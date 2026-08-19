@@ -102,33 +102,34 @@ async function checkDialerPage() {
   }
 }
 
-async function checkTwilioToken() {
+async function checkTwilioTokenContainment() {
   const url = `${baseUrl}/api/twilio-token`
-  const res = await fetchChecked(
-    url,
-    {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...(healthBearer ? { Authorization: `Bearer ${healthBearer}` } : {}),
-      },
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      ...(healthBearer ? { Authorization: `Bearer ${healthBearer}` } : {}),
     },
-    'twilio-token endpoint'
-  )
+  })
 
   assertEdgeHeaders('twilio-token endpoint', res.headers)
   assertNoStore('twilio-token endpoint', res.headers)
+  assert(
+    res.status === 401,
+    `twilio-token endpoint: health bearer must receive HTTP 401, got ${res.status}`
+  )
 
   const body = await res.json().catch(() => null)
   assert(body && typeof body === 'object', 'twilio-token endpoint: response is not valid JSON')
-  assert(typeof body.token === 'string' && body.token.length > 20, 'twilio-token endpoint: missing token payload')
-  assert(typeof body.identity === 'string' && body.identity.length > 0, 'twilio-token endpoint: missing identity')
-  assert(typeof body.callerId === 'string' && body.callerId.startsWith('+1'), 'twilio-token endpoint: malformed callerId')
+  assert(body.error === 'Unauthorized', 'twilio-token endpoint: expected an Unauthorized response')
+  assert(
+    !Object.prototype.hasOwnProperty.call(body, 'token'),
+    'twilio-token endpoint: unauthorized response exposed a token'
+  )
 
   return {
     status: res.status,
-    identity: body.identity,
-    callerId: body.callerId,
+    tokenExposed: false,
     cacheControl: header(res.headers, 'cache-control'),
     cdnCacheControl: header(res.headers, 'cdn-cache-control'),
     cloudflareCdnCacheControl: header(res.headers, 'cloudflare-cdn-cache-control'),
@@ -173,7 +174,7 @@ async function main() {
   const started = Date.now()
   const [dialer, token, twiml] = await Promise.all([
     checkDialerPage(),
-    checkTwilioToken(),
+    checkTwilioTokenContainment(),
     checkTwimlVoice(),
   ])
 
@@ -183,7 +184,7 @@ async function main() {
     expectCloudflare,
     elapsedMs: Date.now() - started,
     dialer,
-    twilioToken: token,
+    twilioTokenContainment: token,
     twimlVoice: twiml,
   })
 }

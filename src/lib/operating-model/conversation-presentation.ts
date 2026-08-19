@@ -1,3 +1,5 @@
+import { isAllowedSmsSender, normalizeTwilioNumber } from '@/lib/twilio-numbers'
+
 export type ConversationDirection = 'inbound' | 'outbound' | null
 export type CallOutcomeTone = 'positive' | 'attention' | 'negative' | 'neutral'
 export type CallOutcomeKey =
@@ -29,18 +31,40 @@ export interface CallParties {
   to: string | null
 }
 
-const COMM_TYPES = new Set([
-  'call',
+const SMS_ACTIVITY_TYPES = new Set([
   'sms',
   'sms_sent',
   'sms_received',
   'sms_inbound',
   'sms_outbound',
+])
+
+const COMM_TYPES = new Set([
+  'call',
+  ...SMS_ACTIVITY_TYPES,
   'email',
   'email_sent',
   'email_received',
   'voicemail',
 ])
+
+export function isSmsConversationActivityType(activityType: string): boolean {
+  return SMS_ACTIVITY_TYPES.has(activityType)
+}
+
+export function getEligibleSmsReplySender(activity: ConversationActivityLike): string | undefined {
+  if (!isSmsConversationActivityType(activity.activity_type)) return undefined
+
+  const direction = getConversationDirection(activity)
+  const candidate = direction === 'inbound'
+    ? activity.metadata?.to
+    : activity.metadata?.from ?? activity.metadata?.fromPhone
+  const normalizedSender = normalizeTwilioNumber(typeof candidate === 'string' ? candidate : undefined)
+
+  return normalizedSender && isAllowedSmsSender(normalizedSender, 'conversation')
+    ? normalizedSender
+    : undefined
+}
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null

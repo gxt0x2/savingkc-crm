@@ -6,10 +6,7 @@ import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { updateManifestV2_1 } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
-
-
-
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
   const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
@@ -22,6 +19,10 @@ function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
  */
 export async function POST(req: Request) {
   try {
+    if (!(await validateTwilioWebhook(req))) {
+      return NextResponse.json({ error: 'Invalid Twilio signature' }, { status: 403 })
+    }
+
     const url = new URL(req.url)
     const from = url.searchParams.get('from') || ''
     const calledNumber = url.searchParams.get('calledNumber') || ''

@@ -13,7 +13,7 @@ interface ThreadContact {
   verified?: boolean
   assignedAgent?: string | null
   team: string
-  toPhone?: string
+  replyFromPhone?: string
   attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
   owner: string | null
   nextAction: {
@@ -335,7 +335,16 @@ export function ThreadView({
       </div>
 
       {/* Compose Box — reply from the same number the lead texted */}
-      <ComposeBox leadId={leadId} phone={phone} email={email} onSent={onSent} replyFromPhone={contact.toPhone} draftMessage={quickDraft} draftVersion={quickDraftVersion} initialMode={initialComposeMode} />
+      <ComposeBox
+        key={`${quickDraftVersion}:${initialComposeMode}`}
+        leadId={leadId}
+        phone={phone}
+        email={email}
+        onSent={onSent}
+        replyFromPhone={contact.replyFromPhone}
+        draftMessage={quickDraft}
+        initialMode={initialComposeMode}
+      />
     </section>
   )
 }

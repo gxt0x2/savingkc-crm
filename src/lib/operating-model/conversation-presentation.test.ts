@@ -4,6 +4,8 @@ import {
   getCallOutcomePresentation,
   getCallParties,
   getConversationDirection,
+  getEligibleSmsReplySender,
+  isSmsConversationActivityType,
 } from './conversation-presentation'
 
 describe('conversation activity presentation', () => {
@@ -46,6 +48,50 @@ describe('conversation activity presentation', () => {
       { activity_type: 'call', description: null, metadata: { direction: 'outbound' } },
       { leadPhone: '+18165550111', teamPhone: '+18163077835' },
     )).toEqual({ from: '+18163077835', to: '+18165550111' })
+  })
+
+  it.each([
+    ['sms', 'outbound'],
+    ['sms_sent', 'outbound'],
+    ['sms_outbound', 'outbound'],
+    ['sms_received', 'inbound'],
+    ['sms_inbound', 'inbound'],
+  ] as const)('normalizes %s as an SMS message with %s direction', (activityType, direction) => {
+    const activity = { activity_type: activityType, description: 'Hello', metadata: null }
+
+    expect(isSmsConversationActivityType(activityType)).toBe(true)
+    expect(getConversationDirection(activity)).toBe(direction)
+  })
+
+  it('does not classify non-SMS system activity as an SMS message', () => {
+    expect(isSmsConversationActivityType('status_change')).toBe(false)
+  })
+
+  it('derives the reply sender from eligible inbound and outbound SMS history', () => {
+    expect(getEligibleSmsReplySender({
+      activity_type: 'sms_received',
+      description: 'Inbound',
+      metadata: { from: '+19135550123', to: '(816) 608-8559' },
+    })).toBe('+18166088559')
+    expect(getEligibleSmsReplySender({
+      activity_type: 'sms_sent',
+      description: 'Outbound',
+      metadata: { from: '+18163077835', to: '+19135550123' },
+    })).toBe('+18163077835')
+  })
+
+  it('does not derive reply identity from calls, protected lines, or empty history', () => {
+    expect(getEligibleSmsReplySender({
+      activity_type: 'call',
+      description: 'Inbound call',
+      metadata: { direction: 'inbound', to: '+18163077835' },
+    })).toBeUndefined()
+    expect(getEligibleSmsReplySender({
+      activity_type: 'sms_inbound',
+      description: 'Inbound ad text',
+      metadata: { from: '+19135550123', to: '+18166088808' },
+    })).toBeUndefined()
+    expect(getEligibleSmsReplySender({ activity_type: 'sms', description: null, metadata: null })).toBeUndefined()
   })
 
   it('recognizes stored email variants even when legacy rows omit direction metadata', () => {

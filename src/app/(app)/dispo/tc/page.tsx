@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
+import { DocusealUnavailableNotice, useDocusealAvailability } from '@/components/dispo/docuseal-availability'
 import { DispoPageHeader, DispoWorkspaceTabs, MetricStrip, NextStepCard } from '@/components/dispo/workspace-ui'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
@@ -273,12 +274,14 @@ function ContactTile({
 function DetailDrawer({
   file,
   templates,
+  docuseal,
   onTemplatesChanged,
   onClose,
   onChanged,
 }: {
   file: TcFile
   templates: TcDocumentTemplate[]
+  docuseal: { enabled: boolean; checking: boolean }
   onTemplatesChanged: () => void
   onClose: () => void
   onChanged: () => void
@@ -626,7 +629,7 @@ function DetailDrawer({
   }
 
   function startAssignmentPreview() {
-    if (!file.offer) return
+    if (!docuseal.enabled || !file.offer) return
     setAssignmentPreviewOffer({
       ...file.offer,
       lead: {
@@ -932,7 +935,9 @@ function DetailDrawer({
                     <div>
                       <p className="text-sm font-black text-[var(--crm-ink)]">Assignment Contract</p>
                       <p className="text-xs font-semibold text-[var(--crm-text-muted)]">
-                        Review signed docs or launch the DocuSeal iframe preview from the TC file.
+                        {docuseal.enabled
+                          ? 'Review signed docs or launch the DocuSeal iframe preview from the TC file.'
+                          : 'Review existing signed docs. New DocuSeal assignments are temporarily unavailable.'}
                       </p>
                     </div>
                     {file.offer?.assignment_document_url ? (
@@ -940,11 +945,13 @@ function DetailDrawer({
                         <Icon name="open_in_new" size="text-sm" />
                         Full View
                       </a>
-                    ) : file.buyer_offer_id ? (
+                    ) : file.buyer_offer_id && docuseal.enabled ? (
                       <button type="button" onClick={startAssignmentPreview} className={secondaryButtonClass}>
                         <Icon name="preview" size="text-sm" />
                         Preview Assignment
                       </button>
+                    ) : file.buyer_offer_id ? (
+                      <DocusealUnavailableNotice checking={docuseal.checking} />
                     ) : null}
                   </div>
 
@@ -1237,7 +1244,7 @@ function DetailDrawer({
         </div>
       </aside>
     </div>
-    {assignmentPreviewOffer && (
+    {assignmentPreviewOffer && docuseal.enabled && (
       <AssignmentPreviewModal
         offer={assignmentPreviewOffer}
         onClose={() => setAssignmentPreviewOffer(null)}
@@ -1254,6 +1261,7 @@ function DetailDrawer({
 export default function TransactionCoordinatorPage() {
   const searchParams = useSearchParams()
   const pageView = normalizePageView(searchParams.get('view'))
+  const docuseal = useDocusealAvailability()
   const [files, setFiles] = useState<TcFile[]>([])
   const [activeTab, setActiveTab] = useState<TcStatus | 'all' | 'blocked'>('all')
   const [selected, setSelected] = useState<TcFile | null>(null)
@@ -1428,7 +1436,7 @@ export default function TransactionCoordinatorPage() {
   ), [files])
 
   function startAssignmentPreview(file: TcFile) {
-    if (!file.offer) return
+    if (!docuseal.enabled || !file.offer) return
     setAssignmentPreviewOffer({
       ...file.offer,
       lead: {
@@ -1613,7 +1621,7 @@ export default function TransactionCoordinatorPage() {
                             <Icon name="open_in_new" size="text-sm" />
                             Full View
                           </a>
-                        ) : file.buyer_offer_id ? (
+                        ) : file.buyer_offer_id && docuseal.enabled ? (
                           <button type="button" onClick={() => startAssignmentPreview(file)} className={secondaryButtonClass}>
                             <Icon name="preview" size="text-sm" />
                             Preview Assignment
@@ -1828,12 +1836,13 @@ export default function TransactionCoordinatorPage() {
         <DetailDrawer
           file={selected}
           templates={templates}
+          docuseal={docuseal}
           onTemplatesChanged={fetchTemplates}
           onClose={() => setSelected(null)}
           onChanged={fetchFiles}
         />
       )}
-      {assignmentPreviewOffer && (
+      {assignmentPreviewOffer && docuseal.enabled && (
         <AssignmentPreviewModal
           offer={assignmentPreviewOffer}
           onClose={() => setAssignmentPreviewOffer(null)}

@@ -7,6 +7,7 @@ import {
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -28,6 +29,10 @@ function esc(value: string): string {
 
 export async function POST(req: Request) {
   try {
+    if (!(await validateTwilioWebhook(req))) {
+      return NextResponse.json({ error: 'Invalid Twilio signature' }, { status: 403 })
+    }
+
     const url = new URL(req.url)
     const form = await req.formData().catch(() => null)
     const from = url.searchParams.get('from') || form?.get('From')?.toString() || ''

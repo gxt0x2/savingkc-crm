@@ -22,30 +22,14 @@ import {
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 import { resolveLeadIdFromCallActivity } from '@/lib/telephony/recording-lead-resolution'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import {
+  claimPlayableRecordingActivity,
+  markRecordingProcessing,
+} from '@/lib/telephony/recording-processing-claim'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
-
-type RecordingCallbackMeta = {
-  callSid?: string
-  direction?: 'inbound' | 'outbound'
-  duration: number
-  from?: string
-  recordingSid: string
-  recordingSourceUrl: string
-  recordingStatus: string
-  recordingUrl: string
-  source: 'twilio_recording_callback'
-  to?: string
-  context_source?: string
-  traffic_source?: string
-  campaign?: string
-  lead_source?: string
-  tracking_number?: string
-  landing_page?: string
-  phone_profile?: string
-  is_test?: boolean
-}
 
 type RecordingContext = {
   source?: string
@@ -126,75 +110,6 @@ async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | nul
   return null
 }
 
-async function logPlayableRecordingActivity({
-  leadId,
-  recordingSid,
-  recordingUrl,
-  callSid,
-  duration,
-  recordingStatus,
-  from,
-  to,
-  context,
-}: {
-  leadId: string
-  recordingSid: string
-  recordingUrl: string
-  callSid: string
-  duration: number
-  recordingStatus: string
-  from: string
-  to: string
-  context?: RecordingContext
-}) {
-  const playableUrl = `/api/recordings/${recordingSid}`
-  const direction = from?.startsWith('client:') ? 'outbound' : 'inbound'
-  const metadata: RecordingCallbackMeta = {
-    callSid,
-    direction,
-    duration,
-    from,
-    recordingSid,
-    recordingSourceUrl: recordingUrl,
-    recordingStatus,
-    recordingUrl: playableUrl,
-    source: 'twilio_recording_callback',
-    to,
-    ...(context?.source && { context_source: context.source }),
-    ...(context?.traffic_source && { traffic_source: context.traffic_source }),
-    ...(context?.campaign && { campaign: context.campaign }),
-    ...(context?.lead_source && { lead_source: context.lead_source }),
-    ...(context?.tracking_number && { tracking_number: context.tracking_number }),
-    ...(context?.landing_page && { landing_page: context.landing_page }),
-    ...(context?.phone_profile && { phone_profile: context.phone_profile }),
-  }
-
-  const { data: existing } = await supabase
-    .from('lead_activities')
-    .select('id, metadata')
-    .eq('lead_id', leadId)
-    .eq('activity_type', 'call')
-    .contains('metadata', { recordingSid })
-    .limit(1)
-    .maybeSingle()
-
-  if (existing?.id) {
-    await supabase
-      .from('lead_activities')
-      .update({ metadata: { ...(existing.metadata || {}), ...metadata } })
-      .eq('id', existing.id)
-    return
-  }
-
-  await supabase.from('lead_activities').insert({
-    lead_id: leadId,
-    activity_type: 'call',
-    description: 'Call recording available',
-    agent: 'System',
-    metadata,
-  })
-}
-
 /**
  * Twilio recording status callback.
  * Called automatically when a call recording is ready.
@@ -202,6 +117,10 @@ async function logPlayableRecordingActivity({
  */
 export async function POST(req: Request) {
   try {
+    if (!(await validateTwilioWebhook(req))) {
+      return NextResponse.json({ error: 'Invalid Twilio signature' }, { status: 403 })
+    }
+
     const url = new URL(req.url)
     const body = await req.formData()
     const recordingUrl = body.get('RecordingUrl') as string
@@ -244,6 +163,10 @@ export async function POST(req: Request) {
     // Only process completed recordings
     if (recordingStatus !== 'completed' || !recordingUrl) {
       return NextResponse.json({ ok: true, skipped: 'not_completed' })
+    }
+
+    if (!recordingSid) {
+      return NextResponse.json({ error: 'Missing RecordingSid' }, { status: 400 })
     }
 
     // Skip very short recordings (< 5 seconds = likely no conversation)
@@ -320,15 +243,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: 'no_lead' })
     }
 
-    console.log(`[recording-callback] Processing recording for lead ${leadId}`)
-
-    if (isGoogleAdsRecording && from && !isInternalTestRecording) {
-      await markLeadAsGoogleAdsPhoneLead(leadId, from, null, calledNumber || sourceHint).catch((error) => {
-        console.error('[recording-callback] Google Ads attribution refresh failed:', error)
-      })
-    }
-
-    await logPlayableRecordingActivity({
+    const processingClaim = await claimPlayableRecordingActivity({
       leadId,
       recordingSid,
       recordingUrl,
@@ -340,7 +255,33 @@ export async function POST(req: Request) {
       context: recordingContext,
     })
 
-    await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
+    if (!processingClaim.shouldProcess) {
+      console.log(`[recording-callback] Skipping ${recordingSid}: ${processingClaim.skipped}`)
+      return NextResponse.json({
+        ok: true,
+        leadId,
+        processed: false,
+        skipped: processingClaim.skipped,
+      })
+    }
+
+    console.log(`[recording-callback] Processing recording for lead ${leadId}`)
+
+    try {
+      if (isGoogleAdsRecording && from && !isInternalTestRecording) {
+        await markLeadAsGoogleAdsPhoneLead(leadId, from, null, calledNumber || sourceHint).catch((error) => {
+          console.error('[recording-callback] Google Ads attribution refresh failed:', error)
+        })
+      }
+
+      await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
+      await markRecordingProcessing(processingClaim, 'completed')
+    } catch (processingError) {
+      await markRecordingProcessing(processingClaim, 'failed', processingError).catch((stateError) => {
+        console.error('[recording-callback] Failed to record processing failure:', stateError)
+      })
+      throw processingError
+    }
 
     return NextResponse.json({ ok: true, leadId, processed: true })
   } catch (err) {

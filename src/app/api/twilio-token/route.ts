@@ -22,16 +22,8 @@ const NO_STORE_HEADERS: HeadersInit = {
 
 export async function GET() {
   try {
-    const required = ['TWILIO_ACCOUNT_SID', 'TWILIO_API_KEY', 'TWILIO_API_SECRET'] as const
-    const missing = required.filter((k) => !cleanTwilioEnv(k))
-    if (missing.length > 0) {
-      return NextResponse.json(
-        { error: `Missing required env vars: ${missing.join(', ')}` },
-        { status: 500, headers: NO_STORE_HEADERS }
-      )
-    }
-
-    // Get logged-in user
+    // Proxy-level trusted bearers are allowed to reach this route for legacy
+    // health checks, but only a real CRM session may mint a Voice token.
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,7 +36,23 @@ export async function GET() {
       }
     )
     const { data: { user } } = await supabase.auth.getUser()
-    const email = user?.email?.toLowerCase() || ''
+    if (!user?.email) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: NO_STORE_HEADERS },
+      )
+    }
+
+    const required = ['TWILIO_ACCOUNT_SID', 'TWILIO_API_KEY', 'TWILIO_API_SECRET'] as const
+    const missing = required.filter((k) => !cleanTwilioEnv(k))
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `Missing required env vars: ${missing.join(', ')}` },
+        { status: 500, headers: NO_STORE_HEADERS }
+      )
+    }
+
+    const email = user.email.toLowerCase()
 
     // Authentication is the source of truth for both the Twilio client identity
     // and the first outbound line shown to the agent.

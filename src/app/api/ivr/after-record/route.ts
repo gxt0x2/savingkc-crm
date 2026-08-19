@@ -6,6 +6,8 @@ import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { ensureManifestExists } from '@/lib/manifest-sync'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import type { ManifestV2 } from '@/lib/manifest-builder'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
@@ -15,6 +17,10 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
  */
 export async function POST(req: Request) {
   try {
+    if (!(await validateTwilioWebhook(req))) {
+      return NextResponse.json({ error: 'Invalid Twilio signature' }, { status: 403 })
+    }
+
     const url = new URL(req.url)
     const from = url.searchParams.get('from') || ''
     const callSid = url.searchParams.get('callSid') || ''
@@ -174,7 +180,7 @@ async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, 
   const analysis = await analyzeCallTranscript(transcript)
 
   // Update lead with extracted fields
-  const leadUpdates: Record<string, any> = {}
+  const leadUpdates: Record<string, unknown> = {}
   if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
   if (analysis.urgency) leadUpdates.urgency = analysis.urgency
   if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
@@ -203,7 +209,8 @@ async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, 
   if (manifest?.id) {
     try {
       const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-      await updateManifestAndCascade(leadId, (manifest: any) => {
+      const motivationScore = typeof analysis?.motivation_score === 'number' ? analysis.motivation_score : undefined
+      await updateManifestAndCascade(leadId, (manifest: ManifestV2) => {
         if (!manifest.communications) manifest.communications = { transcripts: [] }
         manifest.communications.transcripts.push({
           id: `call-${Date.now()}`,
@@ -214,7 +221,7 @@ async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, 
           fullTranscript: transcript,
           aiSummary: analysis?.summary || analysis?.aiSummary || null,
           extractedData: analysis ? {
-            motivationScore: analysis.motivation_score,
+            ...(motivationScore != null ? { motivationScore } : {}),
             sentiment: analysis.sentiment,
           } : null,
         })

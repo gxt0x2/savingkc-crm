@@ -3,11 +3,22 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { sendSubmitterInvite } from '@/lib/docuseal'
+import { docusealUnavailableResponse, isDocusealReady } from '@/lib/docuseal-availability'
+
+function docusealReady() {
+  return isDocusealReady({
+    enabled: process.env.DOCUSEAL_ENABLED,
+    token: process.env.DOCUSEAL_TOKEN,
+    webhookSecret: process.env.DOCUSEAL_WEBHOOK_SECRET,
+  })
+}
 
 // POST /api/offers/[id]/assignment/send
 // Triggers the invitation email for the Assignee submitter on an existing
 // DocuSeal submission created by POST /api/offers/[id]/assignment.
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!docusealReady()) return docusealUnavailableResponse()
+
   try {
     const { id } = await params
     const db = supabaseAdmin()

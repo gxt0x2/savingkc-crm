@@ -5,10 +5,11 @@ on:
   push:
     branches:
       - main
-      - codex/**
-      - codex/stabilization-checkpoint-20260503
-      - codex/dialer-v2-current-crm
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   gate-mobile-dependency-health:
@@ -114,6 +115,9 @@ jobs:
           if-no-files-found: warn
 
   gate-twilio-token-health:
+    # This is a live production contract check. A pull request cannot satisfy
+    # behavior that has not been deployed to production yet.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     needs: gate-build-and-theme
     env:
@@ -146,6 +150,9 @@ jobs:
   gate-edge-integrity:
     runs-on: ubuntu-latest
     needs: gate-twilio-token-health
+    # Like the Twilio health job, this probes the currently deployed production
+    # app and must not demand unreleased branch behavior from a pull request.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     env:
       EDGE_INTEGRITY_BASE_URL: ${{ vars.EDGE_INTEGRITY_BASE_URL }}
       EDGE_EXPECT_VERCEL: ${{ vars.EDGE_EXPECT_VERCEL }}

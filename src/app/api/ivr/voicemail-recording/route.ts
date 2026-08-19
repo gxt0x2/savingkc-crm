@@ -8,12 +8,17 @@ import { ensureManifestExists } from '@/lib/manifest-sync'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { formatPhone } from '@/lib/format'
 import type { ManifestV2 } from '@/lib/manifest-builder'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
 export async function POST(req: Request) {
   try {
+    if (!(await validateTwilioWebhook(req))) {
+      return NextResponse.json({ error: 'Invalid Twilio signature' }, { status: 403 })
+    }
+
     const url = new URL(req.url)
     const agent = url.searchParams.get('agent') || ''
     const from = url.searchParams.get('from') || ''

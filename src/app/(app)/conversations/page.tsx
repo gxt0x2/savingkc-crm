@@ -22,6 +22,8 @@ import {
   getCallOutcomePresentation,
   getCallParties,
   getConversationDirection,
+  getEligibleSmsReplySender,
+  isSmsConversationActivityType,
   type CallOutcomePresentation,
 } from '@/lib/operating-model/conversation-presentation'
 import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
@@ -144,7 +146,7 @@ function activityToMessage(activity: ActivityRow, lead: LeadRow, teamPhone: stri
     }
   }
 
-  if (type === 'sms') {
+  if (isSmsConversationActivityType(type)) {
     return {
       id: activity.id,
       type: 'sms',
@@ -473,8 +475,8 @@ export default function ConversationsPage() {
       )
     : leads
 
-  // The team line is the inbound destination or outbound origin. Do not use an
-  // outbound seller destination as the CRM reply-from number.
+  // The team line is the inbound destination or outbound origin used in call
+  // details. Reply identity is derived separately from eligible SMS history.
   const teamPhoneActivity = [...activities].reverse().find((activity) => {
     const direction = getConversationDirection({ activity_type: activity.type, description: activity.description, metadata: activity.metadata })
     return direction === 'inbound'
@@ -489,6 +491,14 @@ export default function ConversationsPage() {
       ? teamPhoneActivity.metadata?.to || teamPhoneActivity.metadata?.calledNumber
       : teamPhoneActivity.metadata?.from || teamPhoneActivity.metadata?.fromPhone)
     : '+18163077835'
+  const replyFromPhone = [...activities]
+    .reverse()
+    .map((activity) => getEligibleSmsReplySender({
+      activity_type: activity.type,
+      description: activity.description,
+      metadata: activity.metadata,
+    }))
+    .find((sender): sender is string => Boolean(sender))
 
   const threads: ThreadPreview[] = leads.map((lead) => ({
     id: lead.id,
@@ -524,12 +534,12 @@ export default function ConversationsPage() {
         verified: false,
         assignedAgent: activeLead.assigned_agent,
         team: 'Acquisitions',
-        toPhone,
+        replyFromPhone,
         attentionState: activeLead.attentionState || 'resolved',
         owner: activeLead.owner || activeLead.assigned_agent,
         nextAction: activeLead.primaryNextAction || null,
       }
-    : { name: 'Select a contact', initials: '—', verified: false, assignedAgent: null, team: 'Acquisitions', toPhone: '+18163077835', attentionState: 'resolved' as const, owner: null, nextAction: null }
+    : { name: 'Select a contact', initials: '—', verified: false, assignedAgent: null, team: 'Acquisitions', replyFromPhone: undefined, attentionState: 'resolved' as const, owner: null, nextAction: null }
 
   return (
     <>
@@ -625,6 +635,7 @@ export default function ConversationsPage() {
         </div>
 
         <ThreadView
+          key={activeLeadId || activeLead?.phone || 'unmatched-conversation'}
           contact={contact}
           dateGroups={dateGroups.length > 0 ? dateGroups : [{ label: 'No messages yet', messages: [] }]}
           leadId={activeLeadId || undefined}

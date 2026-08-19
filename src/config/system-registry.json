@@ -174,9 +174,9 @@
       "owner": "Dispositions and TC",
       "status": "active",
       "routes": ["/dispo/pipeline", "/dispo/tc", "/dispo/offers", "/dispo/buyers", "/dispo/vendors"],
-      "apiRoutes": ["/api/dispo-deals", "/api/tc/files", "/api/offers", "/api/buyers"],
+      "apiRoutes": ["/api/dispo-deals", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
       "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyer_offers", "buyers", "vendors"],
-      "environment": ["DOCUSEAL_API_KEY", "VERCEL_ENV"]
+      "environment": ["DOCUSEAL_ENABLED", "DOCUSEAL_URL", "DOCUSEAL_TOKEN", "DOCUSEAL_ASSIGNMENT_TEMPLATE_ID", "DOCUSEAL_WEBHOOK_SECRET", "VERCEL_ENV"]
     },
     {
       "id": "reports",

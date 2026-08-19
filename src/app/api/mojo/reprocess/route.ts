@@ -7,6 +7,7 @@
  */
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 import type { ManifestV2 } from '@/lib/manifest-builder'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
@@ -17,6 +18,9 @@ import type { ManifestOwner, ManifestProperty, ManifestSituation } from '@/lib/m
 
 
 export async function POST(req: Request) {
+  const unauthorized = await requireAdminOrSecret(req)
+  if (unauthorized) return unauthorized
+
   try {
     const { leadId } = await req.json().catch(() => ({}))
 
@@ -36,7 +40,7 @@ export async function POST(req: Request) {
     }
 
     let processed = 0
-    const results: any[] = []
+    const results: Array<Record<string, unknown>> = []
 
     for (const row of rows) {
       const manifest = row.manifest as ManifestV2
@@ -77,8 +81,8 @@ export async function POST(req: Request) {
           if (analysis) {
             t.extractedData = {
               motivationScore: analysis.motivationScore,
-              sentiment: analysis.sentiment as any,
-              rapportLevel: analysis.rapportLevel as any,
+              sentiment: analysis.sentiment,
+              rapportLevel: analysis.rapportLevel,
               talkRatio: null,
               verbatimQuotes: analysis.verbatimQuotes,
               objectionResponses: analysis.objectionsRaised,
@@ -110,17 +114,31 @@ export async function POST(req: Request) {
             if (analysis.motivationScore && manifest.situation?.motivation) {
               manifest.situation.motivation.score = analysis.motivationScore
             }
-            if (analysis.urgency && manifest.situation?.timeline) {
-              manifest.situation.timeline.urgency = analysis.urgency as any
+            const validUrgencies: Array<NonNullable<ManifestSituation['timeline']>['urgency']> = [
+              'low', 'medium', 'high', 'critical',
+            ]
+            if (
+              analysis.urgency &&
+              manifest.situation?.timeline &&
+              validUrgencies.includes(analysis.urgency as NonNullable<ManifestSituation['timeline']>['urgency'])
+            ) {
+              manifest.situation.timeline.urgency = analysis.urgency as NonNullable<ManifestSituation['timeline']>['urgency']
             }
             if (analysis.situationType?.length) {
               for (const tag of analysis.situationType) {
                 if (!manifest.situation.type.includes(tag)) manifest.situation.type.push(tag)
               }
             }
-            if (analysis.conditionOverall && !manifest.property.condition?.overall) {
+            const validConditions: Array<NonNullable<ManifestProperty['condition']>['overall']> = [
+              'excellent', 'good', 'fair', 'poor', 'uninhabitable',
+            ]
+            if (
+              analysis.conditionOverall &&
+              !manifest.property.condition?.overall &&
+              validConditions.includes(analysis.conditionOverall as NonNullable<ManifestProperty['condition']>['overall'])
+            ) {
               if (!manifest.property.condition) manifest.property.condition = {}
-              manifest.property.condition.overall = analysis.conditionOverall as any
+              manifest.property.condition.overall = analysis.conditionOverall as NonNullable<ManifestProperty['condition']>['overall']
             }
             if (analysis.vacant !== undefined) manifest.property.vacant = analysis.vacant
             if (analysis.occupancy && !manifest.property.occupancy) {
@@ -158,9 +176,13 @@ export async function POST(req: Request) {
             sentiment: analysis?.sentiment,
             quotesCount: analysis?.verbatimQuotes?.length || 0,
           })
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Reprocess failed for transcript', t.id, err)
-          results.push({ id: t.id, status: 'error', error: err.message })
+          results.push({
+            id: t.id,
+            status: 'error',
+            error: err instanceof Error ? err.message : String(err),
+          })
         }
       }
 
@@ -175,8 +197,10 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ processed, results })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Reprocess error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({
+      error: err instanceof Error ? err.message : 'Internal error',
+    }, { status: 500 })
   }
 }

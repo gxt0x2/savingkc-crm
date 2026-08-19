@@ -222,7 +222,7 @@ async function expectRouteReady(page: Page, route: string) {
     return
   }
   if (pathname === '/conversations') {
-    await expect(page.getByText(contact.fullName, { exact: true }).first()).toBeVisible()
+    await expect(page.getByRole('heading', { name: contact.fullName, exact: true }).first()).toBeVisible()
     await expect(page.getByRole('status', { name: 'Loading conversations' })).toHaveCount(0)
     return
   }

@@ -182,6 +182,123 @@ describe('rebuilt conversation workspace controls', () => {
     expect(screen.getByLabelText('Email subject')).toBeInTheDocument()
   })
 
+  it('lets the server resolve the sender for an established SMS thread', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (input === '/api/sms-templates') {
+        return { ok: true, json: async () => ({ templates: [] }) }
+      }
+      return { ok: true, json: async () => ({ success: true, from: '+18166088559' }) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ComposeBox
+      leadId="lead-1"
+      phone="+18165550198"
+      replyFromPhone="+18166088559"
+    />)
+
+    fireEvent.change(screen.getByPlaceholderText('Type your message... (Enter to send)'), {
+      target: { value: 'Reply on the established thread' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send text message' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/conversations/send',
+      expect.objectContaining({ method: 'POST' }),
+    ))
+    const sendCall = fetchMock.mock.calls.find(([input]) => input === '/api/conversations/send')
+    const payload = JSON.parse(String(sendCall?.[1]?.body))
+
+    expect(payload.resolveSenderFromConversation).toBe(true)
+    expect(payload).not.toHaveProperty('fromPhone')
+  })
+
+  it('resets a manual SMS sender when the active thread changes', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ templates: [] }),
+    }))
+
+    const { rerender } = render(<ComposeBox
+      leadId="lead-1"
+      phone="+18165550198"
+    />)
+    const sender = screen.getByRole('combobox', { name: 'Sending phone number' })
+    fireEvent.change(sender, { target: { value: '+18166088552' } })
+    expect(sender).toHaveValue('+18166088552')
+
+    rerender(<ComposeBox
+      leadId="lead-2"
+      phone="+19135550123"
+    />)
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Sending phone number' })).toHaveValue('+18163077835'))
+  })
+
+  it('surfaces delivered-but-not-persisted email without encouraging a resend', async () => {
+    const onSent = vi.fn()
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (input === '/api/sms-templates') {
+        return { ok: true, json: async () => ({ templates: [] }) }
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          sent: true,
+          persisted: false,
+          deliveryState: 'delivered_not_persisted',
+          warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.',
+        }),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ComposeBox
+      leadId="lead-1"
+      phone="+18165550198"
+      email="marcus@example.com"
+      initialMode="email"
+      onSent={onSent}
+    />)
+
+    fireEvent.change(screen.getByPlaceholderText('Compose email...'), { target: { value: 'Delivered once' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send email' }))
+
+    const warning = await screen.findByRole('status')
+    expect(warning).toHaveTextContent('Email delivered')
+    expect(warning).toHaveTextContent('Do not resend')
+    expect(screen.getByPlaceholderText('Compose email...')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Send email' })).toBeDisabled()
+    expect(onSent).toHaveBeenCalledOnce()
+  })
+
+  it('does not send a client-authored agent identity with an internal note', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (input === '/api/sms-templates') {
+        return { ok: true, json: async () => ({ templates: [] }) }
+      }
+      return { ok: true, json: async () => ({ success: true }) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ComposeBox
+      leadId="lead-1"
+      phone="+18165550198"
+      initialMode="note"
+    />)
+
+    fireEvent.change(screen.getByPlaceholderText('Add an internal note...'), { target: { value: 'Call after 3 PM' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add internal note' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/leads/lead-1/activities',
+      expect.objectContaining({ method: 'POST' }),
+    ))
+    const noteCall = fetchMock.mock.calls.find(([input]) => input === '/api/leads/lead-1/activities')
+    expect(JSON.parse(String(noteCall?.[1]?.body))).toEqual({ description: 'Call after 3 PM' })
+  })
+
   it('uses the thread header for agent, team, and reply state without repeating a caller phone', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

@@ -1,83 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { supabase } from '@/lib/supabase-lazy'
 
+const PRIVATE_NO_STORE_HEADERS = {
+  'Cache-Control': 'private, no-store, max-age=0',
+}
 
+function normalizeEmail(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  return normalized.includes('@') ? normalized : null
+}
 
+function cleanDisplayName(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  return normalized ? normalized.slice(0, 120) : null
+}
 
 export async function POST(req: NextRequest) {
+  const actorEmail = normalizeEmail(await getCurrentUserEmail())
+  if (!actorEmail) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401, headers: PRIVATE_NO_STORE_HEADERS },
+    )
+  }
+
   try {
-    const { email, name, phone } = await req.json()
-    if (!email) {
-      return NextResponse.json({ error: 'Email required' }, { status: 400 })
+    let body: Record<string, unknown>
+    try {
+      const parsed = await req.json() as unknown
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return NextResponse.json({ error: 'JSON body must be an object' }, { status: 400 })
+      }
+      body = parsed as Record<string, unknown>
+    } catch {
+      return NextResponse.json({ error: 'Valid JSON body required' }, { status: 400 })
     }
 
-    // Check if profile with this email already exists
-    const { data: existing } = await supabase
+    if (Object.hasOwn(body, 'email')) {
+      const requestedEmail = normalizeEmail(body.email)
+      if (!requestedEmail) {
+        return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
+      }
+      if (requestedEmail !== actorEmail) {
+        return NextResponse.json({ error: 'Profile email must match the authenticated user' }, { status: 403 })
+      }
+    }
+
+    const { data: existing, error: lookupError } = await supabase
       .from('agent_profiles')
       .select('id')
-      .eq('email', email)
-      .single()
+      .eq('email', actorEmail)
+      .maybeSingle()
+
+    if (lookupError) {
+      console.error('link-profile lookup error:', lookupError)
+      return NextResponse.json({ error: 'Unable to load profile' }, { status: 500 })
+    }
 
     if (existing) {
       return NextResponse.json({ linked: true, profileId: existing.id })
     }
 
-    // Try to match by name (fuzzy)
-    if (name) {
-      const { data: profiles } = await supabase
-        .from('agent_profiles')
-        .select('id, full_name, email')
-
-      if (profiles) {
-        const normalizedName = name.toLowerCase().trim()
-        const match = profiles.find((p: any) => {
-          const profileName = (p.full_name || '').toLowerCase().trim()
-          return profileName === normalizedName ||
-            profileName.includes(normalizedName) ||
-            normalizedName.includes(profileName)
-        })
-
-        if (match) {
-          await supabase
-            .from('agent_profiles')
-            .update({ email })
-            .eq('id', match.id)
-          return NextResponse.json({ linked: true, profileId: match.id, matched: 'name' })
-        }
-      }
-    }
-
-    // Try to match by phone
-    if (phone) {
-      const { data: phoneMatch } = await supabase
-        .from('agent_profiles')
-        .select('id')
-        .eq('phone', phone)
-        .single()
-
-      if (phoneMatch) {
-        await supabase
-          .from('agent_profiles')
-          .update({ email })
-          .eq('id', phoneMatch.id)
-        return NextResponse.json({ linked: true, profileId: phoneMatch.id, matched: 'phone' })
-      }
-    }
-
-    // No match — create a new profile
-    const { data: newProfile } = await supabase
+    const fullName = cleanDisplayName(body.name) || actorEmail.split('@')[0]
+    const { data: newProfile, error: createError } = await supabase
       .from('agent_profiles')
       .insert({
-        email,
-        full_name: name || email.split('@')[0],
+        email: actorEmail,
+        full_name: fullName,
         role: 'agent',
+        is_admin: false,
       })
       .select('id')
       .single()
 
-    return NextResponse.json({ linked: true, profileId: newProfile?.id, created: true })
-  } catch (err: any) {
-    console.error('link-profile error:', err)
-    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 })
+    if (createError || !newProfile?.id) {
+      console.error('link-profile create error:', createError)
+      return NextResponse.json({ error: 'Unable to create profile' }, { status: 500 })
+    }
+
+    return NextResponse.json({ linked: true, profileId: newProfile.id, created: true })
+  } catch (error) {
+    console.error('link-profile error:', error)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

@@ -12,6 +12,8 @@ import {
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import { isUniqueViolation, stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 
 /**
  * Twilio status callback receiver for browser-initiated outbound calls.
@@ -21,8 +23,9 @@ import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
  * including the final Status and any ErrorCode. We persist the terminal
  * outcome to lead_activities.metadata so failures stop being invisible.
  *
- * No auth — Twilio webhooks are signed but Vercel terminates TLS and we
- * trust the URL path. (Same posture as the existing /api/twilio-recording-callback.)
+ * This route is public at the proxy because Twilio cannot carry a CRM session.
+ * The handler therefore validates the provider signature before reading or
+ * persisting callback data.
  */
 
 type OutboundCallQualityInput = {
@@ -88,9 +91,14 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         }),
       }
 
+      const activityId = stableWebhookActivityId(
+        'call-quality-milestone',
+        `${dedupeKey}:${milestone.event}`,
+      )
       const { data: activity, error } = await input.supabase
         .from('lead_activities')
         .insert({
+          id: activityId,
           lead_id: input.leadId,
           activity_type: 'status_change',
           description: `Call quality milestone: ${milestone.label}`,
@@ -99,6 +107,8 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
         })
         .select('id')
         .single()
+
+      if (isUniqueViolation(error)) continue
 
       if (error) {
         console.error('[twilio-call-status] Call quality milestone insert failed:', error)
@@ -133,6 +143,10 @@ async function logOutboundCallQualityMilestones(input: OutboundCallQualityInput)
 
 export async function POST(req: Request) {
   try {
+    if (!(await validateTwilioWebhook(req))) {
+      return NextResponse.json({ error: 'Invalid Twilio signature' }, { status: 403 })
+    }
+
     const body = await req.formData()
     const callSid = (body.get('CallSid') as string) || ''
     const parentCallSid = (body.get('ParentCallSid') as string) || ''
@@ -151,49 +165,80 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, skipped: 'non_terminal', callStatus })
     }
 
+    const callbackSid = callSid || parentCallSid
+    if (!callbackSid) {
+      return NextResponse.json({ error: 'Missing CallSid' }, { status: 400 })
+    }
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
 
-    let leadId: string | null = null
-    for (const variant of phoneLookupVariants(to)) {
-      const { data } = await supabase
-        .from('leads')
-        .select('id')
-        .eq('phone', variant)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (data?.id) {
-        leadId = data.id
-        break
+    const sidMetadataField = callSid ? 'callSid' : 'parentCallSid'
+    const { data: existingCallback, error: existingCallbackError } = await supabase
+      .from('lead_activities')
+      .select('id, lead_id')
+      .eq('metadata->>source', 'twilio_status_callback')
+      .eq(`metadata->>${sidMetadataField}`, callbackSid)
+      .eq('metadata->>status', callStatus)
+      .limit(1)
+      .maybeSingle()
+
+    if (existingCallbackError) throw existingCallbackError
+
+    let leadId: string | null = existingCallback?.lead_id || null
+    if (!leadId) {
+      for (const variant of phoneLookupVariants(to)) {
+        const { data } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('phone', variant)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (data?.id) {
+          leadId = data.id
+          break
+        }
       }
     }
 
     // Stamp a diagnostic activity row so it shows up in the Activity Feed
     // alongside the existing call rows. Failed calls become discoverable.
-    await supabase.from('lead_activities').insert({
-      lead_id: leadId,
-      activity_type: 'call',
-      description: errorCode
-        ? `Twilio status: ${callStatus} (error ${errorCode}: ${errorMessage || 'no message'})`
-        : `Twilio status: ${callStatus}`,
-      agent: identity || 'System',
-      metadata: {
-        source: 'twilio_status_callback',
-        direction: 'outbound',
-        callSid,
-        parentCallSid,
-        from,
-        to,
-        status: callStatus,
-        duration,
-        errorCode: errorCode ? Number(errorCode) : null,
-        errorMessage,
-        identity,
-      },
-    })
+    let duplicate = Boolean(existingCallback?.id)
+    if (!duplicate) {
+      const callbackEventKey = `${callbackSid}:${callStatus}`
+      const { error: insertError } = await supabase.from('lead_activities').insert({
+        id: stableWebhookActivityId('twilio-call-status', callbackEventKey),
+        lead_id: leadId,
+        activity_type: 'call',
+        description: errorCode
+          ? `Twilio status: ${callStatus} (error ${errorCode}: ${errorMessage || 'no message'})`
+          : `Twilio status: ${callStatus}`,
+        agent: identity || 'System',
+        metadata: {
+          source: 'twilio_status_callback',
+          callbackEventKey,
+          direction: 'outbound',
+          callSid,
+          parentCallSid,
+          from,
+          to,
+          status: callStatus,
+          duration,
+          errorCode: errorCode ? Number(errorCode) : null,
+          errorMessage,
+          identity,
+        },
+      })
+
+      if (isUniqueViolation(insertError)) {
+        duplicate = true
+      } else if (insertError) {
+        throw insertError
+      }
+    }
 
     if (callStatus === 'completed' && duration > 0) {
       await logOutboundCallQualityMilestones({
@@ -208,7 +253,7 @@ export async function POST(req: Request) {
       })
     }
 
-    return NextResponse.json({ ok: true, callStatus, errorCode })
+    return NextResponse.json({ ok: true, callStatus, errorCode, duplicate })
   } catch (err) {
     console.error('[twilio-call-status] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
