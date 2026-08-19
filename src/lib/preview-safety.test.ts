@@ -34,6 +34,7 @@ describe('preview safety', () => {
     expect(previewWriteBlocked('GET', '/api/conversations/hub')).toBe(false)
     expect(previewWriteBlocked('OPTIONS', '/api/leads')).toBe(false)
     expect(previewWriteBlocked('POST', '/api/leads')).toBe(true)
+    expect(previewWriteBlocked('POST', '/api/assistant/read')).toBe(false)
     expect(previewWriteBlocked('PATCH', '/api/leads/tasks/task-1')).toBe(true)
     expect(previewWriteBlocked('POST', '/login')).toBe(false)
   })

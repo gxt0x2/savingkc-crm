@@ -106,7 +106,7 @@
       "routes": [],
       "apiRoutes": [],
       "tables": [],
-      "environment": ["VERCEL", "VERCEL_ENV", "VERCEL_PROJECT_ID", "VERCEL_GIT_REPO_SLUG", "VERCEL_GIT_REPO_OWNER", "VERCEL_GIT_COMMIT_REF"]
+      "environment": ["VERCEL", "VERCEL_ENV", "VERCEL_PROJECT_ID", "VERCEL_GIT_REPO_SLUG", "VERCEL_GIT_REPO_OWNER", "VERCEL_GIT_COMMIT_REF", "NEXT_PUBLIC_APP_URL"]
     },
     {
       "id": "dashboard",
@@ -175,7 +175,7 @@
       "status": "active",
       "routes": ["/dispo/pipeline", "/dispo/tc", "/dispo/offers", "/dispo/buyers", "/dispo/vendors"],
       "apiRoutes": ["/api/dispo-deals", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
-      "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyers", "vendors"],
+      "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyer_offers", "buyers", "vendors"],
       "environment": ["DOCUSEAL_ENABLED", "DOCUSEAL_URL", "DOCUSEAL_TOKEN", "DOCUSEAL_ASSIGNMENT_TEMPLATE_ID", "DOCUSEAL_WEBHOOK_SECRET", "VERCEL_ENV"]
     },
     {
@@ -207,6 +207,16 @@
       "apiRoutes": ["/api/ari/chat", "/api/ai/command"],
       "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events", "roles"],
       "environment": ["OPENAI_API_KEY"]
+    },
+    {
+      "id": "read_only_operating_assistant",
+      "name": "Read-only operating assistant",
+      "owner": "Operations",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/assistant/read"],
+      "tables": ["assistant_query_audit"],
+      "environment": ["CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_ALLOWED_EMAILS", "CRM_ASSISTANT_OWNER_EMAILS"]
     },
     {
       "id": "workflows",
