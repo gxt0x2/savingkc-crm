@@ -7,9 +7,18 @@ describe('agent profile database containment', () => {
   it('removes direct browser-role access and preserves service-role access', () => {
     const sql = readFileSync(migrationPath, 'utf8')
 
-    expect(sql).toMatch(/DROP POLICY IF EXISTS "Authenticated full access" ON public\.agent_profiles/i)
+    for (const policyName of [
+      'Authenticated full access',
+      'Authenticated users can read profiles',
+      'Users can update own profile',
+      'authenticated_all',
+    ]) {
+      expect(sql).toContain(`DROP POLICY IF EXISTS "${policyName}" ON public.agent_profiles`)
+    }
     expect(sql).toMatch(/REVOKE ALL PRIVILEGES ON TABLE public\.agent_profiles FROM PUBLIC, anon, authenticated/i)
     expect(sql).toMatch(/GRANT ALL PRIVILEGES ON TABLE public\.agent_profiles TO service_role/i)
+    expect(sql).toMatch(/grantee IN \('PUBLIC', 'anon', 'authenticated'\)/i)
+    expect(sql).toMatch(/'authenticated' = ANY \(roles\)/i)
     expect(sql).not.toMatch(/TO authenticated\b/i)
   })
 })
