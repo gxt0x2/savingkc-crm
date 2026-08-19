@@ -91,7 +91,17 @@ jobs:
         run: node scripts/ci/check-dialer-ringback.mjs
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        run: |
+          # Keep Azure as a fallback, but avoid letting a reachable-yet-throttled
+          # Azure Ubuntu mirror hold the Playwright gate for ~15 minutes.
+          if [[ -f /etc/apt/apt-mirrors.txt ]]; then
+            sudo sed -i \
+              -e '/azure\.archive\.ubuntu\.com/s/priority:[0-9][0-9]*/priority:3/' \
+              -e '/^https:\/\/archive\.ubuntu\.com/s/priority:[0-9][0-9]*/priority:1/' \
+              -e '/security\.ubuntu\.com/s/priority:[0-9][0-9]*/priority:2/' \
+              /etc/apt/apt-mirrors.txt
+          fi
+          npx playwright install --with-deps chromium
 
       - name: Visual smoke gate (dark shell)
         run: npm run test:smoke:theme
