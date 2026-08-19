@@ -144,9 +144,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/dialer"],
-      "apiRoutes": ["/api/dialer/queue", "/api/twilio-token", "/api/call-log"],
+      "apiRoutes": ["/api/dialer/queue", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
       "tables": ["call_logs", "dialer_saved_lists", "phone_number_registry", "agent_profiles"],
-      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"]
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION"]
     },
     {
       "id": "calendar_tasks",
