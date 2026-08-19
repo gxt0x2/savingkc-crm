@@ -33,7 +33,7 @@ vi.mock('@/hooks/use-theme-preference', () => ({
 }))
 
 vi.mock('@/components/conversations/workspace-frame', () => ({
-  WorkspaceFrame: ({ children, userEmail }: { children: React.ReactNode; userEmail?: string | null }) => <div data-testid="workspace-frame" data-user-email={userEmail}>{children}</div>,
+  WorkspaceFrame: ({ children, userEmail, profilePhotoUrl }: { children: React.ReactNode; userEmail?: string | null; profilePhotoUrl?: string | null }) => <div data-testid="workspace-frame" data-user-email={userEmail} data-profile-photo={profilePhotoUrl ?? ''}>{children}</div>,
 }))
 
 describe('AppShell first-load work', () => {
@@ -41,7 +41,9 @@ describe('AppShell first-load work', () => {
     navigation.pathname = '/dashboard'
     navigation.replace.mockReset()
     window.sessionStorage.clear()
+    window.localStorage.clear()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
       json: vi.fn().mockResolvedValue({ profile: { profile_photo_url: 'https://example.com/ernest.jpg' } }),
     }))
   })
@@ -60,6 +62,21 @@ describe('AppShell first-load work', () => {
     act(() => window.dispatchEvent(new Event('open-global-dialer')))
 
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+  })
+
+  it('removes a cached profile photo after the server confirms it was deleted', async () => {
+    window.localStorage.setItem('savingkc:profile-photo:ernest@savingkc.com', 'https://example.com/stale.jpg')
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ profile: { profile_photo_url: null } }),
+    } as unknown as Response)
+
+    render(<AppShell><main>Dashboard content</main></AppShell>)
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem('savingkc:profile-photo:ernest@savingkc.com')).toBeNull()
+    }, { timeout: 2_500 })
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-profile-photo', '')
   })
 
   it('redirects an owner-selected Casey workspace to My Day without painting the company dashboard', () => {

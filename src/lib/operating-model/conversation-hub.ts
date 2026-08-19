@@ -132,11 +132,9 @@ function latestFirst(a: ConversationHubActivity, b: ConversationHubActivity): nu
   return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
 }
 
-export function buildConversationHubThread(
-  lead: ConversationHubLead,
+export function conversationAttentionStateFromActivities(
   activities: ConversationHubActivity[],
-  now = new Date(),
-): ConversationHubThread {
+): ConversationAttentionState {
   const sorted = [...activities].sort(latestFirst)
   const operatingState = sorted.find((activity) =>
     activity.activity_type === 'status_change' &&
@@ -164,6 +162,69 @@ export function buildConversationHubThread(
   if (latestHubState && (!latestComm || new Date(latestHubState.created_at) > new Date(latestComm.created_at))) {
     attentionState = latestHubState.metadata?.hub_action === 'mark_unread' ? 'needs_reply' : 'resolved'
   }
+
+  return attentionState
+}
+
+export function countConversationsNeedingReply(activities: ConversationHubActivity[]): number {
+  return summarizeConversationAttention(activities).needsReply
+}
+
+export interface ConversationAttentionSummary {
+  needsReply: number
+  calls: number
+  emails: number
+  texts: number
+  overdue: number
+}
+
+export function summarizeConversationAttention(
+  activities: ConversationHubActivity[],
+  now = new Date(),
+): ConversationAttentionSummary {
+  const activitiesByLead = new Map<string, ConversationHubActivity[]>()
+  for (const activity of activities) {
+    if (!activity.lead_id) continue
+    const leadActivities = activitiesByLead.get(activity.lead_id) ?? []
+    leadActivities.push(activity)
+    activitiesByLead.set(activity.lead_id, leadActivities)
+  }
+
+  const summary: ConversationAttentionSummary = { needsReply: 0, calls: 0, emails: 0, texts: 0, overdue: 0 }
+  for (const leadActivities of activitiesByLead.values()) {
+    const sorted = [...leadActivities].sort(latestFirst)
+    if (conversationAttentionStateFromActivities(sorted) === 'needs_reply') {
+      summary.needsReply += 1
+      const latestComm = sorted.find((activity) => getConversationDirection(activity) !== null)
+      if (latestComm?.activity_type.includes('sms')) summary.texts += 1
+      else if (latestComm?.activity_type.startsWith('email')) summary.emails += 1
+      else if (latestComm && ['call', 'voicemail'].includes(latestComm.activity_type)) summary.calls += 1
+    }
+
+    const primaryTask = sorted.find((activity) =>
+      activity.activity_type === 'task' &&
+      activity.metadata?.primary_next_action === true &&
+      activity.metadata?.status === 'pending',
+    )
+    const dueAt = text(primaryTask?.metadata?.due_date)
+    if (dueAt && new Date(dueAt) < now) summary.overdue += 1
+  }
+
+  return summary
+}
+
+export function buildConversationHubThread(
+  lead: ConversationHubLead,
+  activities: ConversationHubActivity[],
+  now = new Date(),
+): ConversationHubThread {
+  const sorted = [...activities].sort(latestFirst)
+  const operatingState = sorted.find((activity) =>
+    activity.activity_type === 'status_change' &&
+    activity.metadata?.workflow_id === 'seller-form-intake',
+  )
+  const latestComm = sorted.find((activity) => getConversationDirection(activity) !== null)
+  const attentionState = conversationAttentionStateFromActivities(sorted)
 
   const primaryTask = sorted.find((activity) =>
     activity.activity_type === 'task' &&

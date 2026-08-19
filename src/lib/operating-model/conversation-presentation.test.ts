@@ -3,6 +3,7 @@ import {
   communicationActivitySummary,
   getCallOutcomePresentation,
   getCallParties,
+  getConversationDirection,
 } from './conversation-presentation'
 
 describe('conversation activity presentation', () => {
@@ -45,5 +46,10 @@ describe('conversation activity presentation', () => {
       { activity_type: 'call', description: null, metadata: { direction: 'outbound' } },
       { leadPhone: '+18165550111', teamPhone: '+18163077835' },
     )).toEqual({ from: '+18163077835', to: '+18165550111' })
+  })
+
+  it('recognizes stored email variants even when legacy rows omit direction metadata', () => {
+    expect(getConversationDirection({ activity_type: 'email_received', description: null, metadata: {} })).toBe('inbound')
+    expect(getConversationDirection({ activity_type: 'email_sent', description: null, metadata: {} })).toBe('outbound')
   })
 })

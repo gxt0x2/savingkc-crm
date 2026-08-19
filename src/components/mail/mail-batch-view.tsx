@@ -26,6 +26,10 @@ interface MailPieceWithLead {
   lead_address: string | null
 }
 
+type MailPieceQueryRow = Omit<MailPieceWithLead, 'lead_name' | 'lead_address'> & {
+  leads?: { full_name?: string | null; property_address?: string | null } | null
+}
+
 interface MailBatchViewProps {
   filterStatus?: MailStatus | 'all'
 }
@@ -36,35 +40,40 @@ export function MailBatchView({ filterStatus = 'all' }: MailBatchViewProps) {
   const [statusFilter, setStatusFilter] = useState<MailStatus | 'all'>(filterStatus)
 
   useEffect(() => {
-    fetchAllMail()
-  }, [statusFilter])
+    let cancelled = false
 
-  async function fetchAllMail() {
-    const supabase = createClient()
+    async function fetchAllMail() {
+      const supabase = createClient()
 
-    let query = supabase
-      .from('mail_pieces')
-      .select(`
-        *,
-        leads!inner(full_name, property_address)
-      `)
-      .order('created_at', { ascending: false })
+      let query = supabase
+        .from('mail_pieces')
+        .select(`
+          *,
+          leads!inner(full_name, property_address)
+        `)
+        .order('created_at', { ascending: false })
 
-    if (statusFilter !== 'all') {
-      query = query.eq('status', statusFilter)
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter)
+      }
+
+      const { data } = await query
+
+      const pieces = ((data ?? []) as MailPieceQueryRow[]).map((item) => ({
+        ...item,
+        lead_name: item.leads?.full_name ?? null,
+        lead_address: item.leads?.property_address ?? null,
+      }))
+
+      if (!cancelled) {
+        setMailPieces(pieces)
+        setLoading(false)
+      }
     }
 
-    const { data } = await query
-
-    const pieces = (data || []).map((item: any) => ({
-      ...item,
-      lead_name: item.leads?.full_name,
-      lead_address: item.leads?.property_address,
-    }))
-
-    setMailPieces(pieces)
-    setLoading(false)
-  }
+    void fetchAllMail()
+    return () => { cancelled = true }
+  }, [statusFilter])
 
   const statusCounts = {
     all: mailPieces.length,
@@ -105,42 +114,36 @@ export function MailBatchView({ filterStatus = 'all' }: MailBatchViewProps) {
         <StatCard
           label="Total"
           count={statusCounts.all}
-          color="bg-primary"
           active={statusFilter === 'all'}
           onClick={() => setStatusFilter('all')}
         />
         <StatCard
           label="Queued"
           count={statusCounts.queued}
-          color="bg-blue-500"
           active={statusFilter === 'queued'}
           onClick={() => setStatusFilter('queued')}
         />
         <StatCard
           label="Written"
           count={statusCounts.written}
-          color="bg-purple-500"
           active={statusFilter === 'written'}
           onClick={() => setStatusFilter('written')}
         />
         <StatCard
           label="Mailed"
           count={statusCounts.mailed}
-          color="bg-green-500"
           active={statusFilter === 'mailed'}
           onClick={() => setStatusFilter('mailed')}
         />
         <StatCard
           label="In Transit"
           count={statusCounts.in_transit}
-          color="bg-amber-500"
           active={statusFilter === 'in_transit'}
           onClick={() => setStatusFilter('in_transit')}
         />
         <StatCard
           label="Needs Follow-Up"
           count={statusCounts.needs_follow_up}
-          color="bg-red-500"
           active={statusFilter === 'follow_up_scheduled'}
           onClick={() => setStatusFilter('follow_up_scheduled')}
           pulse={statusCounts.needs_follow_up > 0}
@@ -170,6 +173,7 @@ export function MailBatchView({ filterStatus = 'all' }: MailBatchViewProps) {
                   <div className="flex-1">
                     <Link
                       href={`/leads/${piece.lead_id}`}
+                      prefetch={false}
                       className="text-base font-bold text-primary hover:text-secondary transition-colors mb-1 block"
                     >
                       {piece.lead_name || 'Unknown Lead'}
@@ -234,14 +238,12 @@ export function MailBatchView({ filterStatus = 'all' }: MailBatchViewProps) {
 function StatCard({
   label,
   count,
-  color,
   active,
   onClick,
   pulse = false,
 }: {
   label: string
   count: number
-  color: string
   active: boolean
   onClick: () => void
   pulse?: boolean

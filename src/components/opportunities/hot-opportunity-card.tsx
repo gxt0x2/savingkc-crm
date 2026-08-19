@@ -194,6 +194,7 @@ export function HotOpportunityCard({
           </button>
           <Link
             href={`/leads/${opp.leadId}`}
+            prefetch={false}
             className="flex flex-col items-center gap-1 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container-high transition-colors"
           >
             <Icon name="open_in_new" size="text-sm" className="text-primary" />

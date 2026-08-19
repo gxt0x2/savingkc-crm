@@ -4,15 +4,12 @@ import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { CommandPalette } from './command-palette'
 import type { CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useThemePreference } from '@/hooks/use-theme-preference'
-import { NotificationBell } from './notification-bell'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { WorkspaceFrame } from '@/components/conversations/workspace-frame'
-import { SystemAndon } from '@/components/feedback/system-andon'
 import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button'
 import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
@@ -20,6 +17,9 @@ import { isCallReviewer } from '@/lib/call-review-reviewers'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
+const CommandPalette = dynamic(() => import('./command-palette').then((mod) => mod.CommandPalette), { ssr: false })
+const NotificationBell = dynamic(() => import('./notification-bell').then((mod) => mod.NotificationBell), { ssr: false })
+const SystemAndon = dynamic(() => import('@/components/feedback/system-andon').then((mod) => mod.SystemAndon), { ssr: false })
 const DialerPanel = dynamic(
   () => import('@/components/telephony/telephony-bar').then((mod) => mod.DialerPanel),
   {
@@ -126,15 +126,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (isCallReviewer(email)) return
 
     let cancelled = false
-    void fetch('/api/call-review/access', { cache: 'no-store' })
-      .then((response) => response.ok ? response.json() : { canReviewCalls: false })
-      .then((payload) => {
-        if (!cancelled) setAdminReviewerEmail(payload.canReviewCalls ? email : null)
-      })
-      .catch(() => {
-        if (!cancelled) setAdminReviewerEmail(null)
-      })
-    return () => { cancelled = true }
+    const timeoutId = window.setTimeout(() => {
+      void fetch('/api/call-review/access', { cache: 'no-store' })
+        .then((response) => response.ok ? response.json() : { canReviewCalls: false })
+        .then((payload) => {
+          if (!cancelled) setAdminReviewerEmail(payload.canReviewCalls ? email : null)
+        })
+        .catch(() => {
+          if (!cancelled) setAdminReviewerEmail(null)
+        })
+    }, 1_500)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
   }, [signedInEmail])
 
   useEffect(() => {
@@ -251,42 +256,82 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    async function loadProfile() {
-      const profileEmail = effectiveWorkspaceEmail || user?.email
-      if (!profileEmail) return
+    let cancelled = false
+    const profileEmail = effectiveWorkspaceEmail || user?.email
+    if (!profileEmail) {
+      const clearId = window.setTimeout(() => {
+        if (!cancelled) setProfilePhotoUrl(null)
+      }, 0)
+      return () => {
+        cancelled = true
+        window.clearTimeout(clearId)
+      }
+    }
+    const resolvedProfileEmail = profileEmail
+    const profileCacheKey = `savingkc:profile-photo:${resolvedProfileEmail.toLowerCase()}`
+    const cachedProfilePhoto = window.localStorage.getItem(profileCacheKey)
+    const cachedProfileId = window.setTimeout(() => {
+      if (!cancelled) setProfilePhotoUrl(cachedProfilePhoto || null)
+    }, 0)
+
+    function clearCachedProfilePhoto() {
+      if (cancelled) return
       setProfilePhotoUrl(null)
+      window.localStorage.removeItem(profileCacheKey)
+    }
+
+    async function loadProfile() {
       try {
-        const res = await fetch(`/api/settings?email=${encodeURIComponent(profileEmail)}`)
+        const res = await fetch(`/api/settings?email=${encodeURIComponent(resolvedProfileEmail)}`)
+        if (!res.ok) throw new Error(`Profile request failed with ${res.status}`)
         const data = await res.json()
 
-        if (data.profile?.profile_photo_url) {
+        if (!cancelled && data.profile?.profile_photo_url) {
           setProfilePhotoUrl(data.profile.profile_photo_url)
-        } else if (!data.profile && profileEmail.toLowerCase() === signedInEmail) {
+          window.localStorage.setItem(profileCacheKey, data.profile.profile_photo_url)
+        } else if (data.profile) {
+          // The server is authoritative after the cached photo has provided
+          // the fast first paint. Do not preserve a photo the user removed.
+          clearCachedProfilePhoto()
+        } else if (!data.profile && resolvedProfileEmail.toLowerCase() === signedInEmail) {
           // Profile not found by email — try linking Google OAuth to existing agent_profile
           const meta = (user as { user_metadata?: { full_name?: string; name?: string; phone?: string } }).user_metadata || {}
           const linkRes = await fetch('/api/auth/link-profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              email: profileEmail,
+              email: resolvedProfileEmail,
               name: meta?.full_name || meta?.name || '',
               phone: meta?.phone || '',
             }),
           })
           if (linkRes.ok) {
             // Retry loading profile after linking
-            const res2 = await fetch(`/api/settings?email=${encodeURIComponent(profileEmail)}`)
+            const res2 = await fetch(`/api/settings?email=${encodeURIComponent(resolvedProfileEmail)}`)
+            if (!res2.ok) throw new Error(`Linked profile request failed with ${res2.status}`)
             const data2 = await res2.json()
-            if (data2.profile?.profile_photo_url) {
+            if (!cancelled && data2.profile?.profile_photo_url) {
               setProfilePhotoUrl(data2.profile.profile_photo_url)
+              window.localStorage.setItem(profileCacheKey, data2.profile.profile_photo_url)
+            } else {
+              clearCachedProfilePhoto()
             }
+          } else {
+            clearCachedProfilePhoto()
           }
+        } else {
+          clearCachedProfilePhoto()
         }
       } catch (err) {
         console.error('[AppShell] Error loading profile:', err)
       }
     }
-    void loadProfile()
+    const timeoutId = window.setTimeout(() => { void loadProfile() }, 1_000)
+    return () => {
+      cancelled = true
+      window.clearTimeout(cachedProfileId)
+      window.clearTimeout(timeoutId)
+    }
   }, [effectiveWorkspaceEmail, signedInEmail, user])
 
   if (isConversationWorkspace) {
@@ -569,7 +614,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       /> : null}
 
       {/* ⌘K Command Palette — global search */}
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {paletteOpen ? <CommandPalette open onClose={() => setPaletteOpen(false)} /> : null}
       <SystemAndon floating />
     </div>
   )

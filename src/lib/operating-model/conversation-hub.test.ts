@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildConversationHubThread, type ConversationHubActivity, type ConversationHubLead } from './conversation-hub'
+import { buildConversationHubThread, countConversationsNeedingReply, summarizeConversationAttention, type ConversationHubActivity, type ConversationHubLead } from './conversation-hub'
 
 const lead: ConversationHubLead = {
   id: 'lead-1',
@@ -190,6 +190,79 @@ describe('conversation hub read model', () => {
     ])
 
     expect(thread.attentionState).toBe('resolved')
+  })
+
+  it('counts only lead conversations whose current state needs a reply', () => {
+    const inbound = activity({
+      id: 'inbound-needs-reply',
+      lead_id: 'lead-needs-reply',
+      activity_type: 'sms_received',
+      created_at: '2026-07-28T15:10:00.000Z',
+      metadata: { direction: 'inbound' },
+    })
+    const resolvedInbound = activity({
+      id: 'resolved-inbound',
+      lead_id: 'lead-resolved',
+      activity_type: 'sms_received',
+      created_at: '2026-07-28T15:10:00.000Z',
+      metadata: { direction: 'inbound' },
+    })
+    const explicitRead = activity({
+      id: 'explicit-read',
+      lead_id: 'lead-resolved',
+      activity_type: 'status_change',
+      created_at: '2026-07-28T15:11:00.000Z',
+      metadata: { hub_action: 'mark_read' },
+    })
+    const unmatched = activity({
+      id: 'unmatched-inbound',
+      lead_id: null,
+      activity_type: 'sms_received',
+      created_at: '2026-07-28T15:12:00.000Z',
+      metadata: { direction: 'inbound' },
+    })
+
+    expect(countConversationsNeedingReply([inbound, resolvedInbound, explicitRead, unmatched])).toBe(1)
+  })
+
+  it('summarizes every inbound channel and overdue work without counting unmatched activity', () => {
+    const email = activity({
+      id: 'email-inbound',
+      lead_id: 'lead-email',
+      activity_type: 'email_received',
+      created_at: '2026-08-18T14:00:00.000Z',
+      metadata: {},
+    })
+    const text = activity({
+      id: 'text-inbound',
+      lead_id: 'lead-text',
+      activity_type: 'sms_inbound',
+      created_at: '2026-08-18T14:05:00.000Z',
+      metadata: {},
+    })
+    const call = activity({
+      id: 'call-inbound',
+      lead_id: 'lead-call',
+      activity_type: 'voicemail',
+      created_at: '2026-08-18T14:10:00.000Z',
+      metadata: {},
+    })
+    const overdueTask = activity({
+      id: 'task-overdue',
+      lead_id: 'lead-call',
+      activity_type: 'task',
+      created_at: '2026-08-18T14:11:00.000Z',
+      metadata: {
+        primary_next_action: true,
+        status: 'pending',
+        due_date: '2026-08-18T14:30:00.000Z',
+      },
+    })
+
+    expect(summarizeConversationAttention(
+      [email, text, call, overdueTask],
+      new Date('2026-08-18T15:00:00.000Z'),
+    )).toEqual({ needsReply: 3, calls: 1, emails: 1, texts: 1, overdue: 1 })
   })
 
   it('prefers a claimed agent over workflow team ownership', () => {

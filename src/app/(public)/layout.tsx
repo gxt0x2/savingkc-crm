@@ -3,8 +3,8 @@
 // theme on <html>/<body>; we override here with a light wrapper so the LP
 // renders pixel-equivalent to the design source.
 //
-// Material Symbols is already preloaded by the root layout, so we don't
-// double-load it here.
+// Shared icons use the small local subset declared in globals.css, so public
+// routes never make a render-blocking request to Google Fonts.
 export default function PublicLayout({
   children,
 }: {
