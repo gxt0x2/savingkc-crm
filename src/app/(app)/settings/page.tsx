@@ -176,7 +176,7 @@ export default function SettingsPage() {
           email: selectedEmail,
           full_name: profile.full_name,
           phone: profile.phone,
-          assigned_twilio_number: profile.assigned_twilio_number,
+          ...(isOwner || isAdmin ? { assigned_twilio_number: profile.assigned_twilio_number } : {}),
           profile_photo_url: profile.profile_photo_url,
           voicemail_greeting: profile.voicemail_greeting,
           voicemail_recording_url: profile.voicemail_recording_url,

@@ -8,6 +8,8 @@ import { formatPhone } from '@/lib/format'
 
 type ComposeMode = 'sms' | 'email' | 'note'
 
+const DEFAULT_CONVERSATION_PHONE = '+18163077835'
+
 const modes: { key: ComposeMode; label: string; icon: string }[] = [
   { key: 'sms', label: 'SMS', icon: 'sms' },
   { key: 'email', label: 'Email', icon: 'mail' },
@@ -21,17 +23,24 @@ interface ComposeBoxProps {
   onSent?: () => void
   replyFromPhone?: string // Auto-select the Twilio number the lead last texted
   draftMessage?: string
-  draftVersion?: number
   initialMode?: ComposeMode
 }
 
-export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, draftVersion, initialMode = 'sms' }: ComposeBoxProps) {
-  const [activeMode, setActiveMode] = useState<ComposeMode>(initialMode)
-  const [message, setMessage] = useState('')
+export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, initialMode = 'sms' }: ComposeBoxProps) {
+  const senderThreadKey = `${leadId || 'unmatched'}:${phone || 'no-phone'}:${replyFromPhone || 'new'}`
+  const [activeMode, setActiveMode] = useState<ComposeMode>(draftMessage ? 'sms' : initialMode)
+  const [message, setMessage] = useState(draftMessage || '')
   const [subject, setSubject] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [fromPhone, setFromPhone] = useState(replyFromPhone || '+18163077835')
+  const [deliveryWarning, setDeliveryWarning] = useState<string | null>(null)
+  const [senderSelection, setSenderSelection] = useState({
+    threadKey: senderThreadKey,
+    value: replyFromPhone || DEFAULT_CONVERSATION_PHONE,
+  })
+  const fromPhone = senderSelection.threadKey === senderThreadKey
+    ? senderSelection.value
+    : replyFromPhone || DEFAULT_CONVERSATION_PHONE
   const [templates, setTemplates] = useState<{id: string; name: string; category: string; body: string; merge_fields: string[]}[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
 
@@ -43,17 +52,6 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
       .catch(() => {})
   }, [])
 
-  useEffect(() => {
-    if (draftMessage) {
-      setActiveMode('sms')
-      setMessage(draftMessage)
-    }
-  }, [draftMessage, draftVersion])
-
-  useEffect(() => {
-    setActiveMode(initialMode)
-  }, [initialMode])
-
   async function handleSend() {
     if (!message.trim()) return
     if (activeMode === 'sms' && !phone) { setError('No phone number for this contact'); return }
@@ -62,6 +60,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
 
     setSending(true)
     setError(null)
+    setDeliveryWarning(null)
 
     try {
       const isInternalNote = activeMode === 'note'
@@ -72,7 +71,6 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isInternalNote ? {
           description: message.trim(),
-          agent: 'Ernest',
         } : {
           leadId: leadId?.startsWith('unmatched:') ? null : leadId,
           phone,
@@ -80,13 +78,19 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
           subject: activeMode === 'email' ? subject.trim() || 'Message from Saving KC' : undefined,
           body: message.trim(),
           mode: activeMode,
-          fromPhone: activeMode === 'sms' ? fromPhone : undefined,
-          agent: 'Ernest', // TODO: pass logged-in user name
+          // Existing-thread replies are resolved from SMS history on the
+          // server. Only new outreach carries an explicit manual selection.
+          fromPhone: activeMode === 'sms' && !replyFromPhone ? fromPhone : undefined,
+          resolveSenderFromConversation: activeMode === 'sms' && Boolean(replyFromPhone),
         }),
       })
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Send failed')
+
+      if (data.deliveryState === 'delivered_not_persisted') {
+        setDeliveryWarning(data.warning || 'Email delivered, but CRM history could not be saved. Do not resend this email.')
+      }
 
       setMessage('')
       setSubject('')
@@ -142,6 +146,11 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
         {error && (
           <div className="px-6 pt-3 text-xs text-red-500 font-medium">{error}</div>
         )}
+        {deliveryWarning && (
+          <div role="status" className="px-6 pt-3 text-xs font-semibold text-[var(--crm-warning)]">
+            {deliveryWarning}
+          </div>
+        )}
 
         {/* From number (SMS only) — auto-detected from conversation, manual only for new outreach */}
         {activeMode === 'sms' && (
@@ -155,7 +164,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               <select
                 aria-label="Sending phone number"
                 value={fromPhone}
-                onChange={(e) => setFromPhone(e.target.value)}
+                onChange={(e) => setSenderSelection({ threadKey: senderThreadKey, value: e.target.value })}
                 className="crm-field rounded-lg px-2 py-1 text-xs"
               >
                 {TWILIO_NUMBERS.map((n) => (

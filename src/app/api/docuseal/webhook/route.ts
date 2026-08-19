@@ -1,8 +1,16 @@
 export const dynamic = 'force-dynamic'
 
+import { timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { ensureTcFileForSignedAssignment } from '@/lib/tc'
+
+function sharedSecretsMatch(supplied: string, expected: string): boolean {
+  const suppliedBytes = Buffer.from(supplied, 'utf8')
+  const expectedBytes = Buffer.from(expected, 'utf8')
+  if (suppliedBytes.length !== expectedBytes.length) return false
+  return timingSafeEqual(suppliedBytes, expectedBytes)
+}
 
 // POST /api/docuseal/webhook
 // DocuSeal emits events like form.completed, form.viewed, submission.completed.
@@ -15,11 +23,16 @@ import { ensureTcFileForSignedAssignment } from '@/lib/tc'
 export async function POST(req: NextRequest) {
   try {
     const secret = process.env.DOCUSEAL_WEBHOOK_SECRET
-    if (secret) {
-      const header = req.headers.get('x-docuseal-signature') || req.headers.get('docuseal-signature')
-      if (!header || header !== secret) {
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-      }
+    if (!secret?.trim()) {
+      return NextResponse.json(
+        { error: 'DocuSeal webhook authentication is not configured' },
+        { status: 503 },
+      )
+    }
+
+    const suppliedSecret = req.headers.get('x-docuseal-signature') || req.headers.get('docuseal-signature')
+    if (!suppliedSecret || !sharedSecretsMatch(suppliedSecret, secret)) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 
     const payload = await req.json()

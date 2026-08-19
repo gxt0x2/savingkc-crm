@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 
 export async function GET(
   req: NextRequest,
@@ -40,8 +41,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
-    const body = await req.json() as { description?: string; agent?: string }
+    const body = await req.json() as { description?: string }
     const description = body.description?.trim()
 
     if (!id || !description) {
@@ -54,7 +60,7 @@ export async function POST(
         lead_id: id,
         activity_type: 'note',
         description,
-        agent: body.agent?.trim() || 'Unknown',
+        agent: actor.name,
         metadata: { internal: true },
       })
       .select('id, activity_type, description, agent, metadata, created_at')

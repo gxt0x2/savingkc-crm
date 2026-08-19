@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { syncLeadActivityMutation } from '@/lib/lead-activity-sync'
 
 const EDITABLE_ACTIVITY_TYPES = ['note', 'task', 'appointment', 'follow_up', 'callback', 'send_offer']
 
@@ -59,23 +60,22 @@ export async function PATCH(
       .eq('id', id)
       .single()
 
-    if (activityData?.lead_id) {
-      // Trigger manifest update + briefing refresh via server API
-      fetch(`${req.nextUrl.origin}/api/leads`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: activityData.lead_id,
-          activity: {
-            type: data.activity_type,
-            disposition: 'activity_updated',
-            notes: description.trim(),
-          },
-        }),
-      }).catch(() => {})
-    }
+    const projectionSynced = activityData?.lead_id
+      ? await syncLeadActivityMutation({
+        leadId: activityData.lead_id,
+        activityId: id,
+        activityType: data.activity_type,
+        mutation: 'updated',
+      })
+      : true
 
-    return NextResponse.json({ success: true, activity: data })
+    return NextResponse.json({
+      success: true,
+      activity: data,
+      ...(projectionSynced ? {} : {
+        warning: 'Activity saved, but the lead briefing could not be refreshed.',
+      }),
+    })
   } catch (err) {
     console.error('Error updating note:', err)
     return NextResponse.json(
@@ -122,21 +122,21 @@ export async function DELETE(
     }
 
     // Trigger manifest update
-    if (activityData?.lead_id) {
-      fetch(`${req.nextUrl.origin}/api/leads`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: activityData.lead_id,
-          activity: {
-            type: activityData.activity_type,
-            disposition: 'activity_deleted',
-          },
-        }),
-      }).catch(() => {})
-    }
+    const projectionSynced = activityData?.lead_id
+      ? await syncLeadActivityMutation({
+        leadId: activityData.lead_id,
+        activityId: id,
+        activityType: activityData.activity_type,
+        mutation: 'deleted',
+      })
+      : true
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      ...(projectionSynced ? {} : {
+        warning: 'Activity deleted, but the lead briefing could not be refreshed.',
+      }),
+    })
   } catch (err) {
     console.error('Error deleting activity:', err)
     return NextResponse.json(

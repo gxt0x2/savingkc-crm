@@ -6,6 +6,7 @@ import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { DEAD_REASONS, cleanDeadReason, deadReasonLabel } from '@/lib/lead-outcomes'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
@@ -15,7 +16,7 @@ import { isPipelineClassification, PIPELINE_CLASSIFICATION } from '@/lib/pipelin
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
@@ -518,6 +519,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
+  if (unauthorized) return unauthorized
+
   try {
     const body = await req.json()
     const { id, activity, actor, deadReasonNotes, ...fields } = body
@@ -1004,6 +1008,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
+  if (unauthorized) return unauthorized
+
   try {
     const body = await req.json()
     const { ids } = body
@@ -1155,6 +1162,9 @@ export async function DELETE(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
+  if (unauthorized) return unauthorized
+
   try {
     const { searchParams } = new URL(req.url)
     const page = parseInt(searchParams.get('page') || '1')

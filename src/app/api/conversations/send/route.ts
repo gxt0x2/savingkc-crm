@@ -4,9 +4,15 @@ import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabase } from '@/lib/supabase-lazy'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 
 export async function POST(req: Request) {
   try {
+    const authenticatedActor = await resolveAuthenticatedActor()
+    if (!authenticatedActor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const json = await req.json()
     const {
       leadId,
@@ -14,7 +20,7 @@ export async function POST(req: Request) {
       body,
       mode,
       fromPhone,
-      agent,
+      resolveSenderFromConversation,
       to,
       subject,
       source,
@@ -38,14 +44,15 @@ export async function POST(req: Request) {
     } else if (!phone || !body?.trim()) {
       return NextResponse.json({ error: 'Missing phone or message body' }, { status: 400 })
     }
+    const actor = authenticatedActor.name
 
     if (mode === 'sms') {
       const result = await sendLeadSms({
         leadId,
         phone,
         body,
-        fromPhone,
-        agent,
+        fromPhone: resolveSenderFromConversation === true ? undefined : fromPhone,
+        agent: actor,
         source: activitySource,
         metadata: Object.keys(prospectMetadata).length > 0 ? prospectMetadata : undefined,
       })
@@ -64,42 +71,81 @@ export async function POST(req: Request) {
 
     if (mode === 'email') {
       const emailSubject = subject || 'Message from Saving KC'
-      let sent = false
-
-      if (!externalSideEffectsDisabled() && process.env.RESEND_API_KEY) {
-        const { Resend } = await import('resend')
-        const resend = new Resend(process.env.RESEND_API_KEY)
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'ernest@savingkc.com'
-        await resend.emails.send({
-          from: `Saving KC <${fromEmail}>`,
-          to: [to],
-          subject: emailSubject,
-          text: body.trim(),
-        })
-        sent = true
+      if (externalSideEffectsDisabled()) {
+        return NextResponse.json(
+          { success: false, sent: false, error: 'Email delivery is disabled in this environment' },
+          { status: 503 },
+        )
+      }
+      if (!process.env.RESEND_API_KEY) {
+        return NextResponse.json(
+          { success: false, sent: false, error: 'Email delivery is not configured' },
+          { status: 503 },
+        )
       }
 
-      await supabase.from('lead_activities').insert({
-        lead_id: leadId || null,
-        activity_type: 'email',
-        description: body.trim(),
-        agent: agent || 'System',
-        metadata: {
-          ...(activitySource ? { source: activitySource } : {}),
-          ...prospectMetadata,
-          direction: 'outbound',
-          to,
-          subject: emailSubject,
-          sent,
-        },
+      const { Resend } = await import('resend')
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      const fromEmail = process.env.RESEND_FROM_EMAIL || 'ernest@savingkc.com'
+      const delivery = await resend.emails.send({
+        from: `Saving KC <${fromEmail}>`,
+        to: [to],
+        subject: emailSubject,
+        text: body.trim(),
       })
+
+      if (delivery.error || !delivery.data?.id) {
+        return NextResponse.json(
+          { success: false, sent: false, error: delivery.error?.message || 'Email provider did not accept the message' },
+          { status: 502 },
+        )
+      }
+
+      let activityPersistenceError: unknown = null
+      try {
+        const { error } = await supabase.from('lead_activities').insert({
+          lead_id: leadId || null,
+          activity_type: 'email',
+          description: body.trim(),
+          agent: actor,
+          metadata: {
+            ...(activitySource ? { source: activitySource } : {}),
+            ...prospectMetadata,
+            direction: 'outbound',
+            to,
+            subject: emailSubject,
+            sent: true,
+          },
+        })
+        activityPersistenceError = error
+      } catch (error) {
+        activityPersistenceError = error
+      }
 
       if (leadId) {
         checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
         onCommunicationEvent(leadId, { type: 'email', content: body.trim() }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
       }
 
-      return NextResponse.json({ success: true, sent })
+      if (activityPersistenceError) {
+        console.error('[CONVERSATIONS] Email delivered but activity persistence failed:', activityPersistenceError)
+        return NextResponse.json({
+          success: true,
+          sent: true,
+          persisted: false,
+          deliveryState: 'delivered_not_persisted',
+          warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.',
+          id: delivery.data.id,
+        })
+      }
+
+      return NextResponse.json({
+        success: true,
+        sent: true,
+        persisted: true,
+        deliveryState: 'delivered_and_persisted',
+        id: delivery.data.id,
+      })
     }
 
     if (mode === 'call') {
@@ -108,7 +154,7 @@ export async function POST(req: Request) {
         lead_id: leadId || null,
         activity_type: 'call',
         description: body.trim(),
-        agent: agent || 'System',
+        agent: actor,
         metadata: {
           ...(activitySource ? { source: activitySource } : {}),
           ...prospectMetadata,

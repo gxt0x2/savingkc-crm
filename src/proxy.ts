@@ -12,7 +12,6 @@ const PUBLIC_API_EXACT = new Set([
   '/api/availability',
   '/api/book',
   '/api/buyers/intake',
-  '/api/leads',
   '/api/leads/ppc',
   '/api/leads/ppc/book',
   '/api/leads/ppc/track',
@@ -117,6 +116,12 @@ function isPublicDealApi(request: NextRequest): boolean {
 function isPublicApiRoute(request: NextRequest): boolean {
   const { pathname } = request.nextUrl
 
+  // The website seller-intake endpoint must remain public for form submits and
+  // CORS preflight, but CRM reads and mutations at the same path require a
+  // verified session below.
+  if (pathname === '/api/leads') {
+    return request.method === 'POST' || request.method === 'OPTIONS'
+  }
   if (PUBLIC_API_EXACT.has(pathname)) return true
   if (PUBLIC_API_PREFIXES.some(prefix => pathname.startsWith(prefix))) return true
   if (isPublicDealApi(request)) return true
