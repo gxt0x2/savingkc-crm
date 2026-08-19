@@ -1632,20 +1632,19 @@ function DialerAnalyticsView({ callsToday, uniqueLeadsToday, followupCount, read
   )
 }
 
-function DialerSettingsView({ callerId, setCallerId, dialMode, setDialMode, ringCount, setRingCount, useCallHammer, setUseCallHammer, useVoicemailCallHammer, setUseVoicemailCallHammer }: { callerId: string; setCallerId: (value: string) => void; dialMode: 'click_to_call' | 'power_dialer'; setDialMode: (value: 'click_to_call' | 'power_dialer') => void; ringCount: number; setRingCount: (value: number) => void; useCallHammer: boolean; setUseCallHammer: (value: boolean) => void; useVoicemailCallHammer: boolean; setUseVoicemailCallHammer: (value: boolean) => void }) {
+function DialerSettingsView({ callerId, setCallerId, ringCount, setRingCount }: { callerId: string; setCallerId: (value: string) => void; ringCount: number; setRingCount: (value: number) => void }) {
   return (
     <div>
-      <DialerPageHeading eyebrow="Dialer controls" title="Session defaults" copy="Keep the everyday choices visible; rotation, redial, and automation stay inside advanced queue settings." />
+      <DialerPageHeading eyebrow="Dialer controls" title="Session defaults" copy="Set the caller ID and ring timing used by the single-line calling queue." />
       <section className="max-w-3xl rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-6 shadow-sm">
         <div className="grid gap-5 sm:grid-cols-2">
           <label><span className="text-xs font-bold text-[var(--crm-ink)]">Default calling number</span><select value={callerId} onChange={(event) => setCallerId(event.target.value)} className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2.5 text-sm font-semibold text-[var(--crm-ink)]">{TWILIO_NUMBERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-          <label><span className="text-xs font-bold text-[var(--crm-ink)]">Rings before disposition</span><select value={ringCount} onChange={(event) => setRingCount(Number(event.target.value))} className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2.5 text-sm font-semibold text-[var(--crm-ink)]">{[3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} rings</option>)}</select></label>
+          <label><span className="text-xs font-bold text-[var(--crm-ink)]">Rings before no answer</span><select value={ringCount} onChange={(event) => setRingCount(Number(event.target.value))} className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2.5 text-sm font-semibold text-[var(--crm-ink)]">{[3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} rings</option>)}</select></label>
         </div>
-        <div className="mt-6"><p className="text-xs font-bold text-[var(--crm-ink)]">Calling method</p><div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-[var(--crm-surface-subtle)] p-1">{([['power_dialer', 'Power dialer'], ['click_to_call', 'Click to call']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setDialMode(value)} className={`rounded-lg px-3 py-2.5 text-sm font-bold ${dialMode === value ? 'bg-[var(--crm-surface)] text-[var(--crm-brand)] shadow-sm' : 'text-[var(--crm-text-muted)]'}`}>{label}</button>)}</div></div>
-        <div className="mt-6 space-y-3 border-t border-[var(--crm-border)] pt-5">{[
-          ['Call every verified number', 'Use Call Hammer for each contact in the session.', useCallHammer, setUseCallHammer],
-          ['Continue after voicemail', 'Use the remaining verified numbers after a voicemail result.', useVoicemailCallHammer, setUseVoicemailCallHammer],
-        ].map(([title, copy, checked, setter]) => <label key={title as string} className="flex items-start justify-between gap-4 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><span><strong className="block text-sm text-[var(--crm-ink)]">{title as string}</strong><span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">{copy as string}</span></span><input type="checkbox" checked={checked as boolean} onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)} className="mt-1 h-4 w-4 accent-[var(--crm-brand)]" /></label>)}</div>
+        <div className="mt-6 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4">
+          <p className="text-sm font-black text-[var(--crm-ink)]">Single-line calling</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Calls run one number at a time. After each saved outcome, the session advances to the next callable number.</p>
+        </div>
         <p className="mt-5 text-xs leading-5 text-[var(--crm-text-muted)]">These defaults apply to the current workspace session. Save a calling list to persist its queue-specific configuration and resume point.</p>
       </section>
     </div>
@@ -1659,6 +1658,7 @@ function DialerHome() {
   const [followups, setFollowups] = useState<QueueFollowup[]>([])
   const [contactActivities, setContactActivities] = useState<QueueContactActivity[]>([])
   const [prospects, setProspects] = useState<QueueProspect[]>([])
+  const [callingWindowOpen, setCallingWindowOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [preset, setPreset] = useState<QueuePreset>('custom')
@@ -1686,16 +1686,11 @@ function DialerHome() {
   const [rotateEveryCalls, setRotateEveryCalls] = useState(DEFAULT_ROTATION_EVERY_CALLS)
   const [redialCallerId, setRedialCallerId] = useState('')
   const [startBehavior, setStartBehavior] = useState<'resume' | 'top'>('resume')
-  const [dialMode, setDialMode] = useState<'click_to_call' | 'power_dialer'>('power_dialer')
   const [optionalFilters, setOptionalFilters] = useState<OptionalDialingFilters>(DEFAULT_OPTIONAL_FILTERS)
   const [optionalFiltersDraft, setOptionalFiltersDraft] = useState<OptionalDialingFilters>(DEFAULT_OPTIONAL_FILTERS)
-  const [autoSendEmail, setAutoSendEmail] = useState(false)
-  const [voicemailDrop, setVoicemailDrop] = useState('none')
-  const [callbackDrop, setCallbackDrop] = useState('none')
   const [ringCount, setRingCount] = useState(6)
   const [useCallHammer, setUseCallHammer] = useState(true)
   const [useVoicemailCallHammer, setUseVoicemailCallHammer] = useState(false)
-  const [mode, setMode] = useState<'power' | 'predictive'>('power')
   const [showBulkSms, setShowBulkSms] = useState(false)
   const requestedSection = searchParams.get('section') as DialerHomeSection | null
   const homeSection: DialerHomeSection = requestedSection && DIALER_HOME_SECTIONS.has(requestedSection) ? requestedSection : 'overview'
@@ -1745,6 +1740,7 @@ function DialerHome() {
           setFollowups([])
           setContactActivities([])
           setProspects([])
+          setCallingWindowOpen(false)
           setLoading(false)
           return
         }
@@ -1752,12 +1748,14 @@ function DialerHome() {
         setFollowups((payload.followups as QueueFollowup[] | null) ?? [])
         setContactActivities((payload.contactActivities as QueueContactActivity[] | null) ?? [])
         setProspects((payload.prospects as QueueProspect[] | null) ?? [])
+        setCallingWindowOpen(payload.queuePolicy?.callingWindowOpen === true)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not load dialer queue.')
         setLeads([])
         setFollowups([])
         setContactActivities([])
         setProspects([])
+        setCallingWindowOpen(false)
       }
       setLoading(false)
     }
@@ -1987,7 +1985,7 @@ function DialerHome() {
     return `/dialer?${query.toString()}`
   }, [])
 
-  const startQueue = useCallback(async (dialerMode: 'click_to_call' | 'power_dialer' = 'power_dialer') => {
+  const startQueue = useCallback(async () => {
     const source = selectedQueue.length > 0 ? selectedQueue : queue
     const sourceIds = source.slice(0, 100).map((lead) => lead.id)
 
@@ -2008,12 +2006,6 @@ function DialerHome() {
           Math.max(ids.length - 1, 0),
         )
       : 0
-
-    if (dialerMode === 'click_to_call') {
-      setMode('power')
-    } else {
-      setMode('predictive')
-    }
 
     if (activeSavedQueueId) {
       patchSavedListMeta(activeSavedQueueId, {
@@ -2268,8 +2260,7 @@ function DialerHome() {
     : 0
   const rotationSummary = callerPlan.rotationCallerIds.map((num, idx) => `${formatPhone(num)} (Group ${String.fromCharCode(65 + (idx % 26))})`).join(', ')
   const hasRotation = callerMode === 'rotation' && callerPlan.rotationCallerIds.length > 0
-  const canStart = queue.length > 0
-  const lineDialCount = mode === 'predictive' ? 3 : 1
+  const canStart = queue.length > 0 && callingWindowOpen
   const scheduledCount = leads.filter((lead) => scheduledTodayLeadIds.has(lead.id)).length
   const followupCount = leads.filter((lead) => followupLeadIds.has(lead.id) || dateKey(lead.appointment_date) === today).length
   const priorityCount = leads.filter((lead) => lead.priority === 'hot' || lead.priority === 'high' || (lead.motivation_score || 0) >= 7).length
@@ -2356,7 +2347,7 @@ function DialerHome() {
       ) : homeSection === 'analytics' ? (
         <DialerAnalyticsView callsToday={callsToday} uniqueLeadsToday={uniqueLeadsToday} followupCount={followupCount} readyCount={leads.length} contactActivities={contactActivities} />
       ) : homeSection === 'settings' ? (
-        <DialerSettingsView callerId={callerId} setCallerId={setCallerId} dialMode={dialMode} setDialMode={setDialMode} ringCount={ringCount} setRingCount={setRingCount} useCallHammer={useCallHammer} setUseCallHammer={setUseCallHammer} useVoicemailCallHammer={useVoicemailCallHammer} setUseVoicemailCallHammer={setUseVoicemailCallHammer} />
+        <DialerSettingsView callerId={callerId} setCallerId={setCallerId} ringCount={ringCount} setRingCount={setRingCount} />
       ) : homeSection === 'conversations' ? (
         <DialerConversationHub agent={agent} defaultFromPhone={callerId} homeTabSwitcher={null} />
       ) : (
@@ -2623,7 +2614,7 @@ function DialerHome() {
                 aria-expanded={showAdvancedNumbers}
                 className="mt-2 flex w-full items-center justify-between px-1 text-left text-[11px] font-semibold text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
               >
-                <span>Advanced numbers{callerMode === 'rotation' ? ' · rotation on' : ''}{redialCallerId ? ' · redial set' : ''}</span>
+                <span>Advanced numbers{callerMode === 'rotation' ? ' · rotation on' : ''}</span>
                 <Icon name={showAdvancedNumbers ? 'expand_less' : 'expand_more'} size="text-base" />
               </button>
               {showAdvancedNumbers && (
@@ -2674,19 +2665,6 @@ function DialerHome() {
                       <p className="mt-2 text-[10px] text-[var(--ck-text-dim)]">{rotationSummary || 'Select at least one number for rotation.'}</p>
                     </div>
                   )}
-                  <label className="block">
-                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Redial Caller ID</span>
-                    <select
-                      value={redialCallerId}
-                      onChange={(event) => setRedialCallerId(event.target.value)}
-                      className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2.5 text-sm font-semibold text-[var(--ck-text)] outline-none focus:border-[var(--crm-focus)]"
-                    >
-                      <option value="">Use current caller</option>
-                      {TWILIO_NUMBERS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
                 </div>
               )}
             </div>
@@ -2694,21 +2672,14 @@ function DialerHome() {
             <div className="mt-5">
               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]">3</span>
-                Choose the calling method
+                Review the calling session
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
-                <button
-                  onClick={() => setDialMode('power_dialer')}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'power_dialer' ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
-                >
-                  Power Dialer
-                </button>
-                <button
-                  onClick={() => setDialMode('click_to_call')}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${dialMode === 'click_to_call' ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm' : 'text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
-                >
-                  Click To Call
-                </button>
+              <div className="mt-2 flex items-start gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="call" size="text-lg" /></span>
+                <div>
+                  <p className="text-sm font-black text-[var(--ck-text)]">Single-line dialing</p>
+                  <p className="mt-1 text-[11px] leading-5 text-[var(--ck-text-muted)]">One number at a time. Save an outcome to move to the next callable number.</p>
+                </div>
               </div>
 
               <div className="mt-3 space-y-1.5 text-xs text-[var(--ck-text-muted)]">
@@ -2727,68 +2698,47 @@ function DialerHome() {
                 aria-expanded={showWizardAdvanced}
                 className="mt-3 flex w-full items-center justify-between px-1 text-left text-[11px] font-semibold text-[var(--ck-text-muted)] transition-colors hover:text-[var(--ck-text)]"
               >
-                <span>Call settings{useCallHammer ? ' · hammer' : ''} · {ringCount} rings</span>
+                <span>Call timing · {ringCount} rings</span>
                 <Icon name={showWizardAdvanced ? 'expand_less' : 'expand_more'} size="text-base" />
               </button>
               {showWizardAdvanced && (
-                <div className="mt-2 space-y-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
-                  <div className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
-                    <label className="flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
-                      <span className="font-semibold">Use Call Hammer</span>
-                      <input type="checkbox" checked={useCallHammer} onChange={(event) => setUseCallHammer(event.target.checked)} className="h-4 w-4 accent-[var(--crm-brand)]" />
-                    </label>
-                    <p className="mt-1.5 text-[11px] text-[var(--ck-text-muted)]">On: call all numbers for each contact. Off: only the first listed number.</p>
-                    <label className="mt-3 flex items-center justify-between gap-3 text-sm text-[var(--ck-text)]">
-                      <span className="font-semibold">Voicemail Call Hammer</span>
-                      <input type="checkbox" checked={useVoicemailCallHammer} onChange={(event) => setUseVoicemailCallHammer(event.target.checked)} className="h-4 w-4 accent-[var(--crm-brand)]" />
-                    </label>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="block">
-                      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Lines</span>
-                      <input value={lineDialCount} readOnly className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]" />
-                    </label>
-                    <label className="block">
-                      <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Rings</span>
-                      <select
-                        value={String(ringCount)}
-                        onChange={(event) => setRingCount(Math.max(1, Number(event.target.value) || 6))}
-                        className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
-                      >
-                        {['3', '4', '5', '6', '7', '8'].map((value) => (
-                          <option key={value} value={value}>{value} rings</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <DarkSelect label="Voicemail Drop" value={voicemailDrop} onChange={setVoicemailDrop} options={['none', 'default']} />
-                    <DarkSelect label="Callback Message" value={callbackDrop} onChange={setCallbackDrop} options={['none', 'default']} />
-                  </div>
-                  <button
-                    onClick={() => setAutoSendEmail((current) => !current)}
-                    className={`w-full rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${autoSendEmail ? 'bg-[var(--crm-brand)] text-white' : 'border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'}`}
-                  >
-                    {autoSendEmail ? 'Auto Email On' : 'Auto Send Email'}
-                  </button>
+                <div className="mt-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+                  <label className="block">
+                    <span className="text-[10px] uppercase tracking-[0.08em] text-[var(--ck-text-dim)]">Rings before no answer</span>
+                    <select
+                      value={String(ringCount)}
+                      onChange={(event) => setRingCount(Math.max(1, Number(event.target.value) || 6))}
+                      className="mt-1.5 w-full rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] px-3 py-2 text-sm font-semibold text-[var(--ck-text)]"
+                    >
+                      {['3', '4', '5', '6', '7', '8'].map((value) => (
+                        <option key={value} value={value}>{value} rings</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
               )}
             </div>
 
             <div className="mt-5 border-t border-[var(--ck-border)] pt-4">
+              {!callingWindowOpen && (
+                <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-5 text-amber-200">
+                  Prospecting calls are paused outside Monday-Saturday, 9:00 AM-7:00 PM Central.
+                </div>
+              )}
               <button
-                onClick={() => startQueue(dialMode)}
+                onClick={() => startQueue()}
                 disabled={!canStart}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--crm-brand)] px-4 py-3.5 text-sm font-black text-white shadow-sm transition-colors hover:bg-[var(--crm-brand-hover)] disabled:cursor-not-allowed disabled:opacity-35"
               >
-                <Icon name={dialMode === 'power_dialer' ? 'auto_awesome_motion' : 'call'} size="text-base" />
-                Start {dialMode === 'power_dialer' ? 'power dialer' : 'click-to-call'}{selectedCount > 0 ? ` · ${selectedCount}` : ''}
+                <Icon name="call" size="text-base" />
+                Start single-line session{selectedCount > 0 ? ` · ${selectedCount}` : ''}
               </button>
 
               {hasResumePoint && (
                 <button
                   onClick={() => resumeSavedQueue()}
-                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-2.5 text-xs font-black text-[var(--crm-brand)] transition-colors hover:border-[var(--crm-brand)]"
+                  disabled={!callingWindowOpen}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-2.5 text-xs font-black text-[var(--crm-brand)] transition-colors hover:border-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Icon name="history" size="text-base" /> Resume {(selectedSavedQueue?.resumeIndex || 0) + 1}/{resumeLeadIds.length} · {resumeRemaining} left
                 </button>

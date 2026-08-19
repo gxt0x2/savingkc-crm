@@ -4,6 +4,15 @@ import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers
 import { parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { verifyDialerCallIntent } from '@/lib/telephony/dialer-call-intent'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import {
+  evaluateOutboundDialerCall,
+  recordBlockedDialerCall,
+  type OutboundDialerCallInput,
+  type OutboundDialerCallSource,
+  type OutboundDialerCallDecision,
+} from '@/lib/server/dialer-call-eligibility'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -22,10 +31,20 @@ const XML_HEADERS: HeadersInit = {
   Expires: '0',
 }
 
-const ALLOWED_OUTBOUND_CALLER_IDS = new Set<string>([
-  TWILIO_PHONE,
-  ...TWILIO_NUMBERS.map((n) => n.value),
-])
+const ALLOWED_OUTBOUND_CALLER_IDS = new Set<string>(TWILIO_NUMBERS.map((n) => n.value))
+const LEGACY_SDK_INTENT_SUNSET = Date.parse('2026-09-16T05:00:00.000Z')
+
+type BlockedDialerCallDecision = Extract<OutboundDialerCallDecision, { allowed: false }>
+type RequestKind = 'unknown' | 'outbound' | 'inbound'
+
+const BLOCKED_OUTBOUND_TWIML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Call blocked by contact policy. Review the contact record.</Say>
+  <Hangup/>
+</Response>`
+
+const EMPTY_TWIML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response><Hangup/></Response>`
 
 // Company numbers that ring agent cell directly (no IVR)
 const DIRECT_RING_NUMBERS: Record<string, string> = {
@@ -47,16 +66,6 @@ const COLD_CALL_NUMBERS = new Set([
   '+18166536616',
 ])
 
-function normalizePhone(raw: string | null): string {
-  if (!raw) return ''
-  const digits = raw.replace(/\D/g, '')
-  if (!digits) return ''
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  if (raw.trim().startsWith('+')) return `+${digits}`
-  return `+${digits}`
-}
-
 function getFormString(body: FormData, keys: string[]): string | null {
   for (const key of keys) {
     const value = body.get(key)
@@ -69,29 +78,224 @@ function xmlResponse(body: string, status = 200) {
   return new NextResponse(body, { status, headers: XML_HEADERS })
 }
 
-export async function POST(req: Request) {
+function legacySdkIntentCompatibilityEnabled(now = new Date()): boolean {
+  return process.env.DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS === 'true'
+    && now.getTime() < LEGACY_SDK_INTENT_SUNSET
+}
+
+function blockedDecision(input: {
+  reason?: BlockedDialerCallDecision['reason']
+  reasonSource: string
+  message: string
+  normalizedPhone?: string | null
+  leadId?: string | null
+  prospectPhoneId?: string | null
+}): BlockedDialerCallDecision {
+  return {
+    allowed: false,
+    policyVersion: 'dialer_safety_v1',
+    checkedAt: new Date().toISOString(),
+    normalizedPhone: input.normalizedPhone ?? null,
+    leadId: input.leadId ?? null,
+    prospectPhoneId: input.prospectPhoneId ?? null,
+    reason: input.reason ?? 'policy_unavailable',
+    reasonSource: input.reasonSource,
+    message: input.message,
+  }
+}
+
+async function blockOutboundCall(
+  decision: BlockedDialerCallDecision,
+  policyInput: OutboundDialerCallInput,
+) {
   try {
+    await recordBlockedDialerCall(policyInput, decision)
+  } catch (error) {
+    // Recording is deliberately best-effort. A logging failure must never turn
+    // a denied call into a PSTN leg.
+    console.error('[IVR] Failed to record blocked outbound call:', error)
+  }
+  return xmlResponse(BLOCKED_OUTBOUND_TWIML)
+}
+
+export async function POST(req: Request) {
+  let requestKind: RequestKind = 'unknown'
+  let outboundContext: OutboundDialerCallInput = {
+    phone: '',
+    source: 'legacy_sdk',
+    identity: null,
+    callerId: null,
+    callSid: null,
+    leadId: null,
+    prospectPhoneId: null,
+    clientAttemptId: null,
+  }
+
+  try {
+    if (!req.headers.get('x-twilio-signature')) {
+      return xmlResponse('Forbidden', 403)
+    }
+    let signatureIsValid = false
+    try {
+      signatureIsValid = await validateTwilioWebhook(req)
+    } catch (error) {
+      console.error('[IVR] Twilio signature validation failed:', error)
+    }
+    if (!signatureIsValid) return xmlResponse('Forbidden', 403)
+
     const body = await req.formData()
-    const callSid = body.get('CallSid') as string
-    const from = body.get('From') as string
-    const to = body.get('To') as string
+    const callSid = getFormString(body, ['CallSid']) || ''
+    const from = getFormString(body, ['From']) || ''
+    const to = getFormString(body, ['To']) || ''
 
     // ── OUTBOUND: browser/SDK-initiated call ──
     if (from && from.startsWith('client:')) {
-      const sanitizedTo = normalizePhone(to)
-      if (!sanitizedTo) {
-        const errorTwiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response><Say>No destination number provided.</Say></Response>`
-        return xmlResponse(errorTwiml, 400)
+      requestKind = 'outbound'
+      const identity = from.slice('client:'.length).trim().toLowerCase()
+      const sanitizedTo = normalizePhoneToE164(to)
+      const requestedCallerIdRaw = getFormString(body, ['CallerId', 'callerId', 'caller_id'])
+      const requestedCallerId = normalizePhoneToE164(requestedCallerIdRaw)
+      outboundContext = {
+        ...outboundContext,
+        phone: sanitizedTo ?? to,
+        identity: identity || null,
+        callSid: callSid || null,
+      }
+      const fallbackCallerId = resolveAgentTelephonyProfile(identity).defaultCallerId || TWILIO_PHONE
+      const callerId = requestedCallerId || fallbackCallerId
+      outboundContext = { ...outboundContext, callerId: callerId || null }
+
+      if (!identity) {
+        return blockOutboundCall(blockedDecision({
+          reasonSource: 'intent.invalid_identity',
+          message: 'The outbound caller identity is missing.',
+          normalizedPhone: sanitizedTo,
+        }), outboundContext)
       }
 
-      // Use agent's company number as caller ID (from=client:ernest or client:casey)
-      const identity = from.replace('client:', '').toLowerCase()
-      const requestedCallerId = normalizePhone(getFormString(body, ['CallerId', 'callerId', 'caller_id']))
-      const fallbackCallerId = resolveAgentTelephonyProfile(identity).defaultCallerId || TWILIO_PHONE
-      const callerId = requestedCallerId && ALLOWED_OUTBOUND_CALLER_IDS.has(requestedCallerId)
-        ? requestedCallerId
-        : fallbackCallerId
+      if (!sanitizedTo) {
+        return blockOutboundCall(blockedDecision({
+          reasonSource: 'intent.invalid_destination',
+          message: 'Enter a valid 10-digit US phone number.',
+        }), outboundContext)
+      }
+
+      // An explicitly requested caller ID must be both syntactically valid and
+      // present in the dialer-eligible inventory. Never silently substitute a
+      // different line because that makes the UI and provider audit disagree.
+      if (
+        (requestedCallerIdRaw && !requestedCallerId)
+        || !callerId
+        || !ALLOWED_OUTBOUND_CALLER_IDS.has(callerId)
+      ) {
+        return blockOutboundCall(blockedDecision({
+          reason: 'blocked_number',
+          reasonSource: 'caller_id.unapproved',
+          message: 'The selected outbound caller ID is not approved.',
+          normalizedPhone: sanitizedTo,
+        }), outboundContext)
+      }
+
+      const intentKeys = [
+        'DialIntentToken',
+        'CallIntent',
+        'dialIntentToken',
+        'dial_intent_token',
+      ]
+      const intentToken = getFormString(body, intentKeys)
+      const intentWasSupplied = intentKeys.some((key) => body.has(key))
+      const intentVerification = intentWasSupplied ? verifyDialerCallIntent(intentToken) : null
+
+      let source: OutboundDialerCallSource = 'legacy_sdk'
+      let leadId: string | null = null
+      let prospectPhoneId: string | null = null
+      let clientAttemptId: string | null = null
+
+      // A present but invalid, expired, or tampered token always fails closed.
+      if (intentVerification && !intentVerification.valid) {
+        return blockOutboundCall(blockedDecision({
+          reasonSource: `intent.${intentVerification.reason}`,
+          message: 'Call authorization is invalid or expired. Refresh the contact and retry.',
+          normalizedPhone: sanitizedTo,
+        }), outboundContext)
+      }
+
+      if (!intentWasSupplied && !legacySdkIntentCompatibilityEnabled()) {
+        return blockOutboundCall(blockedDecision({
+          reasonSource: 'intent.missing',
+          message: 'Call authorization is required. Reconnect the dialer and retry.',
+          normalizedPhone: sanitizedTo,
+        }), outboundContext)
+      }
+
+      if (!intentWasSupplied) {
+        console.warn('[IVR] Temporary legacy SDK intent compatibility was used')
+      }
+
+      if (intentVerification?.valid) {
+        const { claims } = intentVerification
+        source = claims.source
+        leadId = claims.leadId
+        prospectPhoneId = claims.prospectPhoneId
+        clientAttemptId = claims.clientAttemptId
+        outboundContext = {
+          ...outboundContext,
+          source,
+          leadId,
+          prospectPhoneId,
+          clientAttemptId,
+        }
+
+        const bodyLeadId = getFormString(body, ['LeadId', 'leadId', 'lead_id'])
+        const bodyProspectPhoneId = getFormString(body, ['ProspectPhoneId', 'prospectPhoneId', 'prospect_phone_id'])
+        const contextMismatch =
+          claims.identity !== identity
+          || claims.to !== sanitizedTo
+          || claims.callerId !== callerId
+          || Boolean(bodyLeadId && bodyLeadId !== claims.leadId)
+          || Boolean(bodyProspectPhoneId && bodyProspectPhoneId !== claims.prospectPhoneId)
+
+        if (contextMismatch) {
+          return blockOutboundCall(blockedDecision({
+            reason: 'destination_mismatch',
+            reasonSource: 'intent.claim_mismatch',
+            message: 'The approved call does not match this destination or caller identity.',
+            normalizedPhone: sanitizedTo,
+            leadId,
+            prospectPhoneId,
+          }), outboundContext)
+        }
+      }
+
+      const policyInput: OutboundDialerCallInput = {
+        phone: sanitizedTo,
+        leadId,
+        prospectPhoneId,
+        source,
+        identity,
+        callerId,
+        callSid,
+        clientAttemptId,
+      }
+      outboundContext = policyInput
+
+      let decision: OutboundDialerCallDecision
+      try {
+        decision = await evaluateOutboundDialerCall(policyInput)
+      } catch (error) {
+        console.error('[IVR] Outbound call policy failed:', error)
+        decision = blockedDecision({
+          reasonSource: 'policy.unexpected_error',
+          message: 'Calling is paused because the safety check is unavailable.',
+          normalizedPhone: sanitizedTo,
+          leadId,
+          prospectPhoneId,
+        })
+      }
+
+      if (!decision.allowed) {
+        return blockOutboundCall(decision, policyInput)
+      }
 
       const statusCallback = `${BASE_URL}/api/twilio-call-status?identity=${encodeURIComponent(identity)}`
       const dialTimeout = parseDialTimeout(getFormString(body, ['RingCount', 'ringCount', 'ring_count']))
@@ -103,6 +307,8 @@ export async function POST(req: Request) {
 </Response>`
       return xmlResponse(twiml)
     }
+
+    requestKind = 'inbound'
 
     // ── GOOGLE ADS: dedicated paid-search line, no generic IVR ──
     if (isGoogleAdsPhoneNumber(to)) {
@@ -149,7 +355,20 @@ export async function POST(req: Request) {
     return xmlResponse(twiml)
   } catch (error) {
     console.error('[IVR] Critical error in main handler:', error)
-    // Emergency fallback: ring Ernest's cell directly
+    if (requestKind === 'outbound') {
+      return blockOutboundCall(blockedDecision({
+        reasonSource: 'policy.unexpected_error',
+        message: 'Calling is paused because the safety check is unavailable.',
+      }), outboundContext)
+    }
+
+    // Preserve the historical emergency fallback only after a verified Twilio
+    // request was successfully classified as inbound. Unknown/parse failures
+    // must not create a call leg.
+    if (requestKind !== 'inbound') {
+      return xmlResponse(EMPTY_TWIML)
+    }
+
     const emergencyTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="15">

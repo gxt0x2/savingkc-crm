@@ -13,6 +13,16 @@
         "path": "src/components/my-day/my-day-workspace.tsx",
         "minimumIntervalMs": 60000,
         "reason": "Keep Casey's active Mission Control metrics and queues current during an operating session."
+      },
+      {
+        "path": "apps/mobile/App.tsx",
+        "minimumIntervalMs": 3000000,
+        "reason": "Refresh the Twilio Voice token and device registration every 50 minutes while the mobile app is active."
+      },
+      {
+        "path": "src/components/telephony/telephony-bar.tsx",
+        "minimumIntervalMs": 1000,
+        "reason": "Update the visible in-call elapsed-time counter once per second; this timer does not poll the network."
       }
     ],
     "approvedOversizedSources": [
@@ -56,6 +66,20 @@
         "maximumLines": 737,
         "owner": "Operations",
         "reason": "The approved acquisitions and dispositions template catalog is kept intact for this release; freeze growth while templates move to data-backed modules.",
+        "targetDate": "2026-10-31"
+      },
+      {
+        "path": "apps/mobile/App.tsx",
+        "maximumLines": 1115,
+        "owner": "Acquisitions",
+        "reason": "The existing native shell remains consolidated while the server-authorized call path ships; freeze growth while phone and queue flows are extracted.",
+        "targetDate": "2026-10-31"
+      },
+      {
+        "path": "src/components/telephony/telephony-bar.tsx",
+        "maximumLines": 1652,
+        "owner": "Acquisitions",
+        "reason": "The existing shared softphone remains consolidated for the dial-safety release; freeze growth while call state and device controls are extracted.",
         "targetDate": "2026-10-31"
       }
     ],
@@ -144,9 +168,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/dialer"],
-      "apiRoutes": ["/api/dialer/queue", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
-      "tables": ["call_logs", "dialer_saved_lists", "phone_number_registry", "agent_profiles"],
-      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION"]
+      "apiRoutes": ["/api/dialer/queue", "/api/dialer/call-intents", "/api/mobile/v1/twilio/call-intents", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/ivr/google-ads-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
+      "tables": ["call_logs", "dialer_saved_lists", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "manifests", "prospect_phones", "sms_opt_outs"],
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "ERNEST_PHONE", "CASEY_PHONE"]
     },
     {
       "id": "calendar_tasks",

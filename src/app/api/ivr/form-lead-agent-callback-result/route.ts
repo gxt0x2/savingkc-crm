@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -14,6 +15,16 @@ function xmlResponse(body: string, status = 200) {
 }
 
 export async function POST(req: Request) {
+  let signatureIsValid = false
+  try {
+    signatureIsValid = await validateTwilioWebhook(req)
+  } catch (error) {
+    console.error('[IVR/form-lead-agent-callback-result] Twilio signature validation failed:', error)
+  }
+  if (!signatureIsValid) {
+    return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', 403)
+  }
+
   try {
     const url = new URL(req.url)
     const leadId = url.searchParams.get('leadId') || ''

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { handleOptIn, handleOptOut } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
+import { phoneLookupVariants } from '@/lib/dialer-call-policy'
 
 type PhoneStatusAction = 'verified' | 'wrong_number' | 'dnc' | 'spam' | 'blocked'
 
@@ -31,7 +32,8 @@ async function currentSuppression(phone: string): Promise<{ isSuppressed: boolea
   const { data } = await supabase
     .from('sms_opt_outs')
     .select('is_opted_out, reason')
-    .eq('phone', phone)
+    .in('phone', phoneLookupVariants(phone))
+    .limit(1)
     .maybeSingle()
 
   const reason = typeof data?.reason === 'string' && data.reason.trim()

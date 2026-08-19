@@ -136,34 +136,39 @@ async function checkTwilioTokenContainment() {
   }
 }
 
-async function checkTwimlVoice() {
+async function checkTwimlVoiceContainment() {
   const url = `${baseUrl}/api/twiml-voice`
   const params = new URLSearchParams({
-    To: '+18162262552',
+    To: '+19135550123',
     From: 'client:ernest',
     CallerId: '+18166088588',
   })
 
-  const res = await fetchChecked(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
-    },
-    'twiml-voice endpoint'
-  )
+  // This deliberately omits both a Twilio signature and the CRM health bearer.
+  // A health check must prove the public webhook fails closed, never bypass the
+  // same boundary that protects real outbound calls.
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  })
 
   assertEdgeHeaders('twiml-voice endpoint', res.headers)
   assertNoStore('twiml-voice endpoint', res.headers)
+  assert(
+    res.status === 403,
+    `twiml-voice endpoint: unsigned request must receive HTTP 403, got ${res.status}`
+  )
 
   const twiml = await res.text()
-  assert(/<Dial\b/i.test(twiml), 'twiml-voice endpoint: missing <Dial> in TwiML response')
-  // Allow optional attributes on <Number> (we add statusCallback for outbound).
-  assert(/<Number\b[^>]*>\+18162262552<\/Number>/i.test(twiml), 'twiml-voice endpoint: destination number mismatch')
+  assert(
+    !/<(?:Dial|Number|Redirect)\b/i.test(twiml),
+    'twiml-voice endpoint: unsigned response exposed a dialable TwiML verb'
+  )
 
   return {
     status: res.status,
+    unsignedRequestContained: true,
     cacheControl: header(res.headers, 'cache-control'),
     cdnCacheControl: header(res.headers, 'cdn-cache-control'),
     cloudflareCdnCacheControl: header(res.headers, 'cloudflare-cdn-cache-control'),
@@ -172,10 +177,10 @@ async function checkTwimlVoice() {
 
 async function main() {
   const started = Date.now()
-  const [dialer, token, twiml] = await Promise.all([
+  const [dialer, token, twimlContainment] = await Promise.all([
     checkDialerPage(),
     checkTwilioTokenContainment(),
-    checkTwimlVoice(),
+    checkTwimlVoiceContainment(),
   ])
 
   console.log('Edge integrity gate passed:', {
@@ -185,7 +190,7 @@ async function main() {
     elapsedMs: Date.now() - started,
     dialer,
     twilioTokenContainment: token,
-    twimlVoice: twiml,
+    twimlVoiceContainment: twimlContainment,
   })
 }
 

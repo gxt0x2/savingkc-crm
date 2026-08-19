@@ -8,9 +8,30 @@ import { DispositionModal, DispositionType } from './disposition-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositions'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
+type DialerCallIntentKind = 'manual' | 'lead' | 'heir'
+
+type DialerCallIntentAllowedResponse = {
+  allowed: true
+  intent: string
+  to: string
+  callerId: string
+  kind: DialerCallIntentKind
+  leadId: string | null
+  prospectPhoneId: string | null
+  clientAttemptId: string
+}
+
+type DialerCallIntentDeniedResponse = {
+  allowed: false
+  error?: string
+  reason?: string
+}
+
+type DialerCallIntentResponse = DialerCallIntentAllowedResponse | DialerCallIntentDeniedResponse
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TwilioDevice = any
@@ -139,6 +160,45 @@ function extractTwilioErrorMessage(err: unknown): string {
     if (typeof obj.name === 'string' && obj.name.trim()) return obj.name.trim()
   }
   return 'Dialer failed to initialize. Please retry.'
+}
+
+function createClientAttemptId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+async function requestDialerCallIntent(input: {
+  phone: string
+  callerId: string
+  kind: DialerCallIntentKind
+  leadId: string | null
+  prospectPhoneId: string | null
+  clientAttemptId: string
+}): Promise<DialerCallIntentAllowedResponse> {
+  const response = await fetch('/api/dialer/call-intents', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const payload = await response.json().catch(() => null) as DialerCallIntentResponse | null
+  if (!response.ok || !payload?.allowed) {
+    const denial = payload?.allowed === false ? payload : null
+    throw new Error(denial?.error || denial?.reason || 'This call is not allowed. Review the number and try again.')
+  }
+  if (!payload.intent || !payload.to || !payload.callerId || !payload.kind || !payload.clientAttemptId) {
+    throw new Error('Call authorization returned an incomplete response. Try again.')
+  }
+  return {
+    allowed: true,
+    intent: payload.intent,
+    to: payload.to,
+    callerId: payload.callerId,
+    kind: payload.kind,
+    leadId: payload.leadId ?? null,
+    prospectPhoneId: payload.prospectPhoneId ?? null,
+    clientAttemptId: payload.clientAttemptId,
+  }
 }
 
 function isNonFatalAudioWarning(err: unknown): boolean {
@@ -309,6 +369,7 @@ export function DialerPanel({
   const queueMode = queue !== null && queue.length > 0
   const activeQueueItemRef = useRef<HeirQueueItem | null>(null)
   const pendingAutoDialRef = useRef(false)
+  const callIntentPendingRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
 
   // Handle pendingDial from ARI page click-to-call
@@ -549,7 +610,7 @@ export function DialerPanel({
 
   async function makeCall() {
     const number = dialNumber.trim()
-    if (!number) return
+    if (!number || callIntentPendingRef.current) return
 
     if (!deviceRef.current || status !== 'ready') {
       setError(status === 'offline'
@@ -560,21 +621,39 @@ export function DialerPanel({
       return
     }
 
-    setStatusLogged('calling')
+    callIntentPendingRef.current = true
     setError(null)
-    setLastCallDuration(null)
-    lastCallDurationSecondsRef.current = 0
-    lastCallPhoneRef.current = number
-    // Snapshot the queue item at call start so the disposition (which fires
-    // after disconnect, possibly after advance) logs against the right heir.
-    activeQueueItemRef.current = queueItem
-    log(`calling ${number}`)
     try {
       const callerIdForThisCall = callerPlan.mode === 'rotation' && !callerIdLockedByUser
         ? rotatedCallerId
         : (effectiveCallerId || '')
-      const params: Record<string, string> = { To: number }
-      if (callerIdForThisCall) params.CallerId = callerIdForThisCall
+      const queueItemAtStart = queueItem
+      const leadIdAtStart = queueItemAtStart?.leadId || selectedLead?.id || null
+      const prospectPhoneIdAtStart = queueItemAtStart?.prospect_phone_id || null
+      const kind: DialerCallIntentKind = queueItemAtStart ? 'heir' : leadIdAtStart ? 'lead' : 'manual'
+      const authorized = await requestDialerCallIntent({
+        phone: number,
+        callerId: callerIdForThisCall,
+        kind,
+        leadId: kind === 'manual' ? null : leadIdAtStart,
+        prospectPhoneId: kind === 'heir' ? prospectPhoneIdAtStart : null,
+        clientAttemptId: createClientAttemptId(),
+      })
+
+      setStatusLogged('calling')
+      setLastCallDuration(null)
+      lastCallDurationSecondsRef.current = 0
+      lastCallPhoneRef.current = authorized.to
+      // Snapshot the queue item only after the server allows the call so a
+      // denied attempt cannot create disposition or call-log state.
+      activeQueueItemRef.current = queueItemAtStart
+      log(`calling ${authorized.to}`)
+
+      const params: Record<string, string> = {
+        To: authorized.to,
+        CallerId: authorized.callerId,
+        DialIntentToken: authorized.intent,
+      }
       if (ringCountRef.current && ringCountRef.current > 0) params.RingCount = String(ringCountRef.current)
       // enableRingingState: true is required by the Twilio Voice SDK so the
       // parent (browser) call emits a 'ringing' event and plays the network
@@ -618,12 +697,12 @@ export function DialerPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: number,
+          phone: authorized.to,
           event: 'started',
           agent: activeAgentName,
           agent_identity: agentIdentity,
-          from_number: callerIdForThisCall || null,
-          lead_id: selectedLead?.id || null,
+          from_number: authorized.callerId,
+          lead_id: authorized.leadId,
           ...heirMeta,
         }),
       }).catch(() => {})
@@ -642,7 +721,7 @@ export function DialerPanel({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            phone: number,
+            phone: authorized.to,
             event: 'ended',
             duration,
             status: finalStatus,
@@ -650,8 +729,8 @@ export function DialerPanel({
             disposition: finalDisposition,
             agent: activeAgentName,
             agent_identity: agentIdentity,
-            from_number: callerIdForThisCall || null,
-            lead_id: selectedLead?.id || null,
+            from_number: authorized.callerId,
+            lead_id: authorized.leadId,
             ...heirMeta,
           }),
         }).catch(() => {})
@@ -673,6 +752,8 @@ export function DialerPanel({
       log(`makeCall error: ${msg}`)
       setError(msg)
       setStatusLogged('ready')
+    } finally {
+      callIntentPendingRef.current = false
     }
   }
 
@@ -754,20 +835,46 @@ export function DialerPanel({
   }
 
   function clearSelectedLead() {
-    setSelectedLead(null)
+    clearUnverifiedDialContext()
     setDialNumber('')
   }
 
+  function dialNumberMatchesContext(nextNumber: string): boolean {
+    const normalizedNext = normalizePhoneToE164(nextNumber)
+    if (!normalizedNext) return false
+    if (queueItem) {
+      return normalizedNext === normalizePhoneToE164(queueItem.phone)
+        && selectedLead?.id === queueItem.leadId
+    }
+    return Boolean(selectedLead && normalizedNext === normalizePhoneToE164(selectedLead.phone))
+  }
+
+  function clearUnverifiedDialContext(nextNumber?: string) {
+    if (nextNumber && dialNumberMatchesContext(nextNumber)) return
+    setSelectedLead(null)
+    setQueue(null)
+    setQueueIndex(0)
+    pendingAutoDialRef.current = false
+    activeQueueItemRef.current = null
+    ringCountRef.current = null
+    setCallerPlan(normalizeDialerCallerPlan(null, selectedCallerId || callerIdDisplay))
+    setAttemptsPlaced(0)
+  }
+
+  function setManualDialNumber(nextNumber: string) {
+    const normalizedInput = stripDialFormatting(nextNumber)
+    clearUnverifiedDialContext(normalizedInput)
+    setDialNumber(normalizedInput)
+  }
+
   function appendDialChar(char: string) {
-    setDialNumber((prev) => {
-      const base = stripDialFormatting(prev)
-      if (char === '+') return base.length === 0 ? '+' : base
-      return `${base}${char}`
-    })
+    const base = stripDialFormatting(dialNumber)
+    const nextNumber = char === '+' ? (base.length === 0 ? '+' : base) : `${base}${char}`
+    setManualDialNumber(nextNumber)
   }
 
   function backspaceDial() {
-    setDialNumber((prev) => stripDialFormatting(prev).slice(0, -1))
+    setManualDialNumber(stripDialFormatting(dialNumber).slice(0, -1))
   }
 
   async function handleDisposition(
@@ -936,6 +1043,7 @@ export function DialerPanel({
 
   function handleRedial(call: RecentCall) {
     if (call.phone) {
+      clearUnverifiedDialContext()
       setViewTab('dial')
       setDialNumber(call.phone)
     }
@@ -1283,7 +1391,7 @@ export function DialerPanel({
                   type="tel"
                   inputMode="tel"
                   value={formatDialDisplay(dialNumber)}
-                  onChange={(e) => setDialNumber(stripDialFormatting(e.target.value))}
+                  onChange={(e) => setManualDialNumber(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && dialNumber.trim() && status === 'ready') {
                       e.preventDefault()

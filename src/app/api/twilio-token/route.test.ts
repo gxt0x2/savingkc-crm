@@ -93,9 +93,28 @@ describe('Twilio browser voice token authorization', () => {
     expect(body).toMatchObject({
       token: 'header.payload.signature',
       identity: 'ernest',
-      twimlAppSid: 'APcccccccccccccccccccccccccccccccc',
     })
+    expect(body).not.toHaveProperty('twimlAppSid')
     expect(mocks.accessToken).toHaveBeenCalledTimes(1)
     expect(mocks.addGrant).toHaveBeenCalledTimes(1)
+    expect(mocks.resolveTwimlAppSid.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.voiceGrant.mock.invocationCallOrder[0])
+  })
+
+  it('fails closed before creating a Voice grant when application integrity is unavailable', async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: { id: 'user-ernest', email: 'ernest@savingkc.com' } },
+    })
+    mocks.resolveTwimlAppSid.mockResolvedValue(undefined)
+
+    const response = await GET()
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body).toEqual({ error: 'Calling is temporarily unavailable' })
+    expect(JSON.stringify(body)).not.toContain('TWILIO_')
+    expect(JSON.stringify(body)).not.toContain('APcccc')
+    expect(mocks.voiceGrant).not.toHaveBeenCalled()
+    expect(mocks.accessToken).not.toHaveBeenCalled()
   })
 })

@@ -5,9 +5,18 @@ import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
+import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+const INVALID_TWILIO_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
+
+function invalidTwilioResponse() {
+  return new NextResponse(INVALID_TWILIO_TWIML, {
+    status: 403,
+    headers: { 'Content-Type': 'text/xml', 'Cache-Control': 'no-store' },
+  })
+}
 
 const TEAM_NUMBERS = new Set([
   '+18167564943', '+18167277667', '+18166088588', '+18162262552',
@@ -29,6 +38,13 @@ async function isLikelySpam(phone: string): Promise<boolean> {
 }
 
 export async function POST(req: Request) {
+  try {
+    if (!(await validateTwilioWebhook(req))) return invalidTwilioResponse()
+  } catch (error) {
+    console.error('[IVR/no-input] Twilio signature validation failed:', error)
+    return invalidTwilioResponse()
+  }
+
   try {
     const url = new URL(req.url)
     const from = url.searchParams.get('from') || ''

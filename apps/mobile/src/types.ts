@@ -42,6 +42,27 @@ export type LeadDetailResponse = {
 
 export type CallOutcome = 'connected' | 'missed' | 'voicemail' | 'bad_number' | 'busy' | 'unknown'
 
+export type CallIntentKind = 'manual' | 'lead' | 'heir'
+
+export type CallIntentAllowedResponse = {
+  allowed: true
+  intent: string
+  to: string
+  callerId: string
+  kind: CallIntentKind
+  leadId: string | null
+  prospectPhoneId: string | null
+  clientAttemptId: string
+}
+
+export type CallIntentDeniedResponse = {
+  allowed: false
+  error: string
+  reason?: string
+}
+
+export type CallIntentResponse = CallIntentAllowedResponse | CallIntentDeniedResponse
+
 export type MobileSession = {
   user: {
     id: string

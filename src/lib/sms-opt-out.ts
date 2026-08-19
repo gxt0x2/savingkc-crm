@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase-lazy'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 /**
  * TCPA Opt-Out Compliance
@@ -11,6 +12,10 @@ import { supabase } from '@/lib/supabase-lazy'
 
 const STOP_KEYWORDS = ['STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'STOPALL']
 const START_KEYWORDS = ['START', 'UNSTOP']
+
+function canonicalPhone(phone: string): string {
+  return normalizePhoneToE164(phone) ?? phone.trim()
+}
 
 export function isStopKeyword(text: string): boolean {
   return STOP_KEYWORDS.includes(text.trim().toUpperCase())
@@ -27,7 +32,7 @@ export async function isOptedOut(phone: string): Promise<boolean> {
   const { data } = await supabase
     .from('sms_opt_outs')
     .select('is_opted_out')
-    .eq('phone', phone)
+    .eq('phone', canonicalPhone(phone))
     .eq('is_opted_out', true)
     .single()
 
@@ -42,7 +47,7 @@ export async function handleOptOut(phone: string, keyword: string): Promise<void
     .from('sms_opt_outs')
     .upsert(
       {
-        phone,
+        phone: canonicalPhone(phone),
         is_opted_out: true,
         opted_out_at: new Date().toISOString(),
         reason: keyword.toUpperCase(),
@@ -59,7 +64,7 @@ export async function handleOptIn(phone: string): Promise<void> {
     .from('sms_opt_outs')
     .upsert(
       {
-        phone,
+        phone: canonicalPhone(phone),
         is_opted_out: false,
         opted_in_at: new Date().toISOString(),
         reason: null,

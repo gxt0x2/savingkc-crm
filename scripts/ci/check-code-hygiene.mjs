@@ -252,7 +252,7 @@ const lintFiles = [...changed]
 const eslintBinary = join(root, 'node_modules/.bin/eslint')
 if (lintFiles.length && existsSync(eslintBinary)) {
   try {
-    execFileSync(eslintBinary, ['--max-warnings=0', ...lintFiles], {
+    execFileSync(eslintBinary, ['--max-warnings=0', '--no-warn-ignored', ...lintFiles], {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
