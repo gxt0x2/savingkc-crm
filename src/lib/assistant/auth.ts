@@ -1,4 +1,12 @@
 import { timingSafeEqual } from 'node:crypto'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+
+export type AssistantActor = {
+  email: string
+  fullName: string
+  role: string
+  access: 'owner' | 'admin' | 'agent'
+}
 
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left)
@@ -32,4 +40,37 @@ export function authorizeAssistantRequest(request: Request): { email: string } |
     return null
   }
   return { email }
+}
+
+function configuredOwnerEmails(): Set<string> {
+  return new Set(
+    (process.env.CRM_ASSISTANT_OWNER_EMAILS || 'ernest@savingkc.com')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  )
+}
+
+export async function resolveAssistantActor(email: string): Promise<AssistantActor | null> {
+  const normalizedEmail = email.trim().toLowerCase()
+  const owners = configuredOwnerEmails()
+  const { data, error } = await supabaseAdmin()
+    .from('agent_profiles')
+    .select('email, full_name, role, is_admin')
+    .eq('email', normalizedEmail)
+    .maybeSingle()
+
+  if (error && !owners.has(normalizedEmail)) {
+    console.error('[assistant-auth] profile lookup failed', { code: error.code })
+    return null
+  }
+
+  const fullName = String(data?.full_name || normalizedEmail.split('@')[0] || 'Unknown').trim()
+  const role = String(data?.role || (owners.has(normalizedEmail) ? 'owner' : 'agent')).trim()
+  const access = owners.has(normalizedEmail) ? 'owner' : data?.is_admin ? 'admin' : 'agent'
+  return { email: normalizedEmail, fullName, role, access }
+}
+
+export function assistantActorCanReadCompanyWide(actor: AssistantActor): boolean {
+  return actor.access === 'owner' || actor.access === 'admin'
 }

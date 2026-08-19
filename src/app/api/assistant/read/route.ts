@@ -1,81 +1,151 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { authorizeAssistantRequest } from '@/lib/assistant/auth'
-import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
+import { assistantActorCanReadCompanyWide, authorizeAssistantRequest, resolveAssistantActor } from '@/lib/assistant/auth'
+import {
+  assistantResultCount,
+  readAssistantAttention,
+  readAssistantCommunications,
+  readAssistantLead360,
+  readAssistantMarketingSummary,
+  readAssistantOperatingSnapshot,
+  readAssistantPhoneSystem,
+  readAssistantSourceCatalog,
+  readAssistantWebsiteFunnel,
+  readAssistantWorkflowRegistry,
+  searchAssistantLeads,
+} from '@/lib/assistant/queries'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const headers = { 'Cache-Control': 'private, no-store, max-age=0' }
+const auditFields = {
+  requestId: z.string().min(1).max(160).optional(),
+  threadId: z.string().min(1).max(500).optional(),
+}
 const bodySchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('attention'), limit: z.number().int().min(1).max(20).optional() }),
-  z.object({ action: z.literal('lead_search'), query: z.string().min(1).max(200), limit: z.number().int().min(1).max(10).optional() }),
+  z.object({ action: z.literal('source_catalog'), ...auditFields }),
+  z.object({ action: z.literal('attention'), limit: z.number().int().min(1).max(30).optional(), ...auditFields }),
+  z.object({ action: z.literal('lead_search'), query: z.string().min(1).max(200), limit: z.number().int().min(1).max(12).optional(), ...auditFields }),
+  z.object({ action: z.literal('lead_360'), leadId: z.string().uuid(), ...auditFields }),
+  z.object({ action: z.literal('communications'), leadId: z.string().uuid(), limit: z.number().int().min(1).max(100).optional(), ...auditFields }),
+  z.object({ action: z.literal('operating_snapshot'), days: z.number().int().min(1).max(365).optional(), ...auditFields }),
+  z.object({ action: z.literal('workflow_registry'), search: z.string().max(100).optional(), ...auditFields }),
+  z.object({ action: z.literal('phone_system'), search: z.string().max(100).optional(), ...auditFields }),
+  z.object({ action: z.literal('website_funnel'), days: z.number().int().min(1).max(365).optional(), ...auditFields }),
+  z.object({ action: z.literal('marketing_summary'), days: z.number().int().min(1).max(365).optional(), ...auditFields }),
 ])
 
+type AssistantRequest = z.infer<typeof bodySchema>
+const COMPANY_WIDE_ACTIONS = new Set<AssistantRequest['action']>([
+  'source_catalog',
+  'operating_snapshot',
+  'workflow_registry',
+  'phone_system',
+  'website_funnel',
+  'marketing_summary',
+])
+
+async function writeAudit(input: {
+  actorEmail: string
+  actorAccess: string
+  action: string
+  requestId: string
+  threadId?: string
+  success: boolean
+  resultCount: number | null
+  durationMs: number
+  error?: string
+}) {
+  const { error } = await supabaseAdmin().from('assistant_query_audit').insert({
+    actor_email: input.actorEmail,
+    actor_access: input.actorAccess,
+    action: input.action,
+    request_id: input.requestId,
+    thread_id: input.threadId || null,
+    success: input.success,
+    result_count: input.resultCount,
+    duration_ms: input.durationMs,
+    error: input.error?.slice(0, 500) || null,
+  })
+  if (error && error.code !== 'PGRST205' && error.code !== '42P01') {
+    console.error('[assistant-read] audit write failed', { code: error.code })
+  }
+}
+
+async function executeRead(body: AssistantRequest, actor: NonNullable<Awaited<ReturnType<typeof resolveAssistantActor>>>) {
+  const db = supabaseAdmin()
+  switch (body.action) {
+    case 'source_catalog':
+      return readAssistantSourceCatalog()
+    case 'attention':
+      return readAssistantAttention(db, actor, body.limit ?? 15)
+    case 'lead_search':
+      return searchAssistantLeads(db, actor, body.query, body.limit ?? 8)
+    case 'lead_360':
+      return readAssistantLead360(db, actor, body.leadId)
+    case 'communications':
+      return readAssistantCommunications(db, actor, body.leadId, body.limit ?? 50)
+    case 'operating_snapshot':
+      return readAssistantOperatingSnapshot(body.days ?? 30)
+    case 'workflow_registry':
+      return readAssistantWorkflowRegistry(db, body.search)
+    case 'phone_system':
+      return readAssistantPhoneSystem(body.search)
+    case 'website_funnel':
+      return readAssistantWebsiteFunnel(db, body.days ?? 30)
+    case 'marketing_summary':
+      return readAssistantMarketingSummary(db, body.days ?? 30)
+  }
+}
+
 export async function POST(request: Request) {
-  const identity = authorizeAssistantRequest(request)
-  if (!identity) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers })
+  const startedAt = Date.now()
+  const credential = authorizeAssistantRequest(request)
+  if (!credential) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers })
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400, headers })
 
-  const db = supabaseAdmin()
-  const generatedAt = new Date().toISOString()
-
-  if (parsed.data.action === 'lead_search') {
-    const query = cleanLeadSearch(parsed.data.query)
-    if (!query) return NextResponse.json({ action: 'lead_search', generatedAt, records: [] }, { headers })
-
-    const limit = parsed.data.limit ?? 6
-    const pattern = `%${query}%`
-    const selection = 'id, full_name, property_address, city, state, station, priority, source, updated_at'
-    const [byName, byAddress] = await Promise.all([
-      db.from('leads').select(selection).ilike('full_name', pattern).order('updated_at', { ascending: false }).limit(limit),
-      db.from('leads').select(selection).ilike('property_address', pattern).order('updated_at', { ascending: false }).limit(limit),
-    ])
-    if (byName.error || byAddress.error) {
-      console.error('[assistant-read] lead search failed', byName.error || byAddress.error)
-      return NextResponse.json({ error: 'CRM lookup failed' }, { status: 500, headers })
-    }
-
-    const unique = new Map<string, Record<string, unknown>>()
-    for (const row of [...(byName.data || []), ...(byAddress.data || [])]) unique.set(String(row.id), row)
-    const records = Array.from(unique.values()).slice(0, limit).map((row) => ({ ...row, crmUrl: crmLeadUrl(String(row.id)) }))
-
-    console.info('[assistant-read] completed', { action: 'lead_search', actor: identity.email, records: records.length })
-    return NextResponse.json({ action: 'lead_search', generatedAt, query, records }, { headers })
+  const actor = await resolveAssistantActor(credential.email)
+  if (!actor) return NextResponse.json({ error: 'CRM profile not authorized' }, { status: 403, headers })
+  if (COMPANY_WIDE_ACTIONS.has(parsed.data.action) && !assistantActorCanReadCompanyWide(actor)) {
+    return NextResponse.json({ error: 'Company-wide access requires an owner or admin profile' }, { status: 403, headers })
   }
 
-  const limit = parsed.data.limit ?? 10
-  const now = new Date()
-  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
-  const staleCutoff = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString()
-  const [tasksResult, appointmentsResult, leadsResult] = await Promise.all([
-    db.from('tasks').select('id, title, description, contact_id, due_date, assigned_to, status, type').in('status', ['pending', 'overdue']).order('due_date', { ascending: true, nullsFirst: false }).limit(limit),
-    db.from('appointments').select('id, lead_id, scheduled_at, type, status, assigned_to').in('status', ['scheduled', 'confirmed']).gte('scheduled_at', generatedAt).lte('scheduled_at', nextWeek).order('scheduled_at', { ascending: true }).limit(limit),
-    db.from('leads').select('id, full_name, property_address, city, state, station, priority, updated_at').in('station', ASSISTANT_ACTIVE_STAGES).lt('updated_at', staleCutoff).order('updated_at', { ascending: true }).limit(limit),
-  ])
-
-  const missingLegacyTasks = tasksResult.error?.code === 'PGRST205' || tasksResult.error?.code === '42P01'
-  if ((!missingLegacyTasks && tasksResult.error) || appointmentsResult.error || leadsResult.error) {
-    console.error('[assistant-read] attention query failed', tasksResult.error || appointmentsResult.error || leadsResult.error)
-    return NextResponse.json({ error: 'CRM attention query failed' }, { status: 500, headers })
+  const requestId = parsed.data.requestId || crypto.randomUUID()
+  try {
+    const result = await executeRead(parsed.data, actor)
+    const durationMs = Date.now() - startedAt
+    await writeAudit({
+      actorEmail: actor.email,
+      actorAccess: actor.access,
+      action: parsed.data.action,
+      requestId,
+      threadId: parsed.data.threadId,
+      success: true,
+      resultCount: assistantResultCount(result),
+      durationMs,
+    })
+    console.info('[assistant-read] completed', { action: parsed.data.action, actor: actor.email, access: actor.access, durationMs })
+    return NextResponse.json({ requestId, actor: { access: actor.access }, ...result }, { headers })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'CRM assistant read failed'
+    const forbidden = message.startsWith('Forbidden:')
+    const durationMs = Date.now() - startedAt
+    await writeAudit({
+      actorEmail: actor.email,
+      actorAccess: actor.access,
+      action: parsed.data.action,
+      requestId,
+      threadId: parsed.data.threadId,
+      success: false,
+      resultCount: null,
+      durationMs,
+      error: message,
+    })
+    console.error('[assistant-read] failed', { action: parsed.data.action, actor: actor.email, durationMs, forbidden })
+    return NextResponse.json({ error: forbidden ? 'Forbidden' : 'CRM assistant read failed', requestId }, { status: forbidden ? 403 : 500, headers })
   }
-
-  const leadIds = new Set<string>()
-  for (const task of missingLegacyTasks ? [] : (tasksResult.data || [])) if (task.contact_id) leadIds.add(String(task.contact_id))
-  for (const appointment of appointmentsResult.data || []) if (appointment.lead_id) leadIds.add(String(appointment.lead_id))
-  const related = leadIds.size
-    ? await db.from('leads').select('id, full_name, property_address, station').in('id', Array.from(leadIds))
-    : { data: [], error: null }
-  if (related.error) return NextResponse.json({ error: 'CRM relationship query failed' }, { status: 500, headers })
-  const leadById = new Map((related.data || []).map((lead) => [String(lead.id), lead]))
-
-  const tasks = (missingLegacyTasks ? [] : (tasksResult.data || [])).map((task) => ({ ...task, lead: task.contact_id ? leadById.get(String(task.contact_id)) || null : null, crmUrl: task.contact_id ? crmLeadUrl(String(task.contact_id)) : null }))
-  const appointments = (appointmentsResult.data || []).map((appointment) => ({ ...appointment, lead: appointment.lead_id ? leadById.get(String(appointment.lead_id)) || null : null, crmUrl: appointment.lead_id ? crmLeadUrl(String(appointment.lead_id)) : null }))
-  const staleLeads = (leadsResult.data || []).map((lead) => ({ ...lead, crmUrl: crmLeadUrl(String(lead.id)) }))
-
-  console.info('[assistant-read] completed', { action: 'attention', actor: identity.email, tasks: tasks.length, appointments: appointments.length, staleLeads: staleLeads.length })
-  return NextResponse.json({ action: 'attention', generatedAt, tasks, appointments, staleLeads }, { headers })
 }
