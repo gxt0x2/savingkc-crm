@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TwilioVerificationResult } from '@/lib/support/twilio-verification'
 
 type LoadState =
@@ -13,6 +13,13 @@ const STATUS_LABELS: Record<TwilioVerificationResult['accountApi']['status'], st
   invalid_credentials: 'Invalid',
   not_configured: 'Not configured',
   unavailable: 'Provider unavailable',
+}
+
+const STATUS_DETAILS: Record<TwilioVerificationResult['accountApi']['status'], string> = {
+  valid: 'Verified with one read-only Twilio Account API request.',
+  invalid_credentials: 'Twilio rejected the configured Account SID or Auth Token.',
+  not_configured: 'The Account SID and Auth Token are not both configured.',
+  unavailable: 'Twilio could not be reached or returned an unexpected response.',
 }
 
 function StatusPill({ healthy }: { healthy: boolean }) {
@@ -39,33 +46,39 @@ function StatusCard({ label, value, detail }: { label: string; value: string; de
 
 export function TwilioSecurityStatus() {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
+  const requestRef = useRef<AbortController | null>(null)
+
+  const load = useCallback(async () => {
+    requestRef.current?.abort()
+    const controller = new AbortController()
+    requestRef.current = controller
+    setState({ status: 'loading' })
+
+    try {
+      const response = await fetch('/api/support/twilio/verify', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: controller.signal,
+      })
+      if (response.status !== 200 && response.status !== 503) throw new Error('Unavailable')
+      const result = await response.json() as TwilioVerificationResult
+      if (!result?.configuration || !result?.signatureValidation || !result?.accountApi) {
+        throw new Error('Invalid response')
+      }
+      setState({ status: 'ready', result })
+    } catch (error) {
+      if (controller.signal.aborted) return
+      void error
+      setState({ status: 'error' })
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
-    const controller = new AbortController()
-
-    async function load() {
-      try {
-        const response = await fetch('/api/support/twilio/verify', {
-          cache: 'no-store',
-          credentials: 'same-origin',
-          signal: controller.signal,
-        })
-        if (response.status !== 200 && response.status !== 503) throw new Error('Unavailable')
-        const result = await response.json() as TwilioVerificationResult
-        if (!result?.configuration || !result?.signatureValidation || !result?.accountApi) {
-          throw new Error('Invalid response')
-        }
-        setState({ status: 'ready', result })
-      } catch (error) {
-        if (controller.signal.aborted) return
-        void error
-        setState({ status: 'error' })
-      }
-    }
-
     void load()
-    return () => controller.abort()
-  }, [])
+    return () => requestRef.current?.abort()
+  }, [load])
 
   return (
     <section className="mb-6 overflow-hidden rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-sm" aria-labelledby="telephony-security-heading">
@@ -74,7 +87,17 @@ export function TwilioSecurityStatus() {
           <h2 id="telephony-security-heading" className="text-base font-black text-[var(--ck-text)]">Telephony security</h2>
           <p className="text-xs text-[var(--ck-text-muted)]">Live, read-only verification. Credentials and phone numbers are never displayed.</p>
         </div>
-        {state.status === 'ready' && <StatusPill healthy={state.result.ok} />}
+        <div className="flex items-center gap-2">
+          {state.status === 'ready' && <StatusPill healthy={state.result.ok} />}
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={state.status === 'loading'}
+            className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-1.5 text-xs font-bold text-[var(--ck-text)] disabled:cursor-wait disabled:opacity-60"
+          >
+            {state.status === 'loading' ? 'Checking…' : 'Recheck'}
+          </button>
+        </div>
       </div>
       {state.status === 'loading' && (
         <p className="p-5 text-sm text-[var(--ck-text-muted)]" role="status">Checking Twilio security…</p>
@@ -89,7 +112,7 @@ export function TwilioSecurityStatus() {
           <StatusCard
             label="Auth Token"
             value={STATUS_LABELS[state.result.accountApi.status]}
-            detail="Verified with one read-only Twilio Account API request."
+            detail={STATUS_DETAILS[state.result.accountApi.status]}
           />
           <StatusCard
             label="Webhook signatures"
