@@ -4,10 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
-import {
-  DocusealUnavailableNotice,
-  useDocusealAvailability,
-} from '@/components/dispo/docuseal-availability'
+import { DocusealUnavailableNotice, useDocusealAvailability } from '@/components/dispo/docuseal-availability'
 import { DispoPageHeader, DispoWorkspaceTabs, MetricStrip, NextStepCard } from '@/components/dispo/workspace-ui'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
