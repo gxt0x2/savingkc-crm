@@ -7,6 +7,15 @@ import {
   archiveSubmission,
   ASSIGNMENT_TEMPLATE_ID,
 } from '@/lib/docuseal'
+import { docusealUnavailableResponse, isDocusealReady } from '@/lib/docuseal-availability'
+
+function docusealReady() {
+  return isDocusealReady({
+    enabled: process.env.DOCUSEAL_ENABLED,
+    token: process.env.DOCUSEAL_TOKEN,
+    webhookSecret: process.env.DOCUSEAL_WEBHOOK_SECRET,
+  })
+}
 
 // POST /api/offers/[id]/assignment
 // Create a DocuSeal assignment submission prefilled from the offer. Does NOT
@@ -14,6 +23,8 @@ import {
 // preview. User then hits /send to actually invite the buyer, or DELETE to
 // cancel.
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!docusealReady()) return docusealUnavailableResponse()
+
   try {
     const { id } = await params
     const db = supabaseAdmin()
@@ -147,6 +158,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 // DELETE /api/offers/[id]/assignment — cancel a preview. Archives the
 // DocuSeal submission and clears the tracking fields so the user can retry.
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!docusealReady()) return docusealUnavailableResponse()
+
   try {
     const { id } = await params
     const db = supabaseAdmin()

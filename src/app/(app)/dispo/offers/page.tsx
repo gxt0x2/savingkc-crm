@@ -8,6 +8,10 @@ import type { BuyerOffer } from '@/types/dispo'
 import { NewOfferModal } from '@/components/dispo/new-offer-modal'
 import { EditOfferModal } from '@/components/dispo/edit-offer-modal'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
+import {
+  DocusealUnavailableNotice,
+  useDocusealAvailability,
+} from '@/components/dispo/docuseal-availability'
 import { DocumentManager } from '@/components/documents/document-manager'
 import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 
@@ -346,11 +350,15 @@ function OfferDetail({
   onAction,
   onEdited,
   onStartAssignment,
+  docusealEnabled,
+  docusealChecking,
 }: {
   offer: BuyerOffer
   onAction: (offerId: string, newStatus: BuyerOffer['status'], extra?: Record<string, unknown>) => void
   onEdited: () => void
   onStartAssignment: () => void
+  docusealEnabled: boolean
+  docusealChecking: boolean
 }) {
   const [confirm, setConfirm] = useState<'accept' | 'reject' | null>(null)
   const [showCounter, setShowCounter] = useState(false)
@@ -527,13 +535,17 @@ function OfferDetail({
               Edit
             </button>
             {offer.status === 'accepted' && !offer.assignment_sent_at && (
-              <button
-                onClick={onStartAssignment}
-                className="flex items-center gap-1.5 bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)] text-[var(--crm-on-brand)] rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
-              >
-                <Icon name="description" size="text-sm" />
-                Send Assignment
-              </button>
+              docusealEnabled ? (
+                <button
+                  onClick={onStartAssignment}
+                  className="flex items-center gap-1.5 bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)] text-[var(--crm-on-brand)] rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+                >
+                  <Icon name="description" size="text-sm" />
+                  Send Assignment
+                </button>
+              ) : (
+                <DocusealUnavailableNotice checking={docusealChecking} />
+              )
             )}
             {offer.assignment_sent_at && !offer.assignment_signed_at && (
               <span className="inline-flex items-center gap-1.5 bg-[var(--crm-warning-soft)] border border-[var(--crm-warning-border)] text-[var(--crm-warning)] rounded-lg px-4 py-2 text-sm font-semibold">
@@ -597,6 +609,7 @@ const STATUS_FILTERS = [
 ] as const
 
 export default function OffersPage() {
+  const docuseal = useDocusealAvailability()
   const [offers, setOffers] = useState<BuyerOffer[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
@@ -703,7 +716,7 @@ export default function OffersPage() {
         />
       )}
 
-      {assignmentOffer && (
+      {assignmentOffer && docuseal.enabled && (
         <AssignmentPreviewModal
           offer={assignmentOffer}
           onClose={() => setAssignmentOffer(null)}
@@ -899,6 +912,8 @@ export default function OffersPage() {
                                     onAction={handleAction}
                                     onEdited={() => { setFeedback('Offer updated'); setTimeout(() => setFeedback(null), 2000); fetchOffers() }}
                                     onStartAssignment={() => setAssignmentOffer(offer)}
+                                    docusealEnabled={docuseal.enabled}
+                                    docusealChecking={docuseal.checking}
                                   />
                                 </td>
                               </tr>
