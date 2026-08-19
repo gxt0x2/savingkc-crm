@@ -157,7 +157,7 @@ function buildFallbackHealth(error: string, now: Date): MojoHealth {
     },
     monitor: {
       path: '/api/admin/mojo-health',
-      schedule: 'Every 15 minutes during Mojo business hours',
+      schedule: 'Hourly during Mojo business hours',
       manualRefreshCommand: 'npm run mojo:session:manual',
     },
   }
@@ -310,7 +310,7 @@ export async function getMojoHealth(
       },
       monitor: {
         path: '/api/admin/mojo-health',
-        schedule: 'Every 15 minutes during Mojo business hours',
+        schedule: 'Hourly during Mojo business hours',
         manualRefreshCommand: 'npm run mojo:session:manual',
       },
     }

@@ -302,9 +302,9 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     name: 'Google Ads Reporting Sync',
     description: 'Refreshes campaign reporting data used by Marketing and CEO dashboards.',
     category: 'data_sync', status: 'active', health: 'healthy', owner: SYSTEM_OWNER,
-    trigger: { type: 'scheduled', schedule: 'Every 10 minutes' },
+    trigger: { type: 'scheduled', schedule: 'Hourly' },
     actions: [{ type: 'execute', label: 'Fetch authorized Google Ads reporting data' }, { type: 'execute', label: 'Normalize and persist reporting snapshot' }],
-    implementation: implementation(['/api/cron/google-ads-reporting-sync'], { execution: 'worker', schedule: '*/10 * * * *', approvalPolicy: 'admin_only' }),
+    implementation: implementation(['/api/cron/google-ads-reporting-sync'], { execution: 'worker', schedule: '0 * * * *', approvalPolicy: 'admin_only' }),
     version: 1, lastRunAt: null,
   },
   {

@@ -587,7 +587,7 @@ export const MOJO_HEALTH: MojoHealth = {
   },
   monitor: {
     path: '/api/admin/mojo-health',
-    schedule: 'Every 15 minutes during Mojo business hours',
+    schedule: 'Hourly during Mojo business hours',
     manualRefreshCommand: 'npm run mojo:session:manual',
   },
 }
