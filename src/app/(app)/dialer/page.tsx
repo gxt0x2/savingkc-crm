@@ -12,6 +12,7 @@ import { toProperCase, formatPhone } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { CallerIdMode, DialerCallerPlan, normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { DEAD_REASONS } from '@/lib/dialer-dispositions'
+import { loadDialerActivities, loadDialerLeadContext, type DialerActivity as Activity, type DialerManifest as ManifestShape } from '@/lib/dialer-lead-activity'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
@@ -56,20 +57,6 @@ interface ProspectSummary {
   mailing_state: string | null
   mailing_zip: string | null
   county: string | null
-}
-
-interface ManifestShape {
-  owner?: { coOwners?: string[] }
-  property?: { vacant?: boolean }
-}
-
-interface Activity {
-  id: string
-  activity_type: string
-  description: string | null
-  agent: string | null
-  metadata: Record<string, unknown> | null
-  created_at: string
 }
 
 interface RecentCall {
@@ -643,23 +630,13 @@ function DialerPageInner() {
     if (!currentLeadId) return
     const requestedLeadId = currentLeadId
     let cancelled = false
-    async function load() {
-      try {
-        const { createClient } = await import('@/lib/supabase/client')
-        const supabase = createClient()
-        const [{ data: mRow }, { data: aRows }] = await Promise.all([
-          supabase.from('manifests').select('manifest').eq('lead_id', requestedLeadId).limit(1).maybeSingle(),
-          supabase.from('lead_activities').select('id, activity_type, description, agent, metadata, created_at')
-            .eq('lead_id', requestedLeadId).order('created_at', { ascending: false }).limit(50),
-        ])
+    void loadDialerLeadContext(requestedLeadId)
+      .then(({ manifest, activities: nextActivities }) => {
         if (cancelled || currentLeadIdRef.current !== requestedLeadId) return
-        setManifests((prev) => ({ ...prev, [requestedLeadId]: (mRow as { manifest: ManifestShape } | null)?.manifest ?? null }))
-        setActivities((aRows as Activity[] | null) ?? [])
-      } catch (error) {
-        console.error('[Dialer] Could not load lead activity', error)
-      }
-    }
-    void load()
+        setManifests((prev) => ({ ...prev, [requestedLeadId]: manifest }))
+        setActivities(nextActivities)
+      })
+      .catch((error) => console.error('[Dialer] Could not load lead activity', error))
     return () => { cancelled = true }
   }, [currentLeadId])
 
@@ -667,15 +644,8 @@ function DialerPageInner() {
     if (!currentLeadId) return
     const requestedLeadId = currentLeadId
     try {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, activity_type, description, agent, metadata, created_at')
-        .eq('lead_id', requestedLeadId)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      if (currentLeadIdRef.current === requestedLeadId) setActivities((data as Activity[] | null) ?? [])
+      const nextActivities = await loadDialerActivities(requestedLeadId)
+      if (currentLeadIdRef.current === requestedLeadId) setActivities(nextActivities)
     } catch (error) {
       console.error('[Dialer] Could not refresh lead activity', error)
     }
