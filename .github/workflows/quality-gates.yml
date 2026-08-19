@@ -141,8 +141,10 @@ jobs:
 
   gate-edge-integrity:
     runs-on: ubuntu-latest
-    needs: [gate-build-and-theme, gate-twilio-token-health]
-    if: always() && needs.gate-build-and-theme.result == 'success' && (needs.gate-twilio-token-health.result == 'success' || needs.gate-twilio-token-health.result == 'skipped')
+    needs: gate-twilio-token-health
+    # Like the Twilio health job, this probes the currently deployed production
+    # app and must not demand unreleased branch behavior from a pull request.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     env:
       EDGE_INTEGRITY_BASE_URL: ${{ vars.EDGE_INTEGRITY_BASE_URL }}
       EDGE_EXPECT_VERCEL: ${{ vars.EDGE_EXPECT_VERCEL }}
