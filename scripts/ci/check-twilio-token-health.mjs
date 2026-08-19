@@ -1,6 +1,8 @@
 const baseUrl = (process.env.TWILIO_HEALTH_BASE_URL || 'https://crm.savingkc.com').replace(/\/$/, '');
 const url = `${baseUrl}/api/twilio-token`;
 const healthBearer = process.env.TWILIO_HEALTH_BEARER;
+const maxAttempts = Math.max(1, Number.parseInt(process.env.TWILIO_HEALTH_ATTEMPTS || '6', 10) || 6);
+const retryMs = Math.max(0, Number.parseInt(process.env.TWILIO_HEALTH_RETRY_MS || '20000', 10) || 20000);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -11,12 +13,23 @@ assert(
   'Twilio health failed: TWILIO_HEALTH_BEARER is required for protected CRM health checks.'
 );
 
-const res = await fetch(url, {
-  headers: {
-    Accept: 'application/json',
-    Authorization: `Bearer ${healthBearer}`,
-  },
-});
+let res;
+for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  res = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${healthBearer}`,
+    },
+  });
+
+  if (res.status === 401 || attempt === maxAttempts) break;
+
+  // A main-branch workflow can finish before the corresponding Vercel
+  // production deployment is promoted. Retry briefly without logging bodies.
+  console.log(`Twilio containment not deployed yet (HTTP ${res.status}); retrying ${attempt}/${maxAttempts}.`);
+  await res.body?.cancel();
+  await new Promise((resolve) => setTimeout(resolve, retryMs));
+}
 
 assert(
   res.status === 401,
