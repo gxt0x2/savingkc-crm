@@ -11,6 +11,7 @@ import { safeSendSMS } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { supabase } from '@/lib/supabase-lazy'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { isAllowedSmsSender, normalizeTwilioNumber } from '@/lib/twilio-numbers'
 
 const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
@@ -23,7 +24,14 @@ type SmsActivityRow = {
 }
 
 export type SendLeadSmsResult =
-  | { status: 'sent'; sid: string | undefined; from: string }
+  | {
+      status: 'sent'
+      sid: string | undefined
+      from: string
+      persisted: boolean
+      deliveryState: 'delivered_and_persisted' | 'delivered_not_persisted'
+      warning?: string
+    }
   | { status: 'skipped'; reason: 'opted_out' | 'duplicate' }
   | { status: 'failed'; error: string }
 
@@ -66,20 +74,6 @@ export async function resolveSmsFromNumber(
     return digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
   }
 
-  function phoneVariants(raw: string): string[] {
-    const digits = raw.replace(/\D/g, '')
-    const variants = new Set<string>()
-    if (raw.trim()) variants.add(raw.trim())
-    const national = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
-    if (national.length === 10) {
-      variants.add(`+1${national}`)
-      variants.add(national)
-      variants.add(`${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`)
-      variants.add(`(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`)
-    }
-    return Array.from(variants)
-  }
-
   function activityDirection(row: SmsActivityRow): 'inbound' | 'outbound' {
     const direction = textValue(row.metadata?.direction)?.toLowerCase()
     if (direction === 'inbound' || direction === 'received' || direction === 'in') return 'inbound'
@@ -101,43 +95,31 @@ export async function resolveSmsFromNumber(
 
   const targetKey = phoneKey(phone)
 
-  if (leadId) {
-    const { data } = await supabase
-      .from('lead_activities')
-      .select('activity_type, metadata, created_at')
-      .eq('lead_id', leadId)
-      .in('activity_type', SMS_ACTIVITY_TYPES)
-      .order('created_at', { ascending: false })
-      .limit(200)
-    const rows = (data || []) as SmsActivityRow[]
-    const match = rows.find((row) => phoneKey(contactPhone(row)) === targetKey && linePhone(row))
-    const detectedLine = match ? linePhone(match) : null
-    if (detectedLine && isAllowedSmsSender(detectedLine, 'conversation')) return normalizeTwilioNumber(detectedLine)!
-  }
-
-  if (phone) {
-    const variants = phoneVariants(phone)
-    const [{ data: fromRows }, { data: toRows }] = await Promise.all([
-      supabase
-        .from('lead_activities')
-        .select('activity_type, metadata, created_at')
-        .in('activity_type', SMS_ACTIVITY_TYPES)
-        .in('metadata->>from', variants)
-        .order('created_at', { ascending: false })
-        .limit(20),
-      supabase
-        .from('lead_activities')
-        .select('activity_type, metadata, created_at')
-        .in('activity_type', SMS_ACTIVITY_TYPES)
-        .in('metadata->>to', variants)
-        .order('created_at', { ascending: false })
-        .limit(20),
-    ])
-    const rows = ([...(fromRows || []), ...(toRows || [])] as SmsActivityRow[])
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    const match = rows.find((row) => phoneKey(contactPhone(row)) === targetKey && linePhone(row))
-    const detectedLine = match ? linePhone(match) : null
-    if (detectedLine && isAllowedSmsSender(detectedLine, 'conversation')) return normalizeTwilioNumber(detectedLine)!
+  const normalizedPhone = normalizePhoneToE164(phone)
+  const threadKey = leadId
+    ? `lead:${leadId}`
+    : normalizedPhone
+      ? `phone:${normalizedPhone}`
+      : null
+  if (threadKey) {
+    const { data, error } = await supabase.rpc('conversation_timeline_page_v1', {
+      target_thread_key: threadKey,
+      page_limit: 101,
+      before_created_at: null,
+      before_activity_id: null,
+    })
+    if (error) {
+      console.error('[SMS-SENDER] Conversation line lookup failed:', error.message)
+    } else {
+      const rows = (data || []) as SmsActivityRow[]
+      const match = rows.find((row) => (
+        SMS_ACTIVITY_TYPES.includes(row.activity_type) &&
+        phoneKey(contactPhone(row)) === targetKey &&
+        linePhone(row)
+      ))
+      const detectedLine = match ? linePhone(match) : null
+      if (detectedLine && isAllowedSmsSender(detectedLine, 'conversation')) return normalizeTwilioNumber(detectedLine)!
+    }
   }
 
   return DEFAULT_TWILIO_PHONE
@@ -154,22 +136,28 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
   const msg = await safeSendSMS({ body, from, to: phone, senderUse: 'conversation' })
   if (!msg.success) return { status: 'failed', error: msg.error || 'SMS send failed' }
 
-  await supabase.from('lead_activities').insert({
-    lead_id: leadId || null,
-    activity_type: 'sms',
-    description: body,
-    agent: agent || 'System',
-    metadata: {
-      ...(metadata || {}),
-      ...(source ? { source } : {}),
-      direction: 'outbound',
-      from: msg.from,
-      requested_from: msg.requestedFrom || from,
-      sender_mismatch: Boolean(msg.senderMismatch),
-      to: phone,
-      message_sid: msg.sid,
-    },
-  })
+  let persistenceError: unknown = null
+  try {
+    const persistence = await supabase.from('lead_activities').insert({
+      lead_id: leadId || null,
+      activity_type: 'sms',
+      description: body,
+      agent: agent || 'System',
+      metadata: {
+        ...(metadata || {}),
+        ...(source ? { source } : {}),
+        direction: 'outbound',
+        from: msg.from,
+        requested_from: msg.requestedFrom || from,
+        sender_mismatch: Boolean(msg.senderMismatch),
+        to: phone,
+        message_sid: msg.sid,
+      },
+    })
+    persistenceError = persistence.error
+  } catch (error) {
+    persistenceError = error
+  }
 
   logSmsSend(phone, body, msg.from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
 
@@ -178,5 +166,23 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     onCommunicationEvent(leadId, { type: 'outbound_sms', content: body }).catch((err) => console.error('[MANIFEST-SYNC] Failed:', err))
   }
 
-  return { status: 'sent', sid: msg.sid, from: msg.from }
+  if (persistenceError) {
+    console.error('[SMS-SENDER] SMS delivered but activity persistence failed:', persistenceError)
+    return {
+      status: 'sent',
+      sid: msg.sid,
+      from: msg.from,
+      persisted: false,
+      deliveryState: 'delivered_not_persisted',
+      warning: 'SMS delivered, but CRM history could not be saved. Do not resend this message.',
+    }
+  }
+
+  return {
+    status: 'sent',
+    sid: msg.sid,
+    from: msg.from,
+    persisted: true,
+    deliveryState: 'delivered_and_persisted',
+  }
 }

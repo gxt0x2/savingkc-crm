@@ -83,6 +83,49 @@ describe('conversation hub read model', () => {
     expect(thread.lastChannel).toBe('sms')
   })
 
+  it('does not let a newer team alert hide an inbound seller reply', () => {
+    const thread = buildConversationHubThread(lead, [
+      activity({
+        id: 'seller-inbound',
+        activity_type: 'sms',
+        description: 'Can you call me?',
+        created_at: '2026-07-28T15:10:00.000Z',
+        metadata: { direction: 'inbound' },
+      }),
+      activity({
+        id: 'team-alert',
+        activity_type: 'sms',
+        description: 'Seller texted; alert Casey and Ernest',
+        created_at: '2026-07-28T15:10:01.000Z',
+        metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'] },
+      }),
+      activity({
+        id: 'queued-placeholder',
+        activity_type: 'sms',
+        description: 'Queued response',
+        created_at: '2026-07-28T15:10:02.000Z',
+        metadata: { direction: 'outbound', queue_contract: 'scheduled_sms_v2', status: 'pending' },
+      }),
+      activity({
+        id: 'legacy-team-alert',
+        activity_type: 'sms',
+        description: 'Jamie just texted: “Can you call me?” — open CRM',
+        created_at: '2026-07-28T15:10:03.000Z',
+        metadata: null,
+      }),
+      activity({
+        id: 'callback-claim',
+        activity_type: 'call',
+        description: 'PPC form callback claimed by Ernest',
+        created_at: '2026-07-28T15:10:04.000Z',
+        metadata: { outcome: 'agent_claimed', to: lead.phone },
+      }),
+    ])
+
+    expect(thread.attentionState).toBe('needs_reply')
+    expect(thread.lastMessage).toBe('Can you call me?')
+  })
+
   it('treats an inbound contact opt-out as compliance handled, not reply work', () => {
     const thread = buildConversationHubThread(lead, [
       activity({
@@ -113,6 +156,19 @@ describe('conversation hub read model', () => {
     expect(thread.unread).toBe(false)
     expect(thread.lastMessage).toBe('Inbound call · Connected')
     expect(thread.lastCallOutcome).toMatchObject({ label: 'Connected', icon: 'phone_in_talk' })
+  })
+
+  it.each(['spoke_with_owner', 'live'])('resolves inbound call outcome %s as connected', (outcome) => {
+    const thread = buildConversationHubThread(lead, [activity({
+      id: `connected-${outcome}`,
+      activity_type: 'call',
+      description: 'Inbound seller call',
+      created_at: '2026-07-28T15:10:00.000Z',
+      metadata: { direction: 'inbound', outcome },
+    })])
+
+    expect(thread.attentionState).toBe('resolved')
+    expect(thread.lastCallOutcome).toMatchObject({ key: 'connected' })
   })
 
   it('recognizes recorded legacy inbound calls as answered', () => {
@@ -151,6 +207,22 @@ describe('conversation hub read model', () => {
     })
 
     expect(buildConversationHubThread(lead, [missed, returned]).attentionState).toBe('waiting_on_contact')
+  })
+
+  it('keeps legacy missed_call rows actionable without direction metadata', () => {
+    const missed = activity({
+      id: 'legacy-missed-call',
+      activity_type: 'missed_call',
+      description: 'Missed call from seller',
+      created_at: '2026-07-28T15:10:00.000Z',
+      metadata: {},
+    })
+
+    expect(buildConversationHubThread(lead, [missed])).toMatchObject({
+      attentionState: 'needs_reply',
+      lastChannel: 'call',
+      lastCallOutcome: { key: 'missed' },
+    })
   })
 
   it('exposes the most recent communication channel for inbox filters', () => {
@@ -298,5 +370,17 @@ describe('conversation hub read model', () => {
     ])
 
     expect(thread.primaryNextAction).toBeNull()
+  })
+
+  it('keeps legacy primary actions whose status was omitted', () => {
+    const thread = buildConversationHubThread(lead, [activity({
+      id: 'legacy-task',
+      activity_type: 'task',
+      description: 'Call seller',
+      created_at: '2026-07-28T15:00:00.000Z',
+      metadata: { primary_next_action: true, assigned_to: 'Casey' },
+    })])
+
+    expect(thread.primaryNextAction).toMatchObject({ id: 'legacy-task', title: 'Call seller', owner: 'Casey' })
   })
 })

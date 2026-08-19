@@ -44,3 +44,54 @@ describe('conversation call card', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 })
+
+describe('typed conversation timeline', () => {
+  it('renders an internal note as a note instead of a sent text', () => {
+    render(<MessageBubble message={{
+      id: 'note-1',
+      type: 'note',
+      direction: 'sent',
+      content: 'Seller asked us to call after 3 PM.',
+      timestamp: '11:15 AM',
+      senderInitials: 'ED',
+      agentName: 'Ernest',
+    }} />)
+
+    expect(screen.getByRole('article', { name: 'Internal note' })).toHaveTextContent('Seller asked us to call after 3 PM.')
+    expect(screen.getByRole('article', { name: 'Internal note' })).toHaveTextContent('Ernest')
+    expect(screen.queryByText(/Sent by/)).not.toBeInTheDocument()
+  })
+
+  it('renders task ownership, status, and due time as task facts', () => {
+    render(<MessageBubble message={{
+      id: 'task-1',
+      type: 'task',
+      direction: 'sent',
+      content: 'Return seller call',
+      timestamp: '11:20 AM',
+      senderInitials: 'ED',
+      owner: 'Casey',
+      taskStatus: 'pending',
+      dueAt: '2026-08-20T20:00:00.000Z',
+    }} />)
+
+    const task = screen.getByRole('article', { name: 'Task activity' })
+    expect(task).toHaveTextContent('Return seller call')
+    expect(task).toHaveTextContent('Owner: Casey')
+    expect(task).toHaveTextContent('pending')
+  })
+
+  it('renders state changes as neutral audit events', () => {
+    render(<MessageBubble message={{
+      id: 'status-1',
+      type: 'status',
+      direction: 'sent',
+      content: 'Conversation assigned to Casey',
+      timestamp: '11:25 AM',
+      senderInitials: 'ED',
+      agentName: 'Ernest',
+    }} />)
+
+    expect(screen.getByRole('note', { name: 'Conversation status change' })).toHaveTextContent('Conversation assigned to Casey')
+  })
+})

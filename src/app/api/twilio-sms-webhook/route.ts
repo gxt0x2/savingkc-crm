@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { isOptedOut, handleOptOut, handleOptIn, isStopKeyword, isStartKeyword } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp } from '@/middleware/rate-limit'
 import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
@@ -11,6 +10,7 @@ import type { ProspectMatch } from '@/lib/prospect-lookup'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { formatPhone } from '@/lib/format'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { processInboundSmsConsent } from '@/lib/sms-consent-audit'
 import { supabase } from '@/lib/supabase-lazy'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import {
@@ -26,7 +26,7 @@ const ERNEST_PHONE = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+1816226
 const TWILIO_PHONE = normalizePhoneToE164(process.env.TWILIO_PHONE_NUMBER) || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
-const TWIML_HEADERS = { 'Content-Type': 'text/xml' }
+const TWIML_HEADERS = { 'Content-Type': 'text/xml', 'Cache-Control': 'no-store, max-age=0' }
 
 function emptyTwimlResponse(status = 200): NextResponse {
   return new NextResponse(EMPTY_TWIML, {
@@ -106,36 +106,12 @@ export async function POST(req: Request) {
       return new NextResponse('Missing required fields', { status: 400 })
     }
 
-    const trimmedUpper = messageBody.trim().toUpperCase()
-
-    // --- TCPA: STOP keyword handling (before ANY processing) ---
-    if (isStopKeyword(messageBody)) {
-      await handleOptOut(from, messageBody.trim())
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>You have been unsubscribed from Saving KC messages. Reply START to re-subscribe.</Message>
-</Response>`
-      return new NextResponse(twiml, { headers: TWIML_HEADERS })
-    }
-
-    // --- TCPA: START keyword handling ---
-    if (isStartKeyword(messageBody)) {
-      await handleOptIn(from)
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>You have been re-subscribed to Saving KC messages. Reply STOP to unsubscribe.</Message>
-</Response>`
-      return new NextResponse(twiml, { headers: TWIML_HEADERS })
-    }
-
-    // --- "YES" from opted-out number = opt-in, not seller confirmation ---
-    if (trimmedUpper === 'YES' && await isOptedOut(from)) {
-      await handleOptIn(from)
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>You have been re-subscribed to Saving KC messages. Reply STOP to unsubscribe.</Message>
-</Response>`
-      return new NextResponse(twiml, { headers: TWIML_HEADERS })
+    try {
+      const consentTwiml = await processInboundSmsConsent({ from, to: to || null, keyword: messageBody, messageSid: messageSid || null, source: 'twilio_sms_webhook', allowYesOptIn: true })
+      if (consentTwiml) return new NextResponse(consentTwiml, { headers: TWIML_HEADERS })
+    } catch (error) {
+      console.error('[twilio-sms-webhook] SMS consent persistence failed:', error)
+      return emptyTwimlResponse(503)
     }
 
     // Match sender phone number to a lead in the database. Twilio sends E.164,
@@ -144,6 +120,7 @@ export async function POST(req: Request) {
     const leadId = lead?.id || null
     const leadName = lead?.full_name || 'Unknown'
     const suppressionReason = await smsSuppressionReason(from)
+    const isTeamMessage = TEAM_NUMBERS.has(from)
 
     // Prospect lookup for unknown senders
     let prospectMatch: ProspectMatch | null = null
@@ -171,6 +148,7 @@ export async function POST(req: Request) {
         to,
         message_sid: messageSid,
         lead_name: leadName,
+        ...(isTeamMessage ? { is_team: true } : {}),
       },
     })
 
@@ -184,7 +162,7 @@ export async function POST(req: Request) {
     }
 
     // ── Team numbers: log + notify, but skip auto-reply/lead creation ──
-    if (TEAM_NUMBERS.has(from)) {
+    if (isTeamMessage) {
       // Still notify — team messages shouldn't be silently swallowed
       const teamMember = from === CASEY_PHONE ? 'Casey' :
                          from === ERNEST_PHONE ? 'Ernest' :

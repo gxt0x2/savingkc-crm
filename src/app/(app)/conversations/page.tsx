@@ -1,35 +1,41 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'next/navigation'
+
+import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
+import type { Message } from '@/components/conversations/message-bubble'
+import { NextActionDialog } from '@/components/conversations/next-action-dialog'
 import { ThreadView } from '@/components/conversations/thread-view'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { Icon } from '@/components/ui/icon'
-import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
-import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
-import { NextActionDialog } from '@/components/conversations/next-action-dialog'
-import type { Message } from '@/components/conversations/message-bubble'
-import { toProperCase, formatPhone } from '@/lib/format'
-import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
-import {
-  buildConversationHubThread,
-  type ConversationHubActivity,
-  type ConversationHubLead,
-} from '@/lib/operating-model/conversation-hub'
+import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
+import { formatPhone } from '@/lib/format'
 import {
   getCallOutcomePresentation,
   getCallParties,
   getConversationDirection,
   getEligibleSmsReplySender,
-  isSmsConversationActivityType,
   type CallOutcomePresentation,
 } from '@/lib/operating-model/conversation-presentation'
-import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
+import {
+  conversationHubStaleTime,
+  conversationTimelineStaleTime,
+  conversationDeepLinkSearch,
+  conversationMatchesDeepLink,
+  mergeConversationThreads,
+  fetchConversationHub,
+  fetchConversationTimeline,
+  type ConversationQueue,
+} from '@/lib/queries/conversation-hub'
 
-interface LeadRow {
+interface ConversationThread {
   id: string
+  threadKey: string
+  kind: string
   full_name: string | null
   phone: string | null
   email: string | null
@@ -47,649 +53,632 @@ interface LeadRow {
   offer_amount?: number | null
   appointment_date?: string | null
   created_at: string
-  attentionState?: 'needs_reply' | 'waiting_on_contact' | 'resolved'
-  owner?: string | null
-  unread?: boolean
-  lastMessage?: string
-  lastActivityAt?: string
-  lastChannel?: 'call' | 'sms' | 'email' | 'voicemail' | null
-  primaryNextAction?: {
+  attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
+  owner: string | null
+  lastMessage: string
+  lastActivityAt: string
+  lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
+  primaryNextAction: {
     id: string
     title: string
     dueAt: string | null
     owner: string | null
     overdue: boolean
   } | null
-  decision_tags?: ConversationDecisionTag[]
   lastCallOutcome?: CallOutcomePresentation | null
 }
 
-interface ActivityRow {
+const EMPTY_CONVERSATION_THREADS: ConversationThread[] = []
+
+type TimelineKind = 'message' | 'call' | 'note' | 'task' | 'status'
+
+interface ConversationTimelineItem {
   id: string
   lead_id: string | null
+  activity_type: string
   type: string
   description: string | null
   agent: string | null
   metadata: Record<string, unknown> | null
   created_at: string
+  // Compatibility aliases accepted during a projection rollout.
+  kind?: TimelineKind
+  createdAt?: string
+  activityType?: string
+  channel?: string | null
+  direction?: string | null
+  content?: string | null
+  body?: string | null
+  subject?: string | null
+  agentName?: string | null
+  owner?: string | null
+  dueAt?: string | null
+  status?: string | null
 }
 
-interface DatabaseActivityRow extends Omit<ActivityRow, 'type'> {
-  activity_type: string
+interface TimelineEntry {
+  createdAt: string
+  message: Message
 }
 
-// Simple toast type
 interface Toast {
   id: number
   message: string
 }
 
+function text(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return null
+}
+
+function activityType(item: ConversationTimelineItem): string {
+  const exactType = text(item.activityType, item.activity_type)
+  if (exactType) return exactType
+  if (item.kind === 'message') return item.channel === 'email' ? 'email' : 'sms'
+  if (item.kind === 'status') return 'status_change'
+  return item.kind || 'status_change'
+}
+
+function timelineKind(item: ConversationTimelineItem): TimelineKind {
+  if (item.kind) return item.kind
+  const type = activityType(item)
+  if (type === 'call' || type === 'missed_call' || type === 'voicemail') return 'call'
+  if (type === 'note' || type === 'agent_note') return 'note'
+  if (type === 'task') return 'task'
+  if (type === 'status_change' || type === 'letter_tracking') return 'status'
+  return 'message'
+}
+
+function itemCreatedAt(item: ConversationTimelineItem) {
+  return text(item.createdAt, item.created_at) || new Date(0).toISOString()
+}
+
+function itemContent(item: ConversationTimelineItem) {
+  return text(item.content, item.body, item.description) || ''
+}
+
+function itemAgent(item: ConversationTimelineItem) {
+  return text(item.agentName, item.agent) || undefined
+}
+
+function normalizedActivity(item: ConversationTimelineItem) {
+  const metadata = { ...(item.metadata || {}) }
+  if (item.direction && !metadata.direction) metadata.direction = item.direction
+  return {
+    activity_type: activityType(item),
+    description: itemContent(item),
+    metadata,
+  }
+}
+
 function formatDuration(value: unknown): string | undefined {
   const seconds = Number(value)
   if (!Number.isFinite(seconds) || seconds <= 0) return undefined
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }
 
-function activityToMessage(activity: ActivityRow, lead: LeadRow, teamPhone: string): Message | null {
-  const type = activity.type
+function timelineItemToEntry(item: ConversationTimelineItem, lead: ConversationThread, teamPhone: string | null): TimelineEntry {
+  const activity = normalizedActivity(item)
+  const metadata = activity.metadata || {}
+  const createdAt = itemCreatedAt(item)
+  const timestamp = new Date(createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  const direction = getConversationDirection(activity) === 'inbound' ? 'received' : 'sent'
+  const agentName = itemAgent(item)
+  const senderInitials = direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'SKC'
 
-  const meta = activity.metadata || {}
-  const direction = getConversationDirection({ activity_type: type, description: activity.description, metadata: meta }) === 'inbound' ? 'received' : 'sent'
-  const timestamp = new Date(activity.created_at).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-  const agentName = activity.agent || undefined
+  const kind = timelineKind(item)
 
-  if (type === 'call') {
-    const recordingSid = (meta.recordingSid as string) || undefined
-    const recordingUrl = recordingSid ? `/api/recordings/${recordingSid}` : undefined
-    const transcript = (meta.transcript as string) || undefined
-
-    const presentationActivity = { activity_type: type, description: activity.description, metadata: meta }
-    const callOutcome = getCallOutcomePresentation(presentationActivity)
-    const parties = getCallParties(presentationActivity, { leadPhone: lead.phone, teamPhone })
-    const duration = meta.duration ?? meta.dialCallDuration ?? meta.duration_seconds
-
+  if (kind === 'call') {
+    const recordingSid = text(metadata.recordingSid, metadata.recording_sid) || undefined
+    const recordingUrl = text(metadata.recordingUrl, metadata.recording_url) || (recordingSid ? `/api/recordings/${recordingSid}` : undefined)
+    const callOutcome = getCallOutcomePresentation(activity)
+    const parties = getCallParties(activity, { leadPhone: lead.phone, teamPhone })
     return {
-      id: activity.id,
-      type: 'call',
-      direction,
-      content: activity.description || '',
-      callDuration: formatDuration(duration),
-      timestamp,
-      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
-      agentName: direction === 'sent' ? agentName : undefined,
-      recordingUrl,
-      recordingSid,
-      transcript,
-      callOutcome,
-      fromPhone: parties.from ? formatPhone(parties.from) : undefined,
-      toPhone: parties.to ? formatPhone(parties.to) : undefined,
-      routingTeam: callOutcome.key === 'routing' ? 'Acquisitions' : undefined,
+      createdAt,
+      message: {
+        id: item.id,
+        type: 'call',
+        direction,
+        content: activity.description || '',
+        timestamp,
+        senderInitials,
+        agentName: direction === 'sent' ? agentName : undefined,
+        callDuration: formatDuration(metadata.duration ?? metadata.dialCallDuration ?? metadata.duration_seconds),
+        recordingSid,
+        recordingUrl,
+        transcript: text(metadata.transcript) || undefined,
+        callOutcome,
+        fromPhone: parties.from ? formatPhone(parties.from) : undefined,
+        toPhone: parties.to ? formatPhone(parties.to) : undefined,
+        routingTeam: callOutcome.key === 'routing' ? 'Acquisitions' : undefined,
+      },
     }
   }
 
-  if (type === 'email') {
+  if (kind === 'note') {
+    return { createdAt, message: { id: item.id, type: 'note', direction: 'sent', content: activity.description || '', timestamp, senderInitials: 'SKC', agentName } }
+  }
+
+  if (kind === 'task') {
     return {
-      id: activity.id,
-      type: 'email',
-      direction,
-      subject: (meta.subject as string) || 'Email',
-      emailMeta: (meta.from as string) || undefined,
-      content: activity.description || '',
-      timestamp,
-      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
-      agentName: direction === 'sent' ? agentName : undefined,
+      createdAt,
+      message: {
+        id: item.id,
+        type: 'task',
+        direction: 'sent',
+        content: activity.description || 'Task updated',
+        timestamp,
+        senderInitials: 'SKC',
+        agentName,
+        owner: text(item.owner, metadata.assigned_to) || undefined,
+        dueAt: text(item.dueAt, metadata.due_date) || undefined,
+        taskStatus: text(item.status, metadata.status) || undefined,
+      },
     }
   }
 
-  if (isSmsConversationActivityType(type)) {
+  if (kind === 'status') {
+    return { createdAt, message: { id: item.id, type: 'status', direction: 'sent', content: activity.description || 'Conversation updated', timestamp, senderInitials: 'SKC', agentName } }
+  }
+
+  const channel = text(item.channel) || (activity.activity_type.includes('email') ? 'email' : 'sms')
+  if (channel === 'email') {
     return {
-      id: activity.id,
+      createdAt,
+      message: {
+        id: item.id,
+        type: 'email',
+        direction,
+        content: activity.description || '',
+        timestamp,
+        senderInitials,
+        agentName: direction === 'sent' ? agentName : undefined,
+        subject: text(item.subject, metadata.subject) || 'Email',
+        emailMeta: text(metadata.from) || undefined,
+      },
+    }
+  }
+
+  return {
+    createdAt,
+    message: {
+      id: item.id,
       type: 'sms',
       direction,
       content: activity.description || '',
       timestamp,
-      senderInitials: direction === 'received' ? getAvatarLabel(lead.full_name, lead.phone, lead.source) : 'ED',
+      senderInitials,
       agentName: direction === 'sent' ? agentName : undefined,
-    }
-  }
-
-  // All other types (task, voicemail, status_change, etc.) — show as system message
-  return {
-    id: activity.id,
-    type: 'sms',
-    direction: 'sent' as const,
-    content: `[${type.replace(/_/g, ' ').toUpperCase()}] ${activity.description || ''}`,
-    timestamp,
-    senderInitials: 'Ari',
-    agentName: agentName || 'System',
+    },
   }
 }
 
-function groupMessagesByDate(messages: Message[], activities: ActivityRow[]): { label: string; messages: Message[] }[] {
+function groupTimeline(entries: TimelineEntry[]) {
   const byDate = new Map<string, Message[]>()
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
 
-  activities.forEach((act, idx) => {
-    const msg = messages[idx]
-    if (!msg) return
-    const d = new Date(act.created_at)
-    let label: string
-    if (d.toDateString() === today.toDateString()) label = 'Today'
-    else if (d.toDateString() === yesterday.toDateString()) label = 'Yesterday'
-    else label = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  for (const entry of entries) {
+    const date = new Date(entry.createdAt)
+    const label = date.toDateString() === today.toDateString()
+      ? 'Today'
+      : date.toDateString() === yesterday.toDateString()
+        ? 'Yesterday'
+        : date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const group = byDate.get(label) ?? []
+    group.push(entry.message)
+    byDate.set(label, group)
+  }
 
-    if (!byDate.has(label)) byDate.set(label, [])
-    byDate.get(label)!.push(msg)
+  return Array.from(byDate.entries()).map(([label, messages]) => ({ label, messages }))
+}
+
+function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const value = key(item)
+    if (seen.has(value)) return false
+    seen.add(value)
+    return true
   })
+}
 
-  return Array.from(byDate.entries()).map(([label, msgs]) => ({ label, messages: msgs }))
+function pollVisible(): number | false {
+  return typeof document !== 'undefined' && document.visibilityState === 'visible' ? 15_000 : false
+}
+
+function pollVisibleSinglePage(query: { state: { data: unknown } }): number | false {
+  if (typeof document === 'undefined' || document.visibilityState !== 'visible') return false
+  const data = query.state.data
+  if (!data || typeof data !== 'object' || !('pages' in data)) return 15_000
+  const pages = (data as { pages?: unknown[] }).pages
+  return (pages?.length ?? 0) <= 1 ? 15_000 : false
 }
 
 export default function ConversationsPage() {
   const queryClient = useQueryClient()
-  const [leads, setLeads] = useState<LeadRow[]>([])
-  const [activeLeadId, setActiveLeadId] = useState<string | null>(null)
-  const [activities, setActivities] = useState<ActivityRow[]>([])
-  const [showNewMessage, setShowNewMessage] = useState(false)
-  const [newConversationSearch, setNewConversationSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const initialThreadsLoaded = useRef(false)
-  const activityRequestId = useRef(0)
-  const activeLeadIdRef = useRef<string | null>(null)
-  const leadsRef = useRef<LeadRow[]>([])
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const routeSearchParams = useSearchParams()
+  const routeRequestedThread = routeSearchParams.get('lead')
+  const routeComposeMode = routeSearchParams.get('compose')
+  const toastCounter = useRef(0)
+  const [requestedThreadId, setRequestedThreadId] = useState<string | null>(() => routeRequestedThread)
+  const [activeQueue, setActiveQueue] = useState<ConversationQueue>(() => routeRequestedThread ? 'all' : 'needs_reply')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [activeThreadKey, setActiveThreadKey] = useState<string | null>(null)
+  const [pinnedThread, setPinnedThread] = useState<ConversationThread | null>(null)
+  const [mobilePane, setMobilePane] = useState<'inbox' | 'thread'>(() => routeRequestedThread ? 'thread' : 'inbox')
   const [contactDetailsOpen, setContactDetailsOpen] = useState(true)
   const [nextActionDialogOpen, setNextActionDialogOpen] = useState(false)
-  const [initialComposeMode] = useState<'sms' | 'email' | 'note'>(() => {
-    if (typeof window === 'undefined') return 'sms'
-    const requestedMode = new URLSearchParams(window.location.search).get('compose')
-    return requestedMode === 'email' || requestedMode === 'note' || requestedMode === 'sms'
-      ? requestedMode
-      : 'sms'
-  })
+  const [showNewMessage, setShowNewMessage] = useState(false)
+  const [newConversationSearch, setNewConversationSearch] = useState('')
+  const [debouncedNewConversationSearch, setDebouncedNewConversationSearch] = useState('')
   const [toasts, setToasts] = useState<Toast[]>([])
-  const toastCounter = useRef(0)
-  activeLeadIdRef.current = activeLeadId
-  leadsRef.current = leads
+  const [initialComposeMode] = useState<'sms' | 'email' | 'note'>(() => routeComposeMode === 'email' || routeComposeMode === 'note' ? routeComposeMode : 'sms')
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 250)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedNewConversationSearch(newConversationSearch), 250)
+    return () => window.clearTimeout(timer)
+  }, [newConversationSearch])
+
+  const normalizedSearch = debouncedSearch.trim().length >= 3 ? debouncedSearch.trim() : ''
+  const requestedThreadSearch = conversationDeepLinkSearch(requestedThreadId)
+  const requestedLookupEnabled = requestedThreadSearch.length >= 3
+
+  const hubQuery = useInfiniteQuery({
+    queryKey: ['conversation-hub', activeQueue, normalizedSearch],
+    queryFn: ({ pageParam }) => fetchConversationHub<ConversationThread>({ queue: activeQueue, cursor: pageParam, search: normalizedSearch }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.pageInfo.hasMore ? lastPage.pageInfo.nextCursor ?? undefined : undefined,
+    staleTime: conversationHubStaleTime,
+    refetchInterval: pollVisibleSinglePage,
+    refetchIntervalInBackground: false,
+  })
+
+  const requestedThreadQuery = useQuery({
+    queryKey: ['conversation-hub', 'direct', requestedThreadSearch],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: 'all', search: requestedThreadSearch, limit: 1 }),
+    enabled: requestedLookupEnabled,
+    staleTime: conversationHubStaleTime,
+    refetchInterval: pollVisible,
+    refetchIntervalInBackground: false,
+  })
+  const requestedThread = requestedThreadId
+    ? requestedThreadQuery.data?.items.find((thread) => conversationMatchesDeepLink(thread, requestedThreadId)) ?? null
+    : null
+  const selectedQueueThreadQuery = useQuery({
+    queryKey: ['conversation-hub', 'selected-queue', activeQueue, requestedThreadSearch],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: requestedThreadSearch, limit: 1 }),
+    enabled: requestedLookupEnabled && activeQueue !== 'all',
+    staleTime: conversationHubStaleTime,
+    refetchInterval: pollVisible,
+    refetchIntervalInBackground: false,
+  })
+  const selectedQueueThread = requestedThreadId
+    ? selectedQueueThreadQuery.data?.items.find((thread) => conversationMatchesDeepLink(thread, requestedThreadId)) ?? null
+    : null
+  const hubHasLoadedHistory = (hubQuery.data?.pages.length ?? 0) > 1
+  const hubHeadQuery = useQuery({
+    queryKey: ['conversation-hub-head', activeQueue, normalizedSearch],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: normalizedSearch, limit: 50 }),
+    enabled: hubHasLoadedHistory,
+    staleTime: conversationHubStaleTime,
+    refetchInterval: pollVisible,
+    refetchIntervalInBackground: false,
+  })
+  const loadedHubThreads = useMemo(() => uniqueBy(hubQuery.data?.pages.flatMap((page) => page.items) ?? [], (thread) => thread.threadKey), [hubQuery.data])
+  const freshHubThreads = hubHeadQuery.data?.items ?? EMPTY_CONVERSATION_THREADS
+  const selectedThreadKey = requestedThread?.threadKey ?? pinnedThread?.threadKey ?? null
+  const selectedMembershipKnown = activeQueue === 'all' || selectedQueueThreadQuery.data !== undefined
+  const selectedThreadForQueue = activeQueue === 'all' ? requestedThread ?? pinnedThread : selectedQueueThread
+  const freshThreadsWithoutStaleSelection = useMemo(() => selectedMembershipKnown && selectedThreadKey
+    ? freshHubThreads.filter((thread) => thread.threadKey !== selectedThreadKey)
+    : freshHubThreads, [freshHubThreads, selectedMembershipKnown, selectedThreadKey])
+  const loadedThreadsWithoutStaleSelection = useMemo(() => selectedMembershipKnown && selectedThreadKey
+    ? loadedHubThreads.filter((thread) => thread.threadKey !== selectedThreadKey)
+    : loadedHubThreads, [loadedHubThreads, selectedMembershipKnown, selectedThreadKey])
+  const threads = useMemo(() => mergeConversationThreads(
+    selectedThreadForQueue ? [selectedThreadForQueue, ...freshThreadsWithoutStaleSelection] : freshThreadsWithoutStaleSelection,
+    loadedThreadsWithoutStaleSelection,
+    null,
+  ), [freshThreadsWithoutStaleSelection, loadedThreadsWithoutStaleSelection, selectedThreadForQueue])
+  const resolvedActiveThreadKey = activeThreadKey
+    ?? (requestedThreadId ? selectedThreadKey : threads[0]?.threadKey)
+    ?? null
+  const activeThread = threads.find((thread) => thread.threadKey === resolvedActiveThreadKey)
+    ?? (selectedThreadKey === resolvedActiveThreadKey ? requestedThread ?? pinnedThread : null)
+  const hubDegradedPage = (hubHeadQuery.data && (hubHeadQuery.data.degraded || hubHeadQuery.data.source === 'compatibility') ? hubHeadQuery.data : null)
+    ?? hubQuery.data?.pages.find((page) => page.degraded || page.source === 'compatibility')
+
+  const timelineQuery = useInfiniteQuery({
+    queryKey: ['conversation-timeline', activeThread?.threadKey],
+    queryFn: ({ pageParam }) => fetchConversationTimeline<ConversationTimelineItem>({ threadId: activeThread!.id, cursor: pageParam }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.pageInfo.hasMore ? lastPage.pageInfo.nextCursor ?? undefined : undefined,
+    enabled: Boolean(activeThread?.threadKey),
+    staleTime: conversationTimelineStaleTime,
+    refetchInterval: pollVisibleSinglePage,
+    refetchIntervalInBackground: false,
+  })
+
+  const timelineHasLoadedHistory = (timelineQuery.data?.pages.length ?? 0) > 1
+  const timelineHeadQuery = useQuery({
+    queryKey: ['conversation-timeline-head', activeThread?.threadKey],
+    queryFn: () => fetchConversationTimeline<ConversationTimelineItem>({ threadId: activeThread!.id, limit: 50 }),
+    enabled: Boolean(activeThread?.threadKey) && timelineHasLoadedHistory,
+    staleTime: conversationTimelineStaleTime,
+    refetchInterval: pollVisible,
+    refetchIntervalInBackground: false,
+  })
+
+  const timelineItems = useMemo(() => uniqueBy(
+    [
+      ...(timelineHeadQuery.data?.items ?? []),
+      ...(timelineQuery.data?.pages.flatMap((page) => page.items) ?? []),
+    ],
+    (item) => item.id,
+  ), [timelineHeadQuery.data, timelineQuery.data])
+
+  const teamPhone = useMemo(() => {
+    for (const item of timelineItems) {
+      const activity = normalizedActivity(item)
+      const direction = getConversationDirection(activity)
+      const candidate = direction === 'inbound'
+        ? text(activity.metadata?.to, activity.metadata?.calledNumber)
+        : text(activity.metadata?.from, activity.metadata?.fromPhone)
+      if (candidate) return candidate
+    }
+    return null
+  }, [timelineItems])
+
+  const replyFromPhone = useMemo(() => timelineItems
+    .map((item) => getEligibleSmsReplySender(normalizedActivity(item)))
+    .find((sender): sender is string => Boolean(sender)), [timelineItems])
+
+  const timelineEntries = useMemo(() => activeThread
+    ? timelineItems
+        .map((item) => timelineItemToEntry(item, activeThread, teamPhone))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    : [], [activeThread, teamPhone, timelineItems])
+  const dateGroups = useMemo(() => groupTimeline(timelineEntries), [timelineEntries])
+  const timelineDegradedPage = (timelineHeadQuery.data && (timelineHeadQuery.data.degraded || timelineHeadQuery.data.source === 'compatibility') ? timelineHeadQuery.data : null)
+    ?? timelineQuery.data?.pages.find((page) => page.degraded || page.source === 'compatibility')
+  const normalizedNewConversationSearch = debouncedNewConversationSearch.trim().length >= 3 ? debouncedNewConversationSearch.trim() : ''
+
+  const newConversationQuery = useQuery({
+    queryKey: ['conversation-hub', 'all', normalizedNewConversationSearch, 'new-conversation'],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: 'all', search: normalizedNewConversationSearch }),
+    enabled: showNewMessage,
+    staleTime: conversationHubStaleTime,
+  })
+
   const closeNewConversation = useCallback(() => {
     setShowNewMessage(false)
     setNewConversationSearch('')
   }, [])
-  const newConversationDialogRef = useDialogAccessibility<HTMLElement>(
-    showNewMessage,
-    closeNewConversation,
-  )
+  const newConversationDialogRef = useDialogAccessibility<HTMLElement>(showNewMessage, closeNewConversation)
 
-  function addToast(msg: string) {
+  function addToast(message: string) {
     const id = ++toastCounter.current
-    setToasts((prev) => [...prev, { id, message: msg }])
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, 3000)
+    setToasts((current) => [...current, { id, message }])
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 3_000)
   }
 
-  function dismissToast(id: number) {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
-  }
-
-  const selectConversation = useCallback((id: string) => {
-    setActiveLeadId(id)
+  const selectConversation = useCallback((threadKey: string) => {
+    setActiveThreadKey(threadKey)
+    setMobilePane('thread')
+    const thread = threads.find((item) => item.threadKey === threadKey)
+    if (thread) {
+      setPinnedThread(thread)
+      setRequestedThreadId(thread.id)
+    }
     const url = new URL(window.location.href)
-    url.searchParams.set('lead', id)
+    url.searchParams.set('lead', thread?.id || threadKey)
     window.history.replaceState(null, '', `${url.pathname}${url.search}`)
-  }, [])
-  const handleSelectConversation = useCallback((id: string) => {
-    selectConversation(id)
-    setSidebarOpen(false)
-  }, [selectConversation])
+  }, [threads])
+
+  function selectNewConversation(thread: ConversationThread) {
+    setActiveQueue('all')
+    setPinnedThread(thread)
+    setRequestedThreadId(thread.id)
+    setActiveThreadKey(thread.threadKey)
+    setMobilePane('thread')
+    const url = new URL(window.location.href)
+    url.searchParams.set('lead', thread.id)
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+    closeNewConversation()
+  }
+
+  function changeQueue(queue: ConversationQueue) {
+    setActiveQueue(queue)
+    setActiveThreadKey(null)
+    setPinnedThread(null)
+    setMobilePane('inbox')
+    setRequestedThreadId(null)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('lead')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+  }
+
+  const refreshConversation = useCallback(() => {
+    void Promise.all([
+      hubHasLoadedHistory ? hubHeadQuery.refetch() : hubQuery.refetch(),
+      activeThread
+        ? timelineHasLoadedHistory ? timelineHeadQuery.refetch() : timelineQuery.refetch()
+        : Promise.resolve(),
+      requestedThreadId ? requestedThreadQuery.refetch() : Promise.resolve(),
+      requestedThreadId && activeQueue !== 'all' ? selectedQueueThreadQuery.refetch() : Promise.resolve(),
+      queryClient.invalidateQueries({ queryKey: ['conversation-attention-count'] }),
+    ])
+  }, [activeQueue, activeThread, hubHasLoadedHistory, hubHeadQuery, hubQuery, queryClient, requestedThreadId, requestedThreadQuery, selectedQueueThreadQuery, timelineHasLoadedHistory, timelineHeadQuery, timelineQuery])
 
   function openActiveDialer() {
-    if (!activeLead?.phone) return
+    if (!activeThread?.phone) return
     window.dispatchEvent(new CustomEvent('open-dialer', {
       detail: {
-        leadId: activeLead.id.startsWith('unmatched:') ? null : activeLead.id,
-        phone: activeLead.phone,
-        name: activeLead.full_name || formatPhone(activeLead.phone),
+        leadId: activeThread.kind === 'lead' ? activeThread.id : null,
+        phone: activeThread.phone,
+        name: activeThread.full_name || formatPhone(activeThread.phone),
       },
     }))
   }
 
-  const fetchActivities = useCallback(async () => {
-    const currentLeadId = activeLeadId
-    if (!currentLeadId) return
-    const requestId = ++activityRequestId.current
-    try {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-
-      if (currentLeadId.startsWith('unmatched:')) {
-        const phone = currentLeadId.replace('unmatched:', '')
-        const rows: DatabaseActivityRow[] = []
-        for (let offset = 0; ; offset += 1000) {
-          const { data } = await supabase
-            .from('lead_activities')
-            .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-            .is('lead_id', null)
-            .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
-            .order('created_at', { ascending: true })
-            .range(offset, offset + 999)
-          rows.push(...((data || []) as DatabaseActivityRow[]))
-          if ((data?.length ?? 0) < 1000) break
-        }
-        const filtered = rows.filter((a) => {
-          const meta = a.metadata || {}
-          return meta.from === phone || meta.to === phone
-        })
-        if (requestId === activityRequestId.current && activeLeadIdRef.current === currentLeadId) {
-          setActivities(filtered.map((a) => ({ ...a, type: a.activity_type })))
-        }
-      } else {
-        const rows: DatabaseActivityRow[] = []
-        for (let offset = 0; ; offset += 1000) {
-          const { data } = await supabase
-            .from('lead_activities')
-            .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-            .eq('lead_id', currentLeadId)
-            .in('activity_type', ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'call', 'voicemail', 'letter_tracking'])
-            .order('created_at', { ascending: true })
-            .range(offset, offset + 999)
-          rows.push(...((data || []) as DatabaseActivityRow[]))
-          if ((data?.length ?? 0) < 1000) break
-        }
-        if (requestId === activityRequestId.current && activeLeadIdRef.current === currentLeadId) {
-          setActivities(rows.map((a) => ({ ...a, type: a.activity_type })))
-        }
-      }
-    } catch (error) {
-      console.error('[Conversations] Could not load thread activities', error)
-    }
-  }, [activeLeadId])
-
-  const fetchThreads = useCallback(async (force = false) => {
-    const payload = await queryClient.fetchQuery({
-      queryKey: conversationHubQueryKey,
-      queryFn: () => fetchConversationHub<LeadRow, ConversationHubActivity>(),
-      staleTime: force ? 0 : conversationHubStaleTime,
-    }).catch(() => ({ items: [] as LeadRow[], unmatchedActivities: [] as ConversationHubActivity[] }))
-    const rows = payload.items
-    const requestedLeadId = new URLSearchParams(window.location.search).get('lead')
-
-    if (!initialThreadsLoaded.current) {
-      setLeads(rows)
-      setActiveLeadId((current) =>
-        current && rows.some((lead) => lead.id === current)
-          ? current
-          : requestedLeadId && rows.some((lead) => lead.id === requestedLeadId)
-            ? requestedLeadId
-            : rows[0]?.id ?? null,
-      )
-      setLoading(false)
-      initialThreadsLoaded.current = true
-    }
-
-    const unmatched = payload.unmatchedActivities.map((activity) => ({ ...activity, type: activity.activity_type }))
-
-    const phoneMap = new Map<string, ActivityRow[]>()
-    for (const act of unmatched) {
-      const rawDirection = String(act.metadata?.direction ?? '').toLowerCase()
-      const phone = rawDirection === 'outbound' || rawDirection === 'sent'
-        ? String(act.metadata?.to ?? act.metadata?.from ?? 'unknown')
-        : String(act.metadata?.from ?? act.metadata?.to ?? 'unknown')
-      const items = phoneMap.get(phone) ?? []
-      items.push(act)
-      phoneMap.set(phone, items)
-    }
-
-    const virtualLeads: LeadRow[] = Array.from(phoneMap.entries()).map(([phone, acts]) => {
-      const virtualLead: ConversationHubLead = {
-        id: `unmatched:${phone}`,
-        full_name: phone,
-        phone,
-        email: null,
-        property_address: null,
-        city: null,
-        station: 'unmatched',
-        priority: 'normal',
-        assigned_agent: null,
-        created_at: acts[0].created_at,
-      }
-      const activities: ConversationHubActivity[] = acts.map((activity) => ({
-        id: activity.id,
-        lead_id: activity.lead_id,
-        activity_type: activity.type,
-        description: activity.description,
-        agent: activity.agent,
-        metadata: activity.metadata,
-        created_at: activity.created_at,
-      }))
-      return buildConversationHubThread(virtualLead, activities)
-    })
-
-    // Open the workspace on a fully identified seller so the operator lands in
-    // a useful thread with property, ownership, and opportunity context. Keep
-    // unmatched callers in the same inbox, immediately after known contacts.
-    const allLeads = [...rows, ...virtualLeads]
-    setLeads(allLeads)
-    setActiveLeadId((current) =>
-      current && allLeads.some((lead) => lead.id === current)
-        ? current
-        : requestedLeadId && allLeads.some((lead) => lead.id === requestedLeadId)
-          ? requestedLeadId
-          : allLeads[0]?.id ?? null,
-    )
-    setLoading(false)
-  }, [queryClient])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchThreads()
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [fetchThreads])
-
-  useEffect(() => {
-    if (!activeLeadId) return
-    let disposed = false
-    let removeRealtimeChannel: (() => void) | undefined
-
-    const refreshTimer = window.setTimeout(() => {
-      void fetchActivities()
-    }, 0)
-
-    // Realtime is valuable after the inbox is visible, but the Supabase SDK
-    // does not belong in the route's critical bundle.
-    void import('@/lib/supabase/client').then(({ createClient }) => {
-      if (disposed) return
-      const supabase = createClient()
-      const channel = supabase
-        .channel(`lead-activities-${activeLeadId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'lead_activities',
-            ...(activeLeadId.startsWith('unmatched:') ? {} : { filter: `lead_id=eq.${activeLeadId}` }),
-          },
-          (payload) => {
-            const meta = payload.new?.metadata || {}
-            const direction = (meta.direction as string) || ''
-            const isInbound = direction === 'inbound' || direction === 'received'
-            if (activeLeadId.startsWith('unmatched:')) {
-              const phone = activeLeadId.replace('unmatched:', '')
-              if (meta.from !== phone && meta.to !== phone) return
-            }
-            void fetchActivities()
-            const description = typeof payload.new?.description === 'string' ? payload.new.description : ''
-            const createdAt = typeof payload.new?.created_at === 'string' ? payload.new.created_at : new Date().toISOString()
-            setLeads((current) => current.map((lead) => lead.id === activeLeadId ? {
-              ...lead,
-              lastMessage: description || lead.lastMessage,
-              lastActivityAt: createdAt,
-              unread: isInbound,
-              attentionState: isInbound ? 'needs_reply' : 'waiting_on_contact',
-            } : lead))
-            if (isInbound) {
-              const lead = leadsRef.current.find((item) => item.id === activeLeadId)
-              const name = lead?.full_name && lead.full_name !== lead.phone
-                ? toProperCase(lead.full_name)
-                : formatPhone(lead?.phone)
-              addToast(`New message from ${name}`)
-            }
-          }
-        )
-        .subscribe()
-      removeRealtimeChannel = () => { void supabase.removeChannel(channel) }
-    })
-
-    return () => {
-      disposed = true
-      window.clearTimeout(refreshTimer)
-      removeRealtimeChannel?.()
-    }
-  }, [activeLeadId, fetchActivities])
-
-  const refreshConversation = useCallback(() => {
-    void Promise.all([fetchActivities(), fetchThreads(true)])
-  }, [fetchActivities, fetchThreads])
-
-  const activeLead = leads.find((l) => l.id === activeLeadId)
-  const normalizedNewConversationSearch = newConversationSearch.trim().toLowerCase()
-  const newConversationLeads = normalizedNewConversationSearch
-    ? leads.filter((lead) =>
-        [
-          lead.full_name,
-          lead.phone,
-          lead.property_address,
-          lead.city,
-          lead.owner,
-          lead.assigned_agent,
-        ].some((value) => value?.toLowerCase().includes(normalizedNewConversationSearch)),
-      )
-    : leads
-
-  // The team line is the inbound destination or outbound origin used in call
-  // details. Reply identity is derived separately from eligible SMS history.
-  const teamPhoneActivity = [...activities].reverse().find((activity) => {
-    const direction = getConversationDirection({ activity_type: activity.type, description: activity.description, metadata: activity.metadata })
-    return direction === 'inbound'
-      ? Boolean(activity.metadata?.to || activity.metadata?.calledNumber)
-      : Boolean(activity.metadata?.from || activity.metadata?.fromPhone)
-  })
-  const teamPhoneDirection = teamPhoneActivity
-    ? getConversationDirection({ activity_type: teamPhoneActivity.type, description: teamPhoneActivity.description, metadata: teamPhoneActivity.metadata })
-    : null
-  const toPhone = teamPhoneActivity
-    ? String(teamPhoneDirection === 'inbound'
-      ? teamPhoneActivity.metadata?.to || teamPhoneActivity.metadata?.calledNumber
-      : teamPhoneActivity.metadata?.from || teamPhoneActivity.metadata?.fromPhone)
-    : '+18163077835'
-  const replyFromPhone = [...activities]
-    .reverse()
-    .map((activity) => getEligibleSmsReplySender({
-      activity_type: activity.type,
-      description: activity.description,
-      metadata: activity.metadata,
-    }))
-    .find((sender): sender is string => Boolean(sender))
-
-  const threads: ThreadPreview[] = leads.map((lead) => ({
-    id: lead.id,
-    name: getDisplayLeadName(lead.full_name, lead.phone),
-    initials: getAvatarLabel(lead.full_name, lead.phone, lead.source),
-    avatarBg: lead.priority === 'hot' ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-charcoal)]',
+  const previews: ThreadPreview[] = threads.map((thread) => ({
+    id: thread.id,
+    threadKey: thread.threadKey,
+    name: getDisplayLeadName(thread.full_name, thread.phone),
+    initials: getAvatarLabel(thread.full_name, thread.phone, thread.source),
+    avatarBg: thread.priority === 'hot' ? 'bg-[var(--crm-brand)]' : 'bg-[var(--crm-charcoal)]',
     avatarText: 'text-white',
-    address: [lead.property_address, lead.city].filter(Boolean).join(', ') || (lead.station === 'unmatched' ? formatPhone(lead.phone) : '—'),
-    personality: null,
-    tags: (lead.decision_tags || []).slice(0, 2),
-    lastMessage: lead.lastMessage || (lead.station === 'unmatched' ? 'Inbound call — not yet a contact' : 'No communication yet'),
-    lastChannel: lead.lastChannel || null,
-    lastCallOutcome: lead.lastCallOutcome || null,
-    activityAt: lead.lastActivityAt || lead.created_at,
-    timestamp: new Date(lead.lastActivityAt || lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    unread: lead.unread ?? lead.station === 'unmatched',
-    hot: lead.priority === 'hot',
-    attentionState: lead.attentionState || (lead.station === 'unmatched' ? 'needs_reply' : 'resolved'),
-    owner: lead.owner || lead.assigned_agent,
-    nextAction: lead.primaryNextAction || null,
+    address: [thread.property_address, thread.city].filter(Boolean).join(', ') || formatPhone(thread.phone) || 'No property linked',
+    lastMessage: thread.lastMessage || 'No communication yet',
+    lastChannel: thread.lastChannel,
+    lastCallOutcome: thread.lastCallOutcome || null,
+    activityAt: thread.lastActivityAt || thread.created_at,
+    timestamp: new Date(thread.lastActivityAt || thread.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    hot: thread.priority === 'hot',
+    attentionState: thread.attentionState,
+    owner: thread.owner || thread.assigned_agent,
+    nextAction: thread.primaryNextAction,
   }))
 
-  const commActivities = activities
-  const messages: Message[] = commActivities
-    .map((act) => activeLead ? activityToMessage(act, activeLead, toPhone) : null)
-    .filter((m): m is Message => m !== null)
-  const dateGroups = groupMessagesByDate(messages, commActivities)
-
-  const contact = activeLead
-    ? {
-        name: getDisplayLeadName(activeLead.full_name, activeLead.phone),
-        initials: getAvatarLabel(activeLead.full_name, activeLead.phone, activeLead.source),
-        verified: false,
-        assignedAgent: activeLead.assigned_agent,
-        team: 'Acquisitions',
-        replyFromPhone,
-        attentionState: activeLead.attentionState || 'resolved',
-        owner: activeLead.owner || activeLead.assigned_agent,
-        nextAction: activeLead.primaryNextAction || null,
-      }
-    : { name: 'Select a contact', initials: '—', verified: false, assignedAgent: null, team: 'Acquisitions', replyFromPhone: undefined, attentionState: 'resolved' as const, owner: null, nextAction: null }
+  const contact = activeThread ? {
+    name: getDisplayLeadName(activeThread.full_name, activeThread.phone),
+    initials: getAvatarLabel(activeThread.full_name, activeThread.phone, activeThread.source),
+    verified: false,
+    assignedAgent: activeThread.assigned_agent,
+    team: 'Acquisitions',
+    replyFromPhone,
+    attentionState: activeThread.attentionState,
+    owner: activeThread.owner || activeThread.assigned_agent,
+    nextAction: activeThread.primaryNextAction,
+  } : null
 
   return (
     <>
-      <WorkspaceChrome needsReply={threads.filter((thread) => thread.attentionState === 'needs_reply').length} />
-      <div aria-busy={loading} className="relative flex h-full overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
-      {loading ? (
-        <div role="status" aria-label="Loading conversations" className="absolute inset-x-0 top-0 z-[60] h-1 overflow-hidden bg-[var(--crm-info-soft)]">
-          <span className="block h-full w-1/3 animate-pulse rounded-full bg-[var(--crm-info)]" />
-        </div>
-      ) : null}
-      {showNewMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeNewConversation}>
-          <section ref={newConversationDialogRef} role="dialog" aria-modal="true" aria-label="Start new conversation" tabIndex={-1} className="max-h-[70vh] w-96 max-w-[90vw] overflow-y-auto rounded-2xl border border-[#ded9d1] bg-white p-6 shadow-[0_22px_60px_rgba(11,41,66,0.22)]" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-bold">Start New Conversation</h2>
-              <button type="button" onClick={closeNewConversation} aria-label="Close new conversation dialog" className="flex h-9 w-9 items-center justify-center rounded-md text-[#667085] hover:bg-[#fff7f7] hover:text-[#b91c26]">✕</button>
-            </div>
-            <p className="mb-3 text-sm text-slate-500">Select a lead to open their conversation thread:</p>
-            <label htmlFor="new-conversation-search" className="sr-only">Search contacts for a new conversation</label>
-            <div className="relative mb-4">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">⌕</span>
-              <input
-                id="new-conversation-search"
-                autoFocus
-                type="search"
-                value={newConversationSearch}
-                onChange={(event) => setNewConversationSearch(event.target.value)}
-                placeholder="Search name, phone, address, or owner"
-                className="h-10 w-full rounded-lg border border-[#d9dee5] bg-white pl-9 pr-3 text-sm text-[#172033] outline-none focus:border-[#df3038] focus:ring-2 focus:ring-[#df3038]/10"
-              />
-            </div>
-            <div className="space-y-2">
-              {newConversationLeads.length === 0 ? (
-                <p role="status" className="rounded-lg border border-dashed border-[#ccd4dd] px-4 py-6 text-center text-sm text-slate-500">
-                  No contacts match “{newConversationSearch}”.
-                </p>
-              ) : newConversationLeads.map((lead) => (
-                <button
-                  key={lead.id}
-                  onClick={() => {
-                    selectConversation(lead.id)
-                    setShowNewMessage(false)
-                    setNewConversationSearch('')
-                    setSidebarOpen(false)
-                  }}
-                  className="w-full rounded-lg border border-[#e1ddd7] p-3 text-left transition-colors hover:border-[#a9c5f4] hover:bg-[#edf4ff]"
-                >
-                  <div className="text-sm font-semibold">{lead.full_name || formatPhone(lead.phone) || '(no name)'}</div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {[lead.property_address || formatPhone(lead.phone), lead.owner || lead.assigned_agent ? `Owner: ${lead.owner || lead.assigned_agent}` : 'Unassigned'].filter(Boolean).join(' · ')}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar - hidden on mobile unless sidebarOpen, always visible on desktop */}
-      <div className={`${sidebarOpen ? 'absolute inset-0 z-50 [&>*]:w-full' : 'hidden'} md:static md:block`}>
-        <InboxSidebar
-          threads={threads}
-          activeThreadId={activeLeadId || ''}
-          onSelectThread={handleSelectConversation}
-          onNewMessage={() => setShowNewMessage(true)}
-        />
-      </div>
-
-      {/* Thread view - full width on mobile, flex-1 on desktop */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--crm-canvas)]">
-        {/* Mobile header with menu button */}
-        <div className="flex h-12 items-center gap-2 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 md:hidden">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open conversation inbox"
-            className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <h2 className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--crm-ink)]">{contact.name}</h2>
-          <button type="button" onClick={openActiveDialer} disabled={!activeLead?.phone} aria-label="Call contact" className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--crm-success-soft)] text-[var(--crm-success)] disabled:opacity-40"><Icon name="call" /></button>
-        </div>
-
-        <ThreadView
-          key={activeLeadId || activeLead?.phone || 'unmatched-conversation'}
-          contact={contact}
-          dateGroups={dateGroups.length > 0 ? dateGroups : [{ label: 'No messages yet', messages: [] }]}
-          leadId={activeLeadId || undefined}
-          phone={activeLead?.phone || undefined}
-          email={activeLead?.email || undefined}
-          onCall={openActiveDialer}
-          onSent={refreshConversation}
-          onConversationChanged={refreshConversation}
-          contactDetailsOpen={contactDetailsOpen}
-          onToggleContactDetails={() => setContactDetailsOpen((value) => !value)}
-          initialComposeMode={initialComposeMode}
-        />
-      </div>
-
-      {contactDetailsOpen ? (
-        <ContactDetailsPanel
-          contact={activeLead || null}
-          onClose={() => setContactDetailsOpen(false)}
-          onNextAction={activeLead && !activeLead.id.startsWith('unmatched:') ? () => setNextActionDialogOpen(true) : undefined}
-          onContactChanged={refreshConversation}
-        />
-      ) : null}
-
-      {nextActionDialogOpen && activeLead && !activeLead.id.startsWith('unmatched:') ? (
-        <NextActionDialog
-          leadId={activeLead.id}
-          leadName={getDisplayLeadName(activeLead.full_name, activeLead.phone)}
-          action={activeLead.primaryNextAction || null}
-          defaultOwner={activeLead.assigned_agent || activeLead.owner || null}
-          onClose={() => setNextActionDialogOpen(false)}
-          onSaved={refreshConversation}
-        />
-      ) : null}
-
-      {/* Toast notifications */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className="flex items-center gap-3 bg-[#df3038] text-white px-4 py-3 rounded-xl shadow-xl text-sm font-semibold pointer-events-auto"
-          >
-            <span>{toast.message}</span>
-            <button
-              type="button"
-              onClick={() => dismissToast(toast.id)}
-              aria-label="Dismiss notification"
-              className="ml-1 text-white/80 hover:text-white leading-none"
-            >
-              ✕
-            </button>
+      <WorkspaceChrome />
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--crm-canvas)] text-[#152033]">
+        {hubDegradedPage ? (
+          <div role="alert" className="flex shrink-0 items-start gap-2 border-b border-[var(--crm-warning)]/35 bg-[var(--crm-warning-soft)] px-4 py-2 text-xs font-semibold text-[var(--crm-text)]">
+            <Icon name="warning_amber" className="mt-0.5 shrink-0 text-[var(--crm-warning)]" />
+            <span><strong>Compatibility inbox.</strong> {hubDegradedPage.warning || 'The bounded fallback may not contain every conversation. Queue decisions should wait for the primary read model.'}</span>
           </div>
-        ))}
-      </div>
+        ) : null}
+
+        {showNewMessage ? (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onClick={closeNewConversation}>
+            <section ref={newConversationDialogRef} role="dialog" aria-modal="true" aria-label="Start new conversation" tabIndex={-1} className="max-h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-[var(--crm-border)] px-5 py-4">
+                <div><p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">Conversation index</p><h2 className="mt-0.5 text-lg font-black text-[var(--crm-ink)]">Find a conversation</h2></div>
+                <button type="button" onClick={closeNewConversation} aria-label="Close new conversation dialog" className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg"><Icon name="close" /></button>
+              </div>
+              <div className="p-4">
+                <label className="relative block"><span className="sr-only">Search existing conversations</span><Icon name="search" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input autoFocus aria-label="Search existing conversations" type="search" value={newConversationSearch} onChange={(event) => setNewConversationSearch(event.target.value)} placeholder="Search name, phone, or property" className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm" /></label>
+                {newConversationSearch.trim().length > 0 && newConversationSearch.trim().length < 3 ? <p role="status" className="mt-2 text-[10px] font-semibold text-[var(--crm-text-muted)]">Type at least 3 characters to search.</p> : null}
+                <p className="mt-2 text-[10px] font-medium text-[var(--crm-text-muted)]">Only contacts with an existing communication thread appear here.</p>
+              </div>
+              <div className="max-h-[50vh] overflow-y-auto border-t border-[var(--crm-border)] p-3">
+                {newConversationQuery.isPending ? <p role="status" className="p-6 text-center text-sm font-semibold text-[var(--crm-text-muted)]">Searching conversations…</p> : null}
+                {newConversationQuery.isError ? <div role="alert" className="p-5 text-center text-sm font-semibold text-[var(--crm-danger)]">{newConversationQuery.error.message}<br /><button type="button" onClick={() => void newConversationQuery.refetch()} className="crm-secondary-button mt-3 rounded-lg px-3 py-2 text-xs">Retry search</button></div> : null}
+                {!newConversationQuery.isPending && !newConversationQuery.isError && (newConversationQuery.data?.items.length ?? 0) === 0 ? <p role="status" className="p-6 text-center text-sm font-semibold text-[var(--crm-text-muted)]">No existing conversation threads match this search.</p> : null}
+                {newConversationQuery.data && (newConversationQuery.data.degraded || newConversationQuery.data.source === 'compatibility') ? <p role="alert" className="mb-2 rounded-lg border border-[var(--crm-warning)]/35 bg-[var(--crm-warning-soft)] p-3 text-xs font-semibold">Compatibility results: {newConversationQuery.data.warning || 'Results may be incomplete.'}</p> : null}
+                {newConversationQuery.data?.items.map((thread) => (
+                  <button key={thread.threadKey} type="button" onClick={() => selectNewConversation(thread)} className="w-full rounded-xl border border-transparent p-3 text-left hover:border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)]">
+                    <span className="block text-sm font-black text-[var(--crm-ink)]">{getDisplayLeadName(thread.full_name, thread.phone)}</span>
+                    <span className="mt-1 block text-xs font-medium text-[var(--crm-text-muted)]">{[thread.property_address || formatPhone(thread.phone), thread.owner || 'Unassigned'].filter(Boolean).join(' · ')}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className={cnPane(mobilePane === 'inbox', 'w-full shrink-0 md:flex md:w-[340px]')}>
+            <InboxSidebar
+              threads={previews}
+              activeThreadKey={resolvedActiveThreadKey || ''}
+              activeQueue={activeQueue}
+              search={search}
+              loading={hubQuery.isPending}
+              error={hubQuery.isError ? hubQuery.error.message : null}
+              onRetry={() => void hubQuery.refetch()}
+              onSelectThread={selectConversation}
+              onQueueChange={changeQueue}
+              onSearchChange={setSearch}
+              hasMore={Boolean(hubQuery.hasNextPage)}
+              loadingMore={hubQuery.isFetchingNextPage}
+              onLoadMore={() => void hubQuery.fetchNextPage()}
+              onNewMessage={() => setShowNewMessage(true)}
+            />
+          </div>
+
+          <div className={cnPane(mobilePane === 'thread', 'min-h-0 min-w-0 flex-1 flex-col bg-[var(--crm-canvas)] md:flex')}>
+            {activeThread && contact ? (
+              <>
+                <ThreadView
+                  key={activeThread.threadKey}
+                  threadKey={activeThread.threadKey}
+                  contact={contact}
+                  dateGroups={dateGroups}
+                  leadId={activeThread.kind === 'lead' ? activeThread.id : undefined}
+                  phone={activeThread.phone || undefined}
+                  email={activeThread.email || undefined}
+                  onCall={openActiveDialer}
+                  onBack={() => setMobilePane('inbox')}
+                  onSent={() => { addToast('Conversation updated'); refreshConversation() }}
+                  onConversationChanged={refreshConversation}
+                  contactDetailsOpen={contactDetailsOpen}
+                  onToggleContactDetails={() => setContactDetailsOpen((value) => !value)}
+                  initialComposeMode={initialComposeMode}
+                  timelineLoading={timelineQuery.isPending}
+                  timelineError={timelineQuery.isError ? timelineQuery.error.message : null}
+                  onRetryTimeline={() => void timelineQuery.refetch()}
+                  hasEarlierActivity={Boolean(timelineQuery.hasNextPage)}
+                  loadingEarlierActivity={timelineQuery.isFetchingNextPage}
+                  onLoadEarlierActivity={() => void timelineQuery.fetchNextPage()}
+                  degradedWarning={timelineDegradedPage ? timelineDegradedPage.warning || 'Some older activity may be unavailable while the primary read model recovers.' : null}
+                />
+              </>
+            ) : requestedThreadId && requestedLookupEnabled && requestedThreadQuery.isPending ? (
+              <div role="status" className="grid min-h-0 flex-1 place-items-center p-6 text-center"><div><Icon name="progress_activity" className="mx-auto animate-spin text-2xl text-[var(--crm-text-muted)]" /><p className="mt-3 text-sm font-black text-[var(--crm-ink)]">Opening conversation…</p></div></div>
+            ) : requestedThreadId && requestedThreadQuery.isError ? (
+              <div role="alert" className="grid min-h-0 flex-1 place-items-center p-6 text-center"><div><Icon name="error" className="mx-auto text-2xl text-[var(--crm-danger)]" /><h2 className="mt-3 text-lg font-black text-[var(--crm-ink)]">Conversation could not be opened</h2><p className="mt-1 max-w-sm text-sm font-medium text-[var(--crm-text-muted)]">{requestedThreadQuery.error.message}</p><button type="button" onClick={() => void requestedThreadQuery.refetch()} className="crm-secondary-button mt-4 rounded-lg px-4 py-2 text-sm font-black">Retry conversation</button></div></div>
+            ) : requestedThreadId && (!requestedLookupEnabled || requestedThreadQuery.data) ? (
+              <div role="status" className="grid min-h-0 flex-1 place-items-center p-6 text-center"><div><Icon name="search_off" className="mx-auto text-2xl text-[var(--crm-text-muted)]" /><h2 className="mt-3 text-lg font-black text-[var(--crm-ink)]">Conversation not found</h2><p className="mt-1 max-w-sm text-sm font-medium text-[var(--crm-text-muted)]">The requested thread is not in the authoritative conversation index.</p><button type="button" onClick={() => { setRequestedThreadId(null); setMobilePane('inbox') }} className="crm-secondary-button mt-4 rounded-lg px-4 py-2 text-sm font-black">Back to inbox</button></div></div>
+            ) : (
+              <div className="grid min-h-0 flex-1 place-items-center p-6 text-center">
+                <div><span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]"><Icon name="forum" className="text-[28px]" /></span><h2 className="mt-4 text-lg font-black text-[var(--crm-ink)]">Select a conversation</h2><p className="mt-1 max-w-sm text-sm font-medium leading-6 text-[var(--crm-text-muted)]">Choose a seller from the inbox to view their activity and reply.</p><button type="button" onClick={() => setMobilePane('inbox')} className="crm-secondary-button mt-4 rounded-lg px-4 py-2 text-sm font-black md:hidden">Back to inbox</button></div>
+              </div>
+            )}
+          </div>
+
+          {contactDetailsOpen && activeThread?.kind === 'lead' ? (
+            <ContactDetailsPanel contact={activeThread} onClose={() => setContactDetailsOpen(false)} onNextAction={() => setNextActionDialogOpen(true)} onContactChanged={refreshConversation} />
+          ) : null}
+        </div>
+
+        {nextActionDialogOpen && activeThread?.kind === 'lead' ? (
+          <NextActionDialog leadId={activeThread.id} leadName={getDisplayLeadName(activeThread.full_name, activeThread.phone)} action={activeThread.primaryNextAction} defaultOwner={activeThread.assigned_agent || activeThread.owner} onClose={() => setNextActionDialogOpen(false)} onSaved={refreshConversation} />
+        ) : null}
+
+        <div aria-live="polite" className="pointer-events-none fixed bottom-20 right-4 z-[140] flex flex-col gap-2 md:bottom-6 md:right-6">
+          {toasts.map((toast) => <div key={toast.id} className="rounded-xl bg-[var(--crm-ink)] px-4 py-3 text-sm font-bold text-white shadow-xl">{toast.message}</div>)}
+        </div>
       </div>
     </>
   )
+}
+
+function cnPane(visibleOnMobile: boolean, classes: string) {
+  return `${visibleOnMobile ? 'flex' : 'hidden'} ${classes}`
 }

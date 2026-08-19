@@ -3,13 +3,13 @@ import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
-  getUser: vi.fn(),
+  getClaims: vi.fn(),
   profileMaybeSingle: vi.fn(),
   insert: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { getUser: mocks.getUser } }),
+  createClient: async () => ({ auth: { getClaims: mocks.getClaims } }),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -29,8 +29,8 @@ function request(body: Record<string, unknown>) {
 describe('lead internal notes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getUser.mockResolvedValue({
-      data: { user: { id: 'user-ernest', email: 'ernest@savingkc.com' } },
+    mocks.getClaims.mockResolvedValue({
+      data: { claims: { sub: 'user-ernest', email: 'ernest@savingkc.com' } },
       error: null,
     })
     mocks.profileMaybeSingle.mockResolvedValue({ data: { full_name: 'Ernest Dodson' }, error: null })
@@ -71,7 +71,7 @@ describe('lead internal notes', () => {
   })
 
   it('rejects unauthenticated note creation before writing', async () => {
-    mocks.getUser.mockResolvedValue({ data: { user: null }, error: null })
+    mocks.getClaims.mockResolvedValue({ data: { claims: {} }, error: null })
 
     const response = await POST(
       request({ description: 'Call after 3 PM' }),

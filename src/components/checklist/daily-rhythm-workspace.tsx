@@ -70,7 +70,7 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
   const [win, setWin] = useState('')
   const [lesson, setLesson] = useState('')
   const [tomorrow, setTomorrow] = useState('')
-  const [attentionSummary, setAttentionSummary] = useState<AttentionSummary>({ needsReply: 0, calls: 0, emails: 0, texts: 0, overdue: 0 })
+  const [attentionSummary, setAttentionSummary] = useState<AttentionSummary | null>(null)
   const [myDay, setMyDay] = useState<MyDay>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -81,10 +81,10 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
     timeZone: 'America/Chicago', weekday: 'long', month: 'long', day: 'numeric',
   }).format(new Date()), [])
   const urgentCounts = {
-    calls: attentionSummary.calls,
-    emails: attentionSummary.emails,
-    texts: attentionSummary.texts,
-    overdue: attentionSummary.overdue,
+    calls: attentionSummary?.calls ?? null,
+    emails: attentionSummary?.emails ?? null,
+    texts: attentionSummary?.texts ?? null,
+    overdue: attentionSummary?.overdue ?? null,
   }
 
   useEffect(() => {
@@ -96,7 +96,7 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
         return payload as DailyState
       }),
       fetch('/api/my-day', { cache: 'no-store' }).then((response) => response.ok ? response.json() as Promise<MyDay> : {}),
-      fetch('/api/conversations/attention-count', { cache: 'no-store' }).then(async (response) => response.ok ? await response.json() as AttentionSummary : { needsReply: 0, calls: 0, emails: 0, texts: 0, overdue: 0 }),
+      fetch('/api/conversations/attention-count', { cache: 'no-store' }).then(async (response) => response.ok ? await response.json() as AttentionSummary : null),
     ]).then(([payload, myDayPayload, summary]) => {
       if (cancelled) return
       setDaily(payload)
@@ -163,7 +163,7 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
         <aside className="border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-5 lg:border-b-0 lg:border-r"><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-brand)]">Morning setup</p><p className="mt-1 text-sm font-bold">Step {wizardStep + 1} of {MORNING_STEPS.length}</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--crm-border)]"><div className="h-full rounded-full bg-[var(--crm-brand)] transition-all" style={{ width: `${((wizardStep + 1) / MORNING_STEPS.length) * 100}%` }} /></div><nav className="mt-5 space-y-1">{MORNING_STEPS.map((item, index) => <button key={item.id} type="button" onClick={() => setWizardStep(index)} className={cn('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold', index === wizardStep ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={checked.sod.includes(item.id) ? 'check_circle' : 'radio_button_unchecked'} className="text-[18px]" />{item.title}</button>)}</nav></aside>
         <div className="flex flex-col p-6 lg:p-8"><div className="flex-1"><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-brand)]">{String(wizardStep + 1).padStart(2, '0')}</p><h2 className="mt-1 text-2xl font-black tracking-tight">{step.title}</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">{step.detail}</p><div className="mt-6 max-w-2xl">
           {step.id === 'purpose' ? <div className="grid gap-5"><label className="text-xs font-black">Personal goal<textarea value={personalGoal} onChange={(event) => setPersonalGoal(event.target.value)} rows={3} placeholder="What are you working toward personally?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><label className="text-xs font-black">Your why<textarea value={personalWhy} onChange={(event) => setPersonalWhy(event.target.value)} rows={3} placeholder="Why does this matter to you?" className="crm-field mt-2 w-full rounded-lg p-3 text-sm font-medium" /></label><fieldset><legend className="text-xs font-black">Energy level</legend><div className="mt-2 grid max-w-sm grid-cols-5 gap-2">{[1,2,3,4,5].map((value) => <button key={value} type="button" onClick={() => setEnergy(value)} className={cn('rounded-lg border py-2 text-xs font-black', energy === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand)] text-white' : 'border-[var(--crm-border)]')}>{value}</button>)}</div></fieldset></div> : null}
-          {step.id === 'urgent' ? <div className="grid gap-3 sm:grid-cols-2">{[['phone_missed','Missed calls',urgentCounts.calls],['mail','Emails',urgentCounts.emails],['sms','Texts',urgentCounts.texts],['schedule','Overdue actions',urgentCounts.overdue]].map(([icon,label,value]) => <div key={String(label)} className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><Icon name={String(icon)} className="text-[22px] text-[var(--crm-brand)]" /><p className="mt-2 text-2xl font-black">{loading ? '—' : String(value)}</p><p className="text-xs font-bold text-[var(--crm-text-muted)]">{label}</p></div>)}<Link href="/conversations" className="crm-secondary-button col-span-full rounded-lg px-4 py-3 text-center text-xs font-black">Open Conversations</Link></div> : null}
+          {step.id === 'urgent' ? <div className="grid gap-3 sm:grid-cols-2">{[['phone_missed','Missed calls',urgentCounts.calls],['mail','Emails',urgentCounts.emails],['sms','Texts',urgentCounts.texts],['schedule','Overdue actions',urgentCounts.overdue]].map(([icon,label,value]) => <div key={String(label)} className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><Icon name={String(icon)} className="text-[22px] text-[var(--crm-brand)]" /><p className="mt-2 text-2xl font-black">{loading || value === null ? '—' : String(value)}</p><p className="text-xs font-bold text-[var(--crm-text-muted)]">{label}</p></div>)}<Link href="/conversations" className="crm-secondary-button col-span-full rounded-lg px-4 py-3 text-center text-xs font-black">Open Conversations</Link></div> : null}
           {step.id === 'calendar' ? <SummaryCard icon="calendar_month" value={myDay.commitments?.length ?? 0} label="commitments scheduled" href="/calendar" action="Review calendar" /> : null}
           {step.id === 'pipeline' ? <PriorityPreview items={myDay.queue ?? []} /> : null}
           {step.id === 'calling' ? <SummaryCard icon="dialpad" value={myDay.queue?.length ?? 0} label="people ready for action" href="/dialer" action="Open Dialer" /> : null}

@@ -1,6 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isNonRealRecord } from '@/lib/real-data'
 import type { Contact, DealStage, Task } from '@/types'
@@ -359,6 +361,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const authenticatedActor = await resolveAuthenticatedActor()
+    if (!authenticatedActor) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await req.json()
     const title = typeof body.title === 'string' ? body.title.trim() : ''
 
@@ -368,6 +375,11 @@ export async function POST(req: NextRequest) {
 
     const dueDate = body.dueDate ? new Date(body.dueDate).toISOString() : null
     const department = normalizeDepartment(typeof body.department === 'string' ? body.department : null)
+    const assignment = resolveTaskAssignee(body.assignedTo, authenticatedActor.name, { defaultToActor: true })
+    if (!assignment.authorized || !assignment.assignedTo) {
+      return NextResponse.json({ success: false, error: 'Task assignee is not authorized' }, { status: 403 })
+    }
+    const assignedTo = assignment.assignedTo
 
     const { data, error } = await supabaseAdmin()
       .from('lead_activities')
@@ -375,11 +387,11 @@ export async function POST(req: NextRequest) {
         lead_id: body.leadId || null,
         activity_type: 'task',
         description: title,
-        agent: body.assignedTo || 'Casey',
+        agent: assignedTo,
         metadata: {
           task_type: body.taskType || 'follow_up',
           due_date: dueDate,
-          assigned_to: body.assignedTo || 'Casey',
+          assigned_to: assignedTo,
           role: body.role || 'setter',
           department,
           priority: 'normal',

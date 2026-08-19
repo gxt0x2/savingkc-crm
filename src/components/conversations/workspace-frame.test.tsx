@@ -31,8 +31,8 @@ vi.mock('@/components/telephony/global-dialer-button', () => ({
 }))
 
 vi.mock('./workspace-nav', () => ({
-  WorkspaceNav: ({ needsReply }: { needsReply: number }) => <nav data-testid="workspace-nav">{needsReply}</nav>,
-  WorkspaceMobileNav: ({ needsReply }: { needsReply: number }) => <nav data-testid="workspace-mobile-nav">{needsReply}</nav>,
+  WorkspaceNav: ({ needsReply }: { needsReply: number | null }) => <nav data-testid="workspace-nav">{needsReply ?? 'unavailable'}</nav>,
+  WorkspaceMobileNav: ({ needsReply }: { needsReply: number | null }) => <nav data-testid="workspace-mobile-nav">{needsReply ?? 'unavailable'}</nav>,
   workspaceLabelForPath: () => 'Dashboard',
 }))
 
@@ -97,6 +97,8 @@ describe('WorkspaceFrame route persistence', () => {
     )
 
     expect(within(screen.getByRole('button', { name: 'Notifications' })).queryByText('0')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workspace-nav')).toHaveTextContent('unavailable')
+    expect(screen.getByTestId('workspace-mobile-nav')).toHaveTextContent('unavailable')
     expect(useQueryMock).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))

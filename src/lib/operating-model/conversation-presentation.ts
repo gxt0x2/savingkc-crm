@@ -41,6 +41,7 @@ const SMS_ACTIVITY_TYPES = new Set([
 
 const COMM_TYPES = new Set([
   'call',
+  'missed_call',
   ...SMS_ACTIVITY_TYPES,
   'email',
   'email_sent',
@@ -74,13 +75,57 @@ function normalized(value: unknown): string {
   return text(value)?.toLowerCase().replace(/[\s-]+/g, '_') ?? ''
 }
 
+function enabledFlag(value: unknown): boolean {
+  return value === true || normalized(value) === 'true'
+}
+
+function isLegacyConversationAlert(activity: ConversationActivityLike): boolean {
+  if (activity.activity_type !== 'sms') return false
+  const metadata = activity.metadata ?? {}
+  if (
+    text(metadata.direction) ||
+    Object.prototype.hasOwnProperty.call(metadata, 'to_agents') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'to_agent_phones') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'queue_contract') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'is_team') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'is_internal') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'internal') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'internal_alert') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'team_alert')
+  ) return false
+
+  return /just texted:\s*["“][\s\S]+["”]\s*—\s*(?:open\s+crm|https?:\/\/\S+\/leads\/\S+)\s*$/i
+    .test(activity.description?.trim() ?? '')
+}
+
+/** Internal notifications and queued placeholders are audit facts, not seller messages. */
+export function isInternalConversationActivity(activity: ConversationActivityLike): boolean {
+  const metadata = activity.metadata ?? {}
+  const direction = normalized(metadata.direction)
+  return (activity.activity_type === 'call' && normalized(metadata.outcome) === 'agent_claimed') ||
+    direction === 'outbound_alert' ||
+    direction === 'internal' ||
+    direction === 'team_alert' ||
+    Object.prototype.hasOwnProperty.call(metadata, 'to_agents') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'to_agent_phones') ||
+    Object.prototype.hasOwnProperty.call(metadata, 'queue_contract') ||
+    enabledFlag(metadata.is_team) ||
+    enabledFlag(metadata.is_internal) ||
+    enabledFlag(metadata.internal) ||
+    enabledFlag(metadata.internal_alert) ||
+    enabledFlag(metadata.team_alert) ||
+    isLegacyConversationAlert(activity)
+}
+
 export function getConversationDirection(activity: ConversationActivityLike): ConversationDirection {
+  if (isInternalConversationActivity(activity)) return null
   if (!COMM_TYPES.has(activity.activity_type)) return null
 
   const raw = normalized(activity.metadata?.direction)
   if (raw === 'inbound' || raw === 'received' || raw === 'in') return 'inbound'
   if (raw === 'outbound' || raw === 'sent' || raw === 'out') return 'outbound'
   if (
+    activity.activity_type === 'missed_call' ||
     activity.activity_type === 'sms_received' ||
     activity.activity_type === 'sms_inbound' ||
     activity.activity_type === 'email_received' ||
@@ -144,7 +189,7 @@ export function getCallOutcomePresentation(activity: ConversationActivityLike): 
     return { key: 'busy', label: 'Line busy', icon: 'phone_paused', tone: 'attention' }
   }
 
-  if (hasAny(outcomes, ['missed']) || /\bmissed\b/.test(description)) {
+  if (activity.activity_type === 'missed_call' || hasAny(outcomes, ['missed']) || /\bmissed\b/.test(description)) {
     return { key: 'missed', label: 'Missed', icon: 'phone_missed', tone: 'negative' }
   }
 
@@ -186,7 +231,7 @@ export function getCallParties(
 
 export function communicationActivitySummary(activity: ConversationActivityLike): string {
   const direction = getConversationDirection(activity)
-  if (activity.activity_type === 'call' || activity.activity_type === 'voicemail') {
+  if (activity.activity_type === 'call' || activity.activity_type === 'missed_call' || activity.activity_type === 'voicemail') {
     const outcome = getCallOutcomePresentation(activity)
     const directionLabel = direction === 'inbound' ? 'Inbound' : 'Outbound'
     const channel = activity.activity_type === 'voicemail' ? 'voicemail' : 'call'

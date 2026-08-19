@@ -5,6 +5,7 @@ import {
   getCallParties,
   getConversationDirection,
   getEligibleSmsReplySender,
+  isInternalConversationActivity,
   isSmsConversationActivityType,
 } from './conversation-presentation'
 
@@ -51,6 +52,7 @@ describe('conversation activity presentation', () => {
   })
 
   it.each([
+    ['missed_call', 'inbound'],
     ['sms', 'outbound'],
     ['sms_sent', 'outbound'],
     ['sms_outbound', 'outbound'],
@@ -59,8 +61,16 @@ describe('conversation activity presentation', () => {
   ] as const)('normalizes %s as an SMS message with %s direction', (activityType, direction) => {
     const activity = { activity_type: activityType, description: 'Hello', metadata: null }
 
-    expect(isSmsConversationActivityType(activityType)).toBe(true)
+    expect(isSmsConversationActivityType(activityType)).toBe(activityType !== 'missed_call')
     expect(getConversationDirection(activity)).toBe(direction)
+  })
+
+  it('treats a dedicated missed_call row as an actionable inbound call', () => {
+    const activity = { activity_type: 'missed_call', description: null, metadata: {} }
+
+    expect(getConversationDirection(activity)).toBe('inbound')
+    expect(getCallOutcomePresentation(activity)).toMatchObject({ key: 'missed', label: 'Missed' })
+    expect(communicationActivitySummary(activity)).toBe('Inbound call · Missed')
   })
 
   it('does not classify non-SMS system activity as an SMS message', () => {
@@ -97,5 +107,71 @@ describe('conversation activity presentation', () => {
   it('recognizes stored email variants even when legacy rows omit direction metadata', () => {
     expect(getConversationDirection({ activity_type: 'email_received', description: null, metadata: {} })).toBe('inbound')
     expect(getConversationDirection({ activity_type: 'email_sent', description: null, metadata: {} })).toBe('outbound')
+  })
+
+  it.each([
+    { direction: 'outbound_alert', to_agents: ['Casey'] },
+    { direction: 'inbound', to_agents: ['Casey'] },
+    { direction: 'outbound', to_agent_phones: ['+18165550111'] },
+    { direction: 'outbound', queue_contract: 'scheduled_sms_v2', status: 'pending' },
+    { direction: 'outbound', internal: true },
+    { direction: 'outbound', is_internal: true },
+    { direction: 'outbound', internal_alert: true },
+    { direction: 'inbound', is_team: true },
+    { direction: 'outbound', is_internal: 'true' },
+  ])('excludes internal and queued SMS audit rows from seller conversation direction: %o', (metadata) => {
+    const activity = { activity_type: 'sms', description: 'Internal audit row', metadata }
+
+    expect(isInternalConversationActivity(activity)).toBe(true)
+    expect(getConversationDirection(activity)).toBeNull()
+  })
+
+  it('retains the actual seller SMS emitted by the queue worker', () => {
+    const activity = {
+      activity_type: 'sms',
+      description: 'Your appointment is confirmed.',
+      metadata: {
+        direction: 'outbound',
+        trigger: 'sms_sender_worker',
+        source_task_id: '00000000-0000-4000-8000-000000000001',
+      },
+    }
+
+    expect(isInternalConversationActivity(activity)).toBe(false)
+    expect(getConversationDirection(activity)).toBe('outbound')
+  })
+
+  it('narrowly excludes legacy mirrored team alerts without hiding seller text', () => {
+    const legacyAlert = {
+      activity_type: 'sms',
+      description: 'Jay just texted: “Call me” — open CRM',
+      metadata: null,
+    }
+
+    expect(isInternalConversationActivity(legacyAlert)).toBe(true)
+    expect(getConversationDirection(legacyAlert)).toBeNull()
+    expect(isInternalConversationActivity({
+      ...legacyAlert,
+      metadata: { direction: 'inbound' },
+    })).toBe(false)
+    expect(isInternalConversationActivity({
+      ...legacyAlert,
+      description: 'Jay just texted: “Call me” — see you soon',
+    })).toBe(false)
+    expect(isInternalConversationActivity({
+      ...legacyAlert,
+      activity_type: 'note',
+    })).toBe(false)
+  })
+
+  it('excludes callback-claim control rows from seller call history', () => {
+    const claim = {
+      activity_type: 'call',
+      description: 'PPC form callback claimed by Ernest',
+      metadata: { outcome: 'agent_claimed', to: '+19135550123' },
+    }
+
+    expect(isInternalConversationActivity(claim)).toBe(true)
+    expect(getConversationDirection(claim)).toBeNull()
   })
 })

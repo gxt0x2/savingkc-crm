@@ -50,7 +50,7 @@ function isItemActive(item: NavItem, pathname: string) {
   return item.activeOn.some((prefix) => pathname.startsWith(prefix))
 }
 
-function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: NavItem; pathname: string; collapsed: boolean; needsReply: number }) {
+function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: NavItem; pathname: string; collapsed: boolean; needsReply: number | null }) {
   const active = isItemActive(item, pathname)
   const router = useRouter()
   return (
@@ -72,12 +72,12 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
     >
       <Icon name={item.icon} className={cn('text-[19px]', active ? 'text-[var(--crm-brand)]' : 'text-current')} />
       <span className={cn('min-w-0 flex-1 truncate', collapsed && 'sr-only')}>{item.label}</span>
-      {item.label === 'Conversations' && needsReply > 0 ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[9px] font-black text-white">{needsReply}</span> : null}
+      {item.label === 'Conversations' && needsReply !== null && needsReply > 0 ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[9px] font-black text-white">{needsReply}</span> : null}
     </Link>
   )
 }
 
-export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: { needsReply: number; userEmail?: string | null; canReviewCalls?: boolean }) {
+export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: { needsReply: number | null; userEmail?: string | null; canReviewCalls?: boolean }) {
   const pathname = usePathname()
   const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
@@ -103,7 +103,7 @@ export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: 
   )
 }
 
-export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = false }: { needsReply: number; userEmail?: string | null; canReviewCalls?: boolean }) {
+export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = false }: { needsReply: number | null; userEmail?: string | null; canReviewCalls?: boolean }) {
   const pathname = usePathname()
   const router = useRouter()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -144,7 +144,7 @@ export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = fal
       <nav className="fixed inset-x-0 bottom-0 z-[60] grid h-[calc(4.25rem+env(safe-area-inset-bottom))] grid-cols-5 border-t border-[var(--crm-border)] bg-[color:var(--crm-surface)]/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(0,0,0,.12)] backdrop-blur-xl lg:hidden" aria-label="Primary CRM navigation">
         {primaryItems.map((item) => {
           const active = isItemActive(item, pathname)
-          return <Link key={item.label} href={item.href} aria-current={active ? 'page' : undefined} className={cn('relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold', active ? 'text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={item.icon} className="text-[22px]" /><span className="max-w-full truncate">{item.label === 'Conversations' ? 'Inbox' : item.label}</span>{item.label === 'Conversations' && needsReply > 0 ? <span className="absolute right-[18%] top-1.5 min-w-4 rounded-full bg-[var(--crm-brand)] px-1 text-center text-[9px] text-white">{needsReply > 99 ? '99+' : needsReply}</span> : null}</Link>
+          return <Link key={item.label} href={item.href} aria-current={active ? 'page' : undefined} className={cn('relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold', active ? 'text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={item.icon} className="text-[22px]" /><span className="max-w-full truncate">{item.label === 'Conversations' ? 'Inbox' : item.label}</span>{item.label === 'Conversations' && needsReply !== null && needsReply > 0 ? <span className="absolute right-[18%] top-1.5 min-w-4 rounded-full bg-[var(--crm-brand)] px-1 text-center text-[9px] text-white">{needsReply > 99 ? '99+' : needsReply}</span> : null}</Link>
         })}
         <button type="button" onClick={() => setMoreOpen(true)} aria-expanded={moreOpen} className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold text-[var(--crm-text-muted)]"><Icon name="menu" className="text-[22px]" /><span>More</span></button>
       </nav>

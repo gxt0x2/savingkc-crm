@@ -2,6 +2,7 @@ import 'server-only'
 
 import { unstable_cache } from 'next/cache'
 import type { ConversationHubActivity } from '@/lib/operating-model/conversation-hub'
+import { getConversationDirection } from '@/lib/operating-model/conversation-presentation'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const CONVERSATION_ACTIVITY_CACHE_TAG = 'conversation-activities'
@@ -24,6 +25,7 @@ const ACTIVITY_TYPES = [
 
 const COMMUNICATION_ACTIVITY_TYPES = new Set([
   'call',
+  'missed_call',
   'sms',
   'sms_sent',
   'sms_received',
@@ -43,7 +45,7 @@ export interface ConversationActivitySnapshotRow extends ConversationHubActivity
 }
 
 export function isConversationCommunicationActivity(activity: ConversationActivitySnapshotRow): boolean {
-  return COMMUNICATION_ACTIVITY_TYPES.has(activity.activity_type)
+  return COMMUNICATION_ACTIVITY_TYPES.has(activity.activity_type) && getConversationDirection(activity) !== null
 }
 
 export function isConversationSupportingActivity(activity: ConversationActivitySnapshotRow): boolean {

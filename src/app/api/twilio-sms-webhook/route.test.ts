@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   markLeadAsGoogleAdsPhoneLead: vi.fn(),
   notifyGoogleAdsTeam: vi.fn(),
   resolveGoogleAdsLeadContext: vi.fn(),
+  processInboundSmsConsent: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -45,6 +46,10 @@ vi.mock('@/lib/sms-opt-out', () => ({
   handleOptIn: mocks.handleOptIn,
   isStopKeyword: mocks.isStopKeyword,
   isStartKeyword: mocks.isStartKeyword,
+}))
+
+vi.mock('@/lib/sms-consent-audit', () => ({
+  processInboundSmsConsent: mocks.processInboundSmsConsent,
 }))
 
 vi.mock('@/lib/manifest-sync', () => ({
@@ -95,9 +100,9 @@ import { POST } from './route'
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 const PROSPECT_PHONE = '+19135550123'
 
-function makeSmsRequest(body: string): Request {
+function makeSmsRequest(body: string, from = PROSPECT_PHONE): Request {
   const form = new FormData()
-  form.set('From', PROSPECT_PHONE)
+  form.set('From', from)
   form.set('To', '+1816608559')
   form.set('Body', body)
   form.set('MessageSid', `SM-${body}`)
@@ -151,6 +156,11 @@ describe('twilio SMS webhook seller responses', () => {
     mocks.isOptedOut.mockResolvedValue(false)
     mocks.handleOptOut.mockResolvedValue(undefined)
     mocks.handleOptIn.mockResolvedValue(undefined)
+    mocks.processInboundSmsConsent.mockImplementation(async (input: { keyword: string }) => (
+      input.keyword.trim().toUpperCase() === 'STOP'
+        ? '<Response><Message>You have been unsubscribed</Message></Response>'
+        : null
+    ))
     mocks.isStopKeyword.mockImplementation((value: string) => value.trim().toUpperCase() === 'STOP')
     mocks.isStartKeyword.mockImplementation((value: string) => value.trim().toUpperCase() === 'START')
     mocks.onCommunicationEvent.mockResolvedValue(undefined)
@@ -199,6 +209,37 @@ describe('twilio SMS webhook seller responses', () => {
     const response = await POST(makeSmsRequest('STOP'))
 
     await expect(response.text()).resolves.toContain('You have been unsubscribed')
-    expect(mocks.handleOptOut).toHaveBeenCalledWith(PROSPECT_PHONE, 'STOP')
+    expect(mocks.processInboundSmsConsent).toHaveBeenCalledWith(expect.objectContaining({
+      from: PROSPECT_PHONE,
+      messageSid: 'SM-STOP',
+      source: 'twilio_sms_webhook',
+    }))
+  })
+
+  it('returns a retryable failure when TCPA STOP cannot be persisted', async () => {
+    mocks.processInboundSmsConsent.mockRejectedValue(new Error('suppression database unavailable'))
+
+    const response = await POST(makeSmsRequest('STOP'))
+
+    expect(response.status).toBe(503)
+    await expect(response.text()).resolves.toBe(EMPTY_TWIML)
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(mocks.processInboundSmsConsent).toHaveBeenCalledOnce()
+  })
+
+  it('marks every team-originated activity as internal conversation traffic', async () => {
+    const response = await POST(makeSmsRequest('Internal coordination', '+18167564943'))
+
+    await expect(response.text()).resolves.toBe(EMPTY_TWIML)
+    const teamSmsRows = inserts.filter(({ table, payload }) => (
+      table === 'lead_activities' &&
+      typeof payload === 'object' &&
+      payload !== null &&
+      (payload as { activity_type?: string }).activity_type === 'sms'
+    ))
+    expect(teamSmsRows.length).toBeGreaterThan(0)
+    for (const row of teamSmsRows) {
+      expect(row.payload).toMatchObject({ metadata: { is_team: true } })
+    }
   })
 })

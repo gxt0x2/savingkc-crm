@@ -196,6 +196,7 @@ export async function POST(request: Request) {
             message_sid: msg.sid,
             trigger: 'sms_sender_worker',
             source_task_id: task.id,
+            ...(isInternal ? { is_internal: true } : {}),
           },
         })
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const AGENT_NAMES = new Map([
@@ -7,6 +8,8 @@ const AGENT_NAMES = new Map([
   ['casey', 'Casey'],
   ['gertha', 'Gertha'],
 ])
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function cleanText(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -20,12 +23,17 @@ function cleanAgent(value: unknown): string | null | undefined {
 
 export async function PATCH(req: Request) {
   try {
+    const authenticatedActor = await resolveAuthenticatedActor()
+    if (!authenticatedActor) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await req.json()
     const leadId = cleanText(body?.leadId)
     const assignedAgent = cleanAgent(body?.assignedAgent)
 
-    if (!leadId) {
-      return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 })
+    if (!leadId || !UUID_PATTERN.test(leadId)) {
+      return NextResponse.json({ success: false, error: 'A valid leadId is required' }, { status: 400 })
     }
     if (assignedAgent === undefined) {
       return NextResponse.json({ success: false, error: 'Choose Ernest, Casey, Gertha, or Unassigned' }, { status: 400 })
@@ -39,7 +47,8 @@ export async function PATCH(req: Request) {
       .maybeSingle()
 
     if (currentError) {
-      return NextResponse.json({ success: false, error: currentError.message }, { status: 500 })
+      console.error('[conversations/assignment] lead lookup failed:', currentError.message)
+      return NextResponse.json({ success: false, error: 'Conversation assignment could not be loaded' }, { status: 500 })
     }
     if (!current) {
       return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 })
@@ -51,7 +60,8 @@ export async function PATCH(req: Request) {
       .eq('id', leadId)
 
     if (updateError) {
-      return NextResponse.json({ success: false, error: updateError.message }, { status: 500 })
+      console.error('[conversations/assignment] lead update failed:', updateError.message)
+      return NextResponse.json({ success: false, error: 'Conversation assignment could not be saved' }, { status: 500 })
     }
 
     const previousAgent = cleanText(current.assigned_agent)
@@ -60,7 +70,7 @@ export async function PATCH(req: Request) {
       lead_id: leadId,
       activity_type: 'status_change',
       description: label,
-      agent: 'Ernest',
+      agent: authenticatedActor.name,
       metadata: {
         source: 'conversation_hub',
         hub_action: assignedAgent ? 'agent_assigned' : 'agent_unassigned',

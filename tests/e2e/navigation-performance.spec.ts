@@ -8,7 +8,7 @@ const MAX_NAVIGATION_MS = 1_000
 const MAX_TAB_MS = 500
 
 const contact = {
-  id: 'performance-seller-1',
+  id: '00000000-0000-4000-8000-000000000001',
   fullName: 'Performance Seller',
   phone: '+18165550101',
   email: 'performance@example.com',
@@ -38,6 +38,8 @@ const contact = {
 
 const conversation = {
   id: contact.id,
+  threadKey: `lead:${contact.id}`,
+  kind: 'lead',
   full_name: contact.fullName,
   phone: contact.phone,
   email: contact.email,
@@ -140,6 +142,29 @@ async function installPerformanceFixtures(page: Page) {
   await page.route('**/api/conversations/hub**', (route) => fulfillJson(route, {
     items: [conversation],
     unmatchedActivities: [],
+    pageInfo: { limit: 50, hasMore: false, nextCursor: null },
+    source: 'projection',
+    degraded: false,
+  }))
+  await page.route('**/api/conversations/timeline**', (route) => fulfillJson(route, {
+    threadId: conversation.id,
+    threadKey: conversation.threadKey,
+    items: [{
+      id: '00000000-0000-4000-8000-000000000002',
+      lead_id: contact.id,
+      activity_type: 'sms',
+      type: 'sms',
+      kind: 'message',
+      channel: 'sms',
+      direction: 'outbound',
+      description: conversation.lastMessage,
+      agent: contact.owner,
+      metadata: { direction: 'outbound', from: '+18166088808', to: contact.phone },
+      created_at: contact.lastContactAt,
+    }],
+    pageInfo: { limit: 50, hasMore: false, nextCursor: null },
+    source: 'projection',
+    degraded: false,
   }))
   await page.route('**/api/calendar/tasks**', (route) => fulfillJson(route, {
     success: true,
@@ -204,7 +229,10 @@ function watchSameOriginApiFailures(page: Page) {
   })
   page.on('requestfailed', (request) => {
     if (isSameOriginApi(request.url())) {
-      failures.push(`${request.method()} ${new URL(request.url()).pathname} failed: ${request.failure()?.errorText ?? 'unknown error'}`)
+      const errorText = request.failure()?.errorText ?? 'unknown error'
+      // Fast route changes legitimately cancel work from the page being left.
+      if (errorText === 'net::ERR_ABORTED') return
+      failures.push(`${request.method()} ${new URL(request.url()).pathname} failed: ${errorText}`)
     }
   })
 }
@@ -222,7 +250,11 @@ async function expectRouteReady(page: Page, route: string) {
     return
   }
   if (pathname === '/conversations') {
-    await expect(page.getByRole('heading', { name: contact.fullName, exact: true }).first()).toBeVisible()
+    if ((page.viewportSize()?.width ?? 1280) < 768) {
+      await expect(page.getByRole('button', { name: new RegExp(contact.fullName) }).first()).toBeVisible()
+    } else {
+      await expect(page.getByRole('heading', { name: contact.fullName, exact: true }).first()).toBeVisible()
+    }
     await expect(page.getByRole('status', { name: 'Loading conversations' })).toHaveCount(0)
     return
   }

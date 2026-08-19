@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
 import { formatLeadSource, getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
-import type { ConversationDecisionTag } from '@/lib/operating-model/conversation-tags'
 import { LeadStatusControl } from '@/components/leads/lead-status-control'
 
 interface ContactDetails {
@@ -26,7 +25,6 @@ interface ContactDetails {
   offer_amount?: number | null
   source?: string | null
   appointment_date?: string | null
-  decision_tags?: ConversationDecisionTag[]
   primaryNextAction?: {
     id: string
     title: string
@@ -39,16 +37,6 @@ interface ContactDetails {
 function money(value?: number | null) {
   return value ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value) : '—'
 }
-
-const stages = ['New', 'Contacted', 'Opportunity', 'Offer']
-
-const TAG_TONE = {
-  brand: 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]',
-  info: 'border-[var(--crm-info)]/30 bg-[var(--crm-info-soft)] text-[var(--crm-info)]',
-  success: 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]',
-  violet: 'border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]',
-  neutral: 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]',
-} as const
 
 export function ContactDetailsPanel({
   contact,
@@ -63,18 +51,16 @@ export function ContactDetailsPanel({
 }) {
   if (!contact) {
     return (
-      <aside className="hidden w-[360px] shrink-0 items-center justify-center border-l border-[var(--crm-border)] bg-[var(--crm-surface)] p-8 text-sm text-[var(--crm-text-dim)] xl:flex">
+      <aside className="hidden w-[360px] shrink-0 items-center justify-center border-l border-[var(--crm-border)] bg-[var(--crm-surface)] p-8 text-sm text-[var(--crm-text-dim)] 2xl:flex">
         Select a conversation to view contact details.
       </aside>
     )
   }
 
   const name = getDisplayLeadName(contact.full_name, contact.phone)
-  const currentStage = Math.max(0, stages.findIndex((stage) => stage.toLowerCase() === contact.station?.toLowerCase()))
-  const tags = contact.decision_tags ?? []
 
   return (
-    <aside className="hidden w-[360px] shrink-0 overflow-y-auto border-l border-[var(--crm-border)] bg-[var(--crm-surface)] xl:block">
+    <aside className="hidden w-[360px] shrink-0 overflow-y-auto border-l border-[var(--crm-border)] bg-[var(--crm-surface)] 2xl:block">
       <div className="flex h-[76px] items-center justify-between border-b border-[var(--crm-border)] px-5">
         <h2 className="flex items-center gap-2 text-[17px] font-bold text-[var(--crm-ink)]"><Icon name="contact_page" className="text-[20px] text-[var(--crm-brand)]" />Contact details</h2>
         {onClose ? (
@@ -121,15 +107,8 @@ export function ContactDetailsPanel({
       </section>
 
       <section className="border-b border-[var(--crm-border)] p-5">
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3>
-        <div className="flex overflow-hidden rounded">
-          {stages.map((stage, index) => (
-            <div key={stage} className={`flex-1 py-2 text-center text-[10px] font-bold ${index === currentStage ? 'bg-[var(--crm-success)] text-white' : index < currentStage ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>
-              {stage}
-            </div>
-          ))}
-        </div>
-        <dl className="mt-4 space-y-2 text-sm">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="analytics" className="text-[18px] text-[var(--crm-success)]" />Deal facts</h3>
+        <dl className="space-y-2 text-sm">
           <div className="flex justify-between"><dt className="text-slate-500">Motivation score</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{contact.motivation_score ?? '—'}{contact.motivation_score ? '/100' : ''}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Estimated value</dt><dd className="font-semibold">{money(contact.arv)}</dd></div>
           <div className="flex justify-between"><dt className="text-slate-500">Target offer</dt><dd className="font-semibold">{money(contact.offer_amount)}</dd></div>
@@ -165,21 +144,6 @@ export function ContactDetailsPanel({
         </section>
       ) : null}
 
-      <section className="p-5">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-ink)]"><Icon name="sell" className="text-[18px] text-[var(--crm-info)]" />Decision signals</h3>
-        <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Durable facts Ari and agents can use for routing, follow-up, and offer strategy.</p>
-        <div className="flex flex-wrap gap-2">
-          {tags.length ? tags.map((tag) => (
-            <span key={tag.id} className={`mt-3 rounded border px-2 py-1 text-xs font-semibold ${TAG_TONE[tag.tone]}`}>
-              <span className="opacity-70">{tag.category} · </span>{tag.label}
-            </span>
-          )) : (
-            <div className="mt-3 rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface-subtle)] px-3 py-3 text-xs leading-5 text-[var(--crm-text-muted)]">
-              No decision signals captured. Add motivation, seller situation, property condition, or a blocker when it becomes known.
-            </div>
-          )}
-        </div>
-      </section>
     </aside>
   )
 }

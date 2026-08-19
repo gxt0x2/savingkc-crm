@@ -47,7 +47,16 @@ export async function POST(req: NextRequest) {
         const error = result.reason === 'opted_out' ? 'This number has opted out of SMS messages' : 'Duplicate SMS sent within 24 hours'
         return NextResponse.json({ error }, { status: result.reason === 'opted_out' ? 400 : 409, headers: mobileNoStoreHeaders() })
       }
-      return NextResponse.json({ success: true, channel, sid: result.sid, from: result.from }, { headers: mobileNoStoreHeaders() })
+      return NextResponse.json({
+        success: true,
+        channel,
+        sent: true,
+        persisted: result.persisted,
+        deliveryState: result.deliveryState,
+        warning: result.warning,
+        sid: result.sid,
+        from: result.from,
+      }, { headers: mobileNoStoreHeaders() })
     }
 
     if (!lead.email) return NextResponse.json({ error: 'This contact has no email address' }, { status: 400, headers: mobileNoStoreHeaders() })

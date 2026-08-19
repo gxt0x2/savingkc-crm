@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
+  resolveAuthenticatedActor: vi.fn(),
+}))
+
+vi.mock('@/lib/api/authenticated-actor', () => ({
+  resolveAuthenticatedActor: mocks.resolveAuthenticatedActor,
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -11,15 +16,18 @@ vi.mock('@/lib/supabase-lazy', () => ({
 import { POST } from './route'
 
 let insertedActivities: unknown[]
+const LEAD_ID = '00000000-0000-4000-8000-000000000001'
 
 function makeRequest(body: Record<string, unknown>): Request {
   return new Request('https://crm.savingkc.com/api/conversations/thread-state', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      leadId: 'lead-1',
+      threadKey: `lead:${LEAD_ID}`,
+      leadId: LEAD_ID,
       phone: '+19135550123',
-      agent: 'Casey',
+      agent: 'Spoofed Agent',
+      source: 'spoofed_source',
       prospectPhoneId: 'prospect-phone-1',
       ...body,
     }),
@@ -39,10 +47,11 @@ describe('conversation thread state actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     insertedActivities = []
+    mocks.resolveAuthenticatedActor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
     mocks.from.mockImplementation((table: string) => tableChain(table))
   })
 
-  it('logs mark read as a hub action', async () => {
+  it('logs mark read as the authenticated actor and ignores a spoofed agent', async () => {
     const response = await POST(makeRequest({ action: 'mark_read' }))
     const payload = await response.json()
 
@@ -50,15 +59,73 @@ describe('conversation thread state actions', () => {
     expect(payload.action).toBe('mark_read')
     expect(insertedActivities).toHaveLength(1)
     expect(insertedActivities[0]).toMatchObject({
-      lead_id: 'lead-1',
+      lead_id: LEAD_ID,
       activity_type: 'status_change',
+      agent: 'Casey',
       metadata: {
         hub_action: 'mark_read',
-        source: 'dialer_prospecting_hub',
-        phone: '+19135550123',
+        source: 'conversation_hub',
+        thread_key: `lead:${LEAD_ID}`,
         prospect_phone_id: 'prospect-phone-1',
       },
     })
+    expect((insertedActivities[0] as { metadata: Record<string, unknown> }).metadata).not.toHaveProperty('phone')
+  })
+
+  it('persists an unmatched phone thread without placing its virtual id in lead_id', async () => {
+    const response = await POST(makeRequest({
+      action: 'mark_read',
+      threadKey: 'phone:(913) 555-0123',
+      leadId: 'unmatched:+19135550123',
+      phone: '913-555-0123',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(insertedActivities[0]).toMatchObject({
+      lead_id: null,
+      agent: 'Casey',
+      metadata: {
+        source: 'conversation_hub',
+        hub_action: 'mark_read',
+        thread_key: 'phone:+19135550123',
+        phone: '+19135550123',
+      },
+    })
+  })
+
+  it('preserves the allowlisted dialer provenance without accepting arbitrary sources', async () => {
+    const response = await POST(makeRequest({
+      action: 'mark_unread',
+      source: 'dialer_prospecting_hub',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(insertedActivities[0]).toMatchObject({
+      metadata: { source: 'dialer_prospecting_hub', hub_action: 'mark_unread' },
+    })
+  })
+
+  it('rejects mismatched phone thread identity before inserting', async () => {
+    const response = await POST(makeRequest({
+      action: 'mark_read',
+      threadKey: 'phone:+19135550123',
+      leadId: null,
+      phone: '+19135550999',
+    }))
+
+    expect(response.status).toBe(400)
+    expect(insertedActivities).toHaveLength(0)
+  })
+
+  it('denies unauthenticated mutations before touching conversation data', async () => {
+    mocks.resolveAuthenticatedActor.mockResolvedValue(null)
+
+    const response = await POST(makeRequest({ action: 'mark_read' }))
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'Unauthorized' })
+    expect(mocks.from).not.toHaveBeenCalled()
+    expect(insertedActivities).toHaveLength(0)
   })
 
   it('requires a valid due date when creating reminders', async () => {

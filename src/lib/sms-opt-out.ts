@@ -29,12 +29,14 @@ export function isStartKeyword(text: string): boolean {
  * Check if a phone number is opted out
  */
 export async function isOptedOut(phone: string): Promise<boolean> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('sms_opt_outs')
     .select('is_opted_out')
     .eq('phone', canonicalPhone(phone))
     .eq('is_opted_out', true)
-    .single()
+    .maybeSingle()
+
+  if (error) throw new Error('SMS suppression status could not be verified')
 
   return !!data
 }
@@ -43,7 +45,7 @@ export async function isOptedOut(phone: string): Promise<boolean> {
  * Handle an opt-out request (STOP keyword)
  */
 export async function handleOptOut(phone: string, keyword: string): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('sms_opt_outs')
     .upsert(
       {
@@ -54,13 +56,15 @@ export async function handleOptOut(phone: string, keyword: string): Promise<void
       },
       { onConflict: 'phone' }
     )
+
+  if (error) throw new Error('SMS opt-out could not be saved')
 }
 
 /**
  * Handle an opt-in request (START keyword)
  */
 export async function handleOptIn(phone: string): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('sms_opt_outs')
     .upsert(
       {
@@ -71,4 +75,6 @@ export async function handleOptIn(phone: string): Promise<void> {
       },
       { onConflict: 'phone' }
     )
+
+  if (error) throw new Error('SMS opt-in could not be saved')
 }

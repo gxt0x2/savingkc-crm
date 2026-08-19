@@ -46,10 +46,12 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
 
   // Fetch templates on mount
   useEffect(() => {
-    fetch('/api/sms-templates')
+    const controller = new AbortController()
+    fetch('/api/sms-templates', { signal: controller.signal })
       .then(r => r.json())
       .then(data => setTemplates(data.templates || []))
       .catch(() => {})
+    return () => controller.abort()
   }, [])
 
   async function handleSend() {
@@ -89,7 +91,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
       if (!res.ok) throw new Error(data.error || 'Send failed')
 
       if (data.deliveryState === 'delivered_not_persisted') {
-        setDeliveryWarning(data.warning || 'Email delivered, but CRM history could not be saved. Do not resend this email.')
+        setDeliveryWarning(data.warning || 'Message delivered, but CRM history could not be saved. Do not resend it.')
       }
 
       setMessage('')
@@ -103,7 +105,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       handleSend()
     }
@@ -118,8 +120,14 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
     setShowTemplates(false)
   }
 
+  function modeUnavailable(mode: ComposeMode) {
+    if (mode === 'sms') return !phone
+    if (mode === 'email') return !email
+    return !leadId || leadId.startsWith('unmatched:')
+  }
+
   return (
-    <div className="relative z-10 flex-shrink-0 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-4">
+    <div className="sticky bottom-0 z-10 flex-shrink-0 border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-3 md:p-4">
       <div className="overflow-hidden rounded-xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)]">
         {/* Toggle Tabs */}
         <div className="flex border-b border-outline-variant/5">
@@ -128,9 +136,10 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               key={mode.key}
               type="button"
               onClick={() => setActiveMode(mode.key)}
+              disabled={modeUnavailable(mode.key)}
               aria-pressed={activeMode === mode.key}
               className={cn(
-                'flex items-center gap-2 border-b-2 px-5 py-2.5 text-xs font-bold transition-all',
+                'flex items-center gap-2 border-b-2 px-3 py-2.5 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-40 md:px-5',
                 activeMode === mode.key
                   ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]'
                   : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'
@@ -144,7 +153,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
 
         {/* Error */}
         {error && (
-          <div className="px-6 pt-3 text-xs text-red-500 font-medium">{error}</div>
+          <div role="alert" className="px-6 pt-3 text-xs text-red-500 font-medium">{error}</div>
         )}
         {deliveryWarning && (
           <div role="status" className="px-6 pt-3 text-xs font-semibold text-[var(--crm-warning)]">
@@ -182,8 +191,9 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
 
         {/* Input Area */}
         <div className="flex items-end gap-3 p-3">
-          <div className="flex-1">
+          <div className="relative flex-1">
             <textarea
+              aria-label={activeMode === 'note' ? 'Internal note' : activeMode === 'email' ? 'Email message' : 'Text message'}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -199,12 +209,14 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               disabled={sending}
             />
             <div className="flex gap-2 p-2">
-              <button type="button" onClick={() => setMessage((value) => `${value}${value ? ' ' : ''}🙂`)} title="Add emoji" className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
+              <button type="button" onClick={() => setMessage((value) => `${value}${value ? ' ' : ''}🙂`)} aria-label="Add emoji" title="Add emoji" className="p-1.5 hover:bg-surface-container rounded-lg transition-all">
                 <Icon name="mood" className="text-on-surface-variant text-lg" />
               </button>
               <button
                 type="button"
                 onClick={() => setShowTemplates(!showTemplates)}
+                aria-expanded={showTemplates}
+                aria-label="Open message templates"
                 className="p-1.5 hover:bg-surface-container rounded-lg transition-all relative"
                 title="Templates"
               >

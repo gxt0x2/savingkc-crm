@@ -82,6 +82,20 @@ describe('conversation activity snapshot', () => {
 
   it('keeps communication and workflow support rows separate for the hub', () => {
     expect(isConversationCommunicationActivity(activity({ activity_type: 'call' }))).toBe(true)
+    expect(isConversationCommunicationActivity(activity({ activity_type: 'missed_call' }))).toBe(true)
+    expect(isConversationCommunicationActivity(activity({
+      activity_type: 'sms',
+      metadata: { direction: 'outbound', is_internal: true },
+    }))).toBe(false)
+    expect(isConversationCommunicationActivity(activity({
+      activity_type: 'sms',
+      metadata: { direction: 'outbound', queue_contract: 'scheduled_sms_v2' },
+    }))).toBe(false)
+    expect(isConversationCommunicationActivity(activity({
+      activity_type: 'sms',
+      description: 'Jamie just texted: “Call me” — open CRM',
+      metadata: null,
+    }))).toBe(false)
     expect(isConversationCommunicationActivity(activity({ activity_type: 'task' }))).toBe(false)
     expect(isConversationSupportingActivity(activity({ activity_type: 'task' }))).toBe(true)
     expect(isConversationSupportingActivity(activity({ activity_type: 'status_change' }))).toBe(true)
