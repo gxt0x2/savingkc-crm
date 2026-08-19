@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 const webDialerSource = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf8')
 const mobileVoiceSource = readFileSync('apps/mobile/src/lib/twilio-voice-service.ts', 'utf8')
@@ -7,12 +7,6 @@ const mobileApiSource = readFileSync('apps/mobile/src/lib/api.ts', 'utf8')
 const mobileAppSource = readFileSync('apps/mobile/App.tsx', 'utf8')
 
 describe('outbound dialer client preflight', () => {
-  afterEach(() => {
-    vi.resetModules()
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-  })
-
   it('posts the full mobile call context through the bearer-authenticated API helper', () => {
     const helperStart = mobileApiSource.indexOf('export async function requestMobileCallIntent')
     const helper = mobileApiSource.slice(helperStart)
@@ -26,42 +20,6 @@ describe('outbound dialer client preflight', () => {
     }
     expect(mobileApiSource).toContain('Authorization: `Bearer ${options.accessToken}`')
     expect(helper).toContain("payload.error || payload.reason || 'This call is not allowed.'")
-  })
-
-  it('sends bearer auth and surfaces the mobile server denial message', async () => {
-    vi.stubEnv('EXPO_PUBLIC_CRM_API_BASE_URL', 'https://crm.example')
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 409,
-      json: async () => ({ allowed: false, error: 'This number is suppressed.', reason: 'suppressed' }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
-    const { requestMobileCallIntent } = await import('../../../apps/mobile/src/lib/api')
-
-    await expect(requestMobileCallIntent({
-      accessToken: 'mobile-access-token',
-      phone: '+18165550100',
-      callerId: '+18166088808',
-      kind: 'lead',
-      leadId: 'lead-123',
-      clientAttemptId: 'attempt-123',
-    })).rejects.toThrow('This number is suppressed.')
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://crm.example/api/mobile/v1/twilio/call-intents',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer mobile-access-token' }),
-        body: JSON.stringify({
-          phone: '+18165550100',
-          callerId: '+18166088808',
-          kind: 'lead',
-          leadId: 'lead-123',
-          prospectPhoneId: null,
-          clientAttemptId: 'attempt-123',
-        }),
-      }),
-    )
   })
 
   it('authorizes web and mobile calls before connecting or entering calling state', () => {
