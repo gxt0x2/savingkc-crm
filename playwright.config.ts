@@ -33,7 +33,7 @@ export default defineConfig({
     extraHTTPHeaders: useAuthProxyTestBypass
       ? { 'x-skc-test-auth-bypass': authProxyTestBypassSecret }
       : undefined,
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   projects: [

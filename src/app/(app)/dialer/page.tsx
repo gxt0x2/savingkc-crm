@@ -1,22 +1,26 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
-import { HeirsSection } from '@/components/leads/heirs-section'
-import { SmsComposeModal } from '@/components/leads/sms-compose-modal'
-import { SmsThreadPanel } from '@/components/leads/sms-thread-panel'
 import { CommsTimeline, CommsSummaryBar } from '@/components/leads/comms-timeline'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
-import { BulkSmsModal } from '@/components/leads/bulk-sms-modal'
-import { DialerConversationHub } from '@/components/dialer/dialer-conversation-hub'
-import { createClient } from '@/lib/supabase/client'
 import { calculateTemperature } from '@/lib/lead-temperature'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { CallerIdMode, DialerCallerPlan, normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { DEAD_REASONS } from '@/lib/dialer-dispositions'
+
+const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
+const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
+const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
+const BulkSmsModal = dynamic(() => import('@/components/leads/bulk-sms-modal').then((module) => module.BulkSmsModal))
+const DialerConversationHub = dynamic(
+  () => import('@/components/dialer/dialer-conversation-hub').then((module) => module.DialerConversationHub),
+  { loading: () => <div role="status" className="grid min-h-[50vh] place-items-center text-sm font-semibold text-[var(--ck-text-muted)]">Opening conversations…</div> },
+)
 
 // URL contract:
 //   /dialer?lead_ids=<uuid>,<uuid>,...
@@ -507,6 +511,7 @@ function DialerPageInner() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
   const [leftTab, setLeftTab] = useState<'texts' | 'activity' | 'recent_calls'>('texts')
+  const currentLeadIdRef = useRef<string | null>(null)
 
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
@@ -525,6 +530,7 @@ function DialerPageInner() {
   const [markDeadError, setMarkDeadError] = useState<string | null>(null)
 
   const currentLeadId: string | null = leadIds[currentIndex] ?? null
+  currentLeadIdRef.current = currentLeadId
   const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? null : null
   const currentProspect: ProspectSummary | null = currentLeadId ? prospects[currentLeadId] ?? null : null
   const currentManifest: ManifestShape | null = currentLeadId ? manifests[currentLeadId] ?? null : null
@@ -635,29 +641,44 @@ function DialerPageInner() {
   // Load manifest + activities for the current lead only (small fetch, refreshed on advance)
   useEffect(() => {
     if (!currentLeadId) return
-    const supabase = createClient()
+    const requestedLeadId = currentLeadId
+    let cancelled = false
     async function load() {
-      const [{ data: mRow }, { data: aRows }] = await Promise.all([
-        supabase.from('manifests').select('manifest').eq('lead_id', currentLeadId).limit(1).maybeSingle(),
-        supabase.from('lead_activities').select('id, activity_type, description, agent, metadata, created_at')
-          .eq('lead_id', currentLeadId).order('created_at', { ascending: false }).limit(50),
-      ])
-      setManifests((prev) => ({ ...prev, [currentLeadId!]: (mRow as { manifest: ManifestShape } | null)?.manifest ?? null }))
-      setActivities((aRows as Activity[] | null) ?? [])
+      try {
+        const { createClient } = await import('@/lib/supabase/client')
+        const supabase = createClient()
+        const [{ data: mRow }, { data: aRows }] = await Promise.all([
+          supabase.from('manifests').select('manifest').eq('lead_id', requestedLeadId).limit(1).maybeSingle(),
+          supabase.from('lead_activities').select('id, activity_type, description, agent, metadata, created_at')
+            .eq('lead_id', requestedLeadId).order('created_at', { ascending: false }).limit(50),
+        ])
+        if (cancelled || currentLeadIdRef.current !== requestedLeadId) return
+        setManifests((prev) => ({ ...prev, [requestedLeadId]: (mRow as { manifest: ManifestShape } | null)?.manifest ?? null }))
+        setActivities((aRows as Activity[] | null) ?? [])
+      } catch (error) {
+        console.error('[Dialer] Could not load lead activity', error)
+      }
     }
-    load()
+    void load()
+    return () => { cancelled = true }
   }, [currentLeadId])
 
   const refreshActivities = useCallback(async () => {
     if (!currentLeadId) return
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('lead_activities')
-      .select('id, activity_type, description, agent, metadata, created_at')
-      .eq('lead_id', currentLeadId)
-      .order('created_at', { ascending: false })
-      .limit(50)
-    setActivities((data as Activity[] | null) ?? [])
+    const requestedLeadId = currentLeadId
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('lead_activities')
+        .select('id, activity_type, description, agent, metadata, created_at')
+        .eq('lead_id', requestedLeadId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (currentLeadIdRef.current === requestedLeadId) setActivities((data as Activity[] | null) ?? [])
+    } catch (error) {
+      console.error('[Dialer] Could not refresh lead activity', error)
+    }
   }, [currentLeadId])
 
   // Refresh activities when an attempt is logged.
@@ -675,6 +696,7 @@ function DialerPageInner() {
   }, [currentLeadId, refreshActivities])
 
   useEffect(() => {
+    if (leadIds.length === 0 || leftTab !== 'recent_calls') return
     async function loadRecentCalls() {
       try {
         const res = await fetch('/api/call-log?limit=50')
@@ -683,7 +705,7 @@ function DialerPageInner() {
       } catch {}
     }
     loadRecentCalls()
-  }, [])
+  }, [leadIds.length, leftTab])
 
   useEffect(() => {
     if (!sessionSavedListId || leadIds.length === 0 || !resumeHydrated) return
@@ -1087,6 +1109,7 @@ function DialerPageInner() {
               </div>
               <Link
                 href={`/leads/${currentLeadId}`}
+                prefetch={false}
                 className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] rounded-md px-2 py-1 transition-colors"
                 title="Open full lead profile in a new tab"
                 target="_blank"
@@ -2321,13 +2344,13 @@ function DialerHome() {
 
   return (
     <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${homeSection === 'conversations' ? 'flex h-full max-w-[1440px] flex-col py-4' : 'max-w-[1440px] py-6 pb-20'}`}>
-      <BulkSmsModal
+      {showBulkSms ? <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
         leadIds={(selectedCount > 0 ? selectedQueue : queue).map((lead) => lead.id)}
         agent={agent}
         fromPhone={callerId}
-      />
+      /> : null}
       {homeSection === 'queue' && (
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">

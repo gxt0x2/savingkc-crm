@@ -37,6 +37,8 @@ const COMM_TYPES = new Set([
   'sms_inbound',
   'sms_outbound',
   'email',
+  'email_sent',
+  'email_received',
   'voicemail',
 ])
 
@@ -54,7 +56,12 @@ export function getConversationDirection(activity: ConversationActivityLike): Co
   const raw = normalized(activity.metadata?.direction)
   if (raw === 'inbound' || raw === 'received' || raw === 'in') return 'inbound'
   if (raw === 'outbound' || raw === 'sent' || raw === 'out') return 'outbound'
-  if (activity.activity_type === 'sms_received' || activity.activity_type === 'sms_inbound' || activity.activity_type === 'voicemail') {
+  if (
+    activity.activity_type === 'sms_received' ||
+    activity.activity_type === 'sms_inbound' ||
+    activity.activity_type === 'email_received' ||
+    activity.activity_type === 'voicemail'
+  ) {
     return 'inbound'
   }
   return 'outbound'

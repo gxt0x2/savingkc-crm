@@ -1,18 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { createContext, FormEvent, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, FormEvent, Suspense, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { GlobalDialerButton } from '@/components/telephony/global-dialer-button'
 import { useThemePreference } from '@/hooks/use-theme-preference'
-import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
 import { WorkspaceMobileNav, WorkspaceNav, workspaceLabelForPath } from './workspace-nav'
 import { WorkspaceContextNav } from './workspace-context-nav'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { GiraffeAssistant } from '@/components/ai/giraffe-assistant'
+import { GiraffeAssistantLauncher } from '@/components/ai/giraffe-assistant-launcher'
 
 type WorkspaceChromeContextValue = {
   commandBarHost: HTMLDivElement | null
@@ -78,28 +77,20 @@ export function WorkspaceFrame({
   const [pageCommandBarActive, setPageCommandBarActive] = useState(false)
   const [pageHeaderHidden, setPageHeaderHidden] = useState(false)
   const [commandBarHost, setCommandBarHost] = useState<HTMLDivElement | null>(null)
-  const [attentionQueryEnabled, setAttentionQueryEnabled] = useState(false)
   const { theme, toggle: toggleTheme } = useThemePreference()
   const userProfile = useMemo(() => resolveAgentTelephonyProfile(userEmail), [userEmail])
-  const { data: hubPayload } = useQuery({
-    queryKey: conversationHubQueryKey,
-    queryFn: () => fetchConversationHub<{ attentionState?: string }>(),
-    staleTime: conversationHubStaleTime,
-    enabled: attentionQueryEnabled,
+  const needsReplyKnownByPage = pageNeedsReply !== undefined || needsReply !== undefined
+  const { data: attentionPayload, isPending: attentionPending } = useQuery({
+    queryKey: ['conversation-attention-count'],
+    queryFn: async () => {
+      const response = await fetch('/api/conversations/attention-count', { cache: 'no-store' })
+      if (!response.ok) throw new Error('Conversation attention could not be loaded')
+      return response.json() as Promise<{ needsReply: number }>
+    },
+    staleTime: 60_000,
+    enabled: notificationsOpen && !needsReplyKnownByPage,
   })
-
-  useEffect(() => {
-    // A navigation badge must not compete with the active page for bandwidth,
-    // database work, or hydration time. Load it as idle follow-up work; routes
-    // that need the hub immediately use the same React Query cache key.
-    const timeoutId = window.setTimeout(() => setAttentionQueryEnabled(true), 750)
-    return () => window.clearTimeout(timeoutId)
-  }, [])
-  const hubNeedsReply = useMemo(
-    () => (hubPayload?.items ?? []).filter((item) => item.attentionState === 'needs_reply').length,
-    [hubPayload],
-  )
-  const resolvedNeedsReply = pageNeedsReply ?? needsReply ?? hubNeedsReply
+  const resolvedNeedsReply = pageNeedsReply ?? needsReply ?? attentionPayload?.needsReply
   const resolvedHideHeader = pageHeaderHidden || hideHeader
   const resolvedCommandBarActive = Boolean(commandBar) || pageCommandBarActive
   const chromeContextValue = useMemo<WorkspaceChromeContextValue>(() => ({
@@ -120,7 +111,7 @@ export function WorkspaceFrame({
       className="crm-workspace-shell flex h-[100dvh] overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
       data-theme={theme}
     >
-      <WorkspaceNav needsReply={resolvedNeedsReply} userEmail={userEmail} canReviewCalls={canReviewCalls} />
+      <WorkspaceNav needsReply={resolvedNeedsReply ?? 0} userEmail={userEmail} canReviewCalls={canReviewCalls} />
       <div className="flex min-w-0 flex-1 flex-col">
         <WorkspaceChromeContext.Provider value={chromeContextValue}>
           {resolvedHideHeader ? null : <header className={`crm-shell-header flex shrink-0 flex-col border-b px-3 pb-2 pt-[max(.5rem,env(safe-area-inset-top))] backdrop-blur md:flex-row md:items-center md:gap-5 md:px-6 md:py-2 ${resolvedCommandBarActive ? 'md:min-h-[76px]' : 'md:h-[62px]'}`}>
@@ -157,9 +148,9 @@ export function WorkspaceFrame({
             <div className="relative">
               <button type="button" onClick={() => setNotificationsOpen((value) => !value)} aria-expanded={notificationsOpen} className="crm-icon-button relative flex h-10 w-10 items-center justify-center rounded-lg text-[var(--crm-brand)]" aria-label="Notifications">
                 <Icon name="notifications_none" className="text-[25px]" />
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--crm-brand)] px-1 text-[10px] font-bold text-white">{resolvedNeedsReply}</span>
+                {resolvedNeedsReply !== undefined && resolvedNeedsReply > 0 ? <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--crm-brand)] px-1 text-[10px] font-bold text-white">{resolvedNeedsReply > 99 ? '99+' : resolvedNeedsReply}</span> : null}
               </button>
-              {notificationsOpen ? <div className="crm-menu absolute right-0 top-11 z-50 w-72 overflow-hidden rounded-xl"><div className="border-b border-[var(--crm-border)] px-4 py-3 text-sm font-bold">Action center</div><Link href="/conversations" onClick={() => setNotificationsOpen(false)} className="flex items-start gap-3 px-4 py-3 hover:bg-[var(--crm-brand-soft)]"><Icon name="forum" className="mt-0.5 text-[var(--crm-brand)]" /><span><strong className="block text-sm">{resolvedNeedsReply} conversation{resolvedNeedsReply === 1 ? '' : 's'} need a reply</strong><span className="text-xs text-[var(--crm-text-muted)]">Open the team inbox</span></span></Link><Link href="/tasks" onClick={() => setNotificationsOpen(false)} className="flex items-start gap-3 border-t border-[var(--crm-border)] px-4 py-3 hover:bg-[var(--crm-brand-soft)]"><Icon name="checklist" className="mt-0.5 text-[var(--crm-brand)]" /><span><strong className="block text-sm">Review assigned tasks</strong><span className="text-xs text-[var(--crm-text-muted)]">Open the task workspace</span></span></Link></div> : null}
+              {notificationsOpen ? <div className="crm-menu absolute right-0 top-11 z-50 w-72 overflow-hidden rounded-xl"><div className="border-b border-[var(--crm-border)] px-4 py-3 text-sm font-bold">Action center</div><Link href="/conversations" onClick={() => setNotificationsOpen(false)} className="flex items-start gap-3 px-4 py-3 hover:bg-[var(--crm-brand-soft)]"><Icon name="forum" className="mt-0.5 text-[var(--crm-brand)]" /><span><strong className="block text-sm">{resolvedNeedsReply === undefined ? (attentionPending ? 'Checking conversations…' : 'Conversation count unavailable') : `${resolvedNeedsReply} conversation${resolvedNeedsReply === 1 ? '' : 's'} need a reply`}</strong><span className="text-xs text-[var(--crm-text-muted)]">Open the team inbox</span></span></Link><Link href="/tasks" onClick={() => setNotificationsOpen(false)} className="flex items-start gap-3 border-t border-[var(--crm-border)] px-4 py-3 hover:bg-[var(--crm-brand-soft)]"><Icon name="checklist" className="mt-0.5 text-[var(--crm-brand)]" /><span><strong className="block text-sm">Review assigned tasks</strong><span className="text-xs text-[var(--crm-text-muted)]">Open the task workspace</span></span></Link></div> : null}
             </div>
             <div className="relative">
             <button type="button" onClick={() => setProfileOpen((value) => !value)} aria-expanded={profileOpen} aria-label="Open user menu" className="flex min-h-11 items-center gap-2 rounded-lg px-1 py-1 hover:bg-[var(--crm-surface-subtle)] md:px-2">
@@ -181,8 +172,8 @@ export function WorkspaceFrame({
             <WorkspaceContextNav />
           </Suspense>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
-          <GiraffeAssistant />
-          <WorkspaceMobileNav needsReply={resolvedNeedsReply} userEmail={userEmail} canReviewCalls={canReviewCalls} />
+          <GiraffeAssistantLauncher />
+          <WorkspaceMobileNav needsReply={resolvedNeedsReply ?? 0} userEmail={userEmail} canReviewCalls={canReviewCalls} />
         </WorkspaceChromeContext.Provider>
       </div>
     </div>

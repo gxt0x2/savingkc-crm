@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
+import { Providers } from '@/lib/providers'
 
 function AppShellLoading() {
   return (
@@ -26,5 +27,9 @@ function AppShellLoading() {
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<AppShellLoading />}><AppShell>{children}</AppShell></Suspense>
+  return (
+    <Providers>
+      <Suspense fallback={<AppShellLoading />}><AppShell>{children}</AppShell></Suspense>
+    </Providers>
+  )
 }

@@ -1,26 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  arrayMove,
-  horizontalListSortingStrategy,
-  sortableKeyboardCoordinates,
-  useSortable,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { Icon } from '@/components/ui/icon'
 import { formatLeadSource, getAvatarLabel, getDisplayLeadName, outreachStatusLabel, type OutreachStatus } from '@/lib/contact-display'
 import { formatPhone } from '@/lib/format'
@@ -29,12 +12,13 @@ import type { DealStage } from '@/types/pipeline'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { ProspectsWorkspaceTab } from '@/components/contacts/prospects-workspace-tab'
 import { ContactsLoadingSkeleton, MobileContactsList } from '@/components/contacts/mobile-contacts-list'
+import type { SortableSmartListTabsProps } from '@/components/contacts/sortable-smart-list-tabs'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
 import { PipelineFilterSelect, PipelineModal, PipelineModalActions } from '@/components/pipeline/pipeline-controls'
 import { DEAD_REASONS, deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { useAuth } from '@/hooks/use-auth'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
-import { conversationHubQueryKey, conversationHubStaleTime, fetchConversationHub } from '@/lib/queries/conversation-hub'
+import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
 import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, contactMatchesSmartList, contactPipelineStatusLabel, contactSmartListCounts, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
 
@@ -61,23 +45,14 @@ interface ContactRow {
   outreachStatus: OutreachStatus
   updatedAt: string | null
   pipelineIntentSource: string | null
-}
-
-interface HubThread {
-  id: string
   attentionState: 'needs_reply' | 'waiting_on_contact' | 'resolved'
-  owner: string | null
   lastMessage: string
   lastActivityAt: string
   primaryNextAction: { id: string; title: string; dueAt: string | null; owner: string | null; overdue: boolean } | null
 }
 
 export interface ContactWorkspaceRow extends ContactRow {
-  attentionState: HubThread['attentionState']
-  owner: string | null
-  lastMessage: string | null
-  lastActivityAt: string | null
-  primaryNextAction: HubThread['primaryNextAction']
+  hubEnriched: boolean
 }
 
 type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
@@ -169,34 +144,19 @@ function formatRelativeDate(value: string | null): string {
   return days < 30 ? `${days}d ago` : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+type ContactScopeCounts = { active: number; prospects: number; not_leads: number }
+type ContactWorkspacePayload = { items: ContactWorkspaceRow[]; scopeCounts: ContactScopeCounts }
+
 function useContactWorkspace(scope: ContactScope, enabled = true) {
-  const queryClient = useQueryClient()
-  return useQuery<{ items: ContactWorkspaceRow[] }>({
+  return useQuery<ContactWorkspacePayload>({
     queryKey: CONTACT_QUERY_KEY(scope),
     queryFn: async () => {
-      const [contactsResponse, hubResponse] = await Promise.all([
-        fetch(`/api/contacts?scope=${scope}`, { cache: 'no-store' }),
-        queryClient.fetchQuery({
-          queryKey: conversationHubQueryKey,
-          queryFn: () => fetchConversationHub<HubThread>(),
-          staleTime: conversationHubStaleTime,
-        }),
-      ])
+      const contactsResponse = await fetch(`/api/contacts?scope=${scope}`, { cache: 'no-store' })
       if (!contactsResponse.ok) throw new Error('Contacts could not be loaded')
-      const contactsPayload = await contactsResponse.json() as { items?: ContactRow[] }
-      const hubByLead = new Map(hubResponse.items.map((thread) => [thread.id, thread]))
+      const contactsPayload = await contactsResponse.json() as { items?: ContactRow[]; scopeCounts?: ContactScopeCounts }
       return {
-        items: (contactsPayload.items ?? []).map((contact) => {
-          const thread = hubByLead.get(contact.id)
-          return {
-            ...contact,
-            attentionState: thread?.attentionState ?? 'resolved',
-            owner: thread?.owner ?? contact.owner ?? null,
-            lastMessage: thread?.lastMessage ?? null,
-            lastActivityAt: thread?.lastActivityAt ?? contact.lastContactAt,
-            primaryNextAction: thread?.primaryNextAction ?? null,
-          }
-        }),
+        items: (contactsPayload.items ?? []).map((item) => ({ ...item, hubEnriched: true })),
+        scopeCounts: contactsPayload.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
       }
     },
     staleTime: 30_000,
@@ -208,9 +168,11 @@ function useContactWorkspace(scope: ContactScope, enabled = true) {
 export default function ContactsPage() {
   const isMobile = useMobileViewport()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const [smartList, setSmartList] = useState<ContactSmartList>('new')
+  const requestedInitialList = searchParams.get('list') as ContactSmartList | null
+  const [smartList, setSmartList] = useState<ContactSmartList>(requestedInitialList && SMART_LISTS.has(requestedInitialList) ? requestedInitialList : 'new')
   const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -241,8 +203,10 @@ export default function ContactsPage() {
   const [bulkNotes, setBulkNotes] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkMessage, setBulkMessage] = useState<string | null>(null)
-  const activeQuery = useContactWorkspace('active')
-  const prospectsQuery = useContactWorkspace('prospects')
+  const [SortableSmartListTabs, setSortableSmartListTabs] = useState<ComponentType<SortableSmartListTabsProps> | null>(null)
+  const sortableSmartListTabsPromise = useRef<Promise<ComponentType<SortableSmartListTabsProps>> | null>(null)
+  const activeQuery = useContactWorkspace('active', smartList !== 'prospects' && smartList !== 'not_leads')
+  const prospectsQuery = useContactWorkspace('prospects', smartList === 'prospects')
   const archiveQuery = useContactWorkspace('not_leads', smartList === 'not_leads')
   const currentQuery = smartList === 'not_leads' ? archiveQuery : smartList === 'prospects' ? prospectsQuery : activeQuery
   const items = useMemo(() => currentQuery.data?.items ?? [], [currentQuery.data])
@@ -251,11 +215,6 @@ export default function ContactsPage() {
     [activeQuery.data, archiveQuery.data, prospectsQuery.data],
   )
   const { isLoading, error, refetch, isFetching } = currentQuery
-  const smartListSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem('savingkc-contact-views')
@@ -285,7 +244,46 @@ export default function ContactsPage() {
     if (requestedOutreach && ['unattempted', 'attempted_no_response', 'connected_unclassified'].includes(requestedOutreach)) setOutreachFilter(requestedOutreach)
   }, [])
 
-  const counts = useMemo(() => contactSmartListCounts(allKnownItems), [allKnownItems])
+  const loadSortableSmartListTabs = useCallback(() => {
+    if (!sortableSmartListTabsPromise.current) {
+      sortableSmartListTabsPromise.current = import('@/components/contacts/sortable-smart-list-tabs')
+        .then((module) => module.SortableSmartListTabs)
+    }
+    void sortableSmartListTabsPromise.current
+      .then((component) => setSortableSmartListTabs(() => component))
+      .catch(() => { /* static tabs remain fully usable if the enhancement fails */ })
+  }, [])
+
+  useEffect(() => {
+    let idleId: number | null = null
+    const timeoutId = window.setTimeout(() => {
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(loadSortableSmartListTabs, { timeout: 5_000 })
+      } else {
+        loadSortableSmartListTabs()
+      }
+    }, 5_000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      if (idleId !== null) window.cancelIdleCallback(idleId)
+    }
+  }, [loadSortableSmartListTabs])
+
+  const counts = useMemo(() => {
+    const next = contactSmartListCounts(allKnownItems.map((item) => ({
+      ...item,
+      // Unknown is deliberately not treated as resolved. Waiting is neutral
+      // for the only count that depends on this value (Needs Reply).
+      attentionState: item.attentionState ?? 'waiting_on_contact',
+    })))
+    const scopeCounts = currentQuery.data?.scopeCounts
+    if (scopeCounts) {
+      next.prospects = scopeCounts.prospects
+      next.not_leads = scopeCounts.not_leads
+    }
+    return next
+  }, [allKnownItems, currentQuery.data?.scopeCounts])
   const orderedSmartLists = useMemo(() => {
     const smartListsById = new Map(CONTACT_SMART_LISTS.map((item) => [item.id, item]))
     return smartListOrder.map((id) => smartListsById.get(id)).filter((item): item is (typeof CONTACT_SMART_LISTS)[number] => Boolean(item))
@@ -298,17 +296,17 @@ export default function ContactsPage() {
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return items.filter((item) => {
-      if (!contactMatchesSmartList(item, smartList)) return false
+      if (!contactMatchesSmartList({ ...item, attentionState: item.attentionState ?? 'waiting_on_contact' }, smartList)) return false
       if (ownerFilter === '__unassigned' ? item.owner : ownerFilter && item.owner !== ownerFilter) return false
       if (stageFilter && item.station !== stageFilter) return false
       if (minimumStageFilter && STAGE_RANK[item.station] < STAGE_RANK[minimumStageFilter as DealStage]) return false
       if (sourceFilter && item.source !== sourceFilter) return false
       if (tagFilter && !item.tags.includes(tagFilter)) return false
-      if (attentionFilter && item.attentionState !== attentionFilter) return false
+      if (attentionFilter && (!item.hubEnriched || item.attentionState !== attentionFilter)) return false
       if (outreachFilter && item.outreachStatus !== outreachFilter) return false
       if (dataGapFilter === 'missing_phone' && item.phone) return false
       if (dataGapFilter === 'missing_email' && item.email) return false
-      if (dataGapFilter === 'missing_next_action' && item.primaryNextAction) return false
+      if (dataGapFilter === 'missing_next_action' && (!item.hubEnriched || item.primaryNextAction)) return false
       if (activityFilter) {
         const timestamp = item.lastActivityAt ? new Date(item.lastActivityAt).getTime() : 0
         const age = filterReferenceTime - timestamp
@@ -386,17 +384,22 @@ export default function ContactsPage() {
   function handleLeadStatusChanged(id: string, update: LeadStatusUpdate) {
     const becameNotLead = isNotLeadOutcome(update.classification, update.station)
     const becameActive = update.classification === 'lead' || update.classification === 'opportunity'
-    queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('active'), (current) => ({
+    queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('active'), (current) => ({
       items: becameNotLead
         ? (current?.items ?? []).filter((item) => item.id !== id)
         : (current?.items ?? []).map((item) => item.id === id ? { ...item, classification: update.classification, station: (update.station as DealStage | null) ?? item.station, deadReason: update.dead_reason } : item),
+      scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
     }))
-    queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('not_leads'), (current) => ({
+    queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('not_leads'), (current) => ({
       items: becameNotLead
         ? (current?.items ?? [])
         : (current?.items ?? []).filter((item) => item.id !== id),
+      scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
     }))
-    queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('prospects'), (current) => ({ items: becameActive || becameNotLead ? (current?.items ?? []).filter((item) => item.id !== id) : (current?.items ?? []) }))
+    queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('prospects'), (current) => ({
+      items: becameActive || becameNotLead ? (current?.items ?? []).filter((item) => item.id !== id) : (current?.items ?? []),
+      scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
+    }))
     if (becameNotLead) {
       setSelectedId(null)
       setDetailsOpen(false)
@@ -456,8 +459,9 @@ export default function ContactsPage() {
       const failed = results.length - succeeded
       if (bulkAction === 'not_lead' && succeeded) {
         const succeededIds = new Set(results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []))
-        queryClient.setQueryData<{ items: ContactWorkspaceRow[] }>(CONTACT_QUERY_KEY('active'), (current) => ({
+        queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('active'), (current) => ({
           items: (current?.items ?? []).filter((item) => !succeededIds.has(item.id)),
+          scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
         }))
       }
       setSelectedIds(new Set())
@@ -504,17 +508,6 @@ export default function ContactsPage() {
     try {
       window.localStorage.setItem(CONTACT_SMART_LIST_ORDER_STORAGE_KEY, JSON.stringify(nextOrder))
     } catch { /* storage may be unavailable */ }
-  }
-
-  function handleSmartListDragEnd(event: DragEndEvent) {
-    const activeId = event.active.id as ContactSmartListNavigationId
-    const overId = event.over?.id as ContactSmartListNavigationId | undefined
-    if (!overId || activeId === overId) return
-
-    const currentIndex = smartListOrder.indexOf(activeId)
-    const nextIndex = smartListOrder.indexOf(overId)
-    if (currentIndex === -1 || nextIndex === -1) return
-    persistSmartListOrder(arrayMove(smartListOrder, currentIndex, nextIndex))
   }
 
   function resetSmartListOrder() {
@@ -625,27 +618,30 @@ export default function ContactsPage() {
 
   return (
     <>
-      <WorkspaceChrome needsReply={counts.needs_reply} commandBar={contactsCommandBar} />
+      <WorkspaceChrome needsReply={currentQuery.data ? counts.needs_reply : undefined} commandBar={contactsCommandBar} />
       <main className="flex h-full min-w-0 bg-[var(--crm-canvas)]">
         <section className="min-w-0 flex-1 overflow-y-auto">
           {!isMobile ? <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
-            <DndContext sensors={smartListSensors} collisionDetection={closestCenter} onDragEnd={handleSmartListDragEnd}>
-              <SortableContext items={smartListOrder} strategy={horizontalListSortingStrategy}>
-                <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Pipeline smart lists">
-                  {orderedSmartLists.map(({ id, label }) => (
-                    <SortableSmartListTab
-                      key={id}
-                      id={id}
-                      label={label}
-                      count={counts[id]}
-                      active={smartList === id}
-                      tone={SMART_LIST_TONES[id]}
-                      onSelect={() => selectSmartList(id)}
-                    />
-                  ))}
-                </nav>
-              </SortableContext>
-            </DndContext>
+            {SortableSmartListTabs ? (
+              <SortableSmartListTabs
+                items={orderedSmartLists}
+                order={smartListOrder}
+                counts={counts}
+                activeId={smartList}
+                tones={SMART_LIST_TONES}
+                onSelect={selectSmartList}
+                onOrderChange={persistSmartListOrder}
+              />
+            ) : (
+              <StaticSmartListTabs
+                items={orderedSmartLists}
+                counts={counts}
+                activeId={smartList}
+                tones={SMART_LIST_TONES}
+                onSelect={selectSmartList}
+                onLoadDragAndDrop={loadSortableSmartListTabs}
+              />
+            )}
             {hasCustomSmartListOrder ? <button type="button" onClick={resetSmartListOrder} className="ml-2 flex shrink-0 items-center gap-1 border-l border-[var(--crm-border)] px-3 text-xs font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]" aria-label="Reset smart-list order"><Icon name="restart_alt" className="text-[16px]" />Reset order</button> : null}
             <ProspectsWorkspaceTab count={counts.prospects} active={smartList === 'prospects'} onSelect={() => selectSmartList('prospects')} />
           </div> : null}
@@ -727,7 +723,7 @@ export default function ContactsPage() {
               {!isLoading && !error ? pageItems.map((row) => {
                 const displayName = getDisplayLeadName(row.fullName, row.phone)
                 const property = row.address || 'No property linked'
-                const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || 'Define next action'
+                const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || (row.hubEnriched ? 'Define next action' : 'Loading next action…')
                 const selectedRow = detailsOpen && selected?.id === row.id
                 const notLead = isNotLeadOutcome(row.classification, row.station)
                 const pipelineStatus = contactPipelineStatusLabel(row)
@@ -798,7 +794,7 @@ export default function ContactsPage() {
               />
             </div>
             <div className="crm-panel mt-6 rounded-xl p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{selected.score} / 100</dd></div></dl></div>
-            <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{selected.primaryNextAction?.title || selected.nextActivity?.label || 'Define next action'}</p></div>
+            <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{selected.primaryNextAction?.title || selected.nextActivity?.label || (selected.hubEnriched ? 'Define next action' : 'Loading next action…')}</p></div>
             <div className="mt-5 border-t border-[var(--crm-border)] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[var(--crm-info)]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-info-soft)] p-3 text-xs leading-5 text-[var(--crm-text)]">{selected.lastMessage || 'No recent message'}</p></div>
             <div className="mt-6 border-t border-[var(--crm-border)] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[var(--crm-text-muted)]">{formatPhone(selected.phone) || 'No phone'}</p><p className="mt-2 break-all text-sm text-[var(--crm-text-muted)]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Owner: {selected.owner || 'Unassigned'}</p></div>
             <Link href={`/leads/${selected.id}`} className="crm-primary-button mt-7 flex h-11 items-center justify-center rounded-lg text-sm font-bold">Open full workspace →</Link>
@@ -825,40 +821,42 @@ export default function ContactsPage() {
   )
 }
 
-function SortableSmartListTab({
-  id,
-  label,
-  count,
-  active,
-  tone,
+function StaticSmartListTabs({
+  items,
+  counts,
+  activeId,
+  tones,
   onSelect,
-}: {
-  id: ContactSmartListNavigationId
-  label: string
-  count: number
-  active: boolean
-  tone: { active: string; count: string }
-  onSelect: () => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 30 : undefined,
-  }
-
-  return <button
-    ref={setNodeRef}
-    style={style}
-    type="button"
-    {...attributes}
-    {...listeners}
-    onClick={onSelect}
-    aria-label={`${label} ${count}`}
-    aria-current={active ? 'page' : undefined}
-    title={`Open ${label}. Drag the tab itself to reorder.`}
-    className={`shrink-0 touch-none border-b-[3px] px-3 py-3 text-sm font-semibold transition-colors ${active ? tone.active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'} ${isDragging ? 'cursor-grabbing rounded-t-lg bg-[var(--crm-surface)] shadow-lg' : 'cursor-grab'}`}
-  >
-    {label} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${active ? tone.count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{count}</span>
-  </button>
+  onLoadDragAndDrop,
+}: Omit<SortableSmartListTabsProps, 'order' | 'onOrderChange'> & { onLoadDragAndDrop: () => void }) {
+  return (
+    <nav
+      className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto"
+      aria-label="Pipeline smart lists"
+      onPointerEnter={onLoadDragAndDrop}
+      onFocusCapture={onLoadDragAndDrop}
+      onTouchStart={onLoadDragAndDrop}
+    >
+      {items.map(({ id, label }) => {
+        const active = activeId === id
+        const tone = tones[id]
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onSelect(id)}
+            aria-label={`${label} ${counts[id]}`}
+            aria-current={active ? 'page' : undefined}
+            title={`Open ${label}. Drag the tab itself to reorder.`}
+            className={`shrink-0 touch-none border-b-[3px] px-3 py-3 text-sm font-semibold transition-colors ${active ? tone.active : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'} cursor-grab`}
+          >
+            {label}{' '}
+            <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${active ? tone.count : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>
+              {counts[id]}
+            </span>
+          </button>
+        )
+      })}
+    </nav>
+  )
 }

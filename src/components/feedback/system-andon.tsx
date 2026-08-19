@@ -1,11 +1,16 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 
-import { FeedbackForm } from '@/components/feedback/feedback-form'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+
+const FeedbackForm = dynamic(
+  () => import('@/components/feedback/feedback-form').then((module) => module.FeedbackForm),
+  { ssr: false },
+)
 
 const ROUTE_SECTIONS: Array<[string, string]> = [
   ['/reports', 'Reports'],

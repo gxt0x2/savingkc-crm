@@ -187,6 +187,7 @@ function CalendarContent() {
               {selectedTask.contact_id && (
                 <Link
                   href={`/leads/${selectedTask.contact_id}`}
+                  prefetch={false}
                   className="flex-1 text-center py-2.5 bg-[#E32E2E] hover:bg-[#C42626] text-white rounded-lg font-bold text-sm transition-colors"
                 >
                   View Lead Profile →

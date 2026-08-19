@@ -114,6 +114,7 @@ export function OpportunityCard({ deal }: { deal: Deal }) {
         </div>
         <Link
           href={`/leads/${contact.id}`}
+          prefetch={false}
           className="flex items-center gap-2 text-sm font-bold text-primary hover:text-secondary transition-colors"
         >
           <span>Details</span>

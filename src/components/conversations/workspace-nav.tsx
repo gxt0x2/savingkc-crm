@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { SystemAndon } from '@/components/feedback/system-andon'
@@ -31,6 +31,8 @@ const CASEY_NAV_ITEMS: NavItem[] = [
   ...NAV_ITEMS.filter((item) => ['Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings'].includes(item.label)),
 ]
 
+const WARM_NAV_LABELS = new Set(['Dashboard', 'My Day', 'Pipeline', 'Conversations', 'Dialer', 'Task'])
+
 function workspaceItemsFor(userEmail?: string | null, canReviewCalls = false) {
   const isCasey = isCaseyCrmUser(userEmail)
   const baseNavItems = isCasey ? CASEY_NAV_ITEMS : NAV_ITEMS
@@ -50,10 +52,13 @@ function isItemActive(item: NavItem, pathname: string) {
 
 function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: NavItem; pathname: string; collapsed: boolean; needsReply: number }) {
   const active = isItemActive(item, pathname)
+  const router = useRouter()
   return (
     <Link
       href={item.href}
-      prefetch
+      prefetch={WARM_NAV_LABELS.has(item.label) ? null : false}
+      onPointerEnter={() => router.prefetch(item.href)}
+      onFocus={() => router.prefetch(item.href)}
       aria-label={item.label}
       aria-current={active ? 'page' : undefined}
       title={collapsed ? item.label : undefined}
@@ -74,6 +79,7 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
 
 export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: { needsReply: number; userEmail?: string | null; canReviewCalls?: boolean }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
   const isCasey = isCaseyCrmUser(userEmail)
   // Casey's agent workspace has a fixed, approved menu. Reviewer permissions
@@ -83,7 +89,7 @@ export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: 
   return (
     <aside className={cn('hidden shrink-0 flex-col border-r border-black/15 bg-[var(--crm-nav)] text-[var(--crm-nav-text)] transition-[width] duration-200 lg:flex', collapsed ? 'w-[64px]' : 'w-[192px]')}>
       <svg width="0" height="0" aria-hidden="true"><filter id="crm-logo-dark" colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values="0 -0.5 -0.5 0 1 -1 0 0 0 1 -1 0 0 0 1 0 0 0 1 0" /></filter></svg>
-      <Link href={isCasey ? '/my-day' : '/dashboard'} prefetch aria-label="Saving KC CRM dashboard" className={cn('flex h-[68px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-4')}>
+      <Link href={isCasey ? '/my-day' : '/dashboard'} prefetch onPointerEnter={() => router.prefetch(isCasey ? '/my-day' : '/dashboard')} onFocus={() => router.prefetch(isCasey ? '/my-day' : '/dashboard')} aria-label="Saving KC CRM dashboard" className={cn('flex h-[68px] items-center border-b border-white/10', collapsed ? 'justify-center px-2' : 'px-4')}>
         <Image src="/logo.png" alt={collapsed ? '' : 'Saving KC Homebuyers'} width={489} height={141} className={cn('h-auto object-contain', collapsed ? 'w-[48px]' : 'w-[138px]')} style={{ filter: 'url(#crm-logo-dark)' }} />
       </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 py-3" aria-label="CRM navigation">
@@ -99,6 +105,7 @@ export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: 
 
 export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = false }: { needsReply: number; userEmail?: string | null; canReviewCalls?: boolean }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [moreOpen, setMoreOpen] = useState(false)
   const navItems = workspaceItemsFor(userEmail, canReviewCalls)
   const primaryLabels = isCaseyCrmUser(userEmail)
@@ -128,7 +135,7 @@ export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = fal
             <nav className="grid max-h-[calc(78dvh-6rem)] grid-cols-2 gap-2 overflow-y-auto p-4" aria-label="Additional CRM navigation">
               {moreItems.map((item) => {
                 const active = isItemActive(item, pathname)
-                return <Link key={item.label} href={item.href} onClick={() => setMoreOpen(false)} aria-current={active ? 'page' : undefined} className={cn('flex min-h-14 items-center gap-3 rounded-xl border px-3 py-3 text-sm font-bold', active ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-text)]')}><Icon name={item.icon} className="text-[21px]" />{item.label}</Link>
+                return <Link key={item.label} href={item.href} prefetch={false} onPointerDown={() => router.prefetch(item.href)} onClick={() => setMoreOpen(false)} aria-current={active ? 'page' : undefined} className={cn('flex min-h-14 items-center gap-3 rounded-xl border px-3 py-3 text-sm font-bold', active ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-text)]')}><Icon name={item.icon} className="text-[21px]" />{item.label}</Link>
               })}
             </nav>
           </section>
