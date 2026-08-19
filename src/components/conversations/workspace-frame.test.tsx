@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
+import { useWorkspaceUserEmail, WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
 
 const useQueryMock = vi.hoisted(() => vi.fn(() => ({ data: undefined, isPending: false })))
 
@@ -41,6 +41,20 @@ vi.mock('./workspace-context-nav', () => ({
 }))
 
 describe('WorkspaceFrame route persistence', () => {
+  function ProfileAwareContent() {
+    return <p>Active profile: {useWorkspaceUserEmail()}</p>
+  }
+
+  it('provides the active viewed profile to profile-aware pages', () => {
+    render(
+      <WorkspaceFrame userEmail="casey@savingkc.com">
+        <ProfileAwareContent />
+      </WorkspaceFrame>,
+    )
+
+    expect(screen.getByText('Active profile: casey@savingkc.com')).toBeVisible()
+  })
+
   it('lets a route replace the persistent command bar and notification count', () => {
     const { rerender } = render(
       <WorkspaceFrame needsReply={2}>
@@ -98,6 +112,20 @@ describe('WorkspaceFrame route persistence', () => {
     )
 
     expect(screen.getByRole('img', { name: 'Casey profile' })).toHaveAttribute('src', 'https://example.com/casey.jpg')
+  })
+
+  it('opens the user menu below the persistent header and above page content', () => {
+    render(
+      <WorkspaceFrame userEmail="casey@savingkc.com">
+        <main>Casey workspace</main>
+      </WorkspaceFrame>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open user menu' }))
+
+    const menu = screen.getByRole('link', { name: 'Dashboard' }).parentElement
+    expect(menu).toHaveClass('top-full', 'z-[70]')
+    expect(menu?.closest('header')).toHaveClass('z-[60]', 'overflow-visible')
   })
 
   it('opens the persistent giraffe assistant from the lower-right launcher', async () => {

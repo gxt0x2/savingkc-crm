@@ -15,6 +15,7 @@ import { GiraffeAssistantLauncher } from '@/components/ai/giraffe-assistant-laun
 
 type WorkspaceChromeContextValue = {
   commandBarHost: HTMLDivElement | null
+  userEmail: string | null
   setCommandBarActive: (active: boolean) => void
   setHeaderHidden: (hidden: boolean) => void
   setNeedsReplyOverride: (count: number | undefined) => void
@@ -49,6 +50,10 @@ export function WorkspaceChrome({
   return commandBar && chrome?.commandBarHost
     ? createPortal(commandBar, chrome.commandBarHost)
     : null
+}
+
+export function useWorkspaceUserEmail() {
+  return useContext(WorkspaceChromeContext)?.userEmail ?? null
 }
 
 export function WorkspaceFrame({
@@ -95,10 +100,11 @@ export function WorkspaceFrame({
   const resolvedCommandBarActive = Boolean(commandBar) || pageCommandBarActive
   const chromeContextValue = useMemo<WorkspaceChromeContextValue>(() => ({
     commandBarHost,
+    userEmail: userEmail ?? null,
     setCommandBarActive: setPageCommandBarActive,
     setHeaderHidden: setPageHeaderHidden,
     setNeedsReplyOverride: setPageNeedsReply,
-  }), [commandBarHost])
+  }), [commandBarHost, userEmail])
 
   function submitSearch(event: FormEvent) {
     event.preventDefault()
@@ -114,7 +120,7 @@ export function WorkspaceFrame({
       <WorkspaceNav needsReply={resolvedNeedsReply ?? 0} userEmail={userEmail} canReviewCalls={canReviewCalls} />
       <div className="flex min-w-0 flex-1 flex-col">
         <WorkspaceChromeContext.Provider value={chromeContextValue}>
-          {resolvedHideHeader ? null : <header className={`crm-shell-header flex shrink-0 flex-col border-b px-3 pb-2 pt-[max(.5rem,env(safe-area-inset-top))] backdrop-blur md:flex-row md:items-center md:gap-5 md:px-6 md:py-2 ${resolvedCommandBarActive ? 'md:min-h-[76px]' : 'md:h-[62px]'}`}>
+          {resolvedHideHeader ? null : <header className={`crm-shell-header relative z-[60] flex shrink-0 flex-col overflow-visible border-b px-3 pb-2 pt-[max(.5rem,env(safe-area-inset-top))] backdrop-blur md:flex-row md:items-center md:gap-5 md:px-6 md:py-2 ${resolvedCommandBarActive ? 'md:min-h-[76px]' : 'md:h-[62px]'}`}>
             <div ref={setCommandBarHost} className="order-2 min-w-0 w-full md:order-1 md:flex-1">
               {commandBar ?? (pageCommandBarActive ? null : (
                 <form onSubmit={submitSearch} className="relative mt-2 hidden w-full md:mt-0 md:block md:max-w-[610px]">
@@ -163,7 +169,7 @@ export function WorkspaceFrame({
               <span className="hidden text-sm font-semibold text-[var(--crm-ink)] sm:inline">{userProfile.displayName}</span>
               <Icon name="expand_more" className="hidden text-[var(--crm-text-muted)] sm:inline" />
             </button>
-            {profileOpen ? <div className="crm-menu absolute right-0 top-12 z-50 w-48 overflow-hidden rounded-xl py-1"><Link href="/dashboard" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="home" className="text-[18px]" />Dashboard</Link><Link href="/reports/acquisitions" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="bar_chart" className="text-[18px]" />Reports</Link><Link href="/settings" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="settings" className="text-[18px]" />Settings</Link></div> : null}
+            {profileOpen ? <div className="crm-menu absolute right-0 top-full z-[70] mt-2 w-48 overflow-hidden rounded-xl py-1"><Link href="/dashboard" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="home" className="text-[18px]" />Dashboard</Link><Link href="/reports/acquisitions" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="bar_chart" className="text-[18px]" />Reports</Link><Link href="/settings" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><Icon name="settings" className="text-[18px]" />Settings</Link></div> : null}
             </div>
               </div>
             </div>

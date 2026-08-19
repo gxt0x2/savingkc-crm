@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { useWorkspaceUserEmail } from '@/components/conversations/workspace-frame'
 import { cn } from '@/lib/utils'
 
 type Protocol = 'sod' | 'eod'
@@ -57,6 +58,7 @@ function readText(submission: Submission | null, key: string) {
 }
 
 export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
+  const workspaceUserEmail = useWorkspaceUserEmail()
   const [active, setActive] = useState<Protocol>('sod')
   const [daily, setDaily] = useState<DailyState | null>(null)
   const [checked, setChecked] = useState<Record<Protocol, string[]>>({ sod: [], eod: [] })
@@ -74,7 +76,7 @@ export function DailyRhythmWorkspace({ userEmail }: { userEmail: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const completionCount = Number(Boolean(daily?.sod)) + Number(Boolean(daily?.eod))
-  const teamMemberName = displayName(userEmail)
+  const teamMemberName = displayName(workspaceUserEmail || userEmail)
   const dateLabel = useMemo(() => new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago', weekday: 'long', month: 'long', day: 'numeric',
   }).format(new Date()), [])
