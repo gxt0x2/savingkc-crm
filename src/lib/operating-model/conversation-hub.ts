@@ -77,6 +77,8 @@ const RESOLVED_CALL_OUTCOMES = new Set([
   'answered',
   'completed',
   'connected',
+  'spoke-with-owner',
+  'live',
 ])
 
 const OPT_OUT_SMS_TYPES = new Set(['sms', 'sms_received', 'sms_inbound'])
@@ -97,7 +99,7 @@ function normalizedMetadataValues(activity: ConversationHubActivity): string[] {
     metadata.status,
     metadata.callStatus,
   ]
-    .map((value) => text(value)?.toLowerCase().replace(/\s+/g, '-') ?? null)
+    .map((value) => text(value)?.toLowerCase().replace(/[\s_]+/g, '-') ?? null)
     .filter((value): value is string => Boolean(value))
 }
 
@@ -109,6 +111,7 @@ function normalizedMetadataValues(activity: ConversationHubActivity): string[] {
 export function inboundCommunicationNeedsReply(activity: ConversationHubActivity): boolean {
   if (getConversationDirection(activity) !== 'inbound') return false
   if (activity.activity_type === 'voicemail') return true
+  if (activity.activity_type === 'missed_call') return true
   if (activity.activity_type !== 'call') return !isContactOptOut(activity)
 
   const outcomes = normalizedMetadataValues(activity)
@@ -204,7 +207,7 @@ export function summarizeConversationAttention(
     const primaryTask = sorted.find((activity) =>
       activity.activity_type === 'task' &&
       activity.metadata?.primary_next_action === true &&
-      activity.metadata?.status === 'pending',
+      (activity.metadata?.status === undefined || activity.metadata?.status === null || activity.metadata?.status === 'pending'),
     )
     const dueAt = text(primaryTask?.metadata?.due_date)
     if (dueAt && new Date(dueAt) < now) summary.overdue += 1
@@ -229,7 +232,7 @@ export function buildConversationHubThread(
   const primaryTask = sorted.find((activity) =>
     activity.activity_type === 'task' &&
     activity.metadata?.primary_next_action === true &&
-    activity.metadata?.status === 'pending',
+    (activity.metadata?.status === undefined || activity.metadata?.status === null || activity.metadata?.status === 'pending'),
   )
   const dueAt = text(primaryTask?.metadata?.due_date)
   const owner =
@@ -255,7 +258,7 @@ export function buildConversationHubThread(
             ? 'email'
             : 'call'
       : null,
-    lastCallOutcome: latestComm && ['call', 'voicemail'].includes(latestComm.activity_type)
+    lastCallOutcome: latestComm && ['call', 'missed_call', 'voicemail'].includes(latestComm.activity_type)
       ? getCallOutcomePresentation(latestComm)
       : null,
     primaryNextAction: primaryTask ? {

@@ -56,6 +56,7 @@ async function claimCallbackBatch(input: {
     agentCallSid: input.agentCallSid,
     callerId: input.callerId,
     to: input.leadPhone,
+    is_internal: true,
   }
 
   const { data: claim, error: claimError } = await supabase

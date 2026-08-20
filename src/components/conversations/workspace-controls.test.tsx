@@ -11,18 +11,16 @@ import { ThreadView } from './thread-view'
 
 const baseThread: ThreadPreview = {
   id: 'lead-1',
+  threadKey: 'lead:lead-1',
   name: 'Marcus Johnson',
   initials: 'MJ',
   avatarBg: 'bg-slate-700',
   avatarText: 'text-white',
   address: '4821 Woodland Ave',
-  personality: null,
-  tags: [],
   lastMessage: 'I inherited a property.',
   lastChannel: 'sms',
   activityAt: '2026-08-01T15:00:00.000Z',
   timestamp: 'Today',
-  unread: true,
   attentionState: 'needs_reply',
   owner: 'Ernest',
   nextAction: null,
@@ -52,117 +50,93 @@ describe('rebuilt conversation workspace controls', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('uses the signed-in agent, All, Recent, and Hot as the primary work queues', () => {
+  it('uses the four server-owned work queues', () => {
+    const onQueueChange = vi.fn()
     render(<InboxSidebar
-      threads={[
-        { ...baseThread, hot: true },
-        { ...baseThread, id: 'lead-2', name: 'Sheila Brooks', owner: 'Casey' },
-      ]}
-      activeThreadId="lead-1"
+      threads={[baseThread]}
+      activeThreadKey="lead:lead-1"
+      activeQueue="needs_reply"
+      search=""
       onSelectThread={() => {}}
-      currentUserName="Ernest"
+      onQueueChange={onQueueChange}
+      onSearchChange={() => {}}
     />)
 
-    expect(screen.getByRole('button', { name: /Ernest 1/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /All 2/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Recent 2/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Hot 1/ })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Inbox/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Mine/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Needs Reply \d+$/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Needs Reply' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Mine' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unassigned' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Recent/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Hot/ })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Ernest 1/ }))
-    expect(screen.getByRole('combobox', { name: 'Filter by assigned team member' })).toHaveValue('ernest')
-    expect(screen.getByText('Marcus Johnson')).toBeInTheDocument()
-    expect(screen.queryByText('Sheila Brooks')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /Hot 1/ }))
-    expect(screen.getByRole('combobox', { name: 'Filter by assigned team member' })).toHaveValue('team')
-    expect(screen.getByText('Marcus Johnson')).toBeInTheDocument()
-    expect(screen.queryByText('Sheila Brooks')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Mine' }))
+    expect(onQueueChange).toHaveBeenCalledWith('mine')
   })
 
-  it('opens real conversation filters with preset and custom date ranges', () => {
-    render(<InboxSidebar
-      threads={[
-        baseThread,
-        { ...baseThread, id: 'lead-2', name: 'Older Contact', activityAt: '2026-07-01T15:00:00.000Z', timestamp: 'Jul 1' },
-      ]}
-      activeThreadId="lead-1"
+  it('shows explicit empty and error states without disguising them as data', () => {
+    const { rerender } = render(<InboxSidebar
+      threads={[]}
+      activeThreadKey=""
+      activeQueue="unassigned"
+      search=""
       onSelectThread={() => {}}
-      currentUserName="Ernest"
+      onQueueChange={() => {}}
+      onSearchChange={() => {}}
     />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation filters' }))
-    const filters = screen.getByRole('dialog', { name: 'Filter conversations' })
-    expect(within(filters).getByRole('combobox', { name: 'Conversation date range' })).toHaveTextContent('All timeTodayLast 7 daysLast 30 daysCustom range')
-    expect(within(filters).getByRole('combobox', { name: 'Conversation reply state' })).toBeInTheDocument()
-    expect(within(filters).getByRole('combobox', { name: 'Conversation next action' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('No conversations are waiting for an owner.')
+    expect(screen.getByRole('status')).toHaveTextContent('calculated by the CRM')
 
-    fireEvent.change(within(filters).getByRole('combobox', { name: 'Conversation date range' }), { target: { value: 'custom' } })
-    fireEvent.change(screen.getByLabelText('Conversation start date'), { target: { value: '2026-08-01' } })
-    fireEvent.change(screen.getByLabelText('Conversation end date'), { target: { value: '2026-08-01' } })
-    expect(screen.getByText('Marcus Johnson')).toBeInTheDocument()
-    expect(screen.queryByText('Older Contact')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Conversation filters, 1 active' })).toBeInTheDocument()
-
-    fireEvent.click(within(filters).getByRole('button', { name: 'Show results' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation filters, 1 active' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
-    expect(screen.getByText('Older Contact')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Sort conversations' }))
-    const sortMenu = screen.getByRole('dialog', { name: 'Sort conversations' })
-    fireEvent.click(within(sortMenu).getByRole('button', { name: 'Recent activity' }))
-    expect(screen.queryByRole('dialog', { name: 'Sort conversations' })).not.toBeInTheDocument()
-  })
-
-  it('filters the team inbox by Casey, Ernest, Gertha, Team, or Unassigned', () => {
-    render(<InboxSidebar
-      threads={[
-        baseThread,
-        { ...baseThread, id: 'lead-2', name: 'Sheila Brooks', owner: 'Casey' },
-        { ...baseThread, id: 'lead-3', name: 'Gertha Contact', owner: 'Gertha' },
-        { ...baseThread, id: 'lead-4', name: 'Team Queue Contact', owner: null },
-      ]}
-      activeThreadId="lead-1"
+    rerender(<InboxSidebar
+      threads={[]}
+      activeThreadKey=""
+      activeQueue="all"
+      search=""
+      error="Read model unavailable"
       onSelectThread={() => {}}
-      currentUserName="Ernest"
+      onQueueChange={() => {}}
+      onSearchChange={() => {}}
     />)
 
-    const ownerFilter = screen.getByRole('combobox', { name: 'Filter by assigned team member' })
-    expect(within(ownerFilter).getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Casey', 'Ernest', 'Gertha', 'All', 'Unassigned',
-    ])
-
-    fireEvent.change(ownerFilter, { target: { value: 'casey' } })
-    expect(screen.getByText('Sheila Brooks')).toBeInTheDocument()
-    expect(screen.queryByText('Marcus Johnson')).not.toBeInTheDocument()
-
-    fireEvent.change(ownerFilter, { target: { value: 'unassigned' } })
-    expect(screen.getByText('Team Queue Contact')).toBeInTheDocument()
-    expect(screen.queryByText('Sheila Brooks')).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Conversations could not be loaded')
+    expect(screen.getByRole('alert')).toHaveTextContent('Read model unavailable')
   })
 
-  it('keeps the active conversation synchronized with the visible filtered list', async () => {
+  it('requests server search and bounded pagination instead of filtering a partial page', () => {
+    const onSearchChange = vi.fn()
+    const onLoadMore = vi.fn()
+    render(<InboxSidebar
+      threads={[baseThread]}
+      activeThreadKey="lead:lead-1"
+      activeQueue="all"
+      search=""
+      hasMore
+      onSelectThread={() => {}}
+      onQueueChange={() => {}}
+      onSearchChange={onSearchChange}
+      onLoadMore={onLoadMore}
+    />)
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search conversations' }), { target: { value: 'Woodland' } })
+    expect(onSearchChange).toHaveBeenCalledWith('Woodland')
+    fireEvent.click(screen.getByRole('button', { name: 'Load more conversations' }))
+    expect(onLoadMore).toHaveBeenCalledOnce()
+  })
+
+  it('selects the authoritative thread key', () => {
     const onSelectThread = vi.fn()
     render(<InboxSidebar
-      threads={[
-        baseThread,
-        { ...baseThread, id: 'lead-2', name: 'Sheila Brooks', owner: 'Casey' },
-      ]}
-      activeThreadId="lead-1"
+      threads={[baseThread]}
+      activeThreadKey=""
+      activeQueue="all"
+      search=""
       onSelectThread={onSelectThread}
-      currentUserName="Ernest"
+      onQueueChange={() => {}}
+      onSearchChange={() => {}}
     />)
 
-    fireEvent.change(screen.getByLabelText('Search conversations'), {
-      target: { value: 'Sheila' },
-    })
-
-    await waitFor(() => expect(onSelectThread).toHaveBeenCalledWith('lead-2'))
-    expect(screen.getByText('Sheila Brooks')).toBeInTheDocument()
-    expect(screen.queryByText('Marcus Johnson')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open conversation with Marcus Johnson' }))
+    expect(onSelectThread).toHaveBeenCalledWith('lead:lead-1')
   })
 
   it('opens directly in the requested communication mode', async () => {
@@ -306,6 +280,7 @@ describe('rebuilt conversation workspace controls', () => {
     }))
 
     const { container } = render(<ThreadView
+      threadKey="unmatched:+18164764715"
       contact={{
         name: '(816) 476-4715',
         initials: '15',
@@ -327,7 +302,7 @@ describe('rebuilt conversation workspace controls', () => {
     expect(header!.textContent?.match(/816/g)).toHaveLength(1)
   })
 
-  it('separates lead source from durable decision signals', () => {
+  it('shows the factual lead source without unsupported decision-signal chrome', () => {
     render(<ContactDetailsPanel contact={{
       id: 'lead-ivr',
       full_name: 'Caller (816) 476-4715',
@@ -339,12 +314,10 @@ describe('rebuilt conversation workspace controls', () => {
       priority: 'normal',
       assigned_agent: null,
       source: 'inbound_ivr_no_input',
-      decision_tags: [{ id: 'tax_delinquent', label: 'Tax delinquent', category: 'Risk', tone: 'brand' }],
     }} />)
 
     expect(screen.getByText('Source: Inbound IVR')).toBeInTheDocument()
-    expect(screen.getByText('Risk ·')).toBeInTheDocument()
-    expect(screen.getByText('Tax delinquent')).toBeInTheDocument()
+    expect(screen.queryByText('Decision signals')).not.toBeInTheDocument()
     expect(screen.queryByText(/Inbound Ivr No Input/i)).not.toBeInTheDocument()
   })
 
@@ -357,6 +330,7 @@ describe('rebuilt conversation workspace controls', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<ThreadView
+      threadKey="lead:lead-1"
       contact={{
         name: 'Marcus Johnson',
         initials: 'MJ',
@@ -378,6 +352,133 @@ describe('rebuilt conversation workspace controls', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/conversations/assignment', expect.objectContaining({ method: 'PATCH' })))
     await waitFor(() => expect(onConversationChanged).toHaveBeenCalledOnce())
+  })
+
+  it('updates conversation state with the authoritative thread key', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (input === '/api/sms-templates') {
+        return { ok: true, json: async () => ({ templates: [] }) }
+      }
+      return { ok: true, json: async () => ({ success: true }) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ThreadView
+      threadKey="unmatched:+18164764715"
+      contact={{
+        name: '(816) 476-4715',
+        initials: '15',
+        assignedAgent: null,
+        team: 'Acquisitions',
+        attentionState: 'needs_reply',
+        owner: null,
+        nextAction: null,
+      }}
+      dateGroups={[]}
+      phone="+18164764715"
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark resolved' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/conversations/thread-state', expect.objectContaining({ method: 'POST' })))
+    const stateCall = fetchMock.mock.calls.find(([input]) => input === '/api/conversations/thread-state')
+    const payload = JSON.parse(String(stateCall?.[1]?.body))
+    expect(payload).toMatchObject({
+      action: 'mark_read',
+      threadKey: 'unmatched:+18164764715',
+      phone: '+18164764715',
+    })
+    expect(payload).not.toHaveProperty('agent')
+  })
+
+  it('exposes mobile back, attention, ownership, and next-action controls', async () => {
+    const onBack = vi.fn()
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (input === '/api/sms-templates') {
+        return { ok: true, json: async () => ({ templates: [] }) }
+      }
+      return { ok: true, json: async () => ({ success: true }) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ThreadView
+      threadKey="lead:lead-1"
+      contact={{
+        name: 'Marcus Johnson',
+        initials: 'MJ',
+        assignedAgent: null,
+        team: 'Acquisitions',
+        attentionState: 'needs_reply',
+        owner: null,
+        nextAction: { id: 'task-1', title: 'Call with offer', dueAt: null, owner: null, overdue: false },
+      }}
+      dateGroups={[]}
+      leadId="lead-1"
+      phone="+18165550198"
+      onBack={onBack}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to conversation inbox' }))
+    expect(onBack).toHaveBeenCalledOnce()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation actions' }))
+    expect(screen.getByRole('button', { name: 'Mark resolved' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Assign to Casey' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Complete next action' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads/tasks/task-1', expect.objectContaining({ method: 'PATCH' })))
+  })
+
+  it('keeps mutation errors visible on a resolved thread with no next action', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (input === '/api/sms-templates') {
+        return { ok: true, json: async () => ({ templates: [] }) }
+      }
+      return { ok: false, json: async () => ({ error: 'Thread update failed' }) }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ThreadView
+      threadKey="lead:lead-1"
+      contact={{
+        name: 'Marcus Johnson',
+        initials: 'MJ',
+        assignedAgent: 'Ernest',
+        team: 'Acquisitions',
+        attentionState: 'resolved',
+        owner: 'Ernest',
+        nextAction: null,
+      }}
+      dateGroups={[]}
+      leadId="lead-1"
+      phone="+18165550198"
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark needs reply' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Thread update failed')
+  })
+
+  it('does not relabel a resolved thread as waiting when a next action remains', () => {
+    render(<ThreadView
+      threadKey="lead:lead-1"
+      contact={{
+        name: 'Marcus Johnson',
+        initials: 'MJ',
+        assignedAgent: 'Ernest',
+        team: 'Acquisitions',
+        attentionState: 'resolved',
+        owner: 'Ernest',
+        nextAction: { id: 'task-1', title: 'Review offer', dueAt: null, owner: 'Ernest', overdue: false },
+      }}
+      dateGroups={[]}
+      leadId="lead-1"
+    />)
+
+    expect(screen.getAllByText('Resolved').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Waiting on contact')).not.toBeInTheDocument()
   })
 
   it('makes the next-action card a real control', () => {

@@ -7,7 +7,7 @@ import { getAgentProfile } from '@/lib/agent-profiles'
 import type { CallOutcomePresentation } from '@/lib/operating-model/conversation-presentation'
 import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
 
-export type MessageType = 'sms' | 'email' | 'call'
+export type MessageType = 'sms' | 'email' | 'call' | 'note' | 'task' | 'status'
 export type MessageDirection = 'sent' | 'received'
 
 export interface Message {
@@ -30,6 +30,10 @@ export interface Message {
   fromPhone?: string
   toPhone?: string
   routingTeam?: string
+  // internal timeline event fields
+  owner?: string
+  dueAt?: string
+  taskStatus?: string
 }
 
 const CALL_OUTCOME_STYLE = {
@@ -134,6 +138,55 @@ function EmailCard({ message }: { message: Message }) {
           {message.content}
         </div>
       </div>
+    </div>
+  )
+}
+
+function NoteCard({ message }: { message: Message }) {
+  return (
+    <article aria-label="Internal note" className="mx-auto w-full max-w-2xl rounded-xl border border-[var(--crm-violet)]/30 bg-[var(--crm-violet-soft)] p-4 text-[var(--crm-text)]">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-[var(--crm-violet)]">
+        <Icon name="edit_note" className="text-[18px]" /> Internal note
+      </div>
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{message.content}</p>
+      <p className="mt-2 text-[10px] font-semibold text-[var(--crm-text-muted)]">{message.agentName || 'CRM user'} · {message.timestamp}</p>
+    </article>
+  )
+}
+
+function TaskCard({ message }: { message: Message }) {
+  const completed = message.taskStatus === 'completed'
+  return (
+    <article aria-label="Task activity" className="mx-auto w-full max-w-2xl rounded-xl border border-[var(--crm-action-border)] bg-[var(--crm-action-soft)] p-4 text-[var(--crm-text)]">
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--crm-surface)] text-[var(--crm-action)]"><Icon name={completed ? 'task_alt' : 'checklist'} /></span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-[0.08em] text-[var(--crm-action)]">Task</span>
+            <span className={cn('rounded-full px-2 py-0.5 text-[9px] font-black uppercase', completed ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'bg-[var(--crm-surface)] text-[var(--crm-text-muted)]')}>
+              {message.taskStatus || 'Recorded'}
+            </span>
+          </div>
+          <p className="mt-1 text-sm font-black text-[var(--crm-ink)]">{message.content}</p>
+          <p className="mt-2 text-[10px] font-semibold text-[var(--crm-text-muted)]">
+            {message.owner ? `Owner: ${message.owner} · ` : ''}
+            {message.dueAt ? `Due ${new Date(message.dueAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ` : ''}
+            {message.timestamp}
+          </p>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function StatusEvent({ message }: { message: Message }) {
+  return (
+    <div role="note" aria-label="Conversation status change" className="flex items-center gap-3 py-1">
+      <span className="h-px flex-1 bg-[var(--crm-border)]" />
+      <span className="max-w-[80%] rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-1.5 text-center text-[10px] font-bold text-[var(--crm-text-muted)]">
+        {message.content} · {message.agentName || 'System'} · {message.timestamp}
+      </span>
+      <span className="h-px flex-1 bg-[var(--crm-border)]" />
     </div>
   )
 }
@@ -342,6 +395,12 @@ export function MessageBubble({ message }: { message: Message }) {
       return <EmailCard message={message} />
     case 'call':
       return <CallCard message={message} />
+    case 'note':
+      return <NoteCard message={message} />
+    case 'task':
+      return <TaskCard message={message} />
+    case 'status':
+      return <StatusEvent message={message} />
     default:
       return <SmsBubble message={message} />
   }

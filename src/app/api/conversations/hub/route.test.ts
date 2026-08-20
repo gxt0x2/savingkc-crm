@@ -1,108 +1,116 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  from: vi.fn(),
-  readActivitySnapshot: vi.fn(),
-  unstableCache: vi.fn((loader: () => Promise<unknown>) => loader),
+  auth: vi.fn(),
+  actor: vi.fn(),
+  readThreads: vi.fn(),
 }))
 
-vi.mock('server-only', () => ({}))
-
-vi.mock('next/cache', () => ({
-  unstable_cache: mocks.unstableCache,
+vi.mock('@/lib/api/authenticated-actor', () => ({
+  resolveAuthenticatedActor: mocks.actor,
+}))
+vi.mock('@/lib/api/require-authenticated-user', () => ({
+  requireAuthenticatedUser: mocks.auth,
 }))
 
-vi.mock('@/lib/supabase/admin', () => ({
-  supabaseAdmin: () => ({ from: mocks.from }),
-}))
-
-vi.mock('@/lib/server/conversation-activity-snapshot', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/server/conversation-activity-snapshot')>(
-    '@/lib/server/conversation-activity-snapshot',
+vi.mock('@/lib/server/conversation-read-model', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/server/conversation-read-model')>(
+    '@/lib/server/conversation-read-model',
   )
-  return {
-    ...actual,
-    readConversationActivitySnapshot: mocks.readActivitySnapshot,
-  }
+  return { ...actual, readConversationThreads: mocks.readThreads }
 })
 
 import { GET } from './route'
+import { ConversationReadModelUnavailableError } from '@/lib/server/conversation-read-model'
+
+const emptyPage = {
+  items: [],
+  unmatchedActivities: [],
+  pageInfo: { limit: 50, hasMore: false, nextCursor: null },
+  source: 'projection' as const,
+  degraded: false,
+}
 
 describe('conversation hub API', () => {
   beforeEach(() => {
-    mocks.from.mockReset()
-    mocks.readActivitySnapshot.mockReset()
+    mocks.auth.mockReset().mockResolvedValue(null)
+    mocks.actor.mockReset()
+    mocks.readThreads.mockReset().mockResolvedValue(emptyPage)
   })
 
-  it('builds the hub from the shared snapshot without another activity query', async () => {
-    mocks.readActivitySnapshot.mockResolvedValue([
-      {
-        id: 'message-1',
-        lead_id: 'lead-1',
-        activity_type: 'sms_received',
-        type: null,
-        description: 'Can you call me?',
-        agent: null,
-        metadata: { direction: 'inbound' },
-        created_at: '2026-08-18T15:00:00.000Z',
-      },
-      {
-        id: 'task-1',
-        lead_id: 'lead-1',
-        activity_type: 'task',
-        type: null,
-        description: 'Return seller call',
-        agent: null,
-        metadata: {
-          primary_next_action: true,
-          status: 'pending',
-          due_date: '2026-08-18T16:00:00.000Z',
-        },
-        created_at: '2026-08-18T15:01:00.000Z',
-      },
-    ])
-
-    mocks.from.mockImplementation((table: string) => ({
-      select: vi.fn(() => ({
-        in: vi.fn(async () => table === 'leads'
-          ? {
-              data: [{
-                id: 'lead-1',
-                full_name: 'Jordan Seller',
-                phone: '+19135550123',
-                email: null,
-                property_address: '123 Test Street',
-                city: 'Kansas City',
-                county: 'Jackson',
-                station: 'new',
-                priority: 'warm',
-                assigned_agent: 'Casey',
-                classification: 'lead',
-                dead_reason: null,
-                source: 'website_form',
-                motivation_score: null,
-                arv: null,
-                offer_amount: null,
-                appointment_date: null,
-                created_at: '2026-08-18T14:00:00.000Z',
-              }],
-              error: null,
-            }
-          : { data: [], error: null }),
-      })),
-    }))
-
-    const response = await GET()
-    const payload = await response.json()
+  it('defaults to the bounded needs-reply queue', async () => {
+    const response = await GET(new Request('https://crm.savingkc.com/api/conversations/hub'))
 
     expect(response.status).toBe(200)
-    expect(payload.items).toHaveLength(1)
-    expect(payload.items[0]).toMatchObject({
-      id: 'lead-1',
-      attentionState: 'needs_reply',
-      primaryNextAction: { id: 'task-1', title: 'Return seller call' },
+    expect(mocks.readThreads).toHaveBeenCalledWith({
+      limit: 50,
+      queue: 'needs_reply',
+      channel: null,
+      query: null,
+      actorName: null,
+      cursor: null,
     })
-    expect(mocks.from).toHaveBeenCalledTimes(2)
-    expect(mocks.from).not.toHaveBeenCalledWith('lead_activities')
+    expect(mocks.actor).not.toHaveBeenCalled()
+    expect(response.headers.get('x-conversation-read-model')).toBe('projection')
+    expect(response.headers.get('server-timing')).toMatch(/^total;dur=/)
+    expect(response.headers.get('x-conversation-row-count')).toBe('0')
+  })
+
+  it('resolves Mine from the authenticated actor instead of a client owner name', async () => {
+    mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey Davis' })
+
+    const response = await GET(new Request(
+      'https://crm.savingkc.com/api/conversations/hub?queue=mine&owner=Ernest&q=smith&channel=sms&limit=25',
+    ))
+
+    expect(response.status).toBe(200)
+    expect(mocks.readThreads).toHaveBeenCalledWith(expect.objectContaining({
+      queue: 'mine',
+      actorName: 'Casey Davis',
+      query: 'smith',
+      channel: 'sms',
+      limit: 25,
+    }))
+    expect(mocks.readThreads.mock.calls[0]?.[0]).not.toHaveProperty('owner')
+  })
+
+  it('fails the Mine queue closed when no authenticated actor exists', async () => {
+    mocks.actor.mockResolvedValue(null)
+
+    const response = await GET(new Request('https://crm.savingkc.com/api/conversations/hub?queue=mine'))
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('cache-control')).toContain('no-store')
+    expect(mocks.readThreads).not.toHaveBeenCalled()
+  })
+
+  it('exits before the read model when the route-local session is missing', async () => {
+    mocks.auth.mockResolvedValue(new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }))
+
+    const response = await GET(new Request('https://crm.savingkc.com/api/conversations/hub?queue=all'))
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('cache-control')).toContain('no-store')
+    expect(mocks.actor).not.toHaveBeenCalled()
+    expect(mocks.readThreads).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid or unindexed short searches', async () => {
+    const response = await GET(new Request('https://crm.savingkc.com/api/conversations/hub?q=ab'))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ error: 'q must contain at least 3 characters' })
+  })
+
+  it('returns explicit 503 when migration-first rollout has not completed', async () => {
+    mocks.readThreads.mockRejectedValue(new ConversationReadModelUnavailableError())
+
+    const response = await GET(new Request('https://crm.savingkc.com/api/conversations/hub'))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'CONVERSATION_READ_MODEL_UNAVAILABLE',
+      retryable: true,
+    })
   })
 })

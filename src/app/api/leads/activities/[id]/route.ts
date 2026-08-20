@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { supabase } from '@/lib/supabase-lazy'
 import { syncLeadActivityMutation } from '@/lib/lead-activity-sync'
 
@@ -9,6 +11,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authenticatedActor = await resolveAuthenticatedActor()
+    if (!authenticatedActor) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
     const body = await req.json()
     const { description, metadata, activity_type } = body
@@ -26,8 +33,24 @@ export async function PATCH(
     }
 
     // For calendar-style tasks, allow metadata updates while preserving the row's existing activity_type.
-    if (activity_type === 'task' && metadata) {
-      updateData.metadata = metadata
+    if (activity_type === 'task' && metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      const taskMetadata = metadata as Record<string, unknown>
+      const assignment = resolveTaskAssignee(taskMetadata.assigned_to, authenticatedActor.name, { defaultToActor: true })
+      if (!assignment.authorized || !assignment.assignedTo) {
+        return NextResponse.json({ success: false, error: 'Task assignee is not authorized' }, { status: 403 })
+      }
+      const trustedTaskMetadata = { ...taskMetadata }
+      delete trustedTaskMetadata.actor
+      delete trustedTaskMetadata.agent
+      delete trustedTaskMetadata.created_by
+      delete trustedTaskMetadata.createdBy
+      delete trustedTaskMetadata.updated_by
+      delete trustedTaskMetadata.updatedBy
+      updateData.metadata = {
+        ...trustedTaskMetadata,
+        assigned_to: assignment.assignedTo,
+        updated_by: authenticatedActor.name,
+      }
     }
 
     const { data, error } = await supabase
@@ -90,6 +113,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authenticatedActor = await resolveAuthenticatedActor()
+    if (!authenticatedActor) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await params
 
     // Get lead_id before deletion for manifest update

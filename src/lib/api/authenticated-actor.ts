@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase-lazy'
+import { hasVerifiedSubject } from '@/lib/auth/verified-claims'
 import { createClient } from '@/lib/supabase/server'
 
 export interface AuthenticatedActor {
@@ -9,10 +10,12 @@ export interface AuthenticatedActor {
 /** Resolve the request's verified CRM user and server-owned activity label. */
 export async function resolveAuthenticatedActor(): Promise<AuthenticatedActor | null> {
   const authClient = await createClient()
-  const { data: { user } } = await authClient.auth.getUser()
-  if (!user?.email) return null
+  const claimsResult = await authClient.auth.getClaims()
+  if (!hasVerifiedSubject(claimsResult)) return null
+  const emailClaim = claimsResult.data?.claims?.email
+  if (typeof emailClaim !== 'string' || !emailClaim.trim()) return null
 
-  const email = user.email.toLowerCase()
+  const email = emailClaim.trim().toLowerCase()
   try {
     const { data: profile } = await supabase
       .from('agent_profiles')

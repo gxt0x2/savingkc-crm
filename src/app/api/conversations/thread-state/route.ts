@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { supabase } from '@/lib/supabase-lazy'
 
 type ThreadStateAction = 'mark_read' | 'mark_unread' | 'reminder_created' | 'reminder_completed' | 'tag_added' | 'tag_removed'
@@ -48,6 +50,73 @@ function cleanTag(value: unknown): string | null {
   return normalized || null
 }
 
+function auditSource(value: unknown): 'conversation_hub' | 'dialer_prospecting_hub' {
+  return value === 'dialer_prospecting_hub' ? 'dialer_prospecting_hub' : 'conversation_hub'
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+interface ConversationThreadIdentity {
+  threadKey: string
+  leadId: string | null
+  phone: string | null
+}
+
+function normalizeLeadId(value: string | null): string | null {
+  return value && UUID_PATTERN.test(value) ? value.toLowerCase() : null
+}
+
+function unmatchedPhone(value: string | null): string | null {
+  return value?.toLowerCase().startsWith('unmatched:')
+    ? normalizePhoneToE164(value.slice(value.indexOf(':') + 1))
+    : null
+}
+
+function resolveThreadIdentity(body: Record<string, unknown>): ConversationThreadIdentity | null {
+  const suppliedThreadKey = cleanText(body.threadKey)
+  const suppliedLeadId = cleanText(body.leadId)
+  const suppliedPhone = cleanText(body.phone)
+  const normalizedSuppliedPhone = suppliedPhone ? normalizePhoneToE164(suppliedPhone) : null
+
+  if (suppliedPhone && !normalizedSuppliedPhone) return null
+
+  if (suppliedThreadKey) {
+    const separator = suppliedThreadKey.indexOf(':')
+    const kind = separator > 0 ? suppliedThreadKey.slice(0, separator).trim().toLowerCase() : ''
+    const value = separator > 0 ? suppliedThreadKey.slice(separator + 1).trim() : ''
+
+    if (kind === 'lead') {
+      const leadId = normalizeLeadId(value)
+      if (!leadId) return null
+      if (suppliedLeadId && normalizeLeadId(suppliedLeadId) !== leadId) return null
+      return { threadKey: `lead:${leadId}`, leadId, phone: null }
+    }
+
+    if (kind === 'phone') {
+      const phone = normalizePhoneToE164(value)
+      if (!phone || (normalizedSuppliedPhone && normalizedSuppliedPhone !== phone)) return null
+      if (suppliedLeadId) {
+        const legacyPhone = unmatchedPhone(suppliedLeadId)
+        if (legacyPhone !== phone) return null
+      }
+      return { threadKey: `phone:${phone}`, leadId: null, phone }
+    }
+
+    return null
+  }
+
+  const leadId = normalizeLeadId(suppliedLeadId)
+  if (leadId) {
+    return { threadKey: `lead:${leadId}`, leadId, phone: null }
+  }
+
+  const legacyPhone = unmatchedPhone(suppliedLeadId)
+  const phone = normalizedSuppliedPhone ?? legacyPhone
+  if (!phone || (suppliedLeadId && !legacyPhone)) return null
+  if (legacyPhone && normalizedSuppliedPhone && legacyPhone !== normalizedSuppliedPhone) return null
+  return { threadKey: `phone:${phone}`, leadId: null, phone }
+}
+
 function tagLabel(tag: string | null): string | null {
   if (!tag) return null
   return tag
@@ -70,12 +139,15 @@ function actionDescription(action: ThreadStateAction, phone: string | null, dueA
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    const authenticatedActor = await resolveAuthenticatedActor()
+    if (!authenticatedActor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await req.json() as Record<string, unknown>
     const action = cleanAction(body?.action)
-    const leadId = cleanText(body?.leadId)
-    const phone = cleanText(body?.phone)
-    const agent = cleanText(body?.agent) || 'System'
-    const source = cleanText(body?.source) || 'dialer_prospecting_hub'
+    const thread = resolveThreadIdentity(body)
+    const source = auditSource(body.source)
     const prospectPhoneId = cleanText(body?.prospectPhoneId)
     const reminderNote = cleanText(body?.note)
     const dueAt = cleanDueAt(body?.dueAt)
@@ -84,8 +156,8 @@ export async function POST(req: Request) {
     if (!action) {
       return NextResponse.json({ error: 'Valid action is required' }, { status: 400 })
     }
-    if (!leadId && !phone) {
-      return NextResponse.json({ error: 'leadId or phone is required' }, { status: 400 })
+    if (!thread) {
+      return NextResponse.json({ error: 'A valid, matching conversation threadKey is required' }, { status: 400 })
     }
     if (action === 'reminder_created' && !dueAt) {
       return NextResponse.json({ error: 'A valid dueAt is required for reminders' }, { status: 400 })
@@ -95,14 +167,15 @@ export async function POST(req: Request) {
     }
 
     const { error } = await supabase.from('lead_activities').insert({
-      lead_id: leadId,
+      lead_id: thread.leadId,
       activity_type: 'status_change',
-      description: actionDescription(action, phone, dueAt, tag),
-      agent,
+      description: actionDescription(action, thread.phone, dueAt, tag),
+      agent: authenticatedActor.name,
       metadata: {
         source,
+        thread_key: thread.threadKey,
         hub_action: action,
-        ...(phone ? { phone } : {}),
+        ...(thread.phone ? { phone: thread.phone } : {}),
         ...(prospectPhoneId ? { prospect_phone_id: prospectPhoneId } : {}),
         ...(dueAt ? { reminder_due_at: dueAt } : {}),
         ...(reminderNote ? { reminder_note: reminderNote } : {}),
@@ -111,7 +184,8 @@ export async function POST(req: Request) {
     })
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('[conversations/thread-state] activity insert failed:', error.message)
+      return NextResponse.json({ error: 'Conversation state could not be saved' }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -123,6 +197,6 @@ export async function POST(req: Request) {
     })
   } catch (err) {
     console.error('[conversations/thread-state] error:', err)
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

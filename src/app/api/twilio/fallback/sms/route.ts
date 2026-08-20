@@ -3,7 +3,7 @@ import { getAgentRouting } from '@/lib/agent-routing'
 import { ensureManifestExists, onCommunicationEvent } from '@/lib/manifest-sync'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
-import { handleOptIn, handleOptOut, isStartKeyword, isStopKeyword } from '@/lib/sms-opt-out'
+import { processInboundSmsConsent } from '@/lib/sms-consent-audit'
 import {
   buildCarrierFallbackSmsLeadSeed,
   buildCarrierFallbackSmsTask,
@@ -20,8 +20,8 @@ const XML_HEADERS = {
   'Cache-Control': 'no-store, max-age=0',
 }
 
-function xmlResponse(body = emptyTwiml()) {
-  return new NextResponse(body, { headers: XML_HEADERS })
+function xmlResponse(body = emptyTwiml(), status = 200) {
+  return new NextResponse(body, { status, headers: XML_HEADERS })
 }
 
 async function findLeadId(phone: string): Promise<string | null> {
@@ -47,15 +47,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (isStopKeyword(message)) {
-      await handleOptOut(from, message.trim())
-      return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Message>You have been unsubscribed from Saving KC messages. Reply START to re-subscribe.</Message></Response>')
-    }
-    if (isStartKeyword(message)) {
-      await handleOptIn(from)
-      return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Message>You have been re-subscribed to Saving KC messages. Reply STOP to unsubscribe.</Message></Response>')
-    }
+    const consentTwiml = await processInboundSmsConsent({ from, to, keyword: message, messageSid, source: 'carrier_sms_fallback' })
+    if (consentTwiml) return xmlResponse(consentTwiml)
+  } catch (error) {
+    console.error('[carrier-sms-fallback] SMS consent persistence failed', error)
+    return xmlResponse(emptyTwiml(), 503)
+  }
 
+  try {
     const { data: existingActivity } = await supabase
       .from('lead_activities')
       .select('id')

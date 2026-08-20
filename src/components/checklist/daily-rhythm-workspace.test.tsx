@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DailyRhythmWorkspace } from './daily-rhythm-workspace'
@@ -58,5 +58,20 @@ describe('DailyRhythmWorkspace', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /Daily Closeout/ })).toHaveClass('bg-[var(--crm-brand)]'))
     expect(fetchMock).toHaveBeenLastCalledWith('/api/daily-rhythm', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('shows unavailable urgent counts instead of false zeroes when attention fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (input === '/api/conversations/attention-count') return { ok: false, json: async () => ({ error: 'Unavailable' }) }
+      if (input === '/api/my-day') return { ok: true, json: async () => ({ commitments: [], queue: [] }) }
+      return { ok: true, json: async () => ({ date: '2026-08-17', sod: null, eod: null }) }
+    }))
+
+    render(<DailyRhythmWorkspace userEmail="casey@savingkc.com" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Clear Urgent Messages/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /Clear Urgent Messages/ }))
+
+    expect(within(screen.getByText('Missed calls').parentElement!).getByText('—')).toBeVisible()
+    expect(within(screen.getByText('Overdue actions').parentElement!).getByText('—')).toBeVisible()
   })
 })

@@ -117,7 +117,7 @@ export function WorkspaceFrame({
       className="crm-workspace-shell flex h-[100dvh] overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
       data-theme={theme}
     >
-      <WorkspaceNav needsReply={resolvedNeedsReply ?? 0} userEmail={userEmail} canReviewCalls={canReviewCalls} />
+      <WorkspaceNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />
       <div className="flex min-w-0 flex-1 flex-col">
         <WorkspaceChromeContext.Provider value={chromeContextValue}>
           {resolvedHideHeader ? null : <header className={`crm-shell-header relative z-[60] flex shrink-0 flex-col overflow-visible border-b px-3 pb-2 pt-[max(.5rem,env(safe-area-inset-top))] backdrop-blur md:flex-row md:items-center md:gap-5 md:px-6 md:py-2 ${resolvedCommandBarActive ? 'md:min-h-[76px]' : 'md:h-[62px]'}`}>
@@ -179,7 +179,7 @@ export function WorkspaceFrame({
           </Suspense>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
           <GiraffeAssistantLauncher />
-          <WorkspaceMobileNav needsReply={resolvedNeedsReply ?? 0} userEmail={userEmail} canReviewCalls={canReviewCalls} />
+          <WorkspaceMobileNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />
         </WorkspaceChromeContext.Provider>
       </div>
     </div>

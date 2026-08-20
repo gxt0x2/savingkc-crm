@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({
-  getCurrentUserEmail: vi.fn(),
+  requireAuthenticatedUser: vi.fn(),
   from: vi.fn(),
 }))
 
-vi.mock('@/lib/auth/admin', () => ({
-  getCurrentUserEmail: mocks.getCurrentUserEmail,
+vi.mock('@/lib/api/require-authenticated-user', () => ({
+  requireAuthenticatedUser: mocks.requireAuthenticatedUser,
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -27,7 +27,12 @@ function jsonRequest(method: string, body?: Record<string, unknown>) {
 describe('/api/leads route-local containment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getCurrentUserEmail.mockResolvedValue(null)
+    mocks.requireAuthenticatedUser.mockResolvedValue(
+      Response.json({ success: false, error: 'Unauthorized' }, {
+        status: 401,
+        headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+      }),
+    )
   })
 
   it.each([
@@ -48,7 +53,7 @@ describe('/api/leads route-local containment', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ error: 'Phone, address, or email is required' })
-    expect(mocks.getCurrentUserEmail).not.toHaveBeenCalled()
+    expect(mocks.requireAuthenticatedUser).not.toHaveBeenCalled()
   })
 
   it('keeps public preflight limited to POST and OPTIONS', async () => {
@@ -56,14 +61,14 @@ describe('/api/leads route-local containment', () => {
 
     expect(response.status).toBe(204)
     expect(response.headers.get('access-control-allow-methods')).toBe('POST, OPTIONS')
-    expect(mocks.getCurrentUserEmail).not.toHaveBeenCalled()
+    expect(mocks.requireAuthenticatedUser).not.toHaveBeenCalled()
   })
 
   it('allows an authenticated GET to reach the leads query', async () => {
     const range = vi.fn().mockResolvedValue({ data: [], error: null, count: 0 })
     const order = vi.fn(() => ({ range }))
     const select = vi.fn(() => ({ order }))
-    mocks.getCurrentUserEmail.mockResolvedValue('agent@savingkc.com')
+    mocks.requireAuthenticatedUser.mockResolvedValue(null)
     mocks.from.mockReturnValue({ select })
 
     const response = await GET(jsonRequest('GET'))

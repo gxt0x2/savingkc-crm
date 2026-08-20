@@ -66,7 +66,15 @@ export async function POST(req: Request) {
           : NextResponse.json({ error: 'Duplicate SMS — same message sent to this number within 24 hours' }, { status: 409 })
       }
 
-      return NextResponse.json({ success: true, sid: result.sid, from: result.from })
+      return NextResponse.json({
+        success: true,
+        sent: true,
+        persisted: result.persisted,
+        deliveryState: result.deliveryState,
+        warning: result.warning,
+        sid: result.sid,
+        from: result.from,
+      })
     }
 
     if (mode === 'email') {
@@ -169,6 +177,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unknown mode' }, { status: 400 })
   } catch (err) {
     console.error('conversations/send error:', err)
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 })
+    return NextResponse.json({ error: 'Conversation could not be sent' }, { status: 500 })
   }
 }

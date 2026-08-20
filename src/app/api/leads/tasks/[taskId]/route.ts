@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { supabase } from '@/lib/supabase-lazy'
-import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
 /**
  * PATCH /api/leads/tasks/[taskId]
@@ -28,8 +29,11 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ taskId: string }> },
 ) {
-  const unauthorized = await requireUserOrSecret(req)
-  if (unauthorized) return unauthorized
+  const authenticatedActor = await resolveAuthenticatedActor()
+  if (!authenticatedActor) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const actorName = authenticatedActor.name
 
   const { taskId } = await params
   if (!taskId) return NextResponse.json({ error: 'taskId required' }, { status: 400 })
@@ -60,7 +64,18 @@ export async function PATCH(
   if (typeof body.title === 'string') next.title = body.title.trim()
   if (typeof body.notes === 'string') next.notes = body.notes.trim()
   if (typeof body.cta === 'string') next.cta = body.cta.trim()
-  if (typeof body.assignedTo === 'string') next.assigned_to = body.assignedTo.trim()
+  const assignment = resolveTaskAssignee(body.assignedTo, actorName, {
+    defaultToActor: false,
+    allowUnassigned: true,
+  })
+  if (!assignment.authorized) {
+    return NextResponse.json({ error: 'Task assignee is not authorized' }, { status: 403 })
+  }
+  if (assignment.assignedTo !== undefined) {
+    next.assigned_to = assignment.assignedTo
+  } else if (typeof next.assigned_to !== 'string' || !next.assigned_to.trim()) {
+    next.assigned_to = actorName
+  }
   if (typeof body.priority === 'string') {
     const p = body.priority
     if (p === 'critical' || p === 'high' || p === 'normal' || p === 'nominal') next.priority = p
@@ -77,11 +92,14 @@ export async function PATCH(
 
   // Mark as user-edited unless this is purely a status flip (complete/dismiss
   // shouldn't masquerade as an edit; the source line stays AI if originally AI).
-  const isPureStatusFlip = Object.keys(body).length === 1 && 'status' in body
+  const supportedMutationKeys = new Set(['title', 'notes', 'cta', 'assignedTo', 'priority', 'dueDate', 'status'])
+  const mutationKeys = Object.keys(body).filter((key) => supportedMutationKeys.has(key))
+  const isPureStatusFlip = mutationKeys.length === 1 && mutationKeys[0] === 'status'
   if (!isPureStatusFlip) {
     next.userEdited = true
     next.userEditedAt = new Date().toISOString()
   }
+  next.updated_by = actorName
 
   const description = typeof next.title === 'string' && next.title ? (next.title as string) : existing.description
 

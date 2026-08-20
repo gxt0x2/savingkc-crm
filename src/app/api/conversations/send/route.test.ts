@@ -8,12 +8,12 @@ const mocks = vi.hoisted(() => ({
   resendSend: vi.fn(),
   checkAutoAdvance: vi.fn(),
   onCommunicationEvent: vi.fn(),
-  getUser: vi.fn(),
+  getClaims: vi.fn(),
   profileMaybeSingle: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { getUser: mocks.getUser } }),
+  createClient: async () => ({ auth: { getClaims: mocks.getClaims } }),
 }))
 
 vi.mock('@/lib/send-lead-sms', () => ({
@@ -56,8 +56,8 @@ describe('conversation sends', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.externalSideEffectsDisabled.mockReturnValue(false)
-    mocks.getUser.mockResolvedValue({
-      data: { user: { id: 'user-ernest', email: 'ernest@savingkc.com' } },
+    mocks.getClaims.mockResolvedValue({
+      data: { claims: { sub: 'user-ernest', email: 'ernest@savingkc.com' } },
       error: null,
     })
     mocks.profileMaybeSingle.mockResolvedValue({ data: { full_name: 'Ernest Dodson' }, error: null })
@@ -74,7 +74,13 @@ describe('conversation sends', () => {
     mocks.insert.mockResolvedValue({ error: null })
     mocks.checkAutoAdvance.mockResolvedValue(undefined)
     mocks.onCommunicationEvent.mockResolvedValue(undefined)
-    mocks.sendLeadSms.mockResolvedValue({ status: 'sent', sid: 'SM123', from: '+18166088559' })
+    mocks.sendLeadSms.mockResolvedValue({
+      status: 'sent',
+      sid: 'SM123',
+      from: '+18166088559',
+      persisted: true,
+      deliveryState: 'delivered_and_persisted',
+    })
   })
 
   afterEach(() => {
@@ -101,8 +107,36 @@ describe('conversation sends', () => {
     }))
   })
 
+  it('reports an SMS that was delivered but not persisted without inviting a resend', async () => {
+    mocks.sendLeadSms.mockResolvedValue({
+      status: 'sent',
+      sid: 'SM123',
+      from: '+18166088559',
+      persisted: false,
+      deliveryState: 'delivered_not_persisted',
+      warning: 'SMS delivered, but CRM history could not be saved. Do not resend this message.',
+    })
+
+    const response = await POST(request({
+      mode: 'sms',
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Hello',
+      resolveSenderFromConversation: true,
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      sent: true,
+      persisted: false,
+      deliveryState: 'delivered_not_persisted',
+      warning: expect.stringContaining('Do not resend'),
+    })
+  })
+
   it('requires a route-local authenticated user before sending', async () => {
-    mocks.getUser.mockResolvedValue({ data: { user: null }, error: null })
+    mocks.getClaims.mockResolvedValue({ data: { claims: {} }, error: null })
 
     const response = await POST(request({
       mode: 'sms',

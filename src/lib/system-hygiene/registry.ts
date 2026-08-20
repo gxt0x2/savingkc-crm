@@ -33,6 +33,7 @@ export interface SystemRegistry {
       path: string
       minimumIntervalMs: number
       reason: string
+      targetDate?: string
     }>
   }
   features: SystemFeature[]
