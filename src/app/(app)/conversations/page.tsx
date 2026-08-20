@@ -25,7 +25,9 @@ import {
   conversationHubStaleTime,
   conversationTimelineStaleTime,
   conversationDeepLinkSearch,
+  conversationHubInfiniteQueryKey,
   conversationMatchesDeepLink,
+  conversationTimelineInfiniteQueryKey,
   mergeConversationThreads,
   fetchConversationHub,
   fetchConversationTimeline,
@@ -335,7 +337,7 @@ export default function ConversationsPage() {
   const requestedLookupEnabled = requestedThreadSearch.length >= 3
 
   const hubQuery = useInfiniteQuery({
-    queryKey: ['conversation-hub', activeQueue, normalizedSearch],
+    queryKey: conversationHubInfiniteQueryKey(activeQueue, normalizedSearch),
     queryFn: ({ pageParam }) => fetchConversationHub<ConversationThread>({ queue: activeQueue, cursor: pageParam, search: normalizedSearch }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.pageInfo.hasMore ? lastPage.pageInfo.nextCursor ?? undefined : undefined,
@@ -400,7 +402,7 @@ export default function ConversationsPage() {
     ?? hubQuery.data?.pages.find((page) => page.degraded || page.source === 'compatibility')
 
   const timelineQuery = useInfiniteQuery({
-    queryKey: ['conversation-timeline', activeThread?.threadKey],
+    queryKey: conversationTimelineInfiniteQueryKey(activeThread?.threadKey ?? ''),
     queryFn: ({ pageParam }) => fetchConversationTimeline<ConversationTimelineItem>({ threadId: activeThread!.id, cursor: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.pageInfo.hasMore ? lastPage.pageInfo.nextCursor ?? undefined : undefined,

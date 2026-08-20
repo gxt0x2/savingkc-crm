@@ -3,6 +3,7 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
+  "regions": ["pdx1"],
   "crons": [
     {
       "path": "/api/cron/sweep-briefings",

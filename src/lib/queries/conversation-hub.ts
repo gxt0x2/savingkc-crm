@@ -4,6 +4,14 @@ export const conversationHubQueryKey = ['conversation-hub'] as const
 
 export type ConversationQueue = 'needs_reply' | 'mine' | 'unassigned' | 'all'
 
+export function conversationHubInfiniteQueryKey(queue: ConversationQueue, search: string) {
+  return [...conversationHubQueryKey, queue, search] as const
+}
+
+export function conversationTimelineInfiniteQueryKey(threadKey: string) {
+  return ['conversation-timeline', threadKey] as const
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export function conversationDeepLinkSearch(requestedThreadId: string | null): string {
