@@ -3,12 +3,13 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { getContactSignal, getOutreachStatus, isOutboundAttempt, type ContactActivityLike, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
+import { getContactSignal, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import { isActiveAcquisitionContact, isProspectingContact } from '@/lib/contact-smart-lists'
 import { getPipelineIntentSource } from '@/lib/pipeline-intent'
-import { buildConversationHubThread, type ConversationHubActivity, type ConversationHubThread } from '@/lib/operating-model/conversation-hub'
-import { readConversationActivitySnapshot } from '@/lib/server/conversation-activity-snapshot'
+import { communicationActivitySummary } from '@/lib/operating-model/conversation-presentation'
+import type { ConversationHubActivity, ConversationHubThread } from '@/lib/operating-model/conversation-hub'
+import { readContactWorkspaceActivitySummaries, type ContactWorkspaceActivitySummary } from '@/lib/server/contact-workspace-read-model'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -89,9 +90,6 @@ const CONTACT_STAGES = new Set<DealStage>([
   'closed_lost',
   'dead',
 ])
-const CONTACT_ACTIVITY_TYPES = ['call', 'sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound', 'email', 'email_sent', 'email_received', 'voicemail', 'missed_call', 'task', 'status_change']
-const CONTACT_ACTIVITY_TYPE_SET = new Set(CONTACT_ACTIVITY_TYPES)
-
 function getContactStation(station: string | null | undefined): DealStage | null {
   const normalized = normalizeDealStage(station) ?? 'new'
   return CONTACT_STAGES.has(normalized) ? normalized : null
@@ -127,32 +125,55 @@ function pickTags(m: ManifestPayload): string[] {
   return [...tags].slice(0, 6)
 }
 
+function projectionCommunication(summary: ContactWorkspaceActivitySummary | undefined): ConversationHubActivity | null {
+  if (!summary?.last_communication_id || !summary.last_communication_type || !summary.last_communication_at) return null
+  return {
+    id: summary.last_communication_id,
+    lead_id: summary.lead_id,
+    activity_type: summary.last_communication_type,
+    description: summary.last_communication_description,
+    agent: summary.last_communication_agent,
+    metadata: summary.last_communication_metadata ?? {},
+    created_at: summary.last_communication_at,
+  }
+}
+
+function projectionAttentionState(summary: ContactWorkspaceActivitySummary | undefined): ConversationHubThread['attentionState'] {
+  return summary?.attention_state === 'needs_reply' || summary?.attention_state === 'waiting_on_contact'
+    ? summary.attention_state
+    : 'resolved'
+}
+
+function projectionOutreachStatus(summary: ContactWorkspaceActivitySummary | undefined): OutreachStatus {
+  if (summary?.has_connected_call || summary?.has_inbound_message) return 'connected_unclassified'
+  return summary?.has_outbound_attempt ? 'attempted_no_response' : 'unattempted'
+}
+
 export async function GET(request: NextRequest) {
+  const requestStartedAt = performance.now()
   const db = supabaseAdmin()
   const requestedScope = request.nextUrl.searchParams.get('scope')
   const scope = requestedScope === 'not_leads' || requestedScope === 'prospects' || requestedScope === 'all' ? requestedScope : 'active'
 
-  const [{ data: leads, error: leadsErr }, activitySnapshot] = await Promise.all([
-    db
-      .from('leads')
-      .select('id, full_name, phone, email, source, station, classification, dead_reason, assigned_agent, property_address, city, created_at, updated_at, is_parked, is_favorite')
-      .eq('is_parked', false)
-      .order('updated_at', { ascending: false }),
-    readConversationActivitySnapshot(),
-  ])
+  const { data: leads, error: leadsErr } = await db
+    .from('leads')
+    .select('id, full_name, phone, email, source, station, classification, dead_reason, assigned_agent, property_address, city, created_at, updated_at, is_parked, is_favorite')
+    .eq('is_parked', false)
+    .order('updated_at', { ascending: false })
 
   if (leadsErr) return NextResponse.json({ error: leadsErr.message }, { status: 500 })
   const rows = leads ?? []
   const rowIds = rows.map((lead) => lead.id)
-  const rowIdSet = new Set(rowIds)
-  const intentActivities = activitySnapshot.filter((activity) =>
-    Boolean(activity.lead_id && rowIdSet.has(activity.lead_id)) &&
-    ['status_change', 'call'].includes(activity.activity_type),
-  ).sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const summaryStartedAt = performance.now()
+  const activitySummaries = await readContactWorkspaceActivitySummaries(rowIds, db)
+  const summaryDuration = performance.now() - summaryStartedAt
   const intentActivitiesByLead = new Map<string, Array<{ activity_type?: unknown; metadata?: unknown }>>()
-  for (const activity of intentActivities) {
-    if (!activity.lead_id) continue
-    intentActivitiesByLead.set(activity.lead_id, [...(intentActivitiesByLead.get(activity.lead_id) ?? []), activity])
+  for (const [leadId, summary] of activitySummaries) {
+    if (!summary.pipeline_intent_activity_type) continue
+    intentActivitiesByLead.set(leadId, [{
+      activity_type: summary.pipeline_intent_activity_type,
+      metadata: summary.pipeline_intent_metadata,
+    }])
   }
   const classifiedRows = rows
     .map((lead) => ({
@@ -191,7 +212,13 @@ export async function GET(request: NextRequest) {
       })
     })
 
-  if (scopedRows.length === 0) return NextResponse.json({ items: [], scope, scopeCounts })
+  if (scopedRows.length === 0) {
+    return NextResponse.json({ items: [], scope, scopeCounts }, {
+      headers: {
+        'Server-Timing': `activity-summary;dur=${summaryDuration.toFixed(1)}, total;dur=${(performance.now() - requestStartedAt).toFixed(1)}`,
+      },
+    })
+  }
 
   const leadIds = scopedRows.map(({ lead }) => lead.id)
 
@@ -206,12 +233,6 @@ export async function GET(request: NextRequest) {
       .select('lead_id, composite_score')
       .in('lead_id', leadIds),
   ])
-  const leadIdSet = new Set(leadIds)
-  const activities = activitySnapshot.filter((activity) =>
-    Boolean(activity.lead_id && leadIdSet.has(activity.lead_id)) &&
-    CONTACT_ACTIVITY_TYPE_SET.has(activity.activity_type),
-  ).sort((a, b) => a.created_at.localeCompare(b.created_at))
-
   const latestManifest = new Map<string, ManifestPayload>()
   for (const m of manifests ?? []) {
     if (!latestManifest.has(m.lead_id)) {
@@ -224,45 +245,12 @@ export async function GET(request: NextRequest) {
     scoreByLead.set(s.lead_id, Number(s.composite_score ?? 0))
   }
 
-  const firstOutboundByLead = new Map<string, string>()
-  const latestSignalByLead = new Map<string, ContactSignal>()
-  const communicationsByLead = new Map<string, ContactActivityLike[]>()
-  const hubActivitiesByLead = new Map<string, ConversationHubActivity[]>()
-  for (const activity of activities as ContactActivityLike[]) {
-    const leadId = typeof activity.lead_id === 'string' ? activity.lead_id : null
-    if (!leadId) continue
-    communicationsByLead.set(leadId, [...(communicationsByLead.get(leadId) ?? []), activity])
-    hubActivitiesByLead.set(leadId, [
-      ...(hubActivitiesByLead.get(leadId) ?? []),
-      activity as ConversationHubActivity,
-    ])
-
-    if (!firstOutboundByLead.has(leadId) && isOutboundAttempt(activity) && activity.created_at) {
-      firstOutboundByLead.set(leadId, activity.created_at)
-    }
-
-    const signal = getContactSignal(activity)
-    if (signal) latestSignalByLead.set(leadId, signal)
-  }
-
   const items: ContactRow[] = []
   for (const { lead, station, pipelineIntentSource } of scopedRows) {
     const manifest = latestManifest.get(lead.id) ?? {}
-    const hubThread = buildConversationHubThread({
-      id: lead.id,
-      full_name: lead.full_name,
-      phone: lead.phone,
-      email: lead.email,
-      property_address: lead.property_address,
-      city: lead.city,
-      station,
-      priority: null,
-      assigned_agent: lead.assigned_agent,
-      classification: (lead.classification as ContactRow['classification']) ?? null,
-      dead_reason: lead.dead_reason ?? null,
-      source: lead.source,
-      created_at: lead.created_at ?? lead.updated_at ?? '1970-01-01T00:00:00.000Z',
-    }, hubActivitiesByLead.get(lead.id) ?? [])
+    const summary = activitySummaries.get(lead.id)
+    const communication = projectionCommunication(summary)
+    const dueAt = summary?.primary_next_action_due_at ?? null
     const lastContactAt =
       manifest.communications?.lastSellerContactDate ??
       manifest.communications?.lastInboundDate ??
@@ -279,26 +267,36 @@ export async function GET(request: NextRequest) {
       station,
       classification: (lead.classification as ContactRow['classification']) ?? null,
       deadReason: lead.dead_reason ?? null,
-      owner: hubThread.owner,
+      owner: summary?.owner ?? lead.assigned_agent ?? null,
       score: scoreByLead.get(lead.id) ?? 0,
       isFavorite: Boolean((lead as { is_favorite?: boolean | null }).is_favorite),
       nextActivity: pickNextActivity(manifest),
       tags: pickTags(manifest),
       lastContactAt,
       createdAt: lead.created_at,
-      firstOutboundAt: firstOutboundByLead.get(lead.id) ?? null,
-      contactSignal: latestSignalByLead.get(lead.id) ?? null,
-      outreachStatus: getOutreachStatus(communicationsByLead.get(lead.id) ?? []),
+      firstOutboundAt: summary?.first_outbound_at ?? null,
+      contactSignal: communication ? getContactSignal(communication) : null,
+      outreachStatus: projectionOutreachStatus(summary),
       updatedAt: lead.updated_at,
       pipelineIntentSource,
-      attentionState: hubThread.attentionState,
-      lastMessage: hubThread.lastMessage,
-      lastActivityAt: hubThread.lastActivityAt,
-      primaryNextAction: hubThread.primaryNextAction,
+      attentionState: projectionAttentionState(summary),
+      lastMessage: communication ? communicationActivitySummary(communication) : 'No messages yet',
+      lastActivityAt: summary?.last_activity_at ?? lead.created_at ?? lead.updated_at ?? '1970-01-01T00:00:00.000Z',
+      primaryNextAction: summary?.primary_next_action_id ? {
+        id: summary.primary_next_action_id,
+        title: summary.primary_next_action_title?.trim() || 'Next action',
+        dueAt,
+        owner: summary.primary_next_action_owner ?? summary.owner ?? lead.assigned_agent ?? null,
+        overdue: Boolean(dueAt && new Date(dueAt) < new Date()),
+      } : null,
     })
   }
 
-  return NextResponse.json({ items, scope, scopeCounts })
+  return NextResponse.json({ items, scope, scopeCounts }, {
+    headers: {
+      'Server-Timing': `activity-summary;dur=${summaryDuration.toFixed(1)}, total;dur=${(performance.now() - requestStartedAt).toFixed(1)}`,
+    },
+  })
 }
 
 function cleanText(value: unknown): string | null {
