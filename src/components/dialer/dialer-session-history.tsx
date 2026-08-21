@@ -7,10 +7,13 @@ import { formatPhone, toProperCase } from '@/lib/format'
 import {
   loadDialerAttemptHistory,
   loadDialerSessionHistory,
+  decideDialerAiChanges,
   type DialerHistoryPage,
   type DurableDialerAttempt,
   type DurableDialerSession,
 } from '@/lib/dialer-session-client'
+import type { AiChangeProposal } from '@/lib/ai-change-proposal'
+import { AiChangeProposalCard } from '@/components/ai/ai-change-proposal-card'
 
 interface DialerSessionHistoryProps {
   onResume: (session: DurableDialerSession) => void
@@ -40,7 +43,33 @@ function statusTone(status: DurableDialerSession['status']) {
   return 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'
 }
 
-function PostCallReview({ attempt }: { attempt: DurableDialerAttempt }) {
+function AiChangeReview({
+  proposal,
+  sessionId,
+  clientAttemptId,
+  onChange,
+}: {
+  proposal: AiChangeProposal
+  sessionId: string
+  clientAttemptId: string
+  onChange: (proposal: AiChangeProposal) => void
+}) {
+  async function decide(decision: 'approved' | 'rejected') {
+    const next = await decideDialerAiChanges({
+      sessionId,
+      clientAttemptId,
+      decision,
+      decisionKey: `dialer-ai:${proposal.id}:${decision}`,
+    })
+    if (!next) throw new Error('Could not save the AI change decision.')
+    onChange(next)
+    return next
+  }
+
+  return <div className="mt-3"><AiChangeProposalCard proposal={proposal} onDecision={decide} /></div>
+}
+
+function PostCallReview({ attempt, sessionId, onProposalChange }: { attempt: DurableDialerAttempt; sessionId: string; onProposalChange: (proposal: AiChangeProposal) => void }) {
   const review = attempt.postCallReview
   if (!review || review.status === 'not_requested' || review.status === 'skipped') return null
   if (review.status === 'processing') {
@@ -59,6 +88,7 @@ function PostCallReview({ attempt }: { attempt: DurableDialerAttempt }) {
       {review.nextAction ? <p className="mt-2 text-[11px] text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Suggested next step:</strong> {review.nextAction}</p> : null}
       {review.improvements.length ? <p className="mt-1 text-[11px] text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Coaching:</strong> {review.improvements.join(' · ')}</p> : null}
       <p className="mt-2 text-[10px] text-[var(--crm-text-dim)]">AI-generated. Confirm the summary and suggested next step before acting.</p>
+      {review.changeProposal ? <AiChangeReview proposal={review.changeProposal} sessionId={sessionId} clientAttemptId={attempt.client_attempt_id} onChange={onProposalChange} /> : null}
     </div>
   )
 }
@@ -106,7 +136,13 @@ function AttemptHistory({ sessionId }: { sessionId: string }) {
               <span className="text-xs font-bold text-[var(--crm-ink)]">{attempt.disposition ? label(attempt.disposition) : label(attempt.status)}</span>
               <span className="text-xs tabular-nums text-[var(--crm-text-muted)]">{duration(attempt.duration_seconds)}</span>
             </div>
-            <PostCallReview attempt={attempt} />
+            <PostCallReview attempt={attempt} sessionId={sessionId} onProposalChange={(proposal) => setPage((current) => current ? {
+              ...current,
+              items: current.items.map((item) => item.id === attempt.id ? {
+                ...item,
+                postCallReview: { ...item.postCallReview, changeProposal: proposal },
+              } : item),
+            } : current)} />
           </div>
         ))}
       </div>

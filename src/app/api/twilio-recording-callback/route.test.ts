@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   completeDialerPostCallReview: vi.fn(),
   markDialerPostCallProcessing: vi.fn(),
   markDialerPostCallUnavailable: vi.fn(),
+  createCallAnalysisLeadProposal: vi.fn(),
 }))
 
 vi.mock('@/lib/twilio-validate', () => ({
@@ -52,6 +53,9 @@ vi.mock('@/lib/server/dialer-post-call-review', () => ({
   completeDialerPostCallReview: mocks.completeDialerPostCallReview,
   markDialerPostCallProcessing: mocks.markDialerPostCallProcessing,
   markDialerPostCallUnavailable: mocks.markDialerPostCallUnavailable,
+}))
+vi.mock('@/lib/server/ai-change-proposals', () => ({
+  createCallAnalysisLeadProposal: mocks.createCallAnalysisLeadProposal,
 }))
 
 vi.mock('@/lib/call-quality-events', () => ({
@@ -119,6 +123,7 @@ describe('Twilio recording callback containment', () => {
     mocks.completeDialerPostCallReview.mockResolvedValue(false)
     mocks.markDialerPostCallProcessing.mockResolvedValue(false)
     mocks.markDialerPostCallUnavailable.mockResolvedValue(false)
+    mocks.createCallAnalysisLeadProposal.mockResolvedValue(null)
   })
 
   it('rejects an invalid signature before reading CRM data or media', async () => {

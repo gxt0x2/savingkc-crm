@@ -42,6 +42,7 @@ const CockpitModal = dynamic(() => import('@/components/ui/cockpit-modal').then(
 const SortableColumn = dynamic(() => import('@/components/ui/sortable-column').then((module) => module.SortableColumn))
 const NewTaskModal = dynamic(() => import('@/components/modals/new-task-modal').then((module) => module.NewTaskModal))
 const EditTaskModal = dynamic(() => import('@/components/modals/edit-task-modal').then((module) => module.EditTaskModal))
+const LeadAiChangeReview = dynamic(() => import('@/components/ai/lead-ai-change-review').then((module) => module.LeadAiChangeReview))
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
 
@@ -1982,6 +1983,7 @@ export default function LeadDetailPage() {
           ),
           ai: (
             <div className="grid gap-5 lg:grid-cols-2">
+              <LeadAiChangeReview leadId={lead.id} onApplied={refreshAll} />
               <AriBriefing
                 leadId={lead.id}
                 manifestId={manifestRowId ?? undefined}

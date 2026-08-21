@@ -1,4 +1,5 @@
 import type { CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import type { AiChangeProposal } from '@/lib/ai-change-proposal'
 
 export type DialerPostCallStatus = 'not_requested' | 'processing' | 'ready' | 'unavailable' | 'skipped'
 
@@ -16,6 +17,7 @@ export interface DialerPostCallReview {
   completedAt: string | null
   updatedAt: string | null
   failureCode: string | null
+  changeProposal: AiChangeProposal | null
 }
 
 export type DialerPostCallRow = {
@@ -61,7 +63,7 @@ export function postCallSnapshot(analysis: CallAnalysisResult): Record<string, u
   }
 }
 
-export function parseDialerPostCallReview(row: DialerPostCallRow): DialerPostCallReview {
+export function parseDialerPostCallReview(row: DialerPostCallRow, changeProposal: AiChangeProposal | null = null): DialerPostCallReview {
   const status = text(row.post_call_status)
   const snapshot = object(row.post_call_snapshot)
   return {
@@ -80,5 +82,6 @@ export function parseDialerPostCallReview(row: DialerPostCallRow): DialerPostCal
     completedAt: text(row.post_call_completed_at),
     updatedAt: text(row.post_call_updated_at),
     failureCode: text(snapshot.failureCode),
+    changeProposal,
   }
 }

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   getDialerSession: vi.fn(),
+  getAiChangeProposalForAttemptId: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { from: mocks.from } }))
@@ -11,6 +12,9 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
     constructor(public code: string, public status: number, message: string) { super(message) }
   },
   getDialerSession: mocks.getDialerSession,
+}))
+vi.mock('@/lib/server/ai-change-proposals', () => ({
+  getAiChangeProposalForAttemptId: mocks.getAiChangeProposalForAttemptId,
 }))
 
 import {
@@ -33,7 +37,10 @@ function chain(result: { data: unknown; error: unknown }) {
 }
 
 describe('dialer post-call review persistence', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.getAiChangeProposalForAttemptId.mockResolvedValue(null)
+  })
 
   it('binds provider processing state to both the signed attempt and resolved lead', async () => {
     const builder = chain({ data: { id: 'attempt-row-1' }, error: null })
@@ -86,7 +93,7 @@ describe('dialer post-call review persistence', () => {
   it('verifies session ownership before reading one attempt review', async () => {
     mocks.getDialerSession.mockResolvedValue({ id: 'session-1' })
     const builder = chain({
-      data: { post_call_status: 'ready', post_call_summary: 'Ready', post_call_snapshot: {} },
+      data: { id: 'attempt-row-1', post_call_status: 'ready', post_call_summary: 'Ready', post_call_snapshot: {} },
       error: null,
     })
     mocks.from.mockReturnValue(builder)
@@ -103,6 +110,7 @@ describe('dialer post-call review persistence', () => {
     )
     expect(builder.eq).toHaveBeenCalledWith('session_id', 'session-1')
     expect(builder.eq).toHaveBeenCalledWith('client_attempt_id', 'client-attempt-1')
+    expect(mocks.getAiChangeProposalForAttemptId).toHaveBeenCalledWith('attempt-row-1')
     expect(review).toMatchObject({ status: 'ready', summary: 'Ready' })
   })
 })

@@ -279,6 +279,16 @@
       "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "GROQ_API_KEY", "OPENROUTER_API_KEY"]
     },
     {
+      "id": "ai_change_governance",
+      "name": "Human-reviewed AI CRM changes",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/dialer", "/leads/[id]"],
+      "apiRoutes": ["/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/leads/[id]/ai-change-proposals", "/api/twilio-recording-callback"],
+      "tables": ["ai_change_proposals", "dialer_session_attempts", "leads", "lead_activities", "manifests"],
+      "environment": ["GROQ_API_KEY"]
+    },
+    {
       "id": "read_only_operating_assistant",
       "name": "Read-only operating assistant",
       "owner": "Operations",

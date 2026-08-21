@@ -57,6 +57,7 @@ export function useDialerPostCallReview(input: {
             completedAt: null,
             updatedAt: null,
             failureCode: 'review_request_failed',
+            changeProposal: null,
           } })
         }
       }

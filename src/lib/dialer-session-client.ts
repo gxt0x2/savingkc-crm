@@ -88,6 +88,24 @@ export async function loadDialerPostCallReview(
   return body.review as DialerPostCallReview
 }
 
+export async function decideDialerAiChanges(input: {
+  sessionId: string
+  clientAttemptId: string
+  decision: 'approved' | 'rejected'
+  decisionKey: string
+  note?: string
+}) {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(input.sessionId)}/attempts/${encodeURIComponent(input.clientAttemptId)}`, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision: input.decision, decisionKey: input.decisionKey, note: input.note }),
+  })
+  const body = await payload(response, 'Could not save the AI change decision.')
+  if (!body.proposal) throw new Error('Could not save the AI change decision.')
+  return body.proposal as DialerPostCallReview['changeProposal']
+}
+
 export async function loadDialerSavedQueuesWithOpenSession(): Promise<Record<string, unknown>[]> {
   const [savedResponse, sessionResponse] = await Promise.all([
     fetch('/api/dialer/saved-lists', { cache: 'no-store' }),
