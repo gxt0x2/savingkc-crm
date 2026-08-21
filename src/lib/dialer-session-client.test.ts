@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createDurableDialerSession, loadDialerSavedQueuesWithOpenSession } from './dialer-session-client'
+import { createDurableDialerSession, loadDialerAttemptHistory, loadDialerSavedQueuesWithOpenSession, loadDialerSessionHistory } from './dialer-session-client'
 
 const session = {
   id: '00000000-0000-4000-8000-000000000010',
@@ -16,6 +16,10 @@ const session = {
   dialsCompleted: 2,
   contacts: 1,
   skips: 0,
+  outcomes: {},
+  startedAt: '2026-08-20T12:00:00.000Z',
+  pausedAt: '2026-08-20T12:05:00.000Z',
+  endedAt: null,
   updatedAt: '2026-08-20T12:00:00.000Z',
 }
 
@@ -56,5 +60,18 @@ describe('dialer session client', () => {
       resumeLeadId: session.currentLeadId,
       sessionCompleted: false,
     })
+  })
+
+  it('uses opaque cursors for bounded session and attempt history', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], pageInfo: { limit: 20, hasMore: false, nextCursor: null } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ session, attempts: { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await loadDialerSessionHistory('session-cursor')
+    await loadDialerAttemptHistory(session.id, 'attempt-cursor')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/dialer/sessions?scope=history&limit=20&cursor=session-cursor')
+    expect(fetchMock.mock.calls[1][0]).toBe(`/api/dialer/sessions/${session.id}?include=attempts&limit=50&cursor=attempt-cursor`)
   })
 })

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const dialerPage = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
+const dialerSessionHistory = readFileSync('src/components/dialer/dialer-session-history.tsx', 'utf8')
 const redirects = readFileSync('next.config.ts', 'utf8')
 const operatingReports = readFileSync('src/components/reports/operating-reports-workspace.tsx', 'utf8')
 const acquisitionsReports = readFileSync('src/app/(app)/dashboard/components/AcquisitionsReportsWorkspace.tsx', 'utf8')
@@ -37,7 +38,7 @@ describe('Dialer workspace consolidation', () => {
 
   it('routes call reporting directly to the canonical report', () => {
     expect(acquisitionsReports).toContain('href="/reports/call-sms"')
-    expect(dialerPage).toContain('href="/reports/call-sms"')
-    expect(`${dialerPage}\n${operatingReports}\n${acquisitionsReports}`).not.toContain('/dialer?section=analytics')
+    expect(dialerSessionHistory).toContain('href="/reports/call-sms"')
+    expect(`${dialerPage}\n${dialerSessionHistory}\n${operatingReports}\n${acquisitionsReports}`).not.toContain('/dialer?section=analytics')
   })
 })

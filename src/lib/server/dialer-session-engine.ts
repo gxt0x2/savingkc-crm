@@ -18,6 +18,7 @@ export interface DialerSessionState {
   dialsCompleted: number
   contacts: number
   skips: number
+  outcomes: Record<string, number>
   startedAt: string
   pausedAt: string | null
   endedAt: string | null
@@ -37,9 +38,27 @@ export interface DialerAttemptState {
   disposition: string | null
   duration_seconds: number | null
   reached: boolean | null
+  started_at: string | null
+  connected_at: string | null
+  ended_at: string | null
+  dispositioned_at: string | null
   advanced_at: string | null
   created_at: string
   updated_at: string
+}
+
+export interface DialerAttemptHistoryItem extends DialerAttemptState {
+  leadName: string | null
+  propertyAddress: string | null
+}
+
+export interface DialerHistoryPage<T> {
+  items: T[]
+  pageInfo: {
+    limit: number
+    hasMore: boolean
+    nextCursor: string | null
+  }
 }
 
 export class DialerSessionError extends Error {
@@ -71,6 +90,14 @@ function textValue(value: unknown): string | null {
 function normalizeLeadIds(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter(isUuid).map((item) => item.trim())
+}
+
+function numberRecord(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).flatMap(([key, count]) => {
+    const parsed = Number(count)
+    return Number.isFinite(parsed) && parsed >= 0 ? [[key, parsed]] : []
+  }))
 }
 
 export function parseDialerSession(value: unknown): DialerSessionState {
@@ -107,6 +134,7 @@ export function parseDialerSession(value: unknown): DialerSessionState {
     dialsCompleted: numberValue(row.dialsCompleted),
     contacts: numberValue(row.contacts),
     skips: numberValue(row.skips),
+    outcomes: numberRecord(row.outcomes),
     startedAt,
     pausedAt: textValue(row.pausedAt),
     endedAt: textValue(row.endedAt),
@@ -174,6 +202,7 @@ type DialerSessionRow = {
   dials_completed: number
   contacts: number
   skips: number
+  outcomes: unknown
   started_at: string
   paused_at: string | null
   ended_at: string | null
@@ -197,6 +226,7 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
     dialsCompleted: row.dials_completed,
     contacts: row.contacts,
     skips: row.skips,
+    outcomes: row.outcomes,
     startedAt: row.started_at,
     pausedAt: row.paused_at,
     endedAt: row.ended_at,
@@ -205,7 +235,119 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
   })
 }
 
-const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,caller_id,dials_completed,contacts,skips,started_at,paused_at,ended_at,updated_at,state_version'
+const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,caller_id,dials_completed,contacts,skips,outcomes,started_at,paused_at,ended_at,updated_at,state_version'
+
+type HistoryCursor = { timestamp: string; id: string }
+
+function encodeHistoryCursor(cursor: HistoryCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
+}
+
+function decodeHistoryCursor(value: string | null): HistoryCursor | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<HistoryCursor>
+    if (!parsed.timestamp || !parsed.id || !isUuid(parsed.id) || Number.isNaN(Date.parse(parsed.timestamp))) {
+      throw new Error('invalid cursor')
+    }
+    return { timestamp: parsed.timestamp, id: parsed.id }
+  } catch {
+    throw new DialerSessionError('invalid_cursor', 400, 'Dialer history cursor is invalid')
+  }
+}
+
+function historyLimit(value: number | undefined, maximum: number): number {
+  if (value == null) return Math.min(20, maximum)
+  if (!Number.isInteger(value) || value < 1 || value > maximum) {
+    throw new DialerSessionError('invalid_limit', 400, `Dialer history limit must be between 1 and ${maximum}`)
+  }
+  return value
+}
+
+export async function getDialerSessionHistory(
+  actor: AuthenticatedActor,
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<DialerHistoryPage<DialerSessionState>> {
+  const limit = historyLimit(options.limit, 20)
+  const cursor = decodeHistoryCursor(options.cursor || null)
+  let query = supabase
+    .from('dialer_sessions')
+    .select(SESSION_SELECT)
+    .eq('actor_email', actor.email.trim().toLowerCase())
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit + 1)
+  if (cursor) {
+    query = query.or(`updated_at.lt.${cursor.timestamp},and(updated_at.eq.${cursor.timestamp},id.lt.${cursor.id})`)
+  }
+  const { data, error } = await query
+  if (error) throw mapDatabaseError(error)
+  const rows = (data || []) as DialerSessionRow[]
+  const hasMore = rows.length > limit
+  const items = rows.slice(0, limit).map(rowToSession)
+  const last = items.at(-1)
+  return {
+    items,
+    pageInfo: {
+      limit,
+      hasMore,
+      nextCursor: hasMore && last ? encodeHistoryCursor({ timestamp: last.updatedAt, id: last.id }) : null,
+    },
+  }
+}
+
+type DialerAttemptRow = DialerAttemptState
+
+export async function getDialerAttemptHistory(
+  actor: AuthenticatedActor,
+  sessionId: string,
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<{ session: DialerSessionState; attempts: DialerHistoryPage<DialerAttemptHistoryItem> }> {
+  const session = await getDialerSession(actor, sessionId)
+  const limit = historyLimit(options.limit, 50)
+  const cursor = decodeHistoryCursor(options.cursor || null)
+  let query = supabase
+    .from('dialer_session_attempts')
+    .select('id,session_id,client_attempt_id,lead_id,prospect_phone_id,phone,caller_id,status,disposition,duration_seconds,reached,started_at,connected_at,ended_at,dispositioned_at,advanced_at,created_at,updated_at')
+    .eq('session_id', session.id)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit + 1)
+  if (cursor) {
+    query = query.or(`created_at.lt.${cursor.timestamp},and(created_at.eq.${cursor.timestamp},id.lt.${cursor.id})`)
+  }
+  const { data, error } = await query
+  if (error) throw mapDatabaseError(error)
+  const rows = ((data || []) as DialerAttemptRow[]).slice(0, limit)
+  const leadIds = Array.from(new Set(rows.flatMap((row) => row.lead_id ? [row.lead_id] : [])))
+  const leadLookup = new Map<string, { full_name: string | null; property_address: string | null }>()
+  if (leadIds.length > 0) {
+    const { data: leads, error: leadError } = await supabase
+      .from('leads')
+      .select('id,full_name,property_address')
+      .in('id', leadIds)
+    if (leadError) throw mapDatabaseError(leadError)
+    for (const lead of leads || []) leadLookup.set(lead.id, lead)
+  }
+  const items = rows.map((row) => ({
+    ...row,
+    leadName: row.lead_id ? leadLookup.get(row.lead_id)?.full_name || null : null,
+    propertyAddress: row.lead_id ? leadLookup.get(row.lead_id)?.property_address || null : null,
+  }))
+  const hasMore = ((data || []) as DialerAttemptRow[]).length > limit
+  const last = items.at(-1)
+  return {
+    session,
+    attempts: {
+      items,
+      pageInfo: {
+        limit,
+        hasMore,
+        nextCursor: hasMore && last ? encodeHistoryCursor({ timestamp: last.created_at, id: last.id }) : null,
+      },
+    },
+  }
+}
 
 export async function getDialerSession(actor: AuthenticatedActor, sessionId: string): Promise<DialerSessionState> {
   if (!isUuid(sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')
