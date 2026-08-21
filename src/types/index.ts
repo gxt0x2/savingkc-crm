@@ -3,7 +3,7 @@ export type PersonalityType = 'assertive' | 'analytical' | 'amiable' | 'accommod
 export type ActivityType = 'call' | 'sms' | 'email' | 'status_change'
 export type ActivityDirection = 'in' | 'out'
 
-export type TaskType = 'follow_up' | 'appointment' | 'send_offer' | 'review' | 'task'
+export type TaskType = 'follow_up' | 'callback' | 'appointment' | 'send_offer' | 'review' | 'research' | 'task'
 export type TaskStatus = 'pending' | 'completed' | 'overdue'
 
 export type DealStage =
@@ -94,6 +94,7 @@ export interface Task {
   assigned_to: string | null
   status: TaskStatus
   created_at: string
+  version?: number
   contact?: Contact
 }
 

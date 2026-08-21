@@ -5,12 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TasksPage from '../page'
 import type { Task } from '@/types'
 
-const { refetchMock, useCalendarTasksMock } = vi.hoisted(() => ({
+const { refetchMock, useTaskWorklistMock } = vi.hoisted(() => ({
   refetchMock: vi.fn(),
-  useCalendarTasksMock: vi.fn(),
+  useTaskWorklistMock: vi.fn(),
 }))
 
-vi.mock('@/hooks/use-calendar-tasks', () => ({ useCalendarTasks: useCalendarTasksMock }))
+vi.mock('@/hooks/use-task-worklist', () => ({ useTaskWorklist: useTaskWorklistMock }))
 vi.mock('@/components/conversations/workspace-frame', () => ({
   WorkspaceChrome: ({ commandBar }: { commandBar?: React.ReactNode }) => <header data-testid="shared-shell-header">{commandBar}</header>,
 }))
@@ -33,6 +33,7 @@ const tasks: Task[] = [
     assigned_to: 'Casey',
     status: 'pending',
     created_at: '2026-08-10T12:00:00.000Z',
+    version: 2,
     contact: {
       id: 'lead-1', first_name: 'Michael', last_name: 'Maddox', email: null, phone: null, address: '123 Main St', city: 'Kansas City', state: 'MO', zip: null, personality_type: null, lead_score: null, lead_owner: 'Casey', smart_tags: [], current_stage: 'new', created_at: '2026-08-10T12:00:00.000Z', updated_at: '2026-08-10T12:00:00.000Z',
     },
@@ -54,8 +55,18 @@ const tasks: Task[] = [
 
 describe('TasksPage operating workspace', () => {
   beforeEach(() => {
-    refetchMock.mockResolvedValue({ data: tasks })
-    useCalendarTasksMock.mockReturnValue({ data: tasks, isLoading: false, error: null, refetch: refetchMock, isFetching: false })
+    refetchMock.mockReset()
+    useTaskWorklistMock.mockReset()
+    refetchMock.mockResolvedValue({ data: { tasks } })
+    useTaskWorklistMock.mockReturnValue({
+      data: {
+        tasks,
+        counts: { all: 2, due_today: 0, overdue: 0, upcoming: 1, completed: 1 },
+        pageInfo: { limit: 20, total: 2, hasMore: false, nextCursor: null },
+        serverNow: '2026-08-21T15:00:00Z',
+      },
+      isLoading: false, error: null, refetch: refetchMock, isFetching: false,
+    })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, changed: 2 }) }))
   })
 
@@ -87,7 +98,7 @@ describe('TasksPage operating workspace', () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/calendar/tasks/task-1', expect.objectContaining({
       method: 'PATCH',
-      body: JSON.stringify({ status: 'completed' }),
+      body: JSON.stringify({ status: 'completed', expectedVersion: 2 }),
     })))
     expect(await screen.findByRole('status')).toHaveTextContent('Task completed.')
     expect(screen.getByRole('button', { name: 'Reopen Call seller' })).toBeInTheDocument()
@@ -120,7 +131,7 @@ describe('TasksPage operating workspace', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('2 tasks updated.')
   })
 
-  it('filters by the governed task types and combines with other task filters', () => {
+  it('sends governed filters to the bounded server worklist', () => {
     render(<TasksPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
@@ -132,24 +143,39 @@ describe('TasksPage operating workspace', () => {
       'Follow-up',
       'Callback',
       'Appointment',
-      'Research',
       'Send Offer',
       'General',
     ])
 
     fireEvent.change(taskType, { target: { value: 'follow_up' } })
-    expect(screen.getByText('Call seller')).toBeInTheDocument()
-    expect(screen.queryByText('Review offer')).not.toBeInTheDocument()
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'follow_up' }))
 
     fireEvent.change(within(filters).getByRole('combobox', { name: 'Assignee' }), { target: { value: 'Ernest' } })
-    expect(screen.getByText('No tasks match this view')).toBeInTheDocument()
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'follow_up', assignee: 'Ernest' }))
 
     fireEvent.change(taskType, { target: { value: 'general' } })
-    expect(screen.getByText('Review offer')).toBeInTheDocument()
-    expect(screen.queryByText('Call seller')).not.toBeInTheDocument()
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'general', assignee: 'Ernest' }))
 
     fireEvent.click(within(filters).getByRole('button', { name: 'Clear all' }))
-    expect(screen.getByText('Call seller')).toBeInTheDocument()
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'any', assignee: undefined }))
+  })
+
+  it('advances with the opaque server cursor instead of slicing a downloaded task list', () => {
+    useTaskWorklistMock.mockImplementation((input: { cursor?: string | null }) => ({
+      data: {
+        tasks: input.cursor ? [tasks[1]] : [tasks[0]],
+        counts: { all: 21, due_today: 0, overdue: 0, upcoming: 20, completed: 1 },
+        pageInfo: { limit: 20, total: 21, hasMore: !input.cursor, nextCursor: input.cursor ? null : 'opaque-page-2' },
+        serverNow: '2026-08-21T15:00:00Z',
+      },
+      isLoading: false, error: null, refetch: refetchMock, isFetching: false,
+    }))
+
+    render(<TasksPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'opaque-page-2', limit: 20 }))
     expect(screen.getByText('Review offer')).toBeInTheDocument()
+    expect(screen.getByText('Showing 21 to 21 of 21 results')).toBeInTheDocument()
   })
 })
