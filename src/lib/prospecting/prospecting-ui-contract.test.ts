@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const workspace = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-workspace.tsx'), 'utf8')
 const contacts = readFileSync(join(process.cwd(), 'src/app/(app)/contacts/page.tsx'), 'utf8')
 const navigation = readFileSync(join(process.cwd(), 'src/components/layout/nav-tab.tsx'), 'utf8')
+const appShell = readFileSync(join(process.cwd(), 'src/components/layout/app-shell.tsx'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
@@ -24,5 +25,6 @@ describe('prospecting workspace UI contract', () => {
   it('consolidates Dialer and Conversations under Prospecting navigation', () => {
     expect(navigation).toContain("{ label: 'Prospecting', href: '/prospecting'")
     expect(navigation).not.toContain("{ label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },\n  { label: 'Ads'")
+    expect(appShell).toContain("pathname?.startsWith('/prospecting')")
   })
 })
