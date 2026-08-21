@@ -115,15 +115,16 @@ describe('workspace navigation', () => {
     expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('href', '/marketing/google-ads')
   })
 
-  it('keeps the Dialer focused on queue execution and sessions', () => {
+  it('keeps campaign, single-line Dialer, and Inbox execution in one Prospecting workspace', () => {
     navigation.pathname = '/dialer'
     render(<WorkspaceContextNav />)
 
-    const dialerNav = screen.getByRole('navigation', { name: 'Dialer sections' })
+    const dialerNav = screen.getByRole('navigation', { name: 'Prospecting sections' })
     expect(within(dialerNav).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
-      '/dialer', '/dialer?section=queue', '/dialer?section=sessions',
+      '/prospecting', '/dialer', '/dialer?section=queue', '/dialer?section=sessions', '/conversations',
     ])
-    expect(within(dialerNav).queryByRole('link', { name: /Conversations/ })).not.toBeInTheDocument()
+    expect(within(dialerNav).getByRole('link', { name: /Campaigns/ })).toHaveAttribute('href', '/prospecting')
+    expect(within(dialerNav).getByRole('link', { name: /Inbox/ })).toHaveAttribute('href', '/conversations')
     expect(within(dialerNav).queryByRole('link', { name: /Analytics/ })).not.toBeInTheDocument()
     expect(within(dialerNav).queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument()
   })
