@@ -10,6 +10,7 @@ import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller
 import { isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 type DialerCallIntentKind = 'manual' | 'lead' | 'heir'
@@ -23,6 +24,7 @@ type DialerCallIntentAllowedResponse = {
   leadId: string | null
   prospectPhoneId: string | null
   clientAttemptId: string
+  sessionId?: string | null
 }
 
 type DialerCallIntentDeniedResponse = {
@@ -97,6 +99,7 @@ interface DialerPanelProps {
   pendingQueueCallerId?: string | null
   pendingQueueCallerPlan?: DialerCallerPlan | null
   pendingQueueAutoDial?: boolean
+  pendingSessionId?: string | null
   /** How many rings to allow before giving up; maps to the Twilio Dial timeout. */
   pendingQueueRingCount?: number | null
   presentation?: 'modal' | 'dock'
@@ -174,6 +177,7 @@ async function requestDialerCallIntent(input: {
   leadId: string | null
   prospectPhoneId: string | null
   clientAttemptId: string
+  sessionId?: string | null
 }): Promise<DialerCallIntentAllowedResponse> {
   const response = await fetch('/api/dialer/call-intents', {
     method: 'POST',
@@ -198,6 +202,7 @@ async function requestDialerCallIntent(input: {
     leadId: payload.leadId ?? null,
     prospectPhoneId: payload.prospectPhoneId ?? null,
     clientAttemptId: payload.clientAttemptId,
+    sessionId: payload.sessionId ?? input.sessionId ?? null,
   }
 }
 
@@ -296,6 +301,7 @@ export function DialerPanel({
   pendingQueueCallerId,
   pendingQueueCallerPlan,
   pendingQueueAutoDial = false,
+  pendingSessionId = null,
   pendingQueueRingCount = null,
   presentation = 'dock',
   signedInEmail = null,
@@ -368,6 +374,8 @@ export function DialerPanel({
   const queueItem = queue && queue[queueIndex] ? queue[queueIndex] : null
   const queueMode = queue !== null && queue.length > 0
   const activeQueueItemRef = useRef<HeirQueueItem | null>(null)
+  const activeSessionIdRef = useRef<string | null>(null)
+  const activeAttemptIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
   const callIntentPendingRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
@@ -412,10 +420,11 @@ export function DialerPanel({
         queueIndex,
         queueLength: queue?.length ?? 0,
         status,
+        sessionId: pendingSessionId,
         callDuration: status === 'on_call' ? callTimer : status === 'calling' ? '00:00' : null,
       },
     }))
-  }, [callTimer, queueItem, queueIndex, queue, status])
+  }, [callTimer, pendingSessionId, queueItem, queueIndex, queue, status])
 
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
@@ -638,7 +647,18 @@ export function DialerPanel({
         leadId: kind === 'manual' ? null : leadIdAtStart,
         prospectPhoneId: kind === 'heir' ? prospectPhoneIdAtStart : null,
         clientAttemptId: createClientAttemptId(),
+        sessionId: queueItemAtStart ? pendingSessionId : null,
       })
+
+      activeSessionIdRef.current = authorized.sessionId ?? null
+      activeAttemptIdRef.current = authorized.clientAttemptId
+      if (activeSessionIdRef.current) {
+        await transitionDurableDialerAttempt({
+          sessionId: activeSessionIdRef.current,
+          clientAttemptId: authorized.clientAttemptId,
+          action: 'started',
+        })
+      }
 
       setStatusLogged('calling')
       setLastCallDuration(null)
@@ -683,6 +703,13 @@ export function DialerPanel({
         callWasAccepted = true
         log('call accepted')
         setStatusLogged('on_call')
+        if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+          void transitionDurableDialerAttempt({
+            sessionId: activeSessionIdRef.current,
+            clientAttemptId: activeAttemptIdRef.current,
+            action: 'connected',
+          }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
+        }
       })
 
       const heirMeta = activeQueueItemRef.current
@@ -737,6 +764,14 @@ export function DialerPanel({
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)
+        if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+          void transitionDurableDialerAttempt({
+            sessionId: activeSessionIdRef.current,
+            clientAttemptId: activeAttemptIdRef.current,
+            action: 'ended',
+            durationSeconds: duration,
+          }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
+        }
         // Always prompt for disposition after a call ends — the modal
         // handles the no-lead case (manual dial) gracefully.
         setShowDisposition(true)
@@ -745,6 +780,14 @@ export function DialerPanel({
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)
+        if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+          void transitionDurableDialerAttempt({
+            sessionId: activeSessionIdRef.current,
+            clientAttemptId: activeAttemptIdRef.current,
+            action: 'ended',
+            durationSeconds: lastCallDurationSecondsRef.current,
+          }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
+        }
         setShowDisposition(true)
       })
     } catch (err) {
@@ -752,6 +795,15 @@ export function DialerPanel({
       log(`makeCall error: ${msg}`)
       setError(msg)
       setStatusLogged('ready')
+      if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+        void transitionDurableDialerAttempt({
+          sessionId: activeSessionIdRef.current,
+          clientAttemptId: activeAttemptIdRef.current,
+          action: 'failed',
+        }).catch(() => {})
+        activeSessionIdRef.current = null
+        activeAttemptIdRef.current = null
+      }
     } finally {
       callIntentPendingRef.current = false
     }
@@ -883,6 +935,22 @@ export function DialerPanel({
     options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null },
   ) {
     const markedDead = isDeadDisposition(disposition)
+    const durableSessionId = activeSessionIdRef.current
+    const durableAttemptId = activeAttemptIdRef.current
+    if (durableSessionId && durableAttemptId) {
+      try {
+        await transitionDurableDialerAttempt({
+          sessionId: durableSessionId,
+          clientAttemptId: durableAttemptId,
+          action: 'disposition',
+          disposition,
+          durationSeconds: lastCallDurationSecondsRef.current,
+        })
+      } catch (transitionError) {
+        setError(extractTwilioErrorMessage(transitionError))
+        return false
+      }
+    }
     if (!selectedLead) {
       // Manual dial without a lead — log to call_log so the disposition is
       // not lost. The handler returns true so the modal closes cleanly.
@@ -969,12 +1037,33 @@ export function DialerPanel({
       return false
     }
 
+    // Advance the server-owned lead queue only after both the durable outcome
+    // and the CRM disposition have been saved. The transition is idempotent,
+    // so retrying the modal cannot advance twice.
+    const completesLead = !queueMode || Boolean(queue && queueIndex + 1 >= queue.length)
+    if (durableSessionId && durableAttemptId && completesLead) {
+      try {
+        const payload = await transitionDurableDialerAttempt({
+          sessionId: durableSessionId,
+          clientAttemptId: durableAttemptId,
+          action: 'advance',
+        })
+        if (!payload.session) throw new Error('Dialer session advance returned no state.')
+        window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: payload.session }))
+      } catch (transitionError) {
+        setError(extractTwilioErrorMessage(transitionError))
+        return false
+      }
+    }
+
     // Advance the heir queue after disposition is logged.
     const nextQueueItem = queueMode ? advanceQueue() : null
     if (nextQueueItem && options?.autoDialNext) {
       pendingAutoDialRef.current = true
     }
     activeQueueItemRef.current = null
+    activeAttemptIdRef.current = null
+    if (completesLead) activeSessionIdRef.current = null
     return true
   }
 

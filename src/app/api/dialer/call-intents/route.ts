@@ -12,6 +12,11 @@ import {
   type DialerCallIntentSource,
 } from '@/lib/telephony/dialer-call-intent'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import {
+  authorizeDialerSessionAttempt,
+  DialerSessionError,
+  isUuid,
+} from '@/lib/server/dialer-session-engine'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -54,6 +59,7 @@ export async function POST(request: Request) {
   const leadId = text(body.leadId)
   const prospectPhoneId = text(body.prospectPhoneId)
   const clientAttemptId = text(body.clientAttemptId)
+  const sessionId = text(body.sessionId)
   const kind = text(body.kind) as DialerCallIntentKind | null
   if (!phone || !kind || !['manual', 'lead', 'heir'].includes(kind)) {
     return json({ allowed: false, error: 'Phone and a valid call kind are required' }, 400)
@@ -64,6 +70,9 @@ export async function POST(request: Request) {
     || (kind === 'heir' && (!leadId || !prospectPhoneId))
   ) {
     return json({ allowed: false, error: 'Call context does not match the selected contact', reason: 'destination_mismatch' }, 409)
+  }
+  if (sessionId && (!isUuid(sessionId) || kind === 'manual')) {
+    return json({ allowed: false, error: 'Dialer session context is invalid', reason: 'session_context_mismatch' }, 409)
   }
 
   const profile = resolveAgentTelephonyProfile(actor.email)
@@ -99,6 +108,20 @@ export async function POST(request: Request) {
       prospectPhoneId: policy.prospectPhoneId,
       clientAttemptId,
     })
+    if (sessionId) {
+      if (!policy.leadId || !clientAttemptId) {
+        return json({ allowed: false, error: 'Dialer session context is incomplete', reason: 'session_context_mismatch' }, 409)
+      }
+      await authorizeDialerSessionAttempt({
+        actor,
+        sessionId,
+        clientAttemptId,
+        leadId: policy.leadId,
+        prospectPhoneId: policy.prospectPhoneId,
+        phone: issued.claims.to,
+        callerId: issued.claims.callerId,
+      })
+    }
     return json({
       allowed: true,
       intent: issued.token,
@@ -108,9 +131,13 @@ export async function POST(request: Request) {
       leadId: issued.claims.leadId,
       prospectPhoneId: issued.claims.prospectPhoneId,
       clientAttemptId: issued.claims.clientAttemptId,
+      sessionId,
       expiresAt: issued.claims.expiresAt,
     })
   } catch (error) {
+    if (error instanceof DialerSessionError) {
+      return json({ allowed: false, error: error.message, reason: error.code }, error.status)
+    }
     console.error('[dialer/call-intents] Intent signing unavailable', error)
     await recordBlockedDialerCall(policyInput, {
       allowed: false,

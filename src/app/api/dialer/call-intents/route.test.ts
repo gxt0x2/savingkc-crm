@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   evaluateOutboundDialerCall: vi.fn(),
   recordBlockedDialerCall: vi.fn(),
   createDialerCallIntent: vi.fn(),
+  authorizeDialerSessionAttempt: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.resolveAuthenticatedActor }))
@@ -15,6 +16,11 @@ vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   dialerBlockStatus: (reason: string) => reason === 'policy_unavailable' ? 503 : 409,
 }))
 vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: mocks.createDialerCallIntent }))
+vi.mock('@/lib/server/dialer-session-engine', () => ({
+  authorizeDialerSessionAttempt: mocks.authorizeDialerSessionAttempt,
+  DialerSessionError: class DialerSessionError extends Error {},
+  isUuid: (value: unknown) => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value),
+}))
 
 import { POST } from './route'
 
@@ -111,5 +117,32 @@ describe('web dialer call intent authorization', () => {
       clientAttemptId: 'attempt-1',
     })
     expect(await response.json()).toMatchObject({ allowed: true, intent: 'signed-intent' })
+  })
+
+  it('creates a durable attempt before returning a session-bound call intent', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000010'
+    const leadId = '00000000-0000-4000-8000-000000000011'
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({ ...allowed, leadId })
+    mocks.authorizeDialerSessionAttempt.mockResolvedValue({ id: 'attempt-row' })
+
+    const response = await POST(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'lead',
+      leadId,
+      sessionId,
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.authorizeDialerSessionAttempt).toHaveBeenCalledWith({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId,
+      clientAttemptId: 'attempt-1',
+      leadId,
+      prospectPhoneId: null,
+      phone: '+19135550123',
+      callerId: '+18167277667',
+    })
   })
 })

@@ -1,5 +1,4 @@
 'use client'
-
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
@@ -13,6 +12,14 @@ import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers
 import { CallerIdMode, DialerCallerPlan, normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { DEAD_REASONS } from '@/lib/dialer-dispositions'
 import { loadDialerActivities, loadDialerLeadContext, type DialerActivity as Activity, type DialerManifest as ManifestShape } from '@/lib/dialer-lead-activity'
+import { DialerSessionCommand } from '@/components/dialer/dialer-session-command'
+import {
+  createDurableDialerSession,
+  loadDialerSavedQueuesWithOpenSession,
+  loadDurableDialerSession,
+  transitionDurableDialerSession,
+  type DurableDialerSession,
+} from '@/lib/dialer-session-client'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
@@ -22,11 +29,7 @@ const DialerConversationHub = dynamic(
   () => import('@/components/dialer/dialer-conversation-hub').then((module) => module.DialerConversationHub),
   { loading: () => <div role="status" className="grid min-h-[50vh] place-items-center text-sm font-semibold text-[var(--ck-text-muted)]">Opening conversations…</div> },
 )
-
-// URL contract:
-//   /dialer?lead_ids=<uuid>,<uuid>,...
-//   /dialer?cohort=deceased-2-3yr   (shorthand; resolves to lead_ids client-side)
-
+const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assist').then((module) => module.DialerAiAssist))
 interface LeadSummary {
   id: string
   full_name: string | null
@@ -150,6 +153,7 @@ interface SavedDialerQueue {
   sessionCompleted: boolean
   createdAt: string
   updatedAt: string
+  durableSessionId?: string
 }
 
 interface OptionalDialingFilters {
@@ -503,6 +507,9 @@ function DialerPageInner() {
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
   const [autoQueueLeadId, setAutoQueueLeadId] = useState<string | null>(null)
+  const [durableSession, setDurableSession] = useState<DurableDialerSession | null>(null)
+  const [sessionActionPending, setSessionActionPending] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
 
   // SMS compose state
   const [smsTarget, setSmsTarget] = useState<{ heirName: string; relation: string; phone: string; prospectPhoneId: string; deceasedOwnerName: string } | null>(null)
@@ -522,6 +529,7 @@ function DialerPageInner() {
   const currentProspect: ProspectSummary | null = currentLeadId ? prospects[currentLeadId] ?? null : null
   const currentManifest: ManifestShape | null = currentLeadId ? manifests[currentLeadId] ?? null : null
   const sessionSavedListId = params.get('saved_list_id')?.trim() || ''
+  const durableSessionId = params.get('session_id')?.trim() || ''
   const sessionCallerId = params.get('caller_id')?.trim() || ''
   const sessionCallerModeParam = params.get('caller_mode')
   const sessionRotateEveryParam = params.get('rotation_every')
@@ -555,6 +563,25 @@ function DialerPageInner() {
     async function resolveIds() {
       setLoading(true)
       setResolveError(null)
+      if (durableSessionId) {
+        try {
+          const session = await loadDurableDialerSession(durableSessionId)
+          setDurableSession(session)
+          setLeadIds(session.leadIds)
+          setCurrentIndex(session.currentIndex)
+          setSessionDials(session.dialsCompleted)
+          setSessionContacts(session.contacts)
+          setResumeHydrated(true)
+          setLoading(false)
+          return
+        } catch (sessionError) {
+          setResolveError(sessionError instanceof Error ? sessionError.message : 'Could not load the dialer session.')
+          setLeadIds([])
+          setLoading(false)
+          return
+        }
+      }
+      setDurableSession(null)
       const explicit = params.get('lead_ids')
       if (explicit) {
         const ids = explicit.split(',').map((s) => s.trim()).filter(Boolean)
@@ -582,9 +609,10 @@ function DialerPageInner() {
       setLoading(false)
     }
     resolveIds()
-  }, [params])
+  }, [durableSessionId, params])
 
   useEffect(() => {
+    if (durableSessionId) return
     if (leadIds.length === 0) return
     const requested = Number(startIndexParam ?? '0')
     const safeIndex = Number.isFinite(requested) ? Math.max(0, Math.floor(requested)) : 0
@@ -594,7 +622,7 @@ function DialerPageInner() {
       setResumeHydrated(true)
     }, 0)
     return () => window.clearTimeout(timeout)
-  }, [leadIds.length, startIndexParam])
+  }, [durableSessionId, leadIds.length, startIndexParam])
 
   // Batch-load leads + prospects for the cohort
   useEffect(() => {
@@ -678,6 +706,7 @@ function DialerPageInner() {
   }, [leadIds.length, leftTab])
 
   useEffect(() => {
+    if (durableSessionId) return
     if (!sessionSavedListId || leadIds.length === 0 || !resumeHydrated) return
     const resumeIndex = Math.min(Math.max(currentIndex, 0), Math.max(leadIds.length - 1, 0))
     const resumeUpdatedAt = new Date().toISOString()
@@ -706,7 +735,7 @@ function DialerPageInner() {
     }, 250)
 
     return () => window.clearTimeout(timeout)
-  }, [sessionSavedListId, leadIds, currentIndex, sessionCallerId, resumeHydrated])
+  }, [durableSessionId, sessionSavedListId, leadIds, currentIndex, sessionCallerId, resumeHydrated])
 
   // Listen to queue-state events from the telephony bar
   useEffect(() => {
@@ -716,6 +745,25 @@ function DialerPageInner() {
     window.addEventListener('heir-queue-state', onState)
     return () => window.removeEventListener('heir-queue-state', onState)
   }, [])
+
+  const applyDurableSession = useCallback((session: DurableDialerSession) => {
+    setDurableSession(session)
+    setLeadIds(session.leadIds)
+    setCurrentIndex(session.currentIndex)
+    setSessionDials(session.dialsCompleted)
+    setSessionContacts(session.contacts)
+    if (session.status === 'active' && session.currentLeadId) setAutoQueueLeadId(session.currentLeadId)
+    if (session.status === 'completed' || session.status === 'stopped') setAutoQueueLeadId(null)
+  }, [])
+
+  useEffect(() => {
+    function onSessionState(event: Event) {
+      const session = (event as CustomEvent).detail as DurableDialerSession | null
+      if (session?.id === durableSessionId) applyDurableSession(session)
+    }
+    window.addEventListener('dialer-session-state', onSessionState)
+    return () => window.removeEventListener('dialer-session-state', onSessionState)
+  }, [applyDurableSession, durableSessionId])
 
   const advance = useCallback((autoQueueNextLead = false) => {
     setCurrentIndex((i) => {
@@ -731,6 +779,33 @@ function DialerPageInner() {
     setCurrentIndex((i) => Math.max(i - 1, 0))
   }, [])
 
+  const transitionCurrentSession = useCallback(async (
+    action: 'pause' | 'resume' | 'stop' | 'skip',
+    reason?: string,
+  ) => {
+    if (!durableSessionId) return null
+    setSessionActionPending(true)
+    setSessionError(null)
+    try {
+      const session = await transitionDurableDialerSession(durableSessionId, action, reason)
+      applyDurableSession(session)
+      return session
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Could not update the dialer session.')
+      return null
+    } finally {
+      setSessionActionPending(false)
+    }
+  }, [applyDurableSession, durableSessionId])
+
+  const skipCurrentLead = useCallback(async () => {
+    if (!durableSessionId) {
+      advance(true)
+      return
+    }
+    await transitionCurrentSession('skip', 'Agent skipped this contact')
+  }, [advance, durableSessionId, transitionCurrentSession])
+
   const handleAutoStartEmpty = useCallback(() => {
     // A record with no callable heirs (never skip-traced, or already fully
     // worked) used to auto-advance here — which cascaded through every such
@@ -742,8 +817,21 @@ function DialerPageInner() {
     setAutoQueueLeadId(null)
   }, [])
 
-  const closeSession = useCallback(() => {
-    if (sessionSavedListId && leadIds.length > 0) {
+  const navigateAwayFromSession = useCallback(() => {
+    const returnTo = params.get('return_to')
+    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
+      router.push(returnTo)
+      return
+    }
+    router.push('/dialer')
+  }, [params, router])
+
+  const closeSession = useCallback(async () => {
+    if (durableSessionId && durableSession?.status === 'active') {
+      const session = await transitionCurrentSession('pause')
+      if (!session) return
+    }
+    if (!durableSessionId && sessionSavedListId && leadIds.length > 0) {
       const resumeIndex = Math.min(Math.max(currentIndex, 0), Math.max(leadIds.length - 1, 0))
       const isCompleted = resumeIndex >= leadIds.length - 1
       patchSavedListMeta(sessionSavedListId, {
@@ -768,20 +856,21 @@ function DialerPageInner() {
       })
     }
 
-    const returnTo = params.get('return_to')
-    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
-      router.push(returnTo)
+    navigateAwayFromSession()
+  }, [currentIndex, durableSession, durableSessionId, leadIds, navigateAwayFromSession, sessionCallerId, sessionSavedListId, transitionCurrentSession])
+
+  const stopSession = useCallback(async () => {
+    if (!durableSessionId) {
+      navigateAwayFromSession()
       return
     }
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      router.back()
-      return
-    }
-    router.push('/dialer')
-  }, [currentIndex, leadIds, params, router, sessionCallerId, sessionSavedListId])
+    const session = await transitionCurrentSession('stop')
+    if (session) navigateAwayFromSession()
+  }, [durableSessionId, navigateAwayFromSession, transitionCurrentSession])
 
   useEffect(() => {
     function onQueueComplete(e: Event) {
+      if (durableSessionId) return
       const detail = (e as CustomEvent).detail
       if (detail?.leadId === currentLeadId) {
         setTimeout(() => advance(true), 400)
@@ -789,18 +878,18 @@ function DialerPageInner() {
     }
     window.addEventListener('heir-queue-complete', onQueueComplete)
     return () => window.removeEventListener('heir-queue-complete', onQueueComplete)
-  }, [currentLeadId, advance])
+  }, [currentLeadId, advance, durableSessionId])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      if (e.key === 'j' || e.key === 'ArrowRight') { e.preventDefault(); advance() }
-      if (e.key === 'k' || e.key === 'ArrowLeft')  { e.preventDefault(); back() }
+      if (e.key === 'j' || e.key === 'ArrowRight') { e.preventDefault(); void skipCurrentLead() }
+      if (!durableSessionId && (e.key === 'k' || e.key === 'ArrowLeft')) { e.preventDefault(); back() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, back])
+  }, [back, durableSessionId, skipCurrentLead])
 
   // Tally dials / contacts for the session HUD. crm:disposition-logged fires
   // once per saved call disposition and carries `reached` (the agent actually
@@ -852,13 +941,17 @@ function DialerPageInner() {
       setMarkDeadReason('')
       setMarkDeadNotes('')
       refreshActivities()
-      advance(true)
+      if (durableSessionId) {
+        await transitionCurrentSession('skip', `Lead marked dead: ${markDeadReason}`)
+      } else {
+        advance(true)
+      }
     } catch (e) {
       setMarkDeadError(e instanceof Error ? e.message : 'Could not mark lead dead')
     } finally {
       setMarkDeadBusy(false)
     }
-  }, [currentLeadId, markDeadReason, markDeadNotes, advance, refreshActivities])
+  }, [currentLeadId, durableSessionId, markDeadReason, markDeadNotes, advance, refreshActivities, transitionCurrentSession])
 
   const ownerName = useMemo(() => {
     const raw = currentProspect?.owner_1 || currentLead?.full_name || 'Unknown'
@@ -896,7 +989,6 @@ function DialerPageInner() {
     ? '2 yr'
     : null
 
-  const isCallingNow = queueState?.queueItem && ['calling', 'on_call'].includes(queueState.status)
   const inferredQueueLabel = sessionQueueLabelParam ||
     (params.get('cohort') === 'deceased-2-3yr'
       ? '3+ Year Deceased Tax'
@@ -905,12 +997,6 @@ function DialerPageInner() {
       : 'Dialer queue')
   const commsEvents = useMemo(() => buildCommsTimeline(activities), [activities])
   const commsSummary = useMemo(() => summarizeComms(commsEvents), [commsEvents])
-
-  const dialTimeLabel = queueState?.status === 'on_call'
-    ? queueState.callDuration || '00:00'
-    : queueState?.status === 'calling'
-    ? 'Dialing'
-    : 'Idle'
 
   if (!loading && leadIds.length === 0 && !resolveError) {
     return <DialerHome />
@@ -944,120 +1030,26 @@ function DialerPageInner() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
-      {/* ── Session HUD (Mojo/CallTools-style command bar) ───────────────── */}
-      <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 mb-4 border-b border-[var(--ck-border)] bg-[var(--ck-surface)]/90 backdrop-blur supports-[backdrop-filter]:bg-[var(--ck-surface)]/75">
-        <div className="px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
-          <button
-            onClick={closeSession}
-            className="shrink-0 w-10 h-10 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text-muted)] flex items-center justify-center transition-colors"
-            title="Exit session"
-            aria-label="Exit session"
-          >
-            <Icon name="close" size="text-xl" />
-          </button>
-
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E] leading-none">
-              {inferredQueueLabel}
-            </p>
-            <p className="mt-1 text-sm font-black text-[var(--ck-text)] leading-none">
-              Lead {currentIndex + 1}<span className="text-[var(--ck-text-dim)] font-bold"> / {leadIds.length}</span>
-              {sessionCallerId && (
-                <span className="ml-2 text-[11px] font-semibold text-[var(--ck-text-muted)]">from {formatPhone(sessionCallerId)}</span>
-              )}
-            </p>
-          </div>
-
-          {/* Stat chips */}
-          <div className="hidden md:flex items-center gap-2 ml-1">
-            <HudStat icon="call" label="Dials" value={sessionDials} />
-            <HudStat icon="phone_in_talk" label="Contacts" value={sessionContacts} tone="emerald" />
-            {queueState?.queueLength ? (
-              <HudStat icon="diversity_3" label="Heir" value={`${queueState.queueIndex + 1}/${queueState.queueLength}`} />
-            ) : null}
-          </div>
-
-          <div className="flex-1" />
-
-          {/* Live dial state */}
-          <div className={`hidden sm:flex items-center gap-2 rounded-lg border px-3 py-1.5 ${
-            isCallingNow ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)]'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${isCallingNow ? 'bg-emerald-400 animate-pulse' : 'bg-[var(--ck-text-dim)]'}`} />
-            <span className={`text-[10px] font-black uppercase tracking-wider ${isCallingNow ? 'text-emerald-400' : 'text-[var(--ck-text-dim)]'}`}>
-              {queueState?.status === 'on_call' ? 'On call' : queueState?.status === 'calling' ? 'Dialing' : 'Idle'}
-            </span>
-            <span className="font-mono text-xs tabular-nums text-[var(--ck-text)]">{dialTimeLabel}</span>
-          </div>
-
-          {/* Mark lead dead */}
-          <button
-            onClick={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}
-            disabled={!currentLeadId}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E32E2E]/40 text-[#ff7777] hover:bg-[#E32E2E]/10 text-xs font-bold uppercase tracking-wider disabled:opacity-30 transition-colors"
-            title="Mark this lead dead (records why)"
-          >
-            <Icon name="cancel" size="text-sm" /> <span className="hidden lg:inline">Mark dead</span>
-          </button>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={back}
-              disabled={currentIndex === 0}
-              className="inline-flex items-center justify-center w-10 h-9 rounded-lg bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] hover:border-[var(--ck-border-strong)] text-[var(--ck-text)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Previous lead (K / ←)"
-              aria-label="Previous lead"
-            >
-              <Icon name="chevron_left" size="text-base" />
-            </button>
-            <button
-              onClick={() => advance()}
-              disabled={currentIndex >= leadIds.length - 1}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#E32E2E] hover:bg-[#C42626] text-white text-xs font-black uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Next lead (J / →)"
-            >
-              Next <Icon name="chevron_right" size="text-sm" />
-            </button>
-          </div>
-        </div>
-
-        {/* Progress bar hugs the bottom of the HUD */}
-        <div className="h-1 bg-[var(--ck-surface-hi)]">
-          <div className="h-full bg-[#E32E2E] transition-all" style={{ width: `${Math.round(((currentIndex + 1) / Math.max(leadIds.length, 1)) * 100)}%` }} />
-        </div>
-      </div>
-
-      {/* ── Now Calling hero ─────────────────────────────────────────────── */}
-      {queueState?.queueItem && (
-        <div
-          className={`mb-5 rounded-2xl border p-5 sm:p-6 flex items-center justify-between gap-4 ${
-            isCallingNow ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-[#E32E2E]/10 border-[#E32E2E]/30'
-          }`}
-        >
-          <div className="flex items-center gap-4 min-w-0">
-            <span className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
-              isCallingNow ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#E32E2E]/20 text-[#ff7777]'
-            }`}>
-              <Icon name={queueState.status === 'on_call' ? 'phone_in_talk' : 'call'} size="text-2xl" className={isCallingNow ? 'animate-pulse' : ''} filled />
-            </span>
-            <div className="min-w-0">
-              <p className={`text-[10px] font-black uppercase tracking-widest ${isCallingNow ? 'text-emerald-400' : 'text-[#ff7777]'}`}>
-                {isCallingNow ? (queueState.status === 'on_call' ? 'On call now' : 'Dialing now') : 'Up next'}
-              </p>
-              <p className="text-xl font-black text-[var(--ck-text)] truncate leading-tight">
-                {queueState.queueItem.heirName}
-                <span className="text-[var(--ck-text-muted)] font-semibold capitalize text-base"> · {queueState.queueItem.relation}</span>
-              </p>
-              <p className="text-sm font-mono text-[var(--ck-text-muted)]">{formatPhone(queueState.queueItem.phone)}</p>
-            </div>
-          </div>
-          <div className="shrink-0 text-right">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Talk time</p>
-            <p className="text-2xl font-black text-[var(--ck-text)] tabular-nums font-mono leading-tight">{dialTimeLabel}</p>
-            <p className="text-[11px] font-bold text-[var(--ck-text-muted)] mt-0.5">Heir {queueState.queueIndex + 1} of {queueState.queueLength}</p>
-          </div>
-        </div>
-      )}
+      <DialerSessionCommand
+        queueLabel={inferredQueueLabel}
+        currentIndex={currentIndex}
+        queueSize={leadIds.length}
+        callerId={sessionCallerId}
+        durableSessionId={durableSessionId}
+        durableStatus={durableSession?.status}
+        dials={sessionDials}
+        contacts={sessionContacts}
+        queueState={queueState}
+        actionPending={sessionActionPending}
+        currentLeadId={currentLeadId}
+        error={sessionError}
+        onClose={() => { void closeSession() }}
+        onResume={() => { void transitionCurrentSession('resume') }}
+        onStop={() => { void stopSession() }}
+        onMarkDead={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}
+        onPrevious={back}
+        onSkip={() => { void skipCurrentLead() }}
+      />
 
       {/* Two-column body */}
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
@@ -1160,6 +1152,8 @@ function DialerPageInner() {
               </div>
             </div>
           </section>
+
+          {currentLead ? <DialerAiAssist lead={currentLead} activities={activities} /> : null}
 
           {/* Text thread + activity + recent call history */}
           <section className="ck-card p-5">
@@ -1336,6 +1330,7 @@ function DialerPageInner() {
               dialerCallerPlan={sessionCallerPlan}
               callHammerEnabled={sessionUseCallHammer}
               ringCount={sessionRingCount}
+              dialerSessionId={durableSessionId || null}
               autoStart={autoQueueLeadId === currentLeadId}
               onAutoStartHandled={() => setAutoQueueLeadId(null)}
               onAutoStartEmpty={handleAutoStartEmpty}
@@ -1712,15 +1707,8 @@ function DialerHome() {
   const loadSavedQueues = useCallback(async () => {
     setSavedQueueError(null)
     try {
-      const response = await fetch('/api/dialer/saved-lists', { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok) {
-        setSavedQueueError(payload?.error || 'Could not load saved lists.')
-        setSavedQueues([])
-        return
-      }
-      const serverQueues = (payload.savedLists || []) as SavedDialerQueue[]
-      setSavedQueues(serverQueues.map(mergeSavedQueueWithLocalMeta))
+      const serverQueues = await loadDialerSavedQueuesWithOpenSession() as unknown as SavedDialerQueue[]
+      setSavedQueues(serverQueues.map((queue) => queue.durableSessionId ? queue : mergeSavedQueueWithLocalMeta(queue)))
     } catch {
       setSavedQueueError('Could not load saved lists.')
       setSavedQueues([])
@@ -1966,6 +1954,7 @@ function DialerHome() {
     callHammerSettings?: { useCallHammer?: boolean; useVoicemailCallHammer?: boolean } | null,
     queueLabel?: string,
     ringCountValue?: number | null,
+    sessionId?: string,
   ) => {
     const query = new URLSearchParams()
     query.set('lead_ids', ids.join(','))
@@ -1982,6 +1971,7 @@ function DialerHome() {
     query.set('call_hammer', callHammerSettings?.useCallHammer ? '1' : '0')
     query.set('voicemail_call_hammer', callHammerSettings?.useVoicemailCallHammer ? '1' : '0')
     if (ringCountValue && ringCountValue > 0) query.set('ring_count', String(ringCountValue))
+    if (sessionId) query.set('session_id', sessionId)
     return `/dialer?${query.toString()}`
   }, [])
 
@@ -2040,27 +2030,43 @@ function DialerHome() {
       })
     }
 
-    router.push(buildSessionUrl(
-      ids,
-      startIndex,
+    try {
+      const createdSession = await createDurableDialerSession({
+        leadIds: ids,
+        queueKey: selectedPreset.id,
+        callerId: callerPlan.staticCallerId,
+        savedQueueId: activeSavedQueueId || undefined,
+        settings: {
+          callerPlan,
+          ringCount,
+          queueLabel: selectedSavedQueue?.name || selectedPreset.label,
+        },
+      })
+      const session = createdSession.session
+      const navigationPlan = createdSession.created
+        ? callerPlan
+        : normalizeDialerCallerPlan({ mode: 'static', staticCallerId: session.callerId || callerPlan.staticCallerId }, session.callerId || callerPlan.staticCallerId)
+      router.push(buildSessionUrl(
+      session.leadIds,
+      session.currentIndex,
       activeSavedQueueId || undefined,
-      callerPlan.staticCallerId,
-      callerPlan,
+      session.callerId || callerPlan.staticCallerId,
+      navigationPlan,
       { useCallHammer, useVoicemailCallHammer },
-      selectedSavedQueue?.name || selectedPreset.label,
+      createdSession.created ? selectedSavedQueue?.name || selectedPreset.label : session.queueKey.replace(/_/g, ' '),
       ringCount,
-    ))
-  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, ringCount, router, selectedPreset.label, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
+      session.id,
+      ))
+    } catch (sessionError) {
+      setError(sessionError instanceof Error ? sessionError.message : 'Could not create the dialer session.')
+    }
+  }, [activeSavedQueueId, buildSessionUrl, callerPlan, optionalFilters, queue, ringCount, router, selectedPreset.id, selectedPreset.label, selectedQueue, selectedSavedQueue, startBehavior, useCallHammer, useVoicemailCallHammer])
 
-  const resumeSavedQueue = useCallback((queueOverride?: SavedDialerQueue) => {
+  const resumeSavedQueue = useCallback(async (queueOverride?: SavedDialerQueue) => {
     const queueToResume = queueOverride ?? selectedSavedQueue
     if (!queueToResume) return
     const ids = (queueToResume.sessionLeadIds || []).slice(0, 100)
     if (ids.length === 0) return
-    const resumeIndex = Math.min(
-      Math.max(queueToResume.resumeIndex || 0, 0),
-      Math.max(ids.length - 1, 0),
-    )
     const resumePlan = normalizeDialerCallerPlan({
       mode: queueToResume.callerMode || callerMode,
       staticCallerId: queueToResume.callerId || callerId,
@@ -2077,19 +2083,35 @@ function DialerHome() {
       useCallHammer: queueToResume.useCallHammer ?? useCallHammer,
       useVoicemailCallHammer: queueToResume.useVoicemailCallHammer ?? useVoicemailCallHammer,
     })
-    router.push(buildSessionUrl(
-      ids,
-      resumeIndex,
-      queueToResume.id,
-      resumePlan.staticCallerId,
-      resumePlan,
-      {
-        useCallHammer: queueToResume.useCallHammer ?? useCallHammer,
-        useVoicemailCallHammer: queueToResume.useVoicemailCallHammer ?? useVoicemailCallHammer,
-      },
-      queueToResume.name,
-      ringCount,
-    ))
+    try {
+      const createdSession = await createDurableDialerSession({
+        leadIds: ids,
+        queueKey: queueToResume.preset,
+        callerId: resumePlan.staticCallerId,
+        savedQueueId: queueToResume.id,
+        settings: { callerPlan: resumePlan, ringCount, queueLabel: queueToResume.name },
+      })
+      const session = createdSession.session
+      const navigationPlan = createdSession.created
+        ? resumePlan
+        : normalizeDialerCallerPlan({ mode: 'static', staticCallerId: session.callerId || resumePlan.staticCallerId }, session.callerId || resumePlan.staticCallerId)
+      router.push(buildSessionUrl(
+        session.leadIds,
+        session.currentIndex,
+        queueToResume.id,
+        session.callerId || resumePlan.staticCallerId,
+        navigationPlan,
+        {
+          useCallHammer: queueToResume.useCallHammer ?? useCallHammer,
+          useVoicemailCallHammer: queueToResume.useVoicemailCallHammer ?? useVoicemailCallHammer,
+        },
+        createdSession.created ? queueToResume.name : session.queueKey.replace(/_/g, ' '),
+        ringCount,
+        session.id,
+      ))
+    } catch (sessionError) {
+      setError(sessionError instanceof Error ? sessionError.message : 'Could not resume the dialer session.')
+    }
   }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, ringCount, router, selectedSavedQueue, useCallHammer, useVoicemailCallHammer])
 
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
@@ -2976,18 +2998,6 @@ function DarkSelect({ label, value, onChange, options }: { label: string; value:
         ))}
       </select>
     </label>
-  )
-}
-
-function HudStat({ icon, label, value, tone = 'neutral' }: { icon: string; label: string; value: number | string; tone?: 'neutral' | 'emerald' }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2.5 py-1.5">
-      <Icon name={icon} size="text-sm" className={tone === 'emerald' ? 'text-emerald-400' : 'text-[var(--ck-text-dim)]'} />
-      <div className="leading-none">
-        <p className={`text-sm font-black tabular-nums ${tone === 'emerald' ? 'text-emerald-400' : 'text-[var(--ck-text)]'}`}>{value}</p>
-        <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">{label}</p>
-      </div>
-    </div>
   )
 }
 

@@ -83,9 +83,9 @@
       },
       {
         "path": "src/components/telephony/telephony-bar.tsx",
-        "maximumLines": 1652,
+        "maximumLines": 1741,
         "owner": "Acquisitions",
-        "reason": "The existing shared softphone remains consolidated for the dial-safety release; freeze growth while call state and device controls are extracted.",
+        "reason": "The shared softphone now bridges provider events to the durable server-owned attempt lifecycle; freeze growth while call state and device controls are extracted.",
         "targetDate": "2026-10-31"
       }
     ],
@@ -174,8 +174,8 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/dialer"],
-      "apiRoutes": ["/api/dialer/queue", "/api/dialer/call-intents", "/api/mobile/v1/twilio/call-intents", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/ivr/google-ads-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
-      "tables": ["call_logs", "dialer_saved_lists", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "manifests", "prospect_phones", "sms_opt_outs"],
+      "apiRoutes": ["/api/dialer/queue", "/api/dialer/call-intents", "/api/dialer/sessions", "/api/dialer/sessions/[id]", "/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/mobile/v1/twilio/call-intents", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/ivr/google-ads-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
+      "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "manifests", "prospect_phones", "sms_opt_outs"],
       "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "ERNEST_PHONE", "CASEY_PHONE"]
     },
     {
