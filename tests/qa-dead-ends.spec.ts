@@ -21,7 +21,7 @@ interface QAReport {
 const ROUTES = [
   '/dashboard',
   '/opportunities',
-  '/leads',
+  '/contacts',
   '/conversations',
   '/calendar',
   '/pipeline',
@@ -64,7 +64,7 @@ async function checkDeadLinks(page: Page, route: string) {
     // Check for links to unknown routes (potential 404s)
     if (href && href.startsWith('/') && !href.startsWith('//')) {
       const knownRoutes = [
-        '/', '/login', '/dashboard', '/opportunities', '/leads', '/conversations',
+        '/', '/login', '/dashboard', '/opportunities', '/contacts', '/leads', '/conversations',
         '/calendar', '/pipeline', '/settings', '/checklist'
       ];
       const baseRoute = href.split('?')[0].split('#')[0];
@@ -318,14 +318,14 @@ test.describe('CRM Dead-End Finder', () => {
 
     // Special check: Try to load a sample lead detail page if we can find a lead ID
     try {
-      await page.goto('/leads', { waitUntil: 'networkidle' });
+      await page.goto('/contacts', { waitUntil: 'networkidle' });
       await page.waitForTimeout(2000);
 
       // Try to find a lead link
       const leadLink = page.locator('a[href*="/leads/"]').first();
       const href = await leadLink.getAttribute('href').catch(() => null);
 
-      if (href && href !== '/leads') {
+      if (href && href !== '/contacts') {
         console.log(`\n📄 Auditing: ${href} (lead detail page)`);
         captureConsoleErrors(page, href);
         checkNetworkRequests(page, href);
