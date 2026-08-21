@@ -91,6 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/checklist') ?? false) ||
     (pathname?.startsWith('/contacts') ?? false) ||
     (pathname?.startsWith('/leads') ?? false) ||
+    (pathname?.startsWith('/prospecting') ?? false) ||
     (pathname?.startsWith('/workflows') ?? false) ||
     (pathname?.startsWith('/tasks') ?? false) ||
     (pathname?.startsWith('/reports') ?? false) ||

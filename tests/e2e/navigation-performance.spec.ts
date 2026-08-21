@@ -230,6 +230,10 @@ async function installPerformanceFixtures(page: Page) {
     prospects: [],
   }))
   await page.route('**/api/dialer/saved-lists**', (route) => fulfillJson(route, { savedLists: [] }))
+  await page.route('**/api/prospecting/campaigns**', (route) => fulfillJson(route, {
+    items: [],
+    pageInfo: { limit: 50, hasMore: false, nextCursor: null },
+  }))
   await page.route('**/api/settings**', (route) => fulfillJson(route, {
     profile: { email: 'performance@example.com', profile_photo_url: null },
   }))
@@ -296,6 +300,11 @@ async function expectRouteReady(page: Page, route: string) {
     await expect(page.getByRole('status', { name: 'Loading conversations' })).toHaveCount(0)
     return
   }
+  if (pathname === '/prospecting') {
+    await expect(page.getByRole('button', { name: 'New campaign' })).toBeVisible()
+    await expect(page.getByText('Loading campaigns…', { exact: true })).toHaveCount(0)
+    return
+  }
   if (pathname === '/tasks') {
     await expect(page.getByText(taskFixture.title, { exact: true }).first()).toBeVisible()
     await expect(page.getByLabel('Loading task rows')).toHaveCount(0)
@@ -331,8 +340,7 @@ async function ensureAuthenticated(page: Page) {
 
 const transitions = [
   { label: 'Pipeline', href: '/contacts?list=new' },
-  { label: 'Conversations', href: '/conversations' },
-  { label: 'Dialer', href: '/dialer' },
+  { label: 'Prospecting', href: '/prospecting' },
   { label: 'Task', href: '/tasks' },
   { label: 'Dashboard', href: '/dashboard' },
 ] as const
@@ -347,7 +355,7 @@ test.afterEach(async ({ page }) => {
   expect(forbiddenRequests.get(page) ?? [], 'Performance runs may not prefetch unselected lead details or external Google fonts').toEqual([])
 })
 
-for (const route of ['/dashboard', '/contacts?list=new', '/conversations', '/tasks', '/calendar?department=acquisitions', '/dialer']) {
+for (const route of ['/dashboard', '/contacts?list=new', '/prospecting', '/conversations', '/tasks', '/calendar?department=acquisitions', '/dialer']) {
   test(`cold authenticated route is useful in under 1000ms on ${route}`, async ({ page }, testInfo) => {
     test.setTimeout(60_000)
     let startedAt = Date.now()
@@ -457,7 +465,7 @@ test.describe('real iPhone navigation', () => {
     const mobileNavigation = page.getByRole('navigation', { name: 'Primary CRM navigation' })
     const mobileTransitions = [
       { label: 'Pipeline', href: '/contacts?list=new' },
-      { label: 'Inbox', href: '/conversations' },
+      { label: 'Prospecting', href: '/prospecting' },
       { label: 'Task', href: '/tasks' },
       { label: 'Dashboard', href: '/dashboard' },
     ] as const

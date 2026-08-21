@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 const crmWorkspaceRoutes = [
   '/contacts',
+  '/prospecting',
   '/conversations',
   '/calendar?department=acquisitions',
   '/tasks',
@@ -75,9 +76,8 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     ['Dashboard', '/dashboard'],
     ['Issue Log', '/reports/andon'],
     ['Pipeline', '/contacts?list=new'],
-    ['Conversations', '/conversations'],
+    ['Prospecting', '/prospecting'],
     ['Calendar', '/calendar?department=acquisitions'],
-    ['Dialer', '/dialer'],
     ['Task', '/tasks'],
     ['Reports', '/reports/acquisitions'],
     ['Settings', '/settings'],
@@ -167,14 +167,18 @@ for (const route of crmWorkspaceRoutes) {
     await expect(page.locator('body.ck-dark')).toHaveCount(0);
     await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light');
     await expect(page.getByRole('button', { name: 'Switch to dark theme' })).toBeVisible();
-    const commandSearch = route === '/contacts'
-      ? page.getByPlaceholder('Search contacts...')
-      : route === '/tasks'
-        ? page.getByPlaceholder('Search tasks...')
-        : page.getByPlaceholder('Search contacts, properties, or messages...');
-    await expect(commandSearch).toBeVisible();
+    if (route === '/prospecting') {
+      await expect(page.getByRole('button', { name: 'New campaign' })).toBeVisible();
+    } else {
+      const commandSearch = route === '/contacts'
+        ? page.getByPlaceholder('Search contacts...')
+        : route === '/tasks'
+          ? page.getByPlaceholder('Search tasks...')
+          : page.getByPlaceholder('Search contacts, properties, or messages...');
+      await expect(commandSearch).toBeVisible();
+    }
     const desktopNavigation = page.getByRole('navigation', { name: 'CRM navigation' });
-    await expect(desktopNavigation.getByRole('link', { name: 'Conversations' })).toBeVisible();
+    await expect(desktopNavigation.getByRole('link', { name: 'Prospecting' })).toBeVisible();
     await expect(desktopNavigation.getByRole('link', { name: 'Pipeline' })).toBeVisible();
     await expect(desktopNavigation.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
