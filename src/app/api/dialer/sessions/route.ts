@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import {
   DialerSessionError,
+  getDialerSessionHistory,
   getOpenDialerSession,
   startDialerSession,
 } from '@/lib/server/dialer-session-engine'
@@ -16,10 +17,18 @@ function response(error: unknown) {
   console.error('[dialer/sessions] Unexpected session failure', error)
   return NextResponse.json({ error: 'Dialer session state is unavailable', code: 'session_engine_unavailable' }, { status: 503, headers: NO_STORE })
 }
-export async function GET() {
+export async function GET(request: Request) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
   try {
+    const searchParams = new URL(request.url).searchParams
+    if (searchParams.get('scope') === 'history') {
+      const limitValue = searchParams.get('limit')
+      return NextResponse.json(await getDialerSessionHistory(actor, {
+        limit: limitValue == null ? undefined : Number(limitValue),
+        cursor: searchParams.get('cursor'),
+      }), { headers: NO_STORE })
+    }
     return NextResponse.json({ session: await getOpenDialerSession(actor) }, { headers: NO_STORE })
   } catch (error) {
     return response(error)

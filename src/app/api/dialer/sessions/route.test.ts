@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
+  getDialerSessionHistory: vi.fn(),
   getOpenDialerSession: vi.fn(),
   startDialerSession: vi.fn(),
 }))
@@ -11,6 +12,7 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   DialerSessionError: class DialerSessionError extends Error {
     constructor(public code: string, public status: number, message: string) { super(message) }
   },
+  getDialerSessionHistory: mocks.getDialerSessionHistory,
   getOpenDialerSession: mocks.getOpenDialerSession,
   startDialerSession: mocks.startDialerSession,
 }))
@@ -73,10 +75,26 @@ describe('dialer session routes', () => {
   it('loads only the authenticated actor open session', async () => {
     mocks.getOpenDialerSession.mockResolvedValue({ id: 'session-1' })
 
-    const response = await GET()
+    const response = await GET(new Request('https://crm.savingkc.com/api/dialer/sessions'))
 
     expect(response.status).toBe(200)
     expect(mocks.getOpenDialerSession).toHaveBeenCalledWith({ email: 'casey@savingkc.com', name: 'Casey' })
     expect(response.headers.get('cache-control')).toBe('private, no-store')
+  })
+
+  it('returns bounded history for the authenticated actor', async () => {
+    mocks.getDialerSessionHistory.mockResolvedValue({
+      items: [{ id: 'session-1' }],
+      pageInfo: { limit: 10, hasMore: false, nextCursor: null },
+    })
+
+    const response = await GET(new Request('https://crm.savingkc.com/api/dialer/sessions?scope=history&limit=10&cursor=opaque'))
+
+    expect(response.status).toBe(200)
+    expect(mocks.getDialerSessionHistory).toHaveBeenCalledWith(
+      { email: 'casey@savingkc.com', name: 'Casey' },
+      { limit: 10, cursor: 'opaque' },
+    )
+    expect(await response.json()).toMatchObject({ items: [{ id: 'session-1' }] })
   })
 })

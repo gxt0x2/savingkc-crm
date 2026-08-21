@@ -13,7 +13,35 @@ export interface DurableDialerSession {
   dialsCompleted: number
   contacts: number
   skips: number
+  outcomes: Record<string, number>
+  startedAt: string
+  pausedAt: string | null
+  endedAt: string | null
   updatedAt: string
+}
+
+export interface DurableDialerAttempt {
+  id: string
+  lead_id: string | null
+  phone: string
+  caller_id: string
+  status: 'authorized' | 'dialing' | 'connected' | 'awaiting_disposition' | 'dispositioned' | 'failed' | 'cancelled'
+  disposition: string | null
+  duration_seconds: number | null
+  reached: boolean | null
+  started_at: string | null
+  connected_at: string | null
+  ended_at: string | null
+  dispositioned_at: string | null
+  created_at: string
+  updated_at: string
+  leadName: string | null
+  propertyAddress: string | null
+}
+
+export interface DialerHistoryPage<T> {
+  items: T[]
+  pageInfo: { limit: number; hasMore: boolean; nextCursor: string | null }
 }
 
 async function payload(response: Response, fallback: string) {
@@ -27,6 +55,23 @@ export async function loadDurableDialerSession(sessionId: string): Promise<Durab
   const body = await payload(response, 'Could not load the dialer session.')
   if (!body.session) throw new Error('Could not load the dialer session.')
   return body.session as DurableDialerSession
+}
+
+export async function loadDialerSessionHistory(cursor?: string | null): Promise<DialerHistoryPage<DurableDialerSession>> {
+  const params = new URLSearchParams({ scope: 'history', limit: '20' })
+  if (cursor) params.set('cursor', cursor)
+  const response = await fetch(`/api/dialer/sessions?${params.toString()}`, { cache: 'no-store' })
+  return payload(response, 'Could not load dialer session history.') as Promise<DialerHistoryPage<DurableDialerSession>>
+}
+
+export async function loadDialerAttemptHistory(
+  sessionId: string,
+  cursor?: string | null,
+): Promise<{ session: DurableDialerSession; attempts: DialerHistoryPage<DurableDialerAttempt> }> {
+  const params = new URLSearchParams({ include: 'attempts', limit: '50' })
+  if (cursor) params.set('cursor', cursor)
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}?${params.toString()}`, { cache: 'no-store' })
+  return payload(response, 'Could not load dialer session attempts.') as Promise<{ session: DurableDialerSession; attempts: DialerHistoryPage<DurableDialerAttempt> }>
 }
 
 export async function loadDialerSavedQueuesWithOpenSession(): Promise<Record<string, unknown>[]> {

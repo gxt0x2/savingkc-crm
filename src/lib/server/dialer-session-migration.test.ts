@@ -6,6 +6,10 @@ const migration = readFileSync(
   join(process.cwd(), 'supabase/migrations/20260820120000_dialer_session_engine.sql'),
   'utf8',
 )
+const historyMigration = readFileSync(
+  join(process.cwd(), 'supabase/migrations/20260826120000_dialer_session_history_indexes.sql'),
+  'utf8',
+)
 
 describe('dialer session migration contract', () => {
   it('enforces one open session and one open attempt per session', () => {
@@ -31,5 +35,10 @@ describe('dialer session migration contract', () => {
   it('locks session creation by verified actor and session transitions by row', () => {
     expect(migration).toContain("pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('dialer-actor:' || v_actor, 0))")
     expect(migration.match(/FOR UPDATE;/g)?.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('indexes actor-owned session and attempt keyset history', () => {
+    expect(historyMigration).toContain('(actor_email, updated_at DESC, id DESC)')
+    expect(historyMigration).toContain('(session_id, created_at DESC, id DESC)')
   })
 })

@@ -27,6 +27,7 @@ const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-mod
 const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
 const BulkSmsModal = dynamic(() => import('@/components/leads/bulk-sms-modal').then((module) => module.BulkSmsModal))
 const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assist').then((module) => module.DialerAiAssist))
+const DialerSessionHistory = dynamic(() => import('@/components/dialer/dialer-session-history').then((module) => module.DialerSessionHistory))
 interface LeadSummary {
   id: string
   full_name: string | null
@@ -1571,32 +1572,6 @@ function DialerOverview({
   )
 }
 
-function DialerSessionsView({ savedQueues, onResume, onOpenQueue }: { savedQueues: SavedDialerQueue[]; onResume: (queue: SavedDialerQueue) => void; onOpenQueue: (preset: QueuePreset) => void }) {
-  const active = savedQueues.filter((queue) => queue.sessionLeadIds.length > 0 && !queue.sessionCompleted)
-  const completed = savedQueues.filter((queue) => queue.sessionCompleted)
-  return (
-    <div>
-      <DialerPageHeading eyebrow="Dialer sessions" title="Pick up without rebuilding" copy="Paused sessions keep their order, calling number, filters, and exact resume point." action={<button type="button" onClick={() => onOpenQueue('custom')} className="rounded-lg bg-[var(--crm-brand)] px-4 py-2.5 text-sm font-black text-white hover:bg-[var(--crm-brand-hover)]">New calling session</button>} />
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm">
-          <h2 className="text-lg font-black text-[var(--crm-ink)]">Active and paused</h2>
-          <div className="mt-4 space-y-3">
-            {active.map((queue) => (
-              <div key={queue.id} className="flex flex-col gap-4 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4 sm:flex-row sm:items-center">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="phone_in_talk" className="text-xl" /></span>
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-[var(--crm-ink)]">{queue.name}</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{queue.resumeIndex + 1} of {queue.sessionLeadIds.length} · {queue.agent} · {formatPhone(queue.callerId)}</p></div>
-                <button type="button" onClick={() => onResume(queue)} className="rounded-lg bg-[var(--crm-brand)] px-4 py-2 text-xs font-black text-white hover:bg-[var(--crm-brand-hover)]">Resume · {Math.max(queue.sessionLeadIds.length - queue.resumeIndex, 0)} left</button>
-              </div>
-            ))}
-            {active.length === 0 ? <div className="rounded-xl border border-dashed border-[var(--crm-border-strong)] p-8 text-center"><Icon name="pause_circle" className="text-3xl text-[var(--crm-text-dim)]" /><p className="mt-2 text-sm font-bold text-[var(--crm-ink)]">No paused sessions</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Start a queue and your progress will be saved here.</p></div> : null}
-          </div>
-        </section>
-        <aside className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><h2 className="text-lg font-black text-[var(--crm-ink)]">Completed sessions</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Recent saved-list sessions marked complete.</p><p className="mt-5 text-4xl font-black text-[var(--crm-ink)]">{completed.length}</p><Link href="/reports/call-sms" className="mt-5 inline-flex items-center gap-1 text-xs font-black text-[var(--crm-brand)]">Review calling report <Icon name="arrow_forward" className="text-sm" /></Link></aside>
-      </div>
-    </div>
-  )
-}
-
 function DialerHome() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -2045,6 +2020,22 @@ function DialerHome() {
     }
   }, [buildSessionUrl, callerId, callerMode, redialCallerId, rotateEveryCalls, rotationCallerIds, ringCount, router, selectedSavedQueue, useCallHammer, useVoicemailCallHammer])
 
+  const openDurableSession = useCallback((session: DurableDialerSession) => {
+    const sessionCallerId = session.callerId || callerId || DEFAULT_DIALER_CALLER_ID
+    const sessionPlan = normalizeDialerCallerPlan({ mode: 'static', staticCallerId: sessionCallerId }, sessionCallerId)
+    router.push(buildSessionUrl(
+      session.leadIds,
+      session.currentIndex,
+      session.savedQueueId || undefined,
+      sessionCallerId,
+      sessionPlan,
+      { useCallHammer: false, useVoicemailCallHammer: false },
+      session.queueKey.replace(/_/g, ' '),
+      ringCount,
+      session.id,
+    ))
+  }, [buildSessionUrl, callerId, ringCount, router])
+
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
   const previewLeads = queue.slice(0, visibleLimit)
   const selectedVisibleCount = previewLeads.filter((lead) => selectedLeadIds.has(lead.id)).length
@@ -2296,7 +2287,7 @@ function DialerHome() {
           lastContactByLeadId={lastContactByLeadId}
         />
       ) : homeSection === 'sessions' ? (
-        <DialerSessionsView savedQueues={savedQueues} onResume={resumeSavedQueue} onOpenQueue={openQueue} />
+        <DialerSessionHistory onResume={openDurableSession} onOpenQueue={() => openQueue('custom')} />
       ) : (
         <>
           {error && (
