@@ -19,6 +19,18 @@ const nextConfig: NextConfig = {
         destination: '/conversations',
         permanent: false,
       },
+      {
+        source: '/dialer',
+        has: [{ type: 'query', key: 'section', value: 'analytics' }],
+        destination: '/reports/call-sms',
+        permanent: false,
+      },
+      {
+        source: '/dialer',
+        has: [{ type: 'query', key: 'section', value: 'settings' }],
+        destination: '/dialer?section=queue',
+        permanent: false,
+      },
     ];
   },
   turbopack: {

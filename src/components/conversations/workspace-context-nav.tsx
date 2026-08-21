@@ -69,8 +69,6 @@ const GROUPS: ContextGroup[] = [
       { label: 'Overview', href: '/dialer', icon: 'space_dashboard', section: 'overview' },
       { label: 'Call queue', href: '/dialer?section=queue', icon: 'format_list_numbered', section: 'queue' },
       { label: 'Sessions', href: '/dialer?section=sessions', icon: 'play_circle', section: 'sessions' },
-      { label: 'Analytics', href: '/dialer?section=analytics', icon: 'monitoring', section: 'analytics' },
-      { label: 'Settings', href: '/dialer?section=settings', icon: 'tune', section: 'settings' },
     ],
   },
   {
