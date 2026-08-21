@@ -32,6 +32,7 @@ export interface SmartListContact {
 
 export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigationId; label: string }> = [
   { id: 'new', label: 'New' },
+  { id: 'hot', label: 'Hot Opps' },
   { id: 'contacted', label: 'Leads' },
   { id: 'qualified', label: 'Opportunities' },
   { id: 'appointment_set', label: 'Appointment Set' },
@@ -40,7 +41,7 @@ export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigation
   { id: 'all', label: 'All' },
 ]
 
-export const CONTACT_SMART_LIST_ORDER_STORAGE_KEY = 'savingkc-contact-smart-list-order-v1'
+export const CONTACT_SMART_LIST_ORDER_STORAGE_KEY = 'savingkc-contact-smart-list-order-v2'
 
 export const DEFAULT_CONTACT_SMART_LIST_ORDER: ReadonlyArray<ContactSmartListNavigationId> = CONTACT_SMART_LISTS.map(({ id }) => id)
 
@@ -66,7 +67,7 @@ export const CONTACT_SMART_LIST_COPY: Record<ContactSmartList, { label: string; 
     description: 'Unreviewed seller inquiries from approved intent sources. Communication alone never enters Pipeline.',
   },
   hot: {
-    label: 'Hot',
+    label: 'Hot Opps',
     description: 'High-priority active records scored 75+ or manually starred.',
   },
   contacted: {
