@@ -230,13 +230,23 @@
     },
     {
       "id": "ari",
-      "name": "ARI insights and assistant",
+      "name": "Legacy lead-level ARI insights",
       "owner": "Operations",
       "status": "active",
-      "routes": ["/ari", "/ai"],
-      "apiRoutes": ["/api/ari/chat", "/api/ai/command"],
+      "routes": ["/ari"],
+      "apiRoutes": ["/api/ari/chat"],
       "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events", "roles"],
-      "environment": ["OPENAI_API_KEY"]
+      "environment": ["GROQ_API_KEY", "OPENROUTER_API_KEY"]
+    },
+    {
+      "id": "unified_ai_assistant",
+      "name": "Unified persistent AI assistant",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/ai"],
+      "apiRoutes": ["/api/ai/command", "/api/ai/threads", "/api/ai/threads/[id]"],
+      "tables": ["assistant_threads", "assistant_messages", "assistant_generations", "assistant_confirmations", "agent_profiles"],
+      "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "GROQ_API_KEY", "OPENROUTER_API_KEY"]
     },
     {
       "id": "read_only_operating_assistant",
