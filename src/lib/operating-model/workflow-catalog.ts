@@ -37,6 +37,20 @@ function implementation(
 
 export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
+    id: 'workflow-registry-health',
+    name: 'Workflow Registry Health',
+    description: 'Validates the governed workflow catalog, stored drafts, version identity, and executable definition contracts without changing CRM data.',
+    category: 'reporting', status: 'active', health: 'healthy', owner: SYSTEM_OWNER,
+    trigger: { type: 'manual', surface: 'Workflows > Run registry health check' },
+    actions: [
+      { type: 'execute', label: 'Load code-owned and stored workflow definitions' },
+      { type: 'execute', label: 'Validate definition contracts and duplicate identities' },
+      { type: 'execute', label: 'Record the versioned health result' },
+    ],
+    implementation: implementation(['/api/workflows/runs', '/api/workers/workflow-runs', 'src/lib/server/workflow-runs.ts'], { execution: 'worker', mutatesData: false }),
+    version: 1, lastRunAt: null,
+  },
+  {
     id: 'acquisitions-seller-call-flow',
     name: 'Standard Seller Call Flow',
     description: 'The default acquisition path for main, business, and general seller numbers.',

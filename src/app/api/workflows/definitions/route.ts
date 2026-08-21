@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { getCurrentUserEmail } from '@/lib/auth/admin'
-import { requireUserOrSecret } from '@/lib/api/admin-auth'
+import { requireAdminOrSecret, requireUserOrSecret } from '@/lib/api/admin-auth'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { WORKFLOW_CATALOG } from '@/lib/operating-model/workflow-catalog'
 import {
@@ -29,12 +29,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const unauthorized = await requireUserOrSecret(request)
+  const unauthorized = await requireAdminOrSecret(request)
   if (unauthorized) return unauthorized
   try {
-    const actor = await getCurrentUserEmail() || 'authenticated-system-user'
+    const actor = await resolveAuthenticatedActor()
     const body = await request.json() as WorkflowDraftInput
-    const draft = buildWorkflowDraft(body, actor)
+    const draft = buildWorkflowDraft(body, actor?.name || 'Authorized automation')
     await saveWorkflowDraft(supabaseAdmin(), draft)
     return NextResponse.json({ definition: draft.definition, governance: draft.governance }, { status: 201 })
   } catch (error) {
