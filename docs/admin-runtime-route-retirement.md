@@ -6,6 +6,7 @@ The following one-time admin handlers are retired from the hosted CRM:
 
 | Retired route | Replacement |
 | --- | --- |
+| `/api/admin/fix-orphans` | Canonical Mojo ingestion; reviewed offline reconciliation for a future real orphan |
 | `/api/admin/migrate-deals` | Versioned Supabase migrations |
 | `/api/admin/migrate` | Versioned Supabase migrations and `/api/admin/system-config` |
 | `/api/admin/repair-mojo-leads` | Normal Mojo ingestion; a reviewed operations script for any future historical repair |
@@ -30,13 +31,25 @@ A read-only production preflight on 2026-08-21 confirmed:
 
 No production data was changed during this preflight.
 
-## Intentionally retained
+## Quarantined synthetic orphan
 
-`/api/admin/fix-orphans` remains available behind its existing admin boundary.
 Production still has one unlinked manifest created on 2026-03-29 in the
-qualification station, so that recovery capability is not yet eligible for
-retirement. It must be investigated and repaired through a controlled,
-auditable operation before the handler is removed.
+qualification station. A second read-only preflight established that it is
+synthetic residue, not a recoverable seller:
+
+- its source is `mojo:Test List`;
+- its owner name and property address both contain test markers;
+- it has no booking or notes and no matching lead by normalized phone, exact
+  address, or exact name;
+- it has no `manifest_history`, PPC conversion-outbox, or PPC tracking-event
+  references; and
+- it contains an internal audit trail, so the row was left unchanged instead
+  of being destructively deleted.
+
+The retired handler would have read the wrong owner fields and created a
+placeholder seller through a mutating GET request. A future real orphan must
+be reconciled through a reviewed, transactional operation with duplicate
+checks; it must not restore this endpoint.
 
 Operational admin routes such as reranking, Mojo session management, entity
 health, stuck-station review, historical import, and enrichment reprocessing
