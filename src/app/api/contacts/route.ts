@@ -10,6 +10,7 @@ import { getPipelineIntentSource } from '@/lib/pipeline-intent'
 import { communicationActivitySummary } from '@/lib/operating-model/conversation-presentation'
 import type { ConversationHubActivity, ConversationHubThread } from '@/lib/operating-model/conversation-hub'
 import { readContactWorkspaceActivitySummaries, type ContactWorkspaceActivitySummary } from '@/lib/server/contact-workspace-read-model'
+import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
 import { ACQUISITION_STAGES, normalizeDealStage, type DealStage } from '@/types/pipeline'
 
 /**
@@ -90,6 +91,11 @@ const CONTACT_STAGES = new Set<DealStage>([
   'closed_lost',
   'dead',
 ])
+const CONTACT_SMART_LISTS = new Set([
+  'new', 'hot', 'contacted', 'qualified', 'appointment_set', 'offer_made',
+  'in_closing', 'all', 'needs_reply', 'overdue', 'unassigned', 'prospects', 'not_leads',
+])
+const CONTACT_SORTS = new Set(['priority', 'recent', 'name'])
 function getContactStation(station: string | null | undefined): DealStage | null {
   const normalized = normalizeDealStage(station) ?? 'new'
   return CONTACT_STAGES.has(normalized) ? normalized : null
@@ -152,6 +158,107 @@ function projectionOutreachStatus(summary: ContactWorkspaceActivitySummary | und
 export async function GET(request: NextRequest) {
   const requestStartedAt = performance.now()
   const db = supabaseAdmin()
+  if (request.nextUrl.searchParams.get('mode') === 'page') {
+    const params = request.nextUrl.searchParams
+    const rawCursor = params.get('cursor')
+    const cursor = decodeContactDirectoryCursor(rawCursor)
+    if (rawCursor && !cursor) {
+      return NextResponse.json({ error: 'Invalid contact page cursor' }, { status: 400 })
+    }
+    const smartList = params.get('list') ?? 'new'
+    const sort = params.get('sort') ?? 'priority'
+    if (!CONTACT_SMART_LISTS.has(smartList) || !CONTACT_SORTS.has(sort)) {
+      return NextResponse.json({ error: 'Invalid contact directory query' }, { status: 400 })
+    }
+    const requestedLimit = Number(params.get('limit') ?? 25)
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 50) : 25
+    const scope = smartList === 'prospects' ? 'prospects' : smartList === 'not_leads' ? 'not_leads' : 'active'
+    try {
+      const page = await readContactDirectoryPage({
+        smartList,
+        scope,
+        limit,
+        cursor,
+        sort,
+        search: params.get('q') ?? '',
+        owner: params.get('owner') ?? '',
+        stage: params.get('stage') ?? '',
+        minimumStage: params.get('min_stage') ?? '',
+        source: params.get('source') ?? '',
+        tag: params.get('tag') ?? '',
+        activity: params.get('activity') ?? '',
+        attention: params.get('attention') ?? '',
+        outreach: params.get('outreach') ?? '',
+        dataGap: params.get('gap') ?? '',
+        referenceTime: new Date().toISOString(),
+      }, db)
+
+      const items: ContactRow[] = page.items.map((item) => {
+        const manifest = item.manifest as ManifestPayload
+        const communication: ConversationHubActivity | null = item.last_communication_id && item.last_communication_type && item.last_communication_at ? {
+          id: item.last_communication_id,
+          lead_id: item.id,
+          activity_type: item.last_communication_type,
+          description: item.last_communication_description,
+          agent: item.last_communication_agent,
+          metadata: item.last_communication_metadata ?? {},
+          created_at: item.last_communication_at,
+        } : null
+        const dueAt = item.primary_next_action_due_at
+        return {
+          id: item.id,
+          fullName: item.full_name,
+          phone: item.phone,
+          email: item.email,
+          source: item.source,
+          address: item.address,
+          city: item.city,
+          station: item.station as DealStage,
+          classification: item.classification,
+          deadReason: item.dead_reason,
+          owner: item.owner,
+          score: item.score,
+          isFavorite: item.is_favorite,
+          nextActivity: pickNextActivity(manifest),
+          tags: pickTags(manifest),
+          lastContactAt: manifest.communications?.lastSellerContactDate ?? manifest.communications?.lastInboundDate ?? null,
+          createdAt: item.created_at,
+          firstOutboundAt: item.first_outbound_at,
+          contactSignal: communication ? getContactSignal(communication) : null,
+          outreachStatus: item.outreach_status,
+          updatedAt: item.updated_at,
+          pipelineIntentSource: item.pipeline_intent_source,
+          attentionState: item.attention_state,
+          lastMessage: communication ? communicationActivitySummary(communication) : 'No messages yet',
+          lastActivityAt: item.last_activity_at,
+          primaryNextAction: item.primary_next_action_id ? {
+            id: item.primary_next_action_id,
+            title: item.primary_next_action_title?.trim() || 'Next action',
+            dueAt,
+            owner: item.primary_next_action_owner ?? item.owner,
+            overdue: Boolean(dueAt && new Date(dueAt) < new Date()),
+          } : null,
+        }
+      })
+
+      return NextResponse.json({
+        items,
+        scope,
+        scopeCounts: page.scopeCounts,
+        counts: page.smartListCounts,
+        facets: page.facets,
+        pageInfo: { limit, total: page.totalCount, hasMore: page.hasMore, nextCursor: page.nextCursor },
+      }, {
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'Server-Timing': `contact-page;dur=${(performance.now() - requestStartedAt).toFixed(1)}`,
+        },
+      })
+    } catch (error) {
+      console.error('Contact directory request failed', error)
+      return NextResponse.json({ error: 'Contacts could not be loaded' }, { status: 503 })
+    }
+  }
   const requestedScope = request.nextUrl.searchParams.get('scope')
   const scope = requestedScope === 'not_leads' || requestedScope === 'prospects' || requestedScope === 'all' ? requestedScope : 'active'
 
