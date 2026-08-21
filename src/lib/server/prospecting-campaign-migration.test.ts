@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20260828120000_prospecting_campaigns.sql'), 'utf8')
+const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20260904120000_prospecting_campaigns.sql'), 'utf8')
 
 describe('prospecting campaign migration contract', () => {
   it('keeps campaign state and execution server-only', () => {
