@@ -11,6 +11,7 @@ import { toProperCase, formatPhone } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { CallerIdMode, DialerCallerPlan, normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { DEAD_REASONS } from '@/lib/dialer-dispositions'
+import type { DialerQueueContextRow, DialerQueueMetrics } from '@/lib/dialer-queue-contract'
 import { loadDialerActivities, loadDialerLeadContext, type DialerActivity as Activity, type DialerManifest as ManifestShape } from '@/lib/dialer-lead-activity'
 import { DialerSessionCommand } from '@/components/dialer/dialer-session-command'
 import {
@@ -97,19 +98,6 @@ interface DialerQueueLead {
   appointment_date: string | null
   created_at: string
   updated_at: string | null
-}
-
-interface QueueFollowup {
-  lead_id: string | null
-  activity_type: string
-  metadata: { due_date?: string; status?: string; task_type?: string; title?: string } | null
-  created_at: string
-}
-
-interface QueueContactActivity {
-  lead_id: string | null
-  activity_type: string
-  created_at: string
 }
 
 interface QueueProspect {
@@ -1613,8 +1601,8 @@ function DialerHome() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [leads, setLeads] = useState<DialerQueueLead[]>([])
-  const [followups, setFollowups] = useState<QueueFollowup[]>([])
-  const [contactActivities, setContactActivities] = useState<QueueContactActivity[]>([])
+  const [queueContext, setQueueContext] = useState<DialerQueueContextRow[]>([])
+  const [queueMetrics, setQueueMetrics] = useState<DialerQueueMetrics>({ callsToday: 0, uniqueLeadsToday: 0 })
   const [prospects, setProspects] = useState<QueueProspect[]>([])
   const [callingWindowOpen, setCallingWindowOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -1688,23 +1676,26 @@ function DialerHome() {
         if (!response.ok) {
           setError(payload?.error || 'Could not load dialer queue.')
           setLeads([])
-          setFollowups([])
-          setContactActivities([])
+          setQueueContext([])
+          setQueueMetrics({ callsToday: 0, uniqueLeadsToday: 0 })
           setProspects([])
           setCallingWindowOpen(false)
           setLoading(false)
           return
         }
         setLeads((payload.leads as DialerQueueLead[] | null) ?? [])
-        setFollowups((payload.followups as QueueFollowup[] | null) ?? [])
-        setContactActivities((payload.contactActivities as QueueContactActivity[] | null) ?? [])
+        setQueueContext((payload.queueContext as DialerQueueContextRow[] | null) ?? [])
+        setQueueMetrics({
+          callsToday: Number(payload.queueMetrics?.callsToday) || 0,
+          uniqueLeadsToday: Number(payload.queueMetrics?.uniqueLeadsToday) || 0,
+        })
         setProspects((payload.prospects as QueueProspect[] | null) ?? [])
         setCallingWindowOpen(payload.queuePolicy?.callingWindowOpen === true)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not load dialer queue.')
         setLeads([])
-        setFollowups([])
-        setContactActivities([])
+        setQueueContext([])
+        setQueueMetrics({ callsToday: 0, uniqueLeadsToday: 0 })
         setProspects([])
         setCallingWindowOpen(false)
       }
@@ -1720,63 +1711,40 @@ function DialerHome() {
 
   const today = dateKey(new Date().toISOString())
   const followupLeadIds = useMemo(() => {
-    return new Set(followups
-      .filter((task) => {
-        const status = task.metadata?.status || 'pending'
-        const dueDate = dateKey(task.metadata?.due_date)
-        return status !== 'completed' && Boolean(dueDate) && dueDate <= today
-      })
-      .map((task) => task.lead_id)
-      .filter(Boolean) as string[])
-  }, [followups, today])
+    return new Set(queueContext.filter((context) => context.hasDueFollowup).map((context) => context.leadId))
+  }, [queueContext])
 
   const scheduledTodayLeadIds = useMemo(() => {
-    const ids = new Set<string>()
-    followups.forEach((task) => {
-      const status = task.metadata?.status || 'pending'
-      if (status === 'completed') return
-      if (dateKey(task.metadata?.due_date) === today && task.lead_id) ids.add(task.lead_id)
-    })
+    const ids = new Set(queueContext.filter((context) => context.scheduledToday).map((context) => context.leadId))
     leads.forEach((lead) => {
       if (dateKey(lead.appointment_date) === today) ids.add(lead.id)
     })
     return ids
-  }, [followups, leads, today])
+  }, [leads, queueContext, today])
 
   const lastContactByLeadId = useMemo(() => {
     const map = new Map<string, string>()
-    contactActivities.forEach((activity) => {
-      if (!activity.lead_id) return
-      const current = map.get(activity.lead_id)
-      if (!current || new Date(activity.created_at).getTime() > new Date(current).getTime()) {
-        map.set(activity.lead_id, activity.created_at)
-      }
+    queueContext.forEach((context) => {
+      if (context.lastContactAt) map.set(context.leadId, context.lastContactAt)
     })
     return map
-  }, [contactActivities])
+  }, [queueContext])
 
   const callAttemptCountByLeadId = useMemo(() => {
     const map = new Map<string, number>()
-    contactActivities.forEach((activity) => {
-      if (!activity.lead_id) return
-      if (activity.activity_type !== 'call' && activity.activity_type !== 'voicemail') return
-      map.set(activity.lead_id, (map.get(activity.lead_id) || 0) + 1)
+    queueContext.forEach((context) => {
+      map.set(context.leadId, context.callAttemptCount)
     })
     return map
-  }, [contactActivities])
+  }, [queueContext])
 
   const lastDialedByLeadId = useMemo(() => {
     const map = new Map<string, string>()
-    contactActivities.forEach((activity) => {
-      if (!activity.lead_id) return
-      if (activity.activity_type !== 'call' && activity.activity_type !== 'voicemail') return
-      const current = map.get(activity.lead_id)
-      if (!current || new Date(activity.created_at).getTime() > new Date(current).getTime()) {
-        map.set(activity.lead_id, activity.created_at)
-      }
+    queueContext.forEach((context) => {
+      if (context.lastDialedAt) map.set(context.leadId, context.lastDialedAt)
     })
     return map
-  }, [contactActivities])
+  }, [queueContext])
 
   const prospectByLeadId = useMemo(() => {
     const map = new Map<string, QueueProspect[]>()
@@ -2253,8 +2221,8 @@ function DialerHome() {
     const staleDays = daysSince(lastContactByLeadId.get(lead.id))
     return staleDays == null || staleDays >= 30
   }).length
-  const callsToday = contactActivities.filter((activity) => ['call', 'voicemail'].includes(activity.activity_type) && dateKey(activity.created_at) === today).length
-  const uniqueLeadsToday = new Set(contactActivities.filter((activity) => ['call', 'voicemail'].includes(activity.activity_type) && dateKey(activity.created_at) === today).map((activity) => activity.lead_id).filter(Boolean)).size
+  const callsToday = queueMetrics.callsToday
+  const uniqueLeadsToday = queueMetrics.uniqueLeadsToday
   const activeSessions = savedQueues.filter((savedQueue) => savedQueue.sessionLeadIds.length > 0 && !savedQueue.sessionCompleted)
 
   const openQueue = useCallback((nextPreset: QueuePreset) => {
