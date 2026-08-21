@@ -67,6 +67,11 @@ export interface ProspectingCampaignMember {
   } | null
 }
 
+export interface ProspectingCampaignMemberPage {
+  items: ProspectingCampaignMember[]
+  pageInfo: { limit: number; hasMore: boolean; nextCursor: string | null }
+}
+
 export interface ProspectingCampaignDetail extends ProspectingCampaignSummary {
   steps: ProspectingCampaignStep[]
   members: ProspectingCampaignMember[]

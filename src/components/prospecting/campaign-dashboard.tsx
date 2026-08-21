@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { CampaignActivityFeed } from '@/components/prospecting/campaign-activity-feed'
+import { CampaignAudienceWorkbench } from '@/components/prospecting/campaign-audience-workbench'
 import { Icon } from '@/components/ui/icon'
 import type { ProspectingCampaignDetail, ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 
@@ -121,10 +122,12 @@ export function CampaignDashboard({
 
             <CampaignActivityFeed key={detail.id} campaignId={detail.id} />
 
-            <article className="crm-panel rounded-2xl p-5 sm:p-6">
+            {detail.stats.total > detail.members.length ? <CampaignAudienceWorkbench key={`audience:${detail.id}`} campaignId={detail.id} total={detail.stats.total} /> : null}
+
+            {detail.stats.total <= detail.members.length ? <article className="crm-panel rounded-2xl p-5 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="crm-eyebrow">Audience</p><h2 className="mt-1 text-xl font-black text-[var(--crm-ink)]">Who is in this campaign</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Showing the first 100 contacts. Suppressed contacts never enter execution.</p></div><div className="flex gap-2"><label className="relative hidden sm:block"><Icon name="search" className="pointer-events-none absolute left-3 top-2.5 text-base text-[var(--crm-text-dim)]" /><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="Find in audience" aria-label="Find in audience" className="crm-field h-10 w-44 rounded-lg pl-9 pr-3 text-xs" /></label><Link href="/contacts?list=prospects" className="crm-secondary-button inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-black"><Icon name="person_add" className="text-base" />Add contacts</Link></div></div>
               {detail.members.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-[var(--crm-border)] p-8 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--crm-surface-subtle)]"><Icon name="group_add" className="text-2xl text-[var(--crm-text-dim)]" /></span><p className="mt-3 text-sm font-black text-[var(--crm-ink)]">This campaign needs an audience</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Choose contacts in Pipeline, then return here to enroll them safely.</p></div> : <div className="mt-5 overflow-hidden rounded-xl border border-[var(--crm-border)]"><div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_8rem_8rem] gap-3 bg-[var(--crm-surface-subtle)] px-4 py-2 text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)] sm:grid"><span>Seller</span><span>Property</span><span>Next action</span><span>Status</span></div>{filteredMembers.map((member) => <div key={member.id} className="grid gap-2 border-t border-[var(--crm-border)] px-4 py-3 first:border-t-0 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_8rem_8rem] sm:items-center"><div className="min-w-0"><p className="truncate text-sm font-black text-[var(--crm-ink)]">{member.lead?.fullName || member.phone}</p><p className="mt-0.5 text-[10px] text-[var(--crm-text-muted)]">{member.phone}</p></div><p className="truncate text-xs text-[var(--crm-text-muted)]">{member.lead?.propertyAddress || 'Property not recorded'}</p><p className="text-[10px] font-bold text-[var(--crm-text-muted)]">{member.nextActionAt ? dateLabel(member.nextActionAt) : '—'}</p><span className={`w-fit rounded-full px-2 py-1 text-[9px] font-black uppercase ${member.status === 'active' ? 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : member.status === 'suppressed' ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'}`}>{member.suppressionReason || member.status}</span></div>)}</div>}
-            </article>
+            </article> : null}
           </div>}
         </section>
 
