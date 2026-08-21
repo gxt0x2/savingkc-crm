@@ -68,6 +68,7 @@ interface HeirsSectionProps {
   onSmsPhone?: (args: { heirName: string; relation: string; phone: string; prospectPhoneId: string; deceasedOwnerName: string }) => void
   /** Rings to allow before giving up; flows to the Twilio Dial timeout. */
   ringCount?: number | null
+  dialerSessionId?: string | null
 }
 
 function dispatchHeirQueue(
@@ -75,14 +76,16 @@ function dispatchHeirQueue(
   callerId?: string | null,
   callerPlan?: Partial<DialerCallerPlan> | null,
   options?: { autoDial?: boolean; ringCount?: number | null },
+  sessionId?: string | null,
 ) {
   if (queue.length === 0) return
-  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean; ringCount?: number } = { queue }
+  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean; ringCount?: number; sessionId?: string } = { queue }
   if (typeof callerId === 'string' && callerId.trim()) detail.callerId = callerId.trim()
   const normalizedPlan = normalizeDialerCallerPlan(callerPlan, typeof callerId === 'string' ? callerId.trim() : '')
   detail.callerPlan = normalizedPlan
   if (options?.autoDial) detail.autoDial = true
   if (options?.ringCount && options.ringCount > 0) detail.ringCount = options.ringCount
+  if (sessionId) detail.sessionId = sessionId
   window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail }))
 }
 
@@ -138,6 +141,7 @@ export function HeirsSection({
   onAutoStartEmpty,
   onSmsPhone,
   ringCount = null,
+  dialerSessionId = null,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
   const [loading, setLoading] = useState(true)
@@ -266,13 +270,13 @@ export function HeirsSection({
 
   function queueAll() {
     const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
-    dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount })
+    dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId)
   }
 
   // Explicit recalls may include attempted/verified numbers, but hard-stop
   // outcomes are never reintroduced into a dial queue.
   function queueHeir(heir: Heir) {
-    dispatchHeirQueue(mapHeirPhones(heir, callablePhonesForHeir(heir)), dialerCallerId, dialerCallerPlan, { ringCount })
+    dispatchHeirQueue(mapHeirPhones(heir, callablePhonesForHeir(heir)), dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId)
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
@@ -284,7 +288,7 @@ export function HeirsSection({
     const remaining = heirs
       .flatMap((h) => buildQueueForHeir(h))
       .filter((item) => item.prospect_phone_id !== phone.id)
-    dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan, { ringCount })
+    dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId)
   }
 
   useEffect(() => {
@@ -299,12 +303,12 @@ export function HeirsSection({
     const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
 
     if (queue.length > 0) {
-      dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount })
+      dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount }, dialerSessionId)
       onAutoStartHandled?.()
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, error, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, ringCount])
+  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, ringCount])
 
   return (
     <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>

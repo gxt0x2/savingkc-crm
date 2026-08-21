@@ -193,6 +193,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingQueueCallerPlan, setPendingQueueCallerPlan] = useState<DialerCallerPlan | null>(null)
   const [pendingQueueAutoDial, setPendingQueueAutoDial] = useState(false)
   const [pendingQueueRingCount, setPendingQueueRingCount] = useState<number | null>(null)
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null)
 
   function handleDialerStatusChange(status: CallStatus) {
     setDialerStatus(status)
@@ -217,6 +218,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueCallerPlan(null)
         setPendingQueueAutoDial(false)
         setPendingQueueRingCount(null)
+        setPendingSessionId(null)
         setDialerMounted(true)
         setShowDialer(true)
       }
@@ -228,6 +230,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setPendingQueueCallerPlan(null)
       setPendingQueueAutoDial(false)
       setPendingQueueRingCount(null)
+      setPendingSessionId(null)
       setDialerMounted(true)
       setShowDialer(true)
     }
@@ -240,6 +243,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueCallerPlan(normalizeDialerCallerPlan(detail.callerPlan, callerId || ''))
         setPendingQueueAutoDial(Boolean(detail.autoDial))
         setPendingQueueRingCount(typeof detail.ringCount === 'number' ? detail.ringCount : null)
+        setPendingSessionId(typeof detail.sessionId === 'string' ? detail.sessionId : null)
         setPendingDialLead(null)
         setDialerMounted(true)
         setShowDialer(true)
@@ -357,6 +361,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             setPendingQueueCallerPlan(null)
             setPendingQueueAutoDial(false)
             setPendingQueueRingCount(null)
+            setPendingSessionId(null)
           }}
           onStatusChange={handleDialerStatusChange}
           pendingDial={pendingDialLead}
@@ -365,6 +370,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           pendingQueueCallerPlan={pendingQueueCallerPlan}
           pendingQueueAutoDial={pendingQueueAutoDial}
           pendingQueueRingCount={pendingQueueRingCount}
+          pendingSessionId={pendingSessionId}
           presentation={dialerPresentation}
           signedInEmail={user?.email}
         /> : null}
@@ -601,7 +607,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Dialer Panel — Twilio softphone */}
       {dialerMounted ? <DialerPanel
         open={showDialer}
-        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null); setPendingQueueAutoDial(false); setPendingQueueRingCount(null) }}
+        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null); setPendingQueueAutoDial(false); setPendingQueueRingCount(null); setPendingSessionId(null) }}
         onStatusChange={handleDialerStatusChange}
         pendingDial={pendingDialLead}
         pendingQueue={pendingQueue}
@@ -609,6 +615,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         pendingQueueCallerPlan={pendingQueueCallerPlan}
         pendingQueueAutoDial={pendingQueueAutoDial}
         pendingQueueRingCount={pendingQueueRingCount}
+        pendingSessionId={pendingSessionId}
         presentation={dialerPresentation}
         signedInEmail={user?.email}
       /> : null}

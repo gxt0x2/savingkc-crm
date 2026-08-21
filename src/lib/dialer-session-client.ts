@@ -1,0 +1,126 @@
+export interface DurableDialerSession {
+  id: string
+  status: 'active' | 'paused' | 'completed' | 'stopped'
+  actorEmail: string
+  agentName: string
+  queueKey: string
+  savedQueueId: string | null
+  leadIds: string[]
+  queueSize: number
+  currentIndex: number
+  currentLeadId: string | null
+  callerId: string | null
+  dialsCompleted: number
+  contacts: number
+  skips: number
+  updatedAt: string
+}
+
+async function payload(response: Response, fallback: string) {
+  const body = await response.json().catch(() => null)
+  if (!response.ok || !body) throw new Error(body?.error || fallback)
+  return body
+}
+
+export async function loadDurableDialerSession(sessionId: string): Promise<DurableDialerSession> {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+  const body = await payload(response, 'Could not load the dialer session.')
+  if (!body.session) throw new Error('Could not load the dialer session.')
+  return body.session as DurableDialerSession
+}
+
+export async function loadDialerSavedQueuesWithOpenSession(): Promise<Record<string, unknown>[]> {
+  const [savedResponse, sessionResponse] = await Promise.all([
+    fetch('/api/dialer/saved-lists', { cache: 'no-store' }),
+    fetch('/api/dialer/sessions', { cache: 'no-store' }),
+  ])
+  const savedBody = await savedResponse.json().catch(() => null)
+  if (!savedResponse.ok) throw new Error(savedBody?.error || 'Could not load saved lists.')
+  const queues = Array.isArray(savedBody?.savedLists) ? savedBody.savedLists as Record<string, unknown>[] : []
+  if (!sessionResponse.ok) return queues
+  const sessionBody = await sessionResponse.json().catch(() => null)
+  const session = sessionBody?.session as DurableDialerSession | null
+  if (!session) return queues
+
+  const matchIndex = session.savedQueueId
+    ? queues.findIndex((queue) => queue.id === session.savedQueueId)
+    : -1
+  const base = matchIndex >= 0 ? queues[matchIndex] : {}
+  const resumeQueue: Record<string, unknown> = {
+    ...base,
+    durableSessionId: session.id,
+    id: session.savedQueueId || session.id,
+    name: typeof base.name === 'string' ? base.name : session.queueKey.replace(/_/g, ' '),
+    agent: session.agentName,
+    preset: typeof base.preset === 'string' ? base.preset : 'custom',
+    callerId: session.callerId || '',
+    campaign: typeof base.campaign === 'string' ? base.campaign : 'all',
+    statusFilter: typeof base.statusFilter === 'string' ? base.statusFilter : 'all',
+    priorityFilter: typeof base.priorityFilter === 'string' ? base.priorityFilter : 'all',
+    minMotivation: Number(base.minMotivation) || 0,
+    search: typeof base.search === 'string' ? base.search : '',
+    sortBy: typeof base.sortBy === 'string' ? base.sortBy : 'recommended',
+    visibleLimit: Number(base.visibleLimit) || 25,
+    sessionLeadIds: session.leadIds,
+    resumeIndex: session.currentIndex,
+    resumeLeadId: session.currentLeadId,
+    resumeUpdatedAt: session.updatedAt,
+    sessionCompleted: false,
+    createdAt: typeof base.createdAt === 'string' ? base.createdAt : session.updatedAt,
+    updatedAt: session.updatedAt,
+  }
+  if (matchIndex >= 0) return queues.map((queue, index) => index === matchIndex ? resumeQueue : queue)
+  return [resumeQueue, ...queues]
+}
+
+export async function createDurableDialerSession(input: {
+  leadIds: string[]
+  queueKey: string
+  callerId: string
+  savedQueueId?: string
+  settings: Record<string, unknown>
+}): Promise<{ created: boolean; session: DurableDialerSession }> {
+  const response = await fetch('/api/dialer/sessions', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const body = await response.json().catch(() => null)
+  if ((!response.ok && response.status !== 409) || !body?.session) {
+    throw new Error(body?.error || 'Could not create a durable dialer session.')
+  }
+  return { created: body.created === true, session: body.session as DurableDialerSession }
+}
+
+export async function transitionDurableDialerSession(
+  sessionId: string,
+  action: 'pause' | 'resume' | 'stop' | 'skip',
+  reason?: string,
+): Promise<DurableDialerSession> {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, reason }),
+  })
+  const body = await payload(response, 'Could not update the dialer session.')
+  if (!body.session) throw new Error('Could not update the dialer session.')
+  return body.session as DurableDialerSession
+}
+
+export async function transitionDurableDialerAttempt(input: {
+  sessionId: string
+  clientAttemptId: string
+  action: 'started' | 'connected' | 'ended' | 'failed' | 'cancelled' | 'disposition' | 'advance'
+  disposition?: string
+  durationSeconds?: number
+}) {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(input.sessionId)}/attempts/${encodeURIComponent(input.clientAttemptId)}`, {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return payload(response, 'Call session state could not be saved') as Promise<{ attempt?: unknown; session?: DurableDialerSession }>
+}
