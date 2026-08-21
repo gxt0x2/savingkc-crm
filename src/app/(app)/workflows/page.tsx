@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { WorkflowRunPanel } from '@/components/workflows/workflow-run-panel'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { PHONE_SYSTEM, PHONE_SYSTEM_ATTENTION, type PhoneSystemRecord } from '@/lib/operating-model/phone-system'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
@@ -120,6 +121,8 @@ function Overview({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefini
           </article>
         ))}
       </section>
+
+      <WorkflowRunPanel />
 
       <section className="grid gap-4 lg:grid-cols-3">
         <Link href="/workflows?section=phones" className="group crm-panel rounded-2xl p-5 transition hover:-translate-y-0.5 hover:border-[var(--crm-info)]/50 hover:shadow-lg">
