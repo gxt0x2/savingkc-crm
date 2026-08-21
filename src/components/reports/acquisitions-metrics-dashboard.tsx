@@ -179,7 +179,7 @@ export function AcquisitionsMetricsDashboard({ report }: { report: OperatingRepo
         <DashboardPanel title="Cost and efficiency" period="Recorded acquisition expenses" tone="green" href="/reports/finance">
           <CostEfficiency report={report} />
         </DashboardPanel>
-        <DashboardPanel title="Revenue lift model" period="Current CRM vs Left Main benchmark" tone="amber" href="/ari">
+        <DashboardPanel title="Revenue lift model" period="Current CRM vs Left Main benchmark" tone="amber" href="/ai">
           <RevenueLift report={report} />
         </DashboardPanel>
       </section>

@@ -1010,10 +1010,10 @@ function DialerPageInner() {
           <p className="text-sm font-bold text-[var(--ck-text)] mb-2">Cannot start a dialing session</p>
           <p className="text-xs text-[var(--ck-text-muted)] mb-6">{resolveError}</p>
           <Link
-            href="/leads"
+            href="/contacts"
             className="inline-flex items-center gap-2 bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors"
           >
-            <Icon name="arrow_back" size="text-sm" /> Back to leads
+            <Icon name="arrow_back" size="text-sm" /> Back to contacts
           </Link>
         </div>
       </div>

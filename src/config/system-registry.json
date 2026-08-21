@@ -232,11 +232,15 @@
       "id": "ari",
       "name": "Legacy lead-level ARI insights",
       "owner": "Operations",
-      "status": "active",
+      "status": "deprecated",
       "routes": ["/ari"],
       "apiRoutes": ["/api/ari/chat"],
       "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events", "roles"],
-      "environment": ["GROQ_API_KEY", "OPENROUTER_API_KEY"]
+      "environment": ["GROQ_API_KEY", "OPENROUTER_API_KEY"],
+      "retirement": {
+        "reason": "The /ari dashboard is replaced by the canonical Dashboard plus the unified persistent AI assistant. Lead-level ARI APIs remain temporarily available while their embedded lead-detail consumers are reconciled.",
+        "targetDate": "2026-11-30"
+      }
     },
     {
       "id": "unified_ai_assistant",

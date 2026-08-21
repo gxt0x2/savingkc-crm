@@ -1504,7 +1504,7 @@ export default function LeadDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-32 gap-4">
         <p className="text-slate-500 font-medium">Lead not found</p>
-        <Link href="/leads" className="text-primary hover:underline text-sm">Back to Leads</Link>
+        <Link href="/contacts" className="text-primary hover:underline text-sm">Back to Contacts</Link>
       </div>
     )
   }
