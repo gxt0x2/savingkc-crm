@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ContactsPage from '../page'
-import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY } from '@/lib/contact-smart-lists'
+import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY, contactMatchesSmartList, contactSmartListCounts, type ContactSmartList } from '@/lib/contact-smart-lists'
 
 const { useQueryMock, useQueryClientMock, pushMock } = vi.hoisted(() => ({ useQueryMock: vi.fn(), useQueryClientMock: vi.fn(), pushMock: vi.fn() }))
 
@@ -60,15 +60,22 @@ describe('ContactsPage smart-list workspace', () => {
     window.localStorage.clear()
     useQueryClientMock.mockReturnValue({ fetchQuery: vi.fn(), invalidateQueries: vi.fn(), setQueryData: vi.fn() })
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
-      const scope = queryKey?.[1]
-      const scopedContacts = scope === 'active'
-        ? contacts.filter((contact) => contact.classification === 'lead' || Boolean(contact.pipelineIntentSource))
-        : scope === 'prospects'
-          ? contacts.filter((contact) => contact.classification === null && !contact.pipelineIntentSource)
-        : scope === 'not_leads'
-          ? contacts.filter((contact) => contact.station === 'dead')
-          : contacts
-      return { data: { items: scopedContacts }, isLoading: false, error: null, refetch: vi.fn(), isFetching: false }
+      const query = queryKey?.[1] as { smartList?: ContactSmartList } | undefined
+      const smartList = query?.smartList ?? 'new'
+      const scopedContacts = contacts.filter((contact) => contactMatchesSmartList(contact, smartList))
+      return {
+        data: {
+          items: scopedContacts,
+          scopeCounts: { active: 2, prospects: 0, not_leads: 1 },
+          counts: contactSmartListCounts(contacts),
+          facets: { owners: ['Casey'], sources: ['manual'], tags: [] },
+          pageInfo: { limit: 10, total: scopedContacts.length, hasMore: false, nextCursor: null },
+        },
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+        isFetching: false,
+      }
     })
   })
 
@@ -213,6 +220,39 @@ describe('ContactsPage smart-list workspace', () => {
 
     fireEvent.doubleClick(contactName)
     expect(pushMock).toHaveBeenCalledWith('/leads/active-lead')
+  })
+
+  it('moves through server-owned cursor pages without offering a global client selection', () => {
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
+      const query = queryKey[1] as { cursor: string | null }
+      return {
+        data: {
+          items: [contacts[0]],
+          scopeCounts: { active: 11, prospects: 0, not_leads: 1 },
+          counts: { ...contactSmartListCounts(contacts), new: 11 },
+          facets: { owners: ['Casey'], sources: ['manual'], tags: [] },
+          pageInfo: {
+            limit: 10,
+            total: 11,
+            hasMore: query.cursor === null,
+            nextCursor: query.cursor === null ? 'cursor-page-2' : null,
+          },
+        },
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+        isFetching: false,
+      }
+    })
+    render(<ContactsPage />)
+
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+
+    const latestQuery = useQueryMock.mock.calls.at(-1)?.[0].queryKey[1]
+    expect(latestQuery).toMatchObject({ smartList: 'new', cursor: 'cursor-page-2' })
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Select all 11 results/ })).not.toBeInTheDocument()
   })
 
   it('labels the workspace Pipeline and exposes safe bulk classifications', () => {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { FormEvent, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { formatLeadSource, getAvatarLabel, getDisplayLeadName, outreachStatusLabel, type OutreachStatus } from '@/lib/contact-display'
@@ -19,7 +19,7 @@ import { DEAD_REASONS, deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outc
 import { useAuth } from '@/hooks/use-auth'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
 import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
-import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, contactMatchesSmartList, contactPipelineStatusLabel, contactSmartListCounts, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
+import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
 
 interface ContactRow {
@@ -58,7 +58,6 @@ export interface ContactWorkspaceRow extends ContactRow {
 type DataGap = '' | 'missing_phone' | 'missing_email' | 'missing_next_action'
 type ContactDialog = 'add' | 'import' | 'view' | null
 type ToolbarMenu = 'filters' | 'sort' | null
-type ContactScope = 'active' | 'prospects' | 'not_leads'
 type BulkAction = '' | 'assign:Ernest' | 'assign:Casey' | 'assign:Gertha' | 'assign:unassigned' | 'classify:new' | 'classify:lead' | `stage:${DealStage}` | 'not_lead'
 
 interface SavedView {
@@ -128,7 +127,8 @@ const STAGE_TONES: Record<DealStage, string> = {
 }
 
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
-const CONTACT_QUERY_KEY = (scope: ContactScope) => ['contact-workspace', scope] as const
+const CONTACT_QUERY_ROOT = ['contact-workspace'] as const
+const CONTACT_PAGE_SIZE = 10
 const BULK_STAGE_OPTIONS: DealStage[] = ['qualified', 'appointment_set', 'offer_made', 'under_contract']
 
 function formatRelativeDate(value: string | null): string {
@@ -145,23 +145,65 @@ function formatRelativeDate(value: string | null): string {
 }
 
 type ContactScopeCounts = { active: number; prospects: number; not_leads: number }
-type ContactWorkspacePayload = { items: ContactWorkspaceRow[]; scopeCounts: ContactScopeCounts }
+type ContactWorkspacePayload = {
+  items: ContactWorkspaceRow[]
+  scopeCounts: ContactScopeCounts
+  counts: Record<ContactSmartList, number>
+  facets: { owners: string[]; sources: string[]; tags: string[] }
+  pageInfo: { limit: number; total: number; hasMore: boolean; nextCursor: string | null }
+}
 
-function useContactWorkspace(scope: ContactScope, enabled = true) {
+interface ContactWorkspaceQuery {
+  smartList: ContactSmartList
+  cursor: string | null
+  sort: 'priority' | 'recent' | 'name'
+  search: string
+  owner: string
+  stage: string
+  minimumStage: string
+  source: string
+  tag: string
+  activity: string
+  attention: string
+  outreach: string
+  dataGap: DataGap
+}
+
+function useContactWorkspace(query: ContactWorkspaceQuery) {
   return useQuery<ContactWorkspacePayload>({
-    queryKey: CONTACT_QUERY_KEY(scope),
+    queryKey: [...CONTACT_QUERY_ROOT, query],
     queryFn: async () => {
-      const contactsResponse = await fetch(`/api/contacts?scope=${scope}`, { cache: 'no-store' })
+      const params = new URLSearchParams({
+        mode: 'page',
+        list: query.smartList,
+        limit: String(CONTACT_PAGE_SIZE),
+        sort: query.sort,
+      })
+      if (query.cursor) params.set('cursor', query.cursor)
+      if (query.search.trim()) params.set('q', query.search.trim())
+      if (query.owner) params.set('owner', query.owner)
+      if (query.stage) params.set('stage', query.stage)
+      if (query.minimumStage) params.set('min_stage', query.minimumStage)
+      if (query.source) params.set('source', query.source)
+      if (query.tag) params.set('tag', query.tag)
+      if (query.activity) params.set('activity', query.activity)
+      if (query.attention) params.set('attention', query.attention)
+      if (query.outreach) params.set('outreach', query.outreach)
+      if (query.dataGap) params.set('gap', query.dataGap)
+      const contactsResponse = await fetch(`/api/contacts?${params}`, { cache: 'no-store' })
       if (!contactsResponse.ok) throw new Error('Contacts could not be loaded')
-      const contactsPayload = await contactsResponse.json() as { items?: ContactRow[]; scopeCounts?: ContactScopeCounts }
+      const contactsPayload = await contactsResponse.json() as Partial<ContactWorkspacePayload> & { items?: ContactRow[] }
       return {
         items: (contactsPayload.items ?? []).map((item) => ({ ...item, hubEnriched: true })),
         scopeCounts: contactsPayload.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
+        counts: contactsPayload.counts ?? Object.fromEntries(Object.keys(CONTACT_SMART_LIST_COPY).map((key) => [key, 0])) as Record<ContactSmartList, number>,
+        facets: contactsPayload.facets ?? { owners: [], sources: [], tags: [] },
+        pageInfo: contactsPayload.pageInfo ?? { limit: CONTACT_PAGE_SIZE, total: 0, hasMore: false, nextCursor: null },
       }
     },
     staleTime: 30_000,
     refetchOnWindowFocus: true,
-    enabled,
+    placeholderData: (previous) => previous,
   })
 }
 
@@ -187,8 +229,8 @@ export default function ContactsPage() {
   const [outreachFilter, setOutreachFilter] = useState('')
   const [dataGapFilter, setDataGapFilter] = useState<DataGap>('')
   const [sortBy, setSortBy] = useState<'priority' | 'recent' | 'name'>('priority')
-  const [page, setPage] = useState(1)
-  const [filterReferenceTime] = useState(() => Date.now())
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([null])
+  const [pageIndex, setPageIndex] = useState(0)
   const [dialog, setDialog] = useState<ContactDialog>(null)
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT)
   const [viewName, setViewName] = useState('')
@@ -205,15 +247,23 @@ export default function ContactsPage() {
   const [bulkMessage, setBulkMessage] = useState<string | null>(null)
   const [SortableSmartListTabs, setSortableSmartListTabs] = useState<ComponentType<SortableSmartListTabsProps> | null>(null)
   const sortableSmartListTabsPromise = useRef<Promise<ComponentType<SortableSmartListTabsProps>> | null>(null)
-  const activeQuery = useContactWorkspace('active', smartList !== 'prospects' && smartList !== 'not_leads')
-  const prospectsQuery = useContactWorkspace('prospects', smartList === 'prospects')
-  const archiveQuery = useContactWorkspace('not_leads', smartList === 'not_leads')
-  const currentQuery = smartList === 'not_leads' ? archiveQuery : smartList === 'prospects' ? prospectsQuery : activeQuery
+  const deferredSearch = useDeferredValue(search)
+  const currentQuery = useContactWorkspace({
+    smartList,
+    cursor: cursorHistory[pageIndex] ?? null,
+    sort: sortBy,
+    search: deferredSearch,
+    owner: ownerFilter,
+    stage: stageFilter,
+    minimumStage: minimumStageFilter,
+    source: sourceFilter,
+    tag: tagFilter,
+    activity: activityFilter,
+    attention: attentionFilter,
+    outreach: outreachFilter,
+    dataGap: dataGapFilter,
+  })
   const items = useMemo(() => currentQuery.data?.items ?? [], [currentQuery.data])
-  const allKnownItems = useMemo(
-    () => [...(activeQuery.data?.items ?? []), ...(prospectsQuery.data?.items ?? []), ...(archiveQuery.data?.items ?? [])],
-    [activeQuery.data, archiveQuery.data, prospectsQuery.data],
-  )
   const { isLoading, error, refetch, isFetching } = currentQuery
   useEffect(() => {
     try {
@@ -270,63 +320,16 @@ export default function ContactsPage() {
     }
   }, [loadSortableSmartListTabs])
 
-  const counts = useMemo(() => {
-    const next = contactSmartListCounts(allKnownItems.map((item) => ({
-      ...item,
-      // Unknown is deliberately not treated as resolved. Waiting is neutral
-      // for the only count that depends on this value (Needs Reply).
-      attentionState: item.attentionState ?? 'waiting_on_contact',
-    })))
-    const scopeCounts = currentQuery.data?.scopeCounts
-    if (scopeCounts) {
-      next.prospects = scopeCounts.prospects
-      next.not_leads = scopeCounts.not_leads
-    }
-    return next
-  }, [allKnownItems, currentQuery.data?.scopeCounts])
+  const counts = currentQuery.data?.counts
+    ?? Object.fromEntries(Object.keys(CONTACT_SMART_LIST_COPY).map((key) => [key, 0])) as Record<ContactSmartList, number>
   const orderedSmartLists = useMemo(() => {
     const smartListsById = new Map(CONTACT_SMART_LISTS.map((item) => [item.id, item]))
     return smartListOrder.map((id) => smartListsById.get(id)).filter((item): item is (typeof CONTACT_SMART_LISTS)[number] => Boolean(item))
   }, [smartListOrder])
 
-  const owners = useMemo(() => [...new Set(items.map((item) => item.owner).filter((value): value is string => Boolean(value)))].sort(), [items])
-  const sources = useMemo(() => [...new Set(items.map((item) => item.source).filter((value): value is string => Boolean(value)))].sort(), [items])
-  const tags = useMemo(() => [...new Set(items.flatMap((item) => item.tags))].sort(), [items])
-
-  const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    return items.filter((item) => {
-      if (!contactMatchesSmartList({ ...item, attentionState: item.attentionState ?? 'waiting_on_contact' }, smartList)) return false
-      if (ownerFilter === '__unassigned' ? item.owner : ownerFilter && item.owner !== ownerFilter) return false
-      if (stageFilter && item.station !== stageFilter) return false
-      if (minimumStageFilter && STAGE_RANK[item.station] < STAGE_RANK[minimumStageFilter as DealStage]) return false
-      if (sourceFilter && item.source !== sourceFilter) return false
-      if (tagFilter && !item.tags.includes(tagFilter)) return false
-      if (attentionFilter && (!item.hubEnriched || item.attentionState !== attentionFilter)) return false
-      if (outreachFilter && item.outreachStatus !== outreachFilter) return false
-      if (dataGapFilter === 'missing_phone' && item.phone) return false
-      if (dataGapFilter === 'missing_email' && item.email) return false
-      if (dataGapFilter === 'missing_next_action' && (!item.hubEnriched || item.primaryNextAction)) return false
-      if (activityFilter) {
-        const timestamp = item.lastActivityAt ? new Date(item.lastActivityAt).getTime() : 0
-        const age = filterReferenceTime - timestamp
-        if (activityFilter === 'day' && age > 86_400_000) return false
-        if (activityFilter === 'week' && age > 604_800_000) return false
-        if (activityFilter === 'stale' && (timestamp === 0 || age <= 604_800_000)) return false
-        if (activityFilter === 'none' && timestamp !== 0) return false
-      }
-      if (!needle) return true
-      return [item.fullName, item.phone, item.email, item.address, item.city, item.owner, item.source, deadReasonLabel(item.deadReason)].some((value) => value?.toLowerCase().includes(needle))
-    }).sort((a, b) => {
-      if (sortBy === 'name') return getDisplayLeadName(a.fullName, a.phone).localeCompare(getDisplayLeadName(b.fullName, b.phone))
-      if (sortBy === 'recent') return new Date(b.lastActivityAt || 0).getTime() - new Date(a.lastActivityAt || 0).getTime()
-      const attentionRank = (item: ContactWorkspaceRow) => item.attentionState === 'needs_reply' ? 0 : item.primaryNextAction?.overdue ? 1 : 2
-      if (smartList === 'hot') return b.score - a.score || attentionRank(a) - attentionRank(b)
-      return attentionRank(a) - attentionRank(b) || b.score - a.score
-    })
-  }, [activityFilter, attentionFilter, dataGapFilter, filterReferenceTime, items, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
-
-  useEffect(() => setPage(1), [activityFilter, attentionFilter, dataGapFilter, minimumStageFilter, outreachFilter, ownerFilter, search, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+  const owners = currentQuery.data?.facets.owners ?? []
+  const sources = currentQuery.data?.facets.sources ?? []
+  const tags = currentQuery.data?.facets.tags ?? []
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -336,14 +339,30 @@ export default function ContactsPage() {
     })
   }, [items])
 
-  const pageSize = 10
-  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize))
-  const currentPage = Math.min(page, pageCount)
-  const pageItems = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
-  const paginationStart = Math.min(Math.max(1, currentPage - 2), Math.max(1, pageCount - 4))
-  const paginationPages = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => paginationStart + index)
+  const totalResults = currentQuery.data?.pageInfo.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(totalResults / CONTACT_PAGE_SIZE))
+  const currentPage = pageIndex + 1
+  const pageItems = items
   const selected = items.find((item) => item.id === selectedId) ?? pageItems[0] ?? null
   const pageItemsSelected = pageItems.length > 0 && pageItems.every((item) => selectedIds.has(item.id))
+
+  const resetPagination = useCallback(() => {
+    setCursorHistory([null])
+    setPageIndex(0)
+  }, [])
+
+  function goToNextPage() {
+    const cursor = currentQuery.data?.pageInfo.nextCursor
+    if (!cursor) return
+    setCursorHistory((current) => [...current.slice(0, pageIndex + 1), cursor])
+    setPageIndex((current) => current + 1)
+    setSelectedIds(new Set())
+  }
+
+  function goToPreviousPage() {
+    setPageIndex((current) => Math.max(0, current - 1))
+    setSelectedIds(new Set())
+  }
 
   function signedInAgent(): string {
     const email = user?.email?.toLowerCase() ?? ''
@@ -375,32 +394,13 @@ export default function ContactsPage() {
 
   async function refreshContactScopes() {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('active') }),
-      queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('prospects') }),
-      queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_KEY('not_leads') }),
+      queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_ROOT }),
       queryClient.invalidateQueries({ queryKey: conversationHubQueryKey }),
     ])
   }
 
-  function handleLeadStatusChanged(id: string, update: LeadStatusUpdate) {
+  function handleLeadStatusChanged(update: LeadStatusUpdate) {
     const becameNotLead = isNotLeadOutcome(update.classification, update.station)
-    const becameActive = update.classification === 'lead' || update.classification === 'opportunity'
-    queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('active'), (current) => ({
-      items: becameNotLead
-        ? (current?.items ?? []).filter((item) => item.id !== id)
-        : (current?.items ?? []).map((item) => item.id === id ? { ...item, classification: update.classification, station: (update.station as DealStage | null) ?? item.station, deadReason: update.dead_reason } : item),
-      scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
-    }))
-    queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('not_leads'), (current) => ({
-      items: becameNotLead
-        ? (current?.items ?? [])
-        : (current?.items ?? []).filter((item) => item.id !== id),
-      scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
-    }))
-    queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('prospects'), (current) => ({
-      items: becameActive || becameNotLead ? (current?.items ?? []).filter((item) => item.id !== id) : (current?.items ?? []),
-      scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
-    }))
     if (becameNotLead) {
       setSelectedId(null)
       setDetailsOpen(false)
@@ -458,13 +458,6 @@ export default function ContactsPage() {
       const results = await Promise.allSettled(requests)
       const succeeded = results.filter((result) => result.status === 'fulfilled').length
       const failed = results.length - succeeded
-      if (bulkAction === 'not_lead' && succeeded) {
-        const succeededIds = new Set(results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []))
-        queryClient.setQueryData<ContactWorkspacePayload>(CONTACT_QUERY_KEY('active'), (current) => ({
-          items: (current?.items ?? []).filter((item) => !succeededIds.has(item.id)),
-          scopeCounts: current?.scopeCounts ?? { active: 0, prospects: 0, not_leads: 0 },
-        }))
-      }
       setSelectedIds(new Set())
       setBulkAction('')
       setBulkDeadReason('')
@@ -479,6 +472,7 @@ export default function ContactsPage() {
   }
 
   function clearFilters() {
+    resetPagination()
     selectSmartList('all')
     setOwnerFilter('')
     setStageFilter('')
@@ -492,6 +486,7 @@ export default function ContactsPage() {
   }
 
   function selectSmartList(nextSmartList: ContactSmartList) {
+    resetPagination()
     setSmartList(nextSmartList)
     setToolbarMenu(null)
     setSelectedIds(new Set())
@@ -583,6 +578,7 @@ export default function ContactsPage() {
   }
 
   function applyView(view: SavedView) {
+    resetPagination()
     selectSmartList('all')
     setOwnerFilter(view.owner)
     setStageFilter(view.stage)
@@ -609,7 +605,7 @@ export default function ContactsPage() {
         </div>
         <p className="hidden truncate text-[11px] text-[var(--crm-text-muted)] sm:block" title={smartListCopy.description}>{smartListCopy.description}</p>
       </div>
-      <label data-header-slot="search" className="relative col-span-2 min-w-0 md:col-span-1"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input aria-label="Search contacts" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contacts..." className="crm-field h-11 w-full rounded-xl pl-9 pr-3 text-base outline-none md:h-10 md:rounded-lg md:text-sm" /></label>
+      <label data-header-slot="search" className="relative col-span-2 min-w-0 md:col-span-1"><Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" /><input aria-label="Search contacts" value={search} onChange={(event) => { setSearch(event.target.value); resetPagination() }} placeholder="Search contacts..." className="crm-field h-11 w-full rounded-xl pl-9 pr-3 text-base outline-none md:h-10 md:rounded-lg md:text-sm" /></label>
       <div data-header-slot="actions" className="col-start-2 row-start-1 flex justify-end gap-2 md:col-auto md:row-auto md:justify-start lg:justify-end">
         <button type="button" onClick={() => { setDialogError(null); setDialog('import') }} className="crm-secondary-button hidden h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold sm:flex"><Icon name="upload" />Import</button>
         <button type="button" onClick={() => { setDialogError(null); setDialog('add') }} className="crm-primary-button flex h-11 w-11 items-center justify-center rounded-xl text-sm font-semibold md:h-10 md:w-auto md:gap-2 md:rounded-lg md:px-5"><Icon name="add" /><span className="sr-only md:not-sr-only">Add contact</span></button>
@@ -657,15 +653,15 @@ export default function ContactsPage() {
                   <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold text-[var(--crm-ink)]">Filters</h2><p className="text-xs text-[var(--crm-text-muted)]">Narrow the active smart list without losing table space.</p></div><button type="button" onClick={() => setToolbarMenu(null)} aria-label="Close filters" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="close" /></button></div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <PipelineFilterSelect label="Lead status" value={smartList === 'not_leads' ? 'not_leads' : ''} onChange={(value) => selectSmartList(value === 'not_leads' ? 'not_leads' : 'all')} options={[["not_leads", "Not a lead"]]} />
-                    <PipelineFilterSelect label="Owner" value={ownerFilter} onChange={setOwnerFilter} options={[["__unassigned", "Unassigned"], ...owners.map((value) => [value, value] as [string, string])]} />
-                    <PipelineFilterSelect label="Stage" value={stageFilter} onChange={setStageFilter} options={Object.entries(STAGE_LABELS)} />
-                    <PipelineFilterSelect label="Minimum stage" value={minimumStageFilter} onChange={setMinimumStageFilter} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
-                    <PipelineFilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter} options={sources.map((value) => [value, formatLeadSource(value)])} />
-                    <PipelineFilterSelect label="Tags" value={tagFilter} onChange={setTagFilter} options={tags.map((value) => [value, value])} />
-                    <PipelineFilterSelect label="Last activity" value={activityFilter} onChange={setActivityFilter} options={[["day", "Past 24 hours"], ["week", "Past 7 days"], ["stale", "More than 7 days"], ["none", "No activity"]]} />
-                    <PipelineFilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => setDataGapFilter(value as DataGap)} options={[["missing_phone", "Missing phone"], ["missing_email", "Missing email"], ["missing_next_action", "Missing next action"]]} />
-                    <PipelineFilterSelect label="Conversation state" value={attentionFilter} onChange={setAttentionFilter} options={[["needs_reply", "Needs reply"], ["waiting_on_contact", "Waiting on contact"], ["resolved", "Resolved"]]} />
-                    <PipelineFilterSelect label="Outreach status" value={outreachFilter} onChange={setOutreachFilter} options={[["unattempted", "Unattempted"], ["attempted_no_response", "Attempted — no response"], ["connected_unclassified", "Connected — needs classification"]]} />
+                    <PipelineFilterSelect label="Owner" value={ownerFilter} onChange={(value) => { setOwnerFilter(value); resetPagination() }} options={[["__unassigned", "Unassigned"], ...owners.map((value) => [value, value] as [string, string])]} />
+                    <PipelineFilterSelect label="Stage" value={stageFilter} onChange={(value) => { setStageFilter(value); resetPagination() }} options={Object.entries(STAGE_LABELS)} />
+                    <PipelineFilterSelect label="Minimum stage" value={minimumStageFilter} onChange={(value) => { setMinimumStageFilter(value); resetPagination() }} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
+                    <PipelineFilterSelect label="Source" value={sourceFilter} onChange={(value) => { setSourceFilter(value); resetPagination() }} options={sources.map((value) => [value, formatLeadSource(value)])} />
+                    <PipelineFilterSelect label="Tags" value={tagFilter} onChange={(value) => { setTagFilter(value); resetPagination() }} options={tags.map((value) => [value, value])} />
+                    <PipelineFilterSelect label="Last activity" value={activityFilter} onChange={(value) => { setActivityFilter(value); resetPagination() }} options={[["day", "Past 24 hours"], ["week", "Past 7 days"], ["stale", "More than 7 days"], ["none", "No activity"]]} />
+                    <PipelineFilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => { setDataGapFilter(value as DataGap); resetPagination() }} options={[["missing_phone", "Missing phone"], ["missing_email", "Missing email"], ["missing_next_action", "Missing next action"]]} />
+                    <PipelineFilterSelect label="Conversation state" value={attentionFilter} onChange={(value) => { setAttentionFilter(value); resetPagination() }} options={[["needs_reply", "Needs reply"], ["waiting_on_contact", "Waiting on contact"], ["resolved", "Resolved"]]} />
+                    <PipelineFilterSelect label="Outreach status" value={outreachFilter} onChange={(value) => { setOutreachFilter(value); resetPagination() }} options={[["unattempted", "Unattempted"], ["attempted_no_response", "Attempted — no response"], ["connected_unclassified", "Connected — needs classification"]]} />
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--crm-border)] pt-3">
                     {savedViews.map((view) => <button type="button" key={view.id} onClick={() => applyView(view)} className="rounded-full border border-[var(--crm-border)] px-3 py-1.5 text-xs font-semibold hover:border-[var(--crm-brand-border)] hover:text-[var(--crm-brand)]">{view.label}</button>)}
@@ -677,17 +673,16 @@ export default function ContactsPage() {
               <div className="relative hidden sm:block">
                 <button type="button" aria-label="Sort" onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')} aria-expanded={toolbarMenu === 'sort'} aria-controls="contact-sort-panel" className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold"><Icon name="swap_vert" className="text-[16px]" />Sort</button>
                 {toolbarMenu === 'sort' ? <div id="contact-sort-panel" role="dialog" aria-label="Sort contacts" className="crm-panel fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 rounded-2xl p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-11 sm:w-56 sm:rounded-xl">
-                  {([['priority', smartList === 'hot' ? 'Motivation score first' : 'Priority first'], ['recent', 'Recently active'], ['name', 'Name A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
+                  {([['priority', smartList === 'hot' ? 'Motivation score first' : 'Priority first'], ['recent', 'Recently active'], ['name', 'Name A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); resetPagination(); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
                 </div> : null}
               </div>
             <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button hidden h-9 w-9 items-center justify-center rounded-full sm:flex"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
               {hasFilters ? <button type="button" onClick={clearFilters} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
-              <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{visible.length} results</span>
+              <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{totalResults} results</span>
             </div>
 
             {selectedIds.size > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2.5" role="region" aria-label="Bulk contact changes">
               <span className="mr-1 text-sm font-black text-[var(--crm-info)]">{selectedIds.size} selected</span>
-              {selectedIds.size < visible.length ? <button type="button" onClick={() => setSelectedIds(new Set(visible.map((item) => item.id)))} className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-surface)] px-3 py-2 text-xs font-bold text-[var(--crm-info)]">Select all {visible.length} results</button> : null}
               <select aria-label="Bulk action" value={bulkAction} onChange={(event) => { setBulkAction(event.target.value as BulkAction); setBulkMessage(null) }} className="crm-field h-9 min-w-52 rounded-lg px-3 text-xs font-semibold">
                 <option value="">Choose bulk change…</option>
                 <optgroup label="Assign owner">
@@ -760,12 +755,11 @@ export default function ContactsPage() {
               {!isLoading && !error ? <MobileContactsList items={pageItems} selectedIds={selectedIds} onToggle={toggleSelected} onOpen={(id) => router.push(`/leads/${id}`)} onCall={openDialer} showScore={smartList === 'hot'} /> : null}
             </> : null}
             <div className="mt-5 flex flex-col gap-3 text-xs text-[var(--crm-text-muted)] sm:flex-row sm:items-center md:mt-7">
-              <span>Showing {visible.length ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, visible.length)} of {visible.length} results</span>
+              <span>Showing {pageItems.length ? pageIndex * CONTACT_PAGE_SIZE + 1 : 0} to {Math.min(pageIndex * CONTACT_PAGE_SIZE + pageItems.length, totalResults)} of {totalResults} results</span>
               <div className="flex items-center gap-2 sm:ml-auto">
-                <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Previous page">‹</button>
-                {paginationPages.map((pageNumber) => <button type="button" key={pageNumber} onClick={() => setPage(pageNumber)} aria-current={pageNumber === currentPage ? 'page' : undefined} aria-label={`Page ${pageNumber}`} className={`h-8 min-w-8 rounded border px-2 ${pageNumber === currentPage ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)]'}`}>{pageNumber}</button>)}
-                <span className="sr-only">Page {currentPage} of {pageCount}</span>
-                <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Next page">›</button>
+                <button type="button" disabled={pageIndex === 0 || isFetching} onClick={goToPreviousPage} className="h-8 rounded border border-[var(--crm-border)] px-3 font-semibold disabled:opacity-40" aria-label="Previous page">Previous</button>
+                <span aria-live="polite">Page {currentPage} of {pageCount}</span>
+                <button type="button" disabled={!currentQuery.data?.pageInfo.hasMore || isFetching} onClick={goToNextPage} className="h-8 rounded border border-[var(--crm-border)] px-3 font-semibold disabled:opacity-40" aria-label="Next page">Next</button>
               </div>
             </div>
           </div>
@@ -790,7 +784,7 @@ export default function ContactsPage() {
                 station={selected.station}
                 deadReason={selected.deadReason}
                 agent={selected.owner}
-                onChanged={(update) => handleLeadStatusChanged(selected.id, update)}
+                onChanged={handleLeadStatusChanged}
                 variant="panel"
               />
             </div>
