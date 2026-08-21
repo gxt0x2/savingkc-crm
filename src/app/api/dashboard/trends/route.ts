@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { listCompletedWorkItemDates } from '@/lib/server/work-items'
 
 
 
@@ -34,12 +35,7 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: true })
 
   // Fetch tasks completed
-  const { data: tasks } = await supabase
-    .from('tasks')
-    .select('completed_at')
-    .not('completed_at', 'is', null)
-    .gte('completed_at', sinceISO)
-    .order('completed_at', { ascending: true })
+  const completedTaskDates = await listCompletedWorkItemDates({ completedAfter: sinceISO })
 
   // Build buckets
   const buckets = new Map<string, {
@@ -101,8 +97,8 @@ export async function GET(req: NextRequest) {
   }
 
   // Fill tasks
-  for (const t of tasks || []) {
-    ensureBucket(t.completed_at).tasks_completed++
+  for (const completedAt of completedTaskDates) {
+    ensureBucket(completedAt).tasks_completed++
   }
 
   // Sort buckets by key

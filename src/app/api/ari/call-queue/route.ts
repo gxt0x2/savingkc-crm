@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
+import { listWorkItems } from '@/lib/server/work-items'
 
 export async function GET(request: Request) {
   const unauthorized = await requireUserOrSecret(request)
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
     // 3. Fetch recent inbound activity (SMS replies, missed calls) to identify hot leads
     const { data: recentInbound } = await supabase
       .from('lead_activities')
-      .select('lead_id, activity_type, type, created_at, description')
+      .select('lead_id, activity_type, type, created_at, description, metadata')
       .in('lead_id', leadIds)
       .or('activity_type.eq.sms,type.eq.sms_received,type.eq.sms_inbound,type.eq.missed_call')
       .order('created_at', { ascending: false })
@@ -56,8 +57,11 @@ export async function GET(request: Request) {
     const inboundMap = new Map<string, { created_at: string; description: string; type: string }>()
     for (const a of recentInbound || []) {
       if (a.lead_id && !inboundMap.has(a.lead_id)) {
+        const metadata = a.metadata && typeof a.metadata === 'object'
+          ? a.metadata as Record<string, unknown>
+          : {}
         const isInbound = a.activity_type === 'sms' &&
-          (a.type === 'sms_received' || a.type === 'sms_inbound' || (a as any).metadata?.direction === 'received')
+          (a.type === 'sms_received' || a.type === 'sms_inbound' || metadata.direction === 'received')
         const isMissedCall = a.type === 'missed_call'
         if (isInbound || isMissedCall) {
           inboundMap.set(a.lead_id, {
@@ -70,16 +74,16 @@ export async function GET(request: Request) {
     }
 
     // 4. Fetch overdue callback tasks
-    const { data: callbackTasks } = await supabase
-      .from('tasks')
-      .select('id, lead_id, title, due_date, status')
-      .in('status', ['pending', 'overdue'])
-      .lte('due_date', now)
-      .in('lead_id', leadIds)
+    const callbackTasks = await listWorkItems({
+      statuses: ['pending', 'blocked'],
+      dueBefore: now,
+      leadIds,
+      limit: 500,
+    })
 
     const callbackMap = new Map<string, { due_date: string; title: string }>()
     for (const t of callbackTasks || []) {
-      if (t.lead_id) callbackMap.set(t.lead_id, { due_date: t.due_date, title: t.title })
+      if (t.leadId && t.dueAt) callbackMap.set(t.leadId, { due_date: t.dueAt, title: t.title })
     }
 
     // 5. Fetch last contact dates

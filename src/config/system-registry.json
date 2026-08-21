@@ -184,8 +184,8 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/calendar", "/tasks"],
-      "apiRoutes": ["/api/calendar/tasks"],
-      "tables": ["appointments", "lead_tasks"],
+      "apiRoutes": ["/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk"],
+      "tables": ["appointments", "lead_activities", "lead_tasks", "tc_tasks", "work_items", "work_item_events"],
       "environment": []
     },
     {

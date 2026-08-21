@@ -1,23 +1,22 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase-lazy'
+import { listWorkItems } from '@/lib/server/work-items'
 
 
 
 
 export async function GET() {
   try {
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('id, title, due_date, priority, status, lead_id')
-      .in('status', ['pending', 'overdue'])
-      .order('due_date', { ascending: true })
-      .limit(5)
-
-    if (error) {
-      return NextResponse.json({ tasks: [] })
-    }
-
-    return NextResponse.json({ tasks: data || [] })
+    const items = await listWorkItems({ statuses: ['pending', 'blocked'], limit: 5 })
+    return NextResponse.json({
+      tasks: items.map((item) => ({
+        id: item.key,
+        title: item.title,
+        due_date: item.dueAt,
+        priority: item.priority,
+        status: item.status,
+        lead_id: item.leadId,
+      })),
+    })
   } catch {
     return NextResponse.json({ tasks: [] })
   }

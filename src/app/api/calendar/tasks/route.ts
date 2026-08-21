@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
+import { createWorkItem, listWorkItems, normalizeWorkItemKind, type WorkItem } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isNonRealRecord } from '@/lib/real-data'
 import type { Contact, DealStage, Task } from '@/types'
@@ -17,24 +18,6 @@ interface LeadRow {
   state: string | null
   zip: string | null
   station: string | null
-  created_at: string
-}
-
-interface TaskActivityRow {
-  id: string
-  lead_id: string | null
-  activity_type: string
-  description: string | null
-  agent: string | null
-  metadata: {
-    title?: string
-    task_type?: string
-    due_date?: string
-    assigned_to?: string
-    status?: string
-    property_address?: string
-    department?: string
-  } | null
   created_at: string
 }
 
@@ -73,8 +56,6 @@ interface DispoDealRow {
 }
 
 type CalendarDepartment = 'acquisitions' | 'dispositions' | 'tc'
-
-const DISPOSITION_STAGES = new Set(['contract_signed', 'under_contract', 'disposition', 'closed'])
 
 function normalizeDepartment(value: string | null): CalendarDepartment {
   if (value === 'dispositions' || value === 'tc') return value
@@ -120,28 +101,20 @@ async function loadLeadMap(db: ReturnType<typeof supabaseAdmin>, leadIds: string
   }, {} as Record<string, Contact>)
 }
 
-function departmentForActivity(row: TaskActivityRow, contact?: Contact): CalendarDepartment {
-  const explicit = normalizeDepartment(row.metadata?.department ?? null)
-  if (row.metadata?.department) return explicit
-  return contact?.current_stage && DISPOSITION_STAGES.has(contact.current_stage) ? 'dispositions' : 'acquisitions'
-}
-
-function activityToTask(row: TaskActivityRow, leadsMap: Record<string, Contact>): Task {
-  const meta = row.metadata || {}
-  const contact = row.lead_id ? leadsMap[row.lead_id] : undefined
-
+function workItemToTask(item: WorkItem, leadsMap: Record<string, Contact>): Task {
+  const contact = item.leadId ? leadsMap[item.leadId] : undefined
   return {
-    id: row.id,
-    type: (meta.task_type || row.activity_type) as Task['type'],
-    title: meta.title || row.description || 'Untitled Task',
-    description: row.description,
-    contact_id: row.lead_id,
-    deal_id: null,
-    property_address: meta.property_address || contact?.address || null,
-    due_date: meta.due_date || null,
-    assigned_to: meta.assigned_to || row.agent || null,
-    status: (meta.status || 'pending') as Task['status'],
-    created_at: row.created_at,
+    id: item.key,
+    type: item.kind as Task['type'],
+    title: item.title,
+    description: item.description,
+    contact_id: item.leadId,
+    deal_id: item.tcFileId,
+    property_address: contact?.address || null,
+    due_date: item.dueAt,
+    assigned_to: item.assignedTo,
+    status: item.status === 'completed' ? 'completed' : 'pending',
+    created_at: item.sourceCreatedAt,
     contact,
   }
 }
@@ -317,31 +290,16 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const department = normalizeDepartment(searchParams.get('department'))
     const db = supabaseAdmin()
-
-    const { data: activities, error: activitiesError } = await db
-      .from('lead_activities')
-      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
-      .in('activity_type', ['task', 'appointment', 'follow_up', 'callback', 'send_offer'])
-      .order('created_at', { ascending: true })
-
-    if (activitiesError) {
-      console.error('[calendar/tasks] activity fetch failed:', activitiesError.message)
-      return NextResponse.json({ success: false, tasks: [], error: activitiesError.message }, { status: 500 })
-    }
-
-    const taskRows = (activities || []) as TaskActivityRow[]
-    const leadIds = taskRows
-      .map((task) => task.lead_id)
-      .filter((id): id is string => id !== null)
-    const leadsMap = await loadLeadMap(db, leadIds)
-
-    const activityTasks = taskRows
-      .map((row) => ({ row, task: activityToTask(row, leadsMap) }))
-      .filter(({ row, task }) => departmentForActivity(row, task.contact) === department)
-      .map(({ task }) => task)
+    const items = await listWorkItems({
+      department,
+      statuses: ['pending', 'blocked', 'completed'],
+      limit: 500,
+    })
+    const leadsMap = await loadLeadMap(db, items.flatMap((item) => item.leadId ? [item.leadId] : []))
+    const activityTasks = items.map((item) => workItemToTask(item, leadsMap))
 
     const departmentTasks = department === 'tc'
-      ? await loadTcCalendarTasks(db)
+      ? (await loadTcCalendarTasks(db)).filter((task) => task.id.startsWith('tc-file-'))
       : department === 'dispositions'
         ? await loadDispositionCalendarTasks(db)
         : []
@@ -373,7 +331,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 })
     }
 
-    const dueDate = body.dueDate ? new Date(body.dueDate).toISOString() : null
+    const dueDateValue = body.dueDate ? new Date(body.dueDate) : null
+    if (dueDateValue && Number.isNaN(dueDateValue.getTime())) {
+      return NextResponse.json({ success: false, error: 'Due date is invalid' }, { status: 400 })
+    }
+    const dueDate = dueDateValue?.toISOString() || null
     const department = normalizeDepartment(typeof body.department === 'string' ? body.department : null)
     const assignment = resolveTaskAssignee(body.assignedTo, authenticatedActor.name, { defaultToActor: true })
     if (!assignment.authorized || !assignment.assignedTo) {
@@ -381,35 +343,25 @@ export async function POST(req: NextRequest) {
     }
     const assignedTo = assignment.assignedTo
 
-    const { data, error } = await supabaseAdmin()
-      .from('lead_activities')
-      .insert({
-        lead_id: body.leadId || null,
-        activity_type: 'task',
-        description: title,
-        agent: assignedTo,
-        metadata: {
-          task_type: body.taskType || 'follow_up',
-          due_date: dueDate,
-          assigned_to: assignedTo,
-          role: body.role || 'setter',
-          department,
-          priority: 'normal',
-          status: 'pending',
-          primary_next_action: body.primaryNextAction === true,
-          notes: body.notes?.trim() || undefined,
-          source: body.leadId ? 'lead_detail_task' : 'calendar_new_task',
-        },
-      })
-      .select('id')
-      .single()
+    const idempotencyKey = req.headers.get('idempotency-key')?.trim()
+      || (typeof body.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '')
+      || crypto.randomUUID()
+    const result = await createWorkItem({
+      actor: authenticatedActor.name,
+      idempotencyKey,
+      leadId: typeof body.leadId === 'string' ? body.leadId : null,
+      kind: normalizeWorkItemKind(body.taskType),
+      title,
+      notes: typeof body.notes === 'string' ? body.notes.trim() : null,
+      dueAt: dueDate,
+      assignedTo,
+      department,
+      role: typeof body.role === 'string' ? body.role : 'setter',
+      priority: 'normal',
+      primaryNextAction: body.primaryNextAction === true,
+    })
 
-    if (error) {
-      console.error('[calendar/tasks] create failed:', error.message)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true, taskId: data.id })
+    return NextResponse.json({ success: true, created: result.created, taskId: result.workItem.key })
   } catch (err) {
     console.error('[calendar/tasks] create unexpected error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 })

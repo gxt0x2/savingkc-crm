@@ -81,6 +81,19 @@ Supporting tasks may exist, but the primary action answers:
 
 Stage changes must validate the next-action invariant before completion.
 
+### Compatibility implementation
+
+During the compatibility phase, `work_items` is the server-only operational projection for both task-shaped `lead_activities` and `tc_tasks`. Source rows remain durable so existing lead timelines and transaction-coordination workflows keep working.
+
+- CRM reads use the indexed `work_items` contract; they do not query the retired `tasks` table.
+- Creates, edits, completion, reassignment, cancellation, and bulk transitions use idempotent database functions.
+- Every canonical mutation writes an append-only `work_item_events` audit record with the verified actor and before/after state.
+- Deletes in the product are cancellations. The durable source row and audit history remain available.
+- Bulk transitions are one database transaction and either all succeed or all roll back.
+- Browser roles cannot read either projection table or execute mutation functions directly.
+
+The projection is additive and rebuildable. A destructive source cutover requires production reconciliation and a separate migration decision.
+
 ## Workflow model
 
 Workflows are versioned operational policies made of:
