@@ -66,6 +66,13 @@ describe('workflow run panel', () => {
         title: 'Call seller after title review',
         assignedTo: 'Casey',
         dueAt: '2026-08-22T15:00:00.000Z',
+        aiGenerationId: '30000000-0000-4000-8000-000000000001',
+        aiConfidence: 'high',
+        aiRationale: 'The seller requested a callback after the family title review.',
+        aiSources: [{
+          name: 'Call activity',
+          url: 'https://crm.savingkc.com/leads/10000000-0000-4000-8000-000000000001?section=activity',
+        }],
       },
       output: null,
       error_message: null,
@@ -79,6 +86,9 @@ describe('workflow run panel', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<WorkflowRunPanel />)
+    expect(await screen.findByText('AI-assisted proposal · high confidence')).toBeInTheDocument()
+    expect(screen.getByText('The seller requested a callback after the family title review.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Call activity' })).toHaveAttribute('href', expect.stringContaining('/leads/'))
     fireEvent.click(await screen.findByRole('button', { name: 'Approve & run' }))
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Approve & run' })).not.toBeInTheDocument())

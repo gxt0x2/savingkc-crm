@@ -274,7 +274,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/ai"],
-      "apiRoutes": ["/api/ai/command", "/api/ai/threads", "/api/ai/threads/[id]"],
+      "apiRoutes": ["/api/ai/command", "/api/ai/next-action-proposal", "/api/ai/threads", "/api/ai/threads/[id]"],
       "tables": ["assistant_threads", "assistant_messages", "assistant_generations", "assistant_confirmations", "agent_profiles"],
       "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "GROQ_API_KEY", "OPENROUTER_API_KEY"]
     },

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   start: vi.fn(),
   execute: vi.fn(),
+  verifyAi: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
@@ -20,6 +21,11 @@ vi.mock('@/lib/server/workflow-runs', () => ({
   SUPPORTED_WORKFLOW_EXECUTORS: ['workflow-registry-health', 'approved-follow-up-task'],
   executeWorkflowRun: mocks.execute,
   workflowRunPayload: (value: unknown) => value && typeof value === 'object' ? value : {},
+}))
+vi.mock('@/lib/server/workflow-task-action', () => ({
+  APPROVED_FOLLOW_UP_WORKFLOW_ID: 'approved-follow-up-task',
+  WorkflowInputError: class WorkflowInputError extends Error {},
+  verifyNextActionGeneration: mocks.verifyAi,
 }))
 
 import { GET, POST } from './route'
@@ -43,6 +49,7 @@ describe('workflow runs API', () => {
     mocks.prepare.mockReset().mockImplementation((_workflowId, value) => value || {})
     mocks.start.mockReset().mockResolvedValue(queued)
     mocks.execute.mockReset().mockResolvedValue(succeeded)
+    mocks.verifyAi.mockReset().mockResolvedValue(null)
   })
 
   it('rejects unauthenticated reads before querying run history', async () => {
@@ -130,5 +137,49 @@ describe('workflow runs API', () => {
       maxAttempts: 3,
     }))
     expect(mocks.execute).not.toHaveBeenCalled()
+  })
+
+  it('verifies AI provenance against the actor and contact before storing it', async () => {
+    const awaiting = { id: '20000000-0000-4000-8000-000000000001', status: 'awaiting_approval' }
+    mocks.find.mockReturnValue({
+      id: 'approved-follow-up-task', status: 'active', version: 1,
+      implementation: { mutatesData: true, approvalPolicy: 'user_confirmation' },
+    })
+    mocks.prepare.mockReturnValue({
+      leadId: '10000000-0000-4000-8000-000000000001', title: 'Call seller',
+      assignedTo: 'Casey', dueAt: '2026-08-22T15:00:00.000Z', department: 'acquisitions',
+    })
+    mocks.verifyAi.mockResolvedValue({
+      aiGenerationId: '30000000-0000-4000-8000-000000000001',
+      aiEvidenceIds: ['activity:source-1'],
+      aiSources: [{ name: 'Call activity', url: 'https://crm.savingkc.com/leads/10000000-0000-4000-8000-000000000001?section=activity', detail: 'Seller requested a callback.' }],
+      aiModel: 'openai/gpt-5.6-luna',
+      aiPromptVersion: 'next-action-proposal-v1',
+      aiRationale: 'Seller requested a family-review callback.',
+      aiConfidence: 'high',
+    })
+    mocks.start.mockResolvedValue(awaiting)
+
+    const response = await POST(new Request('https://crm.savingkc.com/api/workflows/runs', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'approved-ai-task:test' },
+      body: JSON.stringify({
+        workflowId: 'approved-follow-up-task',
+        input: { aiGenerationId: '30000000-0000-4000-8000-000000000001' },
+      }),
+    }))
+
+    expect(response.status).toBe(202)
+    expect(mocks.verifyAi).toHaveBeenCalledWith({
+      generationId: '30000000-0000-4000-8000-000000000001',
+      actorEmail: 'ernest@savingkc.com',
+      leadId: '10000000-0000-4000-8000-000000000001',
+    })
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        aiGenerationId: '30000000-0000-4000-8000-000000000001',
+        aiPromptVersion: 'next-action-proposal-v1',
+      }),
+    }))
   })
 })
