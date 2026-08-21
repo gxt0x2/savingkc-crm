@@ -5,12 +5,8 @@ import { NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { executeNextWorkflowRun, workflowRunPayload, type WorkflowRun } from '@/lib/server/workflow-runs'
 
-export async function POST(request: Request) {
-  const unauthorized = await requireAdminOrSecret(request)
-  if (unauthorized) return unauthorized
+async function processRuns(requestedLimit: number) {
   try {
-    const body = await request.json().then(workflowRunPayload).catch(() => workflowRunPayload(null))
-    const requestedLimit = typeof body.limit === 'number' ? body.limit : 1
     const limit = Math.max(1, Math.min(Math.trunc(requestedLimit), 10))
     const workerId = `workflow-worker:${randomUUID()}`
     const runs: WorkflowRun[] = []
@@ -29,4 +25,19 @@ export async function POST(request: Request) {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
     })
   }
+}
+
+export async function GET(request: Request) {
+  const unauthorized = await requireAdminOrSecret(request)
+  if (unauthorized) return unauthorized
+  const rawLimit = Number(new URL(request.url).searchParams.get('limit') || 10)
+  return processRuns(Number.isFinite(rawLimit) ? rawLimit : 10)
+}
+
+export async function POST(request: Request) {
+  const unauthorized = await requireAdminOrSecret(request)
+  if (unauthorized) return unauthorized
+  const body = await request.json().then(workflowRunPayload).catch(() => workflowRunPayload(null))
+  const requestedLimit = typeof body.limit === 'number' ? body.limit : 1
+  return processRuns(requestedLimit)
 }

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   find: vi.fn(),
   supports: vi.fn(),
   list: vi.fn(),
+  prepare: vi.fn(),
   start: vi.fn(),
   execute: vi.fn(),
 }))
@@ -14,7 +15,9 @@ vi.mock('@/lib/server/workflow-runs', () => ({
   findActiveWorkflowDefinition: mocks.find,
   supportsWorkflowExecution: mocks.supports,
   listWorkflowRuns: mocks.list,
+  prepareWorkflowRunInput: mocks.prepare,
   startWorkflowRun: mocks.start,
+  SUPPORTED_WORKFLOW_EXECUTORS: ['workflow-registry-health', 'approved-follow-up-task'],
   executeWorkflowRun: mocks.execute,
   workflowRunPayload: (value: unknown) => value && typeof value === 'object' ? value : {},
 }))
@@ -37,6 +40,7 @@ describe('workflow runs API', () => {
     mocks.find.mockReset().mockReturnValue(definition)
     mocks.supports.mockReset().mockReturnValue(true)
     mocks.list.mockReset().mockResolvedValue([])
+    mocks.prepare.mockReset().mockImplementation((_workflowId, value) => value || {})
     mocks.start.mockReset().mockResolvedValue(queued)
     mocks.execute.mockReset().mockResolvedValue(succeeded)
   })
@@ -86,8 +90,45 @@ describe('workflow runs API', () => {
       idempotencyKey: 'registry-health:test',
       triggerKey: 'user:ernest@savingkc.com',
       payload: { source: 'manual' },
+      maxAttempts: 3,
     }))
     expect(mocks.execute).toHaveBeenCalledWith(queued.id, 'interactive:ernest@savingkc.com')
     await expect(response.json()).resolves.toEqual({ run: succeeded })
+  })
+
+  it('stores the server-canonicalized mutating input and waits for approval', async () => {
+    const awaiting = { id: '20000000-0000-4000-8000-000000000001', status: 'awaiting_approval' }
+    mocks.find.mockReturnValue({
+      id: 'approved-follow-up-task',
+      status: 'active',
+      version: 1,
+      implementation: { mutatesData: true, approvalPolicy: 'user_confirmation' },
+    })
+    mocks.prepare.mockReturnValue({
+      leadId: '10000000-0000-4000-8000-000000000001',
+      title: 'Call seller',
+      assignedTo: 'Casey',
+      dueAt: '2026-08-22T15:00:00.000Z',
+      department: 'acquisitions',
+    })
+    mocks.start.mockResolvedValue(awaiting)
+
+    const response = await POST(new Request('https://crm.savingkc.com/api/workflows/runs', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'approved-task:test' },
+      body: JSON.stringify({
+        workflowId: 'approved-follow-up-task',
+        maxAttempts: 10,
+        input: { title: 'client value', department: 'tc' },
+      }),
+    }))
+
+    expect(response.status).toBe(202)
+    expect(mocks.prepare).toHaveBeenCalledWith('approved-follow-up-task', { title: 'client value', department: 'tc' }, 'Ernest')
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({ department: 'acquisitions' }),
+      maxAttempts: 3,
+    }))
+    expect(mocks.execute).not.toHaveBeenCalled()
   })
 })

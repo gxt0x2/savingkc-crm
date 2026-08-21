@@ -22,6 +22,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/workers/workflow-runs",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/google-ads-reporting-sync",
       "schedule": "*/10 * * * *"
     },
