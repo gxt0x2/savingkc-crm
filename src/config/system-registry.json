@@ -154,8 +154,8 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/contacts", "/leads/[id]"],
-      "apiRoutes": ["/api/contacts", "/api/leads", "/api/leads/[id]"],
-      "tables": ["leads", "lead_activities", "lead_tasks", "manifests", "manifest_history"],
+      "apiRoutes": ["/api/contacts", "/api/leads", "/api/leads/[id]", "/api/admin/entity-health"],
+      "tables": ["leads", "lead_activities", "lead_tasks", "manifests", "manifest_history", "crm_people", "crm_contact_methods", "crm_properties", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events"],
       "environment": []
     },
     {

@@ -1,0 +1,240 @@
+import { supabaseAdmin } from '@/lib/supabase/admin'
+
+type QueryError = { code?: string | null; message?: string | null }
+
+export interface CrmEntityContext {
+  available: boolean
+  linked: boolean
+  degraded: boolean
+  projectedAt: string | null
+  person: {
+    id: string
+    displayName: string
+    recordStatus: string
+  } | null
+  contactMethods: Array<{
+    id: string
+    type: 'phone' | 'email'
+    value: string
+    normalizedValue: string
+    isPrimary: boolean
+    deliverabilityStatus: string
+    smsConsentStatus: string
+  }>
+  property: {
+    id: string
+    address: string
+    city: string | null
+    state: string | null
+    zip: string | null
+    parcelId: string | null
+  } | null
+  opportunity: {
+    id: string
+    stage: string
+    classification: string | null
+    priority: string | null
+    ownerName: string | null
+    lifecycleStatus: string
+  } | null
+  openIdentityConflicts: number
+}
+
+export interface CrmEntityHealth {
+  available: boolean
+  source: 'canonical_projection' | 'migration_pending'
+  leads: number
+  linkedLeads: number
+  people: number
+  contactMethods: number
+  properties: number
+  opportunities: number
+  openIdentityConflicts: number
+  consentEvents: number
+  projectionCoverage: number
+}
+
+function unavailableContext(): CrmEntityContext {
+  return {
+    available: false,
+    linked: false,
+    degraded: true,
+    projectedAt: null,
+    person: null,
+    contactMethods: [],
+    property: null,
+    opportunity: null,
+    openIdentityConflicts: 0,
+  }
+}
+
+export function isEntityFoundationUnavailable(error: QueryError | null | undefined): boolean {
+  const message = error?.message?.toLowerCase() ?? ''
+  return error?.code === '42P01'
+    || error?.code === 'PGRST205'
+    || message.includes('crm_lead_entity_links') && (
+      message.includes('does not exist') || message.includes('schema cache')
+    )
+}
+
+function requireNoError(error: QueryError | null, label: string): void {
+  if (error) throw new Error(`${label}: ${error.message || error.code || 'query failed'}`)
+}
+
+export async function readLeadEntityContext(leadId: string): Promise<CrmEntityContext> {
+  const db = supabaseAdmin()
+  const { data: linkData, error: linkError } = await db
+    .from('crm_lead_entity_links')
+    .select('person_id, property_id, opportunity_id, projected_at')
+    .eq('lead_id', leadId)
+    .maybeSingle()
+
+  if (isEntityFoundationUnavailable(linkError)) return unavailableContext()
+  requireNoError(linkError, 'CRM entity link lookup failed')
+  if (!linkData) {
+    return { ...unavailableContext(), available: true, degraded: true }
+  }
+
+  const [personResult, methodResult, propertyResult, opportunityResult, conflictResult] = await Promise.all([
+    db.from('crm_people')
+      .select('id, display_name, record_status')
+      .eq('id', linkData.person_id)
+      .maybeSingle(),
+    db.from('crm_contact_methods')
+      .select('id, method_type, raw_value, normalized_value, is_primary, deliverability_status, sms_consent_status')
+      .eq('person_id', linkData.person_id)
+      .order('method_type')
+      .order('is_primary', { ascending: false }),
+    linkData.property_id
+      ? db.from('crm_properties')
+        .select('id, address, city, state, zip, parcel_id')
+        .eq('id', linkData.property_id)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    db.from('crm_opportunities')
+      .select('id, stage, classification, priority, owner_name, lifecycle_status')
+      .eq('id', linkData.opportunity_id)
+      .maybeSingle(),
+    db.from('crm_identity_conflicts')
+      .select('id', { count: 'exact', head: true })
+      .eq('lead_id', leadId)
+      .eq('status', 'open'),
+  ])
+
+  requireNoError(personResult.error, 'CRM person lookup failed')
+  requireNoError(methodResult.error, 'CRM contact method lookup failed')
+  requireNoError(propertyResult.error, 'CRM property lookup failed')
+  requireNoError(opportunityResult.error, 'CRM opportunity lookup failed')
+  requireNoError(conflictResult.error, 'CRM identity conflict lookup failed')
+
+  const person = personResult.data
+  const property = propertyResult.data
+  const opportunity = opportunityResult.data
+
+  return {
+    available: true,
+    linked: Boolean(person && opportunity),
+    degraded: !person || !opportunity,
+    projectedAt: linkData.projected_at ?? null,
+    person: person ? {
+      id: person.id,
+      displayName: person.display_name,
+      recordStatus: person.record_status,
+    } : null,
+    contactMethods: (methodResult.data ?? []).map((method) => ({
+      id: method.id,
+      type: method.method_type as 'phone' | 'email',
+      value: method.raw_value,
+      normalizedValue: method.normalized_value,
+      isPrimary: method.is_primary,
+      deliverabilityStatus: method.deliverability_status,
+      smsConsentStatus: method.sms_consent_status,
+    })),
+    property: property ? {
+      id: property.id,
+      address: property.address,
+      city: property.city,
+      state: property.state,
+      zip: property.zip,
+      parcelId: property.parcel_id,
+    } : null,
+    opportunity: opportunity ? {
+      id: opportunity.id,
+      stage: opportunity.stage,
+      classification: opportunity.classification,
+      priority: opportunity.priority,
+      ownerName: opportunity.owner_name,
+      lifecycleStatus: opportunity.lifecycle_status,
+    } : null,
+    openIdentityConflicts: conflictResult.count ?? 0,
+  }
+}
+
+export async function safeReadLeadEntityContext(leadId: string): Promise<CrmEntityContext> {
+  try {
+    return await readLeadEntityContext(leadId)
+  } catch (error) {
+    console.error('CRM entity context is degraded', {
+      leadId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return unavailableContext()
+  }
+}
+
+export async function readCrmEntityHealth(): Promise<CrmEntityHealth> {
+  const db = supabaseAdmin()
+  const [leadResult, linkResult, peopleResult, methodResult, propertyResult, opportunityResult, conflictResult, consentResult] = await Promise.all([
+    db.from('leads').select('id', { count: 'exact', head: true }),
+    db.from('crm_lead_entity_links').select('lead_id', { count: 'exact', head: true }),
+    db.from('crm_people').select('id', { count: 'exact', head: true }),
+    db.from('crm_contact_methods').select('id', { count: 'exact', head: true }),
+    db.from('crm_properties').select('id', { count: 'exact', head: true }),
+    db.from('crm_opportunities').select('id', { count: 'exact', head: true }),
+    db.from('crm_identity_conflicts').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+    db.from('crm_consent_events').select('id', { count: 'exact', head: true }),
+  ])
+
+  if (isEntityFoundationUnavailable(linkResult.error)) {
+    return {
+      available: false,
+      source: 'migration_pending',
+      leads: leadResult.count ?? 0,
+      linkedLeads: 0,
+      people: 0,
+      contactMethods: 0,
+      properties: 0,
+      opportunities: 0,
+      openIdentityConflicts: 0,
+      consentEvents: 0,
+      projectionCoverage: 0,
+    }
+  }
+
+  for (const [label, result] of [
+    ['leads', leadResult],
+    ['links', linkResult],
+    ['people', peopleResult],
+    ['contact methods', methodResult],
+    ['properties', propertyResult],
+    ['opportunities', opportunityResult],
+    ['identity conflicts', conflictResult],
+    ['consent events', consentResult],
+  ] as const) requireNoError(result.error, `CRM entity health ${label} failed`)
+
+  const leads = leadResult.count ?? 0
+  const linkedLeads = linkResult.count ?? 0
+  return {
+    available: true,
+    source: 'canonical_projection',
+    leads,
+    linkedLeads,
+    people: peopleResult.count ?? 0,
+    contactMethods: methodResult.count ?? 0,
+    properties: propertyResult.count ?? 0,
+    opportunities: opportunityResult.count ?? 0,
+    openIdentityConflicts: conflictResult.count ?? 0,
+    consentEvents: consentResult.count ?? 0,
+    projectionCoverage: leads === 0 ? 1 : linkedLeads / leads,
+  }
+}

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
+import { EntityIdentityStatus } from '@/components/leads/entity-identity-status'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
 import { LeadOpportunityPanel, LEAD_WORKSPACE_STAGES } from '@/components/leads/lead-opportunity-panel'
 import { RecordOfferModal } from '@/components/leads/record-offer-modal'
@@ -20,6 +21,7 @@ import {
 } from '@/lib/lead-conversation'
 import { playableRecordingUrl } from '@/lib/marketing/call-recordings'
 import { cn } from '@/lib/utils'
+import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
 
 export interface LeadWorkspaceLead {
   id: string
@@ -44,6 +46,7 @@ export interface LeadWorkspaceLead {
   offer_amount: number | null
   classification?: 'lead' | 'opportunity' | 'dead' | null
   dead_reason?: string | null
+  entityContext?: CrmEntityContext | null
 }
 
 export interface LeadWorkspaceActivity {
@@ -363,6 +366,7 @@ export function LeadWorkspace({
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[8px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
                       {owner}
                     </span>
+                    <EntityIdentityStatus context={lead.entityContext} />
                     <button type="button" onClick={onEdit} className="crm-icon-button hidden h-8 w-8 items-center justify-center rounded-lg sm:flex" aria-label="Edit contact">
                       <Icon name="edit" className="text-[17px]" />
                     </button>
