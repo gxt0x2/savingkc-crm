@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   loadDialerAttemptHistory: vi.fn(),
   loadDialerSessionHistory: vi.fn(),
+  decideDialerAiChanges: vi.fn(),
 }))
 
 vi.mock('next/link', () => ({
@@ -15,6 +16,7 @@ vi.mock('next/link', () => ({
 vi.mock('@/lib/dialer-session-client', () => ({
   loadDialerAttemptHistory: mocks.loadDialerAttemptHistory,
   loadDialerSessionHistory: mocks.loadDialerSessionHistory,
+  decideDialerAiChanges: mocks.decideDialerAiChanges,
 }))
 
 import { DialerSessionHistory } from './dialer-session-history'
@@ -51,6 +53,17 @@ describe('DialerSessionHistory', () => {
       items: [session(), session({ id: '00000000-0000-4000-8000-000000000020', status: 'completed', dialsCompleted: 4, contacts: 2 })],
       pageInfo: { limit: 20, hasMore: false, nextCursor: null },
     })
+    mocks.decideDialerAiChanges.mockResolvedValue({
+      id: 'proposal-1',
+      status: 'applied',
+      summary: 'Review extracted seller details.',
+      changes: [{ field: 'motivation_score', label: 'Motivation score', before: 4, proposed: 8 }],
+      decidedBy: 'Casey',
+      decisionNote: null,
+      decidedAt: '2026-08-21T14:04:00.000Z',
+      appliedAt: '2026-08-21T14:04:00.000Z',
+      errorCode: null,
+    })
     mocks.loadDialerAttemptHistory.mockResolvedValue({
       session: session(),
       attempts: {
@@ -86,6 +99,17 @@ describe('DialerSessionHistory', () => {
             completedAt: '2026-08-21T14:03:00.000Z',
             updatedAt: '2026-08-21T14:03:00.000Z',
             failureCode: null,
+            changeProposal: {
+              id: 'proposal-1',
+              status: 'proposed',
+              summary: 'Review extracted seller details.',
+              changes: [{ field: 'motivation_score', label: 'Motivation score', before: 4, proposed: 8 }],
+              decidedBy: null,
+              decisionNote: null,
+              decidedAt: null,
+              appliedAt: null,
+              errorCode: null,
+            },
           },
         }],
         pageInfo: { limit: 50, hasMore: false, nextCursor: null },
@@ -118,5 +142,24 @@ describe('DialerSessionHistory', () => {
     expect(screen.getByText(/Seller wants to move before October/)).toBeVisible()
     expect(screen.getByText(/Confirm the summary/)).toBeVisible()
     await waitFor(() => expect(mocks.loadDialerAttemptHistory).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps proposed CRM changes inert until the session owner approves them', async () => {
+    render(<DialerSessionHistory onResume={vi.fn()} onOpenQueue={vi.fn()} />)
+    await screen.findByText('Active and paused')
+    fireEvent.click(screen.getAllByRole('button', { name: 'View calls' })[0])
+
+    expect(await screen.findByText('AI-proposed CRM changes')).toBeVisible()
+    expect(screen.getByText('Nothing below changes until you approve it.')).toBeVisible()
+    expect(mocks.decideDialerAiChanges).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve & apply' }))
+    await waitFor(() => expect(mocks.decideDialerAiChanges).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: '00000000-0000-4000-8000-000000000010',
+      clientAttemptId: 'attempt-1',
+      decision: 'approved',
+      decisionKey: 'dialer-ai:proposal-1:approved',
+    })))
+    expect(await screen.findByText('Reviewed and applied by Casey.')).toBeVisible()
   })
 })

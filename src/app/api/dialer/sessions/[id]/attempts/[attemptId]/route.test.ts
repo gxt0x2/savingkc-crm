@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   transitionDialerAttempt: vi.fn(),
   advanceDialerSessionAfterDisposition: vi.fn(),
   getDialerPostCallReview: vi.fn(),
+  decideAiChangeProposal: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.resolveAuthenticatedActor }))
@@ -16,14 +17,23 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   advanceDialerSessionAfterDisposition: mocks.advanceDialerSessionAfterDisposition,
 }))
 vi.mock('@/lib/server/dialer-post-call-review', () => ({ getDialerPostCallReview: mocks.getDialerPostCallReview }))
+vi.mock('@/lib/server/ai-change-proposals', () => ({ decideAiChangeProposal: mocks.decideAiChangeProposal }))
 
-import { GET, PATCH } from './route'
+import { GET, PATCH, POST } from './route'
 
 const context = { params: Promise.resolve({ id: 'session-1', attemptId: 'attempt-1' }) }
 
 function request(body: Record<string, unknown>) {
   return new Request('https://crm.savingkc.com/api/dialer/sessions/session-1/attempts/attempt-1', {
     method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+function decisionRequest(body: Record<string, unknown>) {
+  return new Request('https://crm.savingkc.com/api/dialer/sessions/session-1/attempts/attempt-1', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
@@ -87,5 +97,37 @@ describe('dialer session attempt transitions', () => {
 
     expect(response.status).toBe(401)
     expect(parse).not.toHaveBeenCalled()
+  })
+
+  it('attributes an explicit AI change approval to the authenticated actor', async () => {
+    mocks.decideAiChangeProposal.mockResolvedValue({ id: 'proposal-1', status: 'applied' })
+
+    const response = await POST(decisionRequest({
+      decision: 'approved',
+      decisionKey: 'dialer-ai:proposal-1:approved',
+      decidedBy: 'spoofed actor',
+    }), context)
+
+    expect(response.status).toBe(200)
+    expect(mocks.decideAiChangeProposal).toHaveBeenCalledWith({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId: 'session-1',
+      clientAttemptId: 'attempt-1',
+      decision: 'approved',
+      decisionKey: 'dialer-ai:proposal-1:approved',
+      note: null,
+    })
+  })
+
+  it('rejects unauthenticated AI decisions before reading their body', async () => {
+    mocks.resolveAuthenticatedActor.mockResolvedValue(null)
+    const input = decisionRequest({ decision: 'approved', decisionKey: 'valid-key' })
+    const parse = vi.spyOn(input, 'json')
+
+    const response = await POST(input, context)
+
+    expect(response.status).toBe(401)
+    expect(parse).not.toHaveBeenCalled()
+    expect(mocks.decideAiChangeProposal).not.toHaveBeenCalled()
   })
 })

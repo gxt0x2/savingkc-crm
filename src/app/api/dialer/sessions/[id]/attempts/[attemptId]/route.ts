@@ -7,6 +7,7 @@ import {
   transitionDialerAttempt,
 } from '@/lib/server/dialer-session-engine'
 import { getDialerPostCallReview } from '@/lib/server/dialer-post-call-review'
+import { decideAiChangeProposal } from '@/lib/server/ai-change-proposals'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -25,6 +26,36 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   try {
     const { id, attemptId } = await context.params
     return NextResponse.json({ review: await getDialerPostCallReview(actor, id, attemptId) }, { headers: NO_STORE })
+  } catch (error) {
+    return response(error)
+  }
+}
+
+export async function POST(request: Request, context: { params: Promise<{ id: string; attemptId: string }> }) {
+  const actor = await resolveAuthenticatedActor()
+  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
+  let body: Record<string, unknown>
+  try {
+    body = await request.json() as Record<string, unknown>
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400, headers: NO_STORE })
+  }
+  const decision = body.decision === 'approved' || body.decision === 'rejected' ? body.decision : null
+  const decisionKey = typeof body.decisionKey === 'string' ? body.decisionKey.trim() : ''
+  if (!decision || decisionKey.length < 8 || decisionKey.length > 160) {
+    return NextResponse.json({ error: 'Invalid AI change decision' }, { status: 400, headers: NO_STORE })
+  }
+  try {
+    const { id, attemptId } = await context.params
+    const proposal = await decideAiChangeProposal({
+      actor,
+      sessionId: id,
+      clientAttemptId: attemptId,
+      decision,
+      decisionKey,
+      note: typeof body.note === 'string' ? body.note : null,
+    })
+    return NextResponse.json({ proposal }, { headers: NO_STORE })
   } catch (error) {
     return response(error)
   }

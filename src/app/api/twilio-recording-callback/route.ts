@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server'
-import { randomUUID } from 'crypto'
 import twilio from 'twilio'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { supabase } from '@/lib/supabase-lazy'
-import { upsertAppointmentFromCall } from '@/lib/appointments'
-import { syncCoOwners } from '@/lib/co-owners'
 import {
   GOOGLE_ADS_CAMPAIGN,
   GOOGLE_ADS_PHONE_SOURCE,
@@ -33,6 +30,7 @@ import {
   markDialerPostCallUnavailable,
 } from '@/lib/server/dialer-post-call-review'
 import type { CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import { createCallAnalysisLeadProposal } from '@/lib/server/ai-change-proposals'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -55,31 +53,7 @@ type JsonObject = Record<string, unknown>
 
 type MutableManifest = JsonObject & {
   communications?: { transcripts: JsonObject[] }
-  ariIntelligence?: JsonObject & {
-    sellerProfile?: JsonObject
-    dealIntelligence?: JsonObject
-    recommendedActions?: JsonObject[]
-    briefingStale?: boolean
-  }
-  situation: JsonObject & {
-    objections?: string[]
-    type?: string[]
-    blockers?: string[]
-    motivation?: JsonObject & { signals?: string[] }
-    timeline?: JsonObject
-    priceExpectations?: JsonObject
-  }
-  owner: JsonObject & {
-    outOfState?: boolean
-    coOwners?: string[]
-  }
-  property: JsonObject & {
-    condition?: JsonObject
-    vacant?: boolean
-  }
-  pipeline: JsonObject & {
-    appointment?: JsonObject
-  }
+  ariIntelligence?: JsonObject & { briefingStale?: boolean }
   auditTrail?: JsonObject[]
 }
 
@@ -303,6 +277,16 @@ export async function POST(req: Request) {
       }
 
       const analysis = await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
+      if (analysis) {
+        await createCallAnalysisLeadProposal({
+          leadId,
+          clientAttemptId,
+          recordingSid,
+          analysis,
+        }).catch((proposalError) => {
+          console.error('[recording-callback] Failed to persist AI change proposal:', proposalError)
+        })
+      }
       await markRecordingProcessing(processingClaim, 'completed')
       const reviewUpdate = analysis
         ? completeDialerPostCallReview({
@@ -393,49 +377,13 @@ async function processRecording(
       metadata: { source: 'call_analysis', analysis },
     })
 
-    // 6. Update lead fields from analysis (+ denormalized last-call snapshot)
-    const leadUpdates: Record<string, unknown> = {
+    // 6. Persist factual call evidence. AI-extracted lead fields are written
+    // only through the explicit ai_change_proposals approval boundary.
+    await supabase.from('leads').update({
       transcript,
       call_duration_seconds: duration,
       updated_at: new Date().toISOString(),
-    }
-    if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
-    if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
-    if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
-    if (typeof analysis.opportunity_score === 'number') leadUpdates.opportunity_score = analysis.opportunity_score
-    if (analysis.classification) leadUpdates.classification = analysis.classification
-
-    // Promote AI-extracted appointment to the relational lead row so the lead
-    // page, next-action engine, and any future appointments dashboard read
-    // from one source of truth instead of digging through manifest JSON.
-    if (analysis.appointmentDateTime) {
-      leadUpdates.appointment_date = analysis.appointmentDateTime
-      const apptType = analysis.appointmentType ? `${analysis.appointmentType} appointment` : 'Appointment'
-      const summary = analysis.aiSummary || analysis.summary || analysis.followUpAction || ''
-      leadUpdates.appointment_notes = summary ? `${apptType}. ${summary}` : apptType
-    }
-
-    await supabase.from('leads').update(leadUpdates).eq('id', leadId)
-
-    // Also upsert into the dedicated appointments table (canonical source of
-    // truth going forward). leads.appointment_date stays as a denormalized
-    // cache of the next upcoming appointment.
-    if (analysis.appointmentDateTime) {
-      await upsertAppointmentFromCall({
-        leadId,
-        scheduledAt: analysis.appointmentDateTime,
-        type: (analysis.appointmentType as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
-        notes: leadUpdates.appointment_notes as string,
-        source: 'crm_call',
-        sourceCallId: recordingSid,
-      })
-    }
-
-    // Cascade co-owners to the relational table so we can query
-    // "all leads with co-owner X" without scanning manifest JSON.
-    if (analysis.coOwners?.length) {
-      await syncCoOwners({ leadId, names: analysis.coOwners, source: 'ai_extraction' })
-    }
+    }).eq('id', leadId)
   } else {
     // No analysis available but still refresh the transcript + duration
     await supabase.from('leads').update({
@@ -465,151 +413,8 @@ async function processRecording(
         callerPhone: context.from || null,
         fullTranscript: transcript,
         aiSummary: analysis?.summary || analysis?.aiSummary || null,
-        extractedData: analysis ? {
-          motivationScore: analysis.motivationScore,
-          sentiment: analysis.sentiment,
-          rapportLevel: analysis.rapportLevel,
-          verbatimQuotes: analysis.verbatimQuotes,
-          // Feed the Pain Points component: pull from keyLeverage + emotionalDrivers
-          painPoints: [
-            ...(analysis.keyLeverage || []),
-            ...(analysis.emotionalDrivers || []),
-          ].filter(Boolean),
-        } : null,
+        extractedData: null,
       })
-
-      // Apply seller intelligence from analysis
-      if (analysis) {
-        if (analysis.personalityType) {
-          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-          if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
-          manifest.ariIntelligence.sellerProfile.personalityType = analysis.personalityType
-        }
-        if (analysis.communicationStyle) {
-          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-          if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
-          manifest.ariIntelligence.sellerProfile.communicationStyle = analysis.communicationStyle
-        }
-        if (analysis.keyLeverage?.length) {
-          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-          if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
-          manifest.ariIntelligence.dealIntelligence.keyLeverage = analysis.keyLeverage
-        }
-        if (analysis.objectionsRaised?.length) {
-          if (!manifest.situation.objections) manifest.situation.objections = []
-          for (const obj of analysis.objectionsRaised) {
-            if (!manifest.situation.objections.includes(obj)) {
-              manifest.situation.objections.push(obj)
-            }
-          }
-        }
-        if (analysis.outOfState) manifest.owner.outOfState = true
-        if (analysis.vacant) {
-          if (!manifest.situation.type) manifest.situation.type = []
-          if (!manifest.situation.type.includes('vacant')) manifest.situation.type.push('vacant')
-        }
-        if (analysis.coOwners?.length) {
-          manifest.owner.coOwners = analysis.coOwners
-        }
-
-        // ── Structured situation fields consumed by SellerGoals, PainPoints,
-        //    FavoriteOrFool. These were missing, so those UI cards never
-        //    reflected a new conversation even when transcription succeeded.
-        if (!manifest.situation) manifest.situation = {}
-        if (!manifest.situation.motivation) manifest.situation.motivation = {}
-        if (!manifest.situation.timeline) manifest.situation.timeline = {}
-        if (!manifest.situation.priceExpectations) manifest.situation.priceExpectations = {}
-
-        if (analysis.urgency) manifest.situation.motivation.urgencyLevel = analysis.urgency
-        if (analysis.motivationScore) manifest.situation.motivation.score = analysis.motivationScore
-        if (analysis.motivationSignals?.length) {
-          const existing: string[] = manifest.situation.motivation.signals || []
-          for (const s of analysis.motivationSignals) {
-            if (!existing.includes(s)) existing.push(s)
-          }
-          manifest.situation.motivation.signals = existing
-        }
-        if (analysis.emotionalDrivers?.length) {
-          manifest.situation.motivation.emotionalDrivers = analysis.emotionalDrivers
-          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-          if (!manifest.ariIntelligence.sellerProfile) manifest.ariIntelligence.sellerProfile = {}
-          manifest.ariIntelligence.sellerProfile.emotionalDrivers = analysis.emotionalDrivers
-        }
-
-        if (analysis.targetCloseDate) manifest.situation.timeline.preferredClosing = analysis.targetCloseDate
-        if (analysis.hardDeadline !== undefined) manifest.situation.timeline.hardDeadline = analysis.hardDeadline
-        if (analysis.deadlineReason) manifest.situation.timeline.deadlineReason = analysis.deadlineReason
-        if (analysis.urgency) {
-          manifest.situation.timeline.flexibility =
-            analysis.urgency === 'critical' || analysis.urgency === 'high' ? 'tight' :
-            analysis.urgency === 'medium' ? 'moderate' : 'flexible'
-        }
-
-        if (analysis.sellerAsking != null) manifest.situation.priceExpectations.sellerAsking = analysis.sellerAsking
-        if (analysis.sellerFloor != null) manifest.situation.priceExpectations.sellerFloor = analysis.sellerFloor
-        if (analysis.priceFlexibility) manifest.situation.priceExpectations.flexibility = analysis.priceFlexibility
-        if (analysis.priceAnchor) manifest.situation.priceExpectations.anchor = analysis.priceAnchor
-
-        if (!manifest.property) manifest.property = {}
-        if (!manifest.property.condition) manifest.property.condition = {}
-        if (analysis.conditionOverall) manifest.property.condition.overall = analysis.conditionOverall
-        if (analysis.repairsNotes) manifest.property.condition.repairsNotes = analysis.repairsNotes
-        if (analysis.vacant === true) manifest.property.vacant = true
-
-        if (analysis.situationType?.length) {
-          if (!manifest.situation.type) manifest.situation.type = []
-          for (const t of analysis.situationType) {
-            if (!manifest.situation.type.includes(t)) manifest.situation.type.push(t)
-          }
-        }
-        if (analysis.blockers?.length) {
-          if (!manifest.situation.blockers) manifest.situation.blockers = []
-          for (const b of analysis.blockers) {
-            if (!manifest.situation.blockers.includes(b)) manifest.situation.blockers.push(b)
-          }
-        }
-
-        if (analysis.dealConfidenceScore != null) {
-          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-          if (!manifest.ariIntelligence.dealIntelligence) manifest.ariIntelligence.dealIntelligence = {}
-          manifest.ariIntelligence.dealIntelligence.confidenceScore = analysis.dealConfidenceScore
-        }
-        if (analysis.followUpAction) {
-          if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-          if (!manifest.ariIntelligence.recommendedActions) manifest.ariIntelligence.recommendedActions = []
-          manifest.ariIntelligence.recommendedActions.unshift({
-            action: analysis.followUpAction,
-            reason: 'transcript_analysis',
-            when: analysis.followUpDateTime || null,
-          })
-        }
-
-        // Mirror of mojo/sync: when the analyzer extracts a concrete
-        // appointment, write it as the canonical pipeline.appointment so
-        // the lead page, NextAction, and ghost-protocol all see a single
-        // structured record instead of guessing from prose.
-        if (analysis.appointmentDateTime) {
-          manifest.pipeline = manifest.pipeline || {}
-          manifest.pipeline.appointment = {
-            appointmentId: randomUUID(),
-            type: (analysis.appointmentType as 'phone_call' | 'in_person' | 'google_meet') || 'phone_call',
-            scheduledAt: analysis.appointmentDateTime,
-            createdAt: new Date().toISOString(),
-            status: 'scheduled',
-            confirmationCount: 0,
-            lastSellerResponse: null,
-            ghostRiskScore: 0,
-            ghostProtocolActive: false,
-            reminderAutomationEnabled: true,
-            reminderAutomationEnabledAt: new Date().toISOString(),
-            reminderAutomationSource: 'crm_call_analysis',
-            automationLog: [],
-            assignedTo: 'casey',
-            address: null,
-            notes: analysis.aiSummary || analysis.summary || analysis.followUpAction || 'Extracted from CRM call transcript',
-          }
-        }
-      }
 
       // Mark briefing stale
       if (!manifest.ariIntelligence) manifest.ariIntelligence = {}

@@ -7,6 +7,7 @@ import {
   postCallSnapshot,
   type DialerPostCallReview,
 } from '@/lib/dialer-post-call-review'
+import { getAiChangeProposalForAttemptId } from '@/lib/server/ai-change-proposals'
 
 export { parseDialerPostCallReview, postCallSnapshot }
 export type { DialerPostCallReview }
@@ -94,11 +95,12 @@ export async function getDialerPostCallReview(
   const session = await getDialerSession(actor, sessionId)
   const { data, error } = await supabase
     .from('dialer_session_attempts')
-    .select('post_call_status,post_call_summary,post_call_snapshot,post_call_completed_at,post_call_updated_at,recording_sid,provider_call_sid')
+    .select('id,post_call_status,post_call_summary,post_call_snapshot,post_call_completed_at,post_call_updated_at,recording_sid,provider_call_sid')
     .eq('session_id', session.id)
     .eq('client_attempt_id', clientAttemptId.trim())
     .maybeSingle()
   if (error) throw error
   if (!data) throw new DialerSessionError('attempt_not_found', 404, 'Call attempt not found')
-  return parseDialerPostCallReview(data)
+  const changeProposal = await getAiChangeProposalForAttemptId(data.id)
+  return parseDialerPostCallReview(data, changeProposal)
 }

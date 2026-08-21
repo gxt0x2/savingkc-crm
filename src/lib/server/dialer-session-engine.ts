@@ -5,6 +5,7 @@ import {
   type DialerPostCallReview,
   type DialerPostCallRow,
 } from '@/lib/dialer-post-call-review'
+import { parseAiChangeProposal, type AiChangeProposal } from '@/lib/ai-change-proposal'
 
 export type DialerSessionStatus = 'active' | 'paused' | 'completed' | 'stopped'
 
@@ -326,6 +327,18 @@ export async function getDialerAttemptHistory(
   if (error) throw mapDatabaseError(error)
   const rows = ((data || []) as DialerAttemptRow[]).slice(0, limit)
   const leadIds = Array.from(new Set(rows.flatMap((row) => row.lead_id ? [row.lead_id] : [])))
+  const proposalLookup = new Map<string, AiChangeProposal>()
+  if (rows.length > 0) {
+    const { data: proposals, error: proposalError } = await supabase
+      .from('ai_change_proposals')
+      .select('dialer_session_attempt_id,id,status,summary,proposed_changes,base_snapshot,decided_by,decision_note,decided_at,applied_at,error_code')
+      .in('dialer_session_attempt_id', rows.map((row) => row.id))
+    if (proposalError) throw mapDatabaseError(proposalError)
+    for (const proposalRow of proposals || []) {
+      const parsed = parseAiChangeProposal(proposalRow)
+      if (parsed && proposalRow.dialer_session_attempt_id) proposalLookup.set(proposalRow.dialer_session_attempt_id, parsed)
+    }
+  }
   const leadLookup = new Map<string, { full_name: string | null; property_address: string | null }>()
   if (leadIds.length > 0) {
     const { data: leads, error: leadError } = await supabase
@@ -356,7 +369,7 @@ export async function getDialerAttemptHistory(
       updated_at: row.updated_at,
       leadName: row.lead_id ? leadLookup.get(row.lead_id)?.full_name || null : null,
       propertyAddress: row.lead_id ? leadLookup.get(row.lead_id)?.property_address || null : null,
-      postCallReview: parseDialerPostCallReview(row),
+      postCallReview: parseDialerPostCallReview(row, proposalLookup.get(row.id) || null),
   }))
   const hasMore = ((data || []) as DialerAttemptRow[]).length > limit
   const last = items.at(-1)
