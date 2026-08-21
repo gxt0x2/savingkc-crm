@@ -216,7 +216,7 @@ function AgentView({ ytd, appointments, report }: { ytd: YtdKpis | null; appoint
     <>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon="phone_in_talk" label="Calls tracked" value={ytd?.ytd.calls ?? 0} detail={`${ytd?.ytd.dialTimeHrs.toFixed(1) ?? '0'} dialing hours`} tone="info" href="/dialer?section=analytics" />
-        <MetricCard icon="forum" label="Contacts" value={ytd?.ytd.contacts ?? 0} detail={`${ytd?.ytd.contactRate ?? '0'}% contact rate`} tone="violet" href="/dialer?section=conversations" />
+        <MetricCard icon="forum" label="Contacts" value={ytd?.ytd.contacts ?? 0} detail={`${ytd?.ytd.contactRate ?? '0'}% contact rate`} tone="violet" href="/conversations" />
         <MetricCard icon="calendar_month" label="Appointments" value={ytd?.ytd.appointments ?? 0} detail={`${appointments?.showRate30Day ?? '—'}% 30-day show rate`} tone="success" href="/calendar?department=acquisitions" />
         <MetricCard icon="priority_high" label="Overdue actions" value={report.attention.overdue} detail="Coaching and execution risk" tone="brand" href="/contacts?list=overdue" />
       </section>

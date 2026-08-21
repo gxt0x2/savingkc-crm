@@ -6,11 +6,19 @@
  */
 
 import { NextResponse } from 'next/server'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { getAllTemplates, getTemplatesByCategory } from '@/lib/sms-templates'
 import { supabase } from '@/lib/supabase-lazy'
 
+export const dynamic = 'force-dynamic'
+
+const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' }
+
 export async function GET(req: Request) {
   try {
+    const unauthorized = await requireAuthenticatedUser()
+    if (unauthorized) return unauthorized
+
     const { searchParams } = new URL(req.url)
     const category = searchParams.get('category')
 
@@ -18,15 +26,18 @@ export async function GET(req: Request) {
       ? await getTemplatesByCategory(category)
       : await getAllTemplates()
 
-    return NextResponse.json({ templates })
+    return NextResponse.json({ templates }, { headers: PRIVATE_NO_STORE_HEADERS })
   } catch (err) {
     console.error('SMS templates API error:', err)
-    return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500, headers: PRIVATE_NO_STORE_HEADERS })
   }
 }
 
 export async function POST(req: Request) {
   try {
+    const unauthorized = await requireAuthenticatedUser()
+    if (unauthorized) return unauthorized
+
     const body = await req.json()
     const name = typeof body?.name === 'string' ? body.name.trim() : ''
     const category = typeof body?.category === 'string' ? body.category.trim() : 'intro'
@@ -40,7 +51,7 @@ export async function POST(req: Request) {
       : []
 
     if (!name || !templateBody) {
-      return NextResponse.json({ error: 'Template name and body are required' }, { status: 400 })
+      return NextResponse.json({ error: 'Template name and body are required' }, { status: 400, headers: PRIVATE_NO_STORE_HEADERS })
     }
 
     const { data, error } = await supabase
@@ -57,12 +68,12 @@ export async function POST(req: Request) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: error.message }, { status: 500, headers: PRIVATE_NO_STORE_HEADERS })
     }
 
-    return NextResponse.json({ template: data })
+    return NextResponse.json({ template: data }, { headers: PRIVATE_NO_STORE_HEADERS })
   } catch (err) {
     console.error('SMS templates POST error:', err)
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to save template' }, { status: 500 })
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to save template' }, { status: 500, headers: PRIVATE_NO_STORE_HEADERS })
   }
 }

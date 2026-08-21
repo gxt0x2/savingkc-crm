@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { WorkflowRunPanel } from '@/components/workflows/workflow-run-panel'
+import { SmsTemplateManager } from '@/components/workflows/sms-template-manager'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { PHONE_SYSTEM, PHONE_SYSTEM_ATTENTION, type PhoneSystemRecord } from '@/lib/operating-model/phone-system'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
@@ -77,7 +78,7 @@ function SurfaceHeader({ section, onNew }: { section: string; onNew: () => void 
   const content = section === 'phones'
     ? { eyebrow: 'Phone routing', title: 'Master Phone System', description: 'Every owned number, the path it takes, the workflow that controls it, and the gaps that require a decision.' }
     : section === 'templates'
-      ? { eyebrow: 'Communication standards', title: 'Email Template System', description: 'Approved seller, buyer, title, and internal messages attached to the operating step where each one is used.' }
+      ? { eyebrow: 'Communication standards', title: 'Communication Template System', description: 'Approved SMS and email messages attached to the operating step where each one is used.' }
     : section === 'all'
       ? { eyebrow: 'System registry', title: 'All Workflows', description: 'The canonical operating registry for live routes, workers, automations, and workflows still being designed.' }
       : { eyebrow: 'Operations control', title: 'Workflows', description: 'One source of truth for phone routing, lead intake, communication, appointments, pipeline movement, closeout, reporting, and operating rhythm.' }
@@ -157,7 +158,7 @@ function Overview({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefini
             <Icon name="arrow_forward" className="text-[22px] text-[var(--crm-text-dim)] transition group-hover:translate-x-1 group-hover:text-[var(--crm-danger)]" />
           </div>
           <h2 className="mt-5 text-xl font-black text-[var(--crm-ink)]">Communication Templates</h2>
-          <p className="mt-1 text-sm leading-6 text-[var(--crm-text-muted)]">Use governed email standards built from the acquisitions and dispositions archives plus recurring sent-mail practices.</p>
+          <p className="mt-1 text-sm leading-6 text-[var(--crm-text-muted)]">Manage reusable SMS messages and governed email standards from one operating library.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-full bg-[var(--crm-danger-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-danger)]">Workflow-linked</span>
             <span className="rounded-full bg-[var(--crm-success-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-success)]">Human approval required</span>
@@ -348,7 +349,14 @@ function CommunicationTemplates() {
   const audiences = Array.from(new Set(templates.map((template) => template.audience)))
 
   return (
-    <section className="crm-panel overflow-hidden rounded-2xl">
+    <div className="space-y-5">
+      <SmsTemplateManager />
+      <section className="crm-panel overflow-hidden rounded-2xl">
+      <div className="border-b border-[var(--crm-border)] p-5">
+        <p className="crm-eyebrow">Email</p>
+        <h2 className="mt-1 text-xl font-black text-[var(--crm-ink)]">Governed Email Standards</h2>
+        <p className="mt-1 text-sm leading-6 text-[var(--crm-text-muted)]">Approved seller, buyer, title, and internal messages remain linked to their operating workflows.</p>
+      </div>
       <div className="grid gap-3 border-b border-[var(--crm-border)] p-4 sm:grid-cols-3">
         <div className="rounded-xl bg-[var(--crm-danger-soft)] p-3">
           <p className="text-2xl font-black text-[var(--crm-danger)]">{templates.length}</p>
@@ -413,7 +421,8 @@ function CommunicationTemplates() {
           ))}
         </div>
       ) : null}
-    </section>
+      </section>
+    </div>
   )
 }
 

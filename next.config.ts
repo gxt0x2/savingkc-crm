@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
         destination: '/reports/andon',
         permanent: false,
       },
+      {
+        source: '/dialer',
+        has: [{ type: 'query', key: 'section', value: 'conversations' }],
+        destination: '/conversations',
+        permanent: false,
+      },
     ];
   },
   turbopack: {

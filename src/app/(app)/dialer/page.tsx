@@ -25,10 +25,6 @@ const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').th
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
 const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
 const BulkSmsModal = dynamic(() => import('@/components/leads/bulk-sms-modal').then((module) => module.BulkSmsModal))
-const DialerConversationHub = dynamic(
-  () => import('@/components/dialer/dialer-conversation-hub').then((module) => module.DialerConversationHub),
-  { loading: () => <div role="status" className="grid min-h-[50vh] place-items-center text-sm font-semibold text-[var(--ck-text-muted)]">Opening conversations…</div> },
-)
 const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assist').then((module) => module.DialerAiAssist))
 interface LeadSummary {
   id: string
@@ -1446,9 +1442,9 @@ function DialerPageInner() {
   )
 }
 
-type DialerHomeSection = 'overview' | 'queue' | 'sessions' | 'conversations' | 'analytics' | 'settings'
+type DialerHomeSection = 'overview' | 'queue' | 'sessions' | 'analytics' | 'settings'
 
-const DIALER_HOME_SECTIONS = new Set<DialerHomeSection>(['overview', 'queue', 'sessions', 'conversations', 'analytics', 'settings'])
+const DIALER_HOME_SECTIONS = new Set<DialerHomeSection>(['overview', 'queue', 'sessions', 'analytics', 'settings'])
 
 function DialerPageHeading({ eyebrow, title, copy, action }: { eyebrow: string; title: string; copy: string; action?: React.ReactNode }) {
   return (
@@ -2326,7 +2322,7 @@ function DialerHome() {
   }, [callerId])
 
   return (
-    <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${homeSection === 'conversations' ? 'flex h-full max-w-[1440px] flex-col py-4' : 'max-w-[1440px] py-6 pb-20'}`}>
+    <div className="mx-auto w-full max-w-[1440px] px-4 py-6 pb-20 sm:px-6 lg:px-8">
       {showBulkSms ? <BulkSmsModal
         open={showBulkSms}
         onClose={() => setShowBulkSms(false)}
@@ -2370,8 +2366,6 @@ function DialerHome() {
         <DialerAnalyticsView callsToday={callsToday} uniqueLeadsToday={uniqueLeadsToday} followupCount={followupCount} readyCount={leads.length} contactActivities={contactActivities} />
       ) : homeSection === 'settings' ? (
         <DialerSettingsView callerId={callerId} setCallerId={setCallerId} ringCount={ringCount} setRingCount={setRingCount} />
-      ) : homeSection === 'conversations' ? (
-        <DialerConversationHub agent={agent} defaultFromPhone={callerId} homeTabSwitcher={null} />
       ) : (
         <>
           {error && (

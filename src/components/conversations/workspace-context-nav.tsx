@@ -59,7 +59,7 @@ const GROUPS: ContextGroup[] = [
       { label: 'Overview', href: '/workflows', icon: 'space_dashboard', section: 'overview' },
       { label: 'Phone system', href: '/workflows?section=phones', icon: 'account_tree', section: 'phones' },
       { label: 'All workflows', href: '/workflows?section=all', icon: 'schema', section: 'all' },
-      { label: 'Email templates', href: '/workflows?section=templates', icon: 'mark_email_read', section: 'templates' },
+      { label: 'Message templates', href: '/workflows?section=templates', icon: 'mark_email_read', section: 'templates' },
     ],
   },
   {
@@ -69,7 +69,6 @@ const GROUPS: ContextGroup[] = [
       { label: 'Overview', href: '/dialer', icon: 'space_dashboard', section: 'overview' },
       { label: 'Call queue', href: '/dialer?section=queue', icon: 'format_list_numbered', section: 'queue' },
       { label: 'Sessions', href: '/dialer?section=sessions', icon: 'play_circle', section: 'sessions' },
-      { label: 'Conversations', href: '/dialer?section=conversations', icon: 'forum', section: 'conversations' },
       { label: 'Analytics', href: '/dialer?section=analytics', icon: 'monitoring', section: 'analytics' },
       { label: 'Settings', href: '/dialer?section=settings', icon: 'tune', section: 'settings' },
     ],

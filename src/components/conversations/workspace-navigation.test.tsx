@@ -114,4 +114,24 @@ describe('workspace navigation', () => {
     expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('aria-current', 'page')
     expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('href', '/marketing/google-ads')
   })
+
+  it('keeps the Dialer focused on calling and sends inbox work to Conversations', () => {
+    navigation.pathname = '/dialer'
+    render(<WorkspaceContextNav />)
+
+    const dialerNav = screen.getByRole('navigation', { name: 'Dialer sections' })
+    expect(within(dialerNav).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      '/dialer', '/dialer?section=queue', '/dialer?section=sessions', '/dialer?section=analytics', '/dialer?section=settings',
+    ])
+    expect(within(dialerNav).queryByRole('link', { name: /Conversations/ })).not.toBeInTheDocument()
+  })
+
+  it('labels the consolidated workflow library as message templates', () => {
+    navigation.pathname = '/workflows'
+    render(<WorkspaceContextNav />)
+
+    const workflowNav = screen.getByRole('navigation', { name: 'Workflows sections' })
+    expect(within(workflowNav).getByRole('link', { name: /Message templates/ })).toHaveAttribute('href', '/workflows?section=templates')
+    expect(within(workflowNav).queryByRole('link', { name: /Email templates/ })).not.toBeInTheDocument()
+  })
 })
