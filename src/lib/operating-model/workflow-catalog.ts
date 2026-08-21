@@ -51,6 +51,26 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     version: 1, lastRunAt: null,
   },
   {
+    id: 'approved-follow-up-task',
+    name: 'Approved Follow-up Task',
+    description: 'Creates one canonical seller follow-up or callback task only after an administrator approves the exact contact, owner, title, and due date.',
+    category: 'operating_rhythm', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
+    trigger: { type: 'manual', surface: 'Workflows > Execution control' },
+    actions: [
+      { type: 'execute', label: 'Validate the contact, owner, title, and due date' },
+      { type: 'execute', label: 'Require an explicit administrator decision' },
+      { type: 'create_next_action', actionType: 'task', title: 'Create the approved seller follow-up', dueOffsetMinutes: 0 },
+      { type: 'execute', label: 'Record the canonical task and workflow provenance exactly once' },
+    ],
+    implementation: implementation([
+      '/api/workflows/runs',
+      '/api/workflows/runs/[id]/decision',
+      '/api/workers/workflow-runs',
+      'src/lib/server/workflow-task-action.ts',
+    ], { execution: 'worker', approvalPolicy: 'user_confirmation' }),
+    version: 1, lastRunAt: null,
+  },
+  {
     id: 'acquisitions-seller-call-flow',
     name: 'Standard Seller Call Flow',
     description: 'The default acquisition path for main, business, and general seller numbers.',

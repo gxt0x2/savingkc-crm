@@ -6,15 +6,18 @@ import {
   executeWorkflowRun,
   findActiveWorkflowDefinition,
   listWorkflowRuns,
+  prepareWorkflowRunInput,
   startWorkflowRun,
+  SUPPORTED_WORKFLOW_EXECUTORS,
   supportsWorkflowExecution,
   workflowRunPayload,
 } from '@/lib/server/workflow-runs'
+import { WorkflowInputError } from '@/lib/server/workflow-task-action'
 
 function noStore(body: unknown, init?: ResponseInit) {
   return NextResponse.json(body, {
     ...init,
-    headers: { ...init?.headers, 'Cache-Control': 'private, no-store, max-age=0' },
+    headers: { ...init?.headers, 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie' },
   })
 }
 
@@ -24,7 +27,7 @@ export async function GET(request: Request) {
   const rawLimit = Number(new URL(request.url).searchParams.get('limit') || 25)
   try {
     const runs = await listWorkflowRuns(Number.isFinite(rawLimit) ? rawLimit : 25)
-    return noStore({ runs, supportedWorkflowIds: ['workflow-registry-health'] })
+    return noStore({ runs, supportedWorkflowIds: [...SUPPORTED_WORKFLOW_EXECUTORS] })
   } catch (error) {
     console.error('[workflow-runs] list failed', error)
     return noStore({ error: 'Workflow run history is unavailable.' }, { status: 500 })
@@ -47,15 +50,15 @@ export async function POST(request: Request) {
     if (idempotencyKey.length < 8 || idempotencyKey.length > 200) {
       return noStore({ error: 'A valid Idempotency-Key is required.' }, { status: 400 })
     }
-    const maxAttempts = typeof body.maxAttempts === 'number' ? body.maxAttempts : 3
+    const payload = prepareWorkflowRunInput(workflowId, body.input, actor.name)
     const run = await startWorkflowRun({
       definition,
       actor: actor.name,
       idempotencyKey,
       triggerKind: 'manual',
       triggerKey: `user:${actor.email}`,
-      payload: workflowRunPayload(body.input),
-      maxAttempts,
+      payload,
+      maxAttempts: 3,
     })
     const executed = run.status === 'queued'
       ? await executeWorkflowRun(run.id, `interactive:${actor.email}`)
@@ -63,6 +66,9 @@ export async function POST(request: Request) {
     return noStore({ run: executed ?? run }, { status: 202 })
   } catch (error) {
     console.error('[workflow-runs] start failed', error)
+    if (error instanceof WorkflowInputError || error instanceof SyntaxError) {
+      return noStore({ error: error instanceof WorkflowInputError ? error.message : 'Request body must be valid JSON.' }, { status: 400 })
+    }
     const detail = error instanceof Error ? error.message : ''
     if (detail.includes('idempotency_conflict')) return noStore({ error: 'That idempotency key belongs to a different workflow run.' }, { status: 409 })
     if (detail.includes('definition_version_conflict')) return noStore({ error: 'This workflow version changed and must be published as a new version.' }, { status: 409 })

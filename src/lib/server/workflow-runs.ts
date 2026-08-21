@@ -4,8 +4,18 @@ import { WORKFLOW_CATALOG, validateWorkflowDefinition } from '@/lib/operating-mo
 import { readStoredWorkflowDefinitions } from '@/lib/operating-model/workflow-store'
 import type { WorkflowDefinition } from '@/lib/operating-model/types'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { WorkItemError } from '@/lib/server/work-items'
+import {
+  APPROVED_FOLLOW_UP_WORKFLOW_ID,
+  executeApprovedFollowUpTask,
+  prepareApprovedFollowUpInput,
+  WorkflowInputError,
+} from '@/lib/server/workflow-task-action'
 
-export const SUPPORTED_WORKFLOW_EXECUTORS = ['workflow-registry-health'] as const
+export const SUPPORTED_WORKFLOW_EXECUTORS = [
+  'workflow-registry-health',
+  APPROVED_FOLLOW_UP_WORKFLOW_ID,
+] as const
 
 type WorkflowRunStatus =
   | 'awaiting_approval'
@@ -65,10 +75,25 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error || 'Unknown workflow error')
 }
 
-function safeError(error: unknown): { code: string; message: string } {
+function safeError(error: unknown): { code: string; message: string; retryable: boolean } {
   const raw = message(error)
-  const code = raw.includes('executor_unavailable') ? 'executor_unavailable' : 'workflow_execution_failed'
-  return { code, message: raw.slice(0, 800) }
+  if (error instanceof WorkflowInputError) {
+    return { code: error.code, message: raw.slice(0, 800), retryable: false }
+  }
+  if (error instanceof WorkItemError) {
+    return {
+      code: `work_item_${error.code}`,
+      message: raw.slice(0, 800),
+      retryable: error.code === 'unavailable',
+    }
+  }
+  if (raw.includes('executor_unavailable')) {
+    return { code: 'executor_unavailable', message: raw.slice(0, 800), retryable: false }
+  }
+  if (raw.includes('workflow_registry_invalid')) {
+    return { code: 'workflow_registry_invalid', message: raw.slice(0, 800), retryable: false }
+  }
+  return { code: 'workflow_execution_failed', message: raw.slice(0, 800), retryable: true }
 }
 
 export function findActiveWorkflowDefinition(workflowId: string): WorkflowDefinition | null {
@@ -77,6 +102,18 @@ export function findActiveWorkflowDefinition(workflowId: string): WorkflowDefini
 
 export function supportsWorkflowExecution(workflowId: string): boolean {
   return (SUPPORTED_WORKFLOW_EXECUTORS as readonly string[]).includes(workflowId)
+}
+
+export function prepareWorkflowRunInput(
+  workflowId: string,
+  value: unknown,
+  actorName: string,
+): Record<string, unknown> {
+  if (workflowId === 'workflow-registry-health') return object(value)
+  if (workflowId === APPROVED_FOLLOW_UP_WORKFLOW_ID) {
+    return prepareApprovedFollowUpInput(value, actorName)
+  }
+  throw new WorkflowInputError('This workflow does not have an approved input contract.')
 }
 
 export async function startWorkflowRun(input: {
@@ -180,6 +217,7 @@ async function nextSupportedRunId(db: Db): Promise<string | null> {
 async function recordStep(input: {
   run: WorkflowRun
   workerId: string
+  stepKey: string
   status: 'succeeded' | 'failed' | 'skipped'
   startedAt: string
   output?: Record<string, unknown>
@@ -190,9 +228,9 @@ async function recordStep(input: {
     p_run_id: input.run.id,
     p_worker_id: input.workerId,
     p_step_index: 0,
-    p_step_key: 'validate_registry',
+    p_step_key: input.stepKey,
     p_status: input.status,
-    p_idempotency_key: `${input.run.id}:validate-registry:${input.run.attempt_count}`,
+    p_idempotency_key: `${input.run.id}:${input.stepKey}:${input.run.attempt_count}`,
     p_started_at: input.startedAt,
     p_input: input.run.input,
     p_output: input.output ?? null,
@@ -209,14 +247,16 @@ async function finishRun(input: {
   output?: Record<string, unknown>
   errorCode?: string
   errorMessage?: string
+  retryable?: boolean
 }, db: Db): Promise<WorkflowRun> {
-  const { data, error } = await db.rpc('workflow_finish_run_v1', {
+  const { data, error } = await db.rpc('workflow_finish_run_v2', {
     p_run_id: input.runId,
     p_worker_id: input.workerId,
     p_outcome: input.outcome,
     p_output: input.output ?? null,
     p_error_code: input.errorCode ?? null,
     p_error_message: input.errorMessage ?? null,
+    p_retryable: input.retryable !== false,
   })
   if (error) throw new Error(`Workflow run could not finish: ${error.message}`)
   const run = rpcRow<WorkflowRun>(data)
@@ -249,8 +289,37 @@ async function registryHealth(db: Db): Promise<Record<string, unknown>> {
   }
 }
 
-async function executeDefinition(run: WorkflowRun, db: Db): Promise<Record<string, unknown>> {
-  if (run.workflow_id === 'workflow-registry-health') return registryHealth(db)
+type WorkflowExecutionResult = { stepKey: string; output: Record<string, unknown> }
+
+function stepKeyForWorkflow(workflowId: string): string {
+  return workflowId === APPROVED_FOLLOW_UP_WORKFLOW_ID ? 'create_follow_up_task' : 'validate_registry'
+}
+
+async function executeDefinition(run: WorkflowRun, db: Db): Promise<WorkflowExecutionResult> {
+  if (run.workflow_id === 'workflow-registry-health') {
+    return { stepKey: 'validate_registry', output: await registryHealth(db) }
+  }
+  if (run.workflow_id === APPROVED_FOLLOW_UP_WORKFLOW_ID) {
+    const result = await executeApprovedFollowUpTask({
+      runId: run.id,
+      workflowVersion: run.workflow_version,
+      definitionHash: run.definition_hash,
+      triggerKind: run.trigger_kind,
+      requestedBy: run.requested_by,
+      payload: run.input,
+    }, db)
+    return {
+      stepKey: 'create_follow_up_task',
+      output: {
+        created: result.created,
+        workItemKey: result.workItem.key,
+        leadId: result.workItem.leadId,
+        title: result.workItem.title,
+        assignedTo: result.workItem.assignedTo,
+        dueAt: result.workItem.dueAt,
+      },
+    }
+  }
   throw new Error(`executor_unavailable:${run.workflow_id}`)
 }
 
@@ -258,18 +327,26 @@ export async function executeWorkflowRun(runId: string, workerId = `workflow-wor
   const run = await claimWorkflowRun(runId, workerId, db)
   if (!run) return null
   const startedAt = new Date().toISOString()
+  const stepKey = stepKeyForWorkflow(run.workflow_id)
   try {
-    const output = await executeDefinition(run, db)
-    await recordStep({ run, workerId, status: 'succeeded', startedAt, output }, db)
-    return finishRun({ runId: run.id, workerId, outcome: 'succeeded', output }, db)
+    const execution = await executeDefinition(run, db)
+    await recordStep({ run, workerId, stepKey: execution.stepKey, status: 'succeeded', startedAt, output: execution.output }, db)
+    return finishRun({ runId: run.id, workerId, outcome: 'succeeded', output: execution.output }, db)
   } catch (cause) {
     const failure = safeError(cause)
     try {
-      await recordStep({ run, workerId, status: 'failed', startedAt, errorCode: failure.code, errorMessage: failure.message }, db)
+      await recordStep({ run, workerId, stepKey, status: 'failed', startedAt, errorCode: failure.code, errorMessage: failure.message }, db)
     } catch (stepError) {
       console.error('[workflow-runs] failed step audit', { runId: run.id, error: message(stepError) })
     }
-    return finishRun({ runId: run.id, workerId, outcome: 'failed', errorCode: failure.code, errorMessage: failure.message }, db)
+    return finishRun({
+      runId: run.id,
+      workerId,
+      outcome: 'failed',
+      errorCode: failure.code,
+      errorMessage: failure.message,
+      retryable: failure.retryable,
+    }, db)
   }
 }
 

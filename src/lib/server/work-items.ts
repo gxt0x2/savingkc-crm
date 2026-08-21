@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const WORK_ITEM_STATUSES = ['pending', 'completed', 'blocked', 'cancelled'] as const
@@ -191,8 +192,10 @@ export async function createWorkItem(input: {
   role?: string | null
   priority?: string
   primaryNextAction?: boolean
-}): Promise<{ created: boolean; workItem: WorkItem }> {
-  const { data, error } = await supabaseAdmin().rpc('create_work_item_v1', {
+  provenance?: Record<string, unknown>
+}, db: SupabaseClient = supabaseAdmin()): Promise<{ created: boolean; workItem: WorkItem }> {
+  const rpcName = input.provenance ? 'create_work_item_v2' : 'create_work_item_v1'
+  const rpcInput = {
     p_actor: input.actor,
     p_idempotency_key: input.idempotencyKey,
     p_lead_id: input.leadId || null,
@@ -205,7 +208,9 @@ export async function createWorkItem(input: {
     p_role: input.role || null,
     p_priority: input.priority || 'normal',
     p_primary_next_action: input.primaryNextAction === true,
-  })
+    ...(input.provenance ? { p_provenance: input.provenance } : {}),
+  }
+  const { data, error } = await db.rpc(rpcName, rpcInput)
   if (error) databaseError(error.message)
   const result = data as { created?: boolean; workItem?: WorkItemRow } | null
   if (!result?.workItem) databaseError('work item create returned malformed state')

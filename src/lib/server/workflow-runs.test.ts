@@ -39,9 +39,14 @@ function run(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
 }
 
 describe('workflow run service', () => {
-  it('exposes only the approved read-only executor', () => {
+  it('exposes the read-only health executor and the approved task executor only', () => {
     expect(findActiveWorkflowDefinition('workflow-registry-health')?.implementation.mutatesData).toBe(false)
+    expect(findActiveWorkflowDefinition('approved-follow-up-task')?.implementation).toMatchObject({
+      mutatesData: true,
+      approvalPolicy: 'user_confirmation',
+    })
     expect(supportsWorkflowExecution('workflow-registry-health')).toBe(true)
+    expect(supportsWorkflowExecution('approved-follow-up-task')).toBe(true)
     expect(supportsWorkflowExecution('ppc-conversion-export')).toBe(false)
   })
 
@@ -75,7 +80,7 @@ describe('workflow run service', () => {
       calls.push(name)
       if (name === 'workflow_claim_specific_run_v1') return { data: running, error: null }
       if (name === 'workflow_record_step_v1') return { data: { id: 'step' }, error: null }
-      if (name === 'workflow_finish_run_v1') return { data: run({ status: 'succeeded', output: { healthy: true } }), error: null }
+      if (name === 'workflow_finish_run_v2') return { data: run({ status: 'succeeded', output: { healthy: true } }), error: null }
       throw new Error(`Unexpected RPC ${name}`)
     })
     const from = vi.fn((table: string) => {
@@ -88,7 +93,7 @@ describe('workflow run service', () => {
     expect(calls).toEqual([
       'workflow_claim_specific_run_v1',
       'workflow_record_step_v1',
-      'workflow_finish_run_v1',
+      'workflow_finish_run_v2',
     ])
     expect(rpc).toHaveBeenCalledWith('workflow_record_step_v1', expect.objectContaining({
       p_status: 'succeeded',
@@ -102,7 +107,7 @@ describe('workflow run service', () => {
     const rpc = vi.fn(async (name: string) => {
       if (name === 'workflow_claim_specific_run_v1') return { data: running, error: null }
       if (name === 'workflow_record_step_v1') return { data: { id: 'step' }, error: null }
-      if (name === 'workflow_finish_run_v1') return { data: run({ status: 'retry_scheduled', error_code: 'workflow_execution_failed' }), error: null }
+      if (name === 'workflow_finish_run_v2') return { data: run({ status: 'retry_scheduled', error_code: 'workflow_execution_failed' }), error: null }
       throw new Error(`Unexpected RPC ${name}`)
     })
     const from = vi.fn(() => ({ select: () => ({ like: async () => ({ data: null, error: { message: 'registry offline' } }) }) }))
@@ -113,9 +118,59 @@ describe('workflow run service', () => {
       p_status: 'failed',
       p_error_code: 'workflow_execution_failed',
     }))
-    expect(rpc).toHaveBeenCalledWith('workflow_finish_run_v1', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('workflow_finish_run_v2', expect.objectContaining({
       p_outcome: 'failed',
       p_error_code: 'workflow_execution_failed',
+      p_retryable: true,
+    }))
+  })
+
+  it('creates an approved task exactly once and records its workflow step', async () => {
+    const running = run({
+      workflow_id: 'approved-follow-up-task',
+      approval_policy: 'user_confirmation',
+      mutates_data: true,
+      input: {
+        leadId: '10000000-0000-4000-8000-000000000002',
+        title: 'Call seller after attorney review',
+        dueAt: '2026-08-22T16:00:00.000Z',
+        assignedTo: 'Ernest',
+      },
+    })
+    const calls: string[] = []
+    const rpc = vi.fn(async (name: string) => {
+      calls.push(name)
+      if (name === 'workflow_claim_specific_run_v1') return { data: running, error: null }
+      if (name === 'create_work_item_v2') return {
+        data: {
+          created: true,
+          workItem: {
+            work_item_key: 'activity:task-1', source_kind: 'activity', source_id: 'task-1',
+            lead_id: running.input.leadId, tc_file_id: null, kind: 'follow_up',
+            title: running.input.title, description: null, status: 'pending', priority: 'normal',
+            due_at: running.input.dueAt, assigned_to: 'Ernest', department: 'acquisitions',
+            role: 'setter', primary_next_action: false, version: 1,
+            source_created_at: running.created_at, completed_at: null, updated_at: running.updated_at,
+          },
+        },
+        error: null,
+      }
+      if (name === 'workflow_record_step_v1') return { data: { id: 'step' }, error: null }
+      if (name === 'workflow_finish_run_v2') return { data: run({ ...running, status: 'succeeded' }), error: null }
+      throw new Error(`Unexpected RPC ${name}`)
+    })
+
+    const result = await executeWorkflowRun(running.id, 'worker:test', { rpc } as unknown as SupabaseClient)
+    expect(result?.status).toBe('succeeded')
+    expect(calls).toEqual([
+      'workflow_claim_specific_run_v1',
+      'create_work_item_v2',
+      'workflow_record_step_v1',
+      'workflow_finish_run_v2',
+    ])
+    expect(rpc).toHaveBeenCalledWith('workflow_record_step_v1', expect.objectContaining({
+      p_step_key: 'create_follow_up_task',
+      p_idempotency_key: `${running.id}:create_follow_up_task:1`,
     }))
   })
 })

@@ -7,7 +7,7 @@ vi.mock('@/lib/server/workflow-runs', () => ({
   workflowRunPayload: (value: unknown) => value && typeof value === 'object' ? value : {},
 }))
 
-import { POST } from './route'
+import { GET, POST } from './route'
 
 describe('workflow run worker', () => {
   beforeEach(() => {
@@ -34,5 +34,16 @@ describe('workflow run worker', () => {
     expect(response.status).toBe(200)
     expect(mocks.execute).toHaveBeenCalledTimes(3)
     await expect(response.json()).resolves.toMatchObject({ processed: 2 })
+  })
+
+  it('processes a bounded cron batch through the authenticated GET route', async () => {
+    mocks.execute.mockResolvedValue({ id: 'run', status: 'succeeded' })
+    const response = await GET(new Request('https://crm.savingkc.com/api/workers/workflow-runs?limit=99', {
+      headers: { Authorization: 'Bearer cron-secret' },
+    }))
+    expect(response.status).toBe(200)
+    expect(mocks.auth).toHaveBeenCalled()
+    expect(mocks.execute).toHaveBeenCalledTimes(10)
+    await expect(response.json()).resolves.toMatchObject({ processed: 10 })
   })
 })

@@ -1,7 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useIsAdmin } from '@/hooks/use-is-admin'
 import { Icon } from '@/components/ui/icon'
+import { ApprovedFollowUpRunForm } from './approved-follow-up-run-form'
 
 type RunStatus = 'awaiting_approval' | 'queued' | 'running' | 'retry_scheduled' | 'succeeded' | 'failed' | 'rejected' | 'cancelled'
 
@@ -14,6 +16,7 @@ type WorkflowRunSummary = {
   attempt_count: number
   max_attempts: number
   output: Record<string, unknown> | null
+  input: Record<string, unknown>
   error_message: string | null
   created_at: string
 }
@@ -42,17 +45,33 @@ function healthSummary(run: WorkflowRunSummary): string {
   return definitions === null ? 'Completed with a durable audit record' : `${definitions} definitions checked · ${warnings ?? 0} warnings`
 }
 
+function taskRequestSummary(run: WorkflowRunSummary): string | null {
+  if (run.workflow_id !== 'approved-follow-up-task') return null
+  const source = run.status === 'succeeded' ? run.output ?? {} : run.input ?? {}
+  const title = typeof source.title === 'string' ? source.title : 'Follow-up task'
+  const assignedTo = typeof source.assignedTo === 'string' ? source.assignedTo : 'assigned owner'
+  const dueAt = typeof source.dueAt === 'string' && Number.isFinite(new Date(source.dueAt).getTime())
+    ? new Date(source.dueAt).toLocaleString()
+    : 'scheduled time'
+  if (run.status === 'succeeded') return `${title} · ${assignedTo} · ${dueAt}`
+  if (run.status === 'awaiting_approval') return `${title} · ${assignedTo} · ${dueAt} · no task created yet`
+  return `${title} · ${assignedTo} · ${dueAt}`
+}
+
 export function WorkflowRunPanel() {
+  const { isAdmin, loading: adminLoading } = useIsAdmin()
   const [runs, setRuns] = useState<WorkflowRunSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
+  const [deciding, setDeciding] = useState<string | null>(null)
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch('/api/workflows/runs?limit=8', { cache: 'no-store', signal })
     const data = await response.json()
     if (!response.ok) throw new Error(data.error || 'Workflow run history is unavailable.')
     setRuns(Array.isArray(data.runs) ? data.runs : [])
+    setError('')
   }, [])
 
   useEffect(() => {
@@ -92,6 +111,33 @@ export function WorkflowRunPanel() {
     }
   }
 
+  async function decide(runId: string, decision: 'approved' | 'rejected') {
+    if (deciding || !isAdmin) return
+    setDeciding(runId)
+    setError('')
+    try {
+      const response = await fetch(`/api/workflows/runs/${encodeURIComponent(runId)}/decision`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `${runId}:${decision}:${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({ decision }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Workflow decision failed.')
+      try {
+        await refresh()
+      } catch {
+        setError('The workflow decision completed, but run history could not refresh. Do not repeat the decision.')
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Workflow decision failed.')
+    } finally {
+      setDeciding(null)
+    }
+  }
+
   return (
     <section className="crm-panel overflow-hidden rounded-2xl">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--crm-border)] p-5">
@@ -105,6 +151,8 @@ export function WorkflowRunPanel() {
           {running ? 'Checking…' : 'Run registry health'}
         </button>
       </div>
+
+      <ApprovedFollowUpRunForm disabled={loading || Boolean(error)} onSubmitted={refresh} />
 
       {error ? (
         <div className="m-4 rounded-xl border border-[var(--crm-warning)]/25 bg-[var(--crm-warning-soft)] p-4 text-sm font-semibold text-[var(--crm-ink)]">
@@ -125,7 +173,18 @@ export function WorkflowRunPanel() {
                   <span className="text-xs font-semibold text-[var(--crm-text-muted)]">v{run.workflow_version}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${STATUS_TONE[run.status]}`}>{readableStatus(run.status)}</span>
                 </div>
-                <p className="mt-1 text-xs text-[var(--crm-text-muted)]">{healthSummary(run)}</p>
+                <p className="mt-1 text-xs text-[var(--crm-text-muted)]">{taskRequestSummary(run) ?? healthSummary(run)}</p>
+                {run.status === 'awaiting_approval' ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {!adminLoading && isAdmin ? (
+                      <>
+                        <button type="button" onClick={() => void decide(run.id, 'approved')} disabled={Boolean(deciding)} className="crm-primary-button min-h-9 rounded-lg px-3 text-xs font-black disabled:opacity-50">Approve &amp; run</button>
+                        <button type="button" onClick={() => void decide(run.id, 'rejected')} disabled={Boolean(deciding)} className="crm-secondary-button min-h-9 rounded-lg px-3 text-xs font-black disabled:opacity-50">Reject</button>
+                      </>
+                    ) : null}
+                    {!adminLoading && !isAdmin ? <span className="text-xs font-bold text-[var(--crm-warning)]">Waiting for administrator approval</span> : null}
+                  </div>
+                ) : null}
               </div>
               <div className="shrink-0 text-left text-xs text-[var(--crm-text-muted)] sm:text-right">
                 <p className="font-bold text-[var(--crm-ink)]">{run.requested_by}</p>
