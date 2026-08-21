@@ -82,6 +82,10 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   }
 
   function closeBuilder() {
+    if (audienceReviewOpen) {
+      window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
+      setPendingLeadIds([])
+    }
     setStudioOpen(false)
     setAudienceReviewOpen(false)
     if (initialCampaignId) window.history.replaceState(null, '', `/prospecting?campaign=${encodeURIComponent(initialCampaignId)}`)
