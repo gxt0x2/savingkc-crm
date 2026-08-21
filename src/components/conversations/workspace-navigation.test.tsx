@@ -32,12 +32,12 @@ describe('workspace navigation', () => {
     navigation.prefetch.mockReset()
   })
 
-  it('uses the approved compact ten-item reviewer order and hides retired menu labels', () => {
+  it('uses the consolidated nine-item reviewer order and hides retired menu labels', () => {
     render(<WorkspaceNav needsReply={3} canReviewCalls />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
-    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Scorecard', 'Task', 'Reports', 'Settings'])
+    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Prospecting', 'Calendar', 'Scorecard', 'Task', 'Reports', 'Settings'])
     expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
     expect(within(navigationRegion).getByRole('link', { name: 'Issue Log' })).toHaveAttribute('href', '/reports/andon')
     expect(within(navigationRegion).queryByRole('link', { name: 'Bottlenecks' })).not.toBeInTheDocument()
@@ -50,13 +50,13 @@ describe('workspace navigation', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
     const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Daily Rhythm', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Calendar', 'Task', 'Settings',
     ])
     expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/my-day')
 
     rerender(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" canReviewCalls />)
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Daily Rhythm', 'Pipeline', 'Conversations', 'Calendar', 'Dialer', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Calendar', 'Task', 'Settings',
     ])
   })
 
@@ -73,7 +73,7 @@ describe('workspace navigation', () => {
 
     const primary = screen.getByRole('navigation', { name: 'Primary CRM navigation' })
     expect(within(primary).getByRole('link', { name: /My Day/ })).toHaveAttribute('aria-current', 'page')
-    expect(within(primary).getByRole('link', { name: /Inbox/ })).toHaveTextContent('4')
+    expect(within(primary).getByRole('link', { name: /Prospecting/ })).toHaveTextContent('4')
 
     fireEvent.click(within(primary).getByRole('button', { name: /More/ }))
     const more = screen.getByRole('dialog', { name: 'More navigation' })

@@ -6,6 +6,7 @@ const workspace = readFileSync(join(process.cwd(), 'src/components/prospecting/p
 const contacts = readFileSync(join(process.cwd(), 'src/app/(app)/contacts/page.tsx'), 'utf8')
 const navigation = readFileSync(join(process.cwd(), 'src/components/layout/nav-tab.tsx'), 'utf8')
 const appShell = readFileSync(join(process.cwd(), 'src/components/layout/app-shell.tsx'), 'utf8')
+const workspaceNavigation = readFileSync(join(process.cwd(), 'src/components/conversations/workspace-nav.tsx'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
@@ -26,5 +27,8 @@ describe('prospecting workspace UI contract', () => {
     expect(navigation).toContain("{ label: 'Prospecting', href: '/prospecting'")
     expect(navigation).not.toContain("{ label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },\n  { label: 'Ads'")
     expect(appShell).toContain("pathname?.startsWith('/prospecting')")
+    expect(workspaceNavigation).toContain("{ label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer', '/conversations'] }")
+    expect(workspaceNavigation).not.toContain("{ label: 'Conversations', icon: 'forum'")
+    expect(workspaceNavigation).not.toContain("{ label: 'Dialer', icon: 'dialpad'")
   })
 })
