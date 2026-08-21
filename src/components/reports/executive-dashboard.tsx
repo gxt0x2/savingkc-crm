@@ -34,6 +34,9 @@ export function ExecutiveDashboard({
   onCustomRangeChange: (range: OperatingCustomRange) => void
   isFetching: boolean
 }) {
+  const unavailableSources = Object.entries(report.availability)
+    .filter(([, available]) => !available)
+    .map(([source]) => source)
   const cards = [
     { icon: 'payments', label: 'Revenue (period)', value: report.availability.finance ? money(report.core.revenue) : 'Unavailable', numericValue: report.availability.finance ? report.core.revenue : null, detail: `${report.finance.revenueTransactions} recorded transaction${report.finance.revenueTransactions === 1 ? '' : 's'}`, tone: 'green' as const, href: '/reports/finance', series: report.trends.revenue, goal: scaledGoal(report.goals.monthlyRevenue, report, 'monthly') },
     { icon: 'filter_alt', label: 'Pipeline est. revenue', value: report.core.pipelineOfferValue == null ? 'Not recorded' : money(report.core.pipelineOfferValue), numericValue: report.core.pipelineOfferValue, detail: 'Recorded offers on active leads', tone: 'violet' as const, href: '/reports/acquisitions', series: null, goal: null },
@@ -62,6 +65,12 @@ export function ExecutiveDashboard({
         </header>
 
         {isFetching ? <div role="status" className="sr-only">Refreshing dashboard data</div> : null}
+        {unavailableSources.length > 0 ? (
+          <div role="status" className="flex items-start gap-2 rounded-lg border border-[var(--crm-action-border)] bg-[var(--crm-action-soft)] px-3 py-2 text-[10px] font-bold text-[var(--crm-action)]">
+            <Icon name="data_alert" className="mt-px text-[16px]" />
+            <span>Partial data: {unavailableSources.join(', ')} {unavailableSources.length === 1 ? 'is' : 'are'} unavailable. The dashboard does not replace missing records with sample values.</span>
+          </div>
+        ) : null}
 
         <section aria-label="Company operating metrics" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:h-[180px] 2xl:grid-cols-8">
           {cards.map((card) => <CeoMetricCard key={card.label} {...card} />)}
