@@ -12,10 +12,12 @@ const workspaceNavigation = readFileSync(join(process.cwd(), 'src/components/con
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
-    expect(contacts).toContain("sessionStorage.setItem('savingkc-prospecting-audience-v1'")
-    expect(contacts).toContain('Start campaign')
+    expect(contacts).toContain('sessionStorage.setItem(PROSPECTING_AUDIENCE_STORAGE_KEY')
+    expect(contacts).toContain('campaignAudienceReturnHref(requestedCampaignId)')
+    expect(contacts).toContain("'Start campaign'")
     expect(workspace).toContain("'/api/prospecting/campaigns'")
     expect(workspace).toContain("/members`")
+    expect(dashboard).toContain('campaignAudienceContactsHref(detail.id, detail.name)')
   })
 
   it('presents the internal Mojo and Launch Control workflows without fake predictive claims', () => {

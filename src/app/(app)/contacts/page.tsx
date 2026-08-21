@@ -21,6 +21,7 @@ import { useMobileViewport } from '@/hooks/use-mobile-viewport'
 import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
 import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
+import { campaignAudienceReturnHref, prospectingCampaignId, PROSPECTING_AUDIENCE_STORAGE_KEY } from '@/lib/prospecting/audience-handoff'
 
 interface ContactRow {
   id: string
@@ -214,6 +215,8 @@ export default function ContactsPage() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const requestedInitialList = searchParams.get('list') as ContactSmartList | null
+  const requestedCampaignId = prospectingCampaignId(searchParams.get('campaign'))
+  const requestedCampaignName = (searchParams.get('campaign_name') || '').trim().slice(0, 120)
   const [smartList, setSmartList] = useState<ContactSmartList>(requestedInitialList && SMART_LISTS.has(requestedInitialList) ? requestedInitialList : 'new')
   const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
@@ -517,8 +520,8 @@ export default function ContactsPage() {
 
   function openCampaignBuilder() {
     if (selectedIds.size < 1) return
-    window.sessionStorage.setItem('savingkc-prospecting-audience-v1', JSON.stringify([...selectedIds]))
-    router.push('/prospecting?new=1')
+    window.sessionStorage.setItem(PROSPECTING_AUDIENCE_STORAGE_KEY, JSON.stringify([...selectedIds]))
+    router.push(requestedCampaignId ? campaignAudienceReturnHref(requestedCampaignId) : '/prospecting?new=1')
   }
 
   async function createContact(payload: typeof EMPTY_CONTACT) {
@@ -652,6 +655,7 @@ export default function ContactsPage() {
           {isMobile ? <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Pipeline view" value={smartList} onChange={(event) => selectSmartList(event.target.value as ContactSmartListNavigationId)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{[...orderedSmartLists, { id: 'prospects' as const, label: 'Prospects' }].map(({ id, label }) => <option key={id} value={id}>{label} ({counts[id]})</option>)}</select></label> : null}
 
           <div className="px-3 py-3 sm:px-5 lg:px-7">
+            {requestedCampaignId ? <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-3" role="status"><span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--crm-brand)] text-white"><Icon name="group_add" /></span><div className="min-w-0 flex-1"><p className="text-sm font-black text-[var(--crm-ink)]">Building the audience for {requestedCampaignName || 'your campaign'}</p><p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Select sellers below. The server will check DNC, phone quality, and lifecycle status before enrollment.</p></div><Link href={`/prospecting?campaign=${encodeURIComponent(requestedCampaignId)}`} className="crm-secondary-button inline-flex h-9 items-center rounded-lg px-3 text-xs font-black">Cancel</Link></div> : null}
             <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
                 <button type="button" aria-label="Filters" onClick={() => setToolbarMenu((current) => current === 'filters' ? null : 'filters')} aria-expanded={toolbarMenu === 'filters'} aria-controls="contact-filter-panel" className={`crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${activeFilterCount ? 'border-[var(--crm-brand-border)] text-[var(--crm-brand)]' : ''}`}><Icon name="filter_alt" className="text-[16px]" />Filters{activeFilterCount ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span> : null}</button>
@@ -689,7 +693,7 @@ export default function ContactsPage() {
 
             {selectedIds.size > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2.5" role="region" aria-label="Bulk contact changes">
               <span className="mr-1 text-sm font-black text-[var(--crm-info)]">{selectedIds.size} selected</span>
-              <button type="button" onClick={openCampaignBuilder} disabled={bulkSaving} className="crm-primary-button inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-black"><Icon name="campaign" className="text-[16px]" />Start campaign</button>
+              <button type="button" onClick={openCampaignBuilder} disabled={bulkSaving} className="crm-primary-button inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-black"><Icon name="campaign" className="text-[16px]" />{requestedCampaignId ? `Review for ${requestedCampaignName || 'campaign'}` : 'Start campaign'}</button>
               <select aria-label="Bulk action" value={bulkAction} onChange={(event) => { setBulkAction(event.target.value as BulkAction); setBulkMessage(null) }} className="crm-field h-9 min-w-52 rounded-lg px-3 text-xs font-semibold">
                 <option value="">Choose bulk change…</option>
                 <optgroup label="Assign owner">

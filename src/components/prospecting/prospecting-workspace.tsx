@@ -3,12 +3,12 @@
 import { useRouter } from 'next/navigation'
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
+import { CampaignAudienceReview } from '@/components/prospecting/campaign-audience-review'
 import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
 import { Icon } from '@/components/ui/icon'
+import { PROSPECTING_AUDIENCE_STORAGE_KEY } from '@/lib/prospecting/audience-handoff'
 import type { ProspectingCampaignDetail, ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
-
-const AUDIENCE_KEY = 'savingkc-prospecting-audience-v1'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
 
@@ -23,7 +23,7 @@ function freshCampaignForm(): CampaignForm {
   return { ...EMPTY_CAMPAIGN_FORM, steps: EMPTY_CAMPAIGN_FORM.steps.map((step) => ({ ...step })) }
 }
 
-export function ProspectingWorkspace({ openCreate = false }: { openCreate?: boolean }) {
+export function ProspectingWorkspace({ openCreate = false, initialCampaignId = null, audienceMode = false }: { openCreate?: boolean; initialCampaignId?: string | null; audienceMode?: boolean }) {
   const router = useRouter()
   const [campaigns, setCampaigns] = useState<ProspectingCampaignSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -31,6 +31,7 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [studioOpen, setStudioOpen] = useState(openCreate)
+  const [audienceReviewOpen, setAudienceReviewOpen] = useState(audienceMode)
   const [pendingLeadIds, setPendingLeadIds] = useState<string[]>([])
   const [form, setForm] = useState<CampaignForm>(freshCampaignForm)
   const [saving, setSaving] = useState(false)
@@ -41,8 +42,8 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
   const loadCampaigns = useCallback(async () => {
     const page = await jsonRequest<CampaignPage>('/api/prospecting/campaigns?limit=50')
     setCampaigns(page.items)
-    setSelectedId((current) => current || page.items[0]?.id || null)
-  }, [])
+    setSelectedId((current) => current || initialCampaignId || page.items[0]?.id || null)
+  }, [initialCampaignId])
 
   const loadDetail = useCallback(async (id: string) => {
     setDetailLoading(true)
@@ -56,7 +57,7 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
 
   useEffect(() => {
     try {
-      const stored = window.sessionStorage.getItem(AUDIENCE_KEY)
+      const stored = window.sessionStorage.getItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
       const parsed = stored ? JSON.parse(stored) : []
       if (Array.isArray(parsed)) setPendingLeadIds(parsed.filter((value): value is string => typeof value === 'string'))
     } catch { /* a blocked session store simply means no preselected audience */ }
@@ -78,6 +79,12 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
     setNotice(null)
     setForm(freshCampaignForm())
     setStudioOpen(true)
+  }
+
+  function closeBuilder() {
+    setStudioOpen(false)
+    setAudienceReviewOpen(false)
+    if (initialCampaignId) window.history.replaceState(null, '', `/prospecting?campaign=${encodeURIComponent(initialCampaignId)}`)
   }
 
   async function createCampaign(event: FormEvent) {
@@ -102,7 +109,7 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
           body: JSON.stringify({ leadIds: pendingLeadIds }),
         })
         setNotice(`${memberResult.enrollment.eligible} ready; ${memberResult.enrollment.suppressed} safely suppressed; ${memberResult.enrollment.missing} missing a usable phone.`)
-        window.sessionStorage.removeItem(AUDIENCE_KEY)
+        window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
         setPendingLeadIds([])
       } else {
         setNotice(`${created.campaign.name} is a draft. Add an audience, review it, then activate when ready.`)
@@ -110,6 +117,7 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
       setStudioOpen(false)
       setForm(freshCampaignForm())
       setSelectedId(created.campaign.id)
+      window.history.replaceState(null, '', `/prospecting?campaign=${encodeURIComponent(created.campaign.id)}`)
       await Promise.all([loadCampaigns(), loadDetail(created.campaign.id)])
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Campaign could not be created')
@@ -146,10 +154,12 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadIds: pendingLeadIds }),
       })
-      window.sessionStorage.removeItem(AUDIENCE_KEY)
+      window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
       setPendingLeadIds([])
       setStudioOpen(false)
+      setAudienceReviewOpen(false)
       setNotice(`${result.enrollment.eligible} ready; ${result.enrollment.suppressed} safely suppressed; ${result.enrollment.missing} missing a usable phone.`)
+      window.history.replaceState(null, '', `/prospecting?campaign=${encodeURIComponent(detail.id)}`)
       await loadDetail(detail.id)
     } catch (enrollmentError) {
       setError(enrollmentError instanceof Error ? enrollmentError.message : 'Audience could not be added')
@@ -173,22 +183,22 @@ export function ProspectingWorkspace({ openCreate = false }: { openCreate?: bool
 
   const commandBar = (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <div className="min-w-0"><p className="crm-eyebrow">Prospecting</p><h1 className="truncate text-xl font-black text-[var(--crm-ink)]">{studioOpen ? 'Campaign studio' : 'Campaign command center'}</h1></div>
-      {studioOpen ? <button type="button" onClick={() => setStudioOpen(false)} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="close" />Exit studio</button> : <button type="button" onClick={openStudio} className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="add" />Build campaign</button>}
+      <div className="min-w-0"><p className="crm-eyebrow">Prospecting</p><h1 className="truncate text-xl font-black text-[var(--crm-ink)]">{audienceReviewOpen ? 'Audience review' : studioOpen ? 'Campaign studio' : 'Campaign command center'}</h1></div>
+      {studioOpen || audienceReviewOpen ? <button type="button" onClick={closeBuilder} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="close" />Exit {audienceReviewOpen ? 'review' : 'studio'}</button> : <button type="button" onClick={openStudio} className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="add" />Build campaign</button>}
     </div>
   )
 
   return <>
     <WorkspaceChrome commandBar={commandBar} />
     {error || notice ? <div className="bg-[var(--crm-canvas)] px-3 pt-3 sm:px-5 lg:px-7"><div className={`mx-auto max-w-[1540px] rounded-xl border px-4 py-3 text-sm font-bold ${error ? 'border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`} role={error ? 'alert' : 'status'}>{error || notice}</div></div> : null}
-    {studioOpen ? <CampaignStudio
+    {audienceReviewOpen ? <CampaignAudienceReview campaign={detail} pendingCount={pendingLeadIds.length} saving={actionPending} onConfirm={() => void enrollSelectedIntoCurrentCampaign()} onCancel={closeBuilder} /> : studioOpen ? <CampaignStudio
       form={form}
       pendingLeadIds={pendingLeadIds}
       saving={saving}
       existingCampaignName={detail?.name}
       canAddToExisting={Boolean(detail && ['draft', 'paused'].includes(detail.status))}
       onChange={setForm}
-      onCancel={() => setStudioOpen(false)}
+      onCancel={closeBuilder}
       onCreate={createCampaign}
       onAddToExisting={() => void enrollSelectedIntoCurrentCampaign()}
     /> : <CampaignDashboard
