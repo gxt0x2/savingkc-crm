@@ -1442,9 +1442,9 @@ function DialerPageInner() {
   )
 }
 
-type DialerHomeSection = 'overview' | 'queue' | 'sessions' | 'analytics' | 'settings'
+type DialerHomeSection = 'overview' | 'queue' | 'sessions'
 
-const DIALER_HOME_SECTIONS = new Set<DialerHomeSection>(['overview', 'queue', 'sessions', 'analytics', 'settings'])
+const DIALER_HOME_SECTIONS = new Set<DialerHomeSection>(['overview', 'queue', 'sessions'])
 
 function DialerPageHeading({ eyebrow, title, copy, action }: { eyebrow: string; title: string; copy: string; action?: React.ReactNode }) {
   return (
@@ -1603,41 +1603,8 @@ function DialerSessionsView({ savedQueues, onResume, onOpenQueue }: { savedQueue
             {active.length === 0 ? <div className="rounded-xl border border-dashed border-[var(--crm-border-strong)] p-8 text-center"><Icon name="pause_circle" className="text-3xl text-[var(--crm-text-dim)]" /><p className="mt-2 text-sm font-bold text-[var(--crm-ink)]">No paused sessions</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Start a queue and your progress will be saved here.</p></div> : null}
           </div>
         </section>
-        <aside className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><h2 className="text-lg font-black text-[var(--crm-ink)]">Completed sessions</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Recent saved-list sessions marked complete.</p><p className="mt-5 text-4xl font-black text-[var(--crm-ink)]">{completed.length}</p><Link href="/dialer?section=analytics" className="mt-5 inline-flex items-center gap-1 text-xs font-black text-[var(--crm-brand)]">Review dialer activity <Icon name="arrow_forward" className="text-sm" /></Link></aside>
+        <aside className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><h2 className="text-lg font-black text-[var(--crm-ink)]">Completed sessions</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Recent saved-list sessions marked complete.</p><p className="mt-5 text-4xl font-black text-[var(--crm-ink)]">{completed.length}</p><Link href="/reports/call-sms" className="mt-5 inline-flex items-center gap-1 text-xs font-black text-[var(--crm-brand)]">Review calling report <Icon name="arrow_forward" className="text-sm" /></Link></aside>
       </div>
-    </div>
-  )
-}
-
-function DialerAnalyticsView({ callsToday, uniqueLeadsToday, followupCount, readyCount, contactActivities }: { callsToday: number; uniqueLeadsToday: number; followupCount: number; readyCount: number; contactActivities: QueueContactActivity[] }) {
-  const sevenDayCalls = contactActivities.filter((activity) => ['call', 'voicemail'].includes(activity.activity_type) && daysSince(activity.created_at) != null && (daysSince(activity.created_at) || 0) <= 7).length
-  const coverage = readyCount > 0 ? Math.min(100, Math.round((uniqueLeadsToday / readyCount) * 100)) : 0
-  return (
-    <div>
-      <DialerPageHeading eyebrow="Dialer performance" title="Calling activity" copy="Operational activity only—connection and conversion rates appear once dispositions are captured consistently." />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[
-        ['Dials today', callsToday, 'call'], ['Unique leads today', uniqueLeadsToday, 'person_check'], ['Dials in 7 days', sevenDayCalls, 'date_range'], ['Follow-ups due', followupCount, 'event_upcoming'],
-      ].map(([label, value, icon]) => <div key={label as string} className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><Icon name={icon as string} className="text-2xl text-[var(--crm-brand)]" /><p className="mt-4 text-3xl font-black text-[var(--crm-ink)]">{value as number}</p><p className="mt-1 text-xs font-bold text-[var(--crm-text-muted)]">{label as string}</p></div>)}</div>
-      <section className="mt-5 rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5 shadow-sm"><div className="flex items-end justify-between"><div><h2 className="text-lg font-black text-[var(--crm-ink)]">Today&apos;s queue coverage</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Unique leads touched compared with currently callable records.</p></div><strong className="text-2xl font-black text-[var(--crm-ink)]">{coverage}%</strong></div><div className="mt-4 h-3 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]"><div className="h-full rounded-full bg-[var(--crm-brand)]" style={{ width: `${coverage}%` }} /></div><div className="mt-5 rounded-xl border border-[var(--crm-info)]/25 bg-[var(--crm-info-soft)] p-4 text-sm leading-6 text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Metric safeguard:</strong> this page does not infer contacts, appointments, or conversions from raw dial events. Those outcomes require a saved disposition so the reporting remains trustworthy.</div></section>
-    </div>
-  )
-}
-
-function DialerSettingsView({ callerId, setCallerId, ringCount, setRingCount }: { callerId: string; setCallerId: (value: string) => void; ringCount: number; setRingCount: (value: number) => void }) {
-  return (
-    <div>
-      <DialerPageHeading eyebrow="Dialer controls" title="Session defaults" copy="Set the caller ID and ring timing used by the single-line calling queue." />
-      <section className="max-w-3xl rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-6 shadow-sm">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <label><span className="text-xs font-bold text-[var(--crm-ink)]">Default calling number</span><select value={callerId} onChange={(event) => setCallerId(event.target.value)} className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2.5 text-sm font-semibold text-[var(--crm-ink)]">{TWILIO_NUMBERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-          <label><span className="text-xs font-bold text-[var(--crm-ink)]">Rings before no answer</span><select value={ringCount} onChange={(event) => setRingCount(Number(event.target.value))} className="mt-2 w-full rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2.5 text-sm font-semibold text-[var(--crm-ink)]">{[3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} rings</option>)}</select></label>
-        </div>
-        <div className="mt-6 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4">
-          <p className="text-sm font-black text-[var(--crm-ink)]">Single-line calling</p>
-          <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Calls run one number at a time. After each saved outcome, the session advances to the next callable number.</p>
-        </div>
-        <p className="mt-5 text-xs leading-5 text-[var(--crm-text-muted)]">These defaults apply to the current workspace session. Save a calling list to persist its queue-specific configuration and resume point.</p>
-      </section>
     </div>
   )
 }
@@ -2362,10 +2329,6 @@ function DialerHome() {
         />
       ) : homeSection === 'sessions' ? (
         <DialerSessionsView savedQueues={savedQueues} onResume={resumeSavedQueue} onOpenQueue={openQueue} />
-      ) : homeSection === 'analytics' ? (
-        <DialerAnalyticsView callsToday={callsToday} uniqueLeadsToday={uniqueLeadsToday} followupCount={followupCount} readyCount={leads.length} contactActivities={contactActivities} />
-      ) : homeSection === 'settings' ? (
-        <DialerSettingsView callerId={callerId} setCallerId={setCallerId} ringCount={ringCount} setRingCount={setRingCount} />
       ) : (
         <>
           {error && (

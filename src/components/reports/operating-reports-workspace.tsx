@@ -209,7 +209,7 @@ function CallSmsView({ report }: { report: OperatingReport }) {
     <>
       <NumberedPanel number="1" title="Core communication metrics" hint="Recorded call and message events">
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
-          <MetricCard icon="call" label="Calls" value={report.communications.calls} numericValue={report.communications.calls} detail="Recorded call activities" tone="blue" href="/dialer?section=analytics" series={report.trends.calls} goal={scaledGoal(report.goals.dailyCalls, report, 'daily')} />
+          <MetricCard icon="call" label="Calls" value={report.communications.calls} numericValue={report.communications.calls} detail="Recorded call activities" tone="blue" href="/conversations?channel=call" series={report.trends.calls} goal={scaledGoal(report.goals.dailyCalls, report, 'daily')} />
           <MetricCard icon="phone_in_talk" label="Connected" value={report.communications.connectedCalls} numericValue={report.communications.connectedCalls} detail={`${nullablePercent(report.communications.callConnectionRate)} connection rate`} tone="green" href="/conversations?channel=call" series={report.trends.connectedCalls} />
           <MetricCard icon="sms" label="SMS" value={report.communications.sms} numericValue={report.communications.sms} detail={`${report.communications.outboundSms} sent · ${report.communications.inboundSms} received${report.communications.unclassifiedSms > 0 ? ` · ${report.communications.unclassifiedSms} direction unrecorded` : ''}`} tone="violet" href="/conversations?channel=sms" series={report.trends.sms} />
           <MetricCard icon="north_east" label="SMS sent" value={report.communications.outboundSms} numericValue={report.communications.outboundSms} detail="Recorded outbound messages" tone="teal" href="/conversations?channel=sms" series={report.trends.outboundSms} />
@@ -222,7 +222,7 @@ function CallSmsView({ report }: { report: OperatingReport }) {
         <NumberedPanel number="3" title="Channel activity"><ActivityGrid report={report} /></NumberedPanel>
       </section>
       <section className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
-        <NumberedPanel number="4" title="Agent activity" actionHref="/dialer?section=analytics"><AgentTableRows report={report} /></NumberedPanel>
+        <NumberedPanel number="4" title="Agent activity"><AgentTableRows report={report} /></NumberedPanel>
         <NumberedPanel number="5" title="Unresolved attention" actionHref="/conversations?reply=needs_reply"><CommunicationAttention report={report} /></NumberedPanel>
       </section>
       <section className="flex justify-end"><Link href="/dialer" className="crm-primary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-black">Open dialer <Icon name="arrow_forward" /></Link></section>

@@ -13,6 +13,8 @@ bookmarks do not break:
 | `/opportunities` | `/contacts?list=hot` | Acquisitions |
 | `/ari` | `/dashboard` | Operations |
 | `/dialer?section=conversations` | `/conversations` | Acquisitions |
+| `/dialer?section=analytics` | `/reports/call-sms` | Operations |
+| `/dialer?section=settings` | `/dialer?section=queue` | Acquisitions |
 
 `/leads/[id]` remains the full contact workspace. Hot Opps is now a first-class
 Contacts smart list using the persisted motivation score and the same owner,
@@ -35,6 +37,10 @@ pipeline.
   browser-side workspace that loaded prospect phones, leads, and activities
   directly. Its campaign cards were derived reporting plus saved Dialer lists,
   not a durable campaign execution engine.
+- Dialer Analytics duplicated the canonical Call / SMS report with a smaller
+  activity-derived summary. Dialer Settings duplicated caller ID and ring-count
+  controls that already live in the queue builder; phone infrastructure remains
+  under Workflows > Phone system.
 - A bounded production log sample on 2026-08-21 showed current traffic on
   Dashboard, Contacts, and AI, and no requests to the three retired list and
   dashboard pages in that release.
@@ -46,6 +52,9 @@ pipeline.
 - SMS template authoring moved to Workflows > Message templates, and saved call
   lists remain in the Dialer queue. The canonical Conversations composer keeps
   consuming the same `sms_templates` records.
+- Dialer now contains only Overview, Call queue, and Sessions. Reporting links
+  go to Reports > Call / SMS, while session-level caller ID and ring timing stay
+  beside the queue they control.
 - The old Ghost Protocol phase cards no longer pretend to apply a filter that
   neither Leads nor Contacts implemented; they remain truthful status cards.
 - Lead-level ARI APIs and their tables remain available for embedded lead
