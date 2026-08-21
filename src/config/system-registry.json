@@ -288,8 +288,8 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/workflows"],
-      "apiRoutes": ["/api/workflows/definitions", "/api/workflows/phone-system", "/api/workflows/summary", "/api/workflows/runs", "/api/workflows/runs/[id]/decision", "/api/workers/workflow-runs"],
-      "tables": ["workflow_definition_versions", "workflow_runs", "workflow_run_steps", "workflow_approvals", "workflow_run_events", "phone_number_registry"],
+      "apiRoutes": ["/api/workflows/definitions", "/api/workflows/phone-system", "/api/workflows/summary", "/api/workflows/runs", "/api/workflows/runs/[id]/decision", "/api/workers/workflow-runs", "/api/sms-templates"],
+      "tables": ["workflow_definition_versions", "workflow_runs", "workflow_run_steps", "workflow_approvals", "workflow_run_events", "phone_number_registry", "sms_templates"],
       "environment": []
     },
     {
