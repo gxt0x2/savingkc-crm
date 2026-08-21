@@ -1,32 +1,32 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { Icon } from '@/components/ui/icon'
-import { useCalendarTasks } from '@/hooks/use-calendar-tasks'
+import { useTaskWorklist } from '@/hooks/use-task-worklist'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
 import type { Task, TaskStatus } from '@/types'
 
 type TaskView = 'all' | 'due_today' | 'overdue' | 'upcoming' | 'completed'
 type TaskStatusFilter = 'all' | 'active' | 'completed'
 type TaskDueFilter = 'any' | 'no_due' | 'seven_days' | 'thirty_days'
-type TaskTypeFilter = 'any' | 'follow_up' | 'callback' | 'appointment' | 'research' | 'offer' | 'general'
+type TaskTypeFilter = 'any' | 'follow_up' | 'callback' | 'appointment' | 'offer' | 'general'
 type TaskSort = 'due_asc' | 'due_desc' | 'newest' | 'title'
 type ToolbarMenu = 'filters' | 'sort' | null
 type BulkAction = '' | 'complete' | 'reopen' | 'delete' | `assign:${string}`
 type DeleteRequest = { kind: 'single' | 'bulk'; ids: string[]; label: string }
 
 const PAGE_SIZE = 20
+const EMPTY_TASKS: Task[] = []
 const ASSIGNEES = ['Casey', 'Ernest', 'Gertha'] as const
 const TASK_TYPE_FILTER_OPTIONS: Array<[Exclude<TaskTypeFilter, 'any'>, string]> = [
   ['follow_up', 'Follow-up'],
   ['callback', 'Callback'],
   ['appointment', 'Appointment'],
-  ['research', 'Research'],
   ['offer', 'Send Offer'],
   ['general', 'General'],
 ]
@@ -37,14 +37,6 @@ const TASK_VIEW_COPY: Record<TaskView, { label: string; description: string }> =
   overdue: { label: 'Overdue', description: 'Open tasks past their recorded due date.' },
   upcoming: { label: 'Upcoming', description: 'Scheduled work due after today.' },
   completed: { label: 'Completed', description: 'Closed tasks retained for accountability and history.' },
-}
-
-function dayBounds(timestamp: number) {
-  const start = new Date(timestamp)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 1)
-  return { start: start.getTime(), end: end.getTime() }
 }
 
 function isTaskOverdue(task: Task, timestamp: number) {
@@ -73,16 +65,8 @@ function dueLabel(task: Task) {
   })
 }
 
-function taskTypeCategory(value: string): Exclude<TaskTypeFilter, 'any'> | null {
-  if (value === 'send_offer' || value === 'offer') return 'offer'
-  if (value === 'task' || value === 'review' || value === 'general') return 'general'
-  if (value === 'follow_up' || value === 'callback' || value === 'appointment' || value === 'research') return value
-  return null
-}
-
 export default function TasksPage() {
   const isMobile = useMobileViewport()
-  const { data: sourceTasks = [], isLoading, error, refetch, isFetching } = useCalendarTasks('acquisitions')
   const [view, setView] = useState<TaskView>('all')
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
@@ -103,8 +87,23 @@ export default function TasksPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null)
-  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState<{ key: string; cursors: Array<string | null> }>({ key: '', cursors: [null] })
   const [now] = useState(() => Date.now())
+
+  const deferredSearch = useDeferredValue(search.trim())
+  const serverSearch = deferredSearch.length >= 3 ? deferredSearch : ''
+  const filterKey = JSON.stringify([view, assigneeFilter, statusFilter, dueFilter, taskTypeFilter, sortBy, serverSearch])
+  const activeCursors = pagination.key === filterKey ? pagination.cursors : [null]
+  const currentPage = activeCursors.length
+  const cursor = activeCursors[activeCursors.length - 1]
+  const { data, isLoading, error, refetch, isFetching } = useTaskWorklist({
+    department: 'acquisitions', view, status: statusFilter, assignee: assigneeFilter || undefined,
+    due: dueFilter, type: taskTypeFilter, query: serverSearch || undefined, sort: sortBy, limit: PAGE_SIZE, cursor,
+  })
+  const sourceTasks = data?.tasks ?? EMPTY_TASKS
+  const counts = data?.counts ?? { all: 0, due_today: 0, overdue: 0, upcoming: 0, completed: 0 }
+  const filteredTotal = data?.pageInfo.total ?? 0
+  const countLabel = (id: TaskView) => data ? counts[id] : '—'
 
   const tasks = useMemo(() => sourceTasks
     .filter((task) => !hiddenTaskIds.has(task.id))
@@ -148,65 +147,30 @@ export default function TasksPage() {
     })
   }, [sourceTasks])
 
-  const { start: todayStart, end: tomorrowStart } = useMemo(() => dayBounds(now), [now])
-  const counts = useMemo<Record<TaskView, number>>(() => ({
-    all: tasks.length,
-    due_today: tasks.filter((task) => task.status !== 'completed' && task.due_date && new Date(task.due_date).getTime() >= todayStart && new Date(task.due_date).getTime() < tomorrowStart).length,
-    overdue: tasks.filter((task) => isTaskOverdue(task, now)).length,
-    upcoming: tasks.filter((task) => task.status !== 'completed' && task.due_date && new Date(task.due_date).getTime() >= tomorrowStart).length,
-    completed: tasks.filter((task) => task.status === 'completed').length,
-  }), [now, tasks, todayStart, tomorrowStart])
-
-  const filteredTasks = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    const dueLimit = dueFilter === 'seven_days'
-      ? now + 7 * 24 * 60 * 60 * 1000
-      : dueFilter === 'thirty_days'
-        ? now + 30 * 24 * 60 * 60 * 1000
-        : null
-
-    return tasks.filter((task) => {
-      const due = task.due_date ? new Date(task.due_date).getTime() : null
-      if (view === 'due_today' && !(task.status !== 'completed' && due !== null && due >= todayStart && due < tomorrowStart)) return false
-      if (view === 'overdue' && !isTaskOverdue(task, now)) return false
-      if (view === 'upcoming' && !(task.status !== 'completed' && due !== null && due >= tomorrowStart)) return false
-      if (view === 'completed' && task.status !== 'completed') return false
-      if (assigneeFilter === '__unassigned' && task.assigned_to) return false
-      if (assigneeFilter && assigneeFilter !== '__unassigned' && task.assigned_to !== assigneeFilter) return false
-      if (statusFilter === 'active' && task.status === 'completed') return false
-      if (statusFilter === 'completed' && task.status !== 'completed') return false
-      if (dueFilter === 'no_due' && due !== null) return false
-      if (dueLimit !== null && (due === null || due < now || due > dueLimit)) return false
-      if (taskTypeFilter !== 'any' && taskTypeCategory(task.type) !== taskTypeFilter) return false
-      if (!query) return true
-      return [task.title, task.description, task.property_address, task.assigned_to, contactName(task)]
-        .some((value) => value?.toLowerCase().includes(query))
-    }).sort((left, right) => {
-      if (sortBy === 'title') return left.title.localeCompare(right.title)
-      if (sortBy === 'newest') return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
-      const leftDue = left.due_date ? new Date(left.due_date).getTime() : Number.MAX_SAFE_INTEGER
-      const rightDue = right.due_date ? new Date(right.due_date).getTime() : Number.MAX_SAFE_INTEGER
-      return sortBy === 'due_desc' ? rightDue - leftDue : leftDue - rightDue
-    })
-  }, [assigneeFilter, dueFilter, now, search, sortBy, statusFilter, taskTypeFilter, tasks, todayStart, tomorrowStart, view])
-
-  useEffect(() => {
-    // Pagination is reset whenever the active result set changes.
-    setPage(1)
-  }, [assigneeFilter, dueFilter, search, sortBy, statusFilter, taskTypeFilter, view])
-
-  const pageCount = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE))
-  const currentPage = Math.min(page, pageCount)
-  const pageTasks = filteredTasks.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const pageCount = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE))
+  const pageTasks = tasks
   const pageItemsSelected = pageTasks.length > 0 && pageTasks.every((task) => selectedIds.has(task.id))
   const activeFilterCount = [assigneeFilter, statusFilter !== 'all' ? statusFilter : '', dueFilter !== 'any' ? dueFilter : '', taskTypeFilter !== 'any' ? taskTypeFilter : ''].filter(Boolean).length
   const selectedTask = selectedTaskId ? tasks.find((task) => task.id === selectedTaskId) || null : null
   const editingTask = editingTaskId ? tasks.find((task) => task.id === editingTaskId) || null : null
   const viewCopy = TASK_VIEW_COPY[view]
 
+  function resetPosition() {
+    setPagination({ key: '', cursors: [null] })
+    setSelectedIds(new Set())
+  }
+
+  async function refreshWorklist() {
+    if (currentPage > 1) {
+      resetPosition()
+      return
+    }
+    await refetch()
+  }
+
   function selectView(nextView: TaskView) {
     setView(nextView)
-    setSelectedIds(new Set())
+    resetPosition()
     setMessage(null)
   }
 
@@ -238,15 +202,16 @@ export default function TasksPage() {
     if ('assignedTo' in update) setAssigneeOverrides((current) => ({ ...current, [id]: update.assignedTo ?? null }))
 
     try {
+      const expectedVersion = tasks.find((task) => task.id === id)?.version
       const response = await fetch(`/api/calendar/tasks/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(update),
+        body: JSON.stringify({ ...update, expectedVersion }),
       })
       const payload = await response.json()
       if (!response.ok || !payload.success) throw new Error(payload.error || 'Task could not be updated')
       setMessage({ tone: 'success', text: update.status === 'completed' ? 'Task completed.' : update.status === 'pending' ? 'Task reopened.' : 'Task updated.' })
-      await refetch()
+      await refreshWorklist()
     } catch (mutationError) {
       setStatusOverrides((current) => {
         const next = { ...current }
@@ -303,7 +268,7 @@ export default function TasksPage() {
       setMessage({ tone: 'success', text: `${payload.changed} task${payload.changed === 1 ? '' : 's'} updated.` })
       setSelectedIds(new Set())
       setBulkAction('')
-      await refetch()
+      await refreshWorklist()
     } catch (mutationError) {
       setStatusOverrides((current) => {
         const next = { ...current }
@@ -344,7 +309,7 @@ export default function TasksPage() {
       setSelectedTaskId(null)
       setMessage({ tone: 'success', text: `${request.ids.length} task${request.ids.length === 1 ? '' : 's'} deleted.` })
       setBulkAction('')
-      await refetch()
+      await refreshWorklist()
     } catch (mutationError) {
       setHiddenTaskIds((current) => new Set([...current].filter((id) => !request.ids.includes(id))))
       setMessage({ tone: 'error', text: mutationError instanceof Error ? mutationError.message : 'Task deletion failed' })
@@ -365,13 +330,13 @@ export default function TasksPage() {
         <p className="crm-eyebrow hidden md:block">Tasks smart list</p>
         <div className="flex items-center gap-2">
           <h1 className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--crm-ink)]">{viewCopy.label}</h1>
-          <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{counts[view]}</span>
+          <span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--crm-info)]">{countLabel(view)}</span>
         </div>
         <p className="hidden truncate text-[11px] text-[var(--crm-text-muted)] md:block" title={viewCopy.description}>{viewCopy.description}</p>
       </div>
       <label data-header-slot="search" className="relative col-span-2 min-w-0 lg:col-span-1">
         <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" />
-        <input aria-label="Search tasks" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" />
+        <input aria-label="Search tasks" title="Enter at least 3 characters to search" value={search} onChange={(event) => { setSearch(event.target.value); resetPosition() }} placeholder="Search tasks..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" />
       </label>
       <div data-header-slot="actions" className="col-start-2 row-start-1 flex justify-end gap-2 lg:col-auto lg:row-auto">
         <Link href="/calendar?department=acquisitions" className="crm-secondary-button hidden h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold md:flex"><Icon name="calendar_month" />Calendar</Link>
@@ -387,13 +352,13 @@ export default function TasksPage() {
         {!isMobile ? <div className="flex items-stretch border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-7">
           <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto" aria-label="Task smart lists">
             {(Object.keys(TASK_VIEW_COPY) as TaskView[]).map((id) => (
-              <button key={id} type="button" aria-current={view === id ? 'page' : undefined} aria-label={`${TASK_VIEW_COPY[id].label} ${counts[id]}`} onClick={() => selectView(id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${view === id ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
+              <button key={id} type="button" aria-current={view === id ? 'page' : undefined} aria-label={`${TASK_VIEW_COPY[id].label} ${countLabel(id)}`} onClick={() => selectView(id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${view === id ? 'border-[var(--crm-brand)] text-[var(--crm-brand)]' : 'border-transparent text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>
                 <Icon name={id === 'all' ? 'list' : id === 'due_today' ? 'today' : id === 'overdue' ? 'notification_important' : id === 'upcoming' ? 'event_upcoming' : 'task_alt'} className="text-[17px]" />
-                {TASK_VIEW_COPY[id].label}<span className="rounded-full bg-[var(--crm-surface-subtle)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--crm-text-muted)]">{counts[id]}</span>
+                {TASK_VIEW_COPY[id].label}<span className="rounded-full bg-[var(--crm-surface-subtle)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--crm-text-muted)]">{countLabel(id)}</span>
               </button>
             ))}
           </nav>
-        </div> : <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Task view" value={view} onChange={(event) => selectView(event.target.value as TaskView)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{(Object.keys(TASK_VIEW_COPY) as TaskView[]).map((id) => <option key={id} value={id}>{TASK_VIEW_COPY[id].label} ({counts[id]})</option>)}</select></label>}
+        </div> : <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Task view" value={view} onChange={(event) => selectView(event.target.value as TaskView)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{(Object.keys(TASK_VIEW_COPY) as TaskView[]).map((id) => <option key={id} value={id}>{TASK_VIEW_COPY[id].label} ({countLabel(id)})</option>)}</select></label>}
 
         <section className="px-3 py-3 md:px-7">
           <div className="flex flex-wrap items-center gap-2">
@@ -402,28 +367,27 @@ export default function TasksPage() {
               {toolbarMenu === 'filters' ? <div role="dialog" aria-label="Task filters" className="crm-panel absolute left-0 top-11 z-40 w-[min(30rem,calc(100vw-3rem))] rounded-xl p-4 shadow-xl">
                 <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-bold">Filters</h2><p className="text-xs text-[var(--crm-text-muted)]">Narrow this smart list without taking over the page.</p></div><button type="button" onClick={() => setToolbarMenu(null)} aria-label="Close filters" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="close" /></button></div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <TaskFilterSelect label="Assignee" value={assigneeFilter} onChange={setAssigneeFilter} options={[["__unassigned", "Unassigned"], ...ASSIGNEES.map((name) => [name, name] as [string, string])]} />
-                  <TaskFilterSelect label="Status" value={statusFilter === 'all' ? '' : statusFilter} onChange={(value) => setStatusFilter((value || 'all') as TaskStatusFilter)} options={[["active", "Active"], ["completed", "Completed"]]} />
-                  <TaskFilterSelect label="Due date" value={dueFilter === 'any' ? '' : dueFilter} onChange={(value) => setDueFilter((value || 'any') as TaskDueFilter)} options={[["no_due", "No due date"], ["seven_days", "Next 7 days"], ["thirty_days", "Next 30 days"]]} />
-                  <TaskFilterSelect label="Task type" value={taskTypeFilter === 'any' ? '' : taskTypeFilter} onChange={(value) => setTaskTypeFilter((value || 'any') as TaskTypeFilter)} options={TASK_TYPE_FILTER_OPTIONS} />
+                  <TaskFilterSelect label="Assignee" value={assigneeFilter} onChange={(value) => { setAssigneeFilter(value); resetPosition() }} options={[["__unassigned", "Unassigned"], ...ASSIGNEES.map((name) => [name, name] as [string, string])]} />
+                  <TaskFilterSelect label="Status" value={statusFilter === 'all' ? '' : statusFilter} onChange={(value) => { setStatusFilter((value || 'all') as TaskStatusFilter); resetPosition() }} options={[["active", "Active"], ["completed", "Completed"]]} />
+                  <TaskFilterSelect label="Due date" value={dueFilter === 'any' ? '' : dueFilter} onChange={(value) => { setDueFilter((value || 'any') as TaskDueFilter); resetPosition() }} options={[["no_due", "No due date"], ["seven_days", "Next 7 days"], ["thirty_days", "Next 30 days"]]} />
+                  <TaskFilterSelect label="Task type" value={taskTypeFilter === 'any' ? '' : taskTypeFilter} onChange={(value) => { setTaskTypeFilter((value || 'any') as TaskTypeFilter); resetPosition() }} options={TASK_TYPE_FILTER_OPTIONS} />
                 </div>
-                <div className="mt-4 flex justify-end border-t border-[var(--crm-border)] pt-3"><button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any') }} className="text-xs font-bold text-[var(--crm-brand)] hover:underline">Clear all</button></div>
+                <div className="mt-4 flex justify-end border-t border-[var(--crm-border)] pt-3"><button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any'); resetPosition() }} className="text-xs font-bold text-[var(--crm-brand)] hover:underline">Clear all</button></div>
               </div> : null}
             </div>
             <div className="relative hidden sm:block">
               <button type="button" aria-label="Sort" onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')} aria-expanded={toolbarMenu === 'sort'} className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold"><Icon name="swap_vert" className="text-[16px]" />Sort</button>
               {toolbarMenu === 'sort' ? <div role="dialog" aria-label="Sort tasks" className="crm-panel absolute left-0 top-11 z-40 w-56 rounded-xl p-2 shadow-xl">
-                {([['due_asc', 'Due date: soonest'], ['due_desc', 'Due date: latest'], ['newest', 'Recently created'], ['title', 'Title A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
+                {([['due_asc', 'Due date: soonest'], ['due_desc', 'Due date: latest'], ['newest', 'Recently created'], ['title', 'Title A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); setToolbarMenu(null); resetPosition() }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
               </div> : null}
             </div>
-            <button type="button" onClick={() => void refetch()} aria-label="Refresh tasks" className="crm-icon-button hidden h-9 w-9 items-center justify-center rounded-full sm:flex"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
-            {activeFilterCount ? <button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any') }} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
-            <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{filteredTasks.length} results</span>
+            <button type="button" onClick={() => void refreshWorklist()} aria-label="Refresh tasks" className="crm-icon-button hidden h-9 w-9 items-center justify-center rounded-full sm:flex"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
+            {activeFilterCount ? <button type="button" onClick={() => { setAssigneeFilter(''); setStatusFilter('all'); setDueFilter('any'); setTaskTypeFilter('any'); resetPosition() }} className="rounded-full border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--crm-brand)]">Clear ×</button> : null}
+            <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{data ? `${filteredTotal} results` : isLoading ? 'Loading results…' : 'Results unavailable'}</span>
           </div>
 
           {selectedIds.size > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2.5" role="region" aria-label="Bulk task changes">
             <span className="mr-1 text-sm font-black text-[var(--crm-info)]">{selectedIds.size} selected</span>
-            {selectedIds.size < filteredTasks.length ? <button type="button" onClick={() => setSelectedIds(new Set(filteredTasks.map((task) => task.id)))} className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-surface)] px-3 py-2 text-xs font-bold text-[var(--crm-info)]">Select all {filteredTasks.length} results</button> : null}
             <select aria-label="Bulk action" value={bulkAction} onChange={(event) => setBulkAction(event.target.value as BulkAction)} className="crm-field h-9 min-w-52 rounded-lg px-3 text-xs font-semibold">
               <option value="">Choose bulk action…</option>
               <option value="complete">Mark completed</option>
@@ -484,16 +448,16 @@ export default function TasksPage() {
             }) : null}
           </div>}
 
-          <div className="mt-7 flex items-center text-xs text-[var(--crm-text-muted)]">
-            <span>Showing {filteredTasks.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0} to {Math.min(currentPage * PAGE_SIZE, filteredTasks.length)} of {filteredTasks.length} results</span>
-            <div className="ml-auto flex items-center gap-2"><button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Previous page">‹</button><span className="rounded border border-[var(--crm-brand)] px-3 py-2 font-bold text-[var(--crm-brand)]">{currentPage}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Next page">›</button></div>
-          </div>
+          {data && !error ? <div className="mt-7 flex items-center text-xs text-[var(--crm-text-muted)]">
+            <span>Showing {filteredTotal ? (currentPage - 1) * PAGE_SIZE + 1 : 0} to {Math.min((currentPage - 1) * PAGE_SIZE + pageTasks.length, filteredTotal)} of {filteredTotal} results</span>
+            <div className="ml-auto flex items-center gap-2"><button type="button" disabled={currentPage === 1} onClick={() => { setPagination({ key: filterKey, cursors: activeCursors.slice(0, -1) }); setSelectedIds(new Set()); setSelectedTaskId(null) }} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Previous page">‹</button><span className="rounded border border-[var(--crm-brand)] px-3 py-2 font-bold text-[var(--crm-brand)]">{currentPage}</span><button type="button" disabled={!data?.pageInfo.hasMore || !data.pageInfo.nextCursor || currentPage >= pageCount} onClick={() => { if (!data?.pageInfo.nextCursor) return; setPagination({ key: filterKey, cursors: [...activeCursors, data.pageInfo.nextCursor] }); setSelectedIds(new Set()); setSelectedTaskId(null) }} className="h-8 min-w-8 rounded border border-[var(--crm-border)] px-2 disabled:opacity-40" aria-label="Next page">›</button></div>
+          </div> : null}
         </section>
       </main>
 
       {selectedTask ? <TaskDetails task={selectedTask} onClose={() => setSelectedTaskId(null)} onEdit={() => { setEditingTaskId(selectedTask.id); setSelectedTaskId(null) }} onToggle={() => void updateTask(selectedTask.id, { status: selectedTask.status === 'completed' ? 'pending' : 'completed' })} onDelete={() => setDeleteRequest({ kind: 'single', ids: [selectedTask.id], label: selectedTask.title })} /> : null}
-      {newTaskOpen ? <NewTaskModal department="acquisitions" showLeadSelector onClose={() => setNewTaskOpen(false)} onCreated={() => { setNewTaskOpen(false); void refetch() }} /> : null}
-      {editingTask ? <EditTaskModal taskId={editingTask.id} initialTitle={editingTask.title} initialMetadata={{ task_type: editingTask.type, due_date: editingTask.due_date || undefined, assigned_to: editingTask.assigned_to || undefined, notes: editingTask.description || undefined, status: editingTask.status === 'overdue' ? 'pending' : editingTask.status, priority: 'normal', source: 'tasks' }} onClose={() => setEditingTaskId(null)} onSaved={() => { setEditingTaskId(null); void refetch() }} onDeleted={() => { setEditingTaskId(null); void refetch() }} /> : null}
+      {newTaskOpen ? <NewTaskModal department="acquisitions" showLeadSelector onClose={() => setNewTaskOpen(false)} onCreated={() => { setNewTaskOpen(false); void refreshWorklist() }} /> : null}
+      {editingTask ? <EditTaskModal taskId={editingTask.id} initialTitle={editingTask.title} initialMetadata={{ task_type: editingTask.type, due_date: editingTask.due_date || undefined, assigned_to: editingTask.assigned_to || undefined, notes: editingTask.description || undefined, status: editingTask.status === 'overdue' ? 'pending' : editingTask.status, priority: 'normal', source: 'tasks' }} onClose={() => setEditingTaskId(null)} onSaved={() => { setEditingTaskId(null); void refreshWorklist() }} onDeleted={() => { setEditingTaskId(null); void refreshWorklist() }} /> : null}
       {deleteRequest ? <ConfirmDeleteDialog request={deleteRequest} saving={bulkSaving || deleteRequest.ids.some((id) => busyIds.has(id))} onCancel={() => setDeleteRequest(null)} onConfirm={() => void confirmDelete()} /> : null}
     </>
   )
