@@ -134,6 +134,7 @@ describe('workspace navigation', () => {
 
     const workflowNav = screen.getByRole('navigation', { name: 'Workflows sections' })
     expect(within(workflowNav).getByRole('link', { name: /Message templates/ })).toHaveAttribute('href', '/workflows?section=templates')
+    expect(within(workflowNav).getByRole('link', { name: /Entity integrity/ })).toHaveAttribute('href', '/workflows?section=entities')
     expect(within(workflowNav).queryByRole('link', { name: /Email templates/ })).not.toBeInTheDocument()
   })
 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/components/ui/icon'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
@@ -31,6 +31,12 @@ interface PropertyHeroProps {
   taxOwed?: number | null
   /** Show a shimmer placeholder while estimate enrichment is running. */
   estimateLoading?: boolean
+  /** Show progress for an explicit Redfin refresh. */
+  redfinLoading?: boolean
+  /** Human-readable error from the latest explicit Redfin refresh. */
+  redfinError?: string | null
+  /** Explicitly request a fresh Redfin estimate. */
+  onRefreshRedfin?: () => void
   /** Called when user double-clicks the stats row (beds/baths/sqft/built). Opens the property-details modal. */
   onOpenDetails?: () => void
   /** @deprecated retained for compat */
@@ -58,24 +64,20 @@ export function PropertyHero({
   assessedValue,
   taxOwed,
   estimateLoading,
+  redfinLoading,
+  redfinError,
+  onRefreshRedfin,
   onOpenDetails,
 }: PropertyHeroProps) {
   const fullAddress = [property.address, property.city, property.state, property.zip]
     .filter(Boolean)
     .join(', ')
   const encodedAddress = encodeURIComponent(fullAddress || property.address)
-  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`
-  const zillowUrl = `https://www.zillow.com/homes/${encodeURIComponent(fullAddress || property.address)}`
   const GMAPS_KEY = process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''
   const streetViewUrl =
     `https://maps.googleapis.com/maps/api/streetview?size=640x360&scale=2` +
     `&location=${encodedAddress}&fov=82&pitch=4&source=outdoor&return_error_code=true&key=${GMAPS_KEY}`
   const [showStreetView, setShowStreetView] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   function openStreetView() {
     setShowStreetView(true)
@@ -121,7 +123,9 @@ export function PropertyHero({
 
   return (
     <div className="space-y-4">
-      {mounted && streetViewModal && createPortal(streetViewModal, document.body)}
+      {streetViewModal && typeof document !== 'undefined'
+        ? createPortal(streetViewModal, document.body)
+        : null}
 
       {/* ── Hero card: property image + PRIMARY ASSET overlay + address / estimate row ── */}
       <div
@@ -134,6 +138,8 @@ export function PropertyHero({
           title="Click to open Street View"
           style={{ padding: 0, border: 'none', background: 'none' }}
         >
+          {/* External Street View URLs are not compatible with Next image optimization. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={streetViewUrl}
             alt={`Street view of ${fullAddress || property.address}`}
@@ -162,7 +168,7 @@ export function PropertyHero({
           </div>
         </button>
 
-        {/* Address + estimate row */}
+        {/* Address + valuation row */}
         <div className="px-5 pt-4 pb-5 flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <p className="ck-microlabel mb-1.5">Primary Asset</p>
@@ -248,6 +254,47 @@ export function PropertyHero({
             {property.lotSize && property.lotSize !== '--' && property.lotSize !== '—' ? (
               <p className="text-[10px] text-[color:var(--ck-text-muted)] mt-2 font-medium">
                 {property.lotSize} AC lot
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          className="grid grid-cols-1 gap-3 border-t px-5 py-4 sm:grid-cols-2"
+          style={{ borderColor: 'var(--ck-border)' }}
+          role="region"
+          aria-label="Property valuation sources"
+        >
+          <div>
+            <p className="ck-microlabel mb-1">Zillow estimate</p>
+            <p className="text-sm font-bold text-[color:var(--ck-text)]">
+              {zestimate ? compactDollars(zestimate) : estimateLoading ? 'Checking…' : 'Not available'}
+            </p>
+          </div>
+          <div className="sm:text-right">
+            <p className="ck-microlabel mb-1">Redfin estimate</p>
+            <p className="text-sm font-bold text-[color:var(--ck-text)]">
+              {redfinEstimate ? compactDollars(redfinEstimate) : 'Not checked'}
+            </p>
+            {onRefreshRedfin ? (
+              <button
+                type="button"
+                onClick={onRefreshRedfin}
+                disabled={redfinLoading}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors disabled:cursor-wait disabled:opacity-60"
+                style={{ borderColor: 'var(--ck-border)', color: 'var(--ck-accent)' }}
+              >
+                <Icon name={redfinLoading ? 'progress_activity' : 'refresh'} className={redfinLoading ? 'animate-spin' : ''} />
+                {redfinLoading
+                  ? 'Checking Redfin…'
+                  : redfinEstimate
+                    ? 'Refresh Redfin estimate'
+                    : 'Get Redfin estimate'}
+              </button>
+            ) : null}
+            {redfinError ? (
+              <p className="mt-2 max-w-xs text-xs text-red-400" role="status">
+                {redfinError}
               </p>
             ) : null}
           </div>
