@@ -26,6 +26,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/workers/prospecting-campaigns",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/google-ads-reporting-sync",
       "schedule": "*/10 * * * *"
     },

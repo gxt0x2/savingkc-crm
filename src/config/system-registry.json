@@ -205,6 +205,23 @@
       "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "ERNEST_PHONE", "CASEY_PHONE"]
     },
     {
+      "id": "prospecting",
+      "name": "Prospecting campaigns",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": ["/prospecting", "/dialer", "/conversations"],
+      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/launch", "/api/workers/prospecting-campaigns"],
+      "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "sms_opt_outs", "sms_delivery_log"],
+      "environment": ["CRON_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"],
+      "crons": [
+        {
+          "path": "/api/workers/prospecting-campaigns",
+          "schedule": "*/5 * * * *",
+          "highFrequencyReason": "Claim a small durable batch so contact-timezone windows, reply cancellation, and SMS pacing stay accurate without large bursts."
+        }
+      ]
+    },
+    {
       "id": "calendar_tasks",
       "name": "Calendar and tasks",
       "owner": "Operations",

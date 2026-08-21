@@ -515,6 +515,12 @@ export default function ContactsPage() {
     window.dispatchEvent(new CustomEvent('open-dialer', { detail: { leadId: contact.id, phone: contact.phone, name: getDisplayLeadName(contact.fullName, contact.phone) } }))
   }
 
+  function openCampaignBuilder() {
+    if (selectedIds.size < 1) return
+    window.sessionStorage.setItem('savingkc-prospecting-audience-v1', JSON.stringify([...selectedIds]))
+    router.push('/prospecting?new=1')
+  }
+
   async function createContact(payload: typeof EMPTY_CONTACT) {
     const response = await fetch('/api/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     const result = await response.json().catch(() => ({}))
@@ -683,6 +689,7 @@ export default function ContactsPage() {
 
             {selectedIds.size > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2.5" role="region" aria-label="Bulk contact changes">
               <span className="mr-1 text-sm font-black text-[var(--crm-info)]">{selectedIds.size} selected</span>
+              <button type="button" onClick={openCampaignBuilder} disabled={bulkSaving} className="crm-primary-button inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-black"><Icon name="campaign" className="text-[16px]" />Start campaign</button>
               <select aria-label="Bulk action" value={bulkAction} onChange={(event) => { setBulkAction(event.target.value as BulkAction); setBulkMessage(null) }} className="crm-field h-9 min-w-52 rounded-lg px-3 text-xs font-semibold">
                 <option value="">Choose bulk change…</option>
                 <optgroup label="Assign owner">
