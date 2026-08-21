@@ -1220,6 +1220,7 @@ export default function LeadDetailPage() {
   const [redfinEstimate, setRedfinEstimate] = useState<number | null>(null)
   const [zillowEnriching, setZillowEnriching] = useState(false)
   const [redfinEnriching, setRedfinEnriching] = useState(false)
+  const [redfinError, setRedfinError] = useState<string | null>(null)
   const [ghostProtocolStatus, setGhostProtocolStatus] = useState<{ phase: number; status: string } | null>(null)
   const [detailsExpanded, setDetailsExpanded] = useState(false)
   const [editPanelOpen, setEditPanelOpen] = useState(false)
@@ -1425,30 +1426,30 @@ export default function LeadDetailPage() {
       .finally(() => setZillowEnriching(false))
   }, [lead, manifestRowId, refreshAll, zestimate, zillowEnriching])
 
-  // On-demand Redfin enrichment (parallel to Zillow). Same best-effort pattern.
-  useEffect(() => {
-    if (!lead || !manifestRowId) return
-    if (redfinEstimate != null) return
-    if (redfinEnriching) return
-    if (!lead.property_address) return
-
-    const sessionKey = `crm_redfin_tried_${lead.id}`
-    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(sessionKey)) return
+  const refreshRedfinEstimate = useCallback(async () => {
+    if (!lead || !manifestRowId || redfinEnriching || !lead.property_address) return
 
     setRedfinEnriching(true)
-    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(sessionKey, '1')
-    fetch('/api/enrich-redfin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leadId: lead.id }),
-    })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (data?.redfinEstimate) refreshAll()
+    setRedfinError(null)
+    try {
+      const response = await fetch('/api/enrich-redfin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id }),
       })
-      .catch(() => { /* silent */ })
-      .finally(() => setRedfinEnriching(false))
-  }, [lead, manifestRowId, redfinEstimate, redfinEnriching, refreshAll])
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.success || !data?.redfinEstimate) {
+        setRedfinError('Redfin could not return an estimate right now. Try again later.')
+        return
+      }
+      setRedfinEstimate(data.redfinEstimate)
+      refreshAll()
+    } catch {
+      setRedfinError('Redfin could not return an estimate right now. Try again later.')
+    } finally {
+      setRedfinEnriching(false)
+    }
+  }, [lead, manifestRowId, redfinEnriching, refreshAll])
 
   useEffect(() => {
     async function fetchActivities() {
@@ -1956,10 +1957,10 @@ export default function LeadDetailPage() {
                     manifestProperty?.taxCollector?.delinquentAmount ??
                     null
                   }
-                  estimateLoading={
-                    (zillowEnriching && zestimate == null) ||
-                    (redfinEnriching && redfinEstimate == null)
-                  }
+                  estimateLoading={zillowEnriching && zestimate == null}
+                  redfinLoading={redfinEnriching}
+                  redfinError={redfinError}
+                  onRefreshRedfin={refreshRedfinEstimate}
                   onOpenDetails={() => setDetailsExpanded(true)}
                 />
               </div>
@@ -2394,10 +2395,10 @@ export default function LeadDetailPage() {
               manifestProperty?.taxCollector?.delinquentAmount ??
               null
             }
-            estimateLoading={
-              (zillowEnriching && zestimate == null) ||
-              (redfinEnriching && redfinEstimate == null)
-            }
+            estimateLoading={zillowEnriching && zestimate == null}
+            redfinLoading={redfinEnriching}
+            redfinError={redfinError}
+            onRefreshRedfin={refreshRedfinEstimate}
             onOpenDetails={() => setDetailsExpanded(true)}
           />
 
