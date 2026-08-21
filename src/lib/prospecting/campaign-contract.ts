@@ -81,6 +81,29 @@ export interface ProspectingCampaignDetail extends ProspectingCampaignSummary {
   }
 }
 
+export interface ProspectingCampaignActivity {
+  id: string
+  eventType: string
+  actor: string
+  memberId: string | null
+  actionId: string | null
+  status: 'queued' | 'processing' | 'sent' | 'delivered' | 'replied' | 'blocked' | 'failed' | 'cancelled' | null
+  sellerName: string | null
+  phone: string | null
+  propertyAddress: string | null
+  body: string | null
+  errorCode: string | null
+  providerSid: string | null
+  occurredAt: string
+  scheduledAt: string | null
+  sentAt: string | null
+}
+
+export interface ProspectingCampaignActivityPage {
+  items: ProspectingCampaignActivity[]
+  pageInfo: { limit: number; hasMore: boolean; nextCursor: string | null }
+}
+
 export class ProspectingCampaignInputError extends Error {
   constructor(public code: string, message: string) {
     super(message)
