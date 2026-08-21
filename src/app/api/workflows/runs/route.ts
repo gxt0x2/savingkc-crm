@@ -12,7 +12,11 @@ import {
   supportsWorkflowExecution,
   workflowRunPayload,
 } from '@/lib/server/workflow-runs'
-import { WorkflowInputError } from '@/lib/server/workflow-task-action'
+import {
+  APPROVED_FOLLOW_UP_WORKFLOW_ID,
+  WorkflowInputError,
+  verifyNextActionGeneration,
+} from '@/lib/server/workflow-task-action'
 
 function noStore(body: unknown, init?: ResponseInit) {
   return NextResponse.json(body, {
@@ -50,7 +54,18 @@ export async function POST(request: Request) {
     if (idempotencyKey.length < 8 || idempotencyKey.length > 200) {
       return noStore({ error: 'A valid Idempotency-Key is required.' }, { status: 400 })
     }
-    const payload = prepareWorkflowRunInput(workflowId, body.input, actor.name)
+    let payload = prepareWorkflowRunInput(workflowId, body.input, actor.name)
+    if (workflowId === APPROVED_FOLLOW_UP_WORKFLOW_ID) {
+      const input = body.input && typeof body.input === 'object' && !Array.isArray(body.input)
+        ? body.input as Record<string, unknown>
+        : {}
+      const aiProvenance = await verifyNextActionGeneration({
+        generationId: input.aiGenerationId,
+        actorEmail: actor.email,
+        leadId: String(payload.leadId || ''),
+      })
+      if (aiProvenance) payload = { ...payload, ...aiProvenance }
+    }
     const run = await startWorkflowRun({
       definition,
       actor: actor.name,

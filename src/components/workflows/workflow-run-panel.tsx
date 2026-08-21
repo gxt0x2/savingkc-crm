@@ -58,6 +58,34 @@ function taskRequestSummary(run: WorkflowRunSummary): string | null {
   return `${title} · ${assignedTo} · ${dueAt}`
 }
 
+function taskRequestAiContext(run: WorkflowRunSummary) {
+  if (run.workflow_id !== 'approved-follow-up-task' || typeof run.input.aiGenerationId !== 'string') return null
+  const confidence = run.input.aiConfidence === 'high' || run.input.aiConfidence === 'medium' || run.input.aiConfidence === 'low'
+    ? run.input.aiConfidence
+    : null
+  const rationale = typeof run.input.aiRationale === 'string' ? run.input.aiRationale : ''
+  const sources = Array.isArray(run.input.aiSources) ? run.input.aiSources.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const source = value as Record<string, unknown>
+    const name = typeof source.name === 'string' ? source.name : ''
+    const url = typeof source.url === 'string' && /^https:\/\/crm\.savingkc\.com\//i.test(source.url) ? source.url : ''
+    return name && url ? [{ name, url }] : []
+  }).slice(0, 6) : []
+  return { confidence, rationale, sources }
+}
+
+function AiProposalContext({ run }: { run: WorkflowRunSummary }) {
+  const context = taskRequestAiContext(run)
+  if (!context) return null
+  return (
+    <div className="mt-2 rounded-lg border border-[var(--crm-info)]/20 bg-[var(--crm-info-soft)] px-3 py-2 text-xs">
+      <p className="font-black text-[var(--crm-ink)]">AI-assisted proposal{context.confidence ? ` · ${context.confidence} confidence` : ''}</p>
+      {context.rationale ? <p className="mt-1 leading-5 text-[var(--crm-text-muted)]">{context.rationale}</p> : null}
+      {context.sources.length ? <div className="mt-1.5 flex flex-wrap gap-2">{context.sources.map((source, index) => <a key={`${source.url}:${index}`} href={source.url} target="_blank" rel="noreferrer" className="font-bold text-[var(--crm-info)] underline underline-offset-2">{source.name}</a>)}</div> : null}
+    </div>
+  )
+}
+
 export function WorkflowRunPanel() {
   const { isAdmin, loading: adminLoading } = useIsAdmin()
   const [runs, setRuns] = useState<WorkflowRunSummary[]>([])
@@ -174,6 +202,7 @@ export function WorkflowRunPanel() {
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${STATUS_TONE[run.status]}`}>{readableStatus(run.status)}</span>
                 </div>
                 <p className="mt-1 text-xs text-[var(--crm-text-muted)]">{taskRequestSummary(run) ?? healthSummary(run)}</p>
+                <AiProposalContext run={run} />
                 {run.status === 'awaiting_approval' ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     {!adminLoading && isAdmin ? (

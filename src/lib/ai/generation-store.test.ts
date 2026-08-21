@@ -19,6 +19,17 @@ describe('assistant generation accounting', () => {
       source: 'ai-gateway-model-catalog',
       currency: 'USD',
     })
+    expect(estimateAssistantCostMicros('openai/gpt-5.6-luna', {
+      inputTokens: 1_000,
+      outputTokens: 200,
+      totalTokens: 1_200,
+      cacheReadTokens: 400,
+    })).toBe(448)
+    expect(assistantPricingSnapshot('openai/gpt-5.6-luna')).toMatchObject({
+      model: 'openai/gpt-5.6-luna',
+      source: 'ai-gateway-model-catalog',
+      variesByProvider: true,
+    })
   })
 
   it('does not invent cost for an unpriced fallback model', () => {

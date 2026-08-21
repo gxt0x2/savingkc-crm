@@ -66,6 +66,17 @@ const DEFAULT_PRICING = {
   output: 0.0000045,
   inputCacheRead: 0.000000075,
 }
+const LUNA_MODEL = 'openai/gpt-5.6-luna'
+const LUNA_PRICING = {
+  source: 'ai-gateway-model-catalog',
+  capturedAt: '2026-08-21',
+  currency: 'USD',
+  unit: 'per_token',
+  input: 0.0000002,
+  output: 0.0000012,
+  inputCacheRead: 0.00000002,
+  variesByProvider: true,
+}
 
 function text(value: unknown, max = 500): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
@@ -96,16 +107,22 @@ function databaseError(error: { message?: string; code?: string } | null | undef
 }
 
 export function assistantPricingSnapshot(model: string): Record<string, unknown> {
+  if (model === LUNA_MODEL || model.endsWith('/gpt-5.6-luna') || model === 'gpt-5.6-luna') {
+    return { model: LUNA_MODEL, ...LUNA_PRICING }
+  }
   return model === DEFAULT_MODEL || model.endsWith('/gpt-5.4-mini') || model === 'gpt-5.4-mini'
     ? { model: DEFAULT_MODEL, ...DEFAULT_PRICING }
     : { model, source: 'unpriced', capturedAt: '2026-08-21' }
 }
 
 export function estimateAssistantCostMicros(model: string, usage: AssistantUsage): number | null {
-  if (!(model === DEFAULT_MODEL || model.endsWith('/gpt-5.4-mini') || model === 'gpt-5.4-mini')) return null
   const input = usage.inputTokens ?? 0
   const output = usage.outputTokens ?? 0
   const cacheRead = usage.cacheReadTokens ?? 0
+  if (model === LUNA_MODEL || model.endsWith('/gpt-5.6-luna') || model === 'gpt-5.6-luna') {
+    return Math.max(0, Math.round(input * 0.2 + output * 1.2 + cacheRead * 0.02))
+  }
+  if (!(model === DEFAULT_MODEL || model.endsWith('/gpt-5.4-mini') || model === 'gpt-5.4-mini')) return null
   return Math.max(0, Math.round(input * 0.75 + output * 4.5 + cacheRead * 0.075))
 }
 
@@ -184,6 +201,39 @@ export async function startAssistantGeneration(input: {
   const threadId = text(row?.threadId)
   const generationId = text(row?.generationId)
   if (!UUID_PATTERN.test(threadId) || !UUID_PATTERN.test(generationId)) throw new AssistantGenerationError('invalid_generation_payload', 503, 'Assistant history returned invalid data')
+  return {
+    created: row?.created === true,
+    threadId,
+    generationId,
+    requestMessageId: text(row?.requestMessageId),
+    responseMessageId: text(row?.responseMessageId) || null,
+    status: text(row?.status),
+  }
+}
+
+export async function startAssistantArtifactGeneration(input: {
+  actorEmail: string
+  actorName: string
+  title: string
+  content: string
+  requestId: string
+  context?: Record<string, unknown>
+}) {
+  const { data, error } = await supabaseAdmin().rpc('start_assistant_artifact_generation_v1', {
+    p_actor_email: input.actorEmail,
+    p_actor_name: input.actorName,
+    p_title: input.title,
+    p_user_content: input.content,
+    p_request_id: input.requestId,
+    p_context: input.context || {},
+  })
+  if (error) throw databaseError(error)
+  const row = data as Record<string, unknown> | null
+  const threadId = text(row?.threadId)
+  const generationId = text(row?.generationId)
+  if (!UUID_PATTERN.test(threadId) || !UUID_PATTERN.test(generationId)) {
+    throw new AssistantGenerationError('invalid_generation_payload', 503, 'Assistant history returned invalid data')
+  }
   return {
     created: row?.created === true,
     threadId,
