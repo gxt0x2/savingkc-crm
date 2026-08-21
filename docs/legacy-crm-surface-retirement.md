@@ -44,6 +44,10 @@ pipeline.
   review date and are not deleted by this change.
 - Scheduled ranking and the authorized admin recovery route remain available;
   the retired page no longer exposes its older manual rerank write surface.
+- The orphaned `/api/hot-opportunities` GET/POST route returns `410 Gone` with
+  the canonical Contacts destination. Ranking continues only through the
+  registered cron and the authorized admin recovery route; the scorer, cache,
+  and audit history are retained.
 
 ## Removal gate
 
