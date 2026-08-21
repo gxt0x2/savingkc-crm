@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 type JsonRecord = Record<string, unknown>
@@ -173,7 +174,7 @@ export async function GET(
   const nowIso = new Date().toISOString()
 
   // Fetch lead + manifest + canonical next appointment in parallel
-  const [leadRes, manifestRes, appointmentRes, appointmentTaskRes] = await Promise.all([
+  const [leadRes, manifestRes, appointmentRes, appointmentTaskRes, entityContext] = await Promise.all([
     db.from('leads')
       .select('*')
       .eq('id', id)
@@ -198,6 +199,7 @@ export async function GET(
       .in('activity_type', ['appointment', 'task'])
       .order('created_at', { ascending: false })
       .limit(50),
+    safeReadLeadEntityContext(id),
   ])
 
   if (leadRes.error || !leadRes.data) {
@@ -226,5 +228,6 @@ export async function GET(
     ...lead,
     manifest,
     nextAppointment,
+    entityContext,
   })
 }

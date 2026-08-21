@@ -12,6 +12,7 @@ import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
 import { DEAD_REASONS } from '@/lib/lead-outcomes'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
+import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
 
 const AriBriefing = dynamic(() => import('@/components/leads/ari-briefing').then((module) => module.AriBriefing))
 const PainPoints = dynamic(() => import('@/components/leads/pain-points').then((module) => module.PainPoints))
@@ -94,6 +95,7 @@ interface Lead {
   dead_reason?: string | null
   dead_at?: string | null
   dead_by?: string | null
+  entityContext?: CrmEntityContext | null
 }
 
 interface ActivityRow {
