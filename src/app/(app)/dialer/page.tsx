@@ -1138,7 +1138,7 @@ function DialerPageInner() {
             </div>
           </section>
 
-          {currentLead ? <DialerAiAssist lead={currentLead} activities={activities} /> : null}
+          {currentLead ? <DialerAiAssist key={`${durableSessionId || 'legacy'}:${currentLead.id}`} sessionId={durableSessionId} leadId={currentLead.id} /> : null}
 
           {/* Text thread + activity + recent call history */}
           <section className="ck-card p-5">
