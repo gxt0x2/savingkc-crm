@@ -6,6 +6,7 @@ import {
   DialerSessionError,
   transitionDialerAttempt,
 } from '@/lib/server/dialer-session-engine'
+import { getDialerPostCallReview } from '@/lib/server/dialer-post-call-review'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -17,6 +18,18 @@ function response(error: unknown) {
   console.error('[dialer/session-attempt] Unexpected attempt failure', error)
   return NextResponse.json({ error: 'Call attempt state could not be saved', code: 'session_engine_unavailable' }, { status: 503, headers: NO_STORE })
 }
+
+export async function GET(_request: Request, context: { params: Promise<{ id: string; attemptId: string }> }) {
+  const actor = await resolveAuthenticatedActor()
+  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
+  try {
+    const { id, attemptId } = await context.params
+    return NextResponse.json({ review: await getDialerPostCallReview(actor, id, attemptId) }, { headers: NO_STORE })
+  } catch (error) {
+    return response(error)
+  }
+}
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; attemptId: string }> }) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })

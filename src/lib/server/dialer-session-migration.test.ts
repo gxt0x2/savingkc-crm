@@ -10,6 +10,10 @@ const historyMigration = readFileSync(
   join(process.cwd(), 'supabase/migrations/20260826120000_dialer_session_history_indexes.sql'),
   'utf8',
 )
+const postCallMigration = readFileSync(
+  join(process.cwd(), 'supabase/migrations/20260827120000_dialer_post_call_review.sql'),
+  'utf8',
+)
 
 describe('dialer session migration contract', () => {
   it('enforces one open session and one open attempt per session', () => {
@@ -40,5 +44,12 @@ describe('dialer session migration contract', () => {
   it('indexes actor-owned session and attempt keyset history', () => {
     expect(historyMigration).toContain('(actor_email, updated_at DESC, id DESC)')
     expect(historyMigration).toContain('(session_id, created_at DESC, id DESC)')
+  })
+
+  it('keeps post-call AI review bounded inside the protected attempt table', () => {
+    expect(postCallMigration).toContain('ADD COLUMN IF NOT EXISTS post_call_status')
+    expect(postCallMigration).toContain("CHECK (post_call_status IN ('not_requested', 'processing', 'ready', 'unavailable', 'skipped'))")
+    expect(postCallMigration).toContain("WHERE post_call_status IN ('processing', 'unavailable')")
+    expect(postCallMigration).not.toMatch(/GRANT\s+(?:SELECT|ALL)[\s\S]*authenticated/i)
   })
 })

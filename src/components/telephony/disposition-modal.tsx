@@ -10,6 +10,7 @@ import {
   type DispositionId,
   type DispositionTone,
 } from '@/lib/dialer-dispositions'
+import type { DialerPostCallStatus } from '@/lib/dialer-post-call-review'
 
 // Canonical disposition ids live in src/lib/dialer-dispositions.ts so the modal,
 // the heir panel, and the lead PATCH route all speak the same language.
@@ -70,6 +71,7 @@ interface DispositionModalProps {
   notes?: string
   onNotesChange?: (notes: string) => void
   aiSummary?: string | null
+  aiSummaryStatus?: DialerPostCallStatus | null
   onUseAiSummary?: (summary: string) => void
 
   onSave?: () => void
@@ -156,6 +158,31 @@ function CheckActive() {
   )
 }
 
+function AiReviewPrompt({
+  status,
+  summary,
+  onUse,
+}: {
+  status?: DialerPostCallStatus | null
+  summary?: string | null
+  onUse: () => void
+}) {
+  if (status === 'processing' || status === 'not_requested') {
+    return <p role="status" className="mt-2.5 rounded-[var(--skc-radius-control)] border border-[var(--skc-brand-soft-border)] bg-[var(--skc-brand-soft)] px-3 py-2 text-[12px] text-[var(--skc-text-secondary)]">AI review is processing. Save the outcome without waiting.</p>
+  }
+  if (status === 'unavailable') {
+    return <p role="alert" className="mt-2.5 rounded-[var(--skc-radius-control)] border border-[#FF9F0A55] bg-[#FF9F0A14] px-3 py-2 text-[12px] text-[#FFD28A]">AI review was unavailable. Your disposition still saves normally.</p>
+  }
+  if (!summary) return null
+  return (
+    <div className="mt-2.5 flex items-center gap-2 rounded-[var(--skc-radius-control)] border border-[var(--skc-brand-soft-border)] bg-[var(--skc-brand-soft)] px-3 py-2">
+      <Icon name="auto_awesome" size="text-[14px]" className="text-[#FF6B6B]" />
+      <span className="flex-1 text-[13px] tracking-[-0.01em] text-[var(--skc-text-secondary)]">AI summary ready from transcript</span>
+      <button type="button" className="bg-transparent p-0 text-[13px] font-medium text-[#FF6B6B]" onClick={onUse}>Use</button>
+    </div>
+  )
+}
+
 export function DispositionModal({
   open,
   onClose,
@@ -179,6 +206,7 @@ export function DispositionModal({
   notes,
   onNotesChange,
   aiSummary = null,
+  aiSummaryStatus = null,
   onUseAiSummary,
   onSave,
   onSaveAndNext,
@@ -262,6 +290,12 @@ export function DispositionModal({
     if (!isControlledNotes) setInternalNotes(value)
     onNotesChange?.(value)
     setSaveNotice(null)
+  }
+
+  function useAiSummary() {
+    if (!aiSummary || activeNotes.includes(aiSummary)) return
+    changeNotes(activeNotes.trim() ? `${activeNotes.trim()}\n\n${aiSummary}` : aiSummary)
+    onUseAiSummary?.(aiSummary)
   }
 
   async function submit({
@@ -365,6 +399,7 @@ export function DispositionModal({
           <div className="px-4 pb-4">
             <div className="bg-[var(--skc-surface-soft)] rounded-[var(--skc-radius-card)] p-3.5 flex items-center gap-3">
               {resolvedContact.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={resolvedContact.avatarUrl} alt="contact" className="w-11 h-11 rounded-full object-cover" />
               ) : (
                 <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[var(--skc-brand)] to-[#FF6B3D] text-white font-semibold text-[16px] tracking-[-0.01em] flex items-center justify-center">
@@ -554,20 +589,7 @@ export function DispositionModal({
               rows={3}
             />
 
-            {aiSummary && (
-              <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[var(--skc-brand-soft)] border border-[var(--skc-brand-soft-border)]">
-                <Icon name="auto_awesome" size="text-[14px]" className="text-[#FF6B6B]" />
-                <span className="flex-1 text-[13px] tracking-[-0.01em] text-[var(--skc-text-secondary)]">
-                  AI summary ready from transcript
-                </span>
-                <button
-                  className="bg-transparent border-0 p-0 text-[13px] font-medium text-[#FF6B6B]"
-                  onClick={() => onUseAiSummary?.(aiSummary)}
-                >
-                  Use
-                </button>
-              </div>
-            )}
+            <AiReviewPrompt status={aiSummaryStatus} summary={aiSummary} onUse={useAiSummary} />
             {saveError && (
               <div className="mt-2.5 flex items-start gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#FF453A1F] border border-[#FF453A66]">
                 <Icon name="error" size="text-[14px]" className="text-[#FF453A] mt-0.5" />
@@ -643,6 +665,7 @@ export function DispositionModal({
         <div className="px-4 pb-4 overflow-y-auto">
           <div className="bg-[var(--skc-surface-soft)] rounded-[var(--skc-radius-card)] p-3.5 flex items-center gap-3">
             {resolvedContact.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={resolvedContact.avatarUrl} alt="contact" className="w-11 h-11 rounded-full object-cover" />
             ) : (
               <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[var(--skc-brand)] to-[#FF6B3D] text-white font-semibold text-[16px] tracking-[-0.01em] flex items-center justify-center">
@@ -845,20 +868,7 @@ export function DispositionModal({
                   rows={5}
                 />
 
-                {aiSummary && (
-                  <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[var(--skc-brand-soft)] border border-[var(--skc-brand-soft-border)]">
-                    <Icon name="auto_awesome" size="text-[14px]" className="text-[#FF6B6B]" />
-                    <span className="flex-1 text-[13px] tracking-[-0.01em] text-[var(--skc-text-secondary)]">
-                      AI summary ready from transcript
-                    </span>
-                    <button
-                      className="bg-transparent border-0 p-0 text-[13px] font-medium text-[#FF6B6B]"
-                      onClick={() => onUseAiSummary?.(aiSummary)}
-                    >
-                      Use
-                    </button>
-                  </div>
-                )}
+                <AiReviewPrompt status={aiSummaryStatus} summary={aiSummary} onUse={useAiSummary} />
                 {saveNotice && (
                   <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#30D1581F] border border-[#30D15866]">
                     <Icon name="check_circle" size="text-[14px]" className="text-[#30D158]" />

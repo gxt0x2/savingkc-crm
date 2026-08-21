@@ -40,6 +40,29 @@ function statusTone(status: DurableDialerSession['status']) {
   return 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'
 }
 
+function PostCallReview({ attempt }: { attempt: DurableDialerAttempt }) {
+  const review = attempt.postCallReview
+  if (!review || review.status === 'not_requested' || review.status === 'skipped') return null
+  if (review.status === 'processing') {
+    return <p className="mt-3 rounded-lg bg-[var(--crm-violet-soft)] px-3 py-2 text-[11px] font-bold text-[var(--crm-violet)]">AI review is processing from the provider recording.</p>
+  }
+  if (review.status === 'unavailable') {
+    return <p className="mt-3 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">AI review was unavailable. The saved call outcome remains authoritative.</p>
+  }
+  return (
+    <div className="mt-3 rounded-xl border border-[var(--crm-violet)]/20 bg-[var(--crm-violet-soft)] p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-[11px] font-black text-[var(--crm-violet)]"><Icon name="auto_awesome" className="text-sm" />Post-call AI review</p>
+        {attempt.lead_id ? <Link href={`/leads/${attempt.lead_id}`} prefetch={false} className="text-[10px] font-black uppercase tracking-wide text-[var(--crm-violet)] hover:underline">Review contact</Link> : null}
+      </div>
+      {review.summary ? <p className="mt-2 text-xs leading-5 text-[var(--crm-ink)]">{review.summary}</p> : null}
+      {review.nextAction ? <p className="mt-2 text-[11px] text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Suggested next step:</strong> {review.nextAction}</p> : null}
+      {review.improvements.length ? <p className="mt-1 text-[11px] text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Coaching:</strong> {review.improvements.join(' · ')}</p> : null}
+      <p className="mt-2 text-[10px] text-[var(--crm-text-dim)]">AI-generated. Confirm the summary and suggested next step before acting.</p>
+    </div>
+  )
+}
+
 function AttemptHistory({ sessionId }: { sessionId: string }) {
   const [page, setPage] = useState<DialerHistoryPage<DurableDialerAttempt> | null>(null)
   const [loading, setLoading] = useState(true)
@@ -74,13 +97,16 @@ function AttemptHistory({ sessionId }: { sessionId: string }) {
     <div className="mt-3 overflow-hidden rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)]">
       <div className="divide-y divide-[var(--crm-border)]">
         {page.items.map((attempt) => (
-          <div key={attempt.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_110px_100px] sm:items-center">
-            <div className="min-w-0">
-              <p className="truncate text-xs font-black text-[var(--crm-ink)]">{toProperCase(attempt.leadName) || formatPhone(attempt.phone)}</p>
-              <p className="mt-0.5 truncate text-[11px] text-[var(--crm-text-muted)]">{attempt.propertyAddress || formatPhone(attempt.phone)} · {dateTime(attempt.created_at)}</p>
+          <div key={attempt.id} className="px-4 py-3">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px_100px] sm:items-center">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-black text-[var(--crm-ink)]">{toProperCase(attempt.leadName) || formatPhone(attempt.phone)}</p>
+                <p className="mt-0.5 truncate text-[11px] text-[var(--crm-text-muted)]">{attempt.propertyAddress || formatPhone(attempt.phone)} · {dateTime(attempt.created_at)}</p>
+              </div>
+              <span className="text-xs font-bold text-[var(--crm-ink)]">{attempt.disposition ? label(attempt.disposition) : label(attempt.status)}</span>
+              <span className="text-xs tabular-nums text-[var(--crm-text-muted)]">{duration(attempt.duration_seconds)}</span>
             </div>
-            <span className="text-xs font-bold text-[var(--crm-ink)]">{attempt.disposition ? label(attempt.disposition) : label(attempt.status)}</span>
-            <span className="text-xs tabular-nums text-[var(--crm-text-muted)]">{duration(attempt.duration_seconds)}</span>
+            <PostCallReview attempt={attempt} />
           </div>
         ))}
       </div>

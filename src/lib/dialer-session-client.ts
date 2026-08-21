@@ -1,3 +1,5 @@
+import type { DialerPostCallReview } from '@/lib/dialer-post-call-review'
+
 export interface DurableDialerSession {
   id: string
   status: 'active' | 'paused' | 'completed' | 'stopped'
@@ -22,6 +24,7 @@ export interface DurableDialerSession {
 
 export interface DurableDialerAttempt {
   id: string
+  client_attempt_id: string
   lead_id: string | null
   phone: string
   caller_id: string
@@ -37,6 +40,7 @@ export interface DurableDialerAttempt {
   updated_at: string
   leadName: string | null
   propertyAddress: string | null
+  postCallReview: DialerPostCallReview
 }
 
 export interface DialerHistoryPage<T> {
@@ -72,6 +76,16 @@ export async function loadDialerAttemptHistory(
   if (cursor) params.set('cursor', cursor)
   const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}?${params.toString()}`, { cache: 'no-store' })
   return payload(response, 'Could not load dialer session attempts.') as Promise<{ session: DurableDialerSession; attempts: DialerHistoryPage<DurableDialerAttempt> }>
+}
+
+export async function loadDialerPostCallReview(
+  sessionId: string,
+  clientAttemptId: string,
+): Promise<DialerPostCallReview> {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}/attempts/${encodeURIComponent(clientAttemptId)}`, { cache: 'no-store' })
+  const body = await payload(response, 'Could not load the post-call review.')
+  if (!body.review) throw new Error('Could not load the post-call review.')
+  return body.review as DialerPostCallReview
 }
 
 export async function loadDialerSavedQueuesWithOpenSession(): Promise<Record<string, unknown>[]> {

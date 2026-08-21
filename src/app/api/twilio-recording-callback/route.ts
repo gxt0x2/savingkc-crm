@@ -27,6 +27,12 @@ import {
   claimPlayableRecordingActivity,
   markRecordingProcessing,
 } from '@/lib/telephony/recording-processing-claim'
+import {
+  completeDialerPostCallReview,
+  markDialerPostCallProcessing,
+  markDialerPostCallUnavailable,
+} from '@/lib/server/dialer-post-call-review'
+import type { CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -131,6 +137,7 @@ export async function POST(req: Request) {
     const to = (url.searchParams.get('calledNumber') || url.searchParams.get('to') || body.get('To') || '') as string
     const from = (url.searchParams.get('from') || body.get('From') || '') as string
     const hintedLeadId = url.searchParams.get('leadId') || ''
+    const clientAttemptId = url.searchParams.get('clientAttemptId') || null
     const sourceHint = url.searchParams.get('source') || ''
     const calledNumber = url.searchParams.get('calledNumber') || to || ''
     const externalPhone = from?.startsWith('client:') ? to : from
@@ -172,6 +179,13 @@ export async function POST(req: Request) {
     // Skip very short recordings (< 5 seconds = likely no conversation)
     if (recordingDuration < 5) {
       console.log(`[recording-callback] Skipping short recording (${recordingDuration}s)`)
+      await markDialerPostCallUnavailable({
+        clientAttemptId,
+        providerCallSid: callSid || null,
+        recordingSid,
+        status: 'skipped',
+        failureCode: 'recording_too_short',
+      }).catch((error) => console.error('[recording-callback] Failed to mark short review:', error))
       return NextResponse.json({ ok: true, skipped: 'too_short' })
     }
 
@@ -240,6 +254,12 @@ export async function POST(req: Request) {
 
     if (!leadId) {
       console.log(`[recording-callback] No lead found (phone=${cleanPhone || 'none'} callSid=${callSid}), skipping transcript`)
+      await markDialerPostCallUnavailable({
+        clientAttemptId,
+        providerCallSid: callSid || null,
+        recordingSid,
+        failureCode: 'lead_not_resolved',
+      }).catch((error) => console.error('[recording-callback] Failed to mark unresolved review:', error))
       return NextResponse.json({ ok: true, skipped: 'no_lead' })
     }
 
@@ -268,15 +288,51 @@ export async function POST(req: Request) {
     console.log(`[recording-callback] Processing recording for lead ${leadId}`)
 
     try {
+      await markDialerPostCallProcessing({
+        clientAttemptId,
+        leadId,
+        providerCallSid: callSid || null,
+        recordingSid,
+      }).catch((stateError) => {
+        console.error('[recording-callback] Failed to mark post-call review processing:', stateError)
+      })
       if (isGoogleAdsRecording && from && !isInternalTestRecording) {
         await markLeadAsGoogleAdsPhoneLead(leadId, from, null, calledNumber || sourceHint).catch((error) => {
           console.error('[recording-callback] Google Ads attribution refresh failed:', error)
         })
       }
 
-      await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
+      const analysis = await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
       await markRecordingProcessing(processingClaim, 'completed')
+      const reviewUpdate = analysis
+        ? completeDialerPostCallReview({
+          clientAttemptId,
+          leadId,
+          providerCallSid: callSid || null,
+          recordingSid,
+          analysis,
+        })
+        : markDialerPostCallUnavailable({
+          clientAttemptId,
+          leadId,
+          providerCallSid: callSid || null,
+          recordingSid,
+          status: 'skipped',
+          failureCode: 'transcript_too_short',
+        })
+      await reviewUpdate.catch((stateError) => {
+        console.error('[recording-callback] Failed to persist post-call review:', stateError)
+      })
     } catch (processingError) {
+      await markDialerPostCallUnavailable({
+        clientAttemptId,
+        leadId,
+        providerCallSid: callSid || null,
+        recordingSid,
+        failureCode: 'processing_failed',
+      }).catch((stateError) => {
+        console.error('[recording-callback] Failed to mark post-call review failure:', stateError)
+      })
       await markRecordingProcessing(processingClaim, 'failed', processingError).catch((stateError) => {
         console.error('[recording-callback] Failed to record processing failure:', stateError)
       })
@@ -296,7 +352,7 @@ async function processRecording(
   leadId: string,
   duration: number,
   context: RecordingContext = {},
-) {
+): Promise<CallAnalysisResult | null> {
   // 1. Download recording
   const filePath = await downloadRecording(recordingUrl, recordingSid)
 
@@ -305,7 +361,7 @@ async function processRecording(
 
   if (!transcript || transcript.length < 10) {
     console.log(`[recording-callback] Transcript too short, skipping analysis`)
-    return
+    return null
   }
 
   console.log(`[recording-callback] Transcript (${transcript.length} chars): ${transcript.slice(0, 100)}...`)
@@ -586,4 +642,5 @@ async function processRecording(
   }
 
   console.log(`[recording-callback] Recording processed for lead ${leadId}: transcript=${transcript.length} chars, analysis=${!!analysis}`)
+  return analysis
 }
