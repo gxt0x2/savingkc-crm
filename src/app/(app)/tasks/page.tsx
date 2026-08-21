@@ -336,7 +336,7 @@ export default function TasksPage() {
       </div>
       <label data-header-slot="search" className="relative col-span-2 min-w-0 lg:col-span-1">
         <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--crm-text-muted)]" />
-        <input aria-label="Search tasks" value={search} onChange={(event) => { setSearch(event.target.value); resetPosition() }} placeholder="Search tasks (3+ characters)..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" />
+        <input aria-label="Search tasks" title="Enter at least 3 characters to search" value={search} onChange={(event) => { setSearch(event.target.value); resetPosition() }} placeholder="Search tasks..." className="crm-field h-10 w-full rounded-lg pl-9 pr-3 text-sm outline-none" />
       </label>
       <div data-header-slot="actions" className="col-start-2 row-start-1 flex justify-end gap-2 lg:col-auto lg:row-auto">
         <Link href="/calendar?department=acquisitions" className="crm-secondary-button hidden h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold md:flex"><Icon name="calendar_month" />Calendar</Link>
