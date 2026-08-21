@@ -5,7 +5,6 @@ const dialerPage = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
 const dialerSessionHistory = readFileSync('src/components/dialer/dialer-session-history.tsx', 'utf8')
 const redirects = readFileSync('next.config.ts', 'utf8')
 const operatingReports = readFileSync('src/components/reports/operating-reports-workspace.tsx', 'utf8')
-const acquisitionsReports = readFileSync('src/app/(app)/dashboard/components/AcquisitionsReportsWorkspace.tsx', 'utf8')
 
 describe('Dialer workspace consolidation', () => {
   it('removes the duplicate client-scanning inbox from the Dialer bundle', () => {
@@ -21,8 +20,7 @@ describe('Dialer workspace consolidation', () => {
 
   it('routes reporting drill-downs to the authoritative inbox', () => {
     expect(operatingReports).toContain('href="/conversations?channel=call"')
-    expect(acquisitionsReports).toContain('href="/conversations"')
-    expect(`${operatingReports}\n${acquisitionsReports}`).not.toContain('/dialer?section=conversations')
+    expect(operatingReports).not.toContain('/dialer?section=conversations')
   })
 
   it('removes duplicate analytics and settings while preserving legacy bookmarks', () => {
@@ -37,8 +35,7 @@ describe('Dialer workspace consolidation', () => {
   })
 
   it('routes call reporting directly to the canonical report', () => {
-    expect(acquisitionsReports).toContain('href="/reports/call-sms"')
     expect(dialerSessionHistory).toContain('href="/reports/call-sms"')
-    expect(`${dialerPage}\n${dialerSessionHistory}\n${operatingReports}\n${acquisitionsReports}`).not.toContain('/dialer?section=analytics')
+    expect(`${dialerPage}\n${dialerSessionHistory}\n${operatingReports}`).not.toContain('/dialer?section=analytics')
   })
 })
