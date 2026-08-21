@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
+import { listWorkItems } from '@/lib/server/work-items'
 
 // In-memory cache (5 min TTL)
 let cache: { key: string; data: unknown; ts: number } | null = null
@@ -33,14 +34,14 @@ export async function GET(req: NextRequest) {
     const smsReceived = (activities || []).filter(a => a.type === 'sms_received' || a.type === 'sms_inbound').length
 
     // Fetch pending tasks
-    const { data: tasks } = await supabase
-      .from('tasks')
-      .select('id, status, due_date')
-      .in('status', ['pending', 'overdue'])
-      .lte('due_date', new Date().toISOString())
+    const tasks = await listWorkItems({
+      statuses: ['pending', 'blocked'],
+      dueBefore: new Date().toISOString(),
+      limit: 500,
+    })
 
-    const overdueTasks = (tasks || []).filter(t => t.status === 'overdue' || new Date(t.due_date) < todayStart).length
-    const todayTasks = (tasks || []).length
+    const overdueTasks = tasks.filter(t => !!t.dueAt && new Date(t.dueAt) < todayStart).length
+    const todayTasks = tasks.length
 
     // Fetch hot leads with no recent contact
     const { data: hotLeads } = await supabase
@@ -77,13 +78,11 @@ export async function GET(req: NextRequest) {
     }
 
     // EOD mode
-    const { count: completedToday } = await supabase
-      .from('tasks')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'completed')
-      .gte('due_date', todayStart.toISOString())
-
-    const completedCount = completedToday ?? 0
+    const completedCount = (await listWorkItems({
+      statuses: ['completed'],
+      completedAfter: todayStart.toISOString(),
+      limit: 500,
+    })).length
 
     const eodResult = {
       mode: 'eod',

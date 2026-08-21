@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
 import { getLeadQualificationStatuses } from '@/lib/qualification-policy'
+import { listWorkItems } from '@/lib/server/work-items'
 
 type PipelineAction = {
   id: string
@@ -53,13 +54,13 @@ export async function GET(request: Request) {
     }
 
     // Get tasks for these leads to count handled
-    const { data: tasks } = await supabase
-      .from('tasks')
-      .select('lead_id, status')
-      .in('lead_id', leadIds)
-      .eq('status', 'completed')
+    const tasks = await listWorkItems({
+      statuses: ['completed'],
+      leadIds,
+      limit: 500,
+    })
 
-    const completedTaskLeads = new Set((tasks || []).map(t => t.lead_id))
+    const completedTaskLeads = new Set(tasks.flatMap(t => t.leadId ? [t.leadId] : []))
     const qualificationStatuses = await getLeadQualificationStatuses(
       leads.filter((lead) => lead.station === 'qualified').map((lead) => lead.id),
     )

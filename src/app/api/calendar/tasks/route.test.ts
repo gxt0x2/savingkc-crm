@@ -3,17 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
-  from: vi.fn(),
-  insert: vi.fn(),
-  single: vi.fn(),
+  createWorkItem: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({
   resolveAuthenticatedActor: mocks.resolveAuthenticatedActor,
 }))
-
-vi.mock('@/lib/supabase/admin', () => ({
-  supabaseAdmin: () => ({ from: mocks.from }),
+vi.mock('@/lib/server/work-items', () => ({
+  createWorkItem: mocks.createWorkItem,
+  listWorkItems: vi.fn(),
+  normalizeWorkItemKind: (value: unknown) => value === 'offer' ? 'send_offer' : typeof value === 'string' ? value : 'task',
 }))
 
 import { POST } from './route'
@@ -21,63 +20,51 @@ import { POST } from './route'
 function request(body: Record<string, unknown>) {
   return new NextRequest('https://crm.savingkc.com/api/calendar/tasks', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'calendar-test-key-0001' },
     body: JSON.stringify(body),
   })
 }
 
-describe('calendar task mutation trust', () => {
+describe('calendar canonical task mutation trust', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.resolveAuthenticatedActor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
-    mocks.single.mockResolvedValue({ data: { id: 'task-1' }, error: null })
-    mocks.from.mockImplementation(() => ({
-      insert: (payload: unknown) => {
-        mocks.insert(payload)
-        return { select: () => ({ single: mocks.single }) }
-      },
-    }))
+    mocks.createWorkItem.mockResolvedValue({ created: true, workItem: { key: 'activity:task-1' } })
   })
 
-  it('defaults ownership to Casey while ignoring a spoofed actor', async () => {
+  it('uses the verified actor and idempotent work-item service', async () => {
     const response = await POST(request({ title: 'Call the seller', actor: 'Ernest' }))
 
     expect(response.status).toBe(200)
-    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
-      activity_type: 'task',
-      agent: 'Casey',
-      metadata: expect.objectContaining({
-        assigned_to: 'Casey',
-      }),
+    expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({
+      actor: 'Casey',
+      assignedTo: 'Casey',
+      idempotencyKey: 'calendar-test-key-0001',
+      title: 'Call the seller',
     }))
-    expect(mocks.insert).not.toHaveBeenCalledWith(expect.objectContaining({ actor: expect.anything() }))
+    expect(mocks.createWorkItem).not.toHaveBeenCalledWith(expect.objectContaining({ actor: 'Ernest' }))
   })
 
-  it('allows Casey to explicitly assign a task to another operating agent', async () => {
+  it('allows Casey to assign a task to another operating agent', async () => {
     const response = await POST(request({ title: 'Review comps', assignedTo: 'ernest' }))
 
     expect(response.status).toBe(200)
-    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
-      agent: 'Ernest',
-      metadata: expect.objectContaining({ assigned_to: 'Ernest' }),
-    }))
+    expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({ assignedTo: 'Ernest' }))
   })
 
-  it('rejects an unrecognized assignee before writing', async () => {
+  it('rejects an unrecognized assignee before canonical mutation', async () => {
     const response = await POST(request({ title: 'Review comps', assignedTo: 'Spoofed Agent' }))
 
     expect(response.status).toBe(403)
-    expect(mocks.from).not.toHaveBeenCalled()
-    expect(mocks.insert).not.toHaveBeenCalled()
+    expect(mocks.createWorkItem).not.toHaveBeenCalled()
   })
 
-  it('denies unauthenticated task creation before writing', async () => {
+  it('denies unauthenticated task creation before canonical mutation', async () => {
     mocks.resolveAuthenticatedActor.mockResolvedValue(null)
 
     const response = await POST(request({ title: 'Call the seller' }))
 
     expect(response.status).toBe(401)
-    expect(mocks.from).not.toHaveBeenCalled()
-    expect(mocks.insert).not.toHaveBeenCalled()
+    expect(mocks.createWorkItem).not.toHaveBeenCalled()
   })
 })
