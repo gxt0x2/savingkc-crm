@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { WorkflowRunPanel } from '@/components/workflows/workflow-run-panel'
 import { SmsTemplateManager } from '@/components/workflows/sms-template-manager'
+import { EntityIntegrityPanel } from '@/components/workflows/entity-integrity-panel'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { PHONE_SYSTEM, PHONE_SYSTEM_ATTENTION, type PhoneSystemRecord } from '@/lib/operating-model/phone-system'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
@@ -76,12 +77,14 @@ function actionLabel(action: WorkflowAction): string {
 
 function SurfaceHeader({ section, onNew }: { section: string; onNew: () => void }) {
   const content = section === 'phones'
-    ? { eyebrow: 'Phone routing', title: 'Master Phone System', description: 'Every owned number, the path it takes, the workflow that controls it, and the gaps that require a decision.' }
+    ? { eyebrow: 'Phone routing', title: 'Master Phone System', description: 'Every owned number, the path it takes, the workflow that controls it, and the gaps that require a decision.', showNew: true }
     : section === 'templates'
-      ? { eyebrow: 'Communication standards', title: 'Communication Template System', description: 'Approved SMS and email messages attached to the operating step where each one is used.' }
+      ? { eyebrow: 'Communication standards', title: 'Communication Template System', description: 'Approved SMS and email messages attached to the operating step where each one is used.', showNew: true }
+      : section === 'entities'
+        ? { eyebrow: 'Data integrity', title: 'Canonical CRM Entities', description: 'Projection coverage and ambiguous identity evidence across people, contact methods, properties, and opportunities.', showNew: false }
     : section === 'all'
-      ? { eyebrow: 'System registry', title: 'All Workflows', description: 'The canonical operating registry for live routes, workers, automations, and workflows still being designed.' }
-      : { eyebrow: 'Operations control', title: 'Workflows', description: 'One source of truth for phone routing, lead intake, communication, appointments, pipeline movement, closeout, reporting, and operating rhythm.' }
+      ? { eyebrow: 'System registry', title: 'All Workflows', description: 'The canonical operating registry for live routes, workers, automations, and workflows still being designed.', showNew: true }
+      : { eyebrow: 'Operations control', title: 'Workflows', description: 'One source of truth for phone routing, lead intake, communication, appointments, pipeline movement, closeout, reporting, and operating rhythm.', showNew: true }
 
   return (
     <header className="flex flex-col gap-4 border-b border-[var(--crm-border)] pb-5 sm:flex-row sm:items-end sm:justify-between">
@@ -90,10 +93,10 @@ function SurfaceHeader({ section, onNew }: { section: string; onNew: () => void 
         <h1 className="mt-1 text-3xl font-black tracking-tight text-[var(--crm-ink)]">{content.title}</h1>
         <p className="mt-1 max-w-4xl text-sm leading-6 text-[var(--crm-text-muted)]">{content.description}</p>
       </div>
-      <button type="button" onClick={onNew} className="crm-primary-button inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-black">
+      {content.showNew ? <button type="button" onClick={onNew} className="crm-primary-button inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-black">
         <Icon name="add" className="text-[18px]" />
         New workflow
-      </button>
+      </button> : null}
     </header>
   )
 }
@@ -125,7 +128,7 @@ function Overview({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefini
 
       <WorkflowRunPanel />
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <Link href="/workflows?section=phones" className="group crm-panel rounded-2xl p-5 transition hover:-translate-y-0.5 hover:border-[var(--crm-info)]/50 hover:shadow-lg">
           <div className="flex items-start justify-between gap-4">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="phone_in_talk" className="text-[25px]" /></div>
@@ -162,6 +165,19 @@ function Overview({ onSelect, workflows }: { onSelect: (workflow: WorkflowDefini
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-full bg-[var(--crm-danger-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-danger)]">Workflow-linked</span>
             <span className="rounded-full bg-[var(--crm-success-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-success)]">Human approval required</span>
+          </div>
+        </Link>
+
+        <Link href="/workflows?section=entities" className="group crm-panel rounded-2xl p-5 transition hover:-translate-y-0.5 hover:border-[var(--crm-success)]/50 hover:shadow-lg">
+          <div className="flex items-start justify-between gap-4">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--crm-success-soft)] text-[var(--crm-success)]"><Icon name="hub" className="text-[25px]" /></div>
+            <Icon name="arrow_forward" className="text-[22px] text-[var(--crm-text-dim)] transition group-hover:translate-x-1 group-hover:text-[var(--crm-success)]" />
+          </div>
+          <h2 className="mt-5 text-xl font-black text-[var(--crm-ink)]">Entity Integrity</h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--crm-text-muted)]">Verify normalized people, contact methods, properties, opportunities, consent provenance, and ambiguous identity evidence.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="rounded-full bg-[var(--crm-success-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-success)]">Server-only PII</span>
+            <span className="rounded-full bg-[var(--crm-warning-soft)] px-2.5 py-1 text-xs font-bold text-[var(--crm-warning)]">Human-reviewed conflicts</span>
           </div>
         </Link>
       </section>
@@ -581,7 +597,9 @@ export default function WorkflowsPage() {
             ? <WorkflowRegistry workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />
             : section === 'templates'
               ? <CommunicationTemplates />
-              : <Overview workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />}
+              : section === 'entities'
+                ? <EntityIntegrityPanel />
+                : <Overview workflows={workflows} onSelect={(workflow) => { setSelectedWorkflow(workflow); setSelectedPhone(null) }} />}
       </div>
       <DetailSheet workflow={selectedWorkflow} phone={selectedPhone} onClose={() => { setSelectedWorkflow(null); setSelectedPhone(null) }} />
       <NewWorkflowDialog open={showNew} onClose={() => setShowNew(false)} onCreated={(workflow) => { setWorkflows((current) => [...current, workflow]); setSelectedWorkflow(workflow) }} />
