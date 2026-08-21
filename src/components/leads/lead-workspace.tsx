@@ -8,6 +8,7 @@ import { CallReviewSubmitButton } from '@/components/call-review/call-review-sub
 import { EntityIdentityStatus } from '@/components/leads/entity-identity-status'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
 import { LeadOpportunityPanel, LEAD_WORKSPACE_STAGES } from '@/components/leads/lead-opportunity-panel'
+import { openLeadNextAction } from '@/components/leads/governed-next-action'
 import { RecordOfferModal } from '@/components/leads/record-offer-modal'
 import { StageSelector } from '@/components/leads/stage-selector'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
@@ -194,13 +195,13 @@ export function LeadWorkspace({
     : latestOfferActivity?.metadata?.offer_method === 'verbal'
       ? 'Verbal'
       : null
-  const nextTask = activities.find((activity) => activity.activity_type === 'task')
+  const nextTask = useMemo(() => openLeadNextAction(activities), [activities])
   const appointmentIsPast = Boolean(appointment && new Date(appointment.scheduledAt).getTime() < renderedAt)
   const nextAction = appointmentIsPast
     ? 'Record appointment outcome'
     : appointment
       ? `Appointment ${new Date(appointment.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-    : nextTask?.description || 'Define the next action'
+    : nextTask?.title || 'Define the next action'
 
   useEffect(() => {
     if (!contextPanelOpen && !operationsPanelOpen && !streetViewOpen) return
@@ -690,6 +691,8 @@ export function LeadWorkspace({
           </section>
 
           <LeadOpportunityPanel
+            leadId={lead.id}
+            nextActionTask={nextTask}
             station={lead.station}
             score={score}
             motivationScore={lead.motivation_score}

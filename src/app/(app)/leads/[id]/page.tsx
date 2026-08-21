@@ -35,7 +35,6 @@ const SellerGoals = dynamic(() => import('@/components/leads/seller-goals').then
 const DiscoveryQuestions = dynamic(() => import('@/components/leads/discovery-questions').then((module) => module.DiscoveryQuestions))
 const AriChat = dynamic(() => import('@/components/leads/ari-chat').then((module) => module.AriChat))
 const MailTracker = dynamic(() => import('@/components/leads/mail-tracker').then((module) => module.MailTracker))
-const NextAction = dynamic(() => import('@/components/leads/next-action').then((module) => module.NextAction))
 const MissingInfoCard = dynamic(() => import('@/components/leads/missing-info-card').then((module) => module.MissingInfoCard))
 const EmailThread = dynamic(() => import('@/components/leads/email-thread').then((module) => module.EmailThread))
 const CockpitModal = dynamic(() => import('@/components/ui/cockpit-modal').then((module) => module.CockpitModal))
@@ -2434,23 +2433,6 @@ export default function LeadDetailPage() {
         {/* RIGHT COLUMN: Next Action (pinned) + sortable rest */}
         <div className="col-span-12 lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6 lg:pl-4 z-0 space-y-6">
           {/* Pinned — always first, not draggable */}
-          <NextAction
-            leadId={lead.id}
-            leadName={formattedName}
-            leadPhone={lead.phone}
-            leadEmail={lead.email}
-            priority={lead.priority}
-            station={lead.station}
-            activities={activities}
-            onNewTask={() => setShowNewTask(true)}
-            onScheduleAppointment={() => setAppointmentModalOpen(true)}
-            onSmsCompose={() => { setComposeTab('sms'); setSmsModalOpen(true) }}
-            onLogNote={() => setNotesModalOpen(true)}
-            onAppointmentOutcome={() => setOutcomeModalOpen(true)}
-            onContract={() => setContractModalOpen(true)}
-            onCall={openLeadDialer}
-          />
-
           <AdsSignalReceipt leadId={lead.id} variant="sidebar" />
 
           <SortableColumn

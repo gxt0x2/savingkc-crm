@@ -2,6 +2,7 @@
 
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+import { GovernedNextAction, type LeadNextActionTask } from '@/components/leads/governed-next-action'
 
 export const LEAD_WORKSPACE_STAGES = [
   { keys: ['new'], label: 'New' },
@@ -12,6 +13,8 @@ export const LEAD_WORKSPACE_STAGES = [
 ]
 
 interface LeadOpportunityPanelProps {
+  leadId: string
+  nextActionTask: LeadNextActionTask | null
   station: string | null
   score: number | null
   motivationScore: number | null
@@ -36,6 +39,8 @@ function money(value: number | null) {
 }
 
 export function LeadOpportunityPanel({
+  leadId,
+  nextActionTask,
   station,
   score,
   motivationScore,
@@ -85,6 +90,18 @@ export function LeadOpportunityPanel({
           <DataRow label="Motivation score" value={`${score ?? motivationScore ?? '—'}${score != null || motivationScore != null ? ' / 100' : ''}`} accent />
           <DataRow label="Estimated value" value={money(estimatedValue)} />
         </dl>
+
+        <div className="mt-5">
+          <GovernedNextAction
+            key={leadId}
+            leadId={leadId}
+            task={nextActionTask}
+            appointment={appointment}
+            appointmentIsPast={appointmentIsPast}
+            onAppointment={onAppointment}
+            onAppointmentOutcome={onAppointmentOutcome}
+          />
+        </div>
 
         <button
           type="button"
