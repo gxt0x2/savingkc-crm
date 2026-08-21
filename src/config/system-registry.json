@@ -107,8 +107,23 @@
       },
       {
         "path": "src/app/api/migrate/route.ts",
-        "replacement": "versioned Supabase migrations or authenticated /api/admin/migrate",
+        "replacement": "versioned Supabase migrations and reviewed operations scripts",
         "reason": "Database DDL cannot be exposed through an unauthenticated runtime route."
+      },
+      {
+        "path": "src/app/api/admin/migrate/route.ts",
+        "replacement": "versioned Supabase migrations and the authenticated system-config API",
+        "reason": "Hosted bootstrap checks and legacy configuration seeding do not belong in a production request handler."
+      },
+      {
+        "path": "src/app/api/admin/migrate-deals/route.ts",
+        "replacement": "versioned Supabase migrations",
+        "reason": "Production already has the complete deal_pages schema, so runtime DDL is unnecessary."
+      },
+      {
+        "path": "src/app/api/admin/repair-mojo-leads/route.ts",
+        "replacement": "the normal Mojo ingestion pipeline and a reviewed operations script if historical repair is ever required",
+        "reason": "Production has no remaining placeholder Mojo leads, so the one-time mutating repair handler is complete."
       },
       {
         "path": "src/app/api/push/test/route.ts",
