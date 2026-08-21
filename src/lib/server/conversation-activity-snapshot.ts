@@ -40,9 +40,7 @@ const COMMUNICATION_ACTIVITY_TYPES = new Set([
 const SUPPORTING_ACTIVITY_TYPES = new Set(['task', 'status_change'])
 const PAGE_SIZE = 1000
 
-export interface ConversationActivitySnapshotRow extends ConversationHubActivity {
-  type?: string | null
-}
+export type ConversationActivitySnapshotRow = ConversationHubActivity
 
 export function isConversationCommunicationActivity(activity: ConversationActivitySnapshotRow): boolean {
   return COMMUNICATION_ACTIVITY_TYPES.has(activity.activity_type) && getConversationDirection(activity) !== null
@@ -59,7 +57,7 @@ async function fetchConversationActivitySnapshot(): Promise<ConversationActivity
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await db
       .from('lead_activities')
-      .select('id, lead_id, activity_type, type, description, agent, metadata, created_at')
+      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
       .in('activity_type', [...ACTIVITY_TYPES])
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)

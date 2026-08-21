@@ -29,7 +29,6 @@ function activity(overrides: Partial<ConversationActivitySnapshotRow> = {}): Con
     id: 'activity-1',
     lead_id: 'lead-1',
     activity_type: 'sms_received',
-    type: null,
     description: 'Seller replied',
     agent: null,
     metadata: { direction: 'inbound' },
@@ -76,6 +75,10 @@ describe('conversation activity snapshot', () => {
     const rows = await readConversationActivitySnapshot()
 
     expect(rows).toHaveLength(1001)
+    const firstQuery = mocks.from.mock.results[0]?.value as ReturnType<typeof queryChain>
+    expect(firstQuery.select).toHaveBeenCalledWith(
+      'id, lead_id, activity_type, description, agent, metadata, created_at',
+    )
     expect(mocks.range).toHaveBeenNthCalledWith(1, 0, 999)
     expect(mocks.range).toHaveBeenNthCalledWith(2, 1000, 1999)
   })
