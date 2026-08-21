@@ -4,7 +4,6 @@ import path from 'node:path';
 const crmWorkspaceRoutes = [
   '/contacts',
   '/conversations',
-  '/opportunities',
   '/calendar?department=acquisitions',
   '/tasks',
   '/workflows',
@@ -106,6 +105,10 @@ test('legacy CRM pages resolve to their canonical workspaces', async ({ page }) 
   await page.goto('/in-closing', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/contacts\?list=in_closing$/);
   await expect(page.getByRole('heading', { name: 'In Closing', exact: true })).toBeVisible();
+
+  await page.goto('/opportunities', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/contacts\?list=hot$/);
+  await expect(page.getByRole('heading', { name: 'Hot Opps', exact: true })).toBeVisible();
 
   await page.goto('/ari', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/dashboard$/);

@@ -10,12 +10,13 @@ bookmarks do not break:
 | --- | --- | --- |
 | `/leads` | `/contacts` | Acquisitions |
 | `/in-closing` | `/contacts?list=in_closing` | Acquisitions |
+| `/opportunities` | `/contacts?list=hot` | Acquisitions |
 | `/ari` | `/dashboard` | Operations |
 
-`/leads/[id]` remains the full contact workspace. `/opportunities` is not
-retired in this slice because its ranked Hot Opps workflow is not yet present
-in Contacts. Redirecting it now would remove a real capability rather than a
-duplicate.
+`/leads/[id]` remains the full contact workspace. Hot Opps is now a first-class
+Contacts smart list using the persisted motivation score and the same owner,
+next-action, conversation, bulk-action, and filter controls as the rest of the
+pipeline.
 
 ## Why
 
@@ -23,6 +24,9 @@ duplicate.
   Supabase and maintained its own filters, selection state, bulk actions, and
   refresh behavior beside the server-owned Contacts workspace.
 - In Closing duplicated the canonical Contacts smart list.
+- Hot Opportunities duplicated Contacts data and actions. Its custom drag
+  order lived only in one browser, so it was not a durable team priority. The
+  canonical Hot Opps list sorts by persisted motivation score instead.
 - The old ARI dashboard duplicated Dashboard, Tasks, Conversations, Dialer,
   and the persistent AI Assistant while continuing to use separate client
   data hooks.
@@ -38,8 +42,8 @@ duplicate.
 - Lead-level ARI APIs and their tables remain available for embedded lead
   detail consumers. They are registered as deprecated with a 2026-11-30
   review date and are not deleted by this change.
-- Hot Opps remains available until its ranking, re-rank, and action workflow
-  has a canonical Contacts implementation.
+- Scheduled ranking and the authorized admin recovery route remain available;
+  the retired page no longer exposes its older manual rerank write surface.
 
 ## Removal gate
 

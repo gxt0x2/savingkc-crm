@@ -50,7 +50,7 @@ const baseContact = {
 
 const contacts = [
   { ...baseContact, id: 'new-intake', fullName: 'New Intake', station: 'new' as const, classification: null, pipelineIntentSource: 'website_form', address: '6509 W 74TH ST', city: 'Overland Park', attentionState: 'needs_reply' as const },
-  { ...baseContact, id: 'active-lead', fullName: 'Active Lead', station: 'contacted' as const, classification: 'lead' as const, address: '6509 W 74TH ST', city: 'Overland Park', attentionState: 'needs_reply' as const },
+  { ...baseContact, id: 'active-lead', fullName: 'Active Lead', station: 'contacted' as const, classification: 'lead' as const, isFavorite: true, address: '6509 W 74TH ST', city: 'Overland Park', attentionState: 'needs_reply' as const },
   { ...baseContact, id: 'dead-record', fullName: 'Dead Record', station: 'dead' as const, classification: 'dead' as const, deadReason: 'dnc_refused' },
 ]
 
@@ -84,6 +84,7 @@ describe('ContactsPage smart-list workspace', () => {
     const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
     expect(smartListButtons.map((button) => button.textContent?.replace(/\d+$/, '').trim())).toEqual([
       'New',
+      'Hot Opps',
       'Leads',
       'Opportunities',
       'Appointment Set',
@@ -122,6 +123,7 @@ describe('ContactsPage smart-list workspace', () => {
     expect(smartListButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
       'All 2',
       'New 1',
+      'Hot Opps 1',
       'Leads 1',
       'Opportunities 0',
       'Appointment Set 0',
@@ -134,6 +136,7 @@ describe('ContactsPage smart-list workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset smart-list order' }))
     expect(within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder ')).map((button) => button.getAttribute('aria-label'))).toEqual([
       'New 1',
+      'Hot Opps 1',
       'Leads 1',
       'Opportunities 0',
       'Appointment Set 0',
@@ -142,6 +145,17 @@ describe('ContactsPage smart-list workspace', () => {
       'All 2',
     ])
     expect(screen.queryByRole('button', { name: 'Reset smart-list order' })).not.toBeInTheDocument()
+  })
+
+  it('shows scored active records in Hot Opps with a visible motivation score', () => {
+    render(<ContactsPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Hot Opps 1$/ }))
+
+    expect(screen.getByRole('heading', { name: 'Hot Opps' })).toBeInTheDocument()
+    expect(screen.getAllByText('Active Lead')).toHaveLength(2)
+    expect(screen.getByText('Motivation 20 / 100')).toBeInTheDocument()
+    expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
   })
 
   it('changes the header with the smart list and keeps filters behind one compact control', () => {
