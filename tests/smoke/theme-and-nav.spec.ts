@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 const crmWorkspaceRoutes = [
-  '/leads',
   '/contacts',
   '/conversations',
   '/opportunities',
@@ -97,6 +96,20 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
   await expect(page.getByRole('link', { name: 'ARI Insights' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open AI Assistant' })).toBeVisible();
   await expect(page.locator('a[href="#"]')).toHaveCount(0);
+});
+
+test('legacy CRM pages resolve to their canonical workspaces', async ({ page }) => {
+  await page.goto('/leads', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/contacts$/);
+  await expect(page.getByPlaceholder('Search contacts...')).toBeVisible();
+
+  await page.goto('/in-closing', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/contacts\?list=in_closing$/);
+  await expect(page.getByRole('heading', { name: 'In Closing', exact: true })).toBeVisible();
+
+  await page.goto('/ari', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole('navigation', { name: 'Dashboards sections' })).toBeVisible();
 });
 
 test('Issue Log is the sole Andon dashboard and Marketing replaces the retired dashboard tab', async ({ page }) => {

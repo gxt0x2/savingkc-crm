@@ -415,7 +415,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 />
               </filter>
             </svg>
-            <Link href="/ari" className="flex items-center flex-shrink-0" aria-label="Saving KC Homebuyers">
+            <Link href="/dashboard" className="flex items-center flex-shrink-0" aria-label="Saving KC Homebuyers">
               {/* eslint-disable-next-line @next/next/no-img-element -- the active brand asset can switch between the local dark-theme file and the external light-theme source. */}
               <img
                 src={useLightLogo ? 'https://savingkc.com/logo.png' : '/logo.png'}

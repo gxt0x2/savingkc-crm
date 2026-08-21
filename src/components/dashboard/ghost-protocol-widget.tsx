@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import Link from 'next/link'
 
 interface GhostProtocolStats {
   phase1: number
@@ -67,32 +66,23 @@ export function GhostProtocolWidget() {
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-5">
-        <Link
-          href="/leads?ghost_protocol_phase=1"
-          className="text-center p-3 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors cursor-pointer"
-        >
+        <div className="rounded-xl bg-surface-container p-3 text-center">
           <div className="text-2xl font-black text-blue-600">{stats.phase1}</div>
           <div className="text-[10px] text-on-surface-variant uppercase tracking-wider">Phase 1</div>
           <div className="text-[9px] text-on-surface-variant/70">Days 1-7</div>
-        </Link>
+        </div>
 
-        <Link
-          href="/leads?ghost_protocol_phase=2"
-          className="text-center p-3 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors cursor-pointer"
-        >
+        <div className="rounded-xl bg-surface-container p-3 text-center">
           <div className="text-2xl font-black text-amber-600">{stats.phase2}</div>
           <div className="text-[10px] text-on-surface-variant uppercase tracking-wider">Phase 2</div>
           <div className="text-[9px] text-on-surface-variant/70">Days 8-21</div>
-        </Link>
+        </div>
 
-        <Link
-          href="/leads?ghost_protocol_phase=3"
-          className="text-center p-3 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors cursor-pointer"
-        >
+        <div className="rounded-xl bg-surface-container p-3 text-center">
           <div className="text-2xl font-black text-purple-600">{stats.phase3}</div>
           <div className="text-[10px] text-on-surface-variant uppercase tracking-wider">Phase 3</div>
           <div className="text-[9px] text-on-surface-variant/70">Long Nurture</div>
-        </Link>
+        </div>
       </div>
 
       <div className="pt-4 border-t border-outline-variant/10 flex items-center justify-between">
