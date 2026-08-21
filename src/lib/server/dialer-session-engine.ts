@@ -1,5 +1,10 @@
 import { supabase } from '@/lib/supabase-lazy'
 import type { AuthenticatedActor } from '@/lib/api/authenticated-actor'
+import {
+  parseDialerPostCallReview,
+  type DialerPostCallReview,
+  type DialerPostCallRow,
+} from '@/lib/dialer-post-call-review'
 
 export type DialerSessionStatus = 'active' | 'paused' | 'completed' | 'stopped'
 
@@ -50,6 +55,7 @@ export interface DialerAttemptState {
 export interface DialerAttemptHistoryItem extends DialerAttemptState {
   leadName: string | null
   propertyAddress: string | null
+  postCallReview: DialerPostCallReview
 }
 
 export interface DialerHistoryPage<T> {
@@ -296,7 +302,7 @@ export async function getDialerSessionHistory(
   }
 }
 
-type DialerAttemptRow = DialerAttemptState
+type DialerAttemptRow = DialerAttemptState & DialerPostCallRow
 
 export async function getDialerAttemptHistory(
   actor: AuthenticatedActor,
@@ -308,7 +314,7 @@ export async function getDialerAttemptHistory(
   const cursor = decodeHistoryCursor(options.cursor || null)
   let query = supabase
     .from('dialer_session_attempts')
-    .select('id,session_id,client_attempt_id,lead_id,prospect_phone_id,phone,caller_id,status,disposition,duration_seconds,reached,started_at,connected_at,ended_at,dispositioned_at,advanced_at,created_at,updated_at')
+    .select('id,session_id,client_attempt_id,lead_id,prospect_phone_id,phone,caller_id,status,disposition,duration_seconds,reached,started_at,connected_at,ended_at,dispositioned_at,advanced_at,created_at,updated_at,post_call_status,post_call_summary,post_call_snapshot,post_call_completed_at,post_call_updated_at,recording_sid,provider_call_sid')
     .eq('session_id', session.id)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -330,9 +336,27 @@ export async function getDialerAttemptHistory(
     for (const lead of leads || []) leadLookup.set(lead.id, lead)
   }
   const items = rows.map((row) => ({
-    ...row,
-    leadName: row.lead_id ? leadLookup.get(row.lead_id)?.full_name || null : null,
-    propertyAddress: row.lead_id ? leadLookup.get(row.lead_id)?.property_address || null : null,
+      id: row.id,
+      session_id: row.session_id,
+      client_attempt_id: row.client_attempt_id,
+      lead_id: row.lead_id,
+      prospect_phone_id: row.prospect_phone_id,
+      phone: row.phone,
+      caller_id: row.caller_id,
+      status: row.status,
+      disposition: row.disposition,
+      duration_seconds: row.duration_seconds,
+      reached: row.reached,
+      started_at: row.started_at,
+      connected_at: row.connected_at,
+      ended_at: row.ended_at,
+      dispositioned_at: row.dispositioned_at,
+      advanced_at: row.advanced_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      leadName: row.lead_id ? leadLookup.get(row.lead_id)?.full_name || null : null,
+      propertyAddress: row.lead_id ? leadLookup.get(row.lead_id)?.property_address || null : null,
+      postCallReview: parseDialerPostCallReview(row),
   }))
   const hasMore = ((data || []) as DialerAttemptRow[]).length > limit
   const last = items.at(-1)

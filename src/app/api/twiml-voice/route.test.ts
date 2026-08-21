@@ -238,6 +238,7 @@ describe('TwiML request containment', () => {
       clientAttemptId: 'attempt-1',
     })
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
+    expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
   })
 
   it('fails closed when a present intent is invalid or expired', async () => {

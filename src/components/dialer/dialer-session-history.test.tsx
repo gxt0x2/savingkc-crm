@@ -56,6 +56,7 @@ describe('DialerSessionHistory', () => {
       attempts: {
         items: [{
           id: '00000000-0000-4000-8000-000000000030',
+          client_attempt_id: 'attempt-1',
           lead_id: '00000000-0000-4000-8000-000000000001',
           phone: '+18165550123',
           caller_id: '+18167277667',
@@ -71,6 +72,21 @@ describe('DialerSessionHistory', () => {
           updated_at: '2026-08-21T14:02:20.000Z',
           leadName: 'Helen Seller',
           propertyAddress: '123 Main St',
+          postCallReview: {
+            status: 'ready',
+            summary: 'Seller wants to move before October and asked for a Friday follow-up.',
+            sentiment: 'positive',
+            motivationScore: 8,
+            nextAction: 'Call Friday',
+            nextActionAt: null,
+            strengths: ['Clarified timeline'],
+            improvements: ['Confirm all decision makers'],
+            recordingSid: 'RE123',
+            providerCallSid: 'CA123',
+            completedAt: '2026-08-21T14:03:00.000Z',
+            updatedAt: '2026-08-21T14:03:00.000Z',
+            failureCode: null,
+          },
         }],
         pageInfo: { limit: 50, hasMore: false, nextCursor: null },
       },
@@ -98,6 +114,9 @@ describe('DialerSessionHistory', () => {
     expect(await screen.findByText('Helen Seller')).toBeVisible()
     expect(screen.getByText(/123 Main St · Aug 21,/)).toBeVisible()
     expect(screen.getByText('2m 5s')).toBeVisible()
+    expect(screen.getByText('Post-call AI review')).toBeVisible()
+    expect(screen.getByText(/Seller wants to move before October/)).toBeVisible()
+    expect(screen.getByText(/Confirm the summary/)).toBeVisible()
     await waitFor(() => expect(mocks.loadDialerAttemptHistory).toHaveBeenCalledTimes(1))
   })
 })

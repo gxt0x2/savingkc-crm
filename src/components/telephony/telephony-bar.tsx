@@ -11,6 +11,7 @@ import { isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositio
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
+import { useDialerPostCallReview } from './use-dialer-post-call-review'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 type DialerCallIntentKind = 'manual' | 'lead' | 'heir'
@@ -318,7 +319,6 @@ export function DialerPanel({
   // Ring count for the current heir-queue session → Twilio Dial timeout.
   const ringCountRef = useRef<number | null>(null)
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -326,11 +326,9 @@ export function DialerPanel({
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null)
   const dialInputRef = useRef<HTMLInputElement>(null)
 
-  // Recent calls
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
   const [viewTab, setViewTab] = useState<'dial' | 'recent'>('dial')
 
-  // Caller ID display
   const [callerIdDisplay, setCallerIdDisplay] = useState<string>(() => signedInProfile.defaultCallerId)
   const [selectedCallerId, setSelectedCallerId] = useState<string>(() => signedInProfile.defaultCallerId)
   const [callerIdLockedByUser, setCallerIdLockedByUser] = useState(false)
@@ -338,8 +336,8 @@ export function DialerPanel({
   const [callerPlan, setCallerPlan] = useState<DialerCallerPlan>(() => normalizeDialerCallerPlan(null, signedInProfile.defaultCallerId))
   const [attemptsPlaced, setAttemptsPlaced] = useState(0)
 
-  // Disposition
   const [showDisposition, setShowDisposition] = useState(false)
+  const [reviewContext, setReviewContext] = useState<{ sessionId: string; clientAttemptId: string } | null>(null)
   const [showNewTaskFor, setShowNewTaskFor] = useState<SearchResult | null>(null)
   const lastCallPhoneRef = useRef<string>('')
   const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
@@ -367,8 +365,6 @@ export function DialerPanel({
     setAttemptsPlaced(0)
   }, [callerIdLockedByUser, signedInProfile])
 
-  // Heir queue mode — when active, the property stays pinned across calls and
-  // each disposition advances to the next heir phone.
   const [queue, setQueue] = useState<HeirQueueItem[] | null>(null)
   const [queueIndex, setQueueIndex] = useState(0)
   const queueItem = queue && queue[queueIndex] ? queue[queueIndex] : null
@@ -379,6 +375,7 @@ export function DialerPanel({
   const pendingAutoDialRef = useRef(false)
   const callIntentPendingRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
+  const postCallReview = useDialerPostCallReview({ open: showDisposition, sessionId: reviewContext?.sessionId || null, clientAttemptId: reviewContext?.clientAttemptId || null })
 
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
@@ -652,6 +649,7 @@ export function DialerPanel({
 
       activeSessionIdRef.current = authorized.sessionId ?? null
       activeAttemptIdRef.current = authorized.clientAttemptId
+      setReviewContext(authorized.sessionId ? { sessionId: authorized.sessionId, clientAttemptId: authorized.clientAttemptId } : null)
       if (activeSessionIdRef.current) {
         await transitionDurableDialerAttempt({
           sessionId: activeSessionIdRef.current,
@@ -1703,6 +1701,8 @@ export function DialerPanel({
         phoneNumber={lastCallPhoneRef.current}
         leadName={selectedLead?.full_name}
         callDuration={lastCallDuration || undefined}
+        aiSummary={postCallReview?.summary}
+        aiSummaryStatus={postCallReview?.status}
         markAsLeadAvailable={Boolean(dispositionQueueItem)}
         markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
         showVerifyToggle={Boolean(dispositionQueueItem)}

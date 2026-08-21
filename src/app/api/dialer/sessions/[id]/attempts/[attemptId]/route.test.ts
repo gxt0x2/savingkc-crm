@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
   transitionDialerAttempt: vi.fn(),
   advanceDialerSessionAfterDisposition: vi.fn(),
+  getDialerPostCallReview: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.resolveAuthenticatedActor }))
@@ -14,8 +15,9 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   transitionDialerAttempt: mocks.transitionDialerAttempt,
   advanceDialerSessionAfterDisposition: mocks.advanceDialerSessionAfterDisposition,
 }))
+vi.mock('@/lib/server/dialer-post-call-review', () => ({ getDialerPostCallReview: mocks.getDialerPostCallReview }))
 
-import { PATCH } from './route'
+import { GET, PATCH } from './route'
 
 const context = { params: Promise.resolve({ id: 'session-1', attemptId: 'attempt-1' }) }
 
@@ -31,6 +33,20 @@ describe('dialer session attempt transitions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.resolveAuthenticatedActor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+  })
+
+  it('returns the authenticated actor own durable AI review', async () => {
+    mocks.getDialerPostCallReview.mockResolvedValue({ status: 'ready', summary: 'Seller wants to move in September.' })
+
+    const response = await GET(new Request('https://crm.savingkc.com/api/dialer/sessions/session-1/attempts/attempt-1'), context)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ review: { status: 'ready', summary: 'Seller wants to move in September.' } })
+    expect(mocks.getDialerPostCallReview).toHaveBeenCalledWith(
+      { email: 'casey@savingkc.com', name: 'Casey' },
+      'session-1',
+      'attempt-1',
+    )
   })
 
   it('derives reached from the server disposition taxonomy', async () => {

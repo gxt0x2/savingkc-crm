@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   markLeadAsGoogleAdsPhoneLead: vi.fn(),
   upsertAppointmentFromCall: vi.fn(),
   syncCoOwners: vi.fn(),
+  completeDialerPostCallReview: vi.fn(),
+  markDialerPostCallProcessing: vi.fn(),
+  markDialerPostCallUnavailable: vi.fn(),
 }))
 
 vi.mock('@/lib/twilio-validate', () => ({
@@ -43,6 +46,12 @@ vi.mock('@/lib/appointments', () => ({
 
 vi.mock('@/lib/co-owners', () => ({
   syncCoOwners: mocks.syncCoOwners,
+}))
+
+vi.mock('@/lib/server/dialer-post-call-review', () => ({
+  completeDialerPostCallReview: mocks.completeDialerPostCallReview,
+  markDialerPostCallProcessing: mocks.markDialerPostCallProcessing,
+  markDialerPostCallUnavailable: mocks.markDialerPostCallUnavailable,
 }))
 
 vi.mock('@/lib/call-quality-events', () => ({
@@ -107,6 +116,9 @@ describe('Twilio recording callback containment', () => {
     vi.clearAllMocks()
     mocks.validateTwilioWebhook.mockResolvedValue(true)
     mocks.resolveGoogleAdsLeadContext.mockResolvedValue({ leadId: null })
+    mocks.completeDialerPostCallReview.mockResolvedValue(false)
+    mocks.markDialerPostCallProcessing.mockResolvedValue(false)
+    mocks.markDialerPostCallUnavailable.mockResolvedValue(false)
   })
 
   it('rejects an invalid signature before reading CRM data or media', async () => {
@@ -146,5 +158,25 @@ describe('Twilio recording callback containment', () => {
     expect(mocks.downloadRecording).not.toHaveBeenCalled()
     expect(mocks.transcribeAudio).not.toHaveBeenCalled()
     expect(mocks.analyzeCallTranscript).not.toHaveBeenCalled()
+  })
+
+  it('marks a linked durable attempt skipped when the provider recording is too short', async () => {
+    const request = recordingRequest()
+    const url = new URL(request.url)
+    url.searchParams.set('clientAttemptId', 'attempt-1')
+    const shortBody = await request.formData()
+    shortBody.set('RecordingDuration', '4')
+
+    const response = await POST(new Request(url, { method: 'POST', body: shortBody }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.markDialerPostCallUnavailable).toHaveBeenCalledWith(expect.objectContaining({
+      clientAttemptId: 'attempt-1',
+      providerCallSid: 'CA11111111111111111111111111111111',
+      recordingSid: 'RE11111111111111111111111111111111',
+      status: 'skipped',
+      failureCode: 'recording_too_short',
+    }))
+    expect(mocks.downloadRecording).not.toHaveBeenCalled()
   })
 })

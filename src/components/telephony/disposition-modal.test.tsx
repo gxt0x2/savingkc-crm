@@ -115,4 +115,29 @@ describe('DispositionModal', () => {
     expect(html).toContain('Why is it dead?')
     expect(html).toContain('Not the owner / No legal interest')
   })
+
+  it('keeps AI output human-controlled and inserts it only after Use is clicked', () => {
+    render(
+      <DispositionModal
+        open
+        onClose={() => {}}
+        onDisposition={() => true}
+        leadName="Jill Woods"
+        phoneNumber="+18169169564"
+        aiSummary="Seller wants to move before October."
+        aiSummaryStatus="ready"
+      />,
+    )
+
+    const notes = screen.getByPlaceholderText('Add notes from this call...')
+    expect(notes).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: 'Use' }))
+    expect(notes).toHaveValue('Seller wants to move before October.')
+  })
+
+  it('allows the agent to save a disposition while AI processing continues', () => {
+    const html = renderModal({ aiSummaryStatus: 'processing' })
+
+    expect(html).toContain('AI review is processing. Save the outcome without waiting.')
+  })
 })

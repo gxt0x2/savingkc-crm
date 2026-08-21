@@ -78,6 +78,18 @@ function xmlResponse(body: string, status = 200) {
   return new NextResponse(body, { status, headers: XML_HEADERS })
 }
 
+function outboundRecordingCallback(input: {
+  leadId: string | null
+  clientAttemptId: string | null
+  source: OutboundDialerCallSource
+}): string {
+  const callback = new URL('/api/twilio-recording-callback', BASE_URL)
+  if (input.leadId) callback.searchParams.set('leadId', input.leadId)
+  if (input.clientAttemptId) callback.searchParams.set('clientAttemptId', input.clientAttemptId)
+  callback.searchParams.set('source', input.source)
+  return callback.toString().replaceAll('&', '&amp;')
+}
+
 function legacySdkIntentCompatibilityEnabled(now = new Date()): boolean {
   return process.env.DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS === 'true'
     && now.getTime() < LEGACY_SDK_INTENT_SUNSET
@@ -298,10 +310,11 @@ export async function POST(req: Request) {
       }
 
       const statusCallback = `${BASE_URL}/api/twilio-call-status?identity=${encodeURIComponent(identity)}`
+      const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
       const dialTimeout = parseDialTimeout(getFormString(body, ['RingCount', 'ringCount', 'ring_count']))
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${callerId}" timeout="${dialTimeout}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial callerId="${callerId}" timeout="${dialTimeout}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">
     <Number statusCallback="${statusCallback}" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">${sanitizedTo}</Number>
   </Dial>
 </Response>`
