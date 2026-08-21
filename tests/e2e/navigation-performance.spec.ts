@@ -301,8 +301,8 @@ async function expectRouteReady(page: Page, route: string) {
     return
   }
   if (pathname === '/prospecting') {
-    await expect(page.getByRole('button', { name: 'New campaign' })).toBeVisible()
-    await expect(page.getByText('Loading campaigns…', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Build campaign' }).first()).toBeVisible()
+    await expect(page.getByText('Loading campaign', { exact: true })).toHaveCount(0)
     return
   }
   if (pathname === '/tasks') {

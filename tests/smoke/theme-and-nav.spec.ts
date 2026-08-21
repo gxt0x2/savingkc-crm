@@ -66,6 +66,17 @@ test('CRM controls are interactive instead of decorative', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(workflowDetails).toHaveCount(0);
   await expect(firstWorkflow).toBeFocused();
+
+  await page.goto('/prospecting', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Build campaign' }).first().click();
+  await expect(page.getByRole('heading', { name: 'What are we launching?' })).toBeVisible();
+  await page.getByRole('textbox', { name: /Campaign name/ }).fill('Visual smoke draft');
+  await page.getByRole('button', { name: /SMS cadence/ }).click();
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page.getByRole('heading', { name: 'Build the conversation.' })).toBeVisible();
+  await expect(page.getByText('Draft preview · not sent')).toBeVisible();
+  await page.getByRole('button', { name: 'Exit studio' }).click();
+  await expect(page.getByRole('heading', { name: 'Campaigns' })).toBeVisible();
 });
 
 test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) => {
@@ -168,7 +179,7 @@ for (const route of crmWorkspaceRoutes) {
     await expect(page.locator('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light');
     await expect(page.getByRole('button', { name: 'Switch to dark theme' })).toBeVisible();
     if (route === '/prospecting') {
-      await expect(page.getByRole('button', { name: 'New campaign' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Build campaign' }).first()).toBeVisible();
     } else {
       const commandSearch = route === '/contacts'
         ? page.getByPlaceholder('Search contacts...')
