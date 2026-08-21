@@ -1014,7 +1014,7 @@ function DialerPageInner() {
   }
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+    <div className="mx-auto max-w-[1600px] px-4 py-6 pb-24 sm:px-6 lg:px-8">
       <DialerSessionCommand
         queueLabel={inferredQueueLabel}
         currentIndex={currentIndex}
@@ -1036,10 +1036,10 @@ function DialerPageInner() {
         onSkip={() => { void skipCurrentLead() }}
       />
 
-      {/* Two-column body */}
+      {/* Calling floor: the callable people lead; property context supports the call. */}
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
-        {/* LEFT — property context + activity */}
-        <div className="col-span-12 lg:col-span-5 space-y-4">
+        {/* Supporting rail — property context, AI evidence, and communications. */}
+        <aside className="order-2 col-span-12 space-y-4 lg:col-span-4">
           <section className="ck-card p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div className="min-w-0">
@@ -1301,10 +1301,20 @@ function DialerPageInner() {
               <kbd className="text-[9px] font-mono bg-[var(--ck-surface-elev)] border border-[var(--ck-border)] rounded px-1 ml-1">K</kbd> prev
             </p>
           </section>
-        </div>
+        </aside>
 
-        {/* RIGHT — heirs + dial queue */}
-        <div className="col-span-12 lg:col-span-7">
+        {/* Primary workspace — the actual people and callable numbers. */}
+        <main className="order-1 col-span-12 lg:col-span-8">
+          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Current seller group</p>
+              <h2 className="mt-1 text-xl font-black tracking-[-0.02em] text-[var(--crm-ink)]">Reach the right person</h2>
+              <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Verified contacts rise to the top. Blocked outcomes remain visible but cannot enter the call queue.</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">
+              <Icon name="shield" size="text-sm" className="text-emerald-500" /> Safety checked before every dial
+            </div>
+          </div>
           {currentLeadId && (
             <HeirsSection
               key={currentLeadId}
@@ -1324,7 +1334,7 @@ function DialerPageInner() {
               onSmsPhone={setSmsTarget}
             />
           )}
-        </div>
+        </main>
       </div>
 
       {/* SMS composer — pinned to the property lead so the SMS logs there. */}

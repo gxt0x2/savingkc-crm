@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
+import { CallingQueueReadiness } from '@/components/dialer/calling-queue-readiness'
 import {
   dispositionStopsNumber,
   isReachedDisposition,
@@ -311,16 +312,16 @@ export function HeirsSection({
   }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, ringCount])
 
   return (
-    <section className={`ck-card ${expanded ? 'p-6' : 'px-6 py-4'}`}>
+    <section className={`ck-card overflow-hidden ${expanded ? (collapsible ? 'p-6' : 'p-0') : 'px-6 py-4'}`}>
       {/* Header — click anywhere (except Call button) to toggle when collapsible */}
       <header
-        className={`flex items-center justify-between gap-4 ${expanded ? 'mb-5' : ''} ${collapsible ? 'cursor-pointer select-none' : ''}`}
+        className={`flex items-center justify-between gap-4 ${expanded && collapsible ? 'mb-5' : ''} ${collapsible ? 'cursor-pointer select-none' : 'border-b border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-5 py-4 sm:px-6'}`}
         onClick={collapsible ? () => setExpanded((v) => !v) : undefined}
       >
         <div className="flex items-center gap-3 min-w-0">
           <Icon name="diversity_3" className="!text-xl text-[var(--ck-text-muted)] shrink-0" />
           <h2 className="text-sm font-black uppercase tracking-widest text-[var(--ck-text)]">
-            Heirs
+            {collapsible ? 'Heirs' : 'Callable people'}
             {totalHeirs > 0 && (
               <span className="ml-2 text-[var(--ck-text-dim)] font-bold">
                 ({totalHeirs} · {totalPhones} {totalPhones === 1 ? 'phone' : 'phones'})
@@ -354,8 +355,12 @@ export function HeirsSection({
       </header>
 
       {!expanded && null}
-      {expanded && <div className="heirs-body-wrap">
+      {expanded && <div className={`heirs-body-wrap ${collapsible ? '' : 'p-5 sm:p-6'}`}>
       {/* --- expanded body starts --- */}
+
+      {!collapsible && !loading && totalHeirs > 0 ? (
+        <CallingQueueReadiness people={totalHeirs} ready={queuedPhones} verified={verifiedHeirs} />
+      ) : null}
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-[#E32E2E]/10 border border-[#E32E2E]/30 text-xs text-[#E32E2E]">

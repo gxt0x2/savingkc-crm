@@ -123,6 +123,17 @@ afterEach(() => {
 })
 
 describe('HeirsSection dial queue', () => {
+  it('shows calling-floor readiness when embedded as the primary workspace', async () => {
+    mockHeirsFetch()
+    renderHeirsSection({ collapsible: false })
+
+    expect(await screen.findByRole('heading', { name: /Callable people/i })).toBeVisible()
+    expect(screen.getByLabelText('Calling queue readiness')).toBeVisible()
+    expect(screen.getByText('People found')).toBeVisible()
+    expect(screen.getByText('Ready numbers')).toBeVisible()
+    expect(screen.getAllByText('Verified').length).toBeGreaterThan(0)
+  })
+
   it('queues every callable listed heir phone, including attempted and verified numbers', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
