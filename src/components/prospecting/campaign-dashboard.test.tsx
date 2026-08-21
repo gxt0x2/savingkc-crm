@@ -56,6 +56,7 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText('Helen Seller')).toBeVisible()
     expect(screen.getByText('Protected at every action')).toBeVisible()
     expect(screen.getByText('DNC and STOP')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Audience locked' })).toBeDisabled()
   })
 
   it('filters the campaign rail without changing server state', () => {
@@ -88,5 +89,11 @@ describe('CampaignDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Audience workbench' })).toBeVisible()
     expect(await screen.findByText('Helen Seller')).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Who is in this campaign' })).not.toBeInTheDocument()
+  })
+
+  it('carries a draft campaign into the contact audience selector', () => {
+    const draft = { ...detail, status: 'draft' as const }
+    render(<CampaignDashboard campaigns={[draft]} selectedId={draft.id} detail={draft} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    expect(screen.getByRole('link', { name: 'Add contacts' })).toHaveAttribute('href', `/contacts?list=prospects&campaign=${draft.id}&campaign_name=September+absentee+owners`)
   })
 })

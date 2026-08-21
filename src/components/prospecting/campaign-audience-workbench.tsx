@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { campaignAudienceContactsHref } from '@/lib/prospecting/audience-handoff'
 import type { ProspectingCampaignMember, ProspectingCampaignMemberPage } from '@/lib/prospecting/campaign-contract'
 import type { CampaignMemberFilter } from '@/lib/server/prospecting-campaign-members'
 
@@ -23,7 +24,7 @@ function memberTone(member: ProspectingCampaignMember) {
   return 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
 }
 
-export function CampaignAudienceWorkbench({ campaignId, total }: { campaignId: string; total: number }) {
+export function CampaignAudienceWorkbench({ campaignId, campaignName, total, canEditAudience }: { campaignId: string; campaignName: string; total: number; canEditAudience: boolean }) {
   const [filter, setFilter] = useState<CampaignMemberFilter>('all')
   const [query, setQuery] = useState('')
   const [members, setMembers] = useState<ProspectingCampaignMember[]>([])
@@ -80,7 +81,7 @@ export function CampaignAudienceWorkbench({ campaignId, total }: { campaignId: s
   }
 
   return <article className="crm-panel rounded-2xl p-5 sm:p-6" aria-label="Campaign audience workbench">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="crm-eyebrow">Full audience</p><h2 className="mt-1 text-xl font-black text-[var(--crm-ink)]">Audience workbench</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Browse all {total.toLocaleString()} contacts in bounded pages. Status filters run on the server.</p></div><div className="flex flex-wrap gap-2"><label className="relative"><Icon name="search" className="pointer-events-none absolute left-3 top-2.5 text-base text-[var(--crm-text-dim)]" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Find in loaded audience" placeholder="Find loaded contacts" className="crm-field h-10 w-48 rounded-lg pl-9 pr-3 text-xs" /></label><Link href="/contacts?list=prospects" className="crm-secondary-button inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-black"><Icon name="person_add" className="text-base" />Add contacts</Link></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="crm-eyebrow">Full audience</p><h2 className="mt-1 text-xl font-black text-[var(--crm-ink)]">Audience workbench</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Browse all {total.toLocaleString()} contacts in bounded pages. Status filters run on the server.</p></div><div className="flex flex-wrap gap-2"><label className="relative"><Icon name="search" className="pointer-events-none absolute left-3 top-2.5 text-base text-[var(--crm-text-dim)]" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Find in loaded audience" placeholder="Find loaded contacts" className="crm-field h-10 w-48 rounded-lg pl-9 pr-3 text-xs" /></label>{canEditAudience ? <Link href={campaignAudienceContactsHref(campaignId, campaignName)} className="crm-secondary-button inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-black"><Icon name="person_add" className="text-base" />Add contacts</Link> : <button type="button" disabled title="Pause this campaign before changing its audience" className="crm-secondary-button inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-black opacity-50"><Icon name="lock" className="text-base" />Audience locked</button>}</div></div>
     <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Audience status filters">{FILTERS.map((option) => <button key={option.value} type="button" onClick={() => changeFilter(option.value)} className={`rounded-full px-3 py-1.5 text-[10px] font-black ${filter === option.value ? 'bg-[var(--crm-brand)] text-white' : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{option.label}</button>)}</div>
     {error ? <div role="alert" className="mt-4 rounded-xl bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-danger)]">{error}</div> : null}
     {loading && members.length === 0 ? <div role="status" className="mt-5 text-xs font-bold text-[var(--crm-text-muted)]">Loading audience…</div> : null}

@@ -18,7 +18,7 @@ describe('CampaignAudienceWorkbench', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [member], pageInfo: { limit: 50, hasMore: true, nextCursor: 'next-50' } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [{ ...member, id: 'member-2', lead: { ...member.lead, fullName: 'Alex Seller' } }], pageInfo: { limit: 50, hasMore: false, nextCursor: null } }) })
     vi.stubGlobal('fetch', fetchMock)
-    render(<CampaignAudienceWorkbench campaignId="campaign-1" total={150} />)
+    render(<CampaignAudienceWorkbench campaignId="campaign-1" campaignName="August Absentee" total={150} canEditAudience />)
 
     expect(await screen.findByText('Helen Seller')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: /Load 50 more/ }))
@@ -29,7 +29,7 @@ describe('CampaignAudienceWorkbench', () => {
   it('reloads from the server when the operator changes status lanes', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [member], pageInfo: { limit: 50, hasMore: false, nextCursor: null } }) })
     vi.stubGlobal('fetch', fetchMock)
-    render(<CampaignAudienceWorkbench campaignId="campaign-1" total={150} />)
+    render(<CampaignAudienceWorkbench campaignId="campaign-1" campaignName="August Absentee" total={150} canEditAudience />)
     await screen.findByText('Helen Seller')
 
     fireEvent.click(screen.getByRole('button', { name: 'Replied' }))

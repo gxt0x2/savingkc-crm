@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ContactsPage from '../page'
 import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY, contactMatchesSmartList, contactSmartListCounts, type ContactSmartList } from '@/lib/contact-smart-lists'
 
-const { useQueryMock, useQueryClientMock, pushMock } = vi.hoisted(() => ({ useQueryMock: vi.fn(), useQueryClientMock: vi.fn(), pushMock: vi.fn() }))
+const { useQueryMock, useQueryClientMock, pushMock, searchParamsMock } = vi.hoisted(() => ({ useQueryMock: vi.fn(), useQueryClientMock: vi.fn(), pushMock: vi.fn(), searchParamsMock: vi.fn() }))
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: useQueryMock, useQueryClient: useQueryClientMock }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParamsMock(),
 }))
 vi.mock('@/hooks/use-auth', () => ({ useAuth: () => ({ user: { email: 'ernest@savingkc.com' } }) }))
 vi.mock('next/link', () => ({
@@ -58,6 +58,8 @@ describe('ContactsPage smart-list workspace', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/contacts')
     window.localStorage.clear()
+    window.sessionStorage.clear()
+    searchParamsMock.mockReturnValue(new URLSearchParams())
     useQueryClientMock.mockReturnValue({ fetchQuery: vi.fn(), invalidateQueries: vi.fn(), setQueryData: vi.fn() })
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
       const query = queryKey?.[1] as { smartList?: ContactSmartList } | undefined
@@ -220,6 +222,22 @@ describe('ContactsPage smart-list workspace', () => {
 
     fireEvent.doubleClick(contactName)
     expect(pushMock).toHaveBeenCalledWith('/leads/active-lead')
+  })
+
+  it('returns selected contacts to the exact campaign audience review', () => {
+    const campaignId = '11111111-1111-4111-8111-111111111111'
+    searchParamsMock.mockReturnValue(new URLSearchParams(`list=prospects&campaign=${campaignId}&campaign_name=August+Absentee`))
+    useQueryMock.mockReturnValue({
+      data: { items: [contacts[0]], scopeCounts: { active: 0, prospects: 1, not_leads: 0 }, counts: { ...contactSmartListCounts(contacts), prospects: 1 }, facets: { owners: ['Casey'], sources: ['manual'], tags: [] }, pageInfo: { limit: 10, total: 1, hasMore: false, nextCursor: null } },
+      isLoading: false, error: null, refetch: vi.fn(), isFetching: false,
+    })
+    render(<ContactsPage />)
+
+    expect(screen.getByText('Building the audience for August Absentee')).toBeVisible()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select New Intake' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review for August Absentee' }))
+    expect(window.sessionStorage.getItem('savingkc-prospecting-audience-v1')).toBe(JSON.stringify(['new-intake']))
+    expect(pushMock).toHaveBeenCalledWith(`/prospecting?campaign=${campaignId}&audience=1`)
   })
 
   it('moves through server-owned cursor pages without offering a global client selection', () => {
