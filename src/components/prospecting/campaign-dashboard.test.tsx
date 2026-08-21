@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ProspectingCampaignDetail, ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 import { CampaignDashboard } from './campaign-dashboard'
 
@@ -39,12 +39,14 @@ const detail: ProspectingCampaignDetail = {
     enrolledAt: '2026-08-21T10:30:00.000Z',
     lead: { fullName: 'Helen Seller', propertyAddress: '123 Main Street', station: 'prospect', classification: 'warm' },
   }],
-  stats: { total: 10, active: 7, suppressed: 1, replied: 2, completed: 1, sent: 8, failed: 0 },
+  stats: { total: 1, active: 1, suppressed: 0, replied: 2, completed: 1, sent: 8, failed: 0 },
 }
 
 const campaigns: ProspectingCampaignSummary[] = [detail, { ...detail, id: 'campaign-2', name: 'Calling block', kind: 'dialer', status: 'draft' }]
 
 describe('CampaignDashboard', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
   it('shows campaign pulse, sequence, audience health, and server-enforced safety', () => {
     render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
@@ -72,5 +74,19 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText('Eligible')).toBeVisible()
     expect(screen.queryByText('Messages sent')).not.toBeInTheDocument()
     expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
+  })
+
+  it('replaces a truncated audience preview with the paginated workbench', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      return { ok: true, json: async () => url.includes('/activity')
+        ? { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } }
+        : { items: detail.members, pageInfo: { limit: 50, hasMore: true, nextCursor: 'next-page' } } }
+    }))
+    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={{ ...detail, stats: { ...detail.stats, total: 101 } }} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+
+    expect(await screen.findByRole('heading', { name: 'Audience workbench' })).toBeVisible()
+    expect(await screen.findByText('Helen Seller')).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Who is in this campaign' })).not.toBeInTheDocument()
   })
 })
