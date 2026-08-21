@@ -3,9 +3,10 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { FormEvent, useEffect, useRef, useState } from 'react'
+import { AssistantSources } from '@/components/ai/assistant-sources'
 import { Icon } from '@/components/ui/icon'
+import { useAssistantThread } from '@/hooks/use-assistant-thread'
 
-type Message = { role: 'user' | 'assistant'; content: string }
 type LiveSnapshot = { leads: number | null; needsReply: number | null; phones: number | null; workflows: number | null }
 
 const STARTERS = [
@@ -17,19 +18,11 @@ const STARTERS = [
   'Show the work assigned to Ernest versus Casey.',
 ]
 
-function assistantMessage(content: string): Message {
-  return { role: 'assistant', content }
-}
-
 export default function AiAssistantPage() {
   const params = useSearchParams()
   const initialPrompt = params.get('prompt')?.trim() || ''
-  const [messages, setMessages] = useState<Message[]>([
-    assistantMessage('Ask me to inspect the CRM, explain a phone or workflow path, analyze performance, find a contact, or draft an operating change. I use live read-only context; consequential changes require your confirmation before execution.'),
-  ])
+  const { messages, loadingHistory, sending, error, send, clear } = useAssistantThread('ai_page')
   const [input, setInput] = useState(initialPrompt)
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
   const [snapshot, setSnapshot] = useState<LiveSnapshot>({ leads: null, needsReply: null, phones: null, workflows: null })
   const autoSent = useRef(false)
 
@@ -49,35 +42,19 @@ export default function AiAssistantPage() {
 
   async function sendPrompt(prompt: string) {
     const clean = prompt.trim()
-    if (!clean || sending) return
-    const next = [...messages, { role: 'user' as const, content: clean }]
-    setMessages(next)
+    if (!clean || sending || loadingHistory) return
     setInput('')
-    setSending(true)
-    setError('')
-    try {
-      const response = await fetch('/api/ai/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'ARI could not complete the request.')
-      setMessages((current) => [...current, assistantMessage(data.reply)])
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'ARI could not complete the request.')
-    } finally {
-      setSending(false)
-    }
+    const sent = await send(clean)
+    if (!sent) setInput(clean)
   }
 
   useEffect(() => {
-    if (!initialPrompt || autoSent.current) return
+    if (!initialPrompt || loadingHistory || autoSent.current) return
     autoSent.current = true
     void sendPrompt(initialPrompt)
     // The initial URL prompt is intentionally submitted only once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPrompt])
+  }, [initialPrompt, loadingHistory])
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -94,13 +71,15 @@ export default function AiAssistantPage() {
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="crm-panel flex min-h-[680px] min-w-0 flex-col overflow-hidden rounded-2xl">
-            <div className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 py-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]"><Icon name="smart_toy" className="text-[22px]" /></div><div><h2 className="font-black">Ask ARI anything</h2><p className="text-xs text-[var(--crm-text-muted)]">Read, analyze, explain, find, compare, or draft</p></div></div><button type="button" onClick={() => { setMessages([assistantMessage('Conversation cleared. What would you like me to inspect or plan?')]); setError('') }} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-black">Clear</button></div>
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 py-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]"><Icon name="smart_toy" className="text-[22px]" /></div><div><h2 className="font-black">Ask ARI anything</h2><p className="text-xs text-[var(--crm-text-muted)]">Persistent history · actor-scoped CRM evidence</p></div></div><button type="button" onClick={() => void clear()} disabled={sending || loadingHistory} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-black disabled:opacity-50">New conversation</button></div>
             <div className="flex-1 space-y-4 overflow-y-auto bg-[var(--crm-surface-subtle)]/50 p-5">
-              {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}><p className="whitespace-pre-wrap">{message.content}</p></div></div>)}
+              {loadingHistory ? <div className="text-sm text-[var(--crm-text-muted)]">Loading your conversation…</div> : null}
+              {!loadingHistory && messages.length === 0 ? <div className="flex justify-start"><div className="max-w-[82%] rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-sm leading-6 text-[var(--crm-ink)] shadow-sm">Ask me to inspect the CRM, explain a phone or workflow path, analyze performance, find a contact, or draft an operating change. I use live read-only context; consequential changes require confirmation.</div></div> : null}
+              {messages.map((message) => <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}><p className="whitespace-pre-wrap">{message.content}</p>{message.role === 'assistant' ? <AssistantSources sources={message.sources} /> : null}</div></div>)}
               {sending ? <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-sm text-[var(--crm-text-muted)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--crm-violet)]" /><span>Reading the CRM and system registry…</span></div></div> : null}
               {error ? <div className="rounded-xl border border-[var(--crm-danger)]/25 bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]">{error}</div> : null}
             </div>
-            <form onSubmit={submit} className="border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-4"><label htmlFor="ai-request" className="sr-only">Ask ARI</label><div className="flex items-end gap-3 rounded-2xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-2 focus-within:border-[var(--crm-violet)] focus-within:ring-2 focus-within:ring-[var(--crm-violet-soft)]"><textarea id="ai-request" rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendPrompt(input) } }} placeholder="Ask about a lead, metric, phone route, workflow, or operating change…" className="min-h-12 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-[var(--crm-text-dim)]" /><button type="submit" disabled={!input.trim() || sending} className="crm-primary-button grid h-11 w-11 shrink-0 place-items-center rounded-xl disabled:cursor-not-allowed disabled:opacity-50" aria-label="Send request"><Icon name="arrow_upward" /></button></div><div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--crm-text-muted)]"><span>Enter to send · Shift+Enter for a new line</span><span>Changes require confirmation</span></div></form>
+            <form onSubmit={submit} className="border-t border-[var(--crm-border)] bg-[var(--crm-surface)] p-4"><label htmlFor="ai-request" className="sr-only">Ask ARI</label><div className="flex items-end gap-3 rounded-2xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-2 focus-within:border-[var(--crm-violet)] focus-within:ring-2 focus-within:ring-[var(--crm-violet-soft)]"><textarea id="ai-request" rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendPrompt(input) } }} placeholder="Ask about a lead, metric, phone route, workflow, or operating change…" className="min-h-12 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-[var(--crm-text-dim)]" /><button type="submit" disabled={!input.trim() || sending || loadingHistory} className="crm-primary-button grid h-11 w-11 shrink-0 place-items-center rounded-xl disabled:cursor-not-allowed disabled:opacity-50" aria-label="Send request"><Icon name="arrow_upward" /></button></div><div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--crm-text-muted)]"><span>Enter to send · Shift+Enter for a new line</span><span>Changes require confirmation</span></div></form>
           </div>
 
           <aside className="space-y-4">

@@ -3,9 +3,10 @@
 import Image from 'next/image'
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
 
+import { AssistantSources } from '@/components/ai/assistant-sources'
 import { Icon } from '@/components/ui/icon'
+import { useAssistantThread } from '@/hooks/use-assistant-thread'
 
-type Message = { role: 'user' | 'assistant'; content: string; attachments?: string[] }
 type AssistantAttachment = { id: string; name: string; mediaType: string; size: number; dataUrl: string }
 type SpeechResultListLike = { length: number; [index: number]: { isFinal: boolean; 0: { transcript: string } } }
 type SpeechRecognitionLike = {
@@ -36,10 +37,7 @@ const ACCEPTED_MEDIA_TYPES = new Set([
   'text/xml',
 ])
 
-const INTRO: Message = {
-  role: 'assistant',
-  content: "I start with SavingKC's recorded goals, current performance, and approved operating path. I'll identify what is off track, recommend the highest-leverage next action, and prepare safe implementation steps. Ask a question, dictate it, or attach evidence.",
-}
+const INTRO = "I start with SavingKC's recorded goals, current performance, and approved operating path. I'll identify what is off track, recommend the highest-leverage next action, and prepare safe implementation steps. Ask a question, dictate it, or attach evidence."
 
 function mediaTypeFor(file: File) {
   if (file.type) return file.type.toLowerCase()
@@ -62,17 +60,15 @@ function readAsDataUrl(file: File) {
 
 export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolean }) {
   const [open, setOpen] = useState(initialOpen)
-  const [messages, setMessages] = useState<Message[]>([INTRO])
+  const { messages, loadingHistory, sending, error, setError, send, clear } = useAssistantThread('giraffe')
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
-  const [sending, setSending] = useState(false)
   const [listening, setListening] = useState(false)
   const [dictationAvailable] = useState(() => {
     if (typeof window === 'undefined') return false
     const browserWindow = window as typeof window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor }
     return Boolean(browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition)
   })
-  const [error, setError] = useState('')
   const transcriptRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
@@ -97,34 +93,15 @@ export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolea
 
   async function sendPrompt(prompt: string) {
     const clean = prompt.trim() || (attachments.length > 0 ? "Review the attached evidence through SavingKC's goals and operating path." : '')
-    if (!clean || sending) return
+    if (!clean || sending || loadingHistory) return
     const requestAttachments = attachments
-    const priorMessages = messages
-    const next = [...messages, { role: 'user' as const, content: clean, attachments: requestAttachments.map((attachment) => attachment.name) }]
-    setMessages(next)
     setInput('')
     setAttachments([])
-    setSending(true)
     setError('')
-    try {
-      const response = await fetch('/api/ai/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: next.map(({ role, content }) => ({ role, content })),
-          attachments: requestAttachments.map(({ name, mediaType, size, dataUrl }) => ({ name, mediaType, size, dataUrl })),
-        }),
-      })
-      const data = await response.json().catch(() => ({})) as { reply?: string; error?: string }
-      if (!response.ok) throw new Error(data.error || 'The AI Assistant could not complete the request.')
-      setMessages((current) => [...current, { role: 'assistant', content: data.reply || 'No response was returned.' }])
-    } catch (cause) {
-      setMessages(priorMessages)
+    const sent = await send(clean, requestAttachments.map(({ name, mediaType, size, dataUrl }) => ({ name, mediaType, size, dataUrl })))
+    if (!sent) {
       setInput(clean)
       setAttachments(requestAttachments)
-      setError(cause instanceof Error ? cause.message : 'The AI Assistant could not complete the request.')
-    } finally {
-      setSending(false)
     }
   }
 
@@ -198,14 +175,18 @@ export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolea
           <header className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 pb-3 pt-[max(.75rem,env(safe-area-inset-top))] lg:py-3">
             <Image src="/ai/giraffe-assistant.webp" alt="" width={48} height={48} className="h-11 w-11 rounded-full border-2 border-[var(--crm-warning-border)] object-cover" />
             <div className="min-w-0 flex-1"><h2 className="font-black text-[var(--crm-ink)]">AI Assistant</h2><p className="text-[11px] font-semibold text-[var(--crm-success)]">Company goals + live CRM context</p></div>
+            <button type="button" onClick={() => void clear()} disabled={sending || loadingHistory} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40" aria-label="Start a new AI conversation"><Icon name="edit_square" /></button>
             <button type="button" onClick={() => setOpen(false)} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg" aria-label="Close AI Assistant"><Icon name="close" /></button>
           </header>
           <div ref={transcriptRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[var(--crm-surface-subtle)] p-4">
-            {messages.map((message, index) => (
-              <div key={`${message.role}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {loadingHistory ? <p className="text-xs text-[var(--crm-text-muted)]">Loading your conversation…</p> : null}
+            {!loadingHistory && messages.length === 0 ? <div className="flex justify-start"><div className="max-w-[92%] rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3.5 py-2.5 text-[13px] leading-5 text-[var(--crm-ink)] shadow-sm sm:max-w-[88%] sm:text-sm">{INTRO}</div></div> : null}
+            {messages.map((message) => (
+              <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-5 shadow-sm sm:max-w-[88%] sm:text-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}>
                   <p className="whitespace-pre-wrap">{message.content}</p>
-                  {message.attachments?.length ? <div className="mt-2 flex flex-wrap gap-1">{message.attachments.map((name) => <span key={name} className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold">{name}</span>)}</div> : null}
+                  {message.attachments.length ? <div className="mt-2 flex flex-wrap gap-1">{message.attachments.map((attachment) => <span key={attachment.name} className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold">{attachment.name}</span>)}</div> : null}
+                  {message.role === 'assistant' ? <AssistantSources sources={message.sources} /> : null}
                 </div>
               </div>
             ))}
@@ -219,10 +200,10 @@ export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolea
             <div className="rounded-xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-2 focus-within:border-[var(--crm-violet)]">
               <textarea id="giraffe-ai-request" rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendPrompt(input) } }} placeholder="Ask what is off track or what happens next…" className="min-h-12 w-full resize-none bg-transparent px-1 py-1 text-base text-[var(--crm-ink)] outline-none placeholder:text-[var(--crm-text-dim)]" />
               <div className="mt-1 flex items-center gap-1.5 border-t border-[var(--crm-border)] pt-2">
-                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || attachments.length >= MAX_ATTACHMENTS} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40" aria-label="Attach evidence"><Icon name="attach_file" /></button>
-                <button type="button" onClick={toggleDictation} disabled={sending || !dictationAvailable} className={`crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40 ${listening ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : ''}`} aria-label={listening ? 'Stop voice dictation' : 'Start voice dictation'} aria-pressed={listening}><Icon name={listening ? 'mic_off' : 'mic'} /></button>
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || loadingHistory || attachments.length >= MAX_ATTACHMENTS} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40" aria-label="Attach evidence"><Icon name="attach_file" /></button>
+                <button type="button" onClick={toggleDictation} disabled={sending || loadingHistory || !dictationAvailable} className={`crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40 ${listening ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : ''}`} aria-label={listening ? 'Stop voice dictation' : 'Start voice dictation'} aria-pressed={listening}><Icon name={listening ? 'mic_off' : 'mic'} /></button>
                 <span aria-live="polite" className="min-w-0 flex-1 truncate pl-1 text-[9px] font-semibold text-[var(--crm-text-muted)]">{listening ? 'Listening…' : attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? '' : 's'} ready` : 'Attach evidence or dictate'}</span>
-                <button type="submit" disabled={(!input.trim() && attachments.length === 0) || sending} className="crm-primary-button grid h-10 w-10 shrink-0 place-items-center rounded-lg disabled:opacity-50" aria-label="Send AI request"><Icon name="arrow_upward" /></button>
+                <button type="submit" disabled={(!input.trim() && attachments.length === 0) || sending || loadingHistory} className="crm-primary-button grid h-10 w-10 shrink-0 place-items-center rounded-lg disabled:opacity-50" aria-label="Send AI request"><Icon name="arrow_upward" /></button>
               </div>
             </div>
             <p className="mt-1.5 text-[9px] text-[var(--crm-text-muted)]">Goals and approved operating paths are checked first. Changes affecting people, data, routing, or spend require confirmation.</p>

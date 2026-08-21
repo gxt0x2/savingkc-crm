@@ -1,7 +1,7 @@
 import { PHONE_SYSTEM } from '@/lib/operating-model/phone-system'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
 import { readStoredWorkflowDefinitions } from '@/lib/operating-model/workflow-store'
-import { readOperatingSnapshot } from '@/lib/ai/command-agent'
+import { readOperatingSnapshot } from '@/lib/assistant/operating-snapshot'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
 import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
