@@ -81,9 +81,23 @@ describe('CampaignDashboard', () => {
     render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     expect(screen.getByText('Ready to call')).toBeVisible()
-    expect(screen.getByText('Eligible')).toBeVisible()
+    expect(screen.getByText('Calls worked')).toBeVisible()
     expect(screen.queryByText('Messages sent')).not.toBeInTheDocument()
-    expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
+  })
+
+  it('offers the next server-owned batch after calls have been worked', () => {
+    const dialerDetail: ProspectingCampaignDetail = {
+      ...detail,
+      kind: 'dialer',
+      callerId: '+18165550199',
+      fromPhone: null,
+      steps: [],
+      stats: { ...detail.stats, completed: 100, active: 125, total: 225 },
+    }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Start next batch' })).toBeVisible()
+    expect(screen.getByText(/next focused batch of up to 100 ready contacts/i)).toBeVisible()
   })
 
   it('replaces a truncated audience preview with the paginated workbench', async () => {

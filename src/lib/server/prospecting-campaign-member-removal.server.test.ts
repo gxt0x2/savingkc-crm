@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { rpc: mocks.rpc } }))
-vi.mock('@/lib/server/dialer-session-engine', () => ({ startDialerSession: vi.fn() }))
+vi.mock('@/lib/server/dialer-session-engine', () => ({ parseDialerSession: vi.fn() }))
 
 import { ProspectingCampaignError, removeProspectingCampaignMember } from '@/lib/server/prospecting-campaigns'
 
@@ -43,6 +43,15 @@ describe('removeProspectingCampaignMember', () => {
       code: 'invalid_campaign_state',
       status: 409,
       message: 'Pause the campaign before changing its audience',
+    }))
+  })
+
+  it('requires the open calling session to stop before removing a loaded contact', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'campaign_member_in_active_dialer_batch' } })
+    await expect(removeProspectingCampaignMember(actor, campaignId, memberId)).rejects.toEqual(expect.objectContaining<Partial<ProspectingCampaignError>>({
+      code: 'campaign_member_in_active_dialer_batch',
+      status: 409,
+      message: 'Stop the open calling session before removing this contact',
     }))
   })
 })

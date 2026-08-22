@@ -8,7 +8,7 @@ import {
   type ProspectingCampaignSummary,
   type ProspectingCampaignStep,
 } from '@/lib/prospecting/campaign-contract'
-import { startDialerSession } from '@/lib/server/dialer-session-engine'
+import { parseDialerSession } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
 
 export class ProspectingCampaignError extends Error {
@@ -65,7 +65,9 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('campaign_not_found') || detail.includes('pgrst116')) return new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
   if (detail.includes('campaign_has_no_eligible_members')) return new ProspectingCampaignError('campaign_empty', 409, 'Add at least one eligible contact before activating')
   if (detail.includes('campaign_has_no_steps')) return new ProspectingCampaignError('campaign_steps_required', 409, 'Add at least one message step before activating')
+  if (detail.includes('campaign_dialer_complete')) return new ProspectingCampaignError('campaign_dialer_complete', 409, 'Every ready contact has been worked. Review skipped or suppressed contacts before starting another batch')
   if (detail.includes('campaign_setup_locked')) return new ProspectingCampaignError('campaign_setup_locked', 409, 'Only a campaign that has never run can be edited')
+  if (detail.includes('campaign_member_in_active_dialer_batch')) return new ProspectingCampaignError('campaign_member_in_active_dialer_batch', 409, 'Stop the open calling session before removing this contact')
   if (detail.includes('campaign_members_locked') || detail.includes('invalid_campaign_transition')) return new ProspectingCampaignError('invalid_campaign_state', 409, 'Pause the campaign before changing its audience')
   if (detail.includes('invalid_') || detail.includes('23514') || detail.includes('23505') || detail.includes('22p02')) return new ProspectingCampaignError('invalid_campaign', 400, 'Campaign details are invalid')
   if (detail.includes('does not exist') || detail.includes('pgrst202') || detail.includes('42p01') || detail.includes('42883')) {
@@ -322,32 +324,20 @@ export async function launchProspectingDialerCampaign(actor: AuthenticatedActor,
   const campaign = await getProspectingCampaign(actor, campaignId)
   if (campaign.kind !== 'dialer') throw new ProspectingCampaignError('invalid_campaign_kind', 409, 'Only dialer campaigns can start a calling session')
   if (campaign.status !== 'active') throw new ProspectingCampaignError('invalid_campaign_state', 409, 'Activate the campaign before starting calls')
-  const { data, error } = await supabase
-    .from('prospecting_campaign_members')
-    .select('lead_id,phone_snapshot')
-    .eq('campaign_id', campaignId)
-    .eq('status', 'active')
-    .order('enrolled_at')
-    .limit(101)
-  if (error) throw databaseError(error)
-  if (!data?.length) throw new ProspectingCampaignError('campaign_empty', 409, 'This campaign has no eligible contacts')
-  if (data.length > 100) throw new ProspectingCampaignError('campaign_too_large', 409, 'Start this campaign in batches of 100 contacts')
   const callerId = normalizePhoneToE164(campaign.callerId || '')
   if (!callerId) throw new ProspectingCampaignError('caller_id_required', 409, 'Choose a calling number before starting')
-  const result = await startDialerSession({
-    actor,
-    leadIds: data.map((row) => row.lead_id),
-    queueKey: `campaign:${campaignId}`,
-    callerId,
-    settings: { prospectingCampaignId: campaignId, campaignName: campaign.name },
+  const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v1', {
+    p_campaign_id: campaignId,
+    p_actor_email: actor.email,
+    p_actor_name: actor.name,
+    p_caller_id: callerId,
   })
-  if (result.created) {
-    const { error: linkError } = await supabase
-      .from('dialer_sessions')
-      .update({ prospecting_campaign_id: campaignId })
-      .eq('id', result.session.id)
-      .eq('actor_email', actor.email.toLowerCase())
-    if (linkError) throw databaseError(linkError)
+  if (error) throw databaseError(error)
+  const payload = data as { created?: unknown; session?: unknown; batchSize?: unknown; remaining?: unknown } | null
+  return {
+    created: payload?.created === true,
+    session: parseDialerSession(payload?.session),
+    batchSize: Number(payload?.batchSize) || 0,
+    remaining: Number(payload?.remaining) || 0,
   }
-  return result
 }
