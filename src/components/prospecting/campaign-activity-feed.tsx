@@ -1,9 +1,21 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import type { ProspectingCampaignActivity, ProspectingCampaignActivityPage } from '@/lib/prospecting/campaign-contract'
+import type {
+  ProspectingCampaignActivity,
+  ProspectingCampaignActivityFilter,
+  ProspectingCampaignActivityPage,
+} from '@/lib/prospecting/campaign-contract'
+
+const ACTIVITY_FILTERS: Array<{ id: ProspectingCampaignActivityFilter; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'replies', label: 'Replies' },
+  { id: 'failures', label: 'Failures' },
+  { id: 'sends', label: 'Sends' },
+  { id: 'changes', label: 'Changes' },
+]
 
 function eventPresentation(item: ProspectingCampaignActivity) {
   const normalized = item.eventType.replace(/^campaign_/, '')
@@ -38,27 +50,35 @@ function reasonLabel(value: string) {
 }
 
 export function CampaignActivityFeed({ campaignId }: { campaignId: string }) {
+  const [filter, setFilter] = useState<ProspectingCampaignActivityFilter>('all')
   const [items, setItems] = useState<ProspectingCampaignActivity[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const requestVersionRef = useRef(0)
 
-  const load = useCallback(async (nextCursor?: string | null) => {
-    const response = await fetch(`/api/prospecting/campaigns/${encodeURIComponent(campaignId)}/activity?limit=25${nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : ''}`, { cache: 'no-store' })
+  const load = useCallback(async (version: number, nextCursor?: string | null) => {
+    const response = await fetch(`/api/prospecting/campaigns/${encodeURIComponent(campaignId)}/activity?limit=25&filter=${filter}${nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : ''}`, { cache: 'no-store' })
     const body = await response.json().catch(() => null) as (ProspectingCampaignActivityPage & { error?: string }) | null
     if (!response.ok || !body) throw new Error(body?.error || 'Campaign activity is unavailable')
+    if (version !== requestVersionRef.current) return
     setItems((current) => nextCursor ? [...current, ...body.items.filter((item) => !current.some((existing) => existing.id === item.id))] : body.items)
     setCursor(body.pageInfo.nextCursor)
     setHasMore(body.pageInfo.hasMore)
-  }, [campaignId])
+  }, [campaignId, filter])
 
   useEffect(() => {
     let cancelled = false
+    const version = ++requestVersionRef.current
+    setItems([])
+    setCursor(null)
+    setHasMore(false)
     setLoading(true)
+    setLoadingMore(false)
     setError(null)
-    void load().catch((caught) => {
+    void load(version).catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : 'Campaign activity is unavailable')
     }).finally(() => {
       if (!cancelled) setLoading(false)
@@ -67,16 +87,19 @@ export function CampaignActivityFeed({ campaignId }: { campaignId: string }) {
   }, [load])
 
   async function refresh() {
+    const version = ++requestVersionRef.current
     setLoading(true)
+    setLoadingMore(false)
     setError(null)
-    try { await load() } catch (caught) { setError(caught instanceof Error ? caught.message : 'Campaign activity is unavailable') } finally { setLoading(false) }
+    try { await load(version) } catch (caught) { if (version === requestVersionRef.current) setError(caught instanceof Error ? caught.message : 'Campaign activity is unavailable') } finally { if (version === requestVersionRef.current) setLoading(false) }
   }
 
   async function loadMore() {
     if (!cursor || loadingMore) return
+    const version = ++requestVersionRef.current
     setLoadingMore(true)
     setError(null)
-    try { await load(cursor) } catch (caught) { setError(caught instanceof Error ? caught.message : 'Older activity is unavailable') } finally { setLoadingMore(false) }
+    try { await load(version, cursor) } catch (caught) { if (version === requestVersionRef.current) setError(caught instanceof Error ? caught.message : 'Older activity is unavailable') } finally { if (version === requestVersionRef.current) setLoadingMore(false) }
   }
 
   return (
@@ -86,9 +109,13 @@ export function CampaignActivityFeed({ campaignId }: { campaignId: string }) {
         <button type="button" onClick={() => void refresh()} disabled={loading} className="crm-secondary-button inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:opacity-50"><Icon name="refresh" className={`text-base ${loading ? 'animate-spin' : ''}`} />Refresh</button>
       </div>
 
+      <div className="mt-4 flex gap-1 overflow-x-auto rounded-xl bg-[var(--crm-surface-subtle)] p-1" aria-label="Campaign activity filters">
+        {ACTIVITY_FILTERS.map((option) => <button key={option.id} type="button" onClick={() => setFilter(option.id)} aria-pressed={filter === option.id} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black transition ${filter === option.id ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm' : 'text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'}`}>{option.label}</button>)}
+      </div>
+
       {error ? <div role="alert" className="mt-4 rounded-xl border border-[var(--crm-danger)]/25 bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-danger)]">{error}</div> : null}
       {loading && items.length === 0 ? <div className="mt-5 space-y-2" role="status" aria-label="Loading campaign activity">{[1, 2, 3].map((row) => <div key={row} className="h-16 animate-pulse rounded-xl bg-[var(--crm-surface-subtle)]" />)}</div> : null}
-      {!loading && items.length === 0 && !error ? <div className="mt-5 rounded-2xl border border-dashed border-[var(--crm-border)] p-7 text-center"><Icon name="history" className="text-3xl text-[var(--crm-text-dim)]" /><p className="mt-2 text-sm font-black text-[var(--crm-ink)]">No activity yet</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Campaign controls and delivery results will appear here.</p></div> : null}
+      {!loading && items.length === 0 && !error ? <div className="mt-5 rounded-2xl border border-dashed border-[var(--crm-border)] p-7 text-center"><Icon name="history" className="text-3xl text-[var(--crm-text-dim)]" /><p className="mt-2 text-sm font-black text-[var(--crm-ink)]">{filter === 'all' ? 'No activity yet' : `No ${ACTIVITY_FILTERS.find((option) => option.id === filter)?.label.toLowerCase()} yet`}</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{filter === 'all' ? 'Campaign controls and delivery results will appear here.' : 'Try another view or refresh after the campaign runs.'}</p></div> : null}
 
       {items.length ? <ol className="mt-5 space-y-2">{items.map((item) => {
         const presentation = eventPresentation(item)

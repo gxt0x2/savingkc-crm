@@ -3,9 +3,11 @@ import { isAllowedSmsSender, isDialerCallerIdNumber } from '@/lib/twilio-numbers
 
 export const PROSPECTING_CAMPAIGN_KINDS = ['dialer', 'sms'] as const
 export const PROSPECTING_CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'completed', 'archived'] as const
+export const PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS = ['all', 'replies', 'failures', 'sends', 'changes'] as const
 
 export type ProspectingCampaignKind = typeof PROSPECTING_CAMPAIGN_KINDS[number]
 export type ProspectingCampaignStatus = typeof PROSPECTING_CAMPAIGN_STATUSES[number]
+export type ProspectingCampaignActivityFilter = typeof PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS[number]
 
 export interface ProspectingCampaignStepInput {
   delayMinutes: number

@@ -57,6 +57,36 @@ describe('CampaignActivityFeed', () => {
     expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('cursor=next-page'), { cache: 'no-store' })
   })
 
+  it('switches to server-owned operator filters and resets the prior feed', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => firstPage })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        items: [{ ...firstPage.items[0], id: 'failure', eventType: 'campaign_action_failed', status: 'failed', errorCode: '30007' }],
+        pageInfo: { limit: 25, hasMore: false, nextCursor: null },
+      }) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CampaignActivityFeed campaignId="campaign-1" />)
+
+    expect(await screen.findByText('Provider accepted')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Failures' }))
+
+    expect(await screen.findByText('Delivery failed')).toBeVisible()
+    expect(screen.queryByText('Provider accepted')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('filter=failures'), { cache: 'no-store' })
+  })
+
+  it('shows a truthful empty state for the selected filter', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => firstPage })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [], pageInfo: { limit: 25, hasMore: false, nextCursor: null } }) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CampaignActivityFeed campaignId="campaign-1" />)
+
+    expect(await screen.findByText('Provider accepted')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Replies' }))
+    expect(await screen.findByText('No replies yet')).toBeVisible()
+  })
+
   it('distinguishes carrier delivery from provider acceptance', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
       items: [{ ...firstPage.items[0], eventType: 'campaign_action_delivered', status: 'delivered' }],

@@ -1,9 +1,33 @@
 import type { AuthenticatedActor } from '@/lib/api/authenticated-actor'
-import type { ProspectingCampaignActivity, ProspectingCampaignActivityPage } from '@/lib/prospecting/campaign-contract'
+import {
+  PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS,
+  type ProspectingCampaignActivity,
+  type ProspectingCampaignActivityFilter,
+  type ProspectingCampaignActivityPage,
+} from '@/lib/prospecting/campaign-contract'
 import { ProspectingCampaignError } from '@/lib/server/prospecting-campaigns'
 import { supabase } from '@/lib/supabase-lazy'
 
 type Cursor = { createdAt: string; id: string }
+
+const EVENT_TYPES_BY_FILTER: Record<Exclude<ProspectingCampaignActivityFilter, 'all'>, string[]> = {
+  replies: ['campaign_member_replied', 'campaign_member_suppressed'],
+  failures: ['campaign_action_failed', 'campaign_action_blocked'],
+  sends: ['campaign_action_sent', 'campaign_action_delivered'],
+  changes: [
+    'campaign_created',
+    'campaign_setup_updated',
+    'campaign_schedule_set',
+    'campaign_schedule_updated',
+    'members_enrolled',
+    'member_removed',
+    'campaign_activated',
+    'campaign_paused',
+    'campaign_archived',
+    'dialer_batch_started',
+    'member_call_completed',
+  ],
+}
 
 function encodeCursor(cursor: Cursor) {
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
@@ -37,11 +61,15 @@ function text(value: unknown) {
 export async function listProspectingCampaignActivity(
   actor: AuthenticatedActor,
   campaignId: string,
-  options: { limit?: number; cursor?: string | null } = {},
+  options: { limit?: number; cursor?: string | null; filter?: string | null } = {},
 ): Promise<ProspectingCampaignActivityPage> {
   if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new ProspectingCampaignError('invalid_campaign_id', 400, 'Campaign id is invalid')
   const limit = options.limit ?? 25
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new ProspectingCampaignError('invalid_limit', 400, 'Activity limit must be between 1 and 50')
+  const filter = options.filter || 'all'
+  if (!PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS.includes(filter as ProspectingCampaignActivityFilter)) {
+    throw new ProspectingCampaignError('invalid_activity_filter', 400, 'Campaign activity filter is invalid')
+  }
   const cursor = decodeCursor(options.cursor)
 
   const ownership = await supabase
@@ -60,6 +88,7 @@ export async function listProspectingCampaignActivity(
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(limit + 1)
+  if (filter !== 'all') eventQuery = eventQuery.in('event_type', EVENT_TYPES_BY_FILTER[filter as Exclude<ProspectingCampaignActivityFilter, 'all'>])
   if (cursor) eventQuery = eventQuery.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`)
   const eventsResult = await eventQuery
   if (eventsResult.error) throw new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign activity is unavailable')

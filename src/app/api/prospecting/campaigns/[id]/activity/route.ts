@@ -13,6 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return prospectingJson(await listProspectingCampaignActivity(actor, (await params).id, {
       limit: Number(url.searchParams.get('limit') || 25),
       cursor: url.searchParams.get('cursor'),
+      filter: url.searchParams.get('filter'),
     }))
   } catch (error) {
     return prospectingError(error)
