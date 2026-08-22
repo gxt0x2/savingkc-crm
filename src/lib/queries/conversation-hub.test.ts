@@ -34,6 +34,20 @@ describe('conversation client read contract', () => {
     expect(url).not.toMatch(/owner|agent/i)
   })
 
+  it('sends the known or unmatched filter only when selected', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], pageInfo: { hasMore: false, nextCursor: null }, source: 'projection', degraded: false }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchConversationHub({ queue: 'needs_reply', kind: 'unmatched' })
+    expect(String(fetchMock.mock.calls[0][0])).toContain('kind=unmatched')
+
+    await fetchConversationHub({ queue: 'needs_reply', kind: 'all' })
+    expect(String(fetchMock.mock.calls[1][0])).not.toContain('kind=')
+  })
+
   it('preserves compatibility metadata instead of presenting fallback rows as authoritative', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

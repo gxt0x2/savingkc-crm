@@ -47,6 +47,21 @@ This phase does not bulk-complete tasks, auto-dismiss inbound messages, or use A
 
 Classification reads are capped at 5,000 rows per source. If a source exceeds the cap, the response preserves exact totals, marks itself degraded, and refuses to imply complete classified counts.
 
+## Second Deliverable — Operational Lanes
+
+Production reconciliation confirmed that the raw queues are materially different from the work operators should act on first:
+
+- Tasks: 175 overdue; 41 linked to current records, 131 linked to terminal records, and 3 unlinked. Forty-five contacts have multiple active actions.
+- Conversations: 128 Needs Reply; 48 known-contact threads and 80 unmatched threads. Thirty-four known-contact threads are tied to terminal records.
+
+The next release adds read-only, server-filtered lanes without changing any source record:
+
+- Tasks defaults to **Current work** and keeps **Review debt** and **All records** independently available with exact lane counts.
+- Conversations keeps the existing Needs Reply/Mine/Unassigned/All queues and adds **Everyone**, **Known**, and **Unmatched** contact-type filters.
+- `work_items.operational_lane` is a rebuildable projection field maintained from canonical lead lifecycle state. It never changes task status or lifecycle state.
+- v2 task and conversation RPCs are service-role-only and deployed beside the current v1 contracts for a reversible migration-first rollout.
+- The migration rehearsed twice on PostgreSQL 16. Backfill, lifecycle-trigger reconciliation, grants, pagination, and known/unmatched selection passed; `EXPLAIN` used the new task-lane and unmatched-inbox indexes.
+
 ## Acceptance Gates
 
 - Aggregate route is authenticated, private/no-store, and fails honestly with 503.

@@ -7,6 +7,7 @@ import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { TaskReconciliationStrip } from '@/components/tasks/task-reconciliation-strip'
+import { TaskOperatingLanes, type TaskLane } from '@/components/tasks/task-operating-lanes'
 import { Icon } from '@/components/ui/icon'
 import { useTaskWorklist } from '@/hooks/use-task-worklist'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
@@ -69,6 +70,7 @@ function dueLabel(task: Task) {
 export default function TasksPage() {
   const isMobile = useMobileViewport()
   const [view, setView] = useState<TaskView>('all')
+  const [lane, setLane] = useState<TaskLane>('current')
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>('all')
@@ -93,16 +95,17 @@ export default function TasksPage() {
 
   const deferredSearch = useDeferredValue(search.trim())
   const serverSearch = deferredSearch.length >= 3 ? deferredSearch : ''
-  const filterKey = JSON.stringify([view, assigneeFilter, statusFilter, dueFilter, taskTypeFilter, sortBy, serverSearch])
+  const filterKey = JSON.stringify([lane, view, assigneeFilter, statusFilter, dueFilter, taskTypeFilter, sortBy, serverSearch])
   const activeCursors = pagination.key === filterKey ? pagination.cursors : [null]
   const currentPage = activeCursors.length
   const cursor = activeCursors[activeCursors.length - 1]
   const { data, isLoading, error, refetch, isFetching } = useTaskWorklist({
     department: 'acquisitions', view, status: statusFilter, assignee: assigneeFilter || undefined,
-    due: dueFilter, type: taskTypeFilter, query: serverSearch || undefined, sort: sortBy, limit: PAGE_SIZE, cursor,
+    due: dueFilter, type: taskTypeFilter, query: serverSearch || undefined, sort: sortBy, limit: PAGE_SIZE, cursor, lane,
   })
   const sourceTasks = data?.tasks ?? EMPTY_TASKS
   const counts = data?.counts ?? { all: 0, due_today: 0, overdue: 0, upcoming: 0, completed: 0 }
+  const laneCounts = data?.laneCounts ?? { current: 0, review: 0, all: 0 }
   const filteredTotal = data?.pageInfo.total ?? 0
   const countLabel = (id: TaskView) => data ? counts[id] : '—'
 
@@ -362,6 +365,13 @@ export default function TasksPage() {
         </div> : <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Task view" value={view} onChange={(event) => selectView(event.target.value as TaskView)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{(Object.keys(TASK_VIEW_COPY) as TaskView[]).map((id) => <option key={id} value={id}>{TASK_VIEW_COPY[id].label} ({countLabel(id)})</option>)}</select></label>}
 
         <TaskReconciliationStrip />
+
+        <TaskOperatingLanes
+          lane={lane}
+          counts={laneCounts}
+          loaded={Boolean(data)}
+          onChange={(value) => { setLane(value); resetPosition(); setMessage(null) }}
+        />
 
         <section className="px-3 py-3 md:px-7">
           <div className="flex flex-wrap items-center gap-2">

@@ -4,11 +4,13 @@ export const TASK_WORKLIST_VIEWS = ['all', 'due_today', 'overdue', 'upcoming', '
 export const TASK_WORKLIST_STATUS_FILTERS = ['all', 'active', 'completed'] as const
 export const TASK_WORKLIST_DUE_FILTERS = ['any', 'no_due', 'seven_days', 'thirty_days'] as const
 export const TASK_WORKLIST_SORTS = ['due_asc', 'due_desc', 'newest', 'title'] as const
+export const TASK_WORKLIST_LANES = ['current', 'review', 'all'] as const
 
 export type TaskWorklistView = (typeof TASK_WORKLIST_VIEWS)[number]
 export type TaskWorklistStatusFilter = (typeof TASK_WORKLIST_STATUS_FILTERS)[number]
 export type TaskWorklistDueFilter = (typeof TASK_WORKLIST_DUE_FILTERS)[number]
 export type TaskWorklistSort = (typeof TASK_WORKLIST_SORTS)[number]
+export type TaskWorklistLane = (typeof TASK_WORKLIST_LANES)[number]
 
 export type TaskWorklistContact = {
   id: string
@@ -47,10 +49,12 @@ export type TaskWorklistItem = {
 }
 
 export type TaskWorklistCounts = Record<TaskWorklistView, number>
+export type TaskWorklistLaneCounts = Record<TaskWorklistLane, number>
 
 export type TaskWorklistPage = {
   items: TaskWorklistItem[]
   counts: TaskWorklistCounts
+  laneCounts: TaskWorklistLaneCounts
   pageInfo: { limit: number; total: number; hasMore: boolean; nextCursor: string | null }
   serverNow: string
 }
@@ -152,6 +156,7 @@ export async function getTaskWorklist(input: {
   sort?: string
   limit?: number
   cursor?: string | null
+  lane?: string
   now?: Date
 }): Promise<TaskWorklistPage> {
   const department = input.department?.trim().toLowerCase() || 'acquisitions'
@@ -159,12 +164,14 @@ export async function getTaskWorklist(input: {
   const status = input.status?.trim().toLowerCase() || 'all'
   const due = input.due?.trim().toLowerCase() || 'any'
   const sort = input.sort?.trim().toLowerCase() || 'due_asc'
+  const lane = input.lane?.trim().toLowerCase() || 'current'
   const query = input.query?.trim() || null
   if (!['acquisitions', 'dispositions', 'tc'].includes(department)) throw new TaskWorklistError('Task department is invalid.', 'invalid')
   if (!isOneOf(view, TASK_WORKLIST_VIEWS)) throw new TaskWorklistError('Task view is invalid.', 'invalid')
   if (!isOneOf(status, TASK_WORKLIST_STATUS_FILTERS)) throw new TaskWorklistError('Task status filter is invalid.', 'invalid')
   if (!isOneOf(due, TASK_WORKLIST_DUE_FILTERS)) throw new TaskWorklistError('Task due-date filter is invalid.', 'invalid')
   if (!isOneOf(sort, TASK_WORKLIST_SORTS)) throw new TaskWorklistError('Task sort is invalid.', 'invalid')
+  if (!isOneOf(lane, TASK_WORKLIST_LANES)) throw new TaskWorklistError('Task lane is invalid.', 'invalid')
   if (query && query.length < 3) throw new TaskWorklistError('Task search must contain at least 3 characters.', 'invalid')
   if (query && query.length > 100) throw new TaskWorklistError('Task search is too long.', 'invalid')
 
@@ -174,7 +181,7 @@ export async function getTaskWorklist(input: {
   const requestedLimit = input.limit ?? 20
   if (!Number.isFinite(requestedLimit)) throw new TaskWorklistError('Task page limit is invalid.', 'invalid')
   const limit = Math.max(1, Math.min(Math.trunc(requestedLimit), 50))
-  const { data, error } = await supabaseAdmin().rpc('task_worklist_page_v1', {
+  const { data, error } = await supabaseAdmin().rpc('task_worklist_page_v2', {
     p_department: department,
     p_view: view,
     p_status_filter: status,
@@ -183,6 +190,7 @@ export async function getTaskWorklist(input: {
     p_kinds: taskKinds(input.type || 'any'),
     p_query: query,
     p_sort: sort,
+    p_lane: lane,
     p_limit: limit,
     p_now: now.toISOString(),
     p_today_start: bounds.start,
@@ -196,7 +204,7 @@ export async function getTaskWorklist(input: {
     throw new TaskWorklistError(invalid ? 'Task worklist request is invalid.' : 'Task worklist is unavailable.', invalid ? 'invalid' : 'unavailable')
   }
   const result = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null
-  if (!result || !Array.isArray(result.items) || !result.counts || typeof result.counts !== 'object') {
+  if (!result || !Array.isArray(result.items) || !result.counts || typeof result.counts !== 'object' || !result.laneCounts || typeof result.laneCounts !== 'object') {
     throw new TaskWorklistError('Task worklist is unavailable.', 'unavailable')
   }
   const items = result.items.map(parseItem)
@@ -204,11 +212,14 @@ export async function getTaskWorklist(input: {
   const parsedItems = items as TaskWorklistItem[]
   const countsValue = result.counts as Record<string, unknown>
   const counts = Object.fromEntries(TASK_WORKLIST_VIEWS.map((key) => [key, Number(countsValue[key]) || 0])) as TaskWorklistCounts
+  const laneCountsValue = result.laneCounts as Record<string, unknown>
+  const laneCounts = Object.fromEntries(TASK_WORKLIST_LANES.map((key) => [key, Number(laneCountsValue[key]) || 0])) as TaskWorklistLaneCounts
   const hasMore = result.hasMore === true
   const total = Math.max(0, Number(result.total) || 0)
   return {
     items: parsedItems,
     counts,
+    laneCounts,
     pageInfo: {
       limit,
       total,

@@ -7,6 +7,7 @@ import {
   ConversationReadModelInputError,
   ConversationReadModelUnavailableError,
   conversationChannel,
+  conversationKindFilter,
   conversationPageLimit,
   conversationQueue,
   conversationSearchQuery,
@@ -33,6 +34,7 @@ export async function GET(request?: Request) {
     const limit = conversationPageLimit(searchParams.get('limit'))
     const channel = conversationChannel(searchParams.get('channel'))
     const query = conversationSearchQuery(searchParams.get('q'))
+    const kind = conversationKindFilter(searchParams.get('kind'))
     let actorName: string | null = null
 
     if (queue === 'mine') {
@@ -59,6 +61,7 @@ export async function GET(request?: Request) {
       queue,
       channel,
       query,
+      kind,
       actorName,
       cursor: searchParams.get('cursor'),
     })

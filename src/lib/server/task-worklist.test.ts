@@ -19,7 +19,7 @@ describe('task worklist read model', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.rpc.mockResolvedValue({
-      data: { items: [item], hasMore: true, total: 23, counts: { all: 30, due_today: 4, overdue: 7, upcoming: 10, completed: 9 } },
+      data: { items: [item], hasMore: true, total: 23, counts: { all: 30, due_today: 4, overdue: 7, upcoming: 10, completed: 9 }, laneCounts: { current: 20, review: 10, all: 30 } },
       error: null,
     })
   })
@@ -30,9 +30,10 @@ describe('task worklist read model', () => {
       type: 'offer', query: 'Seller', sort: 'due_asc', limit: 20, now: new Date('2026-08-21T15:00:00Z'),
     })
 
-    expect(mocks.rpc).toHaveBeenCalledWith('task_worklist_page_v1', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('task_worklist_page_v2', expect.objectContaining({
       p_department: 'acquisitions', p_view: 'due_today', p_status_filter: 'active', p_assignee: 'Casey',
       p_due_filter: 'seven_days', p_kinds: ['send_offer'], p_query: 'Seller', p_sort: 'due_asc', p_limit: 20,
+      p_lane: 'current',
       p_today_start: '2026-08-21T05:00:00.000Z', p_tomorrow_start: '2026-08-22T05:00:00.000Z',
     }))
     expect(result.items).toEqual([item])
@@ -42,7 +43,7 @@ describe('task worklist read model', () => {
 
   it('uses the correct Central midnight across the fall DST transition', async () => {
     await getTaskWorklist({ now: new Date('2026-11-01T18:00:00Z') })
-    expect(mocks.rpc).toHaveBeenCalledWith('task_worklist_page_v1', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('task_worklist_page_v2', expect.objectContaining({
       p_today_start: '2026-11-01T05:00:00.000Z',
       p_tomorrow_start: '2026-11-02T06:00:00.000Z',
     }))
@@ -59,6 +60,7 @@ describe('task worklist read model', () => {
     [{ query: 'x'.repeat(101) }, 'search'],
     [{ limit: Number.NaN }, 'limit'],
     [{ type: 'made_up' }, 'type'],
+    [{ lane: 'made_up' }, 'lane'],
   ])('rejects invalid input before querying the database: %s', async (input, message) => {
     await expect(getTaskWorklist(input)).rejects.toBeInstanceOf(TaskWorklistError)
     await expect(getTaskWorklist(input)).rejects.toThrow(message)

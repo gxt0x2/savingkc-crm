@@ -13,6 +13,7 @@ import {
   CONVERSATION_MAX_PAGE_SIZE,
   ConversationReadModelInputError,
   ConversationReadModelUnavailableError,
+  conversationKindFilter,
   conversationPageLimit,
   conversationQueue,
   conversationSearchQuery,
@@ -22,6 +23,7 @@ import {
   encodeConversationThreadCursor,
   encodeConversationTimelineCursor,
   type ConversationChannel,
+  type ConversationKindFilter,
   type ConversationQueue,
 } from './conversation-read-model-contract'
 
@@ -31,6 +33,7 @@ export {
   ConversationReadModelInputError,
   ConversationReadModelUnavailableError,
   conversationChannel,
+  conversationKindFilter,
   conversationPageLimit,
   conversationQueue,
   conversationSearchQuery,
@@ -38,7 +41,7 @@ export {
   decodeConversationThreadCursor,
   decodeConversationTimelineCursor,
 } from './conversation-read-model-contract'
-export type { ConversationChannel, ConversationQueue } from './conversation-read-model-contract'
+export type { ConversationChannel, ConversationKindFilter, ConversationQueue } from './conversation-read-model-contract'
 
 export type ConversationReadSource = 'projection' | 'compatibility'
 
@@ -96,6 +99,7 @@ export interface ReadConversationThreadsInput {
   queue?: ConversationQueue
   actorName?: string | null
   channel?: ConversationChannel | null
+  kind?: ConversationKindFilter
   query?: string | null
 }
 
@@ -280,18 +284,20 @@ export async function readConversationThreads(
 ): Promise<ConversationThreadPage> {
   const limit = conversationPageLimit(input.limit)
   const queue = conversationQueue(input.queue)
+  const kind = conversationKindFilter(input.kind)
   const query = conversationSearchQuery(input.query)
   const cursor = decodeConversationThreadCursor(input.cursor)
   if (queue === 'mine' && !text(input.actorName)) {
     throw new ConversationReadModelInputError('The mine queue requires an authenticated actor')
   }
 
-  const { data, error } = await db.rpc('conversation_thread_page_v1', {
+  const { data, error } = await db.rpc('conversation_thread_page_v2', {
     page_limit: limit + 1,
     page_queue: queue,
     page_actor: queue === 'mine' ? text(input.actorName) : null,
     page_channel: input.channel ?? null,
     page_query: query,
+    page_kind: kind,
     after_attention_rank: cursor?.rank ?? null,
     after_activity_at: cursor?.at ?? null,
     after_thread_key: cursor?.key ?? null,

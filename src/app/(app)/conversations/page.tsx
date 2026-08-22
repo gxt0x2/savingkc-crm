@@ -32,6 +32,7 @@ import {
   mergeConversationThreads,
   fetchConversationHub,
   fetchConversationTimeline,
+  type ConversationKindFilter,
   type ConversationQueue,
 } from '@/lib/queries/conversation-hub'
 
@@ -310,6 +311,7 @@ export default function ConversationsPage() {
   const toastCounter = useRef(0)
   const [requestedThreadId, setRequestedThreadId] = useState<string | null>(() => routeRequestedThread)
   const [activeQueue, setActiveQueue] = useState<ConversationQueue>(() => routeRequestedThread ? 'all' : 'needs_reply')
+  const [kindFilter, setKindFilter] = useState<ConversationKindFilter>('all')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [activeThreadKey, setActiveThreadKey] = useState<string | null>(null)
@@ -338,8 +340,8 @@ export default function ConversationsPage() {
   const requestedLookupEnabled = requestedThreadSearch.length >= 3
 
   const hubQuery = useInfiniteQuery({
-    queryKey: conversationHubInfiniteQueryKey(activeQueue, normalizedSearch),
-    queryFn: ({ pageParam }) => fetchConversationHub<ConversationThread>({ queue: activeQueue, cursor: pageParam, search: normalizedSearch }),
+    queryKey: conversationHubInfiniteQueryKey(activeQueue, normalizedSearch, kindFilter),
+    queryFn: ({ pageParam }) => fetchConversationHub<ConversationThread>({ queue: activeQueue, cursor: pageParam, search: normalizedSearch, kind: kindFilter }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.pageInfo.hasMore ? lastPage.pageInfo.nextCursor ?? undefined : undefined,
     staleTime: conversationHubStaleTime,
@@ -359,8 +361,8 @@ export default function ConversationsPage() {
     ? requestedThreadQuery.data?.items.find((thread) => conversationMatchesDeepLink(thread, requestedThreadId)) ?? null
     : null
   const selectedQueueThreadQuery = useQuery({
-    queryKey: ['conversation-hub', 'selected-queue', activeQueue, requestedThreadSearch],
-    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: requestedThreadSearch, limit: 1 }),
+    queryKey: ['conversation-hub', 'selected-queue', activeQueue, kindFilter, requestedThreadSearch],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: requestedThreadSearch, kind: kindFilter, limit: 1 }),
     enabled: requestedLookupEnabled && activeQueue !== 'all',
     staleTime: conversationHubStaleTime,
     refetchInterval: pollVisible,
@@ -371,8 +373,8 @@ export default function ConversationsPage() {
     : null
   const hubHasLoadedHistory = (hubQuery.data?.pages.length ?? 0) > 1
   const hubHeadQuery = useQuery({
-    queryKey: ['conversation-hub-head', activeQueue, normalizedSearch],
-    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: normalizedSearch, limit: 50 }),
+    queryKey: ['conversation-hub-head', activeQueue, kindFilter, normalizedSearch],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: normalizedSearch, kind: kindFilter, limit: 50 }),
     enabled: hubHasLoadedHistory,
     staleTime: conversationHubStaleTime,
     refetchInterval: pollVisible,
@@ -512,6 +514,17 @@ export default function ConversationsPage() {
     window.history.replaceState(null, '', `${url.pathname}${url.search}`)
   }
 
+  function changeKindFilter(kind: ConversationKindFilter) {
+    setKindFilter(kind)
+    setActiveThreadKey(null)
+    setPinnedThread(null)
+    setMobilePane('inbox')
+    setRequestedThreadId(null)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('lead')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+  }
+
   const refreshConversation = useCallback(() => {
     void Promise.all([
       hubHasLoadedHistory ? hubHeadQuery.refetch() : hubQuery.refetch(),
@@ -613,12 +626,14 @@ export default function ConversationsPage() {
               threads={previews}
               activeThreadKey={resolvedActiveThreadKey || ''}
               activeQueue={activeQueue}
+              kindFilter={kindFilter}
               search={search}
               loading={hubQuery.isPending}
               error={hubQuery.isError ? hubQuery.error.message : null}
               onRetry={() => void hubQuery.refetch()}
               onSelectThread={selectConversation}
               onQueueChange={changeQueue}
+              onKindFilterChange={changeKindFilter}
               onSearchChange={setSearch}
               hasMore={Boolean(hubQuery.hasNextPage)}
               loadingMore={hubQuery.isFetchingNextPage}
