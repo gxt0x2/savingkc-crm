@@ -122,8 +122,8 @@ test('legacy CRM pages resolve to their canonical workspaces', async ({ page }) 
   await expect(page.getByRole('heading', { name: 'Hot Opps', exact: true })).toBeVisible();
 
   await page.goto('/ari', { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole('navigation', { name: 'Dashboards sections' })).toBeVisible();
+  await expect(page).toHaveURL(/\/ai$/);
+  await expect(page.getByRole('heading', { name: 'AI Assistant', exact: true })).toBeVisible();
 });
 
 test('Issue Log is the sole Andon dashboard and Marketing replaces the retired dashboard tab', async ({ page }) => {
