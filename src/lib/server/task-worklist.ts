@@ -47,7 +47,7 @@ export type TaskWorklistItem = {
   updatedAt: string
   contact: TaskWorklistContact | null
   operationalLane: 'current' | 'review' | 'quarantine'
-  reviewReason: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification' | 'automation_source'
+  reviewReason: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification' | 'legacy_event' | 'automation_source'
 }
 
 export type TaskWorklistCounts = Record<TaskWorklistView, number>
@@ -169,6 +169,9 @@ async function attachOperationalEvidence(items: TaskWorklistItem[]): Promise<Tas
     }
     if (classification === 'dead') {
       return { ...item, operationalLane: 'review', reviewReason: 'terminal_classification' }
+    }
+    if (item.operationalLane === 'review') {
+      return { ...item, reviewReason: 'legacy_event' }
     }
     return { ...item, operationalLane: 'current', reviewReason: 'none' }
   })

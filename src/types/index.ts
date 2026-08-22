@@ -96,7 +96,7 @@ export interface Task {
   created_at: string
   version?: number
   operational_lane?: 'current' | 'review' | 'quarantine'
-  review_reason?: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification' | 'automation_source'
+  review_reason?: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification' | 'legacy_event' | 'automation_source'
   contact?: Contact
 }
 

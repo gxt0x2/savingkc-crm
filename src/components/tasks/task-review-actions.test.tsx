@@ -27,4 +27,12 @@ describe('task review actions', () => {
     render(<TaskReviewBadge task={{ operational_lane: 'quarantine', review_reason: 'automation_source' } as Task} />)
     expect(screen.getByText('Automation quarantine')).toHaveAttribute('title', expect.stringContaining('unreviewed automation'))
   })
+
+  it('explains why a legacy event task remains in review debt', () => {
+    render(<TaskReviewBadge task={{ operational_lane: 'review', review_reason: 'legacy_event' } as Task} />)
+    expect(screen.getByText('Event-backed review')).toHaveAttribute(
+      'title',
+      'This legacy task is tied to a communication event and remains locked until an operator reviews it.',
+    )
+  })
 })
