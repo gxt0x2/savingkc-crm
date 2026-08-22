@@ -7,7 +7,20 @@ import { AssistantSources } from '@/components/ai/assistant-sources'
 import { Icon } from '@/components/ui/icon'
 import { useAssistantThread } from '@/hooks/use-assistant-thread'
 
-type LiveSnapshot = { leads: number | null; needsReply: number | null; phones: number | null; workflows: number | null }
+type LiveSnapshotValue = number | null | undefined
+type LiveSnapshot = { leads: LiveSnapshotValue; needsReply: LiveSnapshotValue; phones: LiveSnapshotValue; workflows: LiveSnapshotValue }
+
+const INITIAL_SNAPSHOT: LiveSnapshot = {
+  leads: undefined,
+  needsReply: undefined,
+  phones: undefined,
+  workflows: undefined,
+}
+
+function snapshotLabel(value: LiveSnapshotValue) {
+  if (value === undefined) return 'Loading…'
+  return value === null ? 'Unavailable' : value.toLocaleString()
+}
 
 const STARTERS = [
   'What needs my attention right now?',
@@ -23,21 +36,34 @@ export default function AiAssistantPage() {
   const initialPrompt = params.get('prompt')?.trim() || ''
   const { messages, loadingHistory, sending, error, send, clear } = useAssistantThread('ai_page')
   const [input, setInput] = useState(initialPrompt)
-  const [snapshot, setSnapshot] = useState<LiveSnapshot>({ leads: null, needsReply: null, phones: null, workflows: null })
+  const [snapshot, setSnapshot] = useState<LiveSnapshot>(INITIAL_SNAPSHOT)
   const autoSent = useRef(false)
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/reports/operating?period=30d', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null),
-      fetch('/api/workflows/summary', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null),
-    ]).then(([report, registry]) => {
-      setSnapshot({
-        leads: typeof report?.core?.leads === 'number' ? report.core.leads : null,
-        needsReply: typeof report?.core?.needsReply === 'number' ? report.core.needsReply : null,
+    let active = true
+    const update = (values: Partial<LiveSnapshot>) => {
+      if (active) setSnapshot((current) => ({ ...current, ...values }))
+    }
+
+    void fetch('/api/contacts?mode=page&limit=1&list=all', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((directory) => update({ leads: typeof directory?.scopeCounts?.active === 'number' ? directory.scopeCounts.active : null }))
+      .catch(() => update({ leads: null }))
+
+    void fetch('/api/conversations/attention', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((attention) => update({ needsReply: typeof attention?.needsReply === 'number' ? attention.needsReply : null }))
+      .catch(() => update({ needsReply: null }))
+
+    void fetch('/api/workflows/summary', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((registry) => update({
         phones: typeof registry?.phones === 'number' ? registry.phones : null,
         workflows: typeof registry?.workflows === 'number' ? registry.workflows : null,
-      })
-    }).catch(() => {})
+      }))
+      .catch(() => update({ phones: null, workflows: null }))
+
+    return () => { active = false }
   }, [])
 
   async function sendPrompt(prompt: string) {
@@ -83,7 +109,7 @@ export default function AiAssistantPage() {
           </div>
 
           <aside className="space-y-4">
-            <section className="crm-panel rounded-2xl p-4"><div className="flex items-center gap-2"><Icon name="database" className="text-[var(--crm-info)]" /><h2 className="font-black">Live context</h2></div><div className="mt-4 grid grid-cols-2 gap-2">{[['Active leads', snapshot.leads], ['Needs reply', snapshot.needsReply], ['Phone records', snapshot.phones], ['Workflow definitions', snapshot.workflows]].map(([label, value]) => <div key={label as string} className="rounded-xl bg-[var(--crm-surface-subtle)] p-3"><p className="text-xl font-black">{value == null ? 'Unavailable' : value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</p></div>)}</div></section>
+            <section className="crm-panel rounded-2xl p-4"><div className="flex items-center gap-2"><Icon name="database" className="text-[var(--crm-info)]" /><h2 className="font-black">Live context</h2></div><div className="mt-4 grid grid-cols-2 gap-2">{[['Active leads', snapshot.leads], ['Needs reply', snapshot.needsReply], ['Phone records', snapshot.phones], ['Workflow definitions', snapshot.workflows]].map(([label, value]) => <div key={label as string} className="rounded-xl bg-[var(--crm-surface-subtle)] p-3"><p className="text-xl font-black">{snapshotLabel(value as LiveSnapshotValue)}</p><p className="mt-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</p></div>)}</div></section>
             <section className="crm-panel rounded-2xl p-4"><div className="flex items-center gap-2"><Icon name="security" className="text-[var(--crm-success)]" /><h2 className="font-black">Execution boundary</h2></div><p className="mt-2 text-xs leading-5 text-[var(--crm-text-muted)]">ARI can read and analyze immediately. Calls, texts, assignments, stage changes, workflow publishing, routing changes, deletes, and spending require explicit confirmation and an audit record.</p></section>
             <section className="crm-panel rounded-2xl p-4"><h2 className="font-black">Try a request</h2><div className="mt-3 space-y-2">{STARTERS.map((starter) => <button key={starter} type="button" onClick={() => void sendPrompt(starter)} disabled={sending} className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--crm-border)] px-3 py-2.5 text-left text-xs font-bold text-[var(--crm-ink)] transition hover:border-[var(--crm-violet)] hover:bg-[var(--crm-violet-soft)] disabled:opacity-50"><span>{starter}</span><Icon name="arrow_forward" className="shrink-0 text-[15px] text-[var(--crm-violet)]" /></button>)}</div></section>
             <section className="crm-panel rounded-2xl p-4"><h2 className="font-black">System maps</h2><div className="mt-3 grid gap-2"><Link href="/workflows?section=phones" className="crm-secondary-button flex h-10 items-center justify-between rounded-lg px-3 text-xs font-black"><span className="flex items-center gap-2"><Icon name="phone_in_talk" />Phone System</span><Icon name="arrow_forward" /></Link><Link href="/workflows?section=all" className="crm-secondary-button flex h-10 items-center justify-between rounded-lg px-3 text-xs font-black"><span className="flex items-center gap-2"><Icon name="account_tree" />All Workflows</span><Icon name="arrow_forward" /></Link></div></section>
