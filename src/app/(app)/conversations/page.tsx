@@ -5,6 +5,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { useSearchParams } from 'next/navigation'
 
 import { ContactDetailsPanel } from '@/components/conversations/contact-details-panel'
+import { ConversationReconciliationStrip } from '@/components/conversations/conversation-reconciliation-strip'
 import { InboxSidebar, type ThreadPreview } from '@/components/conversations/inbox-sidebar'
 import type { Message } from '@/components/conversations/message-bubble'
 import { NextActionDialog } from '@/components/conversations/next-action-dialog'
@@ -575,6 +576,8 @@ export default function ConversationsPage() {
             <span><strong>Compatibility inbox.</strong> {hubDegradedPage.warning || 'The bounded fallback may not contain every conversation. Queue decisions should wait for the primary read model.'}</span>
           </div>
         ) : null}
+
+        <ConversationReconciliationStrip />
 
         {showNewMessage ? (
           <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onClick={closeNewConversation}>
