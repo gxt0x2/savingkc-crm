@@ -115,6 +115,19 @@ export class ProspectingCampaignInputError extends Error {
   }
 }
 
+export function copyProspectingCampaignSetup(campaign: ProspectingCampaignDetail): CreateProspectingCampaignInput {
+  return {
+    name: `${campaign.name.slice(0, 115)} copy`,
+    kind: campaign.kind,
+    callerId: campaign.callerId,
+    fromPhone: campaign.fromPhone,
+    defaultTimezone: campaign.defaultTimezone,
+    perHour: campaign.perHour,
+    perDay: campaign.perDay,
+    steps: campaign.steps.map((step) => ({ delayMinutes: step.delayMinutes, bodyTemplate: step.bodyTemplate })),
+  }
+}
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }

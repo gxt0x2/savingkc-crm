@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   ProspectingCampaignInputError,
+  type ProspectingCampaignDetail,
+  copyProspectingCampaignSetup,
   isWithinProspectingWindow,
   nextProspectingWindow,
   parseCreateProspectingCampaignInput,
@@ -9,6 +11,20 @@ import {
 } from './campaign-contract'
 
 describe('prospecting campaign contract', () => {
+  it('copies setup into a clean draft contract without audience or activity state', () => {
+    const campaign: ProspectingCampaignDetail = {
+      id: 'campaign-1', name: 'August Absentee', kind: 'sms' as const, status: 'active' as const, ownerEmail: 'ernest@savingkc.com', ownerName: 'Ernest', callerId: null, fromPhone: '+18163077835', defaultTimezone: 'America/Chicago', perHour: 75, perDay: 500, createdAt: '2026-08-21T10:00:00.000Z', updatedAt: '2026-08-21T11:00:00.000Z', activatedAt: '2026-08-21T11:00:00.000Z', pausedAt: null, completedAt: null,
+      steps: [{ id: 'step-1', position: 1, delayMinutes: 0, bodyTemplate: 'Hi {{first_name}}' }],
+      members: [{ id: 'member-1', leadId: 'lead-1', phone: '+18165550123', timezone: 'America/Chicago', status: 'active', suppressionReason: null, currentStepPosition: 1, nextActionAt: null, enrolledAt: '2026-08-21T10:30:00.000Z', lead: null }],
+      stats: { total: 1, active: 1, suppressed: 0, replied: 0, completed: 0, sent: 0, failed: 0 },
+    }
+    const copy = copyProspectingCampaignSetup(campaign)
+    expect(copy).toEqual({ name: 'August Absentee copy', kind: 'sms', callerId: null, fromPhone: '+18163077835', defaultTimezone: 'America/Chicago', perHour: 75, perDay: 500, steps: [{ delayMinutes: 0, bodyTemplate: 'Hi {{first_name}}' }] })
+    expect(copy).not.toHaveProperty('members')
+    expect(copy).not.toHaveProperty('stats')
+    expect(copy.steps).not.toBe(campaign.steps)
+  })
+
   it('accepts a bounded SMS sequence and normalizes its sender', () => {
     expect(parseCreateProspectingCampaignInput({
       name: 'August absentee owners',

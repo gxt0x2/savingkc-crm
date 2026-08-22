@@ -72,6 +72,7 @@ type CampaignStudioProps = {
   form: CampaignForm
   pendingLeadIds: string[]
   saving: boolean
+  sourceCampaignName?: string | null
   existingCampaignName?: string | null
   canAddToExisting?: boolean
   onChange: (updater: (current: CampaignForm) => CampaignForm) => void
@@ -84,6 +85,7 @@ export function CampaignStudio({
   form,
   pendingLeadIds,
   saving,
+  sourceCampaignName,
   existingCampaignName,
   canAddToExisting = false,
   onChange,
@@ -165,6 +167,8 @@ export function CampaignStudio({
               </p>
             </div>
           </header>
+
+          {sourceCampaignName ? <div className="rounded-xl border border-[var(--crm-info)]/25 bg-[var(--crm-info-soft)] px-4 py-3 text-sm text-[var(--crm-info)]" role="status"><strong>Setup copied from {sourceCampaignName}.</strong> Audience and activity were intentionally left behind so this starts as a clean draft.</div> : null}
 
           {studioStep === 1 ? (
             <div className="grid gap-4 lg:grid-cols-2">
