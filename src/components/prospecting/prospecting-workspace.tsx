@@ -138,7 +138,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       await jsonRequest(`/api/prospecting/campaigns/${detail.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, confirmed: status === 'active' }),
       })
       await Promise.all([loadCampaigns(), loadDetail(detail.id)])
     } catch (transitionError) {
