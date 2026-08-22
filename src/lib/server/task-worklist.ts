@@ -46,6 +46,8 @@ export type TaskWorklistItem = {
   completedAt: string | null
   updatedAt: string
   contact: TaskWorklistContact | null
+  operationalLane: 'current' | 'review'
+  reviewReason: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification'
 }
 
 export type TaskWorklistCounts = Record<TaskWorklistView, number>
@@ -136,6 +138,38 @@ function parseItem(value: unknown): TaskWorklistItem | null {
   return row as TaskWorklistItem
 }
 
+type LeadReviewFact = { id: string; station: string | null; classification: string | null }
+
+async function attachOperationalEvidence(items: TaskWorklistItem[]): Promise<TaskWorklistItem[]> {
+  const leadIds = [...new Set(items.map((item) => item.leadId).filter((value): value is string => Boolean(value)))].slice(0, 50)
+  if (!leadIds.length) {
+    return items.map((item) => ({ ...item, operationalLane: 'review', reviewReason: 'unlinked' }))
+  }
+
+  const { data, error } = await supabaseAdmin()
+    .from('leads')
+    .select('id,station,classification')
+    .in('id', leadIds)
+
+  if (error || !Array.isArray(data)) throw new TaskWorklistError('Task review evidence is unavailable.', 'unavailable')
+  const facts = new Map((data as LeadReviewFact[]).map((lead) => [lead.id, lead]))
+
+  return items.map((item) => {
+    if (!item.leadId) return { ...item, operationalLane: 'review', reviewReason: 'unlinked' }
+    const lead = facts.get(item.leadId)
+    if (!lead) return { ...item, operationalLane: 'review', reviewReason: 'missing_contact' }
+    const station = (lead.station || '').trim().toLowerCase()
+    const classification = (lead.classification || '').trim().toLowerCase()
+    if (['dead', 'closed', 'closed_lost'].includes(station)) {
+      return { ...item, operationalLane: 'review', reviewReason: 'terminal_station' }
+    }
+    if (classification === 'dead') {
+      return { ...item, operationalLane: 'review', reviewReason: 'terminal_classification' }
+    }
+    return { ...item, operationalLane: 'current', reviewReason: 'none' }
+  })
+}
+
 function nextCursorFor(item: TaskWorklistItem, sort: TaskWorklistSort): string {
   const value = sort === 'newest'
     ? item.sourceCreatedAt
@@ -209,7 +243,7 @@ export async function getTaskWorklist(input: {
   }
   const items = result.items.map(parseItem)
   if (items.some((item) => item === null)) throw new TaskWorklistError('Task worklist is unavailable.', 'unavailable')
-  const parsedItems = items as TaskWorklistItem[]
+  const parsedItems = await attachOperationalEvidence(items as TaskWorklistItem[])
   const countsValue = result.counts as Record<string, unknown>
   const counts = Object.fromEntries(TASK_WORKLIST_VIEWS.map((key) => [key, Number(countsValue[key]) || 0])) as TaskWorklistCounts
   const laneCountsValue = result.laneCounts as Record<string, unknown>

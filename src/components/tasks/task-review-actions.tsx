@@ -1,0 +1,55 @@
+'use client'
+
+import { useState } from 'react'
+
+import { Icon } from '@/components/ui/icon'
+import type { Task } from '@/types'
+
+const REVIEW_COPY: Record<NonNullable<Task['review_reason']>, { label: string; detail: string }> = {
+  none: { label: 'Current work', detail: 'This task is linked to a non-terminal contact.' },
+  unlinked: { label: 'Unlinked task', detail: 'No contact record is linked. Relink it or confirm that the work is obsolete.' },
+  missing_contact: { label: 'Missing contact', detail: 'The linked contact no longer exists. Review the task before changing it.' },
+  terminal_station: { label: 'Terminal contact', detail: 'The linked contact is in a closed or dead pipeline station.' },
+  terminal_classification: { label: 'Dead classification', detail: 'The linked contact is classified dead even though its station may look active.' },
+}
+
+export function taskReviewCopy(task: Task) {
+  return REVIEW_COPY[task.review_reason || 'none']
+}
+
+export function TaskReviewBadge({ task }: { task: Task }) {
+  if (task.operational_lane !== 'review') return null
+  const copy = taskReviewCopy(task)
+  return <span title={copy.detail} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-2 py-0.5 text-[10px] font-black text-[var(--crm-warning)]"><Icon name="rule" className="text-[13px]" />{copy.label}</span>
+}
+
+export function TaskReviewActionGate({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  return <>
+    <section aria-label="Reviewed task changes" className={`mt-3 rounded-xl border px-4 py-3 ${enabled ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)]' : 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)]'}`}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${enabled ? 'bg-[var(--crm-success)] text-white' : 'bg-[var(--crm-warning)] text-white'}`}><Icon name={enabled ? 'lock_open' : 'lock'} /></span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-black">{enabled ? 'Reviewed changes enabled' : 'Review-only mode'}</h2>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--crm-text-muted)]">{enabled ? 'Completion, reassignment, editing, and deletion are available for this browser session. Every saved change remains actor-attributed.' : 'Open contacts and inspect the evidence first. Review-debt tasks cannot be changed accidentally.'}</p>
+        </div>
+        {enabled
+          ? <button type="button" onClick={() => onChange(false)} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-black">Lock changes</button>
+          : <button type="button" onClick={() => setConfirmOpen(true)} className="crm-primary-button h-9 rounded-lg px-3 text-xs font-black">Enable reviewed changes</button>}
+      </div>
+    </section>
+
+    {confirmOpen ? <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/55 p-4">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="review-enable-title" className="crm-panel-raised w-full max-w-md rounded-2xl p-6">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]"><Icon name="fact_check" /></div>
+        <h2 id="review-enable-title" className="mt-4 text-xl font-black">Enable review-debt changes?</h2>
+        <p className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]">Confirm the linked contact history before completing, reassigning, editing, or deleting these tasks. Enabling controls does not change any record by itself.</p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirmOpen(false)} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-bold">Keep locked</button>
+          <button type="button" onClick={() => { onChange(true); setConfirmOpen(false) }} className="crm-primary-button h-10 rounded-lg px-4 text-sm font-black">I will review each change</button>
+        </div>
+      </div>
+    </div> : null}
+  </>
+}

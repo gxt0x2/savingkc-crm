@@ -73,6 +73,16 @@ The next release adds read-only, server-filtered lanes without changing any sour
 - No lifecycle or attention state changes occur during read-model rollout.
 - Signed-in desktop/mobile evidence and exact-SHA production checks pass.
 
+## Third Deliverable — Reviewed Actions
+
+The read-only lanes are followed by explicit human decision controls, not bulk automation:
+
+- Every task page receives canonical lifecycle evidence from a bounded primary-key lookup. Review debt is labeled as unlinked, missing-contact, terminal-station, or dead-classification work.
+- Review-debt mutation controls start locked. An operator must acknowledge the review rules before completion, reassignment, editing, deletion, or bulk selection becomes available for that browser session.
+- Unmatched conversations cannot be marked resolved without a factual reason: handled elsewhere, duplicate, vendor/non-seller, wrong number, or no action needed.
+- The conversation resolution reason and authenticated actor are persisted in the canonical status-change activity and remain visible in the timeline.
+- No task or conversation is changed merely by loading, filtering, or enabling the controls.
+
 ## Approval Boundary
 
 Reading and rendering the classifications is reversible and may proceed autonomously. Any production operation that completes, cancels, deletes, reassigns, merges, or marks records resolved requires a separately reviewed reconciliation and explicit approval.

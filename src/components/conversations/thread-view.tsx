@@ -32,6 +32,14 @@ interface DateGroup {
 
 const CONVERSATION_AGENTS = ['Ernest', 'Casey', 'Gertha'] as const
 type ConversationAgent = (typeof CONVERSATION_AGENTS)[number]
+const UNMATCHED_RESOLUTION_REASONS = [
+  ['handled_elsewhere', 'Handled elsewhere'],
+  ['duplicate', 'Duplicate conversation'],
+  ['not_a_seller', 'Vendor or non-seller'],
+  ['wrong_number', 'Wrong number'],
+  ['no_action_needed', 'No action needed'],
+] as const
+type UnmatchedResolutionReason = (typeof UNMATCHED_RESOLUTION_REASONS)[number][0]
 
 export function ThreadView({
   contact,
@@ -89,6 +97,8 @@ export function ThreadView({
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [assigningAgent, setAssigningAgent] = useState(false)
   const [updatingThread, setUpdatingThread] = useState(false)
+  const [resolutionOpen, setResolutionOpen] = useState(false)
+  const [resolutionReason, setResolutionReason] = useState<UnmatchedResolutionReason | ''>('')
 
   useLayoutEffect(() => {
     const timeline = scrollRef.current
@@ -134,8 +144,10 @@ export function ThreadView({
     }
   }
 
-  async function updateThreadState(action: 'mark_read' | 'mark_unread') {
-    if (!threadKey || updatingThread) return
+  const isUnmatched = !leadId || leadId.startsWith('unmatched:') || threadKey.startsWith('phone:') || threadKey.startsWith('unmatched:')
+
+  async function updateThreadState(action: 'mark_read' | 'mark_unread', reason?: UnmatchedResolutionReason): Promise<boolean> {
+    if (!threadKey || updatingThread) return false
     setUpdatingThread(true)
     setTaskError(null)
     try {
@@ -148,14 +160,17 @@ export function ThreadView({
           leadId: leadId?.startsWith('unmatched:') ? null : leadId,
           phone,
           source: 'conversation_hub',
+          ...(reason ? { resolutionReason: reason } : {}),
         }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error || 'Unable to update the conversation')
       setMenuOpen(false)
       onConversationChanged?.()
+      return true
     } catch (error) {
       setTaskError(error instanceof Error ? error.message : 'Unable to update the conversation')
+      return false
     } finally {
       setUpdatingThread(false)
     }
@@ -278,7 +293,7 @@ export function ThreadView({
           </button>
           {menuOpen ? (
             <div className="crm-menu absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-xl py-1">
-              <button type="button" disabled={updatingThread} onClick={() => void updateThreadState(contact.attentionState === 'needs_reply' ? 'mark_read' : 'mark_unread')} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold hover:bg-[var(--crm-surface-subtle)] disabled:opacity-50">
+              <button type="button" disabled={updatingThread} onClick={() => { if (contact.attentionState === 'needs_reply' && isUnmatched) { setMenuOpen(false); setResolutionReason(''); setResolutionOpen(true) } else void updateThreadState(contact.attentionState === 'needs_reply' ? 'mark_read' : 'mark_unread') }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold hover:bg-[var(--crm-surface-subtle)] disabled:opacity-50">
                 <Icon name={contact.attentionState === 'needs_reply' ? 'mark_email_read' : 'mark_email_unread'} className="text-[17px]" />
                 {contact.attentionState === 'needs_reply' ? 'Mark resolved' : 'Mark needs reply'}
               </button>
@@ -312,6 +327,8 @@ export function ThreadView({
           <span>{taskError}</span>
         </div>
       ) : null}
+
+      {isUnmatched && contact.attentionState === 'needs_reply' ? <div className="mx-3 mt-2 flex items-start gap-2 rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs text-[var(--crm-text)] md:mx-5 md:mt-3"><Icon name="rule" className="mt-0.5 shrink-0 text-[var(--crm-warning)]" /><span><strong>Unmatched inbound.</strong> Review the timeline before replying. Resolving requires a recorded reason; nothing is auto-dismissed.</span></div> : null}
 
       {(contact.attentionState !== 'resolved' || contact.nextAction) && (
         <div className={cn(
@@ -399,6 +416,22 @@ export function ThreadView({
           </>
         )}
       </div>
+
+      {resolutionOpen ? <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/55 p-4">
+        <div role="alertdialog" aria-modal="true" aria-labelledby="conversation-resolution-title" className="crm-panel-raised w-full max-w-md rounded-2xl p-6">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]"><Icon name="fact_check" /></div>
+          <h2 id="conversation-resolution-title" className="mt-4 text-xl font-black">Why is this conversation resolved?</h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]">Choose the factual reason. This closes the Needs Reply state and records your identity and decision in the timeline.</p>
+          <fieldset className="mt-4 space-y-2">
+            <legend className="sr-only">Resolution reason</legend>
+            {UNMATCHED_RESOLUTION_REASONS.map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--crm-border)] px-3 py-2.5 text-sm font-semibold hover:bg-[var(--crm-surface-subtle)]"><input type="radio" name="unmatched-resolution" value={value} checked={resolutionReason === value} onChange={() => setResolutionReason(value)} className="accent-[var(--crm-brand)]" />{label}</label>)}
+          </fieldset>
+          <div className="mt-6 flex justify-end gap-2">
+            <button type="button" onClick={() => setResolutionOpen(false)} disabled={updatingThread} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-bold">Cancel</button>
+            <button type="button" disabled={!resolutionReason || updatingThread} onClick={() => { if (!resolutionReason) return; void updateThreadState('mark_read', resolutionReason).then((saved) => { if (saved) setResolutionOpen(false) }) }} className="crm-primary-button h-10 rounded-lg px-4 text-sm font-black disabled:opacity-40">{updatingThread ? 'Saving…' : 'Mark resolved'}</button>
+          </div>
+        </div>
+      </div> : null}
 
       {/* Compose Box — reply from the same number the lead texted */}
       <ComposeBox
