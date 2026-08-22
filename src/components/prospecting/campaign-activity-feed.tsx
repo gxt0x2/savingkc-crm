@@ -1,11 +1,14 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import type { ProspectingCampaignActivity, ProspectingCampaignActivityPage } from '@/lib/prospecting/campaign-contract'
 
 function eventPresentation(item: ProspectingCampaignActivity) {
   const normalized = item.eventType.replace(/^campaign_/, '')
+  if (normalized === 'member_replied') return { icon: 'reply', label: 'Seller replied', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' }
+  if (normalized === 'member_suppressed') return { icon: 'block', label: 'Seller opted out', tone: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' }
   if (normalized.endsWith('_delivered')) return { icon: 'mark_chat_read', label: 'Carrier delivered', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' }
   if (normalized.endsWith('_sent')) return { icon: 'send', label: 'Provider accepted', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
   if (normalized.endsWith('_blocked') || normalized.endsWith('_cancelled')) return { icon: 'block', label: item.errorCode === 'contact_replied' ? 'Stopped after reply' : 'Send blocked', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' }
@@ -96,6 +99,7 @@ export function CampaignActivityFeed({ campaignId }: { campaignId: string }) {
             {item.propertyAddress ? <p className="mt-1 truncate text-[10px] text-[var(--crm-text-muted)]">{item.propertyAddress}</p> : null}
             {item.body ? <p className="mt-2 line-clamp-2 rounded-lg bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs leading-5 text-[var(--crm-ink)]">{item.body}</p> : null}
             {item.errorCode ? <p className="mt-2 text-[10px] font-bold capitalize text-[var(--crm-warning)]">Reason: {reasonLabel(item.errorCode)}</p> : null}
+            {item.leadId ? <Link href={`/conversations?lead=${encodeURIComponent(item.leadId)}`} className="mt-2 inline-flex items-center gap-1 text-[10px] font-black text-[var(--crm-brand)] hover:underline"><Icon name="forum" className="text-sm" />Open conversation</Link> : null}
           </div>
         </li>
       })}</ol> : null}

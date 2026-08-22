@@ -21,6 +21,7 @@ describe('CampaignAudienceWorkbench', () => {
     render(<CampaignAudienceWorkbench campaignId="campaign-1" campaignName="August Absentee" total={150} canEditAudience />)
 
     expect(await screen.findByText('Helen Seller')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open conversation with Helen Seller' })).toHaveAttribute('href', '/conversations?lead=lead-1')
     fireEvent.click(screen.getByRole('button', { name: /Load 50 more/ }))
     expect(await screen.findByText('Alex Seller')).toBeVisible()
     expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('cursor=next-50'), expect.objectContaining({ cache: 'no-store' }))

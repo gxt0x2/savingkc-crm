@@ -10,6 +10,7 @@ const firstPage = {
     eventType: 'campaign_action_sent',
     actor: 'Prospecting worker',
     memberId: 'member-1',
+    leadId: '11111111-1111-4111-8111-111111111111',
     actionId: 'action-1',
     status: 'sent',
     sellerName: 'Helen Seller',
@@ -36,6 +37,7 @@ describe('CampaignActivityFeed', () => {
     expect(screen.getByText('Helen Seller')).toBeVisible()
     expect(screen.getByText('Hi Helen, would you consider an offer?')).toBeVisible()
     expect(screen.getByText('123 Main Street')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open conversation' })).toHaveAttribute('href', '/conversations?lead=11111111-1111-4111-8111-111111111111')
     expect(screen.getByRole('button', { name: /Load older activity/ })).toBeVisible()
   })
 
@@ -62,6 +64,18 @@ describe('CampaignActivityFeed', () => {
     }) }))
     render(<CampaignActivityFeed campaignId="campaign-1" />)
     expect(await screen.findByText('Carrier delivered')).toBeVisible()
+  })
+
+  it('shows the seller reply and hands it to the authoritative inbox', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      items: [{ ...firstPage.items[0], eventType: 'campaign_member_replied', actionId: null, status: null, body: 'Yes, I would consider an offer.' }],
+      pageInfo: { limit: 25, hasMore: false, nextCursor: null },
+    }) }))
+    render(<CampaignActivityFeed campaignId="campaign-1" />)
+
+    expect(await screen.findByText('Seller replied')).toBeVisible()
+    expect(screen.getByText('Yes, I would consider an offer.')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open conversation' })).toHaveAttribute('href', '/conversations?lead=11111111-1111-4111-8111-111111111111')
   })
 
   it('names dialer batches and saved call outcomes in operator language', async () => {
