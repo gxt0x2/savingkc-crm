@@ -24,6 +24,14 @@ function dateLabel(value: string | null) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
 }
 
+function timeLabel(value: string | null) {
+  if (!value) return 'Connecting'
+  const date = new Date(value)
+  return Number.isFinite(date.getTime())
+    ? `Synced ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date)}`
+    : 'Sync time unavailable'
+}
+
 function delayLabel(delayMinutes: number) {
   if (delayMinutes === 0) return 'When activated'
   if (delayMinutes % 1440 === 0) return `${delayMinutes / 1440} day${delayMinutes === 1440 ? '' : 's'} after prior message`
@@ -46,6 +54,8 @@ type CampaignDashboardProps = {
   loading: boolean
   detailLoading: boolean
   actionPending: boolean
+  lastRefreshedAt?: string | null
+  liveRefreshDelayed?: boolean
   onSelect: (id: string) => void
   onCreate: () => void
   onDuplicate: (campaign: ProspectingCampaignDetail) => void
@@ -62,6 +72,8 @@ export function CampaignDashboard({
   loading,
   detailLoading,
   actionPending,
+  lastRefreshedAt = null,
+  liveRefreshDelayed = false,
   onSelect,
   onCreate,
   onDuplicate,
@@ -119,7 +131,7 @@ export function CampaignDashboard({
               <div className="relative overflow-hidden bg-[linear-gradient(130deg,#17221a_0%,#344e30_58%,#607957_100%)] px-5 py-6 text-white sm:px-7 sm:py-7">
                 <div className="absolute -right-14 -top-24 h-64 w-64 rounded-full border border-white/10" />
                 <div className="absolute -right-2 -top-10 h-44 w-44 rounded-full border border-white/10" />
-                <div className="relative flex flex-wrap items-start justify-between gap-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase ${detail.status === 'active' ? 'bg-[#bde2b1] text-[#17221a]' : 'bg-white/12 text-white'}`}>{detail.status}</span><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">{detail.kind === 'dialer' ? 'Power dialer' : 'SMS cadence'}</span></div><h1 className="mt-4 max-w-2xl text-2xl font-black tracking-tight sm:text-3xl">{detail.name}</h1><p className="mt-2 text-sm font-medium text-white/65">Owned by {detail.ownerName} · {detail.defaultTimezone.replace('_', ' ')} · Updated {dateLabel(detail.updatedAt)}</p>{detail.kind === 'sms' ? <p className="mt-1 text-xs font-bold text-white/55">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p> : null}</div><div className="relative flex flex-wrap gap-2">{detail.status === 'draft' && onEdit ? <button type="button" onClick={() => onEdit(detail)} disabled={actionPending} className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#17221a]"><Icon name="edit" className="mr-1 align-middle text-base" />Edit setup</button> : null}<button type="button" onClick={() => onDuplicate(detail)} disabled={actionPending} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-black text-white"><Icon name="content_copy" className="mr-1 align-middle text-base" />Duplicate setup</button>{detail.status === 'active' ? <button type="button" onClick={() => onTransition('paused')} disabled={actionPending} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-black text-white">Pause</button> : null}{detail.kind === 'dialer' && detail.status === 'active' ? <button type="button" onClick={onLaunchDialer} disabled={actionPending} className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#17221a]"><Icon name="phone_in_talk" className="text-base" />Open calling floor</button> : null}</div></div>
+                <div className="relative flex flex-wrap items-start justify-between gap-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase ${detail.status === 'active' ? 'bg-[#bde2b1] text-[#17221a]' : 'bg-white/12 text-white'}`}>{detail.status}</span><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">{detail.kind === 'dialer' ? 'Power dialer' : 'SMS cadence'}</span>{detail.status === 'active' ? <span role="status" className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${liveRefreshDelayed ? 'bg-amber-300/20 text-amber-100' : 'bg-white/10 text-white/70'}`}>{liveRefreshDelayed ? 'Updates delayed' : `Live · ${timeLabel(lastRefreshedAt)}`}</span> : null}</div><h1 className="mt-4 max-w-2xl text-2xl font-black tracking-tight sm:text-3xl">{detail.name}</h1><p className="mt-2 text-sm font-medium text-white/65">Owned by {detail.ownerName} · {detail.defaultTimezone.replace('_', ' ')} · Updated {dateLabel(detail.updatedAt)}</p>{detail.kind === 'sms' ? <p className="mt-1 text-xs font-bold text-white/55">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p> : null}</div><div className="relative flex flex-wrap gap-2">{detail.status === 'draft' && onEdit ? <button type="button" onClick={() => onEdit(detail)} disabled={actionPending} className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#17221a]"><Icon name="edit" className="mr-1 align-middle text-base" />Edit setup</button> : null}<button type="button" onClick={() => onDuplicate(detail)} disabled={actionPending} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-black text-white"><Icon name="content_copy" className="mr-1 align-middle text-base" />Duplicate setup</button>{detail.status === 'active' ? <button type="button" onClick={() => onTransition('paused')} disabled={actionPending} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-black text-white">Pause</button> : null}{detail.kind === 'dialer' && detail.status === 'active' ? <button type="button" onClick={onLaunchDialer} disabled={actionPending} className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#17221a]"><Icon name="phone_in_talk" className="text-base" />Open calling floor</button> : null}</div></div>
               </div>
               <div className="grid grid-cols-2 divide-x divide-y divide-[var(--crm-border)] sm:grid-cols-4 sm:divide-y-0">
                 {campaignMetrics.map(([icon, value, label]) => <div key={String(label)} className="p-4 sm:p-5"><div className="flex items-center justify-between"><span className="text-2xl font-black text-[var(--crm-ink)]">{value}</span><Icon name={String(icon)} className="text-xl text-[var(--crm-text-dim)]" /></div><p className="mt-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</p></div>)}

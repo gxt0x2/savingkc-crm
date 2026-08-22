@@ -35,6 +35,12 @@
         "minimumIntervalMs": 15000,
         "reason": "Refresh the authoritative inbox head, selected-thread state and queue membership, and active timeline while the CRM is visible so inbound communications appear without client-authored unread state. Response row counts stay capped regardless of loaded history.",
         "targetDate": "2026-11-30"
+      },
+      {
+        "path": "src/components/prospecting/prospecting-workspace.tsx",
+        "minimumIntervalMs": 15000,
+        "reason": "Refresh only the selected active campaign detail while the Prospecting command center is visible so server-owned delivery, reply, failure, suppression, and dialer progress stay current without polling every campaign or loaded history.",
+        "targetDate": "2026-11-30"
       }
     ],
     "approvedOversizedSources": [

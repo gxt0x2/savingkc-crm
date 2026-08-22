@@ -34,6 +34,16 @@ describe('prospecting workspace UI contract', () => {
     expect(`${workspace}\n${studio}\n${dashboard}`).not.toContain('3 lines')
   })
 
+  it('keeps the active campaign pulse current only while the operator can see it', () => {
+    expect(workspace).toContain('CAMPAIGN_LIVE_REFRESH_MS = 15000')
+    expect(workspace).toContain("document.visibilityState !== 'visible'")
+    expect(workspace).toContain('loadDetail(selectedId, true)')
+    expect(workspace).toContain("document.addEventListener('visibilitychange', refreshOnVisible)")
+    expect(workspace).toContain('window.clearInterval(interval)')
+    expect(dashboard).toContain('Live · ${timeLabel(lastRefreshedAt)}')
+    expect(dashboard).toContain('Updates delayed')
+  })
+
   it('edits a never-run draft without duplicating or activating it', () => {
     expect(dashboard).toContain('Edit setup')
     expect(workspace).toContain('editableProspectingCampaignSetup(campaign)')

@@ -60,7 +60,7 @@ describe('CampaignDashboard', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('shows campaign pulse, sequence, audience health, and server-enforced safety', async () => {
-    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} lastRefreshedAt="2026-08-21T20:15:00.000Z" onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: detail.name })).toBeVisible()
     expect(screen.getByText("Sends Monday–Saturday · 09:00–19:00 in each seller's local time")).toBeVisible()
@@ -70,6 +70,13 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText('Protected at every action')).toBeVisible()
     expect(screen.getByText('DNC and STOP')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Audience locked' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(/Live · Synced/)
+  })
+
+  it('keeps stale campaign data visible while reporting a delayed refresh', () => {
+    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} liveRefreshDelayed onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    expect(screen.getByRole('heading', { name: detail.name })).toBeVisible()
+    expect(screen.getByText('Updates delayed')).toBeVisible()
   })
 
   it('filters the campaign rail without changing server state', () => {

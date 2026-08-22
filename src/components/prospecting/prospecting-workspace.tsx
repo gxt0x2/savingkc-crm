@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { CampaignAudienceReview } from '@/components/prospecting/campaign-audience-review'
 import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
@@ -11,6 +11,7 @@ import { parseStoredProspectingAudienceSelection, PROSPECTING_AUDIENCE_STORAGE_K
 import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
+const CAMPAIGN_LIVE_REFRESH_MS = 15000
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
@@ -40,6 +41,9 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const [actionPending, setActionPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
+  const [liveRefreshDelayed, setLiveRefreshDelayed] = useState(false)
+  const selectedIdRef = useRef<string | null>(null)
 
   const loadCampaigns = useCallback(async () => {
     const page = await jsonRequest<CampaignPage>('/api/prospecting/campaigns?limit=50')
@@ -47,13 +51,24 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setSelectedId((current) => current || initialCampaignId || page.items[0]?.id || null)
   }, [initialCampaignId])
 
-  const loadDetail = useCallback(async (id: string) => {
-    setDetailLoading(true)
+  const loadDetail = useCallback(async (id: string, background = false) => {
+    if (!background) setDetailLoading(true)
     try {
       const payload = await jsonRequest<{ campaign: ProspectingCampaignDetail }>(`/api/prospecting/campaigns/${id}`)
+      if (selectedIdRef.current !== id) return null
       setDetail(payload.campaign)
+      setCampaigns((current) => current.map((campaign) => campaign.id === id ? payload.campaign : campaign))
+      setLastRefreshedAt(new Date().toISOString())
+      setLiveRefreshDelayed(false)
+      return payload.campaign
+    } catch (loadError) {
+      if (background) {
+        setLiveRefreshDelayed(true)
+        return null
+      }
+      throw loadError
     } finally {
-      setDetailLoading(false)
+      if (!background) setDetailLoading(false)
     }
   }, [])
 
@@ -67,12 +82,38 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   }, [loadCampaigns])
 
   useEffect(() => {
+    selectedIdRef.current = selectedId
     if (!selectedId) {
       setDetail(null)
+      setLastRefreshedAt(null)
+      setLiveRefreshDelayed(false)
       return
     }
     void loadDetail(selectedId).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Campaign details could not be loaded'))
   }, [loadDetail, selectedId])
+
+  useEffect(() => {
+    if (!selectedId || detail?.id !== selectedId || detail.status !== 'active' || studioOpen || audienceReviewOpen || actionPending) return
+    let refreshRunning = false
+
+    const refreshVisibleCampaign = async () => {
+      if (refreshRunning || document.visibilityState !== 'visible') return
+      refreshRunning = true
+      try {
+        await loadDetail(selectedId, true)
+      } finally {
+        refreshRunning = false
+      }
+    }
+
+    const interval = window.setInterval(() => { void refreshVisibleCampaign() }, CAMPAIGN_LIVE_REFRESH_MS)
+    const refreshOnVisible = () => { if (document.visibilityState === 'visible') void refreshVisibleCampaign() }
+    document.addEventListener('visibilitychange', refreshOnVisible)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', refreshOnVisible)
+    }
+  }, [actionPending, audienceReviewOpen, detail?.id, detail?.status, loadDetail, selectedId, studioOpen])
 
   function openStudio() {
     setError(null)
@@ -265,13 +306,15 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       loading={loading}
       detailLoading={detailLoading}
       actionPending={actionPending}
+      lastRefreshedAt={lastRefreshedAt}
+      liveRefreshDelayed={liveRefreshDelayed}
       onSelect={setSelectedId}
       onCreate={openStudio}
       onDuplicate={duplicateCampaign}
       onEdit={editCampaign}
       onTransition={(status) => void transition(status)}
       onLaunchDialer={() => void launchDialer()}
-      onAudienceChanged={() => detail ? loadDetail(detail.id) : undefined}
+      onAudienceChanged={detail ? async () => { await loadDetail(detail.id) } : undefined}
     />}
   </>
 }
