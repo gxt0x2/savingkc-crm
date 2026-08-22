@@ -124,22 +124,22 @@ No Manifest table deletion, broad writer conversion, or historical backfill occu
 |---|---|
 | Baseline branch is clean and pinned to `175ea52f7082137fec544e557f02c0eb82c2f050` | Pass |
 | Only unrelated draft PR #375 remains open and is excluded from Phase 0 | Pass |
-| Current Manifest footprint inventory | In progress |
-| Desktop production journey audit | In progress; critical surfaces rendered signed-in at 1920×958 |
-| Mobile-critical production journey audit | Baseline CI passed; direct critical-flow evidence pending |
-| KPI/source reconciliation | In progress; current-vs-period mismatch reproduced |
-| P0/P1/P2 defect register | In progress |
-| Final release/no-release decision | Pending |
+| Current Manifest footprint inventory | Pass: 68 direct non-test dependencies grouped by retain, migrate, and retire |
+| Desktop production journey audit | Pass: critical surfaces rendered signed-in at 1920×958 |
+| Mobile-critical production journey audit | Pass: browser smoke and four sub-second mobile navigation journeys |
+| KPI/source reconciliation | Pass for Phase 0: period cohorts are explicitly labeled; live-queue debt moved to Phase 1 |
+| P0/P1/P2 defect register | Pass: no P0 reproduced; residual P1/P2 debt is explicit below |
+| Final release/no-release decision | Released as `ac290cf47a8ee756fc5b0e9f428bd9f972ad0dfe` |
 
 ## Findings Register
 
 | ID | Severity | Finding | Evidence | Phase 0 decision |
 |---|---|---|---|---|
 | P0-001 | P0 | None reproduced in this audit so far. | Existing token, TwiML, edge, build, security, and mobile gates passed on the production SHA. | Continue read-only verification. |
-| P1-001 | P1 | Dashboard “Open issues” counts a selected-period lead cohort but links to complete live work queues. | At the 30-day setting Dashboard showed 8 Needs reply, 7 overdue next actions, and 20 unassigned. Canonical live surfaces simultaneously showed 128 Needs reply, 175 overdue tasks, and 19 total active leads. | Reconcile the Dashboard to global current operational exceptions or label/filter every value and destination consistently. |
+| P1-001 | P1 | Dashboard “Open issues” counted a selected-period lead cohort but looked like a complete live queue. | At the 30-day setting Dashboard showed 8 Needs reply, 7 overdue next actions, and 20 unassigned. Canonical live surfaces simultaneously showed 128 Needs reply, 175 overdue tasks, and 19 total active leads. | Repaired: headings and every exception label now state that they describe the selected-period cohort. |
 | P1-002 | P1 | The Needs Reply queue is materially noisy. | The live first page includes obvious vendor solicitations, auto-service messages, and historical unknown callers as equal-priority seller replies. | Preserve safe inbound capture, but define a bounded triage/irrelevant resolution policy before calling the inbox operationally complete. Do not auto-classify with AI in Phase 0. |
 | P1-003 | P1 | Work backlog has no lifecycle reconciliation visible to operators. | Tasks reports 208 total and 175 overdue, many dated April, while the Dialer reports 25 callable follow-ups due and the active CRM has 19 leads. | Audit overdue work against terminal contacts, duplicates, and superseded actions. No bulk close/delete without a reviewed reconciliation. |
-| P1-004 | P1 | Closing issue reporting conflicts with the operating record. | Dispositions shows one closed deal with “Close-out required,” while Dashboard shows 0 closeout debriefs due and labels it Clear because the deal is outside the selected period. | Include open closeout obligations in global operational exceptions regardless of reporting period. |
+| P1-004 | P1 | Closing issue reporting mixed a period cohort with a global-sounding obligation. | Dispositions shows one closed deal with “Close-out required,” while Dashboard showed 0 closeout debriefs due because the deal is outside the selected period. | Repaired for truthfulness by labeling the row “Closeouts due among period deals”; a global obligation queue remains Phase 1 work. |
 | P2-001 | P2 | Legacy retirement documentation says `/ari` redirects to Dashboard. | Current code and production redirect `/ari` to `/ai`. | Correct documentation in Phase 0; no runtime change. |
 | P2-002 | P2 | Conversation recording control exposes `Infinity:NaN` before media duration resolves. | Reproduced in the selected live conversation with recording controls. | Queue for a small rendering repair after P1 truth work. |
 | P2-003 | P2 | Manifest architecture comments contradict the current operating model. | `manifest-sync.ts` and `auto-enrich.ts` still call Manifest the source of truth. | Correct doctrine comments after the containment map is accepted; avoid broad Manifest edits. |
@@ -165,3 +165,17 @@ Signed-in read-only checks:
 | `/dispo/pipeline` | Two active deals plus one closed deal; closeout status visible | Functional; P1 exception-count conflict |
 
 The exact-main GitHub run passed 287 test files / 1,361 tests, production build/integrity gates, Twilio token containment, edge integrity, 21/21 Expo checks, mobile typecheck, visual/KPI smoke, and authenticated navigation tests. Recorded iPhone navigation was 475 ms Pipeline, 424 ms Prospecting, 163 ms Task, and 143 ms Dashboard.
+
+## Final Release Evidence
+
+Phase 0 merged through PR #441 as `ac290cf47a8ee756fc5b0e9f428bd9f972ad0dfe` and deployed READY as `dpl_AnMCHLJaCR982K99dSBFQST7iD9x`, aliased to `crm.savingkc.com`.
+
+- Full main suite: 287 files and 1,361 tests passed.
+- Production build, route, proxy, theme, terminology, and dialer gates passed.
+- Visual smoke: 30 journeys passed; KPI smoke passed.
+- Mobile navigation: Pipeline 139 ms, Prospecting 413 ms, Task 134 ms, Dashboard 132 ms.
+- Twilio token containment and unsigned edge-request containment passed.
+- Signed-in production rendered “Selected-period exceptions” and the corrected period-qualified labels.
+- The first post-deploy review returned no error-level or HTTP 500 logs.
+
+Phase 0 made no customer calls, messages, task mutations, bulk lifecycle changes, or Manifest schema changes.
