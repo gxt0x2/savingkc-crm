@@ -56,7 +56,7 @@ export function filterDialerQueueLeads(
   })
 }
 
-function parseLeadIds(value: string | null): string[] {
+export function parseLeadIds(value: string | null): string[] {
   if (!value) return []
   return Array.from(new Set(
     value
@@ -90,7 +90,14 @@ export async function GET(req: NextRequest) {
   const requestStartedAt = performance.now()
   try {
     const { searchParams } = new URL(req.url)
+    const explicitLeadIdsRequested = searchParams.has('lead_ids')
     const explicitLeadIds = parseLeadIds(searchParams.get('lead_ids'))
+    if (explicitLeadIdsRequested && explicitLeadIds.length === 0) {
+      return NextResponse.json({ success: false, error: 'No valid lead IDs supplied' }, {
+        status: 400,
+        headers: NO_STORE_HEADERS,
+      })
+    }
     const cohortLeadIds = explicitLeadIds.length > 0
       ? []
       : await resolveCohortLeadIds(searchParams.get('cohort'))
