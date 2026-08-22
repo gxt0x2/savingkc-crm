@@ -1,24 +1,31 @@
 'use client'
 
+import Link from 'next/link'
 import { useOperationalReconciliation } from '@/hooks/use-operational-reconciliation'
 import { useTaskProvenance } from '@/hooks/use-task-provenance'
 import { Icon } from '@/components/ui/icon'
 
-function Metric({ label, value, note, tone = 'default' }: {
+function Metric({ label, value, note, tone = 'default', href }: {
   label: string
   value: number
   note: string
   tone?: 'default' | 'warning'
+  href?: string
 }) {
-  return (
-    <div className={`min-w-0 rounded-xl border px-3 py-2 ${tone === 'warning' ? 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]'}`}>
-      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--crm-text-muted)]">{label}</p>
+  const className = `min-w-0 rounded-xl border px-3 py-2 ${tone === 'warning' ? 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)]'}`
+  const content = <>
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--crm-text-muted)]">{label}</p>
+        {href ? <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-black uppercase tracking-[0.05em] text-[var(--crm-brand)]">Review <Icon name="arrow_forward" className="text-[13px]" /></span> : null}
+      </div>
       <div className="mt-0.5 flex items-baseline gap-2">
         <strong className="text-xl tabular-nums text-[var(--crm-ink)]">{value.toLocaleString()}</strong>
         <span className="truncate text-[11px] text-[var(--crm-text-muted)]" title={note}>{note}</span>
       </div>
-    </div>
-  )
+    </>
+  return href
+    ? <Link href={href} aria-label={`Review ${value.toLocaleString()} ${label.toLowerCase()}`} className={`${className} transition hover:border-[var(--crm-brand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--crm-brand)]`}>{content}</Link>
+    : <div className={className}>{content}</div>
 }
 
 export function TaskReconciliationStrip() {
@@ -58,7 +65,7 @@ export function TaskReconciliationStrip() {
         <Metric label="Terminal review" value={data.workItems.overdueTerminal} note="linked to a terminal record" tone={data.workItems.overdueTerminal > 0 ? 'warning' : 'default'} />
         <Metric label="Unlinked review" value={data.workItems.overdueUnlinked} note="no linked contact record" tone={data.workItems.overdueUnlinked > 0 ? 'warning' : 'default'} />
         <Metric label="Multiple active" value={data.workItems.leadsWithMultipleActive} note={`up to ${data.workItems.maxActivePerLead} actions on one contact`} tone={data.workItems.leadsWithMultipleActive > 0 ? 'warning' : 'default'} />
-        <Metric label="Missing primary" value={data.workItems.opportunitiesWithNoPrimary} note={`of ${data.workItems.activeOpportunities} active opportunities`} tone={data.workItems.opportunitiesWithNoPrimary > 0 ? 'warning' : 'default'} />
+        <Metric label="Missing primary" value={data.workItems.opportunitiesWithNoPrimary} note={`of ${data.workItems.activeOpportunities} active opportunities`} tone={data.workItems.opportunitiesWithNoPrimary > 0 ? 'warning' : 'default'} href={data.workItems.opportunitiesWithNoPrimary > 0 ? '/contacts?list=all&gap=missing_next_action' : undefined} />
         <Metric label="Multiple primary" value={data.workItems.opportunitiesWithMultiplePrimary} note="active opportunities with more than one" tone={data.workItems.opportunitiesWithMultiplePrimary > 0 ? 'warning' : 'default'} />
       </div>
       {data.degraded ? <p role="status" className="mt-2 text-xs font-semibold text-[var(--crm-warning)]">{data.warning}</p> : null}
