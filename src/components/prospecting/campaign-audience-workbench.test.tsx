@@ -36,4 +36,25 @@ describe('CampaignAudienceWorkbench', () => {
     expect(await screen.findByText('Helen Seller')).toBeVisible()
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('status=replied'), expect.objectContaining({ cache: 'no-store' })))
   })
+
+  it('requires confirmation, removes one member, and refreshes campaign totals', async () => {
+    const onAudienceChanged = vi.fn()
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => init?.method === 'DELETE'
+      ? { ok: true, json: async () => ({ member: { id: member.id, status: 'removed', removed: true, cancelledActions: 1 } }) }
+      : { ok: true, json: async () => ({ items: [member], pageInfo: { limit: 50, hasMore: false, nextCursor: null } }) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CampaignAudienceWorkbench campaignId="campaign-1" campaignName="August Absentee" total={1} canEditAudience onAudienceChanged={onAudienceChanged} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Helen Seller from campaign' }))
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Helen Seller was removed')
+    expect(screen.queryByText('Helen Seller')).not.toBeInTheDocument()
+    expect(onAudienceChanged).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/prospecting/campaigns/campaign-1/members', expect.objectContaining({
+      method: 'DELETE',
+      body: JSON.stringify({ memberId: member.id }),
+    }))
+  })
 })

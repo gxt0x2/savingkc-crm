@@ -57,7 +57,8 @@ export async function listProspectingCampaignMembers(
     .order('enrolled_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(limit + 1)
-  if (status !== 'all') query = query.eq('status', status)
+  if (status === 'all') query = query.neq('status', 'removed')
+  else query = query.eq('status', status)
   if (cursor) query = query.or(`enrolled_at.lt.${cursor.enrolledAt},and(enrolled_at.eq.${cursor.enrolledAt},id.lt.${cursor.id})`)
   const result = await query
   if (result.error) throw new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign audience is unavailable')

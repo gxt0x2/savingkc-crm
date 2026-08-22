@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProspectingCampaignDetail, ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 import { CampaignDashboard } from './campaign-dashboard'
 
@@ -46,15 +46,23 @@ const detail: ProspectingCampaignDetail = {
 const campaigns: ProspectingCampaignSummary[] = [detail, { ...detail, id: 'campaign-2', name: 'Calling block', kind: 'dialer', status: 'draft' }]
 
 describe('CampaignDashboard', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => ({
+      ok: true,
+      json: async () => String(input).includes('/activity')
+        ? { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } }
+        : { items: detail.members, pageInfo: { limit: 50, hasMore: false, nextCursor: null } },
+    })))
+  })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('shows campaign pulse, sequence, audience health, and server-enforced safety', () => {
+  it('shows campaign pulse, sequence, audience health, and server-enforced safety', async () => {
     render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: detail.name })).toBeVisible()
     expect(screen.getByText('25% reply rate')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'The conversation sellers receive' })).toBeVisible()
-    expect(screen.getByText('Helen Seller')).toBeVisible()
+    expect(await screen.findByText('Helen Seller')).toBeVisible()
     expect(screen.getByText('Protected at every action')).toBeVisible()
     expect(screen.getByText('DNC and STOP')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Audience locked' })).toBeDisabled()

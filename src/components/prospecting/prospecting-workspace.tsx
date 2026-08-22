@@ -234,6 +234,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       onDuplicate={duplicateCampaign}
       onTransition={(status) => void transition(status)}
       onLaunchDialer={() => void launchDialer()}
+      onAudienceChanged={() => detail ? loadDetail(detail.id) : undefined}
     />}
   </>
 }
