@@ -47,6 +47,9 @@ describe('TaskReconciliationStrip', () => {
           overdueUnlinked: 5,
           leadsWithMultipleActive: 18,
           maxActivePerLead: 4,
+          activeOpportunities: 20,
+          opportunitiesWithNoPrimary: 7,
+          opportunitiesWithMultiplePrimary: 2,
         },
       },
     })
@@ -58,6 +61,9 @@ describe('TaskReconciliationStrip', () => {
     expect(region).toHaveTextContent('Terminal review50')
     expect(region).toHaveTextContent('Unlinked review5')
     expect(region).toHaveTextContent('Multiple active18')
+    expect(region).toHaveTextContent('Missing primary7')
+    expect(region).toHaveTextContent('of 20 active opportunities')
+    expect(region).toHaveTextContent('Multiple primary2')
     expect(region).toHaveTextContent('Nothing is auto-closed')
     expect(region).not.toHaveTextContent('Complete')
     expect(region).not.toHaveTextContent('Delete')
@@ -77,6 +83,9 @@ describe('TaskReconciliationStrip', () => {
           overdueUnlinked: 3,
           leadsWithMultipleActive: 45,
           maxActivePerLead: 8,
+          activeOpportunities: 19,
+          opportunitiesWithNoPrimary: 5,
+          opportunitiesWithMultiplePrimary: 1,
         },
       },
     })

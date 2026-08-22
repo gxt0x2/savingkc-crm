@@ -11,6 +11,7 @@ type WorkItemRow = {
   due_at: string | null
   assigned_to: string | null
   primary_next_action: boolean
+  operational_lane?: 'current' | 'review' | 'quarantine'
 }
 
 type ThreadRow = {
@@ -25,6 +26,15 @@ type LeadRow = {
   id: string
   station: string | null
   classification: string | null
+  is_parked?: boolean | null
+  pipeline_intent_source?: string | null
+}
+
+type PrimaryNextActionIntegrity = {
+  activeOpportunities: number
+  opportunitiesWithNoPrimary: number
+  opportunitiesWithOnePrimary: number
+  opportunitiesWithMultiplePrimary: number
 }
 
 export type OperationalReconciliationSnapshot = {
@@ -44,6 +54,10 @@ export type OperationalReconciliationSnapshot = {
     overdueUnassigned: number
     leadsWithMultipleActive: number
     leadsWithMultiplePrimary: number
+    activeOpportunities: number
+    opportunitiesWithNoPrimary: number
+    opportunitiesWithOnePrimary: number
+    opportunitiesWithMultiplePrimary: number
     maxActivePerLead: number
     age: Record<string, number>
   }
@@ -66,6 +80,7 @@ export type OperationalReconciliationRows = {
   threads: ThreadRow[]
   threadTotal: number
   leads: LeadRow[]
+  primaryIntegrity?: PrimaryNextActionIntegrity
   now: Date
 }
 
@@ -82,6 +97,20 @@ function isTerminal(lead: LeadRow | undefined) {
   if (!lead) return false
   return TERMINAL_STATIONS.has(String(lead.station || '').toLowerCase())
     || String(lead.classification || '').toLowerCase() === 'dead'
+}
+
+function isActiveOpportunity(lead: LeadRow) {
+  const station = String(lead.station || '').toLowerCase()
+  const classification = String(lead.classification || '').toLowerCase()
+  return lead.is_parked !== true
+    && station !== 'closed_won'
+    && !isTerminal(lead)
+    && (
+      classification === 'lead'
+      || classification === 'opportunity'
+      || (station === 'new' && !classification && Boolean(lead.pipeline_intent_source))
+      || ['qualified', 'appointment_set', 'offer_made', 'under_contract'].includes(station)
+    )
 }
 
 function overdueAge(row: WorkItemRow, now: Date) {
@@ -115,7 +144,25 @@ export function summarizeOperationalReconciliation(
     active.filter((item) => item.lead_id && item.primary_next_action),
     (item) => item.lead_id as string,
   )
-  const degraded = input.workItemTotal > input.workItems.length || input.threadTotal > input.threads.length
+  const activeOpportunities = input.leads.filter(isActiveOpportunity)
+  const activeOpportunityIds = new Set(activeOpportunities.map((lead) => lead.id))
+  const currentPrimaryByLead = countBy(
+    active.filter((item) => item.lead_id
+      && activeOpportunityIds.has(item.lead_id)
+      && item.primary_next_action
+      && item.operational_lane !== 'review'
+      && item.operational_lane !== 'quarantine'),
+    (item) => item.lead_id as string,
+  )
+  const primaryCounts = activeOpportunities.map((lead) => currentPrimaryByLead[lead.id] || 0)
+  const primaryIntegrity = input.primaryIntegrity || {
+    activeOpportunities: activeOpportunities.length,
+    opportunitiesWithNoPrimary: primaryCounts.filter((count) => count === 0).length,
+    opportunitiesWithOnePrimary: primaryCounts.filter((count) => count === 1).length,
+    opportunitiesWithMultiplePrimary: primaryCounts.filter((count) => count > 1).length,
+  }
+  const degraded = input.workItemTotal > input.workItems.length
+    || input.threadTotal > input.threads.length
 
   return {
     generatedAt: input.now.toISOString(),
@@ -136,6 +183,7 @@ export function summarizeOperationalReconciliation(
       overdueUnassigned: overdue.filter((item) => !item.assigned_to).length,
       leadsWithMultipleActive: Object.values(activeByLead).filter((count) => count > 1).length,
       leadsWithMultiplePrimary: Object.values(primaryByLead).filter((count) => count > 1).length,
+      ...primaryIntegrity,
       maxActivePerLead: Math.max(0, ...Object.values(activeByLead)),
       age: countBy(overdue, (item) => overdueAge(item, input.now)),
     },
@@ -167,7 +215,7 @@ async function loadWorkItems() {
   for (let offset = 0; offset < ROW_CAP; offset += PAGE_SIZE) {
     const result = await supabaseAdmin()
       .from('work_items')
-      .select('work_item_key,lead_id,status,due_at,assigned_to,primary_next_action')
+      .select('work_item_key,lead_id,status,due_at,assigned_to,primary_next_action,operational_lane')
       .eq('department', 'acquisitions')
       .in('status', ['pending', 'blocked', 'completed'])
       .order('work_item_key', { ascending: true })
@@ -217,10 +265,30 @@ async function loadLeads(ids: string[]) {
   return rows
 }
 
+async function loadPrimaryNextActionIntegrity(): Promise<PrimaryNextActionIntegrity> {
+  const result = await supabaseAdmin().rpc('primary_next_action_integrity_summary_v1')
+  if (result.error) throw new Error(result.error.message)
+  const data = result.data as Partial<PrimaryNextActionIntegrity> | null
+  const values = {
+    activeOpportunities: Number(data?.activeOpportunities),
+    opportunitiesWithNoPrimary: Number(data?.opportunitiesWithNoPrimary),
+    opportunitiesWithOnePrimary: Number(data?.opportunitiesWithOnePrimary),
+    opportunitiesWithMultiplePrimary: Number(data?.opportunitiesWithMultiplePrimary),
+  }
+  if (Object.values(values).some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    throw new Error('Primary next-action integrity summary is malformed')
+  }
+  return values
+}
+
 export async function getOperationalReconciliationSnapshot(
   now = new Date(),
 ): Promise<OperationalReconciliationSnapshot> {
-  const [workItems, threads] = await Promise.all([loadWorkItems(), loadThreads()])
+  const [workItems, threads, primaryIntegrity] = await Promise.all([
+    loadWorkItems(),
+    loadThreads(),
+    loadPrimaryNextActionIntegrity(),
+  ])
   const leads = await loadLeads([
     ...workItems.rows.flatMap((item) => item.lead_id ? [item.lead_id] : []),
     ...threads.rows.flatMap((thread) => thread.lead_id ? [thread.lead_id] : []),
@@ -231,6 +299,7 @@ export async function getOperationalReconciliationSnapshot(
     threads: threads.rows,
     threadTotal: threads.total,
     leads,
+    primaryIntegrity,
     now,
   })
 }

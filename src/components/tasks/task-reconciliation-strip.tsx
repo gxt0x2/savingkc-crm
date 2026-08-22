@@ -53,11 +53,13 @@ export function TaskReconciliationStrip() {
         </div>
         <span className="text-xs font-semibold text-[var(--crm-text-muted)]">{data.workItems.overdue.toLocaleString()} overdue total</span>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <Metric label="Current-record overdue" value={data.workItems.overdueCurrent} note="linked to a non-terminal record" />
         <Metric label="Terminal review" value={data.workItems.overdueTerminal} note="linked to a terminal record" tone={data.workItems.overdueTerminal > 0 ? 'warning' : 'default'} />
         <Metric label="Unlinked review" value={data.workItems.overdueUnlinked} note="no linked contact record" tone={data.workItems.overdueUnlinked > 0 ? 'warning' : 'default'} />
         <Metric label="Multiple active" value={data.workItems.leadsWithMultipleActive} note={`up to ${data.workItems.maxActivePerLead} actions on one contact`} tone={data.workItems.leadsWithMultipleActive > 0 ? 'warning' : 'default'} />
+        <Metric label="Missing primary" value={data.workItems.opportunitiesWithNoPrimary} note={`of ${data.workItems.activeOpportunities} active opportunities`} tone={data.workItems.opportunitiesWithNoPrimary > 0 ? 'warning' : 'default'} />
+        <Metric label="Multiple primary" value={data.workItems.opportunitiesWithMultiplePrimary} note="active opportunities with more than one" tone={data.workItems.opportunitiesWithMultiplePrimary > 0 ? 'warning' : 'default'} />
       </div>
       {data.degraded ? <p role="status" className="mt-2 text-xs font-semibold text-[var(--crm-warning)]">{data.warning}</p> : null}
       <div className="mt-3 border-t border-[var(--crm-border)] pt-3">
