@@ -84,6 +84,12 @@ export interface ProspectingCampaignDetail extends ProspectingCampaignSummary {
     sent: number
     failed: number
   }
+  operations: {
+    queued: number
+    processing: number
+    nextActionAt: string | null
+    lastSentAt: string | null
+  }
 }
 
 export interface ProspectingCampaignActivity {

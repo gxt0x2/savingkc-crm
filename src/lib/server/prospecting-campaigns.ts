@@ -182,12 +182,19 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     supabase.from('prospecting_campaign_actions').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).in('status', ['sent', 'delivered']),
     supabase.from('prospecting_campaign_actions').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'failed'),
   ])
-  const [campaignResult, stepsResult, membersResult, countResults] = await Promise.all([campaignPromise, stepsPromise, membersPromise, counts])
+  const operations = Promise.all([
+    supabase.from('prospecting_campaign_actions').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'queued'),
+    supabase.from('prospecting_campaign_actions').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'processing'),
+    supabase.from('prospecting_campaign_actions').select('scheduled_at').eq('campaign_id', campaignId).eq('status', 'queued').order('scheduled_at', { ascending: true }).limit(1).maybeSingle(),
+    supabase.from('prospecting_campaign_actions').select('sent_at').eq('campaign_id', campaignId).in('status', ['sent', 'delivered']).not('sent_at', 'is', null).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
+  ])
+  const [campaignResult, stepsResult, membersResult, countResults, operationResults] = await Promise.all([campaignPromise, stepsPromise, membersPromise, counts, operations])
   if (campaignResult.error) throw databaseError(campaignResult.error)
   if (!campaignResult.data) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
   if (stepsResult.error) throw databaseError(stepsResult.error)
   if (membersResult.error) throw databaseError(membersResult.error)
   for (const result of countResults) if (result.error) throw databaseError(result.error)
+  for (const result of operationResults) if (result.error) throw databaseError(result.error)
 
   const members: ProspectingCampaignMember[] = (membersResult.data || []).map((row) => ({
     id: row.id,
@@ -213,6 +220,12 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
       completed: countResults[4].count || 0,
       sent: countResults[5].count || 0,
       failed: countResults[6].count || 0,
+    },
+    operations: {
+      queued: operationResults[0].count || 0,
+      processing: operationResults[1].count || 0,
+      nextActionAt: operationResults[2].data?.scheduled_at || null,
+      lastSentAt: operationResults[3].data?.sent_at || null,
     },
   }
 }
