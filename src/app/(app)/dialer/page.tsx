@@ -2048,6 +2048,8 @@ function DialerHome() {
 
   const currentLead = selectedQueue[0] ?? queue[0] ?? null
   const previewLeads = queue.slice(0, visibleLimit)
+  const maximumSessionPreview = Math.min(queue.length, 100)
+  const hasHiddenSessionContacts = previewLeads.length < maximumSessionPreview
   const selectedVisibleCount = previewLeads.filter((lead) => selectedLeadIds.has(lead.id)).length
   const selectedCount = selectedQueue.length
   const hasFilters = campaign !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all' || minMotivation > 0 || search.trim().length > 0
@@ -2466,6 +2468,7 @@ function DialerHome() {
               <div className="flex items-center gap-3 text-xs font-bold text-[var(--ck-text-muted)]">
                 <span>{selectedVisibleCount}/{previewLeads.length} shown · {selectedCount.toLocaleString()} selected</span>
                 <button onClick={selectVisibleLeads} disabled={previewLeads.length === 0} className="transition-colors hover:text-[var(--ck-text)] disabled:opacity-35">Select shown</button>
+                {hasHiddenSessionContacts ? <button onClick={() => setVisibleLimit(maximumSessionPreview)} className="font-black text-[var(--crm-brand)] transition-colors hover:text-[var(--ck-text)]">{queue.length <= 100 ? `Show all ${queue.length}` : 'Show first 100'}</button> : null}
                 {selectedCount > 0 && (
                   <button onClick={clearSelectedLeads} className="transition-colors hover:text-[var(--ck-text)]">Clear</button>
                 )}
