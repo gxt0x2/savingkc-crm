@@ -23,16 +23,14 @@ describe('dialer queue safety filtering', () => {
     expect(result.map((row) => row.id)).toEqual(['safe'])
   })
 
-  it('keeps every supporting read scoped and returns a compact queue contract', () => {
-    expect(routeSource.match(/\.in\('lead_id', leadIds\)/g)).toHaveLength(4)
-    expect(routeSource).toContain(".or('station.is.null,station.not.in.(dead,closed_lost)')")
-    expect(routeSource).toContain(".or('classification.is.null,classification.neq.dead')")
-    expect(routeSource).toContain(".eq('is_opted_out', true)")
-    expect(routeSource).toContain('queueContext: context')
-    expect(routeSource).toContain('queueMetrics: metrics')
+  it('uses the bounded projection and returns a compact queue contract', () => {
+    expect(routeSource).toContain('readDialerQueuePage({')
+    expect(routeSource).toContain('queueContext: page.queueContext')
+    expect(routeSource).toContain('queueMetrics: page.queueMetrics')
     expect(routeSource).toContain("'Server-Timing'")
-    expect(routeSource).not.toContain('followups: followups || []')
-    expect(routeSource).not.toContain('contactActivities: contactActivities || []')
+    expect(routeSource).not.toContain(".from('sms_opt_outs')")
+    expect(routeSource).not.toContain(".from('lead_activities')")
+    expect(routeSource).not.toContain('buildDialerQueueContext')
     expect(pageSource).not.toContain('QueueContactActivity')
     expect(pageSource).not.toContain('QueueFollowup')
   })
