@@ -26,6 +26,7 @@ const PUBLIC_API_EXACT = new Set([
   '/api/maps/static',
   '/api/twiml-voice',
   '/api/twilio-sms-webhook',
+  '/api/twilio-message-status',
   '/api/twilio-missed-call',
   '/api/twilio-recording-callback',
   '/api/twilio-call-status',

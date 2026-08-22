@@ -71,6 +71,7 @@ interface SMSParams {
   from: string
   body: string
   senderUse?: SmsSenderUse
+  statusCallback?: string
 }
 
 export interface SMSResult {
@@ -145,6 +146,7 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
       to: sendParams.to,
       from: sendParams.from,
       body: sendParams.body,
+      ...(sendParams.statusCallback ? { statusCallback: sendParams.statusCallback } : {}),
       ...(messagingServiceSid ? { messagingServiceSid } : {}),
     })
     const duration = Date.now() - startTime

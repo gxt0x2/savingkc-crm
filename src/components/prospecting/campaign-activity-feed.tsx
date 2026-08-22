@@ -6,7 +6,8 @@ import type { ProspectingCampaignActivity, ProspectingCampaignActivityPage } fro
 
 function eventPresentation(item: ProspectingCampaignActivity) {
   const normalized = item.eventType.replace(/^campaign_/, '')
-  if (normalized.endsWith('_sent') || normalized.endsWith('_delivered')) return { icon: 'send', label: 'Message sent', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' }
+  if (normalized.endsWith('_delivered')) return { icon: 'mark_chat_read', label: 'Carrier delivered', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' }
+  if (normalized.endsWith('_sent')) return { icon: 'send', label: 'Provider accepted', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
   if (normalized.endsWith('_blocked') || normalized.endsWith('_cancelled')) return { icon: 'block', label: item.errorCode === 'contact_replied' ? 'Stopped after reply' : 'Send blocked', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' }
   if (normalized.endsWith('_failed')) return { icon: 'error', label: 'Delivery failed', tone: 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' }
   if (normalized.includes('activated')) return { icon: 'play_arrow', label: 'Campaign activated', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' }

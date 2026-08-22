@@ -4,6 +4,14 @@ import { sendLeadSms } from '@/lib/send-lead-sms'
 import { resolveSmsCaps } from '@/lib/twilio-a2p'
 import { supabase } from '@/lib/supabase-lazy'
 
+function deliveryStatusCallback(actionId: string): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+  const url = new URL('/api/twilio-message-status', base)
+  url.searchParams.set('action_id', actionId)
+  url.hash = 'rc=3&rp=5xx,ct,rt&ct=2000&rt=5000'
+  return url.toString()
+}
+
 type ClaimedCampaignAction = {
   id: string
   campaignId: string
@@ -135,6 +143,7 @@ async function processAction(action: ClaimedCampaignAction, workerToken: string)
       prospecting_campaign_action_id: action.id,
       prospecting_campaign_step_id: action.stepId,
     },
+    statusCallback: deliveryStatusCallback(action.id),
   })
 
   if (send.status === 'skipped' && send.reason === 'opted_out') {

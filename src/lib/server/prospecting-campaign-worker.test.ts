@@ -73,6 +73,7 @@ describe('prospecting campaign worker', () => {
       body: 'Hi Alex, this is Casey about 1 Main St.',
       fromPhone: action.fromPhone,
       metadata: expect.objectContaining({ prospecting_campaign_action_id: action.id }),
+      statusCallback: `https://crm.savingkc.com/api/twilio-message-status?action_id=${action.id}#rc=3&rp=5xx,ct,rt&ct=2000&rt=5000`,
     }))
     expect(mocks.rpc).toHaveBeenCalledWith('finish_prospecting_campaign_action_v1', expect.objectContaining({
       p_result: 'sent', p_provider_sid: 'SM123',

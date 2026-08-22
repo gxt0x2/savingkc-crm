@@ -44,6 +44,7 @@ export interface SendLeadSmsInput {
   agent?: string
   source?: string
   metadata?: Record<string, unknown>
+  statusCallback?: string
 }
 
 /**
@@ -126,14 +127,14 @@ export async function resolveSmsFromNumber(
 }
 
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
-  const { leadId, phone, fromPhone, agent, source, metadata } = input
+  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback } = input
   const body = input.body.trim()
 
   if (await isOptedOut(phone)) return { status: 'skipped', reason: 'opted_out' }
   if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
 
   const from = await resolveSmsFromNumber(leadId, phone, fromPhone)
-  const msg = await safeSendSMS({ body, from, to: phone, senderUse: 'conversation' })
+  const msg = await safeSendSMS({ body, from, to: phone, senderUse: 'conversation', statusCallback })
   if (!msg.success) return { status: 'failed', error: msg.error || 'SMS send failed' }
 
   let persistenceError: unknown = null
