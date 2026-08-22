@@ -73,6 +73,8 @@ type CampaignStudioProps = {
   pendingLeadIds: string[]
   saving: boolean
   sourceCampaignName?: string | null
+  editingCampaignName?: string | null
+  editingAudienceCount?: number
   existingCampaignName?: string | null
   canAddToExisting?: boolean
   onChange: (updater: (current: CampaignForm) => CampaignForm) => void
@@ -86,6 +88,8 @@ export function CampaignStudio({
   pendingLeadIds,
   saving,
   sourceCampaignName,
+  editingCampaignName,
+  editingAudienceCount = 0,
   existingCampaignName,
   canAddToExisting = false,
   onChange,
@@ -123,8 +127,8 @@ export function CampaignStudio({
               <Icon name="arrow_back" className="text-base" /> Campaigns
             </button>
             <p className="crm-eyebrow mt-5">Campaign studio</p>
-            <h2 className="mt-1 text-xl font-black tracking-tight text-[var(--crm-ink)]">Build a clean launch</h2>
-            <p className="mt-2 text-xs leading-5 text-[var(--crm-text-muted)]">One audience, one channel, and a review before anything runs.</p>
+            <h2 className="mt-1 text-xl font-black tracking-tight text-[var(--crm-ink)]">{editingCampaignName ? 'Correct this draft' : 'Build a clean launch'}</h2>
+            <p className="mt-2 text-xs leading-5 text-[var(--crm-text-muted)]">{editingCampaignName ? 'Update setup without replacing its audience or history.' : 'One audience, one channel, and a review before anything runs.'}</p>
           </div>
           <ol className="p-3">
             {STUDIO_STEPS.map((step) => {
@@ -169,6 +173,7 @@ export function CampaignStudio({
           </header>
 
           {sourceCampaignName ? <div className="rounded-xl border border-[var(--crm-info)]/25 bg-[var(--crm-info-soft)] px-4 py-3 text-sm text-[var(--crm-info)]" role="status"><strong>Setup copied from {sourceCampaignName}.</strong> Audience and activity were intentionally left behind so this starts as a clean draft.</div> : null}
+          {editingCampaignName ? <div className="rounded-xl border border-[var(--crm-info)]/25 bg-[var(--crm-info-soft)] px-4 py-3 text-sm text-[var(--crm-info)]" role="status"><strong>Editing {editingCampaignName}.</strong> Its current audience and activity will stay attached. Saving does not activate it.</div> : null}
 
           {studioStep === 1 ? (
             <div className="grid gap-4 lg:grid-cols-2">
@@ -244,7 +249,7 @@ export function CampaignStudio({
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
               <div className="space-y-4">
                 <div className="crm-panel rounded-2xl p-5 sm:p-6"><div className="flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name={form.kind === 'sms' ? 'sms' : 'phone_in_talk'} className="text-2xl" /></span><div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-text-muted)]">Draft campaign</p><h2 className="mt-1 text-2xl font-black text-[var(--crm-ink)]">{form.name || 'Untitled campaign'}</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">{form.kind === 'sms' ? `${form.steps.length} message cadence · ${form.perHour}/hour · ${form.perDay}/day` : `Single-line calls · ${phoneLabel(form.callerId, DIALER_CALLER_ID_NUMBERS)}`}</p></div></div></div>
-                <div className="crm-panel rounded-2xl p-5"><div className="flex items-center justify-between"><div><p className="crm-eyebrow">Audience</p><h3 className="mt-1 text-lg font-black text-[var(--crm-ink)]">{pendingLeadIds.length ? `${pendingLeadIds.length} selected contact${pendingLeadIds.length === 1 ? '' : 's'}` : 'Add contacts after creation'}</h3></div><span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="groups" className="text-2xl" /></span></div><p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">Every selected contact is checked before enrollment. Suppressed or unusable numbers remain visible in campaign health but never enter execution.</p></div>
+                <div className="crm-panel rounded-2xl p-5"><div className="flex items-center justify-between"><div><p className="crm-eyebrow">Audience</p><h3 className="mt-1 text-lg font-black text-[var(--crm-ink)]">{editingCampaignName ? `${editingAudienceCount} contact${editingAudienceCount === 1 ? '' : 's'} stay attached` : pendingLeadIds.length ? `${pendingLeadIds.length} selected contact${pendingLeadIds.length === 1 ? '' : 's'}` : 'Add contacts after creation'}</h3></div><span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="groups" className="text-2xl" /></span></div><p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">{editingCampaignName ? 'This setup edit does not add, remove, or restart contacts. Audience changes stay in the campaign workbench.' : 'Every selected contact is checked before enrollment. Suppressed or unusable numbers remain visible in campaign health but never enter execution.'}</p></div>
                 {form.kind === 'sms' ? <div className="crm-panel rounded-2xl p-5"><p className="crm-eyebrow">Cadence summary</p><div className="mt-4 space-y-3">{form.steps.map((step, index) => <div key={index} className="flex gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--crm-brand)] text-[10px] font-black text-white">{index + 1}</span><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{delayLabel(step.delayMinutes)}</p><p className="mt-1 line-clamp-2 text-sm text-[var(--crm-ink)]">{step.bodyTemplate}</p></div></div>)}</div></div> : null}
               </div>
               <aside className="crm-panel h-fit rounded-2xl p-5"><p className="crm-eyebrow">Launch guardrails</p><h3 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Ready for a safe draft</h3><div className="mt-5 space-y-3">{[
@@ -257,10 +262,10 @@ export function CampaignStudio({
           ) : null}
 
           <footer className="crm-panel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4">
-            <div>{canAddToExisting && existingCampaignName && pendingLeadIds.length > 0 ? <button type="button" onClick={onAddToExisting} className="crm-secondary-button rounded-lg px-4 py-2 text-xs font-black">Add {pendingLeadIds.length} to {existingCampaignName}</button> : <p className="text-xs text-[var(--crm-text-muted)]">Nothing runs until you activate the finished draft.</p>}</div>
+            <div>{canAddToExisting && existingCampaignName && pendingLeadIds.length > 0 ? <button type="button" onClick={onAddToExisting} className="crm-secondary-button rounded-lg px-4 py-2 text-xs font-black">Add {pendingLeadIds.length} to {existingCampaignName}</button> : <p className="text-xs text-[var(--crm-text-muted)]">{editingCampaignName ? 'Saving keeps this campaign in draft.' : 'Nothing runs until you activate the finished draft.'}</p>}</div>
             <div className="flex gap-2">
               {studioStep > 1 ? <button type="button" onClick={() => setStudioStep((current) => current - 1)} className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-black">Back</button> : <button type="button" onClick={onCancel} className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-black">Cancel</button>}
-              {studioStep < 3 ? <button type="button" disabled={!stepIsValid} onClick={() => setStudioStep((current) => current + 1)} className="crm-primary-button inline-flex items-center gap-1 rounded-lg px-5 py-2 text-sm font-black disabled:opacity-40">Continue <Icon name="arrow_forward" className="text-base" /></button> : <button type="submit" disabled={saving || !stepIsValid} className="crm-primary-button inline-flex items-center gap-1.5 rounded-lg px-5 py-2 text-sm font-black disabled:opacity-50">{saving ? 'Creating draft…' : 'Create safe draft'}<Icon name="check" className="text-base" /></button>}
+              {studioStep < 3 ? <button type="button" disabled={!stepIsValid} onClick={() => setStudioStep((current) => current + 1)} className="crm-primary-button inline-flex items-center gap-1 rounded-lg px-5 py-2 text-sm font-black disabled:opacity-40">Continue <Icon name="arrow_forward" className="text-base" /></button> : <button type="submit" disabled={saving || !stepIsValid} className="crm-primary-button inline-flex items-center gap-1.5 rounded-lg px-5 py-2 text-sm font-black disabled:opacity-50">{saving ? (editingCampaignName ? 'Saving draft…' : 'Creating draft…') : (editingCampaignName ? 'Save draft setup' : 'Create safe draft')}<Icon name="check" className="text-base" /></button>}
             </div>
           </footer>
         </section>

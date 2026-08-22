@@ -134,6 +134,19 @@ export function copyProspectingCampaignSetup(campaign: ProspectingCampaignDetail
   }
 }
 
+export function editableProspectingCampaignSetup(campaign: ProspectingCampaignDetail): CreateProspectingCampaignInput {
+  return {
+    name: campaign.name,
+    kind: campaign.kind,
+    callerId: campaign.callerId,
+    fromPhone: campaign.fromPhone,
+    defaultTimezone: campaign.defaultTimezone,
+    perHour: campaign.perHour,
+    perDay: campaign.perDay,
+    steps: campaign.steps.map((step) => ({ delayMinutes: step.delayMinutes, bodyTemplate: step.bodyTemplate })),
+  }
+}
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }

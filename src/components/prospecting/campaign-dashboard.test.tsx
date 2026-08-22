@@ -112,4 +112,15 @@ describe('CampaignDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate setup' }))
     expect(duplicate).toHaveBeenCalledWith(detail)
   })
+
+  it('offers in-place setup editing only for a draft campaign', () => {
+    const edit = vi.fn()
+    const draft = { ...detail, status: 'draft' as const }
+    const { rerender } = render(<CampaignDashboard campaigns={[draft]} selectedId={draft.id} detail={draft} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onEdit={edit} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit setup' }))
+    expect(edit).toHaveBeenCalledWith(draft)
+
+    rerender(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onEdit={edit} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Edit setup' })).not.toBeInTheDocument()
+  })
 })

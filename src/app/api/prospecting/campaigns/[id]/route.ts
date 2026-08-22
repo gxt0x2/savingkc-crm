@@ -1,6 +1,7 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingError, prospectingJson } from '@/lib/api/prospecting-response'
-import { getProspectingCampaign, setProspectingCampaignStatus } from '@/lib/server/prospecting-campaigns'
+import { parseCreateProspectingCampaignInput } from '@/lib/prospecting/campaign-contract'
+import { getProspectingCampaign, setProspectingCampaignStatus, updateProspectingCampaignDraft } from '@/lib/server/prospecting-campaigns'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -19,7 +20,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const actor = await resolveAuthenticatedActor()
   if (!actor) return prospectingJson({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const body = await request.json() as { status?: unknown; confirmed?: unknown }
+    const body = await request.json() as { status?: unknown; confirmed?: unknown; setup?: unknown }
+    if (body.setup !== undefined) {
+      return prospectingJson({ campaign: await updateProspectingCampaignDraft(
+        actor,
+        (await params).id,
+        parseCreateProspectingCampaignInput(body.setup),
+      ) })
+    }
     if (!['active', 'paused', 'archived'].includes(String(body.status))) {
       return prospectingJson({ error: 'Choose active, paused, or archived', code: 'invalid_campaign_status' }, { status: 400 })
     }

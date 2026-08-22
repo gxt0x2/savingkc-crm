@@ -3,6 +3,7 @@ import {
   ProspectingCampaignInputError,
   type ProspectingCampaignDetail,
   copyProspectingCampaignSetup,
+  editableProspectingCampaignSetup,
   isWithinProspectingWindow,
   nextProspectingWindow,
   parseCreateProspectingCampaignInput,
@@ -24,6 +25,7 @@ describe('prospecting campaign contract', () => {
     expect(copy).not.toHaveProperty('members')
     expect(copy).not.toHaveProperty('stats')
     expect(copy.steps).not.toBe(campaign.steps)
+    expect(editableProspectingCampaignSetup(campaign)).toEqual({ ...copy, name: 'August Absentee' })
   })
 
   it('accepts a bounded SMS sequence and normalizes its sender', () => {

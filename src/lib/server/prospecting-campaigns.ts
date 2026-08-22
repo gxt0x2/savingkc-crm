@@ -65,6 +65,7 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('campaign_not_found') || detail.includes('pgrst116')) return new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
   if (detail.includes('campaign_has_no_eligible_members')) return new ProspectingCampaignError('campaign_empty', 409, 'Add at least one eligible contact before activating')
   if (detail.includes('campaign_has_no_steps')) return new ProspectingCampaignError('campaign_steps_required', 409, 'Add at least one message step before activating')
+  if (detail.includes('campaign_setup_locked')) return new ProspectingCampaignError('campaign_setup_locked', 409, 'Only a campaign that has never run can be edited')
   if (detail.includes('campaign_members_locked') || detail.includes('invalid_campaign_transition')) return new ProspectingCampaignError('invalid_campaign_state', 409, 'Pause the campaign before changing its audience')
   if (detail.includes('invalid_') || detail.includes('23514') || detail.includes('23505') || detail.includes('22p02')) return new ProspectingCampaignError('invalid_campaign', 400, 'Campaign details are invalid')
   if (detail.includes('does not exist') || detail.includes('pgrst202') || detail.includes('42p01') || detail.includes('42883')) {
@@ -136,6 +137,29 @@ export async function createProspectingCampaign(actor: AuthenticatedActor, input
   })
   if (error) throw databaseError(error)
   return getProspectingCampaign(actor, String(data))
+}
+
+export async function updateProspectingCampaignDraft(
+  actor: AuthenticatedActor,
+  campaignId: string,
+  input: CreateProspectingCampaignInput,
+) {
+  if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new ProspectingCampaignError('invalid_campaign_id', 400, 'Campaign id is invalid')
+  const { error } = await supabase.rpc('update_prospecting_campaign_draft_v1', {
+    p_campaign_id: campaignId,
+    p_actor_email: actor.email,
+    p_actor_name: actor.name,
+    p_name: input.name,
+    p_kind: input.kind,
+    p_caller_id: input.callerId,
+    p_from_phone: input.fromPhone,
+    p_default_timezone: input.defaultTimezone,
+    p_per_hour: input.perHour,
+    p_per_day: input.perDay,
+    p_steps: input.steps,
+  })
+  if (error) throw databaseError(error)
+  return getProspectingCampaign(actor, campaignId)
 }
 
 function mapStep(row: { id: string; position: number; delay_minutes: number; body_template: string }): ProspectingCampaignStep {
