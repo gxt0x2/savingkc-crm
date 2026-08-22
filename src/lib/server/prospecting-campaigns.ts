@@ -27,6 +27,9 @@ type CampaignRow = {
   caller_id: string | null
   from_phone: string | null
   default_timezone: string
+  send_window_start: string
+  send_window_end: string
+  send_days: number[]
   per_hour: number
   per_day: number
   created_at: string
@@ -36,7 +39,7 @@ type CampaignRow = {
   completed_at: string | null
 }
 
-const CAMPAIGN_SELECT = 'id,name,kind,status,owner_email,owner_name,caller_id,from_phone,default_timezone,per_hour,per_day,created_at,updated_at,activated_at,paused_at,completed_at'
+const CAMPAIGN_SELECT = 'id,name,kind,status,owner_email,owner_name,caller_id,from_phone,default_timezone,send_window_start,send_window_end,send_days,per_hour,per_day,created_at,updated_at,activated_at,paused_at,completed_at'
 
 function mapCampaign(row: CampaignRow): ProspectingCampaignSummary {
   return {
@@ -49,6 +52,9 @@ function mapCampaign(row: CampaignRow): ProspectingCampaignSummary {
     callerId: row.caller_id,
     fromPhone: row.from_phone,
     defaultTimezone: row.default_timezone,
+    sendWindowStart: row.send_window_start.slice(0, 5),
+    sendWindowEnd: row.send_window_end.slice(0, 5),
+    sendDays: row.send_days,
     perHour: row.per_hour,
     perDay: row.per_day,
     createdAt: row.created_at,
@@ -125,7 +131,7 @@ export async function listProspectingCampaigns(
 }
 
 export async function createProspectingCampaign(actor: AuthenticatedActor, input: CreateProspectingCampaignInput) {
-  const { data, error } = await supabase.rpc('create_prospecting_campaign_v1', {
+  const { data, error } = await supabase.rpc('create_prospecting_campaign_v2', {
     p_owner_email: actor.email,
     p_owner_name: actor.name,
     p_name: input.name,
@@ -133,6 +139,9 @@ export async function createProspectingCampaign(actor: AuthenticatedActor, input
     p_caller_id: input.callerId,
     p_from_phone: input.fromPhone,
     p_default_timezone: input.defaultTimezone,
+    p_send_window_start: input.sendWindowStart,
+    p_send_window_end: input.sendWindowEnd,
+    p_send_days: input.sendDays,
     p_per_hour: input.perHour,
     p_per_day: input.perDay,
     p_steps: input.steps,
@@ -147,7 +156,7 @@ export async function updateProspectingCampaignDraft(
   input: CreateProspectingCampaignInput,
 ) {
   if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new ProspectingCampaignError('invalid_campaign_id', 400, 'Campaign id is invalid')
-  const { error } = await supabase.rpc('update_prospecting_campaign_draft_v1', {
+  const { error } = await supabase.rpc('update_prospecting_campaign_draft_v2', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_actor_name: actor.name,
@@ -156,6 +165,9 @@ export async function updateProspectingCampaignDraft(
     p_caller_id: input.callerId,
     p_from_phone: input.fromPhone,
     p_default_timezone: input.defaultTimezone,
+    p_send_window_start: input.sendWindowStart,
+    p_send_window_end: input.sendWindowEnd,
+    p_send_days: input.sendDays,
     p_per_hour: input.perHour,
     p_per_day: input.perDay,
     p_steps: input.steps,

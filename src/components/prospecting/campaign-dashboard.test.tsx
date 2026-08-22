@@ -19,6 +19,9 @@ const detail: ProspectingCampaignDetail = {
   callerId: null,
   fromPhone: '+18165550101',
   defaultTimezone: 'America/Chicago',
+  sendWindowStart: '09:00',
+  sendWindowEnd: '19:00',
+  sendDays: [1, 2, 3, 4, 5, 6],
   perHour: 75,
   perDay: 500,
   createdAt: '2026-08-21T10:00:00.000Z',
@@ -60,6 +63,7 @@ describe('CampaignDashboard', () => {
     render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: detail.name })).toBeVisible()
+    expect(screen.getByText("Sends Monday–Saturday · 09:00–19:00 in each seller's local time")).toBeVisible()
     expect(screen.getByText('25% reply rate')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'The conversation sellers receive' })).toBeVisible()
     expect(await screen.findByText('Helen Seller')).toBeVisible()
