@@ -54,6 +54,8 @@ describe('CampaignStudio', () => {
     expect(screen.getByRole('heading', { name: 'Build the conversation.' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Mon' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Sun' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Draft with AI' })).toBeVisible()
+    expect(screen.getByText(/cannot change, activate, or send this campaign/i)).toBeVisible()
     fireEvent.change(screen.getByLabelText('Send window start'), { target: { value: '10:00' } })
     fireEvent.change(screen.getByLabelText('Send window end'), { target: { value: '18:00' } })
     fireEvent.click(screen.getByRole('button', { name: /Warm follow-up/ }))
