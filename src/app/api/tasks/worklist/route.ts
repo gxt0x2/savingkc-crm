@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       sort: params.get('sort') || undefined,
       limit: params.has('limit') ? Number(params.get('limit')) : undefined,
       cursor: params.get('cursor'),
+      lane: params.get('lane') || undefined,
     })
     return NextResponse.json(page, {
       headers: {

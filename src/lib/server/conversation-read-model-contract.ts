@@ -7,6 +7,7 @@ export const CONVERSATION_MAX_PAGE_SIZE = 100
 
 export type ConversationQueue = 'needs_reply' | 'mine' | 'unassigned' | 'all'
 export type ConversationChannel = 'call' | 'sms' | 'email' | 'voicemail'
+export type ConversationKindFilter = 'all' | 'known' | 'unmatched'
 
 export interface ThreadCursor {
   v: 1
@@ -63,6 +64,12 @@ export function conversationChannel(value: unknown): ConversationChannel | null 
   if (value === null || value === undefined || value === '' || value === 'all') return null
   if (value === 'call' || value === 'sms' || value === 'email' || value === 'voicemail') return value
   throw new ConversationReadModelInputError('channel must be call, sms, email, voicemail, or all')
+}
+
+export function conversationKindFilter(value: unknown): ConversationKindFilter {
+  if (value === null || value === undefined || value === '' || value === 'all') return 'all'
+  if (value === 'known' || value === 'unmatched') return value
+  throw new ConversationReadModelInputError('kind must be all, known, or unmatched')
 }
 
 export function conversationSearchQuery(value: unknown): string | null {

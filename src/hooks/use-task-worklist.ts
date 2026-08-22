@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 
-import type { TaskWorklistCounts, TaskWorklistPage } from '@/lib/server/task-worklist'
+import type { TaskWorklistCounts, TaskWorklistLaneCounts, TaskWorklistPage } from '@/lib/server/task-worklist'
 import type { Contact, DealStage, Task } from '@/types'
 
 export type TaskWorklistQuery = {
@@ -16,11 +16,13 @@ export type TaskWorklistQuery = {
   sort?: 'due_asc' | 'due_desc' | 'newest' | 'title'
   limit?: number
   cursor?: string | null
+  lane?: 'current' | 'review' | 'all'
 }
 
 export type TaskWorklistResult = {
   tasks: Task[]
   counts: TaskWorklistCounts
+  laneCounts: TaskWorklistLaneCounts
   pageInfo: TaskWorklistPage['pageInfo']
   serverNow: string
 }
@@ -74,13 +76,13 @@ export function useTaskWorklist(input: TaskWorklistQuery) {
       const params = new URLSearchParams()
       const entries: Array<[string, string | number | null | undefined]> = [
         ['department', input.department], ['view', input.view], ['status', input.status], ['assignee', input.assignee],
-        ['due', input.due], ['type', input.type], ['q', input.query], ['sort', input.sort], ['limit', input.limit], ['cursor', input.cursor],
+        ['due', input.due], ['type', input.type], ['q', input.query], ['sort', input.sort], ['limit', input.limit], ['cursor', input.cursor], ['lane', input.lane],
       ]
       for (const [key, value] of entries) if (value !== undefined && value !== null && value !== '') params.set(key, String(value))
       const response = await fetch(`/api/tasks/worklist?${params}`, { cache: 'no-store' })
       const payload = await response.json() as TaskWorklistPage & { error?: string }
       if (!response.ok) throw new Error(payload.error || 'Tasks could not be loaded.')
-      return { tasks: payload.items.map(taskFromPage), counts: payload.counts, pageInfo: payload.pageInfo, serverNow: payload.serverNow }
+      return { tasks: payload.items.map(taskFromPage), counts: payload.counts, laneCounts: payload.laneCounts, pageInfo: payload.pageInfo, serverNow: payload.serverNow }
     },
   })
 }

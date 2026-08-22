@@ -21,6 +21,7 @@ describe('useTaskWorklist', () => {
           updatedAt: '2026-08-21T00:00:00Z', contact: { id: 'lead-1', fullName: 'Michael Maddox', phone: null, email: null, propertyAddress: '123 Main St', city: 'Kansas City', state: 'MO', zip: null, station: 'contacted', createdAt: '2026-08-01T00:00:00Z' },
         }],
         counts: { all: 1, due_today: 0, overdue: 0, upcoming: 1, completed: 0 },
+        laneCounts: { current: 1, review: 0, all: 1 },
         pageInfo: { limit: 20, total: 1, hasMore: false, nextCursor: null }, serverNow: '2026-08-21T15:00:00Z',
       }),
     })

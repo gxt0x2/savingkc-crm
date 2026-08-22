@@ -73,6 +73,25 @@ describe('rebuilt conversation workspace controls', () => {
     expect(onQueueChange).toHaveBeenCalledWith('mine')
   })
 
+  it('switches between indexed known and unmatched contact lanes', () => {
+    const onKindFilterChange = vi.fn()
+    render(<InboxSidebar
+      threads={[baseThread]}
+      activeThreadKey="lead:lead-1"
+      activeQueue="needs_reply"
+      kindFilter="known"
+      search=""
+      onSelectThread={() => {}}
+      onQueueChange={() => {}}
+      onKindFilterChange={onKindFilterChange}
+      onSearchChange={() => {}}
+    />)
+
+    expect(screen.getByRole('button', { name: 'Known' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Unmatched' }))
+    expect(onKindFilterChange).toHaveBeenCalledWith('unmatched')
+  })
+
   it('shows explicit empty and error states without disguising them as data', () => {
     const { rerender } = render(<InboxSidebar
       threads={[]}

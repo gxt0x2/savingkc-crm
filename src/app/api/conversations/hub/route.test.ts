@@ -47,6 +47,7 @@ describe('conversation hub API', () => {
       queue: 'needs_reply',
       channel: null,
       query: null,
+      kind: 'all',
       actorName: null,
       cursor: null,
     })
@@ -100,6 +101,12 @@ describe('conversation hub API', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ error: 'q must contain at least 3 characters' })
+  })
+
+  it('passes the indexed known-contact filter to the read model', async () => {
+    const response = await GET(new Request('https://crm.savingkc.com/api/conversations/hub?kind=known'))
+    expect(response.status).toBe(200)
+    expect(mocks.readThreads).toHaveBeenCalledWith(expect.objectContaining({ kind: 'known' }))
   })
 
   it('returns explicit 503 when migration-first rollout has not completed', async () => {

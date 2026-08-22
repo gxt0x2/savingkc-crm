@@ -63,6 +63,7 @@ describe('TasksPage operating workspace', () => {
       data: {
         tasks,
         counts: { all: 2, due_today: 0, overdue: 0, upcoming: 1, completed: 1 },
+        laneCounts: { current: 1, review: 1, all: 2 },
         pageInfo: { limit: 20, total: 2, hasMore: false, nextCursor: null },
         serverNow: '2026-08-21T15:00:00Z',
       },
@@ -161,11 +162,24 @@ describe('TasksPage operating workspace', () => {
     expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'any', assignee: undefined }))
   })
 
+  it('defaults to current work and switches to review debt without changing records', () => {
+    render(<TasksPage />)
+
+    expect(screen.getByRole('button', { name: 'Current work 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ lane: 'current' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review debt 1' }))
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ lane: 'review' }))
+    expect(screen.getByText(/Review before changing anything/)).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('advances with the opaque server cursor instead of slicing a downloaded task list', () => {
     useTaskWorklistMock.mockImplementation((input: { cursor?: string | null }) => ({
       data: {
         tasks: input.cursor ? [tasks[1]] : [tasks[0]],
         counts: { all: 21, due_today: 0, overdue: 0, upcoming: 20, completed: 1 },
+        laneCounts: { current: 20, review: 1, all: 21 },
         pageInfo: { limit: 20, total: 21, hasMore: !input.cursor, nextCursor: input.cursor ? null : 'opaque-page-2' },
         serverNow: '2026-08-21T15:00:00Z',
       },

@@ -6,6 +6,7 @@ import {
   ConversationReadModelInputError,
   ConversationReadModelUnavailableError,
   conversationPageLimit,
+  conversationKindFilter,
   conversationQueue,
   conversationSearchQuery,
   conversationThreadKey,
@@ -47,6 +48,9 @@ describe('conversation read model inputs', () => {
     expect(conversationPageLimit('100')).toBe(100)
     expect(() => conversationPageLimit('101')).toThrow(ConversationReadModelInputError)
     expect(conversationQueue(null)).toBe('needs_reply')
+    expect(conversationKindFilter(null)).toBe('all')
+    expect(conversationKindFilter('unmatched')).toBe('unmatched')
+    expect(() => conversationKindFilter('vendor')).toThrow('kind must be')
   })
 
   it('requires indexed search terms and canonicalizes public thread ids', () => {
@@ -94,9 +98,10 @@ describe('conversation thread pages', () => {
       { rpc } as never,
     )
 
-    expect(rpc).toHaveBeenCalledWith('conversation_thread_page_v1', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('conversation_thread_page_v2', expect.objectContaining({
       page_limit: 2,
       page_queue: 'all',
+      page_kind: 'all',
     }))
     expect(page).toMatchObject({ source: 'projection', degraded: false, pageInfo: { limit: 1, hasMore: true } })
     expect(page.items[0]).toMatchObject({

@@ -12,7 +12,7 @@ import { GET } from './route'
 import { TaskWorklistError } from '@/lib/server/task-worklist'
 
 const page = {
-  items: [], counts: { all: 0, due_today: 0, overdue: 0, upcoming: 0, completed: 0 },
+  items: [], counts: { all: 0, due_today: 0, overdue: 0, upcoming: 0, completed: 0 }, laneCounts: { current: 0, review: 0, all: 0 },
   pageInfo: { limit: 20, total: 0, hasMore: false, nextCursor: null }, serverNow: '2026-08-21T15:00:00Z',
 }
 
@@ -32,9 +32,9 @@ describe('task worklist route', () => {
   })
 
   it('forwards only supported query inputs and returns bounded telemetry', async () => {
-    const response = await GET(new Request('https://crm.savingkc.com/api/tasks/worklist?view=overdue&status=active&q=seller&limit=20&sort=newest'))
+    const response = await GET(new Request('https://crm.savingkc.com/api/tasks/worklist?view=overdue&status=active&q=seller&limit=20&sort=newest&lane=review'))
     expect(response.status).toBe(200)
-    expect(mocks.worklist).toHaveBeenCalledWith(expect.objectContaining({ view: 'overdue', status: 'active', query: 'seller', limit: 20, sort: 'newest' }))
+    expect(mocks.worklist).toHaveBeenCalledWith(expect.objectContaining({ view: 'overdue', status: 'active', query: 'seller', limit: 20, sort: 'newest', lane: 'review' }))
     expect(response.headers.get('server-timing')).toContain('task_rows')
     expect(response.headers.get('cache-control')).toContain('no-store')
   })

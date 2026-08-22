@@ -3,7 +3,7 @@
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { CallOutcomePresentation } from '@/lib/operating-model/conversation-presentation'
-import type { ConversationQueue } from '@/lib/queries/conversation-hub'
+import type { ConversationKindFilter, ConversationQueue } from '@/lib/queries/conversation-hub'
 
 export type { ConversationQueue } from '@/lib/queries/conversation-hub'
 
@@ -38,6 +38,14 @@ const QUEUES: Array<{ key: ConversationQueue; label: string }> = [
   { key: 'unassigned', label: 'Unassigned' },
   { key: 'all', label: 'All' },
 ]
+
+const CONTACT_TYPES: ReadonlyArray<{ key: ConversationKindFilter; label: string }> = [
+  { key: 'all', label: 'Everyone' },
+  { key: 'known', label: 'Known' },
+  { key: 'unmatched', label: 'Unmatched' },
+]
+
+const NOOP_KIND_FILTER_CHANGE = () => undefined
 
 const CHANNEL_META = {
   call: { icon: 'call', tone: 'text-[var(--crm-info)]' },
@@ -81,11 +89,13 @@ export function InboxSidebar({
   threads,
   activeThreadKey,
   activeQueue,
+  kindFilter = 'all',
   search,
   loading = false,
   error = null,
   onSelectThread,
   onQueueChange,
+  onKindFilterChange = NOOP_KIND_FILTER_CHANGE,
   onSearchChange,
   onRetry,
   hasMore = false,
@@ -96,11 +106,13 @@ export function InboxSidebar({
   threads: ThreadPreview[]
   activeThreadKey: string
   activeQueue: ConversationQueue
+  kindFilter?: ConversationKindFilter
   search: string
   loading?: boolean
   error?: string | null
   onSelectThread: (threadKey: string) => void
   onQueueChange: (queue: ConversationQueue) => void
+  onKindFilterChange?: (kind: ConversationKindFilter) => void
   onSearchChange: (search: string) => void
   onRetry?: () => void
   hasMore?: boolean
@@ -136,6 +148,25 @@ export function InboxSidebar({
               )}
             >
               <span className="block truncate">{queue.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div aria-label="Conversation contact type" role="group" className="mx-4 mt-3 grid grid-cols-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-1">
+          {CONTACT_TYPES.map(({ key: kind, label }) => (
+            <button
+              key={kind}
+              type="button"
+              aria-pressed={kindFilter === kind}
+              onClick={() => onKindFilterChange(kind)}
+              className={cn(
+                'rounded-md px-2 py-1.5 text-[10px] font-black transition-colors',
+                kindFilter === kind
+                  ? 'bg-[var(--crm-surface)] text-[var(--crm-brand)] shadow-sm'
+                  : 'text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]',
+              )}
+            >
+              {label}
             </button>
           ))}
         </div>
