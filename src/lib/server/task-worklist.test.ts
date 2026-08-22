@@ -100,6 +100,20 @@ describe('task worklist read model', () => {
     ])
   })
 
+  it('never upgrades a persisted review task to current when its contact is active', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        items: [{ ...item, operationalLane: 'review' }],
+        hasMore: false, total: 1, counts: { all: 1 }, laneCounts: { current: 0, review: 1, all: 1 },
+      },
+      error: null,
+    })
+
+    const result = await getTaskWorklist({ lane: 'review' })
+
+    expect(result.items[0]).toMatchObject({ operationalLane: 'review', reviewReason: 'legacy_event' })
+  })
+
   it('preserves the server-classified automation quarantine without loading lead evidence', async () => {
     mocks.rpc.mockResolvedValueOnce({
       data: {
