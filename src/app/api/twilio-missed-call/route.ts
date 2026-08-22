@@ -218,6 +218,8 @@ export async function POST(req: Request) {
             assigned_to: routing.primary.name,
             priority: 'critical',
             status: 'pending',
+            source: 'twilio_missed_call',
+            call_sid: callSid,
           }
         })
       } else if (!leadId) {

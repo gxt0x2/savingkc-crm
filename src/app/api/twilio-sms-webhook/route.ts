@@ -375,6 +375,8 @@ export async function POST(req: Request) {
             assigned_to: primaryName,
             priority: 'critical',
             status: 'pending',
+            source: 'twilio_sms_event',
+            message_sid: messageSid,
           },
         })
 
@@ -549,6 +551,8 @@ export async function POST(req: Request) {
                 assigned_to: 'Casey',
                 priority: 'critical',
                 status: 'pending',
+                source: 'twilio_sms_event',
+                message_sid: messageSid,
               },
             })
           }
@@ -698,6 +702,8 @@ export async function POST(req: Request) {
             assigned_to: primaryAgent,
             priority: prospectMatch ? 'critical' : 'high',
             status: 'pending',
+            source: 'twilio_sms_event',
+            message_sid: messageSid,
           },
         })
 

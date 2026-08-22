@@ -52,6 +52,14 @@ function sourceFiles(root: string): string[] {
   })
 }
 
+function taskInsertBlock(path: string, marker: string): string {
+  const source = readFileSync(path, 'utf8')
+  const markerIndex = source.indexOf(marker)
+  if (markerIndex < 0) throw new Error(`Missing task marker: ${marker}`)
+  const start = source.lastIndexOf("activity_type: 'task'", markerIndex)
+  return source.slice(start, markerIndex + marker.length + 500)
+}
+
 describe('task provenance census', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -113,5 +121,25 @@ describe('task provenance census', () => {
     const nextActionRoute = readFileSync('src/app/api/ai/next-action-proposal/route.ts', 'utf8')
     expect(nextActionRoute).toContain("execution: 'proposal_only'")
     expect(nextActionRoute).toContain('approvalRequired: true')
+  })
+
+  it('requires provider provenance on every direct telephony callback task writer', () => {
+    const cases = [
+      ['src/app/api/ivr/after-record/route.ts', 'escalate_after_minutes', "source: 'twilio_after_record'", 'recording_sid: recordingSid'],
+      ['src/app/api/ivr/dial-result/route.ts', 'seller_phone: from', "source: 'twilio_dial_result'", 'call_sid: parentCallSid'],
+      ['src/app/api/ivr/voicemail-recording/route.ts', "source: 'twilio_voicemail'", "source: 'twilio_voicemail'", 'recording_sid: recordingSid'],
+      ['src/app/api/twilio-missed-call/route.ts', 'call_sid: callSid', "source: 'twilio_missed_call'", 'call_sid: callSid'],
+      ['src/app/api/twilio-sms-webhook/route.ts', "source: 'twilio_sms_event'", "source: 'twilio_sms_event'", 'message_sid: messageSid'],
+    ] as const
+
+    for (const [path, marker, expectedSource, expectedEvent] of cases) {
+      const block = taskInsertBlock(path, marker)
+      expect(block, path).toContain(expectedSource)
+      expect(block, path).toContain(expectedEvent)
+    }
+
+    const smsRoute = readFileSync('src/app/api/twilio-sms-webhook/route.ts', 'utf8')
+    expect(smsRoute.match(/source: 'twilio_sms_event'/g)).toHaveLength(3)
+    expect(smsRoute.match(/source: 'twilio_sms_event',[\s\S]{0,100}message_sid: messageSid/g)).toHaveLength(3)
   })
 })
