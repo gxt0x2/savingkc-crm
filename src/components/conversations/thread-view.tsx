@@ -40,6 +40,8 @@ export function ThreadView({
   leadId,
   phone,
   email,
+  fullName,
+  propertyAddress,
   onCall,
   onBack,
   onSent,
@@ -61,6 +63,8 @@ export function ThreadView({
   leadId?: string
   phone?: string
   email?: string
+  fullName?: string | null
+  propertyAddress?: string | null
   onCall?: () => void
   onBack?: () => void
   onSent?: () => void
@@ -402,6 +406,8 @@ export function ThreadView({
         leadId={leadId}
         phone={phone}
         email={email}
+        fullName={fullName}
+        propertyAddress={propertyAddress}
         onSent={onSent}
         replyFromPhone={contact.replyFromPhone}
         initialMode={initialComposeMode}

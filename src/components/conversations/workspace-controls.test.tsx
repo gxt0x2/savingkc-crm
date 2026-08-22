@@ -156,6 +156,25 @@ describe('rebuilt conversation workspace controls', () => {
     expect(screen.getByLabelText('Email subject')).toBeInTheDocument()
   })
 
+  it('fills a quick reply with the selected seller and authenticated agent without sending it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        actorName: 'Ernest Dodson',
+        templates: [{ id: 'template-1', name: 'seller_follow_up', category: 'follow_up', body: 'Hi {firstName}, this is {agentName} about {propertyAddress}.', merge_fields: ['firstName', 'agentName', 'propertyAddress'] }],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ComposeBox leadId="lead-1" phone="+18165550198" fullName="Marcus Johnson" propertyAddress="4821 Woodland Ave" />)
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/sms-templates', expect.anything()))
+    fireEvent.click(screen.getByRole('button', { name: 'Open message templates' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Seller Follow Up/ }))
+
+    expect(screen.getByLabelText('Text message')).toHaveValue('Hi Marcus, this is Ernest Dodson about 4821 Woodland Ave.')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('lets the server resolve the sender for an established SMS thread', async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       if (input === '/api/sms-templates') {

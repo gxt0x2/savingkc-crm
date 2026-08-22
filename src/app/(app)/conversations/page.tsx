@@ -635,6 +635,8 @@ export default function ConversationsPage() {
                   leadId={activeThread.kind === 'lead' ? activeThread.id : undefined}
                   phone={activeThread.phone || undefined}
                   email={activeThread.email || undefined}
+                  fullName={activeThread.full_name}
+                  propertyAddress={activeThread.property_address}
                   onCall={openActiveDialer}
                   onBack={() => setMobilePane('inbox')}
                   onSent={() => { addToast('Conversation updated'); refreshConversation() }}

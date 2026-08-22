@@ -6,6 +6,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { getAllTemplates, getTemplatesByCategory } from '@/lib/sms-templates'
 import { supabase } from '@/lib/supabase-lazy'
@@ -16,8 +17,8 @@ const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=
 
 export async function GET(req: Request) {
   try {
-    const unauthorized = await requireAuthenticatedUser()
-    if (unauthorized) return unauthorized
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: PRIVATE_NO_STORE_HEADERS })
 
     const { searchParams } = new URL(req.url)
     const category = searchParams.get('category')
@@ -26,7 +27,7 @@ export async function GET(req: Request) {
       ? await getTemplatesByCategory(category)
       : await getAllTemplates()
 
-    return NextResponse.json({ templates }, { headers: PRIVATE_NO_STORE_HEADERS })
+    return NextResponse.json({ templates, actorName: actor.name.includes('@') ? null : actor.name }, { headers: PRIVATE_NO_STORE_HEADERS })
   } catch (err) {
     console.error('SMS templates API error:', err)
     return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500, headers: PRIVATE_NO_STORE_HEADERS })

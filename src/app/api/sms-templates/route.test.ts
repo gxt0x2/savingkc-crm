@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
+  actor: vi.fn(),
   getAll: vi.fn(),
   getCategory: vi.fn(),
   from: vi.fn(),
 }))
 
 vi.mock('@/lib/api/require-authenticated-user', () => ({ requireAuthenticatedUser: mocks.auth }))
+vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/sms-templates', () => ({
   getAllTemplates: mocks.getAll,
   getTemplatesByCategory: mocks.getCategory,
@@ -20,15 +22,15 @@ describe('/api/sms-templates', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.auth.mockResolvedValue(null)
+    mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey Davis' })
   })
 
   it('rejects unauthenticated reads before template access', async () => {
-    const unauthorized = new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
-    mocks.auth.mockResolvedValue(unauthorized)
+    mocks.actor.mockResolvedValue(null)
 
     const response = await GET(new Request('https://crm.savingkc.com/api/sms-templates'))
 
-    expect(response).toBe(unauthorized)
+    expect(response.status).toBe(401)
     expect(mocks.getAll).not.toHaveBeenCalled()
     expect(mocks.getCategory).not.toHaveBeenCalled()
   })
@@ -41,7 +43,7 @@ describe('/api/sms-templates', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toContain('private')
     expect(response.headers.get('cache-control')).toContain('no-store')
-    expect(await response.json()).toEqual({ templates: [{ id: 'template-1' }] })
+    expect(await response.json()).toEqual({ templates: [{ id: 'template-1' }], actorName: 'Casey Davis' })
     expect(mocks.getCategory).toHaveBeenCalledWith('prospecting_intro')
   })
 
