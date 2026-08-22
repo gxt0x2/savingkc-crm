@@ -128,7 +128,7 @@ function MarketingView({ report }: { report: OperatingReport }) {
       </section>
       <section className="grid gap-3 xl:grid-cols-[1fr_1fr]">
         <NumberedPanel number="4" title="Marketing-to-contract funnel" actionHref="/contacts"><FunnelContent report={report} /></NumberedPanel>
-        <NumberedPanel number="5" title="Marketing insights" actionHref="/ari"><InsightRows report={report} /></NumberedPanel>
+        <NumberedPanel number="5" title="Marketing insights" actionHref="/ai"><InsightRows report={report} /></NumberedPanel>
       </section>
       <section className="crm-panel flex flex-col gap-3 rounded-2xl px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div><p className="crm-eyebrow">Measurement boundary</p><h2 className="mt-1 text-sm font-black">CRM outcomes here; ad-platform economics stay in the Marketing command center.</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Spend, CPL, campaign delivery, and conversion-export health are never backfilled with sample values on this report.</p></div>
@@ -174,7 +174,7 @@ function DispositionsView({ report }: { report: OperatingReport }) {
 
       <section className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
         <NumberedPanel number="9" title="Active bottlenecks" actionHref="/tasks"><BottleneckRows report={report} /></NumberedPanel>
-        <NumberedPanel number="10" title="ARI disposition insights" actionHref="/ari"><InsightRows report={report} /></NumberedPanel>
+        <NumberedPanel number="10" title="ARI disposition insights" actionHref="/ai"><InsightRows report={report} /></NumberedPanel>
       </section>
     </>
   )

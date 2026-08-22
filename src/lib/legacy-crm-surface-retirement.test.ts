@@ -17,7 +17,7 @@ describe('legacy CRM surface retirement', () => {
     ['Leads', LeadsPage, '/contacts'],
     ['In Closing', InClosingPage, '/contacts?list=in_closing'],
     ['Hot Opportunities', OpportunitiesPage, '/contacts?list=hot'],
-    ['ARI dashboard', AriPage, '/dashboard'],
+    ['ARI dashboard', AriPage, '/ai'],
   ])('redirects %s to its canonical workspace', (_label, Page, destination) => {
     Page()
 
@@ -34,5 +34,19 @@ describe('legacy CRM surface retirement', () => {
     expect(dashboard).toContain('OperatingReportsWorkspace')
     expect(acquisitions).toContain('OperatingReportsWorkspace')
     expect(`${dashboard}\n${acquisitions}`).not.toContain('AcquisitionsReportsWorkspace')
+  })
+
+  it('routes every visible ARI entry point to the single persistent assistant', () => {
+    const navigation = readFileSync('src/components/layout/nav-tab.tsx', 'utf8')
+    const reports = readFileSync('src/components/reports/operating-reports-workspace.tsx', 'utf8')
+    const assistant = readFileSync('src/app/(app)/ai/page.tsx', 'utf8')
+    const launcher = readFileSync('src/components/ai/giraffe-assistant.tsx', 'utf8')
+    const assistantThread = readFileSync('src/hooks/use-assistant-thread.ts', 'utf8')
+
+    expect(navigation).toContain("{ label: 'ARI', href: '/ai', icon: 'assistant' }")
+    expect(reports).not.toContain('actionHref="/ari"')
+    expect(assistant).toContain("useAssistantThread('ai_page')")
+    expect(launcher).toContain("useAssistantThread('giraffe')")
+    expect(assistantThread).toContain('loadLatestAssistantThread()')
   })
 })
