@@ -104,6 +104,7 @@ export interface ProspectingCampaignActivity {
   eventType: string
   actor: string
   memberId: string | null
+  leadId: string | null
   actionId: string | null
   status: 'queued' | 'processing' | 'sent' | 'delivered' | 'replied' | 'blocked' | 'failed' | 'cancelled' | null
   sellerName: string | null

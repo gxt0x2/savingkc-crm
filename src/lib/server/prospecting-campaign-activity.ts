@@ -69,7 +69,7 @@ export async function listProspectingCampaignActivity(
 
   const [membersResult, actionsResult] = await Promise.all([
     memberIds.length
-      ? supabase.from('prospecting_campaign_members').select('id,phone_snapshot,leads(full_name,property_address)').in('id', memberIds).limit(50)
+      ? supabase.from('prospecting_campaign_members').select('id,lead_id,phone_snapshot,leads(full_name,property_address)').in('id', memberIds).limit(50)
       : Promise.resolve({ data: [], error: null }),
     actionIds.length
       ? supabase.from('prospecting_campaign_actions').select('id,status,scheduled_at,rendered_body,error_code,provider_sid,sent_at').in('id', actionIds).limit(50)
@@ -91,12 +91,13 @@ export async function listProspectingCampaignActivity(
       eventType: event.event_type,
       actor: event.actor,
       memberId: event.member_id,
+      leadId: text(member?.lead_id),
       actionId: event.action_id,
       status: action?.status as ProspectingCampaignActivity['status'] ?? null,
       sellerName: lead.fullName,
       phone: text(member?.phone_snapshot),
       propertyAddress: lead.propertyAddress,
-      body: text(action?.rendered_body),
+      body: text(metadata.message) || text(action?.rendered_body),
       errorCode: text(action?.error_code) || text(metadata.error_code),
       providerSid: text(action?.provider_sid) || text(metadata.provider_sid),
       occurredAt: event.created_at,
