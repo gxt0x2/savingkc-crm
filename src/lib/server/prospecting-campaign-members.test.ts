@@ -18,6 +18,7 @@ describe('prospecting campaign audience data plane', () => {
     expect(migration).toContain("member.search_text LIKE '%' || search_pattern || '%' ESCAPE E'\\\\'")
     expect(migration).toContain('ORDER BY member.enrolled_at DESC, member.id DESC')
     expect(migration).toContain('LIMIT safe_limit + 1')
+    expect(migration).toContain('member.current_step_position::integer')
     expect(source).toContain('p_after_enrolled_at: cursor?.enrolledAt || null')
   })
 

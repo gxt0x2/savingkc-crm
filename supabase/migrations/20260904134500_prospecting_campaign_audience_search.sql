@@ -167,7 +167,7 @@ BEGIN
     member.timezone,
     member.status,
     member.suppression_reason,
-    member.current_step_position,
+    member.current_step_position::integer,
     member.next_action_at,
     member.enrolled_at,
     lead.full_name,
