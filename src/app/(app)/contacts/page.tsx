@@ -21,7 +21,7 @@ import { useMobileViewport } from '@/hooks/use-mobile-viewport'
 import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
 import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
-import { campaignAudienceReturnHref, prospectingCampaignId, PROSPECTING_AUDIENCE_STORAGE_KEY } from '@/lib/prospecting/audience-handoff'
+import { campaignAudienceReturnHref, MAX_PROSPECTING_QUERY_AUDIENCE, prospectingCampaignId, PROSPECTING_AUDIENCE_STORAGE_KEY, serializeProspectingAudienceSelection, type ProspectingAudienceQuery } from '@/lib/prospecting/audience-handoff'
 
 interface ContactRow {
   id: string
@@ -243,6 +243,7 @@ export default function ContactsPage() {
   const [dialogError, setDialogError] = useState<string | null>(null)
   const [toolbarMenu, setToolbarMenu] = useState<ToolbarMenu>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [allMatchingSelection, setAllMatchingSelection] = useState<{ query: ProspectingAudienceQuery; count: number } | null>(null)
   const [bulkAction, setBulkAction] = useState<BulkAction>('')
   const [bulkDeadReason, setBulkDeadReason] = useState('')
   const [bulkNotes, setBulkNotes] = useState('')
@@ -251,20 +252,12 @@ export default function ContactsPage() {
   const [SortableSmartListTabs, setSortableSmartListTabs] = useState<ComponentType<SortableSmartListTabsProps> | null>(null)
   const sortableSmartListTabsPromise = useRef<Promise<ComponentType<SortableSmartListTabsProps>> | null>(null)
   const deferredSearch = useDeferredValue(search)
+  const audienceQuery = useMemo(() => ({ smartList, sort: sortBy, search: deferredSearch, owner: ownerFilter, stage: stageFilter, minimumStage: minimumStageFilter,
+    source: sourceFilter, tag: tagFilter, activity: activityFilter, attention: attentionFilter, outreach: outreachFilter, dataGap: dataGapFilter,
+  } satisfies ProspectingAudienceQuery), [activityFilter, attentionFilter, dataGapFilter, deferredSearch, minimumStageFilter, outreachFilter, ownerFilter, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
   const currentQuery = useContactWorkspace({
-    smartList,
+    ...audienceQuery,
     cursor: cursorHistory[pageIndex] ?? null,
-    sort: sortBy,
-    search: deferredSearch,
-    owner: ownerFilter,
-    stage: stageFilter,
-    minimumStage: minimumStageFilter,
-    source: sourceFilter,
-    tag: tagFilter,
-    activity: activityFilter,
-    attention: attentionFilter,
-    outreach: outreachFilter,
-    dataGap: dataGapFilter,
   })
   const items = useMemo(() => currentQuery.data?.items ?? [], [currentQuery.data])
   const { isLoading, error, refetch, isFetching } = currentQuery
@@ -342,6 +335,8 @@ export default function ContactsPage() {
     })
   }, [items])
 
+  const activeAllMatchingSelection = allMatchingSelection && JSON.stringify(allMatchingSelection.query) === JSON.stringify(audienceQuery) ? allMatchingSelection : null
+
   const totalResults = currentQuery.data?.pageInfo.total ?? 0
   const pageCount = Math.max(1, Math.ceil(totalResults / CONTACT_PAGE_SIZE))
   const currentPage = pageIndex + 1
@@ -376,6 +371,7 @@ export default function ContactsPage() {
   }
 
   function toggleSelected(id: string) {
+    setAllMatchingSelection(null)
     setSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
@@ -386,6 +382,7 @@ export default function ContactsPage() {
   }
 
   function togglePageSelection() {
+    setAllMatchingSelection(null)
     setSelectedIds((current) => {
       const next = new Set(current)
       if (pageItemsSelected) pageItems.forEach((item) => next.delete(item.id))
@@ -519,8 +516,10 @@ export default function ContactsPage() {
   }
 
   function openCampaignBuilder() {
-    if (selectedIds.size < 1) return
-    window.sessionStorage.setItem(PROSPECTING_AUDIENCE_STORAGE_KEY, JSON.stringify([...selectedIds]))
+    if (!activeAllMatchingSelection && selectedIds.size < 1) return
+    const selection = activeAllMatchingSelection ? { mode: 'query' as const, query: activeAllMatchingSelection.query, count: activeAllMatchingSelection.count }
+      : { mode: 'ids' as const, leadIds: [...selectedIds], count: selectedIds.size }
+    window.sessionStorage.setItem(PROSPECTING_AUDIENCE_STORAGE_KEY, serializeProspectingAudienceSelection(selection))
     router.push(requestedCampaignId ? campaignAudienceReturnHref(requestedCampaignId) : '/prospecting?new=1')
   }
 
@@ -691,10 +690,14 @@ export default function ContactsPage() {
               <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{totalResults} results</span>
             </div>
 
-            {selectedIds.size > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2.5" role="region" aria-label="Bulk contact changes">
-              <span className="mr-1 text-sm font-black text-[var(--crm-info)]">{selectedIds.size} selected</span>
+            {pageItemsSelected && !activeAllMatchingSelection && totalResults > pageItems.length ? <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-2.5 text-xs font-bold text-[var(--crm-ink)]" role="status"><span>All {pageItems.length} contacts on this page are selected.</span>{totalResults <= MAX_PROSPECTING_QUERY_AUDIENCE ? <button type="button" onClick={() => { setSelectedIds(new Set()); setAllMatchingSelection({ query: audienceQuery, count: totalResults }) }} className="font-black text-[var(--crm-brand)] underline underline-offset-2">Select all {totalResults.toLocaleString()} matching contacts</button> : <span className="text-[var(--crm-text-muted)]">Narrow the list to {MAX_PROSPECTING_QUERY_AUDIENCE.toLocaleString()} or fewer to select every match.</span>}</div> : null}
+
+            {activeAllMatchingSelection ? <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-xl border border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] px-4 py-2.5 text-xs font-bold text-[var(--crm-success)]" role="status"><Icon name="select_all" className="text-base" />All {activeAllMatchingSelection.count.toLocaleString()} matching contacts are selected for this campaign audience.<button type="button" onClick={() => setAllMatchingSelection(null)} className="font-black underline underline-offset-2">Clear</button></div> : null}
+
+            {selectedIds.size > 0 || activeAllMatchingSelection ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] px-3 py-2.5" role="region" aria-label="Bulk contact changes">
+              <span className="mr-1 text-sm font-black text-[var(--crm-info)]">{(activeAllMatchingSelection?.count ?? selectedIds.size).toLocaleString()} selected</span>
               <button type="button" onClick={openCampaignBuilder} disabled={bulkSaving} className="crm-primary-button inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-black"><Icon name="campaign" className="text-[16px]" />{requestedCampaignId ? `Review for ${requestedCampaignName || 'campaign'}` : 'Start campaign'}</button>
-              <select aria-label="Bulk action" value={bulkAction} onChange={(event) => { setBulkAction(event.target.value as BulkAction); setBulkMessage(null) }} className="crm-field h-9 min-w-52 rounded-lg px-3 text-xs font-semibold">
+              {!activeAllMatchingSelection ? <><select aria-label="Bulk action" value={bulkAction} onChange={(event) => { setBulkAction(event.target.value as BulkAction); setBulkMessage(null) }} className="crm-field h-9 min-w-52 rounded-lg px-3 text-xs font-semibold">
                 <option value="">Choose bulk change…</option>
                 <optgroup label="Assign owner">
                   <option value="assign:Ernest">Assign to Ernest</option>
@@ -716,7 +719,8 @@ export default function ContactsPage() {
                 {bulkDeadReason === 'other' ? <input aria-label="Not a lead notes" value={bulkNotes} onChange={(event) => setBulkNotes(event.target.value)} placeholder="Required notes…" className="crm-field h-9 min-w-60 rounded-lg px-3 text-xs" /> : null}
               </> : null}
               <button type="button" onClick={() => void applyBulkAction()} disabled={!bulkAction || bulkSaving || (bulkAction === 'not_lead' && !bulkDeadReason)} className="crm-primary-button h-9 rounded-lg px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45">{bulkSaving ? 'Applying…' : 'Apply'}</button>
-              <button type="button" onClick={() => { setSelectedIds(new Set()); setBulkAction(''); setBulkMessage(null) }} disabled={bulkSaving} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-bold">Clear selection</button>
+              </> : <span className="text-xs font-semibold text-[var(--crm-info)]">Full-result selection is limited to campaign enrollment; CRM bulk edits remain page-scoped.</span>}
+              <button type="button" onClick={() => { setSelectedIds(new Set()); setAllMatchingSelection(null); setBulkAction(''); setBulkMessage(null) }} disabled={bulkSaving} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-bold">Clear selection</button>
             </div> : null}
             {bulkMessage ? <p role="status" className={`mt-2 text-xs font-bold ${bulkMessage.includes('failed') || bulkMessage.includes('Choose') || bulkMessage.includes('notes') ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-success)]'}`}>{bulkMessage}</p> : null}
 

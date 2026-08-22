@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), list: vi.fn(), enroll: vi.fn(), remove: vi.fn() }))
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), list: vi.fn(), enroll: vi.fn(), enrollSelection: vi.fn(), parseSelection: vi.fn(), remove: vi.fn() }))
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/server/prospecting-campaigns', () => ({
   ProspectingCampaignError: class ProspectingCampaignError extends Error {},
@@ -11,8 +11,12 @@ vi.mock('@/lib/server/prospecting-campaign-members', () => ({
   CAMPAIGN_MEMBER_FILTERS: ['all', 'active', 'suppressed', 'replied', 'completed', 'removed'],
   listProspectingCampaignMembers: mocks.list,
 }))
+vi.mock('@/lib/server/prospecting-audience-selection', () => ({
+  enrollProspectingAudienceSelection: mocks.enrollSelection,
+  parseProspectingAudienceSelection: mocks.parseSelection,
+}))
 
-import { DELETE, GET } from './route'
+import { DELETE, GET, POST } from './route'
 
 const params = { params: Promise.resolve({ id: '11111111-1111-4111-8111-111111111111' }) }
 
@@ -21,7 +25,26 @@ describe('prospecting campaign members GET', () => {
     vi.clearAllMocks()
     mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com', name: 'Ernest' })
     mocks.list.mockResolvedValue({ items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    mocks.parseSelection.mockReturnValue({ mode: 'query', query: { smartList: 'prospects' }, count: 11 })
+    mocks.enrollSelection.mockResolvedValue({ requested: 11, eligible: 9, suppressed: 1, missing: 1 })
     mocks.remove.mockResolvedValue({ id: '22222222-2222-4222-8222-222222222222', status: 'removed', removed: true, cancelledActions: 1 })
+  })
+
+  it('resolves a full-results selection on the server before campaign enrollment', async () => {
+    const selection = { mode: 'query', query: { smartList: 'prospects', sort: 'priority' }, count: 11 }
+    const response = await POST(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x/members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selection }),
+    }), params)
+    expect(response.status).toBe(200)
+    expect(mocks.parseSelection).toHaveBeenCalledWith(selection)
+    expect(mocks.enrollSelection).toHaveBeenCalledWith(
+      { email: 'ernest@savingkc.com', name: 'Ernest' },
+      '11111111-1111-4111-8111-111111111111',
+      expect.objectContaining({ mode: 'query', count: 11 }),
+    )
+    expect(mocks.enroll).not.toHaveBeenCalled()
   })
 
   it('rejects anonymous audience reads before querying campaign data', async () => {

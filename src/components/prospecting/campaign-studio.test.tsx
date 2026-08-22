@@ -12,7 +12,7 @@ function StudioHarness({ onCreate = vi.fn(), sourceCampaignName, editingCampaign
   })
   return <CampaignStudio
     form={form}
-    pendingLeadIds={['lead-1', 'lead-2']}
+    pendingAudienceCount={2}
     saving={false}
     sourceCampaignName={sourceCampaignName}
     editingCampaignName={editingCampaignName}
