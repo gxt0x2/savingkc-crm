@@ -65,7 +65,7 @@ describe('TasksPage operating workspace', () => {
       data: {
         tasks,
         counts: { all: 2, due_today: 0, overdue: 0, upcoming: 1, completed: 1 },
-        laneCounts: { current: 1, review: 1, all: 2 },
+        laneCounts: { current: 1, review: 1, quarantine: 0, all: 2 },
         pageInfo: { limit: 20, total: 2, hasMore: false, nextCursor: null },
         serverNow: '2026-08-21T15:00:00Z',
       },
@@ -191,12 +191,41 @@ describe('TasksPage operating workspace', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('keeps automation quarantine visible and locked without changing its source task', () => {
+    const quarantinedTask = {
+      ...tasks[0],
+      id: 'task-auto',
+      title: 'Generated follow-up',
+      operational_lane: 'quarantine' as const,
+      review_reason: 'automation_source' as const,
+    }
+    useTaskWorklistMock.mockImplementation((input: { lane?: string }) => ({
+      data: {
+        tasks: input.lane === 'quarantine' ? [quarantinedTask] : [tasks[0]],
+        counts: { all: 2, due_today: 0, overdue: 0, upcoming: 2, completed: 0 },
+        laneCounts: { current: 1, review: 0, quarantine: 1, all: 2 },
+        pageInfo: { limit: 20, total: 1, hasMore: false, nextCursor: null },
+        serverNow: '2026-08-21T15:00:00Z',
+      },
+      isLoading: false, error: null, refetch: refetchMock, isFetching: false,
+    }))
+
+    render(<TasksPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Automation quarantine 1' }))
+
+    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ lane: 'quarantine' }))
+    expect(screen.getByText(/Nothing here was deleted or completed/)).toBeInTheDocument()
+    expect(screen.getByText('Automation quarantine', { selector: 'span' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark Generated follow-up complete' })).toBeDisabled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('advances with the opaque server cursor instead of slicing a downloaded task list', () => {
     useTaskWorklistMock.mockImplementation((input: { cursor?: string | null }) => ({
       data: {
         tasks: input.cursor ? [tasks[1]] : [tasks[0]],
         counts: { all: 21, due_today: 0, overdue: 0, upcoming: 20, completed: 1 },
-        laneCounts: { current: 20, review: 1, all: 21 },
+        laneCounts: { current: 20, review: 1, quarantine: 0, all: 21 },
         pageInfo: { limit: 20, total: 21, hasMore: !input.cursor, nextCursor: input.cursor ? null : 'opaque-page-2' },
         serverNow: '2026-08-21T15:00:00Z',
       },

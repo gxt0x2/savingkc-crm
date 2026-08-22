@@ -16,7 +16,7 @@ export type TaskWorklistQuery = {
   sort?: 'due_asc' | 'due_desc' | 'newest' | 'title'
   limit?: number
   cursor?: string | null
-  lane?: 'current' | 'review' | 'all'
+  lane?: 'current' | 'review' | 'quarantine' | 'all'
 }
 
 export type TaskWorklistResult = {

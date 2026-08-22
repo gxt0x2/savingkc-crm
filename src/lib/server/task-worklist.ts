@@ -4,7 +4,7 @@ export const TASK_WORKLIST_VIEWS = ['all', 'due_today', 'overdue', 'upcoming', '
 export const TASK_WORKLIST_STATUS_FILTERS = ['all', 'active', 'completed'] as const
 export const TASK_WORKLIST_DUE_FILTERS = ['any', 'no_due', 'seven_days', 'thirty_days'] as const
 export const TASK_WORKLIST_SORTS = ['due_asc', 'due_desc', 'newest', 'title'] as const
-export const TASK_WORKLIST_LANES = ['current', 'review', 'all'] as const
+export const TASK_WORKLIST_LANES = ['current', 'review', 'quarantine', 'all'] as const
 
 export type TaskWorklistView = (typeof TASK_WORKLIST_VIEWS)[number]
 export type TaskWorklistStatusFilter = (typeof TASK_WORKLIST_STATUS_FILTERS)[number]
@@ -46,8 +46,8 @@ export type TaskWorklistItem = {
   completedAt: string | null
   updatedAt: string
   contact: TaskWorklistContact | null
-  operationalLane: 'current' | 'review'
-  reviewReason: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification'
+  operationalLane: 'current' | 'review' | 'quarantine'
+  reviewReason: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification' | 'automation_source'
 }
 
 export type TaskWorklistCounts = Record<TaskWorklistView, number>
@@ -134,6 +134,7 @@ function parseItem(value: unknown): TaskWorklistItem | null {
   if (typeof row.key !== 'string' || typeof row.sourceId !== 'string' || typeof row.title !== 'string') return null
   if (row.sourceKind !== 'activity' && row.sourceKind !== 'tc_task') return null
   if (row.status !== 'pending' && row.status !== 'completed' && row.status !== 'blocked') return null
+  if (row.operationalLane !== 'current' && row.operationalLane !== 'review' && row.operationalLane !== 'quarantine') return null
   if (typeof row.version !== 'number' || !Number.isInteger(row.version) || row.version < 1) return null
   return row as TaskWorklistItem
 }
@@ -141,9 +142,11 @@ function parseItem(value: unknown): TaskWorklistItem | null {
 type LeadReviewFact = { id: string; station: string | null; classification: string | null }
 
 async function attachOperationalEvidence(items: TaskWorklistItem[]): Promise<TaskWorklistItem[]> {
-  const leadIds = [...new Set(items.map((item) => item.leadId).filter((value): value is string => Boolean(value)))].slice(0, 50)
+  const leadIds = [...new Set(items.filter((item) => item.operationalLane !== 'quarantine').map((item) => item.leadId).filter((value): value is string => Boolean(value)))].slice(0, 50)
   if (!leadIds.length) {
-    return items.map((item) => ({ ...item, operationalLane: 'review', reviewReason: 'unlinked' }))
+    return items.map((item) => item.operationalLane === 'quarantine'
+      ? { ...item, reviewReason: 'automation_source' }
+      : { ...item, operationalLane: 'review', reviewReason: 'unlinked' })
   }
 
   const { data, error } = await supabaseAdmin()
@@ -155,6 +158,7 @@ async function attachOperationalEvidence(items: TaskWorklistItem[]): Promise<Tas
   const facts = new Map((data as LeadReviewFact[]).map((lead) => [lead.id, lead]))
 
   return items.map((item) => {
+    if (item.operationalLane === 'quarantine') return { ...item, reviewReason: 'automation_source' }
     if (!item.leadId) return { ...item, operationalLane: 'review', reviewReason: 'unlinked' }
     const lead = facts.get(item.leadId)
     if (!lead) return { ...item, operationalLane: 'review', reviewReason: 'missing_contact' }
@@ -247,7 +251,15 @@ export async function getTaskWorklist(input: {
   const countsValue = result.counts as Record<string, unknown>
   const counts = Object.fromEntries(TASK_WORKLIST_VIEWS.map((key) => [key, Number(countsValue[key]) || 0])) as TaskWorklistCounts
   const laneCountsValue = result.laneCounts as Record<string, unknown>
-  const laneCounts = Object.fromEntries(TASK_WORKLIST_LANES.map((key) => [key, Number(laneCountsValue[key]) || 0])) as TaskWorklistLaneCounts
+  const laneAll = Number(laneCountsValue.all) || 0
+  const laneCurrent = Number(laneCountsValue.current) || 0
+  const laneReview = Number(laneCountsValue.review) || 0
+  const laneCounts = {
+    current: laneCurrent,
+    review: laneReview,
+    quarantine: Math.max(0, laneAll - laneCurrent - laneReview),
+    all: laneAll,
+  } satisfies TaskWorklistLaneCounts
   const hasMore = result.hasMore === true
   const total = Math.max(0, Number(result.total) || 0)
   return {
