@@ -5,14 +5,37 @@ import { supabase } from '@/lib/supabase-lazy'
 
 export const CAMPAIGN_MEMBER_FILTERS = ['all', 'active', 'suppressed', 'replied', 'completed', 'removed'] as const
 export type CampaignMemberFilter = typeof CAMPAIGN_MEMBER_FILTERS[number]
-type Cursor = { enrolledAt: string; id: string }
+type Cursor = { enrolledAt: string; id: string; status: CampaignMemberFilter; query: string }
 
-function decodeCursor(value: string | null | undefined): Cursor | null {
+type CampaignMemberRow = {
+  id: string
+  lead_id: string
+  phone_snapshot: string
+  timezone: string
+  status: ProspectingCampaignMember['status']
+  suppression_reason: string | null
+  current_step_position: number
+  next_action_at: string | null
+  enrolled_at: string
+  lead_full_name: string | null
+  lead_property_address: string | null
+  lead_station: string | null
+  lead_classification: string | null
+}
+
+function normalizeSearch(value: string | null | undefined) {
+  const normalized = (value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  if (normalized.length > 100) throw new ProspectingCampaignError('invalid_member_query', 400, 'Audience search must be 100 characters or fewer')
+  return normalized
+}
+
+function decodeCursor(value: string | null | undefined, status: CampaignMemberFilter, query: string): Cursor | null {
   if (!value) return null
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<Cursor>
-    if (!parsed.enrolledAt || !parsed.id || Number.isNaN(Date.parse(parsed.enrolledAt)) || !/^[0-9a-f-]{36}$/i.test(parsed.id)) throw new Error('invalid')
-    return { enrolledAt: parsed.enrolledAt, id: parsed.id }
+    if (!parsed.enrolledAt || !parsed.id || Number.isNaN(Date.parse(parsed.enrolledAt)) || !/^[0-9a-f-]{36}$/i.test(parsed.id)
+      || parsed.status !== status || parsed.query !== query) throw new Error('invalid')
+    return { enrolledAt: parsed.enrolledAt, id: parsed.id, status, query }
   } catch {
     throw new ProspectingCampaignError('invalid_cursor', 400, 'Campaign audience cursor is invalid')
   }
@@ -22,47 +45,44 @@ function encodeCursor(cursor: Cursor) {
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
 }
 
-function embeddedLead(value: unknown): ProspectingCampaignMember['lead'] {
-  const row = Array.isArray(value) ? value[0] : value
-  if (!row || typeof row !== 'object') return null
-  const lead = row as Record<string, unknown>
+function embeddedLead(row: CampaignMemberRow): ProspectingCampaignMember['lead'] {
   return {
-    fullName: typeof lead.full_name === 'string' ? lead.full_name : null,
-    propertyAddress: typeof lead.property_address === 'string' ? lead.property_address : null,
-    station: typeof lead.station === 'string' ? lead.station : null,
-    classification: typeof lead.classification === 'string' ? lead.classification : null,
+    fullName: row.lead_full_name,
+    propertyAddress: row.lead_property_address,
+    station: row.lead_station,
+    classification: row.lead_classification,
   }
 }
 
 export async function listProspectingCampaignMembers(
   actor: AuthenticatedActor,
   campaignId: string,
-  options: { limit?: number; cursor?: string | null; status?: CampaignMemberFilter } = {},
+  options: { limit?: number; cursor?: string | null; status?: CampaignMemberFilter; query?: string | null } = {},
 ): Promise<ProspectingCampaignMemberPage> {
   if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new ProspectingCampaignError('invalid_campaign_id', 400, 'Campaign id is invalid')
   const limit = options.limit ?? 50
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new ProspectingCampaignError('invalid_limit', 400, 'Audience limit must be between 1 and 100')
   const status = options.status ?? 'all'
   if (!CAMPAIGN_MEMBER_FILTERS.includes(status)) throw new ProspectingCampaignError('invalid_member_status', 400, 'Campaign audience status is invalid')
-  const cursor = decodeCursor(options.cursor)
+  const query = normalizeSearch(options.query)
+  const cursor = decodeCursor(options.cursor, status, query)
 
-  const ownership = await supabase.from('prospecting_campaigns').select('id').eq('id', campaignId).eq('owner_email', actor.email.toLowerCase()).maybeSingle()
-  if (ownership.error) throw new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign audience is unavailable')
-  if (!ownership.data) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
-
-  let query = supabase
-    .from('prospecting_campaign_members')
-    .select('id,lead_id,phone_snapshot,timezone,status,suppression_reason,current_step_position,next_action_at,enrolled_at,leads(full_name,property_address,station,classification)')
-    .eq('campaign_id', campaignId)
-    .order('enrolled_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(limit + 1)
-  if (status === 'all') query = query.neq('status', 'removed')
-  else query = query.eq('status', status)
-  if (cursor) query = query.or(`enrolled_at.lt.${cursor.enrolledAt},and(enrolled_at.eq.${cursor.enrolledAt},id.lt.${cursor.id})`)
-  const result = await query
-  if (result.error) throw new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign audience is unavailable')
-  const rows = (result.data || []).slice(0, limit)
+  const result = await supabase.rpc('prospecting_campaign_member_page_v2', {
+    p_actor_email: actor.email,
+    p_campaign_id: campaignId,
+    p_status: status,
+    p_query: query || null,
+    p_limit: limit,
+    p_after_enrolled_at: cursor?.enrolledAt || null,
+    p_after_id: cursor?.id || null,
+  })
+  if (result.error) {
+    const message = String(result.error.message || '').toLowerCase()
+    if (message.includes('campaign_not_found')) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
+    throw new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign audience is unavailable')
+  }
+  const allRows = (result.data || []) as CampaignMemberRow[]
+  const rows = allRows.slice(0, limit)
   const items: ProspectingCampaignMember[] = rows.map((row) => ({
     id: row.id,
     leadId: row.lead_id,
@@ -73,9 +93,9 @@ export async function listProspectingCampaignMembers(
     currentStepPosition: row.current_step_position,
     nextActionAt: row.next_action_at,
     enrolledAt: row.enrolled_at,
-    lead: embeddedLead(row.leads),
+    lead: embeddedLead(row),
   }))
-  const hasMore = (result.data || []).length > limit
+  const hasMore = allRows.length > limit
   const last = items.at(-1)
-  return { items, pageInfo: { limit, hasMore, nextCursor: hasMore && last ? encodeCursor({ enrolledAt: last.enrolledAt, id: last.id }) : null } }
+  return { items, pageInfo: { limit, hasMore, nextCursor: hasMore && last ? encodeCursor({ enrolledAt: last.enrolledAt, id: last.id, status, query }) : null } }
 }
