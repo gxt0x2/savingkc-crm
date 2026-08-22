@@ -86,3 +86,27 @@ projection:
   rewritten by quarantine.
 - If source provenance is later corrected, the projection recalculates the
   appropriate current or review lane without changing source task state.
+
+## Approved legacy event correction — 2026-08-22
+
+After the automation quarantine was production-verified, Ernest approved the
+narrow evidence-backed correction of the remaining unattributed backlog.
+
+The read-only audit found that 71 of the 75 active unknown rows were not AI
+suggestions. They were legacy communication-event tasks whose older writers did
+not stamp source or provider identifiers:
+
+- 52 system follow-ups created within five seconds of a recorded SMS or inbound
+  call and due within 15 minutes.
+- 15 Ari callbacks created within five seconds of a recorded inbound call and
+  due within 15 minutes.
+- 4 voicemail callbacks created within five seconds of a recorded inbound call
+  or voicemail and due within 15 minutes.
+
+The correction adds source, linked activity ID, correction version, and any
+available provider identifier to those source activity metadata objects. It
+does not alter task content, status, assignee, due date, or source timestamp.
+The 71 corrected rows are locked in Review Debt, including the 14 that had been
+polluting Current Work. The four human or human-edited unknown rows remain
+untouched. The migration refuses to run if the exact approved census or event
+evidence has drifted.
