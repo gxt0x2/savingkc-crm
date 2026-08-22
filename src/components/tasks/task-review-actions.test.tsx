@@ -22,4 +22,9 @@ describe('task review actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'I will review each change' }))
     expect(onChange).toHaveBeenCalledWith(true)
   })
+
+  it('labels automation-generated work as quarantined', () => {
+    render(<TaskReviewBadge task={{ operational_lane: 'quarantine', review_reason: 'automation_source' } as Task} />)
+    expect(screen.getByText('Automation quarantine')).toHaveAttribute('title', expect.stringContaining('unreviewed automation'))
+  })
 })

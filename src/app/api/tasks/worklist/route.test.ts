@@ -12,7 +12,7 @@ import { GET } from './route'
 import { TaskWorklistError } from '@/lib/server/task-worklist'
 
 const page = {
-  items: [], counts: { all: 0, due_today: 0, overdue: 0, upcoming: 0, completed: 0 }, laneCounts: { current: 0, review: 0, all: 0 },
+  items: [], counts: { all: 0, due_today: 0, overdue: 0, upcoming: 0, completed: 0 }, laneCounts: { current: 0, review: 0, quarantine: 0, all: 0 },
   pageInfo: { limit: 20, total: 0, hasMore: false, nextCursor: null }, serverNow: '2026-08-21T15:00:00Z',
 }
 

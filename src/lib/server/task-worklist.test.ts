@@ -12,6 +12,7 @@ const item = {
   dueAt: '2026-08-21T15:00:00.000Z', assignedTo: 'Casey', department: 'acquisitions', role: null,
   primaryNextAction: true, version: 2, sourceCreatedAt: '2026-08-20T15:00:00.000Z', completedAt: null,
   updatedAt: '2026-08-20T15:00:00.000Z',
+  operationalLane: 'current',
   contact: { id: 'lead-1', fullName: 'Seller One', phone: '+18165550123', email: null, propertyAddress: '1 Main St', city: 'Kansas City', state: 'MO', zip: '64101', station: 'contacted', createdAt: '2026-08-01T00:00:00Z' },
 }
 
@@ -22,7 +23,7 @@ describe('task worklist read model', () => {
     mocks.select.mockReturnValue({ in: mocks.in })
     mocks.in.mockResolvedValue({ data: [{ id: 'lead-1', station: 'contacted', classification: 'warm' }], error: null })
     mocks.rpc.mockResolvedValue({
-      data: { items: [item], hasMore: true, total: 23, counts: { all: 30, due_today: 4, overdue: 7, upcoming: 10, completed: 9 }, laneCounts: { current: 20, review: 10, all: 30 } },
+      data: { items: [item], hasMore: true, total: 23, counts: { all: 30, due_today: 4, overdue: 7, upcoming: 10, completed: 9 }, laneCounts: { current: 14, review: 8, all: 30 } },
       error: null,
     })
   })
@@ -42,6 +43,7 @@ describe('task worklist read model', () => {
     expect(result.items).toEqual([{ ...item, operationalLane: 'current', reviewReason: 'none' }])
     expect(result.pageInfo).toMatchObject({ total: 23, hasMore: true, limit: 20 })
     expect(result.pageInfo.nextCursor).toEqual(expect.any(String))
+    expect(result.laneCounts).toEqual({ current: 14, review: 8, quarantine: 8, all: 30 })
   })
 
   it('uses the correct Central midnight across the fall DST transition', async () => {
@@ -96,6 +98,23 @@ describe('task worklist read model', () => {
       { operationalLane: 'review', reviewReason: 'terminal_station' },
       { operationalLane: 'review', reviewReason: 'unlinked' },
     ])
+  })
+
+  it('preserves the server-classified automation quarantine without loading lead evidence', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        items: [{ ...item, operationalLane: 'quarantine' }],
+        hasMore: false, total: 1, counts: { all: 1 }, laneCounts: { current: 0, review: 0, all: 1 },
+      },
+      error: null,
+    })
+
+    const result = await getTaskWorklist({ lane: 'quarantine' })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('task_worklist_page_v2', expect.objectContaining({ p_lane: 'quarantine' }))
+    expect(mocks.from).not.toHaveBeenCalled()
+    expect(result.items[0]).toMatchObject({ operationalLane: 'quarantine', reviewReason: 'automation_source' })
+    expect(result.laneCounts.quarantine).toBe(1)
   })
 
   it('fails closed when canonical review evidence cannot be loaded', async () => {

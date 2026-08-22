@@ -2,7 +2,7 @@
 
 Date opened: 2026-08-22  
 Baseline: `20d7dd5369991fe45422b12755187ad6d3a8fc86` (`origin/main`)  
-Branch: `codex/task-provenance-containment`
+Initial branch: `codex/task-provenance-containment`
 
 ## Decision
 
@@ -67,3 +67,22 @@ audit rows are reversible and do not mutate existing task records. Moving any
 existing task out of Current Work, cancelling it, completing it, merging it, or
 deleting it remains a separate production decision requiring explicit human
 approval after signed-in verification of this report.
+
+## Approved quarantine — 2026-08-22
+
+After the census was deployed and verified in the signed-in production Tasks
+workspace, Ernest explicitly approved quarantining the 68 active rows classified
+`automation_unreviewed`.
+
+The implementation changes only the rebuildable `work_items.operational_lane`
+projection:
+
+- Explicit automation provenance moves to `quarantine`.
+- The 75 active unattributed rows remain visible and are not reclassified.
+- Current Work and Review Debt exclude quarantine; All Records still includes
+  every source row and therefore remains the reconciliation total.
+- Quarantined work is visible in its own lane and retains the reviewed-change
+  lock. No task is deleted, completed, cancelled, reassigned, redated, or
+  rewritten by quarantine.
+- If source provenance is later corrected, the projection recalculates the
+  appropriate current or review lane without changing source task state.

@@ -95,8 +95,8 @@ export interface Task {
   status: TaskStatus
   created_at: string
   version?: number
-  operational_lane?: 'current' | 'review'
-  review_reason?: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification'
+  operational_lane?: 'current' | 'review' | 'quarantine'
+  review_reason?: 'none' | 'unlinked' | 'missing_contact' | 'terminal_station' | 'terminal_classification' | 'automation_source'
   contact?: Contact
 }
 
