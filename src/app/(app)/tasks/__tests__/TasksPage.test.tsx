@@ -16,6 +16,7 @@ vi.mock('@/components/conversations/workspace-frame', () => ({
 }))
 vi.mock('@/components/modals/new-task-modal', () => ({ NewTaskModal: () => <div role="dialog">New task modal</div> }))
 vi.mock('@/components/modals/edit-task-modal', () => ({ EditTaskModal: () => <div role="dialog">Edit task modal</div> }))
+vi.mock('@/components/tasks/task-reconciliation-strip', () => ({ TaskReconciliationStrip: () => <section aria-label="Task backlog health" /> }))
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a>,
 }))
