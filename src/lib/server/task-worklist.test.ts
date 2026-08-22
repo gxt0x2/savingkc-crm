@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), select: vi.fn(), in: vi.fn() }))
 
-vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc }) }))
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc, from: mocks.from }) }))
 
 import { getTaskWorklist, TaskWorklistError } from './task-worklist'
 
@@ -18,6 +18,9 @@ const item = {
 describe('task worklist read model', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.from.mockReturnValue({ select: mocks.select })
+    mocks.select.mockReturnValue({ in: mocks.in })
+    mocks.in.mockResolvedValue({ data: [{ id: 'lead-1', station: 'contacted', classification: 'warm' }], error: null })
     mocks.rpc.mockResolvedValue({
       data: { items: [item], hasMore: true, total: 23, counts: { all: 30, due_today: 4, overdue: 7, upcoming: 10, completed: 9 }, laneCounts: { current: 20, review: 10, all: 30 } },
       error: null,
@@ -36,7 +39,7 @@ describe('task worklist read model', () => {
       p_lane: 'current',
       p_today_start: '2026-08-21T05:00:00.000Z', p_tomorrow_start: '2026-08-22T05:00:00.000Z',
     }))
-    expect(result.items).toEqual([item])
+    expect(result.items).toEqual([{ ...item, operationalLane: 'current', reviewReason: 'none' }])
     expect(result.pageInfo).toMatchObject({ total: 23, hasMore: true, limit: 20 })
     expect(result.pageInfo.nextCursor).toEqual(expect.any(String))
   })
@@ -71,6 +74,32 @@ describe('task worklist read model', () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'function missing' } })
     await expect(getTaskWorklist({})).rejects.toMatchObject({ code: 'unavailable' })
     mocks.rpc.mockResolvedValueOnce({ data: { items: [{}], counts: {} }, error: null })
+    await expect(getTaskWorklist({})).rejects.toMatchObject({ code: 'unavailable' })
+  })
+
+  it('attaches canonical review evidence without trusting the projection label', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        items: [item, { ...item, key: 'activity:task-2', sourceId: 'task-2', leadId: null, contact: null }],
+        hasMore: false, total: 2, counts: {}, laneCounts: {},
+      },
+      error: null,
+    })
+    mocks.in.mockResolvedValueOnce({ data: [{ id: 'lead-1', station: 'closed_lost', classification: 'warm' }], error: null })
+
+    const result = await getTaskWorklist({ lane: 'all' })
+
+    expect(mocks.from).toHaveBeenCalledWith('leads')
+    expect(mocks.select).toHaveBeenCalledWith('id,station,classification')
+    expect(mocks.in).toHaveBeenCalledWith('id', ['lead-1'])
+    expect(result.items.map(({ operationalLane, reviewReason }) => ({ operationalLane, reviewReason }))).toEqual([
+      { operationalLane: 'review', reviewReason: 'terminal_station' },
+      { operationalLane: 'review', reviewReason: 'unlinked' },
+    ])
+  })
+
+  it('fails closed when canonical review evidence cannot be loaded', async () => {
+    mocks.in.mockResolvedValueOnce({ data: null, error: { message: 'database unavailable' } })
     await expect(getTaskWorklist({})).rejects.toMatchObject({ code: 'unavailable' })
   })
 })

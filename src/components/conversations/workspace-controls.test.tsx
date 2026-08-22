@@ -418,6 +418,9 @@ describe('rebuilt conversation workspace controls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Conversation actions' }))
     fireEvent.click(screen.getByRole('button', { name: 'Mark resolved' }))
+    expect(screen.getByRole('alertdialog', { name: 'Why is this conversation resolved?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Wrong number' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Mark resolved' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/conversations/thread-state', expect.objectContaining({ method: 'POST' })))
     const stateCall = fetchMock.mock.calls.find(([input]) => input === '/api/conversations/thread-state')
@@ -426,6 +429,7 @@ describe('rebuilt conversation workspace controls', () => {
       action: 'mark_read',
       threadKey: 'unmatched:+18164764715',
       phone: '+18164764715',
+      resolutionReason: 'wrong_number',
     })
     expect(payload).not.toHaveProperty('agent')
   })

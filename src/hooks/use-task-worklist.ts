@@ -65,6 +65,8 @@ function taskFromPage(item: TaskWorklistPage['items'][number]): Task {
     status: item.status === 'completed' ? 'completed' : 'pending',
     created_at: item.sourceCreatedAt,
     version: item.version,
+    operational_lane: item.operationalLane,
+    review_reason: item.reviewReason,
     contact,
   }
 }

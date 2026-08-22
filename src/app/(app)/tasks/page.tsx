@@ -8,6 +8,7 @@ import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { TaskReconciliationStrip } from '@/components/tasks/task-reconciliation-strip'
 import { TaskOperatingLanes, type TaskLane } from '@/components/tasks/task-operating-lanes'
+import { TaskReviewActionGate, TaskReviewBadge, taskReviewCopy } from '@/components/tasks/task-review-actions'
 import { Icon } from '@/components/ui/icon'
 import { useTaskWorklist } from '@/hooks/use-task-worklist'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
@@ -90,6 +91,7 @@ export default function TasksPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null)
+  const [reviewActionsEnabled, setReviewActionsEnabled] = useState(false)
   const [pagination, setPagination] = useState<{ key: string; cursors: Array<string | null> }>({ key: '', cursors: [null] })
   const [now] = useState(() => Date.now())
 
@@ -153,7 +155,10 @@ export default function TasksPage() {
 
   const pageCount = Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE))
   const pageTasks = tasks
-  const pageItemsSelected = pageTasks.length > 0 && pageTasks.every((task) => selectedIds.has(task.id))
+  const taskChangesEnabled = (task: Task) => task.operational_lane !== 'review' || reviewActionsEnabled
+  const mutablePageTasks = pageTasks.filter(taskChangesEnabled)
+  const pageItemsSelected = mutablePageTasks.length > 0 && mutablePageTasks.every((task) => selectedIds.has(task.id))
+  const showReviewGate = lane !== 'current' || pageTasks.some((task) => task.operational_lane === 'review')
   const activeFilterCount = [assigneeFilter, statusFilter !== 'all' ? statusFilter : '', dueFilter !== 'any' ? dueFilter : '', taskTypeFilter !== 'any' ? taskTypeFilter : ''].filter(Boolean).length
   const selectedTask = selectedTaskId ? tasks.find((task) => task.id === selectedTaskId) || null : null
   const editingTask = editingTaskId ? tasks.find((task) => task.id === editingTaskId) || null : null
@@ -181,8 +186,8 @@ export default function TasksPage() {
   function togglePageSelection() {
     setSelectedIds((current) => {
       const next = new Set(current)
-      if (pageItemsSelected) pageTasks.forEach((task) => next.delete(task.id))
-      else pageTasks.forEach((task) => next.add(task.id))
+      if (pageItemsSelected) mutablePageTasks.forEach((task) => next.delete(task.id))
+      else mutablePageTasks.forEach((task) => next.add(task.id))
       return next
     })
   }
@@ -374,6 +379,8 @@ export default function TasksPage() {
         />
 
         <section className="px-3 py-3 md:px-7">
+          {showReviewGate ? <TaskReviewActionGate enabled={reviewActionsEnabled} onChange={(enabled) => { setReviewActionsEnabled(enabled); if (!enabled) setSelectedIds(new Set()) }} /> : null}
+
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative hidden sm:block">
               <button type="button" aria-label="Filters" onClick={() => setToolbarMenu((current) => current === 'filters' ? null : 'filters')} aria-expanded={toolbarMenu === 'filters'} className={`crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${activeFilterCount ? 'border-[var(--crm-brand-border)] text-[var(--crm-brand)]' : ''}`}><Icon name="filter_alt" className="text-[16px]" />Filters{activeFilterCount ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[10px] text-white">{activeFilterCount}</span> : null}</button>
@@ -419,7 +426,7 @@ export default function TasksPage() {
 
           {!isMobile ? <div className="crm-panel mt-3 overflow-x-auto rounded-xl">
             <div className="crm-table-header grid min-w-[1120px] grid-cols-[2rem_3rem_1.05fr_1.25fr_1fr_.75fr_1fr_5rem] items-center gap-3 border-b px-3 py-3 text-[11px] font-bold uppercase tracking-[0.06em]">
-              <input type="checkbox" aria-label="Select tasks on this page" checked={pageItemsSelected} onChange={togglePageSelection} className="h-4 w-4 accent-[var(--crm-brand)]" />
+              <input type="checkbox" aria-label="Select tasks on this page" checked={pageItemsSelected} disabled={mutablePageTasks.length === 0} onChange={togglePageSelection} className="h-4 w-4 accent-[var(--crm-brand)] disabled:opacity-40" />
               <span>Status</span><span>Title</span><span>Description</span><span>Associated contact</span><span>Assignee</span><span>Due date</span><span className="text-right">Actions</span>
             </div>
             {isLoading ? <TaskSkeleton /> : null}
@@ -430,15 +437,16 @@ export default function TasksPage() {
               const busy = busyIds.has(task.id)
               const completed = task.status === 'completed'
               const name = contactName(task)
+              const changesEnabled = taskChangesEnabled(task)
               return <div key={task.id} className={`grid min-w-[1120px] grid-cols-[2rem_3rem_1.05fr_1.25fr_1fr_.75fr_1fr_5rem] items-center gap-3 border-b border-l-4 border-b-[var(--crm-border)] px-3 py-3.5 text-xs last:border-b-0 ${completed ? 'border-l-[var(--crm-success)] bg-[var(--crm-success-soft)]/30' : overdue ? 'border-l-[var(--crm-brand)]' : 'border-l-transparent hover:bg-[var(--crm-surface-subtle)]'}`}>
-                <input type="checkbox" aria-label={`Select ${task.title}`} checked={selectedIds.has(task.id)} onChange={() => toggleSelected(task.id)} className="h-4 w-4 accent-[var(--crm-brand)]" />
-                <button type="button" disabled={busy} onClick={() => void updateTask(task.id, { status: completed ? 'pending' : 'completed' })} aria-label={completed ? `Reopen ${task.title}` : `Mark ${task.title} complete`} title={completed ? 'Reopen task' : 'Mark complete'} className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors disabled:opacity-45 ${completed ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : overdue ? 'border-[var(--crm-danger)] text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)]' : 'border-[var(--crm-border-strong)] text-[var(--crm-text-muted)] hover:border-[var(--crm-success)] hover:bg-[var(--crm-success-soft)] hover:text-[var(--crm-success)]'}`}><Icon name={busy ? 'progress_activity' : 'check'} className={`text-[17px] ${busy ? 'animate-spin' : ''}`} /></button>
-                <button type="button" onClick={() => setSelectedTaskId(task.id)} className="min-w-0 text-left"><strong className={`block truncate text-sm ${completed ? 'text-[var(--crm-text-muted)] line-through' : 'text-[var(--crm-ink)]'} hover:text-[var(--crm-brand)] hover:underline`}>{task.title}</strong><small className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--crm-text-muted)]">{task.type.replaceAll('_', ' ')}</small></button>
+                <input type="checkbox" aria-label={`Select ${task.title}`} checked={selectedIds.has(task.id)} disabled={!changesEnabled} onChange={() => toggleSelected(task.id)} className="h-4 w-4 accent-[var(--crm-brand)] disabled:opacity-40" />
+                <button type="button" disabled={busy || !changesEnabled} onClick={() => void updateTask(task.id, { status: completed ? 'pending' : 'completed' })} aria-label={completed ? `Reopen ${task.title}` : `Mark ${task.title} complete`} title={!changesEnabled ? 'Enable reviewed changes first' : completed ? 'Reopen task' : 'Mark complete'} className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors disabled:opacity-45 ${completed ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : overdue ? 'border-[var(--crm-danger)] text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)]' : 'border-[var(--crm-border-strong)] text-[var(--crm-text-muted)] hover:border-[var(--crm-success)] hover:bg-[var(--crm-success-soft)] hover:text-[var(--crm-success)]'}`}><Icon name={busy ? 'progress_activity' : 'check'} className={`text-[17px] ${busy ? 'animate-spin' : ''}`} /></button>
+                <button type="button" onClick={() => setSelectedTaskId(task.id)} className="min-w-0 text-left"><strong className={`block truncate text-sm ${completed ? 'text-[var(--crm-text-muted)] line-through' : 'text-[var(--crm-ink)]'} hover:text-[var(--crm-brand)] hover:underline`}>{task.title}</strong><small className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--crm-text-muted)]">{task.type.replaceAll('_', ' ')}</small><TaskReviewBadge task={task} /></button>
                 <span className="truncate text-[var(--crm-text-muted)]" title={task.description || 'No description'}>{task.description || 'No description'}</span>
                 <span className="min-w-0">{task.contact_id ? <Link href={`/leads/${task.contact_id}`} prefetch={false} className="block truncate font-bold text-[var(--crm-info)] hover:underline">{name}</Link> : <strong className="block truncate text-[var(--crm-text-muted)]">{name}</strong>}<small className="mt-0.5 block truncate text-[var(--crm-text-muted)]">{task.property_address || 'No property linked'}</small></span>
                 <span className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--crm-info-soft)] text-[10px] font-black text-[var(--crm-info)]">{assigneeInitials(task.assigned_to)}</span><span className="truncate font-semibold">{task.assigned_to || 'Unassigned'}</span></span>
                 <span className={`flex items-center gap-1.5 font-semibold ${overdue ? 'text-[var(--crm-danger)]' : completed ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text)]'}`}><Icon name={completed ? 'check_circle' : overdue ? 'error' : 'event'} className="text-[16px]" />{dueLabel(task)}</span>
-                <span className="flex justify-end gap-1"><button type="button" onClick={() => setEditingTaskId(task.id)} aria-label={`Edit ${task.title}`} title="Edit task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="edit" className="text-[17px]" /></button><button type="button" onClick={() => setDeleteRequest({ kind: 'single', ids: [task.id], label: task.title })} aria-label={`Delete ${task.title}`} title="Delete task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg hover:!border-[var(--crm-danger-border)] hover:!bg-[var(--crm-danger-soft)] hover:!text-[var(--crm-danger)]"><Icon name="delete" className="text-[17px]" /></button></span>
+                <span className="flex justify-end gap-1"><button type="button" disabled={!changesEnabled} onClick={() => setEditingTaskId(task.id)} aria-label={`Edit ${task.title}`} title={changesEnabled ? 'Edit task' : 'Enable reviewed changes first'} className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg disabled:opacity-40"><Icon name="edit" className="text-[17px]" /></button><button type="button" disabled={!changesEnabled} onClick={() => setDeleteRequest({ kind: 'single', ids: [task.id], label: task.title })} aria-label={`Delete ${task.title}`} title={changesEnabled ? 'Delete task' : 'Enable reviewed changes first'} className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg hover:!border-[var(--crm-danger-border)] hover:!bg-[var(--crm-danger-soft)] hover:!text-[var(--crm-danger)] disabled:opacity-40"><Icon name="delete" className="text-[17px]" /></button></span>
               </div>
             }) : null}
           </div> : <div className="mt-3 space-y-2" aria-label="Tasks">
@@ -449,12 +457,14 @@ export default function TasksPage() {
               const overdue = isTaskOverdue(task, now)
               const completed = task.status === 'completed'
               const busy = busyIds.has(task.id)
+              const changesEnabled = taskChangesEnabled(task)
               return <article key={task.id} className="crm-panel flex items-start gap-3 rounded-xl p-3">
-                <button type="button" disabled={busy} onClick={() => void updateTask(task.id, { status: completed ? 'pending' : 'completed' })} aria-label={completed ? `Reopen ${task.title}` : `Mark ${task.title} complete`} className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 ${completed ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : overdue ? 'border-[var(--crm-danger)] text-[var(--crm-danger)]' : 'border-[var(--crm-border-strong)] text-[var(--crm-text-muted)]'}`}><Icon name={busy ? 'progress_activity' : 'check'} className={busy ? 'animate-spin' : ''} /></button>
+                <button type="button" disabled={busy || !changesEnabled} onClick={() => void updateTask(task.id, { status: completed ? 'pending' : 'completed' })} aria-label={completed ? `Reopen ${task.title}` : `Mark ${task.title} complete`} title={!changesEnabled ? 'Enable reviewed changes first' : undefined} className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 disabled:opacity-45 ${completed ? 'border-[var(--crm-success)] bg-[var(--crm-success)] text-white' : overdue ? 'border-[var(--crm-danger)] text-[var(--crm-danger)]' : 'border-[var(--crm-border-strong)] text-[var(--crm-text-muted)]'}`}><Icon name={busy ? 'progress_activity' : 'check'} className={busy ? 'animate-spin' : ''} /></button>
                 <button type="button" onClick={() => setSelectedTaskId(task.id)} className="min-w-0 flex-1 text-left">
                   <strong className={`block truncate text-sm ${completed ? 'text-[var(--crm-text-muted)] line-through' : 'text-[var(--crm-ink)]'}`}>{task.title}</strong>
                   <span className={`mt-1 flex items-center gap-1 text-xs font-semibold ${overdue ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}><Icon name="event" className="text-[15px]" />{dueLabel(task)}</span>
                   {task.contact_id ? <span className="mt-1 block truncate text-xs text-[var(--crm-info)]">{contactName(task)}</span> : null}
+                  <TaskReviewBadge task={task} />
                 </button>
                 <Icon name="chevron_right" className="mt-2 shrink-0 text-[var(--crm-text-muted)]" />
               </article>
@@ -468,7 +478,7 @@ export default function TasksPage() {
         </section>
       </main>
 
-      {selectedTask ? <TaskDetails task={selectedTask} onClose={() => setSelectedTaskId(null)} onEdit={() => { setEditingTaskId(selectedTask.id); setSelectedTaskId(null) }} onToggle={() => void updateTask(selectedTask.id, { status: selectedTask.status === 'completed' ? 'pending' : 'completed' })} onDelete={() => setDeleteRequest({ kind: 'single', ids: [selectedTask.id], label: selectedTask.title })} /> : null}
+      {selectedTask ? <TaskDetails task={selectedTask} changesEnabled={taskChangesEnabled(selectedTask)} onClose={() => setSelectedTaskId(null)} onEdit={() => { setEditingTaskId(selectedTask.id); setSelectedTaskId(null) }} onToggle={() => void updateTask(selectedTask.id, { status: selectedTask.status === 'completed' ? 'pending' : 'completed' })} onDelete={() => setDeleteRequest({ kind: 'single', ids: [selectedTask.id], label: selectedTask.title })} /> : null}
       {newTaskOpen ? <NewTaskModal department="acquisitions" showLeadSelector onClose={() => setNewTaskOpen(false)} onCreated={() => { setNewTaskOpen(false); void refreshWorklist() }} /> : null}
       {editingTask ? <EditTaskModal taskId={editingTask.id} initialTitle={editingTask.title} initialMetadata={{ task_type: editingTask.type, due_date: editingTask.due_date || undefined, assigned_to: editingTask.assigned_to || undefined, notes: editingTask.description || undefined, status: editingTask.status === 'overdue' ? 'pending' : editingTask.status, priority: 'normal', source: 'tasks' }} onClose={() => setEditingTaskId(null)} onSaved={() => { setEditingTaskId(null); void refreshWorklist() }} onDeleted={() => { setEditingTaskId(null); void refreshWorklist() }} /> : null}
       {deleteRequest ? <ConfirmDeleteDialog request={deleteRequest} saving={bulkSaving || deleteRequest.ids.some((id) => busyIds.has(id))} onCancel={() => setDeleteRequest(null)} onConfirm={() => void confirmDelete()} /> : null}
@@ -480,8 +490,9 @@ function TaskFilterSelect({ label, value, onChange, options }: { label: string; 
   return <label><span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">{label}</span><select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className="crm-field h-10 w-full rounded-lg px-3 text-xs font-semibold"><option value="">Any</option>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>
 }
 
-function TaskDetails({ task, onClose, onEdit, onToggle, onDelete }: { task: Task; onClose: () => void; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
-  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><aside role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="h-full w-full max-w-md overflow-y-auto bg-[var(--crm-surface)] p-6 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><p className="crm-eyebrow">Task details</p><h2 id="task-detail-title" className="mt-1 text-xl font-black">{task.title}</h2></div><button type="button" onClick={onClose} aria-label="Close task details" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button></div><dl className="mt-6 divide-y divide-[var(--crm-border)]">{[['Status', task.status], ['Due', dueLabel(task)], ['Assigned', task.assigned_to || 'Unassigned'], ['Contact', contactName(task)], ['Property', task.property_address || 'Not linked'], ['Description', task.description || 'No description recorded']].map(([label, value]) => <div key={label} className="py-4"><dt className="text-[10px] font-black uppercase tracking-[0.1em] text-[var(--crm-text-muted)]">{label}</dt><dd className="mt-1 text-sm font-semibold">{value}</dd></div>)}</dl><div className="mt-6 grid grid-cols-2 gap-2"><button type="button" onClick={onToggle} className="crm-primary-button rounded-lg px-4 py-2.5 text-sm font-black">{task.status === 'completed' ? 'Reopen task' : 'Mark completed'}</button><button type="button" onClick={onEdit} className="crm-secondary-button rounded-lg px-4 py-2.5 text-sm font-black">Edit task</button>{task.contact_id ? <Link href={`/leads/${task.contact_id}`} prefetch={false} className="crm-secondary-button rounded-lg px-4 py-2.5 text-center text-sm font-black">Open contact</Link> : null}<button type="button" onClick={onDelete} className="rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2.5 text-sm font-black text-[var(--crm-danger)]">Delete task</button></div></aside></div>
+function TaskDetails({ task, changesEnabled, onClose, onEdit, onToggle, onDelete }: { task: Task; changesEnabled: boolean; onClose: () => void; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
+  const review = taskReviewCopy(task)
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><aside role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="h-full w-full max-w-md overflow-y-auto bg-[var(--crm-surface)] p-6 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><p className="crm-eyebrow">Task details</p><h2 id="task-detail-title" className="mt-1 text-xl font-black">{task.title}</h2></div><button type="button" onClick={onClose} aria-label="Close task details" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button></div>{task.operational_lane === 'review' ? <div className="mt-5 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] p-3"><p className="text-xs font-black text-[var(--crm-warning)]">{review.label}</p><p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">{review.detail}</p></div> : null}<dl className="mt-6 divide-y divide-[var(--crm-border)]">{[['Status', task.status], ['Due', dueLabel(task)], ['Assigned', task.assigned_to || 'Unassigned'], ['Contact', contactName(task)], ['Property', task.property_address || 'Not linked'], ['Description', task.description || 'No description recorded']].map(([label, value]) => <div key={label} className="py-4"><dt className="text-[10px] font-black uppercase tracking-[0.1em] text-[var(--crm-text-muted)]">{label}</dt><dd className="mt-1 text-sm font-semibold">{value}</dd></div>)}</dl><div className="mt-6 grid grid-cols-2 gap-2"><button type="button" disabled={!changesEnabled} onClick={onToggle} className="crm-primary-button rounded-lg px-4 py-2.5 text-sm font-black disabled:opacity-40">{task.status === 'completed' ? 'Reopen task' : 'Mark completed'}</button><button type="button" disabled={!changesEnabled} onClick={onEdit} className="crm-secondary-button rounded-lg px-4 py-2.5 text-sm font-black disabled:opacity-40">Edit task</button>{task.contact_id ? <Link href={`/leads/${task.contact_id}`} prefetch={false} className="crm-secondary-button rounded-lg px-4 py-2.5 text-center text-sm font-black">Open contact</Link> : null}<button type="button" disabled={!changesEnabled} onClick={onDelete} className="rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2.5 text-sm font-black text-[var(--crm-danger)] disabled:opacity-40">Delete task</button></div>{!changesEnabled ? <p className="mt-3 text-center text-xs font-semibold text-[var(--crm-text-muted)]">Enable reviewed changes from the task list to use mutation controls.</p> : null}</aside></div>
 }
 
 function ConfirmDeleteDialog({ request, saving, onCancel, onConfirm }: { request: DeleteRequest; saving: boolean; onCancel: () => void; onConfirm: () => void }) {

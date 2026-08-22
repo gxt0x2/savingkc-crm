@@ -51,6 +51,8 @@ const tasks: Task[] = [
     assigned_to: 'Ernest',
     status: 'completed',
     created_at: '2026-08-09T12:00:00.000Z',
+    operational_lane: 'review',
+    review_reason: 'unlinked',
   },
 ]
 
@@ -128,7 +130,7 @@ describe('TasksPage operating workspace', () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/calendar/tasks/bulk', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ ids: ['task-1', 'task-2'], action: 'complete' }),
+      body: JSON.stringify({ ids: ['task-1'], action: 'complete' }),
     })))
     expect(await screen.findByRole('status')).toHaveTextContent('2 tasks updated.')
   })
@@ -171,6 +173,21 @@ describe('TasksPage operating workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review debt 1' }))
     expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ lane: 'review' }))
     expect(screen.getByText(/Review before changing anything/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Reviewed task changes' })).toHaveTextContent('Review-only mode')
+    expect(screen.getByRole('button', { name: 'Reopen Review offer' })).toBeDisabled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('unlocks review-debt changes only after explicit confirmation', () => {
+    render(<TasksPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Review debt 1' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enable reviewed changes' }))
+    expect(screen.getByRole('button', { name: 'Reopen Review offer' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'I will review each change' }))
+
+    expect(screen.getByRole('button', { name: 'Reopen Review offer' })).toBeEnabled()
+    expect(screen.getByText('Unlinked task')).toBeInTheDocument()
     expect(fetch).not.toHaveBeenCalled()
   })
 

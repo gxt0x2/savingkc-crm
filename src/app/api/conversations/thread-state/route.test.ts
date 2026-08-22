@@ -75,6 +75,7 @@ describe('conversation thread state actions', () => {
   it('persists an unmatched phone thread without placing its virtual id in lead_id', async () => {
     const response = await POST(makeRequest({
       action: 'mark_read',
+      resolutionReason: 'wrong_number',
       threadKey: 'phone:(913) 555-0123',
       leadId: 'unmatched:+19135550123',
       phone: '913-555-0123',
@@ -84,13 +85,29 @@ describe('conversation thread state actions', () => {
     expect(insertedActivities[0]).toMatchObject({
       lead_id: null,
       agent: 'Casey',
+      description: expect.stringContaining('Wrong number'),
       metadata: {
         source: 'conversation_hub',
         hub_action: 'mark_read',
         thread_key: 'phone:+19135550123',
         phone: '+19135550123',
+        resolution_reason: 'wrong_number',
+        resolution_reason_label: 'Wrong number',
       },
     })
+  })
+
+  it('requires a reviewed reason before resolving an unmatched conversation', async () => {
+    const response = await POST(makeRequest({
+      action: 'mark_read',
+      threadKey: 'phone:+19135550123',
+      leadId: null,
+      phone: '+19135550123',
+    }))
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'A resolutionReason is required for unmatched conversations' })
+    expect(insertedActivities).toHaveLength(0)
   })
 
   it('preserves the allowlisted dialer provenance without accepting arbitrary sources', async () => {

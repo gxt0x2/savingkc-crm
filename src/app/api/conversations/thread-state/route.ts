@@ -4,6 +4,7 @@ import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { supabase } from '@/lib/supabase-lazy'
 
 type ThreadStateAction = 'mark_read' | 'mark_unread' | 'reminder_created' | 'reminder_completed' | 'tag_added' | 'tag_removed'
+type ResolutionReason = 'handled_elsewhere' | 'duplicate' | 'not_a_seller' | 'wrong_number' | 'no_action_needed'
 
 const ACTION_LABELS: Record<ThreadStateAction, string> = {
   mark_read: 'marked read',
@@ -12,6 +13,14 @@ const ACTION_LABELS: Record<ThreadStateAction, string> = {
   reminder_completed: 'reminder completed',
   tag_added: 'tag added',
   tag_removed: 'tag removed',
+}
+
+const RESOLUTION_LABELS: Record<ResolutionReason, string> = {
+  handled_elsewhere: 'Handled elsewhere',
+  duplicate: 'Duplicate conversation',
+  not_a_seller: 'Vendor or non-seller',
+  wrong_number: 'Wrong number',
+  no_action_needed: 'No action needed',
 }
 
 function cleanAction(value: unknown): ThreadStateAction | null {
@@ -48,6 +57,12 @@ function cleanTag(value: unknown): string | null {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
   return normalized || null
+}
+
+function cleanResolutionReason(value: unknown): ResolutionReason | null {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(RESOLUTION_LABELS, value)
+    ? value as ResolutionReason
+    : null
 }
 
 function auditSource(value: unknown): 'conversation_hub' | 'dialer_prospecting_hub' {
@@ -126,13 +141,16 @@ function tagLabel(tag: string | null): string | null {
     .join(' ')
 }
 
-function actionDescription(action: ThreadStateAction, phone: string | null, dueAt: string | null, tag: string | null): string {
+function actionDescription(action: ThreadStateAction, phone: string | null, dueAt: string | null, tag: string | null, resolutionReason: ResolutionReason | null): string {
   if (action === 'reminder_created') {
     const due = dueAt ? new Date(dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'soon'
     return `Conversation reminder set for ${due}${phone ? `: ${phone}` : ''}`
   }
   if (action === 'tag_added' || action === 'tag_removed') {
     return `Conversation ${action === 'tag_added' ? 'tagged' : 'untagged'} ${tagLabel(tag) || 'Tag'}${phone ? `: ${phone}` : ''}`
+  }
+  if (action === 'mark_read' && resolutionReason) {
+    return `Conversation resolved — ${RESOLUTION_LABELS[resolutionReason]}${phone ? `: ${phone}` : ''}`
   }
   return `Conversation ${ACTION_LABELS[action]}${phone ? `: ${phone}` : ''}`
 }
@@ -152,6 +170,7 @@ export async function POST(req: Request) {
     const reminderNote = cleanText(body?.note)
     const dueAt = cleanDueAt(body?.dueAt)
     const tag = cleanTag(body?.tag)
+    const resolutionReason = cleanResolutionReason(body?.resolutionReason)
 
     if (!action) {
       return NextResponse.json({ error: 'Valid action is required' }, { status: 400 })
@@ -165,11 +184,14 @@ export async function POST(req: Request) {
     if ((action === 'tag_added' || action === 'tag_removed') && !tag) {
       return NextResponse.json({ error: 'A valid tag is required' }, { status: 400 })
     }
+    if (action === 'mark_read' && !thread.leadId && !resolutionReason) {
+      return NextResponse.json({ error: 'A resolutionReason is required for unmatched conversations' }, { status: 400 })
+    }
 
     const { error } = await supabase.from('lead_activities').insert({
       lead_id: thread.leadId,
       activity_type: 'status_change',
-      description: actionDescription(action, thread.phone, dueAt, tag),
+      description: actionDescription(action, thread.phone, dueAt, tag, resolutionReason),
       agent: authenticatedActor.name,
       metadata: {
         source,
@@ -180,6 +202,7 @@ export async function POST(req: Request) {
         ...(dueAt ? { reminder_due_at: dueAt } : {}),
         ...(reminderNote ? { reminder_note: reminderNote } : {}),
         ...(tag ? { hub_tag: tag, hub_tag_label: tagLabel(tag) } : {}),
+        ...(resolutionReason ? { resolution_reason: resolutionReason, resolution_reason_label: RESOLUTION_LABELS[resolutionReason] } : {}),
       },
     })
 
@@ -193,6 +216,7 @@ export async function POST(req: Request) {
       action,
       dueAt,
       tag,
+      resolutionReason,
       message: ACTION_LABELS[action],
     })
   } catch (err) {
