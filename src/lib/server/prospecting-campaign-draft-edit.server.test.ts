@@ -14,6 +14,9 @@ const input = {
   callerId: '+18166088770',
   fromPhone: null,
   defaultTimezone: 'America/Chicago',
+  sendWindowStart: '09:00',
+  sendWindowEnd: '19:00',
+  sendDays: [1, 2, 3, 4, 5, 6],
   perHour: 75,
   perDay: 500,
   steps: [],
@@ -38,7 +41,7 @@ describe('updateProspectingCampaignDraft', () => {
       code: 'campaign_setup_locked',
       status: 409,
     })
-    expect(mocks.rpc).toHaveBeenCalledWith('update_prospecting_campaign_draft_v1', {
+    expect(mocks.rpc).toHaveBeenCalledWith('update_prospecting_campaign_draft_v2', {
       p_campaign_id: campaignId,
       p_actor_email: actor.email,
       p_actor_name: actor.name,
@@ -47,6 +50,9 @@ describe('updateProspectingCampaignDraft', () => {
       p_caller_id: input.callerId,
       p_from_phone: null,
       p_default_timezone: input.defaultTimezone,
+      p_send_window_start: input.sendWindowStart,
+      p_send_window_end: input.sendWindowEnd,
+      p_send_days: input.sendDays,
       p_per_hour: input.perHour,
       p_per_day: input.perDay,
       p_steps: [],

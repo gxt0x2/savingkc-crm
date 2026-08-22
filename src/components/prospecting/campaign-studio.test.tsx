@@ -52,6 +52,10 @@ describe('CampaignStudio', () => {
     fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
 
     expect(screen.getByRole('heading', { name: 'Build the conversation.' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Mon' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Sun' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.change(screen.getByLabelText('Send window start'), { target: { value: '10:00' } })
+    fireEvent.change(screen.getByLabelText('Send window end'), { target: { value: '18:00' } })
     fireEvent.click(screen.getByRole('button', { name: /Warm follow-up/ }))
     expect(screen.getByText(/Helen, Your name here with SavingKC/)).toBeVisible()
     expect(screen.getByText('2 messages')).toBeVisible()
@@ -60,7 +64,29 @@ describe('CampaignStudio', () => {
     expect(screen.getByRole('heading', { name: 'Review before you activate.' })).toBeVisible()
     expect(screen.getByText('2 selected contacts')).toBeVisible()
     expect(screen.getByText('Creation does not start sending or calling')).toBeVisible()
+    expect(screen.getByText(/Monday–Saturday · 10:00–18:00/)).toBeVisible()
     expect(screen.getByRole('button', { name: /Create safe draft/ })).toBeEnabled()
+  })
+
+  it('requires at least one SMS send day before review', () => {
+    render(<StudioHarness />)
+    fireEvent.change(screen.getByRole('textbox', { name: /Campaign name/ }), { target: { value: 'No schedule' } })
+    fireEvent.click(screen.getByRole('button', { name: /SMS cadence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    for (const day of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']) fireEvent.click(screen.getByRole('button', { name: day }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose at least one send day.')
+    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+  })
+
+  it('explains an invalid SMS send window before review', () => {
+    render(<StudioHarness />)
+    fireEvent.change(screen.getByRole('textbox', { name: /Campaign name/ }), { target: { value: 'Bad schedule' } })
+    fireEvent.click(screen.getByRole('button', { name: /SMS cadence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    fireEvent.change(screen.getByLabelText('Send window start'), { target: { value: '18:00' } })
+    fireEvent.change(screen.getByLabelText('Send window end'), { target: { value: '10:00' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('End time must be later than start time.')
+    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
   })
 
   it('describes a truthful single-line calling workflow', () => {

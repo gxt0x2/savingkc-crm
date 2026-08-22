@@ -9,6 +9,9 @@ export type CampaignForm = {
   kind: 'dialer' | 'sms'
   callerId: string
   fromPhone: string
+  sendWindowStart: string
+  sendWindowEnd: string
+  sendDays: number[]
   perHour: number
   perDay: number
   steps: Array<{ delayMinutes: number; bodyTemplate: string }>
@@ -19,6 +22,9 @@ export const EMPTY_CAMPAIGN_FORM: CampaignForm = {
   kind: 'dialer',
   callerId: DIALER_CALLER_ID_NUMBERS[0]?.value || '',
   fromPhone: BROADCAST_TWILIO_NUMBERS[0]?.value || '',
+  sendWindowStart: '09:00',
+  sendWindowEnd: '19:00',
+  sendDays: [1, 2, 3, 4, 5, 6],
   perHour: 75,
   perDay: 500,
   steps: [{ delayMinutes: 0, bodyTemplate: 'Hi {{first_name}}, this is {{agent_name}} with SavingKC. Would you consider an offer on {{property_address}}?' }],
@@ -50,6 +56,16 @@ const STUDIO_STEPS = [
   { id: 3, label: 'Review', detail: 'Audience and safeguards' },
 ] as const
 
+const SEND_DAYS = [
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+  { value: 0, label: 'Sun' },
+] as const
+
 function sampleMessage(template: string) {
   return template
     .replaceAll('{{first_name}}', 'Helen')
@@ -66,6 +82,14 @@ function delayLabel(delayMinutes: number) {
 
 function phoneLabel(phone: string, options: ReadonlyArray<{ value: string; label: string }>) {
   return options.find((option) => option.value === phone)?.label || phone
+}
+
+function sendDaySummary(days: number[]) {
+  const sorted = [...days].sort((left, right) => left - right).join(',')
+  if (sorted === '1,2,3,4,5') return 'Weekdays'
+  if (sorted === '1,2,3,4,5,6') return 'Monday–Saturday'
+  if (sorted === '0,1,2,3,4,5,6') return 'Every day'
+  return SEND_DAYS.filter((day) => days.includes(day.value)).map((day) => day.label).join(', ')
 }
 
 type CampaignStudioProps = {
@@ -102,10 +126,13 @@ export function CampaignStudio({
   const stepIsValid = useMemo(() => {
     if (studioStep === 1) return form.name.trim().length > 0
     if (studioStep === 2 && form.kind === 'sms') {
-      return form.steps.length > 0 && form.steps.every((step) => step.bodyTemplate.trim().length > 0)
+      return form.steps.length > 0
+        && form.steps.every((step) => step.bodyTemplate.trim().length > 0)
+        && form.sendDays.length > 0
+        && form.sendWindowStart < form.sendWindowEnd
     }
     return true
-  }, [form.kind, form.name, form.steps, studioStep])
+  }, [form.kind, form.name, form.sendDays.length, form.sendWindowEnd, form.sendWindowStart, form.steps, studioStep])
 
   function updateStep(index: number, patch: Partial<CampaignForm['steps'][number]>) {
     onChange((current) => ({
@@ -241,6 +268,7 @@ export function CampaignStudio({
               <aside className="space-y-4 xl:sticky xl:top-0 xl:h-fit">
                 <div className="rounded-[2rem] bg-[#17221a] p-3 shadow-xl"><div className="rounded-[1.45rem] border border-white/10 bg-[#f5f2e9] p-4 text-[#17221a]"><div className="flex items-center justify-between border-b border-black/8 pb-3"><div><p className="text-[10px] font-black uppercase tracking-wider text-black/45">Preview</p><p className="text-sm font-black">Helen Seller</p></div><span className="grid h-8 w-8 place-items-center rounded-full bg-[#dbe8d6]"><Icon name="sms" className="text-base text-[#344e30]" /></span></div><div className="mt-7 rounded-2xl rounded-bl-sm bg-white p-3 text-sm leading-5 shadow-sm">{sampleMessage(form.steps[activeMessage]?.bodyTemplate || 'Your message preview appears here.')}</div><p className="mt-2 text-right text-[9px] font-bold text-black/35">Draft preview · not sent</p><div className="mt-20 h-9 rounded-full border border-black/10 bg-white/70" /></div></div>
                 <div className="crm-panel rounded-2xl p-4"><p className="text-xs font-black text-[var(--crm-ink)]">Sending identity</p><select value={form.fromPhone} onChange={(event) => onChange((current) => ({ ...current, fromPhone: event.target.value }))} className="crm-field mt-2 h-10 w-full rounded-lg px-2 text-xs">{BROADCAST_TWILIO_NUMBERS.map((number) => <option key={number.value} value={number.value}>{number.label}</option>)}</select><div className="mt-3 grid grid-cols-2 gap-2"><label><span className="text-[10px] font-bold text-[var(--crm-text-muted)]">Per hour</span><input type="number" min={1} max={5000} value={form.perHour} onChange={(event) => onChange((current) => ({ ...current, perHour: Number(event.target.value) }))} className="crm-field mt-1 h-9 w-full rounded-lg px-2 text-xs" /></label><label><span className="text-[10px] font-bold text-[var(--crm-text-muted)]">Per day</span><input type="number" min={1} max={50000} value={form.perDay} onChange={(event) => onChange((current) => ({ ...current, perDay: Number(event.target.value) }))} className="crm-field mt-1 h-9 w-full rounded-lg px-2 text-xs" /></label></div></div>
+                <div className="crm-panel rounded-2xl p-4"><p className="text-xs font-black text-[var(--crm-ink)]">Local send schedule</p><p className="mt-1 text-[10px] leading-4 text-[var(--crm-text-muted)]">Messages outside this window wait automatically in each seller&apos;s timezone.</p><div className="mt-3 grid grid-cols-2 gap-2"><label><span className="text-[10px] font-bold text-[var(--crm-text-muted)]">Start</span><input aria-label="Send window start" type="time" value={form.sendWindowStart} onChange={(event) => onChange((current) => ({ ...current, sendWindowStart: event.target.value }))} className="crm-field mt-1 h-9 w-full rounded-lg px-2 text-xs" /></label><label><span className="text-[10px] font-bold text-[var(--crm-text-muted)]">End</span><input aria-label="Send window end" type="time" value={form.sendWindowEnd} onChange={(event) => onChange((current) => ({ ...current, sendWindowEnd: event.target.value }))} className="crm-field mt-1 h-9 w-full rounded-lg px-2 text-xs" /></label></div><div className="mt-3 flex flex-wrap gap-1.5" aria-label="Send days">{SEND_DAYS.map((day) => { const active = form.sendDays.includes(day.value); return <button key={day.value} type="button" aria-pressed={active} onClick={() => onChange((current) => ({ ...current, sendDays: active ? current.sendDays.filter((value) => value !== day.value) : [...current.sendDays, day.value].sort((left, right) => left - right) }))} className={`rounded-full px-2.5 py-1.5 text-[10px] font-black ${active ? 'bg-[var(--crm-brand)] text-white' : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{day.label}</button> })}</div>{form.sendDays.length === 0 ? <p className="mt-2 text-[10px] font-bold text-[var(--crm-danger)]" role="alert">Choose at least one send day.</p> : form.sendWindowStart >= form.sendWindowEnd ? <p className="mt-2 text-[10px] font-bold text-[var(--crm-danger)]" role="alert">End time must be later than start time.</p> : null}</div>
               </aside>
             </div>
           ) : null}
@@ -248,13 +276,13 @@ export function CampaignStudio({
           {studioStep === 3 ? (
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
               <div className="space-y-4">
-                <div className="crm-panel rounded-2xl p-5 sm:p-6"><div className="flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name={form.kind === 'sms' ? 'sms' : 'phone_in_talk'} className="text-2xl" /></span><div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-text-muted)]">Draft campaign</p><h2 className="mt-1 text-2xl font-black text-[var(--crm-ink)]">{form.name || 'Untitled campaign'}</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">{form.kind === 'sms' ? `${form.steps.length} message cadence · ${form.perHour}/hour · ${form.perDay}/day` : `Single-line calls · ${phoneLabel(form.callerId, DIALER_CALLER_ID_NUMBERS)}`}</p></div></div></div>
+                <div className="crm-panel rounded-2xl p-5 sm:p-6"><div className="flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name={form.kind === 'sms' ? 'sms' : 'phone_in_talk'} className="text-2xl" /></span><div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--crm-text-muted)]">Draft campaign</p><h2 className="mt-1 text-2xl font-black text-[var(--crm-ink)]">{form.name || 'Untitled campaign'}</h2><p className="mt-1 text-sm text-[var(--crm-text-muted)]">{form.kind === 'sms' ? `${form.steps.length} message cadence · ${form.perHour}/hour · ${form.perDay}/day · ${sendDaySummary(form.sendDays)} ${form.sendWindowStart}–${form.sendWindowEnd}` : `Single-line calls · ${phoneLabel(form.callerId, DIALER_CALLER_ID_NUMBERS)}`}</p></div></div></div>
                 <div className="crm-panel rounded-2xl p-5"><div className="flex items-center justify-between"><div><p className="crm-eyebrow">Audience</p><h3 className="mt-1 text-lg font-black text-[var(--crm-ink)]">{editingCampaignName ? `${editingAudienceCount} contact${editingAudienceCount === 1 ? '' : 's'} stay attached` : pendingLeadIds.length ? `${pendingLeadIds.length} selected contact${pendingLeadIds.length === 1 ? '' : 's'}` : 'Add contacts after creation'}</h3></div><span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="groups" className="text-2xl" /></span></div><p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">{editingCampaignName ? 'This setup edit does not add, remove, or restart contacts. Audience changes stay in the campaign workbench.' : 'Every selected contact is checked before enrollment. Suppressed or unusable numbers remain visible in campaign health but never enter execution.'}</p></div>
                 {form.kind === 'sms' ? <div className="crm-panel rounded-2xl p-5"><p className="crm-eyebrow">Cadence summary</p><div className="mt-4 space-y-3">{form.steps.map((step, index) => <div key={index} className="flex gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--crm-brand)] text-[10px] font-black text-white">{index + 1}</span><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{delayLabel(step.delayMinutes)}</p><p className="mt-1 line-clamp-2 text-sm text-[var(--crm-ink)]">{step.bodyTemplate}</p></div></div>)}</div></div> : null}
               </div>
               <aside className="crm-panel h-fit rounded-2xl p-5"><p className="crm-eyebrow">Launch guardrails</p><h3 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Ready for a safe draft</h3><div className="mt-5 space-y-3">{[
                 ['verified_user', 'Suppression checked', 'DNC, STOP, dead, and bad numbers'],
-                ['schedule', 'Local-time windows', 'Campaign timezone: America/Chicago'],
+                ['schedule', 'Local-time windows', form.kind === 'sms' ? `${sendDaySummary(form.sendDays)} · ${form.sendWindowStart}–${form.sendWindowEnd}` : 'Calling policy: Monday–Saturday · 09:00–19:00'],
                 ['reply', 'Replies stop automation', 'The seller returns to the Inbox'],
                 ['lock', 'Human activation', 'Creation does not start sending or calling'],
               ].map(([icon, title, detail]) => <div key={title} className="flex gap-3"><Icon name={icon} className="mt-0.5 text-lg text-[var(--crm-success)]" /><div><p className="text-xs font-black text-[var(--crm-ink)]">{title}</p><p className="mt-0.5 text-[10px] leading-4 text-[var(--crm-text-muted)]">{detail}</p></div></div>)}</div></aside>

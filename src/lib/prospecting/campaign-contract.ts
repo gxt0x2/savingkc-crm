@@ -18,6 +18,9 @@ export interface CreateProspectingCampaignInput {
   callerId: string | null
   fromPhone: string | null
   defaultTimezone: string
+  sendWindowStart: string
+  sendWindowEnd: string
+  sendDays: number[]
   perHour: number
   perDay: number
   steps: ProspectingCampaignStepInput[]
@@ -33,6 +36,9 @@ export interface ProspectingCampaignSummary {
   callerId: string | null
   fromPhone: string | null
   defaultTimezone: string
+  sendWindowStart: string
+  sendWindowEnd: string
+  sendDays: number[]
   perHour: number
   perDay: number
   createdAt: string
@@ -128,6 +134,9 @@ export function copyProspectingCampaignSetup(campaign: ProspectingCampaignDetail
     callerId: campaign.callerId,
     fromPhone: campaign.fromPhone,
     defaultTimezone: campaign.defaultTimezone,
+    sendWindowStart: campaign.sendWindowStart,
+    sendWindowEnd: campaign.sendWindowEnd,
+    sendDays: [...campaign.sendDays],
     perHour: campaign.perHour,
     perDay: campaign.perDay,
     steps: campaign.steps.map((step) => ({ delayMinutes: step.delayMinutes, bodyTemplate: step.bodyTemplate })),
@@ -141,6 +150,9 @@ export function editableProspectingCampaignSetup(campaign: ProspectingCampaignDe
     callerId: campaign.callerId,
     fromPhone: campaign.fromPhone,
     defaultTimezone: campaign.defaultTimezone,
+    sendWindowStart: campaign.sendWindowStart,
+    sendWindowEnd: campaign.sendWindowEnd,
+    sendDays: [...campaign.sendDays],
     perHour: campaign.perHour,
     perDay: campaign.perDay,
     steps: campaign.steps.map((step) => ({ delayMinutes: step.delayMinutes, bodyTemplate: step.bodyTemplate })),
@@ -173,6 +185,11 @@ export function parseCreateProspectingCampaignInput(value: unknown): CreateProsp
   const name = text(row.name)
   const kind = text(row.kind)
   const defaultTimezone = text(row.defaultTimezone) || 'America/Chicago'
+  const sendWindowStart = text(row.sendWindowStart) || '09:00'
+  const sendWindowEnd = text(row.sendWindowEnd) || '19:00'
+  const sendDays = Array.isArray(row.sendDays)
+    ? Array.from(new Set(row.sendDays.map(Number))).filter((day) => Number.isInteger(day)).sort((left, right) => left - right)
+    : [1, 2, 3, 4, 5, 6]
   const callerId = normalizePhoneToE164(text(row.callerId))
   const fromPhone = normalizePhoneToE164(text(row.fromPhone))
   const perHour = integer(row.perHour, 150)
@@ -186,6 +203,13 @@ export function parseCreateProspectingCampaignInput(value: unknown): CreateProsp
   }
   if (!isValidTimeZone(defaultTimezone)) {
     throw new ProspectingCampaignInputError('invalid_timezone', 'Choose a valid campaign timezone')
+  }
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(sendWindowStart)
+    || !/^([01]\d|2[0-3]):[0-5]\d$/.test(sendWindowEnd)
+    || timeMinutes(sendWindowStart) >= timeMinutes(sendWindowEnd)
+    || sendDays.length < 1
+    || sendDays.some((day) => day < 0 || day > 6)) {
+    throw new ProspectingCampaignInputError('invalid_schedule', 'Choose at least one send day and a valid local-time window')
   }
   if (perHour < 1 || perHour > 5000 || perDay < 1 || perDay > 50000 || perDay < perHour) {
     throw new ProspectingCampaignInputError('invalid_pacing', 'Campaign pacing limits are invalid')
@@ -226,6 +250,9 @@ export function parseCreateProspectingCampaignInput(value: unknown): CreateProsp
     callerId: kind === 'dialer' ? callerId : null,
     fromPhone: kind === 'sms' ? fromPhone : null,
     defaultTimezone,
+    sendWindowStart,
+    sendWindowEnd,
+    sendDays,
     perHour,
     perDay,
     steps,

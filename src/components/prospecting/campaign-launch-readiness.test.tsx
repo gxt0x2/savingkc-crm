@@ -6,7 +6,7 @@ import type { ProspectingCampaignDetail } from '@/lib/prospecting/campaign-contr
 import { CampaignLaunchReadiness } from './campaign-launch-readiness'
 
 const campaign: ProspectingCampaignDetail = {
-  id: 'campaign-1', name: 'August Absentee', kind: 'sms', status: 'draft', ownerEmail: 'ernest@savingkc.com', ownerName: 'Ernest', callerId: null, fromPhone: '+18163077835', defaultTimezone: 'America/Chicago', perHour: 75, perDay: 500, createdAt: '2026-08-21T10:00:00.000Z', updatedAt: '2026-08-21T11:00:00.000Z', activatedAt: null, pausedAt: null, completedAt: null,
+  id: 'campaign-1', name: 'August Absentee', kind: 'sms', status: 'draft', ownerEmail: 'ernest@savingkc.com', ownerName: 'Ernest', callerId: null, fromPhone: '+18163077835', defaultTimezone: 'America/Chicago', sendWindowStart: '09:00', sendWindowEnd: '19:00', sendDays: [1, 2, 3, 4, 5, 6], perHour: 75, perDay: 500, createdAt: '2026-08-21T10:00:00.000Z', updatedAt: '2026-08-21T11:00:00.000Z', activatedAt: null, pausedAt: null, completedAt: null,
   steps: [{ id: 'step-1', position: 1, delayMinutes: 0, bodyTemplate: 'Hi {{first_name}}' }], members: [], stats: { total: 4, active: 3, suppressed: 1, replied: 0, completed: 0, sent: 0, failed: 0 }, operations: { queued: 0, processing: 0, nextActionAt: null, lastSentAt: null },
 }
 
