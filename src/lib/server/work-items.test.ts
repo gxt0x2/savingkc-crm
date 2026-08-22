@@ -104,4 +104,25 @@ describe('canonical work-item server service', () => {
       department: 'acquisitions',
     })).rejects.toMatchObject({ code: 'unavailable' })
   })
+
+  it('surfaces the duplicate-primary invariant as an actionable conflict', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'primary_next_action_exists' },
+    })
+
+    await expect(createWorkItem({
+      actor: 'Casey',
+      idempotencyKey: 'create-key-0003',
+      leadId: row.lead_id,
+      kind: 'follow_up',
+      title: 'Call seller again',
+      assignedTo: 'Casey',
+      department: 'acquisitions',
+      primaryNextAction: true,
+    })).rejects.toMatchObject({
+      code: 'conflict',
+      message: 'This opportunity already has a primary next action. Refresh and edit it instead.',
+    })
+  })
 })

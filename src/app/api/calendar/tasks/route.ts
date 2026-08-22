@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
-import { createWorkItem, listWorkItems, normalizeWorkItemKind, type WorkItem } from '@/lib/server/work-items'
+import { createWorkItem, listWorkItems, normalizeWorkItemKind, WorkItemError, type WorkItem } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isNonRealRecord } from '@/lib/real-data'
 import type { Contact, DealStage, Task } from '@/types'
@@ -363,6 +363,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, created: result.created, taskId: result.workItem.key })
   } catch (err) {
+    if (err instanceof WorkItemError) {
+      const status = err.code === 'not_found' ? 404 : err.code === 'conflict' ? 409 : err.code === 'invalid' ? 400 : 503
+      return NextResponse.json({ success: false, error: err.message }, { status })
+    }
     console.error('[calendar/tasks] create unexpected error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 })
   }

@@ -110,6 +110,12 @@ function databaseError(message: string): never {
   if (normalized.includes('version_conflict') || normalized.includes('idempotency_conflict')) {
     throw new WorkItemError('Work item changed in another request. Refresh and try again.', 'conflict')
   }
+  if (normalized.includes('primary_next_action_exists')) {
+    throw new WorkItemError(
+      'This opportunity already has a primary next action. Refresh and edit it instead.',
+      'conflict',
+    )
+  }
   if (
     normalized.includes('invalid_') ||
     normalized.includes('_required') ||
