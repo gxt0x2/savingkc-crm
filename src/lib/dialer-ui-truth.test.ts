@@ -33,4 +33,11 @@ describe('dialer UI truth contract', () => {
     expect(dialerPageSource).toContain("query.set('ring_count'")
     expect(dialerPageSource).toContain('redialCallerId')
   })
+
+  it('exposes the full durable session batch without hiding it inside Refine', () => {
+    expect(dialerPageSource).toContain('const maximumSessionPreview = Math.min(queue.length, 100)')
+    expect(dialerPageSource).toContain('`Show all ${queue.length}`')
+    expect(dialerPageSource).toContain("'Show first 100'")
+    expect(dialerPageSource).toContain('setVisibleLimit(maximumSessionPreview)')
+  })
 })
