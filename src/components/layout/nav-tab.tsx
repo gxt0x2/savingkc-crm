@@ -5,7 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { useAppMode } from '@/hooks/use-app-mode'
 
 const acquisitionTabs = [
-  { label: 'ARI', href: '/ari', icon: 'assistant' },
+  { label: 'ARI', href: '/ai', icon: 'assistant' },
   { label: 'Pipeline', href: '/contacts', icon: 'account_tree' },
   { label: 'Prospecting', href: '/prospecting', icon: 'campaign' },
   { label: 'Workflows', href: '/workflows', icon: 'account_tree' },
@@ -58,7 +58,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
       return (pathname?.startsWith('/dispo/tc') ?? false) && (tabView ? currentView === tabView : !currentView)
     }
     if (!href.includes('?') && pathname === baseHref) return true
-    if (href === '/ari' && pathname?.startsWith('/ari')) return true
+    if (href === '/ai' && (pathname?.startsWith('/ai') || pathname?.startsWith('/ari'))) return true
     if (href === '/contacts' && (
       pathname?.startsWith('/contacts') ||
       pathname?.startsWith('/opportunities') ||

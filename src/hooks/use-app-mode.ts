@@ -25,6 +25,7 @@ function getRouteMode(pathname: string | null, department?: string | null, porta
   }
   if (
     pathname?.startsWith('/ari') ||
+    pathname?.startsWith('/ai') ||
     pathname?.startsWith('/opportunities') ||
     pathname?.startsWith('/leads') ||
     pathname?.startsWith('/dialer') ||

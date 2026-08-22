@@ -24,7 +24,6 @@ const ROUTE_SECTIONS: Array<[string, string]> = [
   ['/dispo', 'Dispositions / Closing'],
   ['/marketing', 'Google Ads'],
   ['/workflows', 'Workflows'],
-  ['/ari', 'ARI Insights'],
   ['/ai', 'AI Assistant'],
   ['/settings', 'Settings'],
 ]
