@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const workspace = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-workspace.tsx'), 'utf8')
 const studio = readFileSync(join(process.cwd(), 'src/components/prospecting/campaign-studio.tsx'), 'utf8')
 const dashboard = readFileSync(join(process.cwd(), 'src/components/prospecting/campaign-dashboard.tsx'), 'utf8')
+const audienceWorkbench = readFileSync(join(process.cwd(), 'src/components/prospecting/campaign-audience-workbench.tsx'), 'utf8')
 const contacts = readFileSync(join(process.cwd(), 'src/app/(app)/contacts/page.tsx'), 'utf8')
 const navigation = readFileSync(join(process.cwd(), 'src/components/layout/nav-tab.tsx'), 'utf8')
 const appShell = readFileSync(join(process.cwd(), 'src/components/layout/app-shell.tsx'), 'utf8')
@@ -17,7 +18,8 @@ describe('prospecting workspace UI contract', () => {
     expect(contacts).toContain("'Start campaign'")
     expect(workspace).toContain("'/api/prospecting/campaigns'")
     expect(workspace).toContain("/members`")
-    expect(dashboard).toContain('campaignAudienceContactsHref(detail.id, detail.name)')
+    expect(dashboard).toContain('<CampaignAudienceWorkbench')
+    expect(audienceWorkbench).toContain('campaignAudienceContactsHref(campaignId, campaignName)')
     expect(workspace).toMatch(/function closeBuilder\(\)[\s\S]*audienceReviewOpen[\s\S]*sessionStorage\.removeItem\(PROSPECTING_AUDIENCE_STORAGE_KEY\)[\s\S]*setPendingLeadIds\(\[\]\)/)
   })
 

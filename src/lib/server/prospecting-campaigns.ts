@@ -61,6 +61,7 @@ function mapCampaign(row: CampaignRow): ProspectingCampaignSummary {
 
 function databaseError(error: { message?: string; code?: string } | null | undefined): ProspectingCampaignError {
   const detail = `${error?.message || ''} ${error?.code || ''}`.toLowerCase()
+  if (detail.includes('campaign_member_not_found')) return new ProspectingCampaignError('campaign_member_not_found', 404, 'Campaign contact not found')
   if (detail.includes('campaign_not_found') || detail.includes('pgrst116')) return new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
   if (detail.includes('campaign_has_no_eligible_members')) return new ProspectingCampaignError('campaign_empty', 409, 'Add at least one eligible contact before activating')
   if (detail.includes('campaign_has_no_steps')) return new ProspectingCampaignError('campaign_steps_required', 409, 'Add at least one message step before activating')
@@ -171,10 +172,11 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     .from('prospecting_campaign_members')
     .select('id,lead_id,phone_snapshot,timezone,status,suppression_reason,current_step_position,next_action_at,enrolled_at,leads(full_name,property_address,station,classification)')
     .eq('campaign_id', campaignId)
+    .neq('status', 'removed')
     .order('enrolled_at', { ascending: false })
     .limit(100)
   const counts = Promise.all([
-    supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId),
+    supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).neq('status', 'removed'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'active'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'suppressed'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'replied'),
@@ -239,6 +241,20 @@ export async function enrollProspectingCampaignMembers(actor: AuthenticatedActor
   })
   if (error) throw databaseError(error)
   return data as { requested: number; eligible: number; suppressed: number; missing: number }
+}
+
+export async function removeProspectingCampaignMember(actor: AuthenticatedActor, campaignId: string, memberId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(campaignId) || !/^[0-9a-f-]{36}$/i.test(memberId)) {
+    throw new ProspectingCampaignError('invalid_campaign_member', 400, 'Campaign contact is invalid')
+  }
+  const { data, error } = await supabase.rpc('remove_prospecting_campaign_member_v1', {
+    p_campaign_id: campaignId,
+    p_member_id: memberId,
+    p_actor_email: actor.email,
+    p_actor_name: actor.name,
+  })
+  if (error) throw databaseError(error)
+  return data as { id: string; status: 'removed'; removed: boolean; cancelledActions: number }
 }
 
 export async function activateProspectingCampaign(actor: AuthenticatedActor, campaignId: string) {
