@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
     if (leadId) {
       await supabase.from('lead_activities').insert({
         lead_id: leadId,
-        activity_type: 'task',
+        activity_type: 'status_change',
         description: `Call booked via /call page for ${slot_date} at ${slot_time}`,
         agent: 'System',
         metadata: {
@@ -183,7 +183,9 @@ export async function POST(req: NextRequest) {
           slot_date,
           slot_time,
           property_address: property_address?.trim() || '',
-          source: bookingSource,
+          source: 'website_booking_event',
+          booking_source: bookingSource,
+          status: 'booked',
         },
       })
     }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useOperationalReconciliation } from '@/hooks/use-operational-reconciliation'
+import { useTaskProvenance } from '@/hooks/use-task-provenance'
 import { Icon } from '@/components/ui/icon'
 
 function Metric({ label, value, note, tone = 'default' }: {
@@ -22,6 +23,7 @@ function Metric({ label, value, note, tone = 'default' }: {
 
 export function TaskReconciliationStrip() {
   const { data, isLoading, error } = useOperationalReconciliation()
+  const provenance = useTaskProvenance()
 
   if (isLoading) {
     return (
@@ -58,6 +60,28 @@ export function TaskReconciliationStrip() {
         <Metric label="Multiple active" value={data.workItems.leadsWithMultipleActive} note={`up to ${data.workItems.maxActivePerLead} actions on one contact`} tone={data.workItems.leadsWithMultipleActive > 0 ? 'warning' : 'default'} />
       </div>
       {data.degraded ? <p role="status" className="mt-2 text-xs font-semibold text-[var(--crm-warning)]">{data.warning}</p> : null}
+      <div className="mt-3 border-t border-[var(--crm-border)] pt-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-[0.05em] text-[var(--crm-ink)]">Task integrity</h3>
+            <p className="text-[11px] text-[var(--crm-text-muted)]">Source evidence only. No tasks are hidden, completed, or deleted.</p>
+          </div>
+          {provenance.data ? <span className="text-[11px] font-semibold text-[var(--crm-text-muted)]">{provenance.data.active.toLocaleString()} active</span> : null}
+        </div>
+        {provenance.isLoading ? <p role="status" className="text-xs text-[var(--crm-text-muted)]">Loading task integrity…</p> : null}
+        {provenance.error ? <p role="status" className="text-xs font-semibold text-[var(--crm-warning)]">Task integrity unavailable. Existing task lanes are unchanged.</p> : null}
+        {provenance.data ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric
+            label="Operator entered"
+            value={provenance.data.classes.governed_human.active + provenance.data.classes.approved_workflow.active + provenance.data.classes.legacy_operator.active}
+            note="governed or legacy operator source"
+          />
+          <Metric label="Event backed" value={provenance.data.classes.event_derived.active} note="linked to a recorded CRM event" />
+          <Metric label="Automation review" value={provenance.data.classes.automation_unreviewed.active} note="Mojo, briefing, or heuristic source" tone={provenance.data.classes.automation_unreviewed.active > 0 ? 'warning' : 'default'} />
+          <Metric label="Unattributed" value={provenance.data.classes.unknown.active} note="no trustworthy source metadata" tone={provenance.data.classes.unknown.active > 0 ? 'warning' : 'default'} />
+          <Metric label="Possible duplicates" value={provenance.data.quality.possibleDuplicateRows} note="same contact, action, and due date" tone={provenance.data.quality.possibleDuplicateRows > 0 ? 'warning' : 'default'} />
+        </div> : null}
+      </div>
     </section>
   )
 }
