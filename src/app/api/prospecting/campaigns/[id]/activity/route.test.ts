@@ -24,13 +24,13 @@ describe('prospecting campaign activity route', () => {
   })
 
   it('returns actor-owned cursor-bounded history without caching', async () => {
-    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x/activity?limit=10&cursor=opaque'), params)
+    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x/activity?limit=10&cursor=opaque&filter=failures'), params)
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toContain('no-store')
     expect(mocks.list).toHaveBeenCalledWith(
       { email: 'casey@savingkc.com', name: 'Casey' },
       '11111111-1111-4111-8111-111111111111',
-      { limit: 10, cursor: 'opaque' },
+      { limit: 10, cursor: 'opaque', filter: 'failures' },
     )
   })
 })
