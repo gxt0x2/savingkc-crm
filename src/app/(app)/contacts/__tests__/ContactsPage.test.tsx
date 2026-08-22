@@ -236,7 +236,12 @@ describe('ContactsPage smart-list workspace', () => {
     expect(screen.getByText('Building the audience for August Absentee')).toBeVisible()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select New Intake' }))
     fireEvent.click(screen.getByRole('button', { name: 'Review for August Absentee' }))
-    expect(window.sessionStorage.getItem('savingkc-prospecting-audience-v1')).toBe(JSON.stringify(['new-intake']))
+    expect(JSON.parse(window.sessionStorage.getItem('savingkc-prospecting-audience-v1') || '{}')).toMatchObject({
+      version: 2,
+      mode: 'ids',
+      leadIds: ['new-intake'],
+      count: 1,
+    })
     expect(pushMock).toHaveBeenCalledWith(`/prospecting?campaign=${campaignId}&audience=1`)
   })
 
@@ -271,6 +276,34 @@ describe('ContactsPage smart-list workspace', () => {
     expect(latestQuery).toMatchObject({ smartList: 'new', cursor: 'cursor-page-2' })
     expect(screen.getByText('Page 2 of 2')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Select all 11 results/ })).not.toBeInTheDocument()
+  })
+
+  it('hands all matching filtered contacts to the campaign for server-side resolution', () => {
+    useQueryMock.mockReturnValue({
+      data: {
+        items: [contacts[0]],
+        scopeCounts: { active: 11, prospects: 0, not_leads: 1 },
+        counts: { ...contactSmartListCounts(contacts), new: 11 },
+        facets: { owners: ['Casey'], sources: ['manual'], tags: [] },
+        pageInfo: { limit: 10, total: 11, hasMore: true, nextCursor: 'cursor-page-2' },
+      },
+      isLoading: false, error: null, refetch: vi.fn(), isFetching: false,
+    })
+    render(<ContactsPage />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select New Intake' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select all 11 matching contacts' }))
+    expect(screen.getByText('All 11 matching contacts are selected for this campaign audience.')).toBeVisible()
+    expect(screen.queryByRole('combobox', { name: 'Bulk action' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Start campaign' }))
+
+    expect(JSON.parse(window.sessionStorage.getItem('savingkc-prospecting-audience-v1') || '{}')).toMatchObject({
+      version: 2,
+      mode: 'query',
+      count: 11,
+      query: { smartList: 'new', sort: 'priority' },
+    })
+    expect(pushMock).toHaveBeenCalledWith('/prospecting?new=1')
   })
 
   it('labels the workspace Pipeline and exposes safe bulk classifications', () => {

@@ -7,7 +7,7 @@ import { CampaignAudienceReview } from '@/components/prospecting/campaign-audien
 import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
 import { Icon } from '@/components/ui/icon'
-import { PROSPECTING_AUDIENCE_STORAGE_KEY } from '@/lib/prospecting/audience-handoff'
+import { parseStoredProspectingAudienceSelection, PROSPECTING_AUDIENCE_STORAGE_KEY, type ProspectingAudienceSelection } from '@/lib/prospecting/audience-handoff'
 import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
@@ -32,7 +32,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const [detailLoading, setDetailLoading] = useState(false)
   const [studioOpen, setStudioOpen] = useState(openCreate)
   const [audienceReviewOpen, setAudienceReviewOpen] = useState(audienceMode)
-  const [pendingLeadIds, setPendingLeadIds] = useState<string[]>([])
+  const [pendingAudience, setPendingAudience] = useState<ProspectingAudienceSelection | null>(null)
   const [studioSourceName, setStudioSourceName] = useState<string | null>(null)
   const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null)
   const [form, setForm] = useState<CampaignForm>(freshCampaignForm)
@@ -59,9 +59,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
 
   useEffect(() => {
     try {
-      const stored = window.sessionStorage.getItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
-      const parsed = stored ? JSON.parse(stored) : []
-      if (Array.isArray(parsed)) setPendingLeadIds(parsed.filter((value): value is string => typeof value === 'string'))
+      setPendingAudience(parseStoredProspectingAudienceSelection(window.sessionStorage.getItem(PROSPECTING_AUDIENCE_STORAGE_KEY)))
     } catch { /* a blocked session store simply means no preselected audience */ }
     void loadCampaigns()
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Campaigns could not be loaded'))
@@ -89,7 +87,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setError(null)
     setNotice(null)
     window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
-    setPendingLeadIds([])
+    setPendingAudience(null)
     const setup = editableProspectingCampaignSetup(campaign)
     setForm({ ...setup, callerId: setup.callerId || '', fromPhone: setup.fromPhone || '' })
     setStudioSourceName(null)
@@ -102,7 +100,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setError(null)
     setNotice(null)
     window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
-    setPendingLeadIds([])
+    setPendingAudience(null)
     const copy = copyProspectingCampaignSetup(campaign)
     setForm({ ...copy, callerId: copy.callerId || '', fromPhone: copy.fromPhone || '' })
     setStudioSourceName(campaign.name)
@@ -112,9 +110,9 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   }
 
   function closeBuilder() {
-    if (audienceReviewOpen) {
+    if (pendingAudience) {
       window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
-      setPendingLeadIds([])
+      setPendingAudience(null)
     }
     setStudioOpen(false)
     setStudioSourceName(null)
@@ -157,15 +155,15 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
           steps: form.kind === 'sms' ? form.steps : [],
         }),
       })
-      if (pendingLeadIds.length > 0) {
+      if (pendingAudience) {
         const memberResult = await jsonRequest<{ enrollment: { eligible: number; suppressed: number; missing: number } }>(`/api/prospecting/campaigns/${created.campaign.id}/members`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ leadIds: pendingLeadIds }),
+          body: JSON.stringify({ selection: pendingAudience }),
         })
         setNotice(`${memberResult.enrollment.eligible} ready; ${memberResult.enrollment.suppressed} safely suppressed; ${memberResult.enrollment.missing} missing a usable phone.`)
         window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
-        setPendingLeadIds([])
+        setPendingAudience(null)
       } else {
         setNotice(`${created.campaign.name} is a draft. Add an audience, review it, then activate when ready.`)
       }
@@ -201,17 +199,17 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   }
 
   async function enrollSelectedIntoCurrentCampaign() {
-    if (!detail || pendingLeadIds.length < 1 || actionPending) return
+    if (!detail || !pendingAudience || actionPending) return
     setActionPending(true)
     setError(null)
     try {
       const result = await jsonRequest<{ enrollment: { eligible: number; suppressed: number; missing: number } }>(`/api/prospecting/campaigns/${detail.id}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadIds: pendingLeadIds }),
+        body: JSON.stringify({ selection: pendingAudience }),
       })
       window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
-      setPendingLeadIds([])
+      setPendingAudience(null)
       setStudioOpen(false)
       setAudienceReviewOpen(false)
       setNotice(`${result.enrollment.eligible} ready; ${result.enrollment.suppressed} safely suppressed; ${result.enrollment.missing} missing a usable phone.`)
@@ -247,9 +245,9 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   return <>
     <WorkspaceChrome commandBar={commandBar} />
     {error || notice ? <div className="bg-[var(--crm-canvas)] px-3 pt-3 sm:px-5 lg:px-7"><div className={`mx-auto max-w-[1540px] rounded-xl border px-4 py-3 text-sm font-bold ${error ? 'border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`} role={error ? 'alert' : 'status'}>{error || notice}</div></div> : null}
-    {audienceReviewOpen ? <CampaignAudienceReview campaign={detail} pendingCount={pendingLeadIds.length} saving={actionPending} onConfirm={() => void enrollSelectedIntoCurrentCampaign()} onCancel={closeBuilder} /> : studioOpen ? <CampaignStudio
+    {audienceReviewOpen ? <CampaignAudienceReview campaign={detail} pendingCount={pendingAudience?.count ?? 0} saving={actionPending} onConfirm={() => void enrollSelectedIntoCurrentCampaign()} onCancel={closeBuilder} /> : studioOpen ? <CampaignStudio
       form={form}
-      pendingLeadIds={pendingLeadIds}
+      pendingAudienceCount={pendingAudience?.count ?? 0}
       saving={saving}
       sourceCampaignName={studioSourceName}
       editingCampaignName={editingCampaignId ? detail?.name : null}

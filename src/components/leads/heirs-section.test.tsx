@@ -128,7 +128,7 @@ describe('HeirsSection dial queue', () => {
     renderHeirsSection({ collapsible: false })
 
     expect(await screen.findByRole('heading', { name: /Callable people/i })).toBeVisible()
-    expect(screen.getByLabelText('Calling queue readiness')).toBeVisible()
+    expect(await screen.findByLabelText('Calling queue readiness')).toBeVisible()
     expect(screen.getByText('People found')).toBeVisible()
     expect(screen.getByText('Ready numbers')).toBeVisible()
     expect(screen.getAllByText('Verified').length).toBeGreaterThan(0)

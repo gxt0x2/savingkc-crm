@@ -20,7 +20,9 @@ describe('prospecting workspace UI contract', () => {
     expect(workspace).toContain("/members`")
     expect(dashboard).toContain('<CampaignAudienceWorkbench')
     expect(audienceWorkbench).toContain('campaignAudienceContactsHref(campaignId, campaignName)')
-    expect(workspace).toMatch(/function closeBuilder\(\)[\s\S]*audienceReviewOpen[\s\S]*sessionStorage\.removeItem\(PROSPECTING_AUDIENCE_STORAGE_KEY\)[\s\S]*setPendingLeadIds\(\[\]\)/)
+    expect(contacts).toContain('matching contacts</button>')
+    expect(workspace).toContain('parseStoredProspectingAudienceSelection')
+    expect(workspace).toMatch(/function closeBuilder\(\)[\s\S]*pendingAudience[\s\S]*sessionStorage\.removeItem\(PROSPECTING_AUDIENCE_STORAGE_KEY\)[\s\S]*setPendingAudience\(null\)/)
   })
 
   it('presents the internal Mojo and Launch Control workflows without fake predictive claims', () => {
