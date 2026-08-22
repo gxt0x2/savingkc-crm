@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { filterDialerQueueLeads } from './route'
+import { filterDialerQueueLeads, parseLeadIds } from './route'
 
 const routeSource = readFileSync('src/app/api/dialer/queue/route.ts', 'utf8')
 const pageSource = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
@@ -10,6 +10,13 @@ function lead(id: string, phone: string | null, station = 'new', classification 
 }
 
 describe('dialer queue safety filtering', () => {
+  it('keeps only unique UUIDs from an explicit session request', () => {
+    expect(parseLeadIds('not-an-id,00000000-0000-4000-8000-000000000001,00000000-0000-4000-8000-000000000001')).toEqual([
+      '00000000-0000-4000-8000-000000000001',
+    ])
+    expect(parseLeadIds('not-an-id')).toEqual([])
+  })
+
   it('removes dead, closed-lost, classification-dead, invalid, and globally suppressed records', () => {
     const result = filterDialerQueueLeads([
       lead('safe', '(913) 555-0123'),
@@ -23,16 +30,14 @@ describe('dialer queue safety filtering', () => {
     expect(result.map((row) => row.id)).toEqual(['safe'])
   })
 
-  it('keeps every supporting read scoped and returns a compact queue contract', () => {
-    expect(routeSource.match(/\.in\('lead_id', leadIds\)/g)).toHaveLength(4)
-    expect(routeSource).toContain(".or('station.is.null,station.not.in.(dead,closed_lost)')")
-    expect(routeSource).toContain(".or('classification.is.null,classification.neq.dead')")
-    expect(routeSource).toContain(".eq('is_opted_out', true)")
-    expect(routeSource).toContain('queueContext: context')
-    expect(routeSource).toContain('queueMetrics: metrics')
+  it('uses the bounded projection and returns a compact queue contract', () => {
+    expect(routeSource).toContain('readDialerQueuePage({')
+    expect(routeSource).toContain('queueContext: page.queueContext')
+    expect(routeSource).toContain('queueMetrics: page.queueMetrics')
     expect(routeSource).toContain("'Server-Timing'")
-    expect(routeSource).not.toContain('followups: followups || []')
-    expect(routeSource).not.toContain('contactActivities: contactActivities || []')
+    expect(routeSource).not.toContain(".from('sms_opt_outs')")
+    expect(routeSource).not.toContain(".from('lead_activities')")
+    expect(routeSource).not.toContain('buildDialerQueueContext')
     expect(pageSource).not.toContain('QueueContactActivity')
     expect(pageSource).not.toContain('QueueFollowup')
   })
