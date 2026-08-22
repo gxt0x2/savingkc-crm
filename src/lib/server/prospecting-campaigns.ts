@@ -220,6 +220,7 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'replied'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'completed'),
     supabase.from('prospecting_campaign_actions').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).in('status', ['sent', 'delivered']),
+    supabase.from('prospecting_campaign_actions').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'delivered'),
     supabase.from('prospecting_campaign_actions').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'failed'),
   ])
   const operations = Promise.all([
@@ -259,7 +260,8 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
       replied: countResults[3].count || 0,
       completed: countResults[4].count || 0,
       sent: countResults[5].count || 0,
-      failed: countResults[6].count || 0,
+      delivered: countResults[6].count || 0,
+      failed: countResults[7].count || 0,
     },
     operations: {
       queued: operationResults[0].count || 0,

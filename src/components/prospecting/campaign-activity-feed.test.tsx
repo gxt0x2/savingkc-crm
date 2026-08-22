@@ -32,7 +32,7 @@ describe('CampaignActivityFeed', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => firstPage }))
     render(<CampaignActivityFeed campaignId="campaign-1" />)
 
-    expect(await screen.findByText('Message sent')).toBeVisible()
+    expect(await screen.findByText('Provider accepted')).toBeVisible()
     expect(screen.getByText('Helen Seller')).toBeVisible()
     expect(screen.getByText('Hi Helen, would you consider an offer?')).toBeVisible()
     expect(screen.getByText('123 Main Street')).toBeVisible()
@@ -51,8 +51,17 @@ describe('CampaignActivityFeed', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Load older activity/ }))
     expect(await screen.findByText('Campaign paused')).toBeVisible()
-    expect(screen.getByText('Message sent')).toBeVisible()
+    expect(screen.getByText('Provider accepted')).toBeVisible()
     expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('cursor=next-page'), { cache: 'no-store' })
+  })
+
+  it('distinguishes carrier delivery from provider acceptance', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      items: [{ ...firstPage.items[0], eventType: 'campaign_action_delivered', status: 'delivered' }],
+      pageInfo: { limit: 25, hasMore: false, nextCursor: null },
+    }) }))
+    render(<CampaignActivityFeed campaignId="campaign-1" />)
+    expect(await screen.findByText('Carrier delivered')).toBeVisible()
   })
 
   it('names dialer batches and saved call outcomes in operator language', async () => {

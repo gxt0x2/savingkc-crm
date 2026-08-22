@@ -88,6 +88,7 @@ export interface ProspectingCampaignDetail extends ProspectingCampaignSummary {
     replied: number
     completed: number
     sent: number
+    delivered: number
     failed: number
   }
   operations: {

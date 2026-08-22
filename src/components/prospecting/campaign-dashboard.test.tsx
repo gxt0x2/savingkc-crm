@@ -42,7 +42,7 @@ const detail: ProspectingCampaignDetail = {
     enrolledAt: '2026-08-21T10:30:00.000Z',
     lead: { fullName: 'Helen Seller', propertyAddress: '123 Main Street', station: 'prospect', classification: 'warm' },
   }],
-  stats: { total: 1, active: 1, suppressed: 0, replied: 2, completed: 1, sent: 8, failed: 0 },
+  stats: { total: 1, active: 1, suppressed: 0, replied: 2, completed: 1, sent: 8, delivered: 6, failed: 0 },
   operations: { queued: 2, processing: 1, nextActionAt: '2026-08-22T14:00:00.000Z', lastSentAt: '2026-08-21T20:00:00.000Z' },
 }
 

@@ -91,7 +91,7 @@ export function CampaignDashboard({
     : detail
       ? [
           ['groups', detail.stats.total, 'Audience'],
-          ['send', detail.stats.sent, 'Messages sent'],
+          ['send', detail.stats.sent, 'Provider accepted'],
           ['forum', detail.stats.replied, `${percent(detail.stats.replied, detail.stats.sent)}% reply rate`],
           ['task_alt', detail.stats.completed, `${percent(detail.stats.completed, detail.stats.total)}% completed`],
         ]

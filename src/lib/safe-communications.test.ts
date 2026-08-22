@@ -94,6 +94,25 @@ describe('safeSendSMS', () => {
     })
   })
 
+  it('passes a campaign delivery callback to Twilio without changing ordinary sends', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockResolvedValue({ sid: 'SM123', status: 'queued', from: '+18163077835' })
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    await safeSendSMS({
+      to: '+19135550123', from: '+18166088588', body: 'Hello',
+      statusCallback: 'https://crm.savingkc.com/api/twilio-message-status?action_id=campaign-action',
+    })
+
+    expect(mocks.createMessage).toHaveBeenCalledWith(expect.objectContaining({
+      statusCallback: 'https://crm.savingkc.com/api/twilio-message-status?action_id=campaign-action',
+    }))
+  })
+
   it('records the provider sender and exposes any mismatch with the requested identity', async () => {
     clearTwilioEnv()
     vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
