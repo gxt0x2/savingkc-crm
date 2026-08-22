@@ -55,6 +55,20 @@ describe('CampaignActivityFeed', () => {
     expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('cursor=next-page'), { cache: 'no-store' })
   })
 
+  it('names dialer batches and saved call outcomes in operator language', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      items: [
+        { ...firstPage.items[0], id: 'batch', eventType: 'dialer_batch_started', sellerName: null, body: null },
+        { ...firstPage.items[0], id: 'outcome', eventType: 'member_call_completed', body: null },
+      ],
+      pageInfo: { limit: 25, hasMore: false, nextCursor: null },
+    }) }))
+    render(<CampaignActivityFeed campaignId="campaign-1" />)
+
+    expect(await screen.findByText('Calling batch started')).toBeVisible()
+    expect(screen.getByText('Call outcome saved')).toBeVisible()
+  })
+
   it('surfaces unavailable history instead of presenting a false empty feed', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: 'Campaign activity is unavailable' }) }))
     render(<CampaignActivityFeed campaignId="campaign-1" />)
