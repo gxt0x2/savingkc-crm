@@ -37,6 +37,18 @@ describe('CampaignAudienceWorkbench', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('status=replied'), expect.objectContaining({ cache: 'no-store' })))
   })
 
+  it('debounces search against the entire server-side campaign audience', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [member], pageInfo: { limit: 50, hasMore: false, nextCursor: null } }) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CampaignAudienceWorkbench campaignId="campaign-1" campaignName="August Absentee" total={150} canEditAudience />)
+    await screen.findByText('Helen Seller')
+
+    expect(screen.getByText(/Search all 150 contacts/)).toBeVisible()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search entire campaign audience' }), { target: { value: '  Helen   Seller ' } })
+    expect(screen.getByRole('status')).toHaveTextContent('Searching the full campaign audience')
+    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('q=helen+seller'), expect.objectContaining({ cache: 'no-store' })), { timeout: 1_000 })
+  })
+
   it('requires confirmation, removes one member, and refreshes campaign totals', async () => {
     const onAudienceChanged = vi.fn()
     const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => init?.method === 'DELETE'

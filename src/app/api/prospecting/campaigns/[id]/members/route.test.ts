@@ -31,14 +31,14 @@ describe('prospecting campaign members GET', () => {
     expect(mocks.list).not.toHaveBeenCalled()
   })
 
-  it('passes the bounded cursor and status filter to the actor-owned query', async () => {
-    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x/members?limit=25&status=replied&cursor=opaque'), params)
+  it('passes the bounded cursor, status, and full-audience search to the actor-owned query', async () => {
+    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x/members?limit=25&status=replied&cursor=opaque&q=Helen%20Seller'), params)
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toContain('no-store')
     expect(mocks.list).toHaveBeenCalledWith(
       { email: 'ernest@savingkc.com', name: 'Ernest' },
       '11111111-1111-4111-8111-111111111111',
-      { limit: 25, status: 'replied', cursor: 'opaque' },
+      { limit: 25, status: 'replied', cursor: 'opaque', query: 'Helen Seller' },
     )
   })
 

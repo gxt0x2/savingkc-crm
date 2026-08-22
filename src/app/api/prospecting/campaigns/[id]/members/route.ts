@@ -19,6 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       limit: Number(url.searchParams.get('limit') || 50),
       cursor: url.searchParams.get('cursor'),
       status: status as CampaignMemberFilter,
+      query: url.searchParams.get('q'),
     }))
   } catch (error) {
     return prospectingError(error)
