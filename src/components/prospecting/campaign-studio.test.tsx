@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from './campaign-studio'
 
-function StudioHarness({ onCreate = vi.fn() }: { onCreate?: (event: React.FormEvent) => void }) {
+function StudioHarness({ onCreate = vi.fn(), sourceCampaignName }: { onCreate?: (event: React.FormEvent) => void; sourceCampaignName?: string }) {
   const [form, setForm] = useState<CampaignForm>({
     ...EMPTY_CAMPAIGN_FORM,
     steps: EMPTY_CAMPAIGN_FORM.steps.map((step) => ({ ...step })),
@@ -14,6 +14,7 @@ function StudioHarness({ onCreate = vi.fn() }: { onCreate?: (event: React.FormEv
     form={form}
     pendingLeadIds={['lead-1', 'lead-2']}
     saving={false}
+    sourceCampaignName={sourceCampaignName}
     onChange={setForm}
     onCancel={vi.fn()}
     onCreate={onCreate}
@@ -22,6 +23,12 @@ function StudioHarness({ onCreate = vi.fn() }: { onCreate?: (event: React.FormEv
 }
 
 describe('CampaignStudio', () => {
+  it('explains that a copied setup starts without the prior audience or activity', () => {
+    render(<StudioHarness sourceCampaignName="August Absentee" />)
+    expect(screen.getByText('Setup copied from August Absentee.')).toBeVisible()
+    expect(screen.getByText(/Audience and activity were intentionally left behind/)).toBeVisible()
+  })
+
   it('builds an SMS cadence with a live seller preview and a safe draft review', () => {
     render(<StudioHarness />)
 

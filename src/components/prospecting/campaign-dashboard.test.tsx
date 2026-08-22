@@ -48,7 +48,7 @@ describe('CampaignDashboard', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('shows campaign pulse, sequence, audience health, and server-enforced safety', () => {
-    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: detail.name })).toBeVisible()
     expect(screen.getByText('25% reply rate')).toBeVisible()
@@ -60,7 +60,7 @@ describe('CampaignDashboard', () => {
   })
 
   it('filters the campaign rail without changing server state', () => {
-    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'draft' }))
     expect(screen.getByRole('button', { name: /Calling block/ })).toBeVisible()
@@ -69,7 +69,7 @@ describe('CampaignDashboard', () => {
 
   it('does not relabel SMS delivery totals as dialer activity', () => {
     const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
-    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     expect(screen.getByText('Ready to call')).toBeVisible()
     expect(screen.getByText('Eligible')).toBeVisible()
@@ -84,7 +84,7 @@ describe('CampaignDashboard', () => {
         ? { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } }
         : { items: detail.members, pageInfo: { limit: 50, hasMore: true, nextCursor: 'next-page' } } }
     }))
-    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={{ ...detail, stats: { ...detail.stats, total: 101 } }} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={{ ...detail, stats: { ...detail.stats, total: 101 } }} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     expect(await screen.findByRole('heading', { name: 'Audience workbench' })).toBeVisible()
     expect(await screen.findByText('Helen Seller')).toBeVisible()
@@ -93,7 +93,14 @@ describe('CampaignDashboard', () => {
 
   it('carries a draft campaign into the contact audience selector', () => {
     const draft = { ...detail, status: 'draft' as const }
-    render(<CampaignDashboard campaigns={[draft]} selectedId={draft.id} detail={draft} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    render(<CampaignDashboard campaigns={[draft]} selectedId={draft.id} detail={draft} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
     expect(screen.getByRole('link', { name: 'Add contacts' })).toHaveAttribute('href', `/contacts?list=prospects&campaign=${draft.id}&campaign_name=September+absentee+owners`)
+  })
+
+  it('hands the selected campaign to the setup-only duplicate flow', () => {
+    const duplicate = vi.fn()
+    render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={duplicate} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate setup' }))
+    expect(duplicate).toHaveBeenCalledWith(detail)
   })
 })
