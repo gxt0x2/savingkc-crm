@@ -523,6 +523,9 @@ export async function POST(req: Request) {
         assigned_to: routing.primary.name,
         priority: 'critical',
         status: 'pending',
+        source: 'twilio_dial_result',
+        call_sid: parentCallSid,
+        dial_call_sid: dialCallSid,
         seller_phone: from
       }
     })

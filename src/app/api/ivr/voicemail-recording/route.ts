@@ -135,6 +135,8 @@ export async function POST(req: Request) {
         assigned_to: agent || 'Casey',
         priority: 'high',
         status: 'pending',
+        source: 'twilio_voicemail',
+        recording_sid: recordingSid,
         recordingUrl,
       }
     })

@@ -127,6 +127,9 @@ export async function POST(req: Request) {
         assigned_to: routing.primary.name,
         priority: 'critical',
         status: 'pending',
+        source: 'twilio_after_record',
+        call_sid: callSid,
+        recording_sid: recordingSid,
         escalate_after_minutes: 3,
         escalate_to: routing.secondary.phone
       }
