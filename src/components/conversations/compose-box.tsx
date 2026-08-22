@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
+import { MessageTemplatePicker } from './message-template-picker'
+import type { MessageTemplate } from '@/lib/conversations/message-template'
 import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone } from '@/lib/format'
 
@@ -24,9 +26,11 @@ interface ComposeBoxProps {
   replyFromPhone?: string // Auto-select the Twilio number the lead last texted
   draftMessage?: string
   initialMode?: ComposeMode
+  fullName?: string | null
+  propertyAddress?: string | null
 }
 
-export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, initialMode = 'sms' }: ComposeBoxProps) {
+export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draftMessage, initialMode = 'sms', fullName, propertyAddress }: ComposeBoxProps) {
   const senderThreadKey = `${leadId || 'unmatched'}:${phone || 'no-phone'}:${replyFromPhone || 'new'}`
   const [activeMode, setActiveMode] = useState<ComposeMode>(draftMessage ? 'sms' : initialMode)
   const [message, setMessage] = useState(draftMessage || '')
@@ -41,16 +45,24 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
   const fromPhone = senderSelection.threadKey === senderThreadKey
     ? senderSelection.value
     : replyFromPhone || DEFAULT_CONVERSATION_PHONE
-  const [templates, setTemplates] = useState<{id: string; name: string; category: string; body: string; merge_fields: string[]}[]>([])
+  const [templates, setTemplates] = useState<MessageTemplate[]>([])
+  const [templateActorName, setTemplateActorName] = useState<string | null>(null)
+  const [templatesLoading, setTemplatesLoading] = useState(true)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
   const [showTemplates, setShowTemplates] = useState(false)
 
-  // Fetch templates on mount
   useEffect(() => {
     const controller = new AbortController()
+    setTemplatesLoading(true)
     fetch('/api/sms-templates', { signal: controller.signal })
-      .then(r => r.json())
-      .then(data => setTemplates(data.templates || []))
-      .catch(() => {})
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({})) as { templates?: MessageTemplate[]; actorName?: string | null; error?: string }
+        if (!response.ok) throw new Error(data.error || 'Quick replies could not be loaded.')
+        setTemplates(Array.isArray(data.templates) ? data.templates : [])
+        setTemplateActorName(typeof data.actorName === 'string' ? data.actorName : null)
+      })
+      .catch((caught) => { if (!controller.signal.aborted) setTemplatesError(caught instanceof Error ? caught.message : 'Quick replies could not be loaded.') })
+      .finally(() => { if (!controller.signal.aborted) setTemplatesLoading(false) })
     return () => controller.abort()
   }, [])
 
@@ -111,15 +123,6 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
     }
   }
 
-  function handleTemplateSelect(template: typeof templates[0]) {
-    let body = template.body
-    // Simple merge field resolution with available data
-    body = body.replace(/\{firstName\}/g, 'there')
-    body = body.replace(/\{propertyAddress\}/g, 'your property')
-    setMessage(body)
-    setShowTemplates(false)
-  }
-
   function modeUnavailable(mode: ComposeMode) {
     if (mode === 'sms') return !phone
     if (mode === 'email') return !email
@@ -135,7 +138,7 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
             <button
               key={mode.key}
               type="button"
-              onClick={() => setActiveMode(mode.key)}
+              onClick={() => { setActiveMode(mode.key); setShowTemplates(false) }}
               disabled={modeUnavailable(mode.key)}
               aria-pressed={activeMode === mode.key}
               className={cn(
@@ -215,30 +218,16 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
               <button
                 type="button"
                 onClick={() => setShowTemplates(!showTemplates)}
+                disabled={activeMode !== 'sms'}
                 aria-expanded={showTemplates}
                 aria-label="Open message templates"
-                className="p-1.5 hover:bg-surface-container rounded-lg transition-all relative"
-                title="Templates"
+                className="relative rounded-lg p-1.5 transition-all hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-35"
+                title={activeMode === 'sms' ? 'Quick replies' : 'Quick replies are available for SMS'}
               >
                 <Icon name="bolt" className="text-on-surface-variant text-lg" />
               </button>
             </div>
-            {showTemplates && templates.length > 0 && (
-              <div className="crm-menu absolute bottom-full left-0 z-50 mb-2 max-h-60 w-80 overflow-y-auto rounded-xl">
-                <div className="p-2 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">Templates</div>
-                {templates.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => handleTemplateSelect(t)}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-0"
-                  >
-                    <div className="text-xs font-semibold text-slate-700">{t.name.replace(/_/g, ' ')}</div>
-                    <div className="text-xs text-slate-400 truncate">{t.body}</div>
-                  </button>
-                ))}
-              </div>
-            )}
+            {showTemplates ? <MessageTemplatePicker templates={templates} loading={templatesLoading} error={templatesError} context={{ fullName, propertyAddress, agentName: templateActorName }} onSelect={(body) => { setMessage(body); setShowTemplates(false) }} onClose={() => setShowTemplates(false)} /> : null}
           </div>
           <button
             type="button"
