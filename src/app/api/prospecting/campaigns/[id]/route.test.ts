@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), get: vi.fn(), transition: vi.fn() }))
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), get: vi.fn(), transition: vi.fn(), update: vi.fn() }))
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/server/prospecting-campaigns', () => ({
   ProspectingCampaignError: class ProspectingCampaignError extends Error {},
   getProspectingCampaign: mocks.get,
   setProspectingCampaignStatus: mocks.transition,
+  updateProspectingCampaignDraft: mocks.update,
 }))
 
 import { PATCH } from './route'
@@ -17,6 +18,7 @@ describe('prospecting campaign transition route', () => {
     vi.clearAllMocks()
     mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com', name: 'Ernest' })
     mocks.transition.mockResolvedValue({ id: 'campaign-1', status: 'active' })
+    mocks.update.mockResolvedValue({ id: 'campaign-1', status: 'draft' })
   })
 
   it('rejects anonymous transitions before parsing the body', async () => {
@@ -40,5 +42,28 @@ describe('prospecting campaign transition route', () => {
     const response = await PATCH(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x', { method: 'PATCH', body: JSON.stringify({ status: 'active', confirmed: true }) }), params)
     expect(response.status).toBe(200)
     expect(mocks.transition).toHaveBeenCalledWith({ email: 'ernest@savingkc.com', name: 'Ernest' }, '11111111-1111-4111-8111-111111111111', 'active')
+  })
+
+  it('validates and saves a draft setup through the actor-owned update boundary', async () => {
+    const setup = {
+      name: 'August Absentee corrected',
+      kind: 'dialer',
+      callerId: '+18166088770',
+      defaultTimezone: 'America/Chicago',
+      perHour: 75,
+      perDay: 500,
+      steps: [],
+    }
+    const response = await PATCH(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x', {
+      method: 'PATCH',
+      body: JSON.stringify({ setup }),
+    }), params)
+    expect(response.status).toBe(200)
+    expect(mocks.transition).not.toHaveBeenCalled()
+    expect(mocks.update).toHaveBeenCalledWith(
+      { email: 'ernest@savingkc.com', name: 'Ernest' },
+      '11111111-1111-4111-8111-111111111111',
+      expect.objectContaining({ name: setup.name, kind: 'dialer', callerId: setup.callerId }),
+    )
   })
 })

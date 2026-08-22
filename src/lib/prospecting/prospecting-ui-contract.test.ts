@@ -32,6 +32,15 @@ describe('prospecting workspace UI contract', () => {
     expect(`${workspace}\n${studio}\n${dashboard}`).not.toContain('3 lines')
   })
 
+  it('edits a never-run draft without duplicating or activating it', () => {
+    expect(dashboard).toContain('Edit setup')
+    expect(workspace).toContain('editableProspectingCampaignSetup(campaign)')
+    expect(workspace).toContain('JSON.stringify({')
+    expect(workspace).toContain('setup: {')
+    expect(studio).toContain('Save draft setup')
+    expect(studio).toContain('Saving does not activate it')
+  })
+
   it('consolidates Dialer and Conversations under Prospecting navigation', () => {
     expect(navigation).toContain("{ label: 'Prospecting', href: '/prospecting'")
     expect(navigation).not.toContain("{ label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },\n  { label: 'Ads'")

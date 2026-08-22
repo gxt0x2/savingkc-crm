@@ -13,6 +13,7 @@ function eventPresentation(item: ProspectingCampaignActivity) {
   if (normalized.includes('paused')) return { icon: 'pause', label: 'Campaign paused', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' }
   if (normalized.includes('archived')) return { icon: 'archive', label: 'Campaign archived', tone: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]' }
   if (normalized.includes('created')) return { icon: 'add_circle', label: 'Campaign created', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
+  if (normalized.includes('setup_updated')) return { icon: 'edit', label: 'Campaign setup updated', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
   if (normalized.includes('enrolled')) return { icon: 'person_add', label: 'Audience enrolled', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
   if (normalized.includes('member_removed')) return { icon: 'person_remove', label: 'Contact removed', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' }
   return { icon: 'history', label: normalized.replaceAll('_', ' '), tone: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]' }

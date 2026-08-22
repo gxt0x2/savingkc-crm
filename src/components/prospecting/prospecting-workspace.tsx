@@ -8,7 +8,7 @@ import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
 import { Icon } from '@/components/ui/icon'
 import { PROSPECTING_AUDIENCE_STORAGE_KEY } from '@/lib/prospecting/audience-handoff'
-import { copyProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
+import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
 
@@ -34,6 +34,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const [audienceReviewOpen, setAudienceReviewOpen] = useState(audienceMode)
   const [pendingLeadIds, setPendingLeadIds] = useState<string[]>([])
   const [studioSourceName, setStudioSourceName] = useState<string | null>(null)
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null)
   const [form, setForm] = useState<CampaignForm>(freshCampaignForm)
   const [saving, setSaving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
@@ -80,6 +81,20 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setNotice(null)
     setForm(freshCampaignForm())
     setStudioSourceName(null)
+    setEditingCampaignId(null)
+    setStudioOpen(true)
+  }
+
+  function editCampaign(campaign: ProspectingCampaignDetail) {
+    setError(null)
+    setNotice(null)
+    window.sessionStorage.removeItem(PROSPECTING_AUDIENCE_STORAGE_KEY)
+    setPendingLeadIds([])
+    const setup = editableProspectingCampaignSetup(campaign)
+    setForm({ ...setup, callerId: setup.callerId || '', fromPhone: setup.fromPhone || '' })
+    setStudioSourceName(null)
+    setEditingCampaignId(campaign.id)
+    setAudienceReviewOpen(false)
     setStudioOpen(true)
   }
 
@@ -91,6 +106,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     const copy = copyProspectingCampaignSetup(campaign)
     setForm({ ...copy, callerId: copy.callerId || '', fromPhone: copy.fromPhone || '' })
     setStudioSourceName(campaign.name)
+    setEditingCampaignId(null)
     setAudienceReviewOpen(false)
     setStudioOpen(true)
   }
@@ -102,6 +118,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     }
     setStudioOpen(false)
     setStudioSourceName(null)
+    setEditingCampaignId(null)
     setAudienceReviewOpen(false)
     if (initialCampaignId) window.history.replaceState(null, '', `/prospecting?campaign=${encodeURIComponent(initialCampaignId)}`)
   }
@@ -112,6 +129,25 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setError(null)
     setNotice(null)
     try {
+      if (editingCampaignId) {
+        const updated = await jsonRequest<{ campaign: ProspectingCampaignDetail }>(`/api/prospecting/campaigns/${editingCampaignId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            setup: {
+              ...form,
+              defaultTimezone: 'America/Chicago',
+              steps: form.kind === 'sms' ? form.steps : [],
+            },
+          }),
+        })
+        setStudioOpen(false)
+        setEditingCampaignId(null)
+        setForm(freshCampaignForm())
+        setNotice(`${updated.campaign.name} was updated and remains a draft.`)
+        await Promise.all([loadCampaigns(), loadDetail(updated.campaign.id)])
+        return
+      }
       const created = await jsonRequest<{ campaign: ProspectingCampaignDetail }>('/api/prospecting/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,6 +252,8 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       pendingLeadIds={pendingLeadIds}
       saving={saving}
       sourceCampaignName={studioSourceName}
+      editingCampaignName={editingCampaignId ? detail?.name : null}
+      editingAudienceCount={editingCampaignId ? detail?.stats.total : 0}
       existingCampaignName={detail?.name}
       canAddToExisting={Boolean(detail && ['draft', 'paused'].includes(detail.status))}
       onChange={setForm}
@@ -232,6 +270,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       onSelect={setSelectedId}
       onCreate={openStudio}
       onDuplicate={duplicateCampaign}
+      onEdit={editCampaign}
       onTransition={(status) => void transition(status)}
       onLaunchDialer={() => void launchDialer()}
       onAudienceChanged={() => detail ? loadDetail(detail.id) : undefined}
