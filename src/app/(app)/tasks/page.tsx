@@ -6,6 +6,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { EditTaskModal } from '@/components/modals/edit-task-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
+import { TaskReconciliationStrip } from '@/components/tasks/task-reconciliation-strip'
 import { Icon } from '@/components/ui/icon'
 import { useTaskWorklist } from '@/hooks/use-task-worklist'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
@@ -359,6 +360,8 @@ export default function TasksPage() {
             ))}
           </nav>
         </div> : <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Task view" value={view} onChange={(event) => selectView(event.target.value as TaskView)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{(Object.keys(TASK_VIEW_COPY) as TaskView[]).map((id) => <option key={id} value={id}>{TASK_VIEW_COPY[id].label} ({countLabel(id)})</option>)}</select></label>}
+
+        <TaskReconciliationStrip />
 
         <section className="px-3 py-3 md:px-7">
           <div className="flex flex-wrap items-center gap-2">
