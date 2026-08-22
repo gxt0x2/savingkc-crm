@@ -59,8 +59,9 @@ describe('buildOperatingReport', () => {
     const report = buildOperatingReport(input())
 
     expect(report.marketing.sources[0]).toMatchObject({ source: 'google_ads', leads: 1, qualified: 1, contracts: 1, revenue: 25_000 })
-    expect(report.insights).toContain('1 seller conversation needs a response.')
-    expect(report.bottlenecks.find((row) => row.key === 'debriefs')).toMatchObject({ count: 1, severity: 'high' })
+    expect(report.insights).toContain('1 seller conversation needs a response among leads in this period.')
+    expect(report.bottlenecks.find((row) => row.key === 'needs-reply')).toMatchObject({ label: 'Needs reply among period leads' })
+    expect(report.bottlenecks.find((row) => row.key === 'debriefs')).toMatchObject({ label: 'Closeouts due among period deals', count: 1, severity: 'high' })
   })
 
   it('combines case-only agent identity variants without changing activity totals', () => {

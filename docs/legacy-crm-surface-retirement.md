@@ -11,7 +11,7 @@ bookmarks do not break:
 | `/leads` | `/contacts` | Acquisitions |
 | `/in-closing` | `/contacts?list=in_closing` | Acquisitions |
 | `/opportunities` | `/contacts?list=hot` | Acquisitions |
-| `/ari` | `/dashboard` | Operations |
+| `/ari` | `/ai` | Operations |
 | `/dialer?section=conversations` | `/conversations` | Acquisitions |
 | `/dialer?section=analytics` | `/reports/call-sms` | Operations |
 | `/dialer?section=settings` | `/dialer?section=queue` | Acquisitions |

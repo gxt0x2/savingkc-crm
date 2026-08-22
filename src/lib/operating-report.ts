@@ -494,17 +494,17 @@ export function buildOperatingReport(input: OperatingReportInput) {
   })
 
   const bottlenecks = [
-    { key: 'needs-reply', label: 'Needs reply', department: 'Acquisitions', count: acquisitions.attention.needsReply, href: '/conversations?reply=needs_reply', severity: acquisitions.attention.needsReply > 0 ? 'high' : 'clear' },
-    { key: 'overdue-actions', label: 'Overdue next actions', department: 'Acquisitions', count: acquisitions.attention.overdue || overdueTasks.length, href: '/tasks?status=overdue', severity: acquisitions.attention.overdue || overdueTasks.length ? 'high' : 'clear' },
-    { key: 'unassigned', label: 'Unassigned contacts', department: 'Acquisitions', count: acquisitions.attention.unassigned, href: '/contacts?list=unassigned', severity: acquisitions.attention.unassigned > 0 ? 'medium' : 'clear' },
-    { key: 'no-offers', label: 'Marketed with no offers', department: 'Dispositions', count: noOfferDeals.length, href: '/dispo/pipeline', severity: noOfferDeals.length > 0 ? 'medium' : 'clear' },
-    { key: 'debriefs', label: 'Closeout debriefs due', department: 'Dispositions', count: debriefOutstanding, href: '/dispo/pipeline?closeout=due', severity: debriefOutstanding > 0 ? 'high' : 'clear' },
+    { key: 'needs-reply', label: 'Needs reply among period leads', department: 'Acquisitions', count: acquisitions.attention.needsReply, href: '/conversations?reply=needs_reply', severity: acquisitions.attention.needsReply > 0 ? 'high' : 'clear' },
+    { key: 'overdue-actions', label: 'Overdue actions among period leads', department: 'Acquisitions', count: acquisitions.attention.overdue || overdueTasks.length, href: '/tasks?status=overdue', severity: acquisitions.attention.overdue || overdueTasks.length ? 'high' : 'clear' },
+    { key: 'unassigned', label: 'Unassigned contacts among period leads', department: 'Acquisitions', count: acquisitions.attention.unassigned, href: '/contacts?list=unassigned', severity: acquisitions.attention.unassigned > 0 ? 'medium' : 'clear' },
+    { key: 'no-offers', label: 'Period deals marketed with no offers', department: 'Dispositions', count: noOfferDeals.length, href: '/dispo/pipeline', severity: noOfferDeals.length > 0 ? 'medium' : 'clear' },
+    { key: 'debriefs', label: 'Closeouts due among period deals', department: 'Dispositions', count: debriefOutstanding, href: '/dispo/pipeline?closeout=due', severity: debriefOutstanding > 0 ? 'high' : 'clear' },
   ] as const
 
   const insights = [
     acquisitions.attention.needsReply > 0
-      ? `${acquisitions.attention.needsReply} seller conversation${acquisitions.attention.needsReply === 1 ? ' needs' : 's need'} a response.`
-      : 'The seller inbox has no unresolved replies.',
+      ? `${acquisitions.attention.needsReply} seller conversation${acquisitions.attention.needsReply === 1 ? ' needs' : 's need'} a response among leads in this period.`
+      : 'No lead created in this period has an unresolved seller reply.',
     noOfferDeals.length > 0
       ? `${noOfferDeals.length} marketed propert${noOfferDeals.length === 1 ? 'y has' : 'ies have'} no recorded buyer offer.`
       : 'Every marketed disposition property has a recorded offer or has moved stages.',

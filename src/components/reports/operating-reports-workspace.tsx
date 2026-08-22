@@ -173,7 +173,7 @@ function DispositionsView({ report }: { report: OperatingReport }) {
       </section>
 
       <section className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
-        <NumberedPanel number="9" title="Active bottlenecks" actionHref="/tasks"><BottleneckRows report={report} /></NumberedPanel>
+        <NumberedPanel number="9" title="Selected-period exceptions" actionHref="/tasks"><BottleneckRows report={report} /></NumberedPanel>
         <NumberedPanel number="10" title="ARI disposition insights" actionHref="/ai"><InsightRows report={report} /></NumberedPanel>
       </section>
     </>
@@ -214,7 +214,7 @@ function CallSmsView({ report }: { report: OperatingReport }) {
           <MetricCard icon="sms" label="SMS" value={report.communications.sms} numericValue={report.communications.sms} detail={`${report.communications.outboundSms} sent · ${report.communications.inboundSms} received${report.communications.unclassifiedSms > 0 ? ` · ${report.communications.unclassifiedSms} direction unrecorded` : ''}`} tone="violet" href="/conversations?channel=sms" series={report.trends.sms} />
           <MetricCard icon="north_east" label="SMS sent" value={report.communications.outboundSms} numericValue={report.communications.outboundSms} detail="Recorded outbound messages" tone="teal" href="/conversations?channel=sms" series={report.trends.outboundSms} />
           <MetricCard icon="south_west" label="SMS received" value={report.communications.inboundSms} numericValue={report.communications.inboundSms} detail={`${nullablePercent(report.communications.smsResponseRate)} inbound / outbound`} tone="amber" href="/conversations?channel=sms" series={report.trends.inboundSms} />
-          <MetricCard icon="mark_chat_unread" label="Needs reply" value={report.core.needsReply} numericValue={report.core.needsReply} detail="Current unresolved seller attention" tone="red" href="/conversations?reply=needs_reply" />
+          <MetricCard icon="mark_chat_unread" label="Needs reply" value={report.core.needsReply} numericValue={report.core.needsReply} detail="Unresolved among period leads" tone="red" href="/conversations?reply=needs_reply" />
         </div>
       </NumberedPanel>
       <section className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
