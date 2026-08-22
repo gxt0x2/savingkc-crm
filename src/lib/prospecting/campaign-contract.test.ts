@@ -17,6 +17,7 @@ describe('prospecting campaign contract', () => {
       steps: [{ id: 'step-1', position: 1, delayMinutes: 0, bodyTemplate: 'Hi {{first_name}}' }],
       members: [{ id: 'member-1', leadId: 'lead-1', phone: '+18165550123', timezone: 'America/Chicago', status: 'active', suppressionReason: null, currentStepPosition: 1, nextActionAt: null, enrolledAt: '2026-08-21T10:30:00.000Z', lead: null }],
       stats: { total: 1, active: 1, suppressed: 0, replied: 0, completed: 0, sent: 0, failed: 0 },
+      operations: { queued: 0, processing: 0, nextActionAt: null, lastSentAt: null },
     }
     const copy = copyProspectingCampaignSetup(campaign)
     expect(copy).toEqual({ name: 'August Absentee copy', kind: 'sms', callerId: null, fromPhone: '+18163077835', defaultTimezone: 'America/Chicago', perHour: 75, perDay: 500, steps: [{ delayMinutes: 0, bodyTemplate: 'Hi {{first_name}}' }] })
