@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveCallLogContext, CallLogContextError } from '@/lib/server/call-log-context'
+import { buildCallLogCommand } from '@/lib/server/call-log-command'
+import { insertCallLogEvidenceOnce } from '@/lib/server/call-log-evidence'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { onCommunicationEvent } from '@/lib/manifest-sync'
+import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -27,126 +32,132 @@ type CallActivityRow = {
 // Log outbound calls from the telephony bar
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const {
-      phone,
-      event,
-      duration,
-      agent,
-      lead_id,
-      heir_name,
-      heir_relation,
-      prospect_phone_id,
-      prospect_owner_name,
-      agent_identity,
-      from_number,
-      status,
-      outcome,
-      disposition,
-      call_status,
-      dial_status,
-    } = body
-
-    if (!phone) {
-      return NextResponse.json({ error: 'phone required' }, { status: 400, headers: NO_STORE_HEADERS })
-    }
-
-    const cleanPhone = phone.replace(/[^\d+]/g, '')
-    const finalDuration = Math.max(0, Math.round(readNumber(duration) ?? 0))
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
+    const parsed = buildCallLogCommand(await req.json())
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400, headers: NO_STORE_HEADERS })
+    const command = parsed.command
+    const context = await resolveCallLogContext({
+      phone: command.phone,
+      leadId: command.leadId,
+      prospectPhoneId: command.prospectPhoneId,
+    })
+    const profile = resolveAgentTelephonyProfile(actor.email)
+    const finalDuration = command.durationSeconds
     const finalStatus = normalizeOutboundFinalStatus(
-      readString(status) || readString(call_status) || readString(dial_status),
-      readString(outcome),
-      readString(disposition)
+      command.status,
+      command.outcome,
+      command.disposition,
     )
-    const finalOutcome = normalizeOutboundOutcome(finalStatus, readString(outcome))
-    const finalDisposition = normalizeOutboundDisposition(finalStatus, readString(disposition))
-
-    // Prefer an explicit lead_id from the caller (set by the dialer for queue
-    // mode so heir calls are attributed to the property lead, not the heir).
-    let leadId: string | null = lead_id ?? null
-    let leadName: string = phone
-
-    if (leadId) {
-      const { data: leadRow } = await supabase
-        .from('leads').select('full_name').eq('id', leadId).limit(1).single()
-      leadName = leadRow?.full_name || phone
-    } else {
-      const { data: lead } = await supabase
-        .from('leads').select('id, full_name').eq('phone', cleanPhone).limit(1).single()
-      leadId = lead?.id || null
-      leadName = lead?.full_name || phone
-    }
+    const finalOutcome = normalizeOutboundOutcome(finalStatus, command.outcome)
+    const finalDisposition = normalizeOutboundDisposition(finalStatus, command.disposition)
 
     // When dialing a relative, the activity row reads "Call to <heir> (daughter)"
     // so the property timeline is legible. Without heir context we keep the
     // original "Outbound call to <lead>" wording.
-    const isHeirCall = Boolean(heir_name)
-    const heirLabel = isHeirCall ? `${heir_name} (${heir_relation || 'relative'})` : null
+    const isHeirCall = Boolean(context.heir)
+    const heirLabel = context.heir ? `${context.heir.name || 'heir'} (${context.heir.relationship || 'relative'})` : null
+    const source = isHeirCall ? 'heir_dialer' : 'telephony_bar'
+    const action = command.event === 'started' ? 'call_started' : 'call_ended'
+    let telemetryCreated = false
 
-    if (event === 'started') {
-      await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        activity_type: 'call',
-        description: isHeirCall ? `Outbound call to ${heirLabel}` : `Outbound call to ${leadName}`,
-        agent: agent || 'System',
-        metadata: {
-          direction: 'outbound',
-          to: cleanPhone,
-          from: from_number || null,
-          agent_identity: agent_identity || null,
-          status: 'initiated',
-          source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
-          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id, prospect_owner_name }),
-        }
+    if (command.event === 'started') {
+      const telemetry = await insertCallLogEvidenceOnce({
+        leadId: context.leadId,
+        source,
+        event: action,
+        clientAttemptId: command.clientAttemptId,
+        payload: {
+          lead_id: context.leadId,
+          activity_type: 'call',
+          description: isHeirCall ? `Outbound call to ${heirLabel}` : `Outbound call to ${context.leadName}`,
+          agent: actor.name,
+          metadata: {
+            direction: 'outbound',
+            to: command.phone,
+            from: command.fromNumber,
+            agent_identity: profile.identity,
+            status: 'initiated',
+            source,
+            action,
+            client_attempt_id: command.clientAttemptId,
+            is_internal: true,
+            ...(context.heir && {
+              heir_name: context.heir.name,
+              heir_relation: context.heir.relationship,
+              prospect_phone_id: context.heir.prospectPhoneId,
+              prospect_owner_name: context.heir.ownerName,
+            }),
+          },
+        },
       })
-    } else if (event === 'ended') {
-      await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        activity_type: 'call',
-        description: isHeirCall
-          ? `Outbound call to ${heirLabel} — ${outboundResultLabel(finalStatus, finalDuration)}`
-          : `Outbound call to ${leadName} — ${outboundResultLabel(finalStatus, finalDuration)}`,
-        agent: agent || 'System',
-        metadata: {
-          direction: 'outbound',
-          to: cleanPhone,
-          from: from_number || null,
-          agent_identity: agent_identity || null,
-          status: finalStatus,
-          outcome: finalOutcome,
-          disposition: finalDisposition,
-          duration: finalDuration,
-          source: isHeirCall ? 'heir_dialer' : 'telephony_bar',
-          ...(isHeirCall && { heir_name, heir_relation, prospect_phone_id, prospect_owner_name }),
-        }
+      telemetryCreated = telemetry.created
+    } else {
+      const telemetry = await insertCallLogEvidenceOnce({
+        leadId: context.leadId,
+        source,
+        event: action,
+        clientAttemptId: command.clientAttemptId,
+        payload: {
+          lead_id: context.leadId,
+          activity_type: 'call',
+          description: isHeirCall
+            ? `Outbound call to ${heirLabel} — ${outboundResultLabel(finalStatus, finalDuration)}`
+            : `Outbound call to ${context.leadName} — ${outboundResultLabel(finalStatus, finalDuration)}`,
+          agent: actor.name,
+          metadata: {
+            direction: 'outbound',
+            to: command.phone,
+            from: command.fromNumber,
+            agent_identity: profile.identity,
+            status: finalStatus,
+            outcome: finalOutcome,
+            disposition: finalDisposition,
+            duration: finalDuration,
+            source,
+            action,
+            client_attempt_id: command.clientAttemptId,
+            is_internal: true,
+            ...(context.heir && {
+              heir_name: context.heir.name,
+              heir_relation: context.heir.relationship,
+              prospect_phone_id: context.heir.prospectPhoneId,
+              prospect_owner_name: context.heir.ownerName,
+            }),
+          },
+        },
       })
+      telemetryCreated = telemetry.created
     }
 
     // Log outbound attempt to the manifest immediately, but do not treat a
     // browser-initiated dial as a true contact until a final connected outcome
     // is known. The Twilio Voice SDK accept event only proves the browser leg
     // opened; it does not prove the seller answered.
-    if (leadId && event === 'started') {
-      onCommunicationEvent(leadId, { type: 'outbound_call' }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
+    if (telemetryCreated && context.leadId && command.event === 'started') {
+      onCommunicationEvent(context.leadId, { type: 'outbound_call' }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
     }
 
     // On call end: refresh denormalized last-call snapshot on the lead row
-    if (leadId && event === 'ended') {
+    if (context.leadId && command.event === 'ended') {
       if (isConnectedOutbound(finalStatus, finalOutcome, finalDisposition)) {
-        checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+        checkAutoAdvance(context.leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
       }
 
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (isConnectedOutbound(finalStatus, finalOutcome, finalDisposition) && finalDuration > 0) {
         patch.call_duration_seconds = finalDuration
       }
-      await supabase.from('leads').update(patch).eq('id', leadId).then(({ error }) => {
+      await supabase.from('leads').update(patch).eq('id', context.leadId).then(({ error }) => {
         if (error) console.error('[call-log] lead snapshot update failed:', error.message)
       })
     }
 
-    return NextResponse.json({ success: true, leadId }, { headers: NO_STORE_HEADERS })
+    return NextResponse.json({ success: true, leadId: context.leadId }, { headers: NO_STORE_HEADERS })
   } catch (err) {
+    if (err instanceof CallLogContextError) {
+      return NextResponse.json({ error: err.message }, { status: err.status, headers: NO_STORE_HEADERS })
+    }
     console.error('Call log error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: NO_STORE_HEADERS })
   }
@@ -154,6 +165,8 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   try {
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE_HEADERS })
     const { searchParams } = new URL(req.url)
     const limitParam = Number(searchParams.get('limit') || '10')
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 10
