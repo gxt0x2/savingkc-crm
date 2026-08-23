@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { supabase } from '@/lib/supabase-lazy'
 import { isMissingColumnError } from '@/lib/schema-compat'
 
@@ -65,6 +66,9 @@ function dedupePhones(phones: HeirPhoneRow[]): HeirPhoneRow[] {
 // by (contact_name, relationship). A "heir" here is any prospect_phone with a
 // relationship that isn't 'owner' — daughter, son, spouse, sister, etc.
 export async function GET(req: Request) {
+  const unauthorized = await requireAuthenticatedUser()
+  if (unauthorized) return unauthorized
+
   const url = new URL(req.url)
   const leadId = url.searchParams.get('lead_id')
 

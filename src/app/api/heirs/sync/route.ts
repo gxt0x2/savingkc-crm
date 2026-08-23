@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { supabase } from '@/lib/supabase-lazy'
 
 // POST /api/heirs/sync
@@ -13,6 +14,11 @@ import { supabase } from '@/lib/supabase-lazy'
 //   { relatives: [{ name, relationship, phones: [{ number, type, is_connected }] }] }
 export async function POST(req: Request) {
   try {
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { lead_id } = await req.json()
     if (!lead_id) {
       return NextResponse.json({ error: 'lead_id required' }, { status: 400 })
@@ -86,15 +92,6 @@ export async function POST(req: Request) {
       return [a.street, a.city, a.state, a.zip].filter(Boolean).join(', ') || null
     }
 
-    // Upsert each (prospect_id, phone) — phone is the natural dedupe key since
-    // prospect_phones has no unique constraint by default; we delete stale
-    // heir-origin rows for this prospect first, then insert.
-    await supabase
-      .from('prospect_phones')
-      .delete()
-      .eq('prospect_id', prospect.id)
-      .neq('relationship', 'owner')
-
     const rows = relatives.flatMap((r) => {
       const address = firstAddress(r.addresses)
       return (r.phones ?? []).map((ph) => ({
@@ -108,16 +105,56 @@ export async function POST(req: Request) {
       }))
     })
 
-    if (rows.length > 0) {
-      const { error: insErr } = await supabase.from('prospect_phones').insert(rows)
-      if (insErr) {
-        return NextResponse.json({ error: insErr.message }, { status: 500 })
-      }
+    if (rows.length === 0) {
+      return NextResponse.json(
+        { error: 'Skip trace returned no usable phone records; existing heirs were preserved.' },
+        { status: 422 },
+      )
     }
 
-    await supabase.from('prospects').update({ is_skip_traced: true }).eq('id', prospect.id)
+    // The current schema has no transactional replacement RPC. Preserve old
+    // data when the upstream result is empty, and only remove stale heir rows
+    // after a complete replacement payload has been validated.
+    const { error: deleteError } = await supabase
+      .from('prospect_phones')
+      .delete()
+      .eq('prospect_id', prospect.id)
+      .neq('relationship', 'owner')
 
-    return NextResponse.json({ success: true, relatives_synced: rows.length })
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 500 })
+    }
+
+    const { error: insErr } = await supabase.from('prospect_phones').insert(rows)
+    if (insErr) {
+      return NextResponse.json({ error: insErr.message }, { status: 500 })
+    }
+
+    const { error: prospectError } = await supabase
+      .from('prospects')
+      .update({ is_skip_traced: true })
+      .eq('id', prospect.id)
+
+    const { error: activityError } = await supabase.from('lead_activities').insert({
+      lead_id,
+      activity_type: 'status_change',
+      description: `Heir skip trace synced ${rows.length} phone record${rows.length === 1 ? '' : 's'}`,
+      agent: actor.name,
+      metadata: {
+        source: 'heir_dialer',
+        action: 'sync_heirs',
+        prospect_id: prospect.id,
+        phone_records_synced: rows.length,
+      },
+    })
+
+    return NextResponse.json({
+      success: true,
+      relatives_synced: rows.length,
+      ...(prospectError || activityError
+        ? { warning: 'Heirs were synced, but some CRM tracking details could not be updated.' }
+        : {}),
+    })
   } catch (err) {
     console.error('[heirs/sync] error', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
