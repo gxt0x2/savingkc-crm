@@ -238,12 +238,13 @@ export function HeirsSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prospect_phone_id: phone.id, verified: nextVerified, lead_id: leadId }),
       })
+      const data = await res.json().catch(() => null)
       if (!res.ok) {
-        const data = await res.json().catch(() => null)
         throw new Error(data?.error || 'Could not update verification')
       }
       window.dispatchEvent(new CustomEvent('heir-attempt-logged', { detail: { leadId } }))
       await load()
+      if (data?.warning) setError(data.warning)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update verification')
     }
