@@ -1,16 +1,14 @@
 import { NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { buildHeirAttemptCommand } from '@/lib/server/heir-attempt-command'
+import { findHeirAttemptEvidence, insertHeirAttemptEvidenceOnce } from '@/lib/server/heir-attempt-evidence'
+import { recordHeirAppointment } from '@/lib/server/heir-appointment-command'
 import { supabase } from '@/lib/supabase-lazy'
-import {
-  normalizeDisposition,
-  isReachedDisposition,
-  isDeadDisposition,
-  isValidDeadReason,
-} from '@/lib/dialer-dispositions'
 import { isMissingColumnError } from '@/lib/schema-compat'
 
 // POST /api/heirs/attempt
 // body: {
-//   prospect_phone_id, disposition, notes?, lead_id?, agent?, duration?,
+//   prospect_phone_id, disposition, notes?, lead_id?, duration?,
 //   mark_as_lead?, verified?, dead_reason?
 // }
 //
@@ -26,32 +24,26 @@ import { isMissingColumnError } from '@/lib/schema-compat'
 //     and records dead_reason / dead_at / dead_by ("mark as dead + why").
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const parsed = buildHeirAttemptCommand(await req.json())
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
     const {
-      prospect_phone_id,
-      disposition: rawDisposition,
+      prospectPhoneId,
+      disposition,
       notes,
-      lead_id,
-      agent,
-      duration,
-      mark_as_lead,
+      requestedLeadId,
+      durationSeconds,
+      markAsLead,
       verified,
-      dead_reason,
-    } = body
-
-    if (!prospect_phone_id || !rawDisposition) {
-      return NextResponse.json(
-        { error: 'prospect_phone_id and disposition required' },
-        { status: 400 },
-      )
-    }
-
-    const disposition = normalizeDisposition(rawDisposition) ?? String(rawDisposition)
-    const reached = isReachedDisposition(disposition)
-    const isDead = isDeadDisposition(disposition)
-    const deadReason = isValidDeadReason(dead_reason)
-      ? dead_reason
-      : (isDead && dead_reason ? String(dead_reason) : null)
+      deadReason,
+      appointmentAt,
+      clientAttemptId,
+      reached,
+      dead: isDead,
+    } = parsed.command
+    const actorName = actor.name
 
     // Pull phone + prospect context so the activity row has readable metadata,
     // plus the current verification source so a manual choice is never undone.
@@ -69,7 +61,7 @@ export async function POST(req: Request) {
       supabase
         .from('prospect_phones')
         .select(cols)
-        .eq('id', prospect_phone_id)
+        .eq('id', prospectPhoneId)
         .single<PhoneWithProspect>()
 
     // verified_source comes from 20260602_dialer_redesign.sql; tolerate its
@@ -87,6 +79,31 @@ export async function POST(req: Request) {
       )
     }
 
+    const resolvedLeadId = phoneRow.prospects?.lead_id ?? null
+    if (!resolvedLeadId) {
+      return NextResponse.json({ error: 'Heir phone has no linked contact record' }, { status: 409 })
+    }
+    if (requestedLeadId && requestedLeadId !== resolvedLeadId) {
+      return NextResponse.json({ error: 'Heir phone does not belong to that contact' }, { status: 409 })
+    }
+    const existingCall = resolvedLeadId ? await findHeirAttemptEvidence({
+      leadId: resolvedLeadId,
+      activityType: 'call',
+      clientAttemptId,
+    }) : null
+    if (existingCall && (
+      existingCall.metadata?.disposition !== disposition
+      || existingCall.metadata?.prospect_phone_id !== phoneRow.id
+      || (existingCall.metadata?.scheduled_at ?? null) !== appointmentAt
+      || Boolean(existingCall.metadata?.mark_as_lead) !== markAsLead
+      || (existingCall.metadata?.dead_reason ?? null) !== deadReason
+    )) {
+      return NextResponse.json(
+        { error: 'This dialer attempt was already saved with a different outcome' },
+        { status: 409 },
+      )
+    }
+
     const now = new Date().toISOString()
 
     // Resolve the verification outcome for this phone.
@@ -99,14 +116,14 @@ export async function POST(req: Request) {
         is_verified_contact: verified,
         verified_source: 'manual',
         verified_at: verified ? now : null,
-        verified_by: verified ? (agent ?? null) : null,
+        verified_by: verified ? actorName : null,
       }
     } else if (reached && phoneRow.verified_source !== 'manual') {
       verificationPatch = {
         is_verified_contact: true,
         verified_source: 'auto',
         verified_at: now,
-        verified_by: agent ?? null,
+        verified_by: actorName,
       }
     }
 
@@ -119,46 +136,62 @@ export async function POST(req: Request) {
       attempted: true,
       last_disposition: disposition,
       last_attempt_at: now,
-      last_attempt_by: agent ?? null,
+      last_attempt_by: actorName,
     }
     let upErr = (await supabase
       .from('prospect_phones')
       .update({ ...baseAttemptPatch, ...verificationPatch })
-      .eq('id', prospect_phone_id)).error
+      .eq('id', prospectPhoneId)).error
     // If the verify columns aren't migrated yet, still record the attempt.
     if (upErr && isMissingColumnError(upErr) && Object.keys(verificationPatch).length > 0) {
       upErr = (await supabase
         .from('prospect_phones')
         .update(baseAttemptPatch)
-        .eq('id', prospect_phone_id)).error
+        .eq('id', prospectPhoneId)).error
     }
 
     if (upErr) {
       return NextResponse.json({ error: upErr.message }, { status: 500 })
     }
 
-    // 2. Immutable activity row — property timeline.
-    const resolvedLeadId = lead_id ?? phoneRow.prospects?.lead_id ?? null
-    if (resolvedLeadId) {
-      await supabase.from('lead_activities').insert({
-        lead_id: resolvedLeadId,
-        activity_type: 'call',
-        description: `Call to ${phoneRow.contact_name || 'heir'} (${phoneRow.relationship || 'relative'}) — ${disposition.replace(/_/g, ' ')}`,
-        agent: agent ?? 'Ernest',
-        metadata: {
-          direction: 'outbound',
-          to: phoneRow.phone,
-          disposition,
-          duration: duration ?? null,
-          notes: notes ?? null,
-          source: 'heir_dialer',
-          prospect_phone_id: phoneRow.id,
-          heir_name: phoneRow.contact_name,
-          heir_relation: phoneRow.relationship,
-          prospect_owner_name: phoneRow.prospects?.owner_1,
-          mark_as_lead: Boolean(mark_as_lead),
-          verified: verificationResult,
-          dead_reason: deadReason,
+    // 2. Canonical activity evidence — property timeline.
+    {
+      const appointment = appointmentAt ? await recordHeirAppointment({
+        leadId: resolvedLeadId,
+        actorName,
+        appointmentAt,
+        notes,
+        clientAttemptId,
+        prospectPhoneId: phoneRow.id,
+        heirName: phoneRow.contact_name,
+      }) : null
+      await insertHeirAttemptEvidenceOnce({
+        leadId: resolvedLeadId,
+        activityType: 'call',
+        clientAttemptId,
+        payload: {
+          lead_id: resolvedLeadId,
+          activity_type: 'call',
+          description: `Call to ${phoneRow.contact_name || 'heir'} (${phoneRow.relationship || 'relative'}) — ${disposition.replace(/_/g, ' ')}`,
+          agent: actorName,
+          metadata: {
+            direction: 'outbound',
+            to: phoneRow.phone,
+            disposition,
+            duration: durationSeconds,
+            notes,
+            source: 'heir_dialer',
+            client_attempt_id: clientAttemptId,
+            prospect_phone_id: phoneRow.id,
+            heir_name: phoneRow.contact_name,
+            heir_relation: phoneRow.relationship,
+            prospect_owner_name: phoneRow.prospects?.owner_1,
+            mark_as_lead: markAsLead,
+            verified: verificationResult,
+            dead_reason: deadReason,
+            appointment_id: appointment?.appointmentId ?? null,
+            scheduled_at: appointmentAt,
+          },
         },
       })
 
@@ -167,7 +200,7 @@ export async function POST(req: Request) {
         const baseDeadPatch = { station: 'dead', updated_at: now }
         let deadErr = (await supabase
           .from('leads')
-          .update({ ...baseDeadPatch, dead_reason: deadReason, dead_at: now, dead_by: agent ?? null })
+          .update({ ...baseDeadPatch, dead_reason: deadReason, dead_at: now, dead_by: actorName })
           .eq('id', resolvedLeadId)).error
         // dead_reason/at/by come from 20260602; still move the lead to 'dead'.
         if (deadErr && isMissingColumnError(deadErr)) {
@@ -181,22 +214,29 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: deadErr.message }, { status: 500 })
         }
 
-        await supabase.from('lead_activities').insert({
-          lead_id: resolvedLeadId,
-          activity_type: 'status_change',
-          description: `Marked lead dead${deadReason ? ` — ${deadReason.replace(/_/g, ' ')}` : ''}`,
-          agent: agent ?? 'Ernest',
-          metadata: {
-            source: 'heir_dialer',
-            action: 'mark_dead',
-            station: 'dead',
-            dead_reason: deadReason,
-            notes: notes ?? null,
+        await insertHeirAttemptEvidenceOnce({
+          leadId: resolvedLeadId,
+          activityType: 'status_change',
+          clientAttemptId,
+          action: 'mark_dead',
+          payload: {
+            lead_id: resolvedLeadId,
+            activity_type: 'status_change',
+            description: `Marked lead dead${deadReason ? ` — ${deadReason.replace(/_/g, ' ')}` : ''}`,
+            agent: actorName,
+            metadata: {
+              source: 'heir_dialer',
+              client_attempt_id: clientAttemptId,
+              action: 'mark_dead',
+              station: 'dead',
+              dead_reason: deadReason,
+              notes: notes ?? null,
+            },
           },
         })
       }
 
-      if (mark_as_lead) {
+      if (markAsLead) {
         const contactName = phoneRow.contact_name || phoneRow.prospects?.owner_1 || 'Unknown seller'
         const { error: leadErr } = await supabase
           .from('leads')
@@ -213,21 +253,28 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: leadErr.message }, { status: 500 })
         }
 
-        await supabase.from('lead_activities').insert({
-          lead_id: resolvedLeadId,
-          activity_type: 'status_change',
-          description: `Marked ${contactName} (${phoneRow.relationship || 'relative'}) as primary lead contact`,
-          agent: agent ?? 'Ernest',
-          metadata: {
-            source: 'heir_dialer',
-            prospect_phone_id: phoneRow.id,
-            heir_name: phoneRow.contact_name,
-            heir_relation: phoneRow.relationship,
-            prospect_owner_name: phoneRow.prospects?.owner_1,
-            phone: phoneRow.phone,
-            action: 'mark_as_lead',
-            classification: 'lead',
-            station: 'contacted',
+        await insertHeirAttemptEvidenceOnce({
+          leadId: resolvedLeadId,
+          activityType: 'status_change',
+          clientAttemptId,
+          action: 'mark_as_lead',
+          payload: {
+            lead_id: resolvedLeadId,
+            activity_type: 'status_change',
+            description: `Marked ${contactName} (${phoneRow.relationship || 'relative'}) as primary lead contact`,
+            agent: actorName,
+            metadata: {
+              source: 'heir_dialer',
+              client_attempt_id: clientAttemptId,
+              prospect_phone_id: phoneRow.id,
+              heir_name: phoneRow.contact_name,
+              heir_relation: phoneRow.relationship,
+              prospect_owner_name: phoneRow.prospects?.owner_1,
+              phone: phoneRow.phone,
+              action: 'mark_as_lead',
+              classification: 'lead',
+              station: 'contacted',
+            },
           },
         })
       }
