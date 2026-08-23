@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 import { deepMerge, updateManifestV2_1, ManifestWriteError } from '@/lib/manifest-sync'
 import { legacyManifestJson, recordLegacyManifestApiUse } from '@/lib/server/legacy-manifest-api'
@@ -16,6 +18,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const unauthorized = await requireAuthenticatedUser()
+  if (unauthorized) return unauthorized
   recordLegacyManifestApiUse('GET', '/api/manifests/[id]')
   try {
     const { id } = await params
@@ -50,6 +54,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const actor = await resolveAuthenticatedActor()
+  if (!actor) return legacyManifestJson({ error: 'Unauthorized' }, { status: 401 })
   recordLegacyManifestApiUse('PATCH', '/api/manifests/[id]')
   try {
     const { id } = await params
@@ -72,9 +78,11 @@ export async function PATCH(
 
     const currentManifest = existing.manifest as ManifestV2
 
-    const { agent: requestedAgent, action: requestedAction, details: requestedDetails, ...manifestUpdates } = updates
-    const agent = typeof requestedAgent === 'string' && requestedAgent.trim() ? requestedAgent : 'system'
-    const action = typeof requestedAction === 'string' && requestedAction.trim() ? requestedAction : 'manifest_updated'
+    const manifestUpdates = { ...updates }
+    delete manifestUpdates.agent
+    delete manifestUpdates.action
+    delete manifestUpdates.details
+    const action = 'legacy_manifest_updated'
 
     // Deep-merge the caller's partial updates into the current manifest in TS
     // to preserve the endpoint's historical API contract (callers can send
@@ -92,9 +100,8 @@ export async function PATCH(
       ...(currentManifest.auditTrail ?? []),
       {
         timestamp: new Date().toISOString(),
-        agent,
+        agent: actor.name,
         action,
-        details: requestedDetails,
       },
     ]
     merged.ariIntelligence = {
@@ -102,7 +109,7 @@ export async function PATCH(
       briefingStale: true,
     }
     merged.lastUpdated = new Date().toISOString()
-    merged.lastUpdatedBy = agent
+    merged.lastUpdatedBy = actor.name
 
     // Hand every top-level key as a subtree. The RPC shallow-replaces each
     // one against the current stored value; manifest.manifest.* can't form.
@@ -115,7 +122,7 @@ export async function PATCH(
       const nextManifest = await updateManifestV2_1({
         manifestId: id,
         subtrees,
-        actor: agent,
+        actor: actor.name,
         reason: action,
       })
 
