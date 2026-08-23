@@ -13,25 +13,21 @@ export interface DialerActivity {
 }
 
 export async function loadDialerActivities(leadId: string): Promise<DialerActivity[]> {
-  const { createClient } = await import('@/lib/supabase/client')
-  const { data } = await createClient()
-    .from('lead_activities')
-    .select('id, activity_type, description, agent, metadata, created_at')
-    .eq('lead_id', leadId)
-    .order('created_at', { ascending: false })
-    .limit(50)
-  return (data as DialerActivity[] | null) ?? []
+  const response = await fetch(`/api/leads/${encodeURIComponent(leadId)}/activities?limit=50`, { cache: 'no-store' })
+  if (!response.ok) throw new Error('Dialer activity is unavailable')
+  const payload = await response.json() as { activities?: DialerActivity[] }
+  return Array.isArray(payload.activities) ? payload.activities : []
 }
 
 export async function loadDialerLeadContext(leadId: string) {
-  const { createClient } = await import('@/lib/supabase/client')
-  const supabase = createClient()
-  const [{ data: manifestRow }, activities] = await Promise.all([
-    supabase.from('manifests').select('manifest').eq('lead_id', leadId).limit(1).maybeSingle(),
+  const [leadResponse, activities] = await Promise.all([
+    fetch(`/api/leads/${encodeURIComponent(leadId)}`, { cache: 'no-store' }),
     loadDialerActivities(leadId),
   ])
+  if (!leadResponse.ok) throw new Error('Dialer seller intelligence is unavailable')
+  const lead = await leadResponse.json() as { manifest?: DialerManifest | null }
   return {
-    manifest: (manifestRow as { manifest: DialerManifest } | null)?.manifest ?? null,
+    manifest: lead.manifest ?? null,
     activities,
   }
 }
