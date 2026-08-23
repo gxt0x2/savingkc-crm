@@ -45,7 +45,7 @@ interface DispositionModalProps {
   onDisposition: (
     disposition: DispositionType,
     notes?: string,
-    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null },
+    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null; appointmentAt?: string | null },
   ) => void | boolean | Promise<void | boolean>
   phoneNumber?: string
   leadName?: string
@@ -158,6 +158,26 @@ function CheckActive() {
   )
 }
 
+function AppointmentDateTimeField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="px-4 pt-4">
+      <label className="block rounded-[var(--skc-radius-card)] border border-[var(--skc-brand-soft-border)] bg-[var(--skc-brand-soft)] p-3">
+        <span className="flex items-center justify-between pb-2 text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--skc-text-secondary)]">
+          Appointment date and time
+          <span className="text-[#FF453A]">Required</span>
+        </span>
+        <input
+          type="datetime-local"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full rounded-[var(--skc-radius-control)] border border-[var(--skc-separator)] bg-[var(--skc-surface-2)] px-3 py-2.5 text-[15px] text-white outline-none focus:border-[var(--skc-brand)]"
+        />
+        <span className="mt-2 block text-[12px] text-[var(--skc-text-tertiary)]">The CRM will save this exact time. It will not invent a placeholder appointment.</span>
+      </label>
+    </div>
+  )
+}
+
 function AiReviewPrompt({
   status,
   summary,
@@ -226,6 +246,7 @@ export function DispositionModal({
   // leaves the flag alone otherwise (a later "No Answer" must not un-verify a
   // number we already confirmed). A touch makes it an explicit manual override.
   const [verifiedTouched, setVerifiedTouched] = useState(false)
+  const [appointmentAt, setAppointmentAt] = useState('')
   const [localSaving, setLocalSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
@@ -245,6 +266,7 @@ export function DispositionModal({
     setDeadReason('')
     setVerified(false)
     setVerifiedTouched(false)
+    setAppointmentAt('')
     setSaveError(null)
     setSaveNotice(null)
   }, [open, isControlledDisposition, selectedDisposition, isControlledNotes, notes])
@@ -255,7 +277,8 @@ export function DispositionModal({
   const reasonSatisfied = !needsReason || (
     deadReason.trim().length > 0 && (deadReason !== 'other' || activeNotes.trim().length > 0)
   )
-  const canSave = Boolean(activeDisposition) && reasonSatisfied && !isSaving && !localSaving
+  const appointmentSatisfied = activeDisposition !== 'appointment_set' || Boolean(appointmentAt)
+  const canSave = Boolean(activeDisposition) && reasonSatisfied && appointmentSatisfied && !isSaving && !localSaving
 
   const resolvedContact = useMemo(() => {
     const name = contact?.name || leadName || 'Unknown'
@@ -281,7 +304,7 @@ export function DispositionModal({
     if (!dispositionRequiresReason(id)) setDeadReason('')
     setSaveError(null)
     setSaveNotice(null)
-    if (autoSubmitOnOutcome && !dispositionRequiresReason(id)) {
+    if (autoSubmitOnOutcome && !dispositionRequiresReason(id) && id !== 'appointment_set') {
       void submit({ closeAfter: true, advance: true, disposition: id })
     }
   }
@@ -320,6 +343,10 @@ export function DispositionModal({
       setSaveError('Add a note when Other is selected.')
       return
     }
+    if (disposition === 'appointment_set' && !appointmentAt) {
+      setSaveError('Choose the appointment date and time before saving.')
+      return
+    }
     savingRef.current = true
     setSaveError(null)
     setSaveNotice(null)
@@ -330,6 +357,9 @@ export function DispositionModal({
         autoDialNext: advance,
         verified: showVerifyToggle && verifiedTouched ? verified : undefined,
         deadReason: dispositionNeedsReason ? resolvedDeadReason : undefined,
+        appointmentAt: disposition === 'appointment_set' && appointmentAt
+          ? new Date(appointmentAt).toISOString()
+          : undefined,
       })
       if (result === false) {
         setSaveError('Disposition was not saved. Try again before moving on.')
@@ -510,6 +540,10 @@ export function DispositionModal({
                 {verified ? <CheckActive /> : <span className="w-[22px]" />}
               </button>
             </div>
+          )}
+
+          {activeDisposition === 'appointment_set' && (
+            <AppointmentDateTimeField value={appointmentAt} onChange={setAppointmentAt} />
           )}
 
           {needsReason && (
@@ -793,6 +827,10 @@ export function DispositionModal({
                   </span>
                   {verified ? <CheckActive /> : <span className="w-[22px]" />}
                 </button>
+              )}
+
+              {activeDisposition === 'appointment_set' && (
+                <AppointmentDateTimeField value={appointmentAt} onChange={setAppointmentAt} />
               )}
 
               {needsReason && (

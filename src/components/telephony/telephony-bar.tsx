@@ -931,7 +931,7 @@ export function DialerPanel({
   async function handleDisposition(
     disposition: DispositionType,
     notes?: string,
-    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null },
+    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null; appointmentAt?: string | null },
   ) {
     const markedDead = isDeadDisposition(disposition)
     const durableSessionId = activeSessionIdRef.current
@@ -1004,19 +1004,14 @@ export function DialerPanel({
             deadReasonNotes: notes || null, reason: notes || 'Marked dead from call disposition',
           })
         }
-        const response = await fetch('/api/leads', {
-          method: 'PATCH',
+        const response = await fetch(`/api/leads/${selectedLead.id}/disposition`, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: selectedLead.id,
-            activity: {
-              type: 'call',
-              disposition,
-              notes,
-              phone: lastCallPhoneRef.current,
-              agent: activeAgentName,
-              dead_reason: options?.deadReason ?? null,
-            },
+            disposition,
+            notes,
+            phone: lastCallPhoneRef.current,
+            appointmentAt: options?.appointmentAt ?? null,
           }),
         })
         if (!response.ok) {
