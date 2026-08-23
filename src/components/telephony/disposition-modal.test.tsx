@@ -78,6 +78,22 @@ describe('DispositionModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 
+  it('keeps Appointment Set manual in an heir queue so the real time can be entered', () => {
+    render(
+      <DispositionModal
+        open
+        onClose={() => {}}
+        onDisposition={() => true}
+        leadName="Angela Taylor"
+        variant="heirQueue"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Appointment Set/i }))
+    expect(screen.getByLabelText(/Appointment date and time/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Save & Next Lead/i })).toBeDisabled()
+  })
+
   it('auto-saves dead heir queue dispositions after the required reason is picked', async () => {
     const onDisposition = vi.fn().mockResolvedValue(true)
 

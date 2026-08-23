@@ -202,7 +202,7 @@ export function DispositionModal({
 
   const isControlledDisposition = selectedDisposition !== undefined
   const isControlledNotes = notes !== undefined
-  const autoSubmitOnOutcome = variant === 'heirQueue'
+  const autoSubmitVariant = variant === 'heirQueue'
 
   useEffect(() => {
     if (!open) return
@@ -221,6 +221,7 @@ export function DispositionModal({
 
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
   const activeNotes = isControlledNotes ? (notes ?? '') : internalNotes
+  const autoSubmitOnOutcome = autoSubmitVariant && activeDisposition !== 'appointment_set'
   const visibleDispositions = useMemo(() => dispositions.map((item) => item.id === 'spoke_with_owner'
     ? { ...item, label: variant === 'heirQueue' ? 'Reached Heir' : 'Reached Seller' }
     : item), [dispositions, variant])
@@ -255,7 +256,7 @@ export function DispositionModal({
     if (!dispositionRequiresReason(id)) setDeadReason('')
     setSaveError(null)
     setSaveNotice(null)
-    if (autoSubmitOnOutcome && !dispositionRequiresReason(id) && id !== 'appointment_set') {
+    if (autoSubmitVariant && !dispositionRequiresReason(id) && id !== 'appointment_set') {
       void submit({ closeAfter: true, advance: true, disposition: id })
     }
   }
@@ -333,7 +334,7 @@ export function DispositionModal({
   function pickDeadReason(reasonId: string) {
     setDeadReason(reasonId)
     setSaveError(null)
-    if (autoSubmitOnOutcome && reasonId !== 'other' && activeDisposition && dispositionRequiresReason(activeDisposition)) {
+    if (autoSubmitVariant && reasonId !== 'other' && activeDisposition && dispositionRequiresReason(activeDisposition)) {
       void submit({
         closeAfter: true,
         advance: true,
