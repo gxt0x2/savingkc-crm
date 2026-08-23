@@ -24,7 +24,7 @@ describe('DispositionModal', () => {
     const html = renderModal()
 
     expect(html).toContain('grid grid-cols-2 xl:grid-cols-3')
-    expect(html).toContain('Reached Heir')
+    expect(html).toContain('Reached Seller')
     expect(html).toContain('No Answer')
     expect(html).toContain('Left Voicemail')
     expect(html).toContain('Dead Lead')
@@ -44,6 +44,8 @@ describe('DispositionModal', () => {
     expect(html).toContain('grid grid-cols-2 xl:grid-cols-3')
     expect(html).toContain('Mark Angela Taylor as lead')
     expect(html).toContain('Verified — this is Angela Taylor')
+    expect(html).toContain('Reached Heir')
+    expect(html).not.toContain('Reached Seller')
     expect(html).not.toContain('Save &amp; Next Number')
     expect(html).not.toContain('Save &amp; Close')
   })
@@ -74,6 +76,22 @@ describe('DispositionModal', () => {
       )
     })
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('keeps Appointment Set manual in an heir queue so the real time can be entered', () => {
+    render(
+      <DispositionModal
+        open
+        onClose={() => {}}
+        onDisposition={() => true}
+        leadName="Angela Taylor"
+        variant="heirQueue"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Appointment Set/i }))
+    expect(screen.getByLabelText(/Appointment date and time/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Save & Next Lead/i })).toBeDisabled()
   })
 
   it('auto-saves dead heir queue dispositions after the required reason is picked', async () => {
@@ -114,6 +132,35 @@ describe('DispositionModal', () => {
 
     expect(html).toContain('Why is it dead?')
     expect(html).toContain('Not the owner / No legal interest')
+  })
+
+  it('requires the real appointment date and forwards its ISO timestamp', async () => {
+    const onDisposition = vi.fn().mockResolvedValue(true)
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const localAppointment = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}T15:30`
+
+    render(
+      <DispositionModal
+        open
+        onClose={() => {}}
+        onDisposition={onDisposition}
+        leadName="Jill Woods"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Appointment Set/i }))
+    expect(screen.getByText('The CRM will save this exact time. It will not invent a placeholder appointment.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Save & Next Lead/i })).toBeDisabled()
+
+    const input = screen.getByLabelText(/Appointment date and time/i)
+    fireEvent.change(input, { target: { value: localAppointment } })
+    fireEvent.click(screen.getByRole('button', { name: /Save & Next Lead/i }))
+
+    await waitFor(() => expect(onDisposition).toHaveBeenCalledWith(
+      'appointment_set',
+      undefined,
+      expect.objectContaining({ appointmentAt: new Date(localAppointment).toISOString() }),
+    ))
   })
 
   it('keeps AI output human-controlled and inserts it only after Use is clicked', () => {

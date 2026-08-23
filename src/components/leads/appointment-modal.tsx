@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { toProperCase } from '@/lib/format'
 
 interface AppointmentModalProps {
   lead: {
@@ -50,6 +49,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
     sendReminder: true,
   })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const typeOptions = [
     { value: 'in_person', label: 'In-Person Visit', icon: 'home' },
@@ -60,8 +60,9 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
   async function handleSubmit() {
     if (!form.date || !form.time) return
     setSaving(true)
+    setError(null)
 
-    const appointmentDate = `${form.date}T${form.time}:00`
+    const appointmentDate = new Date(`${form.date}T${form.time}:00`).toISOString()
     const assignedTo = form.agent.toLowerCase().includes('casey') ? 'casey' : 'ernest'
 
     try {
@@ -74,24 +75,22 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
           type: form.type,
           scheduledAt: appointmentDate,
           assignedTo,
-          address: form.type === 'in_person' ? (lead.property_address || null) : null,
           notes: form.notes || null,
           sendReminder: form.sendReminder,
-          phone: lead.phone,
-          leadName: toProperCase(lead.full_name),
         }),
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        console.error('Appointment creation failed:', err)
+        const payload = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(payload.error || 'Appointment could not be saved')
       }
 
-      setSaving(false)
       onSuccess()
       onClose()
     } catch (error) {
       console.error('Failed to create appointment:', error)
+      setError(error instanceof Error ? error.message : 'Appointment could not be saved')
+    } finally {
       setSaving(false)
     }
   }
@@ -106,7 +105,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
               <Icon name="calendar_month" className="text-primary" />
               <h2 className="text-lg font-bold text-white">{initialAppointment?.scheduledAt ? 'Edit Appointment' : 'Schedule Appointment'}</h2>
             </div>
-            <button onClick={onClose} className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text-muted)] transition-colors">
+            <button type="button" aria-label="Close appointment" onClick={onClose} className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text-muted)] transition-colors">
               <Icon name="close" />
             </button>
           </div>
@@ -118,6 +117,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
               <div className="flex gap-2">
                 {typeOptions.map(opt => (
                   <button
+                    type="button"
                     key={opt.value}
                     onClick={() => setForm(f => ({ ...f, type: opt.value }))}
                     className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-sm font-medium border transition-all ${
@@ -136,8 +136,9 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
             {/* Date & Time */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Date</label>
+                <label htmlFor="appointment-date" className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Date</label>
                 <input
+                  id="appointment-date"
                   type="date"
                   value={form.date}
                   onChange={(e) => setForm(f => ({ ...f, date: e.target.value }))}
@@ -146,8 +147,9 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Time</label>
+                <label htmlFor="appointment-time" className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Time</label>
                 <input
+                  id="appointment-time"
                   type="time"
                   value={form.time}
                   onChange={(e) => setForm(f => ({ ...f, time: e.target.value }))}
@@ -158,8 +160,9 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
 
             {/* Agent */}
             <div>
-              <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Agent</label>
+              <label htmlFor="appointment-agent" className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Agent</label>
               <select
+                id="appointment-agent"
                 value={form.agent}
                 onChange={(e) => setForm(f => ({ ...f, agent: e.target.value }))}
                 className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
@@ -171,8 +174,9 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
 
             {/* Notes */}
             <div>
-              <label className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Notes (optional)</label>
+              <label htmlFor="appointment-notes" className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Notes (optional)</label>
               <textarea
+                id="appointment-notes"
                 value={form.notes}
                 onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="Any additional details..."
@@ -191,16 +195,19 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
               />
               <span className="text-[color:var(--ck-text)]">Send SMS confirmation to seller</span>
             </label>
+            {error && <p role="alert" className="rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">{error}</p>}
           </div>
 
           <div className="px-6 py-4 border-t border-[color:var(--ck-border)] flex gap-3">
             <button
+              type="button"
               onClick={onClose}
               className="flex-1 border border-[color:var(--ck-border)] rounded-lg py-2.5 text-sm font-bold text-[color:var(--ck-text-muted)] hover:bg-[color:var(--ck-surface-hi)] transition-all"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleSubmit}
               disabled={saving || !form.date}
               className="flex-1 bg-primary text-white rounded-lg py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"

@@ -7,6 +7,8 @@ import { normalizeDealStage } from '@/types/pipeline'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { buildAppointmentCommand } from '@/lib/server/appointment-command'
 
 // Stations that should auto-advance to appointment_set when an appointment
 // is scheduled. We never demote a more-advanced station (offer_made,
@@ -18,13 +20,24 @@ const ADVANCE_FROM_STATIONS = new Set(['new', 'contacted', 'qualified'])
  * Server-side appointment creation — bypasses RLS on manifests table
  */
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json()
-    const { leadId, type, scheduledAt, assignedTo, address, notes, sendReminder, phone, leadName } = body
+  const actor = await resolveAuthenticatedActor()
+  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    if (!leadId || !scheduledAt) {
-      return NextResponse.json({ error: 'leadId and scheduledAt required' }, { status: 400 })
-    }
+  try {
+    const parsed = buildAppointmentCommand(await req.json(), actor.name)
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status })
+    const { leadId, type, scheduledAt, assignedTo, notes, sendReminder } = parsed.command
+
+    const { data: leadRow, error: leadError } = await supabase
+      .from('leads')
+      .select('station, phone, full_name, property_address')
+      .eq('id', leadId)
+      .maybeSingle()
+    if (leadError) return NextResponse.json({ error: 'Contact could not be loaded' }, { status: 500 })
+    if (!leadRow) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+    const address = type === 'in_person' ? leadRow.property_address ?? null : null
+    const phone = typeof leadRow.phone === 'string' ? leadRow.phone : null
+    const leadName = typeof leadRow.full_name === 'string' ? leadRow.full_name : null
 
     // 1. Ensure manifest exists
     await ensureManifestExists(leadId)
@@ -32,11 +45,11 @@ export async function POST(req: NextRequest) {
     const canonicalAppointment = await upsertAppointmentFromCall({
       leadId,
       scheduledAt,
-      type: type || 'phone_call',
-      address: address || null,
-      notes: notes || null,
+      type,
+      address,
+      notes,
       source: 'manual',
-      assignedTo: assignedTo || 'casey',
+      assignedTo,
     })
     const appointmentId = canonicalAppointment?.id ?? randomUUID()
     const scheduledIso = canonicalAppointment?.scheduled_at ?? scheduledAt
@@ -45,7 +58,7 @@ export async function POST(req: NextRequest) {
     const updated = await updateManifestAndCascade(leadId, (manifest) => {
       manifest.pipeline.appointment = {
         appointmentId,
-        type: type || 'phone_call',
+        type,
         scheduledAt: scheduledIso,
         createdAt: new Date().toISOString(),
         status: 'scheduled',
@@ -57,9 +70,9 @@ export async function POST(req: NextRequest) {
         reminderAutomationEnabledAt: new Date().toISOString(),
         reminderAutomationSource: 'appointment_modal',
         automationLog: [],
-        assignedTo: assignedTo || 'casey',
-        address: canonicalAppointment?.address ?? address ?? null,
-        notes: canonicalAppointment?.notes ?? notes ?? null,
+        assignedTo,
+        address: canonicalAppointment?.address ?? address,
+        notes: canonicalAppointment?.notes ?? notes,
       }
 
       if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
@@ -68,20 +81,15 @@ export async function POST(req: NextRequest) {
       if (!manifest.auditTrail) manifest.auditTrail = []
       manifest.auditTrail.push({
         timestamp: new Date().toISOString(),
-        agent: 'appointment_modal',
+        agent: actor.name,
         action: 'appointment_created',
-        details: { type, scheduledAt, assignedTo, notes },
+        details: { type, scheduledAt: scheduledIso, assignedTo, notes },
       })
     }, 'appointment_modal')
 
     // 2b. Auto-advance station to appointment_set when applicable. Without
     // this, leads stay at new/contacted/qualified after booking and miss the
     // appointment_set stage value in scoring.
-    const { data: leadRow } = await supabase
-      .from('leads')
-      .select('station')
-      .eq('id', leadId)
-      .single()
     const currentStage = normalizeDealStage(leadRow?.station)
     const leadAppointmentPatch: Record<string, unknown> = {
       appointment_date: scheduledIso,
@@ -102,7 +110,7 @@ export async function POST(req: NextRequest) {
         manifest.auditTrail = manifest.auditTrail ?? []
         manifest.auditTrail.push({
           timestamp: new Date().toISOString(),
-          agent: 'appointment_modal',
+          agent: actor.name,
           action: 'station_auto_advanced',
           details: { from: leadRow?.station, to: 'appointment_set', trigger: 'appointment_created' },
         })
@@ -111,7 +119,7 @@ export async function POST(req: NextRequest) {
         leadId,
         fromStation: leadRow?.station ?? null,
         toStation: 'appointment_set',
-        changedBy: assignedTo || 'appointment_modal',
+        changedBy: actor.name,
         reason: 'appointment_created',
       }).catch((error) => console.error('[create-appointment] PPC qualified conversion queue failed:', error))
     }
@@ -134,7 +142,7 @@ export async function POST(req: NextRequest) {
       lead_id: leadId,
       activity_type: 'appointment',
       description: `Appointment scheduled: ${typeLabel} on ${dateDisplay} at ${timeDisplay} with ${assignedTo}${notes ? `. Notes: ${notes}` : ''}`,
-      agent: assignedTo || 'System',
+      agent: actor.name,
       metadata: {
         appointment_id: appointmentId,
         type,
@@ -151,8 +159,8 @@ export async function POST(req: NextRequest) {
       appointmentId,
       activityId: appointmentActivity?.id ?? null,
       scheduledAt: scheduledIso,
-      appointmentType: type || 'phone_call',
-      assignedTo: assignedTo || 'casey',
+      appointmentType: type,
+      assignedTo,
       source: 'appointment_modal',
     }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 

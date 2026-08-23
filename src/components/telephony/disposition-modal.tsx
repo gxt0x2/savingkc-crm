@@ -11,6 +11,7 @@ import {
   type DispositionTone,
 } from '@/lib/dialer-dispositions'
 import type { DialerPostCallStatus } from '@/lib/dialer-post-call-review'
+import { AppointmentDateTimeField, ConnectionPill } from './disposition-modal-fields'
 
 // Canonical disposition ids live in src/lib/dialer-dispositions.ts so the modal,
 // the heir panel, and the lead PATCH route all speak the same language.
@@ -45,7 +46,7 @@ interface DispositionModalProps {
   onDisposition: (
     disposition: DispositionType,
     notes?: string,
-    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null },
+    options?: { markAsLead?: boolean; autoDialNext?: boolean; verified?: boolean; deadReason?: string | null; appointmentAt?: string | null },
   ) => void | boolean | Promise<void | boolean>
   phoneNumber?: string
   leadName?: string
@@ -111,39 +112,6 @@ function initialsFromName(name?: string | null): string {
   if (parts.length === 0) return '—'
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase()
-}
-
-function ConnectionPill({ status }: { status: string }) {
-  if (status === 'connected') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#30D1582E] text-[#30D158] text-[11px] font-medium">
-        <Icon name="call" size="text-[11px]" filled />
-        Connected
-      </span>
-    )
-  }
-  if (status === 'voicemail') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#64D2FF2E] text-[#64D2FF] text-[11px] font-medium">
-        <Icon name="voicemail" size="text-[11px]" />
-        Voicemail
-      </span>
-    )
-  }
-  if (status === 'no_answer') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#98989E38] text-[var(--skc-text-secondary)] text-[11px] font-medium">
-        <Icon name="phone_missed" size="text-[11px]" />
-        No Answer
-      </span>
-    )
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#98989E38] text-[var(--skc-text-secondary)] text-[11px] font-medium capitalize">
-      {status.replace(/_/g, ' ')}
-    </span>
-  )
 }
 
 function Chevron() {
@@ -226,6 +194,7 @@ export function DispositionModal({
   // leaves the flag alone otherwise (a later "No Answer" must not un-verify a
   // number we already confirmed). A touch makes it an explicit manual override.
   const [verifiedTouched, setVerifiedTouched] = useState(false)
+  const [appointmentAt, setAppointmentAt] = useState('')
   const [localSaving, setLocalSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
@@ -233,7 +202,7 @@ export function DispositionModal({
 
   const isControlledDisposition = selectedDisposition !== undefined
   const isControlledNotes = notes !== undefined
-  const autoSubmitOnOutcome = variant === 'heirQueue'
+  const autoSubmitVariant = variant === 'heirQueue'
 
   useEffect(() => {
     if (!open) return
@@ -245,17 +214,23 @@ export function DispositionModal({
     setDeadReason('')
     setVerified(false)
     setVerifiedTouched(false)
+    setAppointmentAt('')
     setSaveError(null)
     setSaveNotice(null)
   }, [open, isControlledDisposition, selectedDisposition, isControlledNotes, notes])
 
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
   const activeNotes = isControlledNotes ? (notes ?? '') : internalNotes
+  const autoSubmitOnOutcome = autoSubmitVariant && activeDisposition !== 'appointment_set'
+  const visibleDispositions = useMemo(() => dispositions.map((item) => item.id === 'spoke_with_owner'
+    ? { ...item, label: variant === 'heirQueue' ? 'Reached Heir' : 'Reached Seller' }
+    : item), [dispositions, variant])
   const needsReason = dispositionRequiresReason(activeDisposition)
   const reasonSatisfied = !needsReason || (
     deadReason.trim().length > 0 && (deadReason !== 'other' || activeNotes.trim().length > 0)
   )
-  const canSave = Boolean(activeDisposition) && reasonSatisfied && !isSaving && !localSaving
+  const appointmentSatisfied = activeDisposition !== 'appointment_set' || Boolean(appointmentAt)
+  const canSave = Boolean(activeDisposition) && reasonSatisfied && appointmentSatisfied && !isSaving && !localSaving
 
   const resolvedContact = useMemo(() => {
     const name = contact?.name || leadName || 'Unknown'
@@ -281,7 +256,7 @@ export function DispositionModal({
     if (!dispositionRequiresReason(id)) setDeadReason('')
     setSaveError(null)
     setSaveNotice(null)
-    if (autoSubmitOnOutcome && !dispositionRequiresReason(id)) {
+    if (autoSubmitVariant && !dispositionRequiresReason(id) && id !== 'appointment_set') {
       void submit({ closeAfter: true, advance: true, disposition: id })
     }
   }
@@ -320,6 +295,10 @@ export function DispositionModal({
       setSaveError('Add a note when Other is selected.')
       return
     }
+    if (disposition === 'appointment_set' && !appointmentAt) {
+      setSaveError('Choose the appointment date and time before saving.')
+      return
+    }
     savingRef.current = true
     setSaveError(null)
     setSaveNotice(null)
@@ -330,6 +309,9 @@ export function DispositionModal({
         autoDialNext: advance,
         verified: showVerifyToggle && verifiedTouched ? verified : undefined,
         deadReason: dispositionNeedsReason ? resolvedDeadReason : undefined,
+        appointmentAt: disposition === 'appointment_set' && appointmentAt
+          ? new Date(appointmentAt).toISOString()
+          : undefined,
       })
       if (result === false) {
         setSaveError('Disposition was not saved. Try again before moving on.')
@@ -352,7 +334,7 @@ export function DispositionModal({
   function pickDeadReason(reasonId: string) {
     setDeadReason(reasonId)
     setSaveError(null)
-    if (autoSubmitOnOutcome && reasonId !== 'other' && activeDisposition && dispositionRequiresReason(activeDisposition)) {
+    if (autoSubmitVariant && reasonId !== 'other' && activeDisposition && dispositionRequiresReason(activeDisposition)) {
       void submit({
         closeAfter: true,
         advance: true,
@@ -433,8 +415,8 @@ export function DispositionModal({
 
           <div className="px-4">
             <div className="bg-[var(--skc-surface-2)] rounded-[var(--skc-radius-card)] overflow-hidden">
-              {dispositions.map((d, i) => {
-                const isLast = i === dispositions.length - 1
+              {visibleDispositions.map((d, i) => {
+                const isLast = i === visibleDispositions.length - 1
                 const isSelected = d.id === activeDisposition
                 return (
                   <button
@@ -510,6 +492,10 @@ export function DispositionModal({
                 {verified ? <CheckActive /> : <span className="w-[22px]" />}
               </button>
             </div>
+          )}
+
+          {activeDisposition === 'appointment_set' && (
+            <AppointmentDateTimeField value={appointmentAt} onChange={setAppointmentAt} />
           )}
 
           {needsReason && (
@@ -699,7 +685,7 @@ export function DispositionModal({
               </div>
 
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
-                {dispositions.map((d) => {
+                {visibleDispositions.map((d) => {
                   const isSelected = d.id === activeDisposition
                   return (
                     <button
@@ -793,6 +779,10 @@ export function DispositionModal({
                   </span>
                   {verified ? <CheckActive /> : <span className="w-[22px]" />}
                 </button>
+              )}
+
+              {activeDisposition === 'appointment_set' && (
+                <AppointmentDateTimeField value={appointmentAt} onChange={setAppointmentAt} />
               )}
 
               {needsReason && (
