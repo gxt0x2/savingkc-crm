@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   readDirectoryPage: vi.fn(),
+  requireUser: vi.fn(),
 }))
 
 vi.mock('server-only', () => ({}))
@@ -14,13 +15,33 @@ vi.mock('@/lib/server/contact-directory-read-model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/server/contact-directory-read-model')>()
   return { ...original, readContactDirectoryPage: mocks.readDirectoryPage }
 })
+vi.mock('@/lib/api/require-authenticated-user', () => ({
+  requireAuthenticatedUser: mocks.requireUser,
+}))
 
-import { GET } from './route'
+import { GET, POST } from './route'
 
 describe('contacts GET', () => {
   beforeEach(() => {
     mocks.from.mockReset()
     mocks.readDirectoryPage.mockReset()
+    mocks.requireUser.mockReset()
+    mocks.requireUser.mockResolvedValue(null)
+  })
+
+  it('rejects anonymous reads and creates before CRM access', async () => {
+    mocks.requireUser.mockResolvedValue(new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }))
+    const postRequest = new NextRequest('https://crm.savingkc.com/api/contacts', {
+      method: 'POST',
+      body: JSON.stringify({ fullName: 'Seller' }),
+    })
+    const parse = vi.spyOn(postRequest, 'json')
+
+    expect((await GET(new NextRequest('https://crm.savingkc.com/api/contacts?mode=page'))).status).toBe(401)
+    expect((await POST(postRequest)).status).toBe(401)
+    expect(parse).not.toHaveBeenCalled()
+    expect(mocks.readDirectoryPage).not.toHaveBeenCalled()
+    expect(mocks.from).not.toHaveBeenCalled()
   })
 
   it('retires the unbounded compatibility contract without database work', async () => {

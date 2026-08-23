@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
 import { communicationActivitySummary } from '@/lib/operating-model/conversation-presentation'
@@ -115,6 +116,9 @@ function pickTags(m: ManifestPayload): string[] {
 }
 
 export async function GET(request: NextRequest) {
+  const unauthorized = await requireAuthenticatedUser()
+  if (unauthorized) return unauthorized
+
   if (request.nextUrl.searchParams.get('mode') !== 'page') {
     return NextResponse.json(
       { error: 'The unbounded Contacts contract is retired. Use mode=page with an explicit limit.' },
@@ -247,6 +251,9 @@ function normalizeContactPhone(value: unknown): string | null {
  * automated outreach, or advertising conversion events.
  */
 export async function POST(request: NextRequest) {
+  const unauthorized = await requireAuthenticatedUser()
+  if (unauthorized) return unauthorized
+
   const payload = await request.json().catch(() => null) as Record<string, unknown> | null
   if (!payload) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
 
