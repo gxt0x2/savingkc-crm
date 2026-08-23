@@ -1,15 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase } from '@/lib/format'
-import { formatDurationBetween, isOutboundAttempt } from '@/lib/contact-display'
-import { DEAD_REASONS } from '@/lib/lead-outcomes'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
@@ -21,9 +19,6 @@ const PropertyHero = dynamic(() => import('@/components/leads/property-hero').th
 const ActivityFeed = dynamic(() => import('@/components/leads/activity-feed').then((module) => module.ActivityFeed))
 const DocumentManager = dynamic(() => import('@/components/documents/document-manager').then((module) => module.DocumentManager))
 const PropertyDetailsCard = dynamic(() => import('@/components/leads/property-details-card').then((module) => module.PropertyDetailsCard))
-const TemperatureBadge = dynamic(() => import('@/components/leads/temperature-badge').then((module) => module.TemperatureBadge))
-const FavoriteToggle = dynamic(() => import('@/components/leads/favorite-toggle').then((module) => module.FavoriteToggle))
-const StageSelector = dynamic(() => import('@/components/leads/stage-selector').then((module) => module.StageSelector))
 const AdsSignalReceipt = dynamic(() => import('@/components/leads/ads-signal-receipt').then((module) => module.AdsSignalReceipt))
 const AddNote = dynamic(() => import('@/components/leads/add-note').then((module) => module.AddNote))
 const EditNoteModal = dynamic(() => import('@/components/leads/edit-note-modal').then((module) => module.EditNoteModal))
@@ -31,21 +26,16 @@ const ContractModal = dynamic(() => import('@/components/leads/contract-modal').
 const AppointmentModal = dynamic(() => import('@/components/leads/appointment-modal').then((module) => module.AppointmentModal))
 const AppointmentOutcomeModal = dynamic(() => import('@/components/leads/appointment-outcome-modal').then((module) => module.AppointmentOutcomeModal))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
-const SellerGoals = dynamic(() => import('@/components/leads/seller-goals').then((module) => module.SellerGoals))
 const DiscoveryQuestions = dynamic(() => import('@/components/leads/discovery-questions').then((module) => module.DiscoveryQuestions))
-const AriChat = dynamic(() => import('@/components/leads/ari-chat').then((module) => module.AriChat))
 const MailTracker = dynamic(() => import('@/components/leads/mail-tracker').then((module) => module.MailTracker))
-const MissingInfoCard = dynamic(() => import('@/components/leads/missing-info-card').then((module) => module.MissingInfoCard))
 const EmailThread = dynamic(() => import('@/components/leads/email-thread').then((module) => module.EmailThread))
 const CockpitModal = dynamic(() => import('@/components/ui/cockpit-modal').then((module) => module.CockpitModal))
-const SortableColumn = dynamic(() => import('@/components/ui/sortable-column').then((module) => module.SortableColumn))
 const NewTaskModal = dynamic(() => import('@/components/modals/new-task-modal').then((module) => module.NewTaskModal))
 const EditTaskModal = dynamic(() => import('@/components/modals/edit-task-modal').then((module) => module.EditTaskModal))
 const LeadAiChangeReview = dynamic(() => import('@/components/ai/lead-ai-change-review').then((module) => module.LeadAiChangeReview))
 
 type LeadTriageValue = 'opportunity' | 'lead' | 'dead'
 
-const LEAD_GROUP_SESSION_KEY = 'savingkc:lead-group:v1'
 
 interface Lead {
   id: string
@@ -174,19 +164,6 @@ interface ManifestProperty {
   data_enriched_at?: string | null
 }
 
-interface LeadGroupContext {
-  source?: string
-  returnPath?: string
-  label?: string
-  savedAt?: string
-  ids: string[]
-  items?: Array<{
-    id: string
-    name?: string | null
-    address?: string | null
-  }>
-}
-
 function activityTypeToFeedType(type: string): 'sms' | 'call' | 'email' | 'status_change' {
   if (type === 'sms') return 'sms'
   if (type === 'call') return 'call'
@@ -200,24 +177,6 @@ function readObject(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-function formatAppointmentChip(appointment: AppointmentState | null): string | null {
-  if (!appointment?.scheduledAt) return null
-  const date = new Date(appointment.scheduledAt)
-  if (isNaN(date.getTime())) return null
-  const day = date.toLocaleDateString('en-US', {
-    timeZone: 'America/Chicago',
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
-  const time = date.toLocaleTimeString('en-US', {
-    timeZone: 'America/Chicago',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-  return `${day} · ${time}`
-}
-
 const CALLER_ID_BY_AGENT: Record<string, string> = {
   ernest: '+18166088588',
   casey: '+18167277667',
@@ -229,516 +188,6 @@ function callerIdForAssignedAgent(assignedAgent: string | null | undefined): str
   if (normalized.includes('casey')) return CALLER_ID_BY_AGENT.casey
   if (normalized.includes('ernest')) return CALLER_ID_BY_AGENT.ernest
   return undefined
-}
-
-const LEAD_TRIAGE_OPTIONS: Array<{
-  value: LeadTriageValue
-  label: string
-  icon: string
-  station: string
-  priority: string
-  score: number
-  color: string
-  bg: string
-}> = [
-  {
-    value: 'opportunity',
-    label: 'Real Opportunity',
-    icon: 'verified',
-    station: 'qualified',
-    priority: 'hot',
-    score: 85,
-    color: 'var(--ck-success)',
-    bg: 'rgba(16,185,129,0.14)',
-  },
-  {
-    value: 'lead',
-    label: 'Lead',
-    icon: 'person',
-    station: 'contacted',
-    priority: 'warm',
-    score: 55,
-    color: 'var(--ck-warn)',
-    bg: 'rgba(245,158,11,0.14)',
-  },
-  {
-    value: 'dead',
-    label: 'Dead',
-    icon: 'cancel',
-    station: 'dead',
-    priority: 'cold',
-    score: 0,
-    color: 'var(--ck-accent-bright)',
-    bg: 'rgba(239,68,68,0.14)',
-  },
-]
-
-function LeadTriageStrip({
-  lead,
-  onChanged,
-}: {
-  lead: Lead
-  onChanged: (lead: Lead) => void
-}) {
-  const [saving, setSaving] = useState<LeadTriageValue | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [deadDialogOpen, setDeadDialogOpen] = useState(false)
-  const [deadReason, setDeadReason] = useState('')
-  const [pendingDeadOption, setPendingDeadOption] = useState<(typeof LEAD_TRIAGE_OPTIONS)[number] | null>(null)
-  const current = lead.classification
-
-  async function submitTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number], selectedDeadReason?: string) {
-    if (saving) return
-    setSaving(option.value)
-    setError(null)
-    try {
-      const res = await fetch(`/api/leads/${lead.id}/lifecycle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'transition',
-          stage: option.station,
-          ...(option.value === 'dead' ? { deadReason: selectedDeadReason } : {}),
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Unable to save triage')
-      }
-      onChanged({
-        ...lead,
-        classification: data.result?.classification ?? option.value,
-        station: data.result?.stage ?? option.station,
-        priority: data.result?.priority ?? option.priority,
-        opportunity_score: option.score,
-        ...(option.value === 'dead' ? { dead_reason: selectedDeadReason ?? null } : {}),
-      } as Lead)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save triage')
-    } finally {
-      setSaving(null)
-    }
-  }
-
-  function selectTriage(option: (typeof LEAD_TRIAGE_OPTIONS)[number]) {
-    if (saving) return
-    if (option.value === 'dead') {
-      setPendingDeadOption(option)
-      setDeadDialogOpen(true)
-      return
-    }
-    void submitTriage(option)
-  }
-
-  return (
-    <section
-      className="mb-4 rounded-xl border px-3 py-3 sm:px-4"
-      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
-    >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-2">
-          <Icon name="fact_check" className="!text-base !text-[color:var(--ck-accent)]" />
-          <span className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Triage</span>
-          <span
-            className="rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
-            style={{
-              borderColor: 'var(--ck-border-strong)',
-              background: 'var(--ck-surface-elev)',
-              color: 'var(--ck-text-muted)',
-            }}
-          >
-            {current ? LEAD_TRIAGE_OPTIONS.find((option) => option.value === current)?.label : 'Untriaged'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 lg:min-w-[520px]">
-          {LEAD_TRIAGE_OPTIONS.map((option) => {
-            const active = current === option.value
-            const isSaving = saving === option.value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => selectTriage(option)}
-                disabled={!!saving}
-                className="h-10 min-w-0 rounded-lg border px-2 text-xs font-black uppercase tracking-wider transition-all disabled:cursor-wait disabled:opacity-70 sm:text-[13px]"
-                style={{
-                  background: active ? option.bg : 'var(--ck-surface-elev)',
-                  borderColor: active ? option.color : 'var(--ck-border)',
-                  color: active ? option.color : 'var(--ck-text)',
-                }}
-                title={`Mark as ${option.label}`}
-              >
-                <span className="flex items-center justify-center gap-1.5 whitespace-nowrap">
-                  <Icon name={isSaving ? 'progress_activity' : option.icon} className="!text-[15px]" />
-                  <span className="truncate">{option.label}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-      {error && (
-        <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ck-accent-bright)' }}>
-          {error}
-        </p>
-      )}
-      {deadDialogOpen && pendingDeadOption && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-md rounded-2xl border p-5 shadow-2xl" style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}>
-            <div className="mb-4">
-              <p className="text-sm font-black uppercase tracking-wider text-[color:var(--ck-accent-bright)]">Dead Lead</p>
-              <h3 className="mt-1 text-xl font-black text-[color:var(--ck-text)]">Why is this lead dead?</h3>
-              <p className="mt-1 text-sm font-semibold text-[color:var(--ck-text-muted)]">
-                This reason rolls into source and outcome reporting for every channel.
-              </p>
-            </div>
-            <select
-              value={deadReason}
-              onChange={(e) => setDeadReason(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2 text-sm font-semibold focus:outline-none"
-              style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)', color: 'var(--ck-text)' }}
-              aria-label="Dead reason"
-            >
-              <option value="">Select reason...</option>
-              {DEAD_REASONS.map((reason) => (
-                <option key={reason.id} value={reason.id}>{reason.label}</option>
-              ))}
-            </select>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setDeadDialogOpen(false)
-                  setPendingDeadOption(null)
-                  setDeadReason('')
-                }}
-                className="rounded-lg border px-3 py-2 text-sm font-black"
-                style={{ borderColor: 'var(--ck-border)', color: 'var(--ck-text)' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!deadReason || !!saving}
-                onClick={async () => {
-                  const option = pendingDeadOption
-                  const selected = deadReason
-                  setDeadDialogOpen(false)
-                  setPendingDeadOption(null)
-                  setDeadReason('')
-                  await submitTriage(option, selected)
-                }}
-                className="rounded-lg px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ background: 'var(--ck-accent)' }}
-              >
-                Save Reason
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
-  )
-}
-
-// ─── Net Proceeds Calculator ─────────────────────────────────────────────────
-interface NetProceedsCalcProps {
-  leadId: string
-  initialArv: number | null
-  initialAskingPrice: number | null
-  initialAssignmentFee: number | null
-  initialBackTaxes?: number | null
-  initialMortgage?: number | null
-  initialLiens?: number | null
-}
-
-function NetProceedsCalc({ leadId, initialArv, initialAskingPrice, initialAssignmentFee, initialBackTaxes, initialMortgage, initialLiens }: NetProceedsCalcProps) {
-  const [arv, setArv] = useState(initialArv ?? 0)
-  const [asIsValue, setAsIsValue] = useState(initialAskingPrice ? Math.round(initialAskingPrice * 1.1) : 0)
-  const [askingPrice, setAskingPrice] = useState(initialAskingPrice ?? 0)
-  const [mortgage, setMortgage] = useState(initialMortgage ?? 0)
-  const [liens, setLiens] = useState(initialLiens ?? 0)
-  const [taxes, setTaxes] = useState(initialBackTaxes ?? 0)
-  const [editingField, setEditingField] = useState<string | null>(null)
-  const [inputValue, setInputValue] = useState('')
-
-  const totalDebt = mortgage + liens + taxes
-  const equitySurplus = asIsValue - totalDebt
-  const estimatedAssignment = initialAssignmentFee ?? 0
-
-  type FieldConfig = { key: string; label: string; value: number; editable: boolean; color?: string }
-
-  const fields: FieldConfig[] = [
-    { key: 'arv', label: 'ARV', value: arv, editable: true },
-    { key: 'asIs', label: 'As-Is Valuation', value: asIsValue, editable: false },
-    { key: 'asking', label: 'Asking Price', value: askingPrice, editable: true },
-    { key: 'mortgage', label: 'Mortgage', value: mortgage, editable: false },
-    { key: 'liens', label: 'Liens', value: liens, editable: false },
-    { key: 'taxes', label: 'Back Taxes', value: taxes, editable: false },
-  ]
-
-  async function saveField(key: string, val: number) {
-    // Direct DB columns
-    const fieldMap: Record<string, string> = {
-      arv: 'arv',
-      asking: 'offer_amount',
-      repairs: 'repair_estimate',
-      assignment: 'assignment_fee',
-    }
-    const col = fieldMap[key]
-    if (col) {
-      await fetch('/api/leads', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: leadId, [col]: val }),
-      })
-      return
-    }
-  }
-
-  function startEdit(key: string, val: number) {
-    setEditingField(key)
-    setInputValue(String(val))
-  }
-
-  function commitEdit(key: string) {
-    const val = parseFloat(inputValue) || 0
-    const setterMap: Record<string, (v: number) => void> = {
-      arv: setArv, asIs: setAsIsValue, asking: setAskingPrice,
-      mortgage: setMortgage, liens: setLiens, taxes: setTaxes,
-    }
-    setterMap[key]?.(val)
-    saveField(key, val)
-    setEditingField(null)
-  }
-
-  return (
-    <section
-      className="rounded-2xl p-5 border"
-      style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
-    >
-      <div className="flex items-center gap-2 mb-5">
-        <Icon name="calculate" className="!text-base !text-[color:var(--ck-accent)]" />
-        <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Net Proceeds</h2>
-      </div>
-
-      <div className="space-y-2.5">
-        {fields.map(({ key, label, value, editable }) => (
-          <div key={key} className="flex justify-between items-center">
-            <span className="text-xs font-medium" style={{ color: 'var(--ck-text-muted)' }}>{label}</span>
-            {editingField === key ? (
-              <input
-                autoFocus
-                type="number"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onBlur={() => commitEdit(key)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitEdit(key)
-                  if (e.key === 'Escape') setEditingField(null)
-                }}
-                className="w-28 text-right text-sm font-bold text-[color:var(--ck-text)] rounded px-2 py-0.5 focus:outline-none focus:ring-1"
-                style={{
-                  background: 'var(--ck-surface-elev)',
-                  border: '1px solid var(--ck-border)',
-                }}
-              />
-            ) : (
-              <span
-                className="text-sm font-bold text-[color:var(--ck-text)] cursor-pointer hover:opacity-70 transition-opacity px-1"
-                onDoubleClick={() => editable && startEdit(key, value)}
-                title={editable ? 'Double-click to edit' : ''}
-              >
-                ${value.toLocaleString()}
-              </span>
-            )}
-          </div>
-        ))}
-
-        {/* Divider */}
-        <div
-          className="pt-3 space-y-2.5"
-          style={{ borderTop: '1px solid var(--ck-border)' }}
-        >
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-medium" style={{ color: 'var(--ck-text-muted)' }}>Total Debt</span>
-            <span className="text-sm font-bold" style={{ color: 'var(--ck-accent)' }}>
-              ${totalDebt.toLocaleString()}
-            </span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-medium" style={{ color: 'var(--ck-text-muted)' }}>Equity / Surplus</span>
-            <span
-              className="text-sm font-bold"
-              style={{ color: equitySurplus >= 0 ? 'var(--ck-success)' : 'var(--ck-accent)' }}
-            >
-              ${equitySurplus.toLocaleString()}
-            </span>
-          </div>
-        </div>
-
-        {/* Assignment Fee - Big Number */}
-        <div
-          className="rounded-xl p-4 mt-1 border"
-          style={{ background: 'var(--ck-surface-elev)', borderColor: 'var(--ck-border)' }}
-        >
-          <p className="ck-microlabel mb-1" style={{ color: 'var(--ck-accent)' }}>
-            Estimated Assignment
-          </p>
-          <p className="text-3xl font-black text-[color:var(--ck-text)] leading-none tracking-tight">
-            ${estimatedAssignment.toLocaleString()}
-          </p>
-        </div>
-      </div>
-
-      <p className="text-[9px] mt-3" style={{ color: 'var(--ck-text-dim)' }}>
-        ARV and asking price are editable. Other values are derived intelligence until canonical financial fields are available.
-      </p>
-    </section>
-  )
-}
-
-// ─── Email Compose Modal ──────────────────────────────────────────────────────
-interface EmailComposeModalProps {
-  leadId: string
-  toEmail: string
-  leadName: string | null
-  onClose: () => void
-  onSent: () => void
-}
-
-function EmailComposeModal({ leadId, toEmail, leadName, onClose, onSent }: EmailComposeModalProps) {
-  const [to, setTo] = useState(toEmail)
-  const [subject, setSubject] = useState(`${toProperCase(leadName) || 'Your'} Property – Saving KC`)
-  const [body, setBody] = useState('')
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function handleSend() {
-    if (!to || !body.trim()) { setError('Recipient and message are required'); return }
-    setSending(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/conversations/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, to, subject, body: body.trim(), mode: 'email', agent: 'User' }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Send failed')
-      onSent()
-      onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send email')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          className="ck-dark rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden border"
-          style={{ background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }}
-        >
-          {/* Header */}
-          <div
-            className="flex items-center justify-between px-6 py-4 border-b"
-            style={{ borderColor: 'var(--ck-border)' }}
-          >
-            <div className="flex items-center gap-2">
-              <Icon name="mail" className="!text-base !text-[color:var(--ck-accent)]" />
-              <h2 className="text-lg font-bold text-white">Send Email</h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full flex items-center justify-center"
-              style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text)' }}
-            >
-              <Icon name="close" className="!text-base" />
-            </button>
-          </div>
-
-          {/* Form */}
-          <div className="px-6 py-4 space-y-3 flex-1">
-            <div>
-              <label
-                className="ck-microlabel mb-1 block !text-[10px]"
-                style={{ color: 'var(--ck-text-muted)' }}
-              >
-                To
-              </label>
-              <input
-                type="email"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--ck-accent)]"
-                style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)', color: 'var(--ck-text)' }}
-              />
-            </div>
-            <div>
-              <label
-                className="ck-microlabel mb-1 block !text-[10px]"
-                style={{ color: 'var(--ck-text-muted)' }}
-              >
-                Subject
-              </label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--ck-accent)]"
-                style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)', color: 'var(--ck-text)' }}
-              />
-            </div>
-            <div>
-              <label
-                className="ck-microlabel mb-1 block !text-[10px]"
-                style={{ color: 'var(--ck-text-muted)' }}
-              >
-                Message
-              </label>
-              <textarea
-                rows={8}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="Type your message..."
-                autoFocus
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--ck-accent)] resize-none"
-                style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)', color: 'var(--ck-text)' }}
-              />
-            </div>
-            {error && <p className="text-sm font-medium" style={{ color: 'var(--ck-accent-bright)' }}>{error}</p>}
-          </div>
-
-          {/* Footer */}
-          <div
-            className="px-6 py-4 border-t flex gap-3"
-            style={{ borderColor: 'var(--ck-border)' }}
-          >
-            <button
-              onClick={onClose}
-              className="flex-1 rounded-lg py-2.5 text-sm font-bold transition-all"
-              style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)', color: 'var(--ck-text)' }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSend}
-              disabled={sending || !body.trim()}
-              className="flex-1 rounded-lg py-2.5 text-sm font-bold text-white disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-              style={{ background: 'var(--ck-accent)' }}
-            >
-              {sending ? 'Sending...' : <><Icon name="send" size="text-sm" /> Send Email</>}
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  )
 }
 
 // ─── Edit Lead Slide-Over ─────────────────────────────────────────────────────
@@ -874,12 +323,6 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
   )
 }
 
-// ─── Manifest Panel — compact cockpit summary ────────────────────────────────
-interface ManifestPanelProps {
-  manifest: ManifestPanelData | null
-  updatedAt: string | null
-}
-
 interface ManifestPanelData {
   manifestId?: string
   version?: number | string
@@ -917,218 +360,14 @@ interface ManifestPanelData {
   [key: string]: unknown
 }
 
-function ManifestPanel({ manifest, updatedAt }: ManifestPanelProps) {
-  const [open, setOpen] = useState(false)
-  const [showRaw, setShowRaw] = useState(false)
-
-  const cardStyle: React.CSSProperties = { background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }
-
-  if (!manifest) {
-    return (
-      <section className="rounded-2xl p-4 border" style={cardStyle}>
-        <div className="flex items-center gap-2 mb-3">
-          <Icon name="description" className="!text-sm !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Compatibility intelligence</h2>
-        </div>
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--ck-text-muted)' }}>
-          No derived seller intelligence is available yet. It will populate from canonical activity and enrichment.
-        </p>
-      </section>
-    )
-  }
-
-  const m = manifest
-
-  // Top-line signals only — keep this small.
-  const signals: Array<{ label: string; value: string; tone?: 'accent' | 'warn' | 'muted' }> = []
-  if (m.currentStation) signals.push({ label: 'Station', value: String(m.currentStation), tone: 'accent' })
-  if (m.priority) signals.push({ label: 'Priority', value: String(m.priority), tone: m.priority === 'hot' ? 'accent' : 'muted' })
-  if (m.tier) signals.push({ label: 'Tier', value: String(m.tier), tone: 'muted' })
-  if (m.qualificationScore != null) signals.push({ label: 'Score', value: String(m.qualificationScore), tone: 'muted' })
-
-  // Defensive: AI-built manifests sometimes return scalars where the type
-  // expects arrays. asArray() normalises so .join / .slice / .map don't
-  // crash the page render.
-  const asArray = (v: unknown): string[] => {
-    if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string')
-    if (typeof v === 'string' && v.trim()) return [v]
-    return []
-  }
-  const flagRed: string[] = asArray(m.flags?.redFlags)
-  const flagOpp: string[] = asArray(m.flags?.opportunityFlags)
-  const situationTypes: string[] = asArray(m.situation?.type)
-  const motivationSignals: string[] = asArray(m.situation?.motivation?.signals)
-  const taxOwed = m.property?.taxCollector?.totalOwed ?? m.property?.taxCollector?.delinquentAmount
-  const vacant = m.property?.vacant
-  const deceased = m.owner?.deceased
-  const outOfState = m.owner?.outOfState
-
-  function toneColor(tone?: 'accent' | 'warn' | 'muted'): string {
-    if (tone === 'accent') return 'var(--ck-accent-bright)'
-    if (tone === 'warn') return 'var(--ck-warn)'
-    return 'var(--ck-text)'
-  }
-
-  return (
-    <section className="rounded-2xl p-4 border" style={cardStyle}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between"
-      >
-        <div className="flex items-center gap-2">
-          <Icon name="description" className="!text-sm !text-[color:var(--ck-accent)]" />
-          <span className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Compatibility intelligence</span>
-          {m.version ? (
-            <span className="text-[10px] font-bold" style={{ color: 'var(--ck-text-dim)' }}>v{m.version}</span>
-          ) : null}
-        </div>
-        <Icon name={open ? 'expand_less' : 'expand_more'} className="!text-sm !text-[color:var(--ck-text-muted)]" />
-      </button>
-
-      {/* Always-visible top-line signals */}
-      {signals.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {signals.map((s) => (
-            <span
-              key={s.label}
-              className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
-              style={{
-                borderColor: 'var(--ck-border-strong)',
-                background: 'var(--ck-surface-elev)',
-                color: toneColor(s.tone),
-              }}
-            >
-              {s.label}: {s.value}
-            </span>
-          ))}
-          {deceased && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--ck-accent-bright)' }}>Deceased</span>
-          )}
-          {outOfState && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--ck-warn)' }}>Out of State</span>
-          )}
-          {vacant && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--ck-warn)' }}>Vacant</span>
-          )}
-        </div>
-      )}
-
-      {/* Expanded body — still compact */}
-      {open && (
-        <div className="mt-3 space-y-2.5 text-xs" style={{ color: 'var(--ck-text)' }}>
-          {m.owner?.fullName && (
-            <div>
-              <p className="ck-microlabel mb-0.5">Owner</p>
-              <p className="font-semibold">{m.owner.fullName}</p>
-              {asArray(m.owner.coOwners).length > 0 && (
-                <p className="text-[10px]" style={{ color: 'var(--ck-text-muted)' }}>+ {asArray(m.owner.coOwners).join(', ')}</p>
-              )}
-            </div>
-          )}
-
-          {situationTypes.length > 0 && (
-            <div>
-              <p className="ck-microlabel mb-1">Situation</p>
-              <div className="flex flex-wrap gap-1">
-                {situationTypes.map((t: string) => (
-                  <span
-                    key={t}
-                    className="text-[10px] px-1.5 py-0.5 rounded border"
-                    style={{ borderColor: 'var(--ck-border-strong)', color: 'var(--ck-text-muted)' }}
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(flagRed.length > 0 || flagOpp.length > 0) && (
-            <div>
-              <p className="ck-microlabel mb-1">Flags</p>
-              <div className="flex flex-wrap gap-1">
-                {flagRed.map((f) => (
-                  <span
-                    key={'r-' + f}
-                    className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: 'rgba(239,68,68,0.12)', color: 'var(--ck-accent-bright)' }}
-                  >
-                    {f}
-                  </span>
-                ))}
-                {flagOpp.map((f) => (
-                  <span
-                    key={'o-' + f}
-                    className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: 'rgba(16,185,129,0.12)', color: 'var(--ck-success)' }}
-                  >
-                    {f}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {motivationSignals.length > 0 && (
-            <div>
-              <p className="ck-microlabel mb-1">Motivation Signals</p>
-              <p className="text-[11px] leading-snug" style={{ color: 'var(--ck-text)' }}>
-                {motivationSignals.slice(0, 4).join(' · ')}
-              </p>
-            </div>
-          )}
-
-          {taxOwed ? (
-            <div className="flex items-center justify-between">
-              <span className="ck-microlabel">Tax Owed</span>
-              <span className="text-xs font-bold" style={{ color: 'var(--ck-accent-bright)' }}>
-                ${Number(taxOwed).toLocaleString()}
-              </span>
-            </div>
-          ) : null}
-
-          <div className="flex items-center justify-between pt-1" style={{ borderTop: '1px solid var(--ck-border)' }}>
-            <button
-              onClick={() => setShowRaw((v) => !v)}
-              className="text-[10px] font-bold hover:underline"
-              style={{ color: 'var(--ck-text-muted)' }}
-            >
-              {showRaw ? 'Hide JSON' : 'View raw'}
-            </button>
-            <p className="text-[9px] font-mono" style={{ color: 'var(--ck-text-dim)' }}>
-              {updatedAt ? `Updated ${new Date(updatedAt).toLocaleDateString()}` : ''}
-            </p>
-          </div>
-
-          {showRaw && (
-            <pre
-              className="text-[10px] p-2 rounded-lg overflow-x-auto max-h-64 overflow-y-auto"
-              style={{
-                background: 'var(--ck-surface-elev)',
-                border: '1px solid var(--ck-border)',
-                color: 'var(--ck-text-muted)',
-              }}
-            >
-              {JSON.stringify(m, null, 2)}
-            </pre>
-          )}
-        </div>
-      )}
-    </section>
-  )
-}
-
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const loadedLeadIdRef = useRef<string | null>(null)
   const [activities, setActivities] = useState<ActivityRow[]>([])
-  const [leadGroup, setLeadGroup] = useState<LeadGroupContext | null>(null)
   const [manifestRowId, setManifestRowId] = useState<string | null>(null)
-  const [manifestFinancials, setManifestFinancials] = useState<Record<string, number | null>>({ back_taxes: null, liens_amount: null, mortgage_balance: null })
   const [manifestProperty, setManifestProperty] = useState<ManifestProperty | null>(null)
   const [zestimate, setZestimate] = useState<number | null>(null)
   const [assessedValue, setAssessedValue] = useState<number | null>(null)
@@ -1136,10 +375,8 @@ export default function LeadDetailPage() {
   const [zillowEnriching, setZillowEnriching] = useState(false)
   const [redfinEnriching, setRedfinEnriching] = useState(false)
   const [redfinError, setRedfinError] = useState<string | null>(null)
-  const [ghostProtocolStatus, setGhostProtocolStatus] = useState<{ phase: number; status: string } | null>(null)
   const [detailsExpanded, setDetailsExpanded] = useState(false)
   const [editPanelOpen, setEditPanelOpen] = useState(false)
-  const [netProceedsOpen, setNetProceedsOpen] = useState(false)
   const [contractModalOpen, setContractModalOpen] = useState(false)
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [showNewTask, setShowNewTask] = useState(false)
@@ -1148,7 +385,6 @@ export default function LeadDetailPage() {
   const [nextAppointment, setNextAppointment] = useState<AppointmentState | null>(null)
   const [manifestScore, setManifestScore] = useState<number | null>(null)
   const [manifestTranscripts, setManifestTranscripts] = useState<Array<{ date: string; recordingUrl?: string }>>([])
-  const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [notesModalOpen, setNotesModalOpen] = useState(false)
   const notesDialogRef = useDialogAccessibility<HTMLDivElement>(
     notesModalOpen,
@@ -1162,45 +398,6 @@ export default function LeadDetailPage() {
   const [editTaskTitle, setEditTaskTitle] = useState('')
   const [editTaskMetadata, setEditTaskMetadata] = useState<Record<string, unknown>>({})
   const activeAppointment = nextAppointment ?? manifestAppointment
-  const appointmentChip = formatAppointmentChip(activeAppointment)
-
-  useEffect(() => {
-    if (!id || typeof window === 'undefined') return
-
-    try {
-      const raw = window.sessionStorage.getItem(LEAD_GROUP_SESSION_KEY)
-      if (!raw) {
-        setLeadGroup(null)
-        return
-      }
-
-      const parsed = JSON.parse(raw) as Partial<LeadGroupContext>
-      if (parsed.source === 'recent_leads') {
-        window.sessionStorage.removeItem(LEAD_GROUP_SESSION_KEY)
-        setLeadGroup(null)
-        return
-      }
-
-      const ids = Array.isArray(parsed.ids)
-        ? parsed.ids.filter((leadId): leadId is string => typeof leadId === 'string')
-        : []
-      if (!ids.includes(id)) {
-        setLeadGroup(null)
-        return
-      }
-
-      setLeadGroup({
-        source: parsed.source,
-        returnPath: parsed.returnPath,
-        label: parsed.label,
-        savedAt: parsed.savedAt,
-        ids,
-        items: Array.isArray(parsed.items) ? parsed.items : undefined,
-      })
-    } catch {
-      setLeadGroup(null)
-    }
-  }, [id])
 
   // ── Data fetching (runs on mount + after user actions) ──
   const [refreshTick, setRefreshTick] = useState(0)
@@ -1246,11 +443,6 @@ export default function LeadDetailPage() {
         const communications = readObject(manifest?.communications)
 
         setManifestRowId(data.manifestId ?? null)
-        setManifestFinancials({
-          back_taxes: typeof financials?.back_taxes === 'number' ? financials.back_taxes : null,
-          liens_amount: typeof financials?.liens_amount === 'number' ? financials.liens_amount : null,
-          mortgage_balance: typeof financials?.mortgage_balance === 'number' ? financials.mortgage_balance : null,
-        })
         setManifestProperty(property as ManifestProperty | null)
         setZestimate(typeof financials?.zillow_zestimate === 'number' && financials.zillow_zestimate > 0
           ? financials.zillow_zestimate
@@ -1297,7 +489,6 @@ export default function LeadDetailPage() {
         setLead(null)
         setNextAppointment(null)
         setManifestRowId(null)
-        setManifestFinancials({ back_taxes: null, liens_amount: null, mortgage_balance: null })
         setManifestProperty(null)
         setZestimate(null)
         setAssessedValue(null)
@@ -1369,13 +560,6 @@ export default function LeadDetailPage() {
       const data = res.ok ? await res.json() : { activities: [] }
       const rows = (data.activities as ActivityRow[]) || []
       setActivities(rows)
-      const ghostRow = rows.find((r) => r.activity_type === 'ghost_protocol_enrollment')
-      if (ghostRow?.metadata?.status === 'active') {
-        setGhostProtocolStatus({
-          phase: ghostRow.metadata.current_phase as number,
-          status: ghostRow.metadata.status as string,
-        })
-      }
     }
     if (id) fetchActivities()
   }, [id, refreshTick])
@@ -1422,7 +606,6 @@ export default function LeadDetailPage() {
     )
   }
 
-  const addressLine = [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
   const formattedName = toProperCase(lead.full_name)
   function openLeadDialer() {
     const dialLead = lead
@@ -1436,61 +619,6 @@ export default function LeadDetailPage() {
       },
     }))
   }
-
-  const leadGroupIndex = leadGroup?.ids.indexOf(id) ?? -1
-  const previousLeadId = leadGroup && leadGroupIndex > 0 ? leadGroup.ids[leadGroupIndex - 1] : null
-  const nextLeadId = leadGroup && leadGroupIndex >= 0 && leadGroupIndex < leadGroup.ids.length - 1
-    ? leadGroup.ids[leadGroupIndex + 1]
-    : null
-  const groupReturnPath = leadGroup?.returnPath || (leadGroup?.source === 'contacts' ? '/contacts' : '/leads')
-  const groupReturnTitle = groupReturnPath === '/contacts' ? 'Back to contacts' : 'Back to leads list'
-  const groupLabel = leadGroup?.label || (leadGroup?.source === 'contacts' ? 'Contacts' : 'Lead group')
-  const groupPositionLabel = leadGroup && leadGroupIndex >= 0
-    ? `${groupLabel} ${leadGroupIndex + 1} of ${leadGroup.ids.length}`
-    : null
-
-  function groupLeadName(leadId: string | null) {
-    if (!leadId) return null
-    return leadGroup?.items?.find((item) => item.id === leadId)?.name || null
-  }
-
-  function goToLead(leadId: string | null) {
-    if (!leadId) return
-    router.push(`/leads/${leadId}`)
-  }
-
-  const initials = (formattedName || 'N/A')
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-
-  const lastActivityTs = activities[0]?.created_at || lead.created_at
-  const lastActivityLabel = (() => {
-    try {
-      const d = new Date(lastActivityTs)
-      const diffMs = Date.now() - d.getTime()
-      const mins = Math.floor(diffMs / 60_000)
-      if (mins < 1) return 'Active just now'
-      if (mins < 60) return `Active ${mins}m ago`
-      const hrs = Math.floor(mins / 60)
-      if (hrs < 24) return `Active ${hrs}h ago`
-      const days = Math.floor(hrs / 24)
-      if (days < 30) return `Active ${days}d ago`
-      return `Active ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-    } catch {
-      return 'Active recently'
-    }
-  })()
-
-  const firstOutboundAt = [...activities]
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .find((activity) => isOutboundAttempt(activity))
-    ?.created_at ?? null
-  const firstOutboundLabel = firstOutboundAt
-    ? formatDurationBetween(lead.created_at, firstOutboundAt)
-    : null
 
   const property = {
     address: lead.property_address || '--',
@@ -1748,23 +876,6 @@ export default function LeadDetailPage() {
       }
     })
 
-  // File checklist items
-  const hasCalls = activities.some((a) => a.activity_type === 'call')
-  const hasTimeline = !!lead.notes || hasCalls
-  const hasCondition = !!(lead.beds || lead.sqft || lead.property_type)
-  const hasMotivation = !!(lead.motivation_score || lead.seller_situation)
-  const hasPrice = !!(lead.offer_amount || lead.arv)
-
-  const checklistItems = [
-    { label: 'Timeline', done: hasTimeline, icon: 'schedule', hint: 'Deadline, flexibility, life-event window' },
-    { label: 'Condition', done: hasCondition, icon: 'home', hint: 'Beds/baths, sqft, repairs, occupancy' },
-    { label: 'Motivation', done: hasMotivation, icon: 'psychology', hint: 'Why selling, urgency, pain points' },
-    { label: 'Price', done: hasPrice, icon: 'payments', hint: 'Asking, floor, back taxes, mortgage' },
-  ]
-  const showLeadTriage = (lead.station || '').toLowerCase() === 'new'
-  const appointmentStageNeedsDetails = ['appointment', 'appt_set', 'appointment_set'].includes((lead.station || '').toLowerCase())
-    && !activeAppointment?.scheduledAt
-
   const workspacePropertyDetails = (() => {
     const mp = manifestProperty || {}
     const pick = <T,>(a: T | null | undefined, b: T | null | undefined): T | null =>
@@ -1978,513 +1089,8 @@ export default function LeadDetailPage() {
         }}
       />
 
-      {false && ((lead: Lead, ghostProtocolStatus: { phase: number; status: string } | null) => (
-      <div className="lead-cockpit max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20">
-      {showLeadTriage && (
-        <LeadTriageStrip
-          lead={lead}
-          onChanged={(updated) => {
-            setLead(updated)
-            refreshAll()
-          }}
-        />
-      )}
-
-      {appointmentStageNeedsDetails && (
-        <section
-          className="mb-4 rounded-2xl border px-4 py-3"
-          style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.35)' }}
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2">
-              <Icon name="event_busy" className="mt-0.5 !text-[18px] !text-[color:var(--ck-warn)]" />
-              <div>
-                <p className="text-sm font-black text-[color:var(--ck-text)]">Appointment details missing</p>
-                <p className="mt-0.5 text-xs font-semibold text-[color:var(--ck-text-muted)]">
-                  This lead is in Appointment Set, but no date and time are stored.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAppointmentModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-black uppercase tracking-wider text-white"
-              style={{ background: 'var(--ck-accent)' }}
-            >
-              <Icon name="calendar_month" className="!text-[15px]" />
-              Schedule
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* ── Cockpit Header ───────────────────────────────────────────────── */}
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={() => previousLeadId ? goToLead(previousLeadId) : router.push(groupReturnPath)}
-              className="ck-icon-btn !w-9 !h-9 disabled:cursor-not-allowed disabled:opacity-35"
-              title={previousLeadId ? `Previous lead${groupLeadName(previousLeadId) ? ': ' + groupLeadName(previousLeadId) : ''}` : groupReturnTitle}
-              disabled={Boolean(leadGroup) && !previousLeadId}
-            >
-              <Icon name="arrow_back" size="text-base" />
-            </button>
-            <Link
-              href={groupReturnPath}
-              className="ck-icon-btn !w-9 !h-9"
-              title={groupReturnTitle}
-            >
-              <Icon name="format_list_bulleted" size="text-base" />
-            </Link>
-            <button
-              type="button"
-              onClick={() => goToLead(nextLeadId)}
-              className="ck-icon-btn !w-9 !h-9 disabled:cursor-not-allowed disabled:opacity-35"
-              title={nextLeadId ? `Next lead${groupLeadName(nextLeadId) ? ': ' + groupLeadName(nextLeadId) : ''}` : 'No next lead in group'}
-              disabled={!nextLeadId}
-            >
-              <Icon name="arrow_forward" size="text-base" />
-            </button>
-          </div>
-          {/* Avatar */}
-          <div className="relative shrink-0">
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black text-lg ring-2 shadow-lg"
-              style={{
-                background: 'linear-gradient(135deg, var(--ck-accent) 0%, var(--ck-accent-bright) 100%)',
-                boxShadow: '0 0 0 2px rgba(239,68,68,0.3), 0 4px 16px rgba(239,68,68,0.25)',
-              }}
-            >
-              {initials || '?'}
-            </div>
-          </div>
-          {/* Name + meta */}
-          <div className="min-w-0 flex-1 text-left">
-            <div className="flex items-center justify-start gap-2 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-black text-[color:var(--ck-text)] tracking-tight truncate">
-                {formattedName || 'Unknown'}
-              </h1>
-              <button
-                onClick={() => setEditPanelOpen(true)}
-                className="p-1 rounded text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text)] hover:bg-[color:var(--ck-surface-elev)] transition-colors"
-                title="Edit lead"
-              >
-                <Icon name="edit" size="text-sm" />
-              </button>
-              <FavoriteToggle
-                leadId={lead.id}
-                isFavorite={lead.is_favorite ?? false}
-                size="sm"
-                onToggle={(val) =>
-                  setLead((prev) =>
-                    prev ? { ...prev, is_favorite: val, priority: val ? 'hot' : prev.priority } : prev
-                  )
-                }
-              />
-              <StageSelector
-                leadId={lead.id}
-                station={lead.station}
-                size="sm"
-                onAppointmentRequired={() => setAppointmentModalOpen(true)}
-                onChange={(next) =>
-                  setLead((prev) => prev ? { ...prev, station: next } : prev)
-                }
-              />
-            </div>
-            {addressLine && (
-              <p className="mt-1.5 text-base sm:text-lg font-semibold text-[color:var(--ck-text)] break-words text-left">
-                {addressLine}
-              </p>
-            )}
-            {appointmentChip && (
-              <button
-                type="button"
-                onClick={() => setAppointmentModalOpen(true)}
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-black uppercase tracking-wider"
-                style={{
-                  background: 'rgba(239,68,68,0.12)',
-                  borderColor: 'rgba(239,68,68,0.35)',
-                  color: 'var(--ck-accent-bright)',
-                }}
-                title="Edit appointment"
-              >
-                <Icon name="event" className="!text-[14px]" />
-                Appointment {appointmentChip}
-              </button>
-            )}
-            {groupPositionLabel && (
-              <p className="mt-1 text-xs font-bold uppercase tracking-wider text-[color:var(--ck-text-dim)]">
-                {groupPositionLabel}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Right side: action buttons ABOVE status row */}
-        <div className="flex flex-col items-end gap-3 shrink-0">
-          {/* Action row: icon buttons + Create Contract CTA */}
-          <div className="flex items-center gap-2">
-          {lead.phone && (
-            <button
-              type="button"
-              onClick={openLeadDialer}
-              className="ck-icon-btn ck-icon-btn-primary"
-              title="Call with CRM dialer"
-              aria-label="Call with CRM dialer"
-            >
-              <Icon name="phone" size="text-base" />
-            </button>
-          )}
-          {lead.email && (
-            <a
-              href={`mailto:${lead.email}`}
-              className="ck-icon-btn"
-              title="Email"
-            >
-              <Icon name="mail" size="text-base" />
-            </a>
-          )}
-          <button
-            onClick={() => setSmsModalOpen(true)}
-            className="ck-icon-btn disabled:opacity-40"
-            title="Send SMS"
-            disabled={!lead.phone}
-          >
-            <Icon name="chat_bubble" size="text-base" />
-          </button>
-
-          <div className="w-px h-8 bg-[color:var(--ck-border)] mx-1" />
-
-          <button
-            onClick={() => setNotesModalOpen(true)}
-            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-[color:var(--ck-text)] transition-all flex items-center gap-1.5"
-            title="Add note"
-          >
-            <Icon name="edit_note" size="text-sm" />
-            <span className="hidden sm:inline">Notes</span>
-          </button>
-          <button
-            onClick={() => setShowNewTask(true)}
-            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-[color:var(--ck-text)] transition-all flex items-center gap-1.5"
-          >
-            <Icon name="add_task" size="text-sm" />
-            <span className="hidden sm:inline">New Task</span>
-          </button>
-          <button
-            onClick={() => setAppointmentModalOpen(true)}
-            className="h-10 px-3 sm:px-4 rounded-[10px] border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] hover:bg-[color:var(--ck-surface-hi)] text-sm font-bold text-[color:var(--ck-text)] transition-all flex items-center gap-1.5"
-            title={appointmentChip ? 'Edit appointment' : 'Schedule appointment'}
-          >
-            <Icon name="event" size="text-sm" />
-            <span className="hidden sm:inline">{appointmentChip ? 'Appointment' : 'Schedule'}</span>
-          </button>
-          <button
-            onClick={() => setContractModalOpen(true)}
-            className="h-10 px-3 sm:px-4 rounded-[10px] bg-[color:var(--ck-accent)] hover:bg-[color:var(--ck-accent-bright)] text-sm font-bold text-white transition-all flex items-center gap-1.5 whitespace-nowrap shadow-[0_4px_16px_rgba(239,68,68,0.25)]"
-          >
-            <Icon name="description" size="text-sm" />
-            <span className="hidden sm:inline">Create Contract</span>
-          </button>
-          </div>
-
-          {/* Status row: temperature + score + active — BELOW the action buttons */}
-          <div className="flex items-center justify-end gap-2 flex-wrap">
-            <TemperatureBadge
-              lead={{ priority: lead.priority, station: lead.station, created_at: lead.created_at }}
-              size="sm"
-              leadId={lead.id}
-              onChanged={(p) => setLead((prev) => (prev ? { ...prev, priority: p } : prev))}
-              clickable={true}
-            />
-            {(manifestScore != null || lead.motivation_score != null) && (
-              <>
-                <span className="text-[color:var(--ck-text-dim)]">·</span>
-                <span
-                  className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1"
-                  style={{
-                    background: 'var(--ck-surface-elev)',
-                    borderColor: 'var(--ck-border-strong)',
-                    color: 'var(--ck-accent-bright)',
-                  }}
-                  title={manifestScore != null ? 'Qualification score' : 'Motivation score'}
-                >
-                  <Icon name="bolt" className="!text-[11px]" />
-                  Score {manifestScore ?? lead.motivation_score}
-                </span>
-              </>
-            )}
-            <span className="text-[color:var(--ck-text-dim)]">·</span>
-            <span className="text-xs font-medium text-[color:var(--ck-text-muted)]">
-              {lastActivityLabel}
-            </span>
-            <span className="text-[color:var(--ck-text-dim)]">·</span>
-            <span
-              className="text-xs font-medium text-[color:var(--ck-text-muted)]"
-              title="Time from CRM entry to first outbound call, text, or email"
-            >
-              First outbound {firstOutboundLabel ?? 'not yet'}
-            </span>
-            {ghostProtocolStatus && (
-              <>
-                <span className="text-[color:var(--ck-text-dim)]">·</span>
-                <div className="px-2 py-0.5 bg-purple-500/15 border border-purple-500/40 rounded-full flex items-center gap-1">
-                  <Icon name="psychology" className="!text-[11px] text-purple-300" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-300">
-                    Ghost · P{ghostProtocolStatus!.phase}
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-
-      {/* 3-Column Layout */}
-      <div className="grid grid-cols-12 gap-4 sm:gap-6 lg:gap-8 lg:items-start">
-        {/* LEFT COLUMN: Ari Briefing, Pain Points, Seller Goals (sortable) */}
-        <div className="col-span-12 lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6 lg:pl-4">
-          <SortableColumn
-            storageKey={`crm_col_left_${id}`}
-            items={[
-              {
-                id: 'ari-briefing',
-                node: (
-                  <AriBriefing
-                    leadId={lead.id}
-                    manifestId={manifestRowId ?? undefined}
-                    personalityType={null}
-                    tacticalApproach={lead.notes || null}
-                    notes={lead.notes}
-                    sellerSituation={lead.seller_situation}
-                    motivationScore={lead.motivation_score}
-                    activities={activities}
-                  />
-                ),
-              },
-              {
-                id: 'pain-points',
-                node: (
-                  <PainPoints
-                    leadId={lead.id}
-                    notes={lead.notes}
-                    sellerSituation={lead.seller_situation}
-                    motivationScore={lead.motivation_score}
-                    activities={activities}
-                  />
-                ),
-              },
-              {
-                id: 'seller-goals',
-                node: (
-                  <SellerGoals
-                    leadId={lead.id}
-                    notes={lead.notes}
-                    sellerSituation={lead.seller_situation}
-                    activities={activities}
-                  />
-                ),
-              },
-              {
-                id: 'manifest-panel',
-                node: (
-                  <ManifestPanel
-                    manifest={lead.manifest ?? null}
-                    updatedAt={lead.manifestUpdatedAt ?? null}
-                  />
-                ),
-              },
-            ]}
-          />
-        </div>
-
-        {/* CENTER COLUMN: Property hero + Ari chat */}
-        <div className="col-span-12 lg:col-span-6 space-y-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6">
-          <PropertyHero
-            property={property}
-            zestimate={zestimate}
-            redfinEstimate={redfinEstimate}
-            assessedValue={assessedValue ?? lead.tax_assessment ?? null}
-            taxOwed={
-              manifestProperty?.taxCollector?.totalOwed ??
-              manifestProperty?.taxCollector?.delinquentAmount ??
-              null
-            }
-            estimateLoading={zillowEnriching && zestimate == null}
-            redfinLoading={redfinEnriching}
-            redfinError={redfinError}
-            onRefreshRedfin={refreshRedfinEstimate}
-            onOpenDetails={() => setDetailsExpanded(true)}
-          />
-
-          <ActivityFeed
-            activities={feedActivities}
-            leadPhone={lead.phone ?? undefined}
-            leadEmail={lead.email ?? undefined}
-            leadId={id}
-            prominent
-            onCompose={(type) => {
-              if (type === 'call') {
-                openLeadDialer()
-              } else if (type === 'sms') {
-                setComposeTab('sms')
-                setSmsModalOpen(true)
-              } else if (type === 'email') {
-                setComposeTab('email')
-                setSmsModalOpen(true)
-              }
-            }}
-            onEditNote={(noteId, currentContent) => {
-              setEditNoteId(noteId)
-              setEditNoteContent(currentContent)
-            }}
-            onEditTask={(taskId, currentTitle, metadata) => {
-              setEditTaskId(taskId)
-              setEditTaskTitle(currentTitle)
-              setEditTaskMetadata(metadata)
-            }}
-          />
-        </div>
-
-        {/* RIGHT COLUMN: Next Action (pinned) + sortable rest */}
-        <div className="col-span-12 lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6 lg:pl-4 z-0 space-y-6">
-          {/* Pinned — always first, not draggable */}
-          <AdsSignalReceipt leadId={lead.id} variant="sidebar" />
-
-          <SortableColumn
-            storageKey={`crm_col_right_v2_${id}`}
-            items={[
-              {
-                id: 'favorite-or-fool',
-                node: (
-                  <FavoriteOrFool
-                    leadId={lead.id}
-                    manifestId={manifestRowId ?? undefined}
-                    motivationScore={lead.motivation_score}
-                    arv={lead.arv}
-                    offerAmount={lead.offer_amount}
-                    repairEstimate={lead.repair_estimate}
-                    station={lead.station}
-                    notes={lead.notes}
-                    sellerSituation={lead.seller_situation}
-                    classification={lead.classification}
-                    priority={lead.priority}
-                    isFavorite={lead.is_favorite}
-                    opportunityScore={lead.opportunity_score}
-                    activities={activities}
-                  />
-                ),
-              },
-              {
-                id: 'mail-tracker',
-                node: (
-                  <MailTracker
-                    leadId={lead.id}
-                    leadName={lead.full_name ?? undefined}
-                    onLogged={refreshAll}
-                  />
-                ),
-              },
-              {
-                id: 'email-thread',
-                node: <EmailThread leadId={id} />,
-              },
-              {
-                id: 'documents',
-                node: (
-                  <DocumentManager
-                    entityType="lead"
-                    entityId={id}
-                    side="acquisitions"
-                    defaultDocType="purchase_contract"
-                    title="Lead Documents"
-                    defaultCollapsed
-                  />
-                ),
-              },
-              {
-                id: 'ari-chat',
-                node: (
-                  <AriChat
-                    leadId={lead.id}
-                    leadName={lead.full_name}
-                  />
-                ),
-              },
-              {
-                id: 'discovery-questions',
-                node: (
-                  <DiscoveryQuestions
-                    leadId={lead.id}
-                    notes={lead.notes}
-                    sellerSituation={lead.seller_situation}
-                    offerAmount={lead.offer_amount}
-                    sqft={lead.sqft}
-                    yearBuilt={lead.year_built}
-                    activities={activities}
-                  />
-                ),
-              },
-              {
-                id: 'net-proceeds',
-                node: (
-                  <div>
-                    <button
-                      onClick={() => setNetProceedsOpen((v) => !v)}
-                      className="w-full flex items-center justify-between h-10 px-4 rounded-xl border text-xs font-bold uppercase tracking-wider transition-all"
-                      style={{
-                        background: 'var(--ck-surface)',
-                        borderColor: 'var(--ck-border)',
-                        color: 'var(--ck-text-muted)',
-                      }}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Icon name="payments" className="!text-sm !text-[color:var(--ck-accent)]" />
-                        Net Proceeds
-                      </span>
-                      <Icon name={netProceedsOpen ? 'expand_less' : 'expand_more'} size="text-base" />
-                    </button>
-                    {netProceedsOpen && (
-                      <div className="mt-3">
-                        <NetProceedsCalc
-                          leadId={id}
-                          initialArv={lead.arv}
-                          initialAskingPrice={lead.offer_amount}
-                          initialAssignmentFee={lead.assignment_fee}
-                          initialBackTaxes={manifestFinancials.back_taxes}
-                          initialLiens={manifestFinancials.liens_amount}
-                          initialMortgage={manifestFinancials.mortgage_balance}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ),
-              },
-              {
-                id: 'missing-info',
-                node: <MissingInfoCard items={checklistItems} />,
-              },
-            ]}
-          />
-        </div>
-      </div>
-      </div>
-      ))(lead!, ghostProtocolStatus)}
 
       {/* Modals */}
-      {emailModalOpen && lead.email && (
-        <EmailComposeModal
-          leadId={lead.id}
-          toEmail={lead.email}
-          leadName={lead.full_name}
-          onClose={() => setEmailModalOpen(false)}
-          onSent={() => {
-            refreshAll()
-          }}
-        />
-      )}
       {editPanelOpen && (
         <EditLeadPanel
           lead={lead}
