@@ -130,7 +130,7 @@ const STAGE_TONES: Record<DealStage, string> = {
 const EMPTY_CONTACT = { fullName: '', phone: '', email: '', address: '', city: '', state: '', zip: '', source: 'manual_crm' }
 const CONTACT_QUERY_ROOT = ['contact-workspace'] as const
 const CONTACT_PAGE_SIZE = 10
-const BULK_STAGE_OPTIONS: DealStage[] = ['qualified', 'appointment_set', 'offer_made', 'under_contract']
+const BULK_STAGE_OPTIONS: DealStage[] = ['qualified', 'appointment_set', 'offer_made']
 
 function formatRelativeDate(value: string | null): string {
   if (!value) return 'No activity'
@@ -438,30 +438,28 @@ export default function ContactsPage() {
       const actor = signedInAgent()
       const ids = [...selectedIds]
       const requests = ids.map(async (id) => {
-        let fields: Record<string, unknown>
+        let command: Record<string, unknown>
         if (bulkAction.startsWith('assign:')) {
           const owner = bulkAction.slice('assign:'.length)
-          fields = { assigned_agent: owner === 'unassigned' ? null : owner }
+          command = { action: 'assign', owner: owner === 'unassigned' ? null : owner }
         } else if (bulkAction === 'classify:lead') {
-          fields = { classification: 'lead', station: 'contacted', priority: 'warm' }
+          command = { action: 'transition', stage: 'contacted' }
         } else if (bulkAction === 'classify:new') {
-          fields = { classification: null, station: 'new', priority: 'warm', opportunity_score: 0, dead_reason: null, dead_at: null, dead_by: null }
+          command = { action: 'transition', stage: 'new' }
         } else if (bulkAction.startsWith('stage:')) {
-          fields = { station: bulkAction.slice('stage:'.length) }
+          command = { action: 'transition', stage: bulkAction.slice('stage:'.length) }
         } else {
-          fields = {
-            classification: 'dead',
-            station: 'dead',
-            priority: 'cold',
-            opportunity_score: 0,
+          command = {
+            action: 'transition',
+            stage: 'dead',
             deadReason: bulkDeadReason,
             deadReasonNotes: bulkNotes.trim() || null,
           }
         }
-        const response = await fetch('/api/leads', {
-          method: 'PATCH',
+        const response = await fetch(`/api/leads/${id}/lifecycle`, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, actor, ...fields }),
+          body: JSON.stringify({ ...command, reason: `Bulk change by ${actor}` }),
         })
         const payload = await response.json().catch(() => ({})) as { success?: boolean; error?: string }
         if (!response.ok || !payload.success) throw new Error(payload.error || 'Change failed')

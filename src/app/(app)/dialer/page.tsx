@@ -899,23 +899,15 @@ function DialerPageInner() {
     setMarkDeadBusy(true)
     setMarkDeadError(null)
     try {
-      const res = await fetch('/api/leads', {
-        method: 'PATCH',
+      const res = await fetch(`/api/leads/${currentLeadId}/lifecycle`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: currentLeadId,
-          station: 'dead',
-          dead_reason: markDeadReason,
-          dead_at: new Date().toISOString(),
-          dead_by: 'Ernest',
+          action: 'transition',
+          stage: 'dead',
+          deadReason: markDeadReason,
           deadReasonNotes: markDeadNotes.trim() || null,
-          activity: {
-            type: 'status_change',
-            disposition: 'dead',
-            notes: markDeadNotes.trim() || `Marked dead from dialer — ${markDeadReason.replace(/_/g, ' ')}`,
-            agent: 'Ernest',
-            dead_reason: markDeadReason,
-          },
+          reason: markDeadNotes.trim() || `Marked dead from dialer — ${markDeadReason.replace(/_/g, ' ')}`,
         }),
       })
       if (!res.ok) {

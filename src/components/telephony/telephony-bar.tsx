@@ -11,6 +11,7 @@ import { isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositio
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
+import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
@@ -997,21 +998,17 @@ export function DialerPanel({
           detail: { leadId: activeItem.leadId, prospectPhoneId: activeItem.prospect_phone_id },
         }))
       } else {
+        if (markedDead) {
+          await transitionLeadLifecycle(selectedLead.id, {
+            stage: 'dead', deadReason: options?.deadReason ?? null,
+            deadReasonNotes: notes || null, reason: notes || 'Marked dead from call disposition',
+          })
+        }
         const response = await fetch('/api/leads', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: selectedLead.id,
-            // A 'dead' disposition rolls the whole lead to station 'dead' with
-            // the why captured in dead_reason.
-            ...(markedDead
-              ? {
-                  station: 'dead',
-                  dead_reason: options?.deadReason ?? null,
-                  dead_at: new Date().toISOString(),
-                  dead_by: activeAgentName,
-                }
-              : {}),
             activity: {
               type: 'call',
               disposition,

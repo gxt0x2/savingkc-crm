@@ -17,11 +17,11 @@ describe('LeadStatusControl', () => {
       ok: true,
       json: async () => ({
         success: true,
-        lead: {
+        result: {
           classification: 'dead',
-          station: 'dead',
+          stage: 'dead',
           priority: 'cold',
-          dead_reason: 'wrong_or_disconnected',
+          deadReason: 'wrong_or_disconnected',
         },
       }),
     })
@@ -34,8 +34,8 @@ describe('LeadStatusControl', () => {
     fireEvent.click(screen.getByLabelText('Wrong or disconnected number'))
     fireEvent.click(screen.getByRole('button', { name: 'Mark not a lead' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({
-      method: 'PATCH',
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads/lead-1/lifecycle', expect.objectContaining({
+      method: 'POST',
       body: expect.stringContaining('"deadReason":"wrong_or_disconnected"'),
     })))
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({
@@ -63,11 +63,11 @@ describe('LeadStatusControl', () => {
       ok: true,
       json: async () => ({
         success: true,
-        lead: {
+        result: {
           classification: 'lead',
-          station: 'contacted',
+          stage: 'contacted',
           priority: 'warm',
-          dead_reason: null,
+          deadReason: null,
         },
       }),
     })
@@ -79,9 +79,9 @@ describe('LeadStatusControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lead' }))
     fireEvent.click(screen.getByRole('button', { name: 'Restore as lead' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({
-      method: 'PATCH',
-      body: expect.stringContaining('"dead_reason":null'),
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads/lead-1/lifecycle', expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('"stage":"contacted"'),
     })))
   })
 
@@ -91,11 +91,11 @@ describe('LeadStatusControl', () => {
       ok: true,
       json: async () => ({
         success: true,
-        lead: {
+        result: {
           classification: 'lead',
-          station: 'contacted',
+          stage: 'contacted',
           priority: 'warm',
-          dead_reason: null,
+          deadReason: null,
         },
       }),
     })
@@ -107,9 +107,9 @@ describe('LeadStatusControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lead' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add to Leads' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({
-      method: 'PATCH',
-      body: expect.stringContaining('"classification":"lead","station":"contacted"'),
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads/intake-1/lifecycle', expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('"stage":"contacted"'),
     })))
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({
       classification: 'lead',
@@ -121,7 +121,7 @@ describe('LeadStatusControl', () => {
     const onChanged = vi.fn()
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, lead: { classification: null, station: 'new', priority: 'warm', dead_reason: null } }),
+      json: async () => ({ success: true, result: { classification: null, stage: 'new', priority: 'warm', deadReason: null } }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -131,9 +131,9 @@ describe('LeadStatusControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New intake' }))
     fireEvent.click(screen.getByRole('button', { name: 'Return to New' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads', expect.objectContaining({
-      method: 'PATCH',
-      body: expect.stringContaining('"classification":null,"station":"new"'),
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads/lead-1/lifecycle', expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('"stage":"new"'),
     })))
     expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ classification: null, station: 'new' }))
   })

@@ -35,9 +35,7 @@ export function LeadStatusControl({
   leadId,
   classification,
   station,
-  priority,
   deadReason,
-  agent,
   onChanged,
   variant = 'badge',
 }: LeadStatusControlProps) {
@@ -102,51 +100,39 @@ export function LeadStatusControl({
         : currentlyNotLead || currentlyUnclassified
           ? 'contacted'
           : station || 'contacted'
-      const response = await fetch('/api/leads', {
-        method: 'PATCH',
+      const response = await fetch(`/api/leads/${leadId}/lifecycle`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(markingNotLead ? {
-          id: leadId,
-          actor: agent || 'Ernest',
-          classification: 'dead',
-          station: 'dead',
-          priority: 'cold',
-          opportunity_score: 0,
+          action: 'transition',
+          stage: 'dead',
           deadReason: selectedReason,
           deadReasonNotes: notes.trim() || null,
         } : returningToNew ? {
-          id: leadId,
-          actor: agent || 'Ernest',
-          classification: null,
-          station: 'new',
-          priority: 'warm',
-          opportunity_score: 0,
-          dead_reason: null,
-          dead_at: null,
-          dead_by: null,
+          action: 'transition',
+          stage: 'new',
         } : {
-          id: leadId,
-          actor: agent || 'Ernest',
-          classification: 'lead',
-          station: nextStation,
-          priority: currentlyNotLead || priority === 'cold' ? 'warm' : priority || 'warm',
-          dead_reason: null,
-          dead_at: null,
-          dead_by: null,
+          action: 'transition',
+          stage: nextStation,
         }),
       })
       const payload = await response.json().catch(() => ({})) as {
         success?: boolean
         error?: string
-        lead?: Partial<LeadStatusUpdate>
+        result?: {
+          classification?: LeadStatusUpdate['classification']
+          stage?: string | null
+          priority?: string | null
+          deadReason?: string | null
+        }
       }
       if (!response.ok || !payload.success) throw new Error(payload.error || 'Lead status could not be saved')
 
       onChanged?.({
-        classification: payload.lead?.classification ?? (markingNotLead ? 'dead' : returningToNew ? null : 'lead'),
-        station: payload.lead?.station ?? nextStation,
-        priority: payload.lead?.priority ?? (markingNotLead ? 'cold' : 'warm'),
-        dead_reason: payload.lead?.dead_reason ?? (markingNotLead ? selectedReason : null),
+        classification: payload.result?.classification ?? (markingNotLead ? 'dead' : returningToNew ? null : 'lead'),
+        station: payload.result?.stage ?? nextStation,
+        priority: payload.result?.priority ?? (markingNotLead ? 'cold' : 'warm'),
+        dead_reason: payload.result?.deadReason ?? (markingNotLead ? selectedReason : null),
       })
       setOpen(false)
     } catch (caught) {
