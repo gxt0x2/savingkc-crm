@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 const source = readFileSync('src/app/(app)/leads/[id]/page.tsx', 'utf8')
 const addNoteSource = readFileSync('src/components/leads/add-note.tsx', 'utf8')
 const smsComposerSource = readFileSync('src/components/leads/sms-compose-modal.tsx', 'utf8')
+const contractModalSource = readFileSync('src/components/leads/contract-modal.tsx', 'utf8')
+const mailTrackerSource = readFileSync('src/components/leads/mail-tracker.tsx', 'utf8')
 
 describe('lead workspace retirement boundary', () => {
   it('keeps the canonical workspace and removes the unreachable legacy cockpit', () => {
@@ -42,5 +44,15 @@ describe('lead workspace retirement boundary', () => {
     expect(addNoteSource).not.toContain('@/lib/supabase/client')
     expect(smsComposerSource).not.toContain('@/lib/supabase/client')
     expect(smsComposerSource).not.toContain(".from('lead_activities')")
+  })
+
+  it('routes contract and physical-mail evidence through typed activity commands', () => {
+    expect(contractModalSource).toContain("kind: 'contract_terms'")
+    expect(mailTrackerSource).toContain("kind: 'mail_piece'")
+    expect(mailTrackerSource).toContain('type=letter_tracking&limit=10')
+    expect(contractModalSource).not.toContain('@/lib/supabase/client')
+    expect(mailTrackerSource).not.toContain('@/lib/supabase/client')
+    expect(contractModalSource).not.toContain(".from('lead_activities')")
+    expect(mailTrackerSource).not.toContain(".from('lead_activities')")
   })
 })

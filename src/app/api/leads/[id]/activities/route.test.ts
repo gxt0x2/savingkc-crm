@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   profileMaybeSingle: vi.fn(),
   insert: vi.fn(),
   activityLimit: vi.fn(),
+  activityTypeEq: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -27,8 +28,8 @@ function request(body: Record<string, unknown>) {
   })
 }
 
-function getRequest() {
-  return new NextRequest('https://crm.savingkc.com/api/leads/lead-1/activities?limit=25')
+function getRequest(query = 'limit=25') {
+  return new NextRequest(`https://crm.savingkc.com/api/leads/lead-1/activities?${query}`)
 }
 
 describe('lead internal notes', () => {
@@ -51,12 +52,15 @@ describe('lead internal notes', () => {
           }),
         }
       }
+      const activityQuery = {
+        eq: (field: string, value: string) => {
+          if (field === 'activity_type') mocks.activityTypeEq(value)
+          return activityQuery
+        },
+        order: () => ({ limit: mocks.activityLimit }),
+      }
       return {
-        select: () => ({
-          eq: () => ({
-            order: () => ({ limit: mocks.activityLimit }),
-          }),
-        }),
+        select: () => activityQuery,
         insert: (payload: unknown) => {
           mocks.insert(payload)
           return {
@@ -96,12 +100,55 @@ describe('lead internal notes', () => {
     expect(mocks.insert).not.toHaveBeenCalled()
   })
 
+  it('records allowlisted contract and mail commands with the authenticated actor', async () => {
+    const contractResponse = await POST(
+      request({
+        kind: 'contract_terms',
+        propertyAddress: '123 Main St',
+        purchasePrice: 125000,
+        closingDate: '2026-09-30',
+        agent: 'Spoofed Agent',
+      }),
+      { params: Promise.resolve({ id: 'lead-1' }) },
+    )
+    const mailResponse = await POST(
+      request({
+        kind: 'mail_piece',
+        pieceType: 'postcard',
+        sentDate: '2026-08-23',
+      }),
+      { params: Promise.resolve({ id: 'lead-1' }) },
+    )
+
+    expect(contractResponse.status).toBe(201)
+    expect(mailResponse.status).toBe(201)
+    expect(mocks.insert).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      activity_type: 'contract_sent',
+      agent: 'Ernest Dodson',
+    }))
+    expect(mocks.insert).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      activity_type: 'letter_tracking',
+      agent: 'Ernest Dodson',
+    }))
+  })
+
+  it('rejects unsupported activity commands before writing', async () => {
+    const response = await POST(
+      request({ kind: 'delete_all' }),
+      { params: Promise.resolve({ id: 'lead-1' }) },
+    )
+
+    expect(response.status).toBe(400)
+    expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
   it('returns bounded activity history to an authenticated user', async () => {
-    const response = await GET(getRequest(), { params: Promise.resolve({ id: 'lead-1' }) })
+    const response = await GET(getRequest('type=letter_tracking&limit=10'), { params: Promise.resolve({ id: 'lead-1' }) })
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(mocks.activityLimit).toHaveBeenCalledWith(25)
+    expect(mocks.activityTypeEq).toHaveBeenCalledWith('letter_tracking')
+    expect(mocks.activityLimit).toHaveBeenCalledWith(10)
     expect(body.activities).toHaveLength(1)
   })
 
