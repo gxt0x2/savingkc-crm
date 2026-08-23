@@ -13,6 +13,7 @@ import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-i
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { getLeadQualificationStatus, qualificationError } from '@/lib/qualification-policy'
 import { isPipelineClassification, PIPELINE_CLASSIFICATION } from '@/lib/pipeline-classification'
+import { retiredLegacyLeadsPatchResponse } from '@/lib/server/legacy-leads-patch-retirement'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -522,6 +523,9 @@ export async function PATCH(req: NextRequest) {
   const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
   if (unauthorized) return unauthorized
 
+  const retired = retiredLegacyLeadsPatchResponse()
+  if (retired) return retired
+
   try {
     const body = await req.json()
     const { id, activity, actor, deadReasonNotes, ...fields } = body
@@ -726,7 +730,6 @@ export async function PATCH(req: NextRequest) {
         }
       }
 
-      // Update manifest with disposition notes + mark briefing stale
       if (activity.notes || activity.disposition) {
         try {
           const { updateManifestAndCascade, ensureManifestExists: ensureManifest } = await import('@/lib/manifest-sync')
@@ -735,7 +738,6 @@ export async function PATCH(req: NextRequest) {
           await updateManifestAndCascade(id, (manifest) => {
             const dispo = activity.disposition || ''
 
-            // Add agent notes to manifest
             if (activity.notes) {
               if (!manifest.agentNotes) manifest.agentNotes = []
               manifest.agentNotes.push({
@@ -747,7 +749,6 @@ export async function PATCH(req: NextRequest) {
               })
             }
 
-            // Update disposition on manifest
             if (dispo) {
               if (!manifest.communications) manifest.communications = { transcripts: [] }
               manifest.communications.lastDisposition = dispo
