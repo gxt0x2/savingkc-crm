@@ -8,7 +8,7 @@ interface HeirPhoneRow {
   prospect_id: string
   phone: string | null
   phone_type: string | null
-  phone_connected: boolean | null
+  phone_connected: string | boolean | null
   contact_name: string | null
   relationship: string | null
   contact_address: string | null
