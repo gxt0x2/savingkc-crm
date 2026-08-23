@@ -124,7 +124,7 @@ No Manifest table deletion, broad writer conversion, or historical backfill occu
 |---|---|
 | Baseline branch is clean and pinned to `175ea52f7082137fec544e557f02c0eb82c2f050` | Pass |
 | Only unrelated draft PR #375 remains open and is excluded from Phase 0 | Pass |
-| Current Manifest footprint inventory | Pass: 68 direct non-test dependencies grouped by retain, migrate, and retire |
+| Current Manifest footprint inventory | Updated 2026-08-23: 73 direct non-test dependencies grouped by retain, migrate, and retire; growth remains frozen |
 | Desktop production journey audit | Pass: critical surfaces rendered signed-in at 1920×958 |
 | Mobile-critical production journey audit | Pass: browser smoke and four sub-second mobile navigation journeys |
 | KPI/source reconciliation | Pass for Phase 0: period cohorts are explicitly labeled; live-queue debt moved to Phase 1 |

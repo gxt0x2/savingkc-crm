@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { CountyAudienceInventory } from '@/components/prospecting/county-audience-inventory'
 import { campaignAudienceContactsHref } from '@/lib/prospecting/audience-handoff'
 import type { ProspectingCampaignMember, ProspectingCampaignMemberPage } from '@/lib/prospecting/campaign-contract'
 import type { CampaignMemberFilter } from '@/lib/server/prospecting-campaign-members'
@@ -126,6 +127,7 @@ export function CampaignAudienceWorkbench({ campaignId, campaignName, total, can
 
   return <article className="crm-panel rounded-2xl p-5 sm:p-6" aria-label="Campaign audience workbench">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="crm-eyebrow">Full audience</p><h2 className="mt-1 text-xl font-black text-[var(--crm-ink)]">Audience workbench</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Search all {total.toLocaleString()} contacts, then browse the matching results in bounded pages. Status filters also run on the server.</p></div><div className="flex flex-wrap gap-2"><label className="relative"><Icon name="search" className="pointer-events-none absolute left-3 top-2.5 text-base text-[var(--crm-text-dim)]" /><input value={searchQuery} onChange={(event) => changeSearch(event.target.value)} aria-label="Search entire campaign audience" placeholder="Name, address, or phone" maxLength={100} className="crm-field h-10 w-52 rounded-lg pl-9 pr-3 text-xs" /></label>{canEditAudience ? <Link href={campaignAudienceContactsHref(campaignId, campaignName)} className="crm-secondary-button inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-black"><Icon name="person_add" className="text-base" />Add contacts</Link> : <button type="button" disabled title="Pause this campaign before changing its audience" className="crm-secondary-button inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-black opacity-50"><Icon name="lock" className="text-base" />Audience locked</button>}</div></div>
+    {canEditAudience ? <CountyAudienceInventory /> : null}
     <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Audience status filters">{FILTERS.map((option) => <button key={option.value} type="button" onClick={() => changeFilter(option.value)} className={`rounded-full px-3 py-1.5 text-[10px] font-black ${filter === option.value ? 'bg-[var(--crm-brand)] text-white' : 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'}`}>{option.label}</button>)}</div>
     {error ? <div role="alert" className="mt-4 rounded-xl bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-danger)]">{error}</div> : null}
     {notice ? <div role="status" className="mt-4 rounded-xl bg-[var(--crm-success-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-success)]">{notice}</div> : null}
