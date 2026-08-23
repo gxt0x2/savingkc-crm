@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { toProperCase } from '@/lib/format'
 
 interface AppointmentModalProps {
   lead: {
@@ -74,11 +73,8 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
           type: form.type,
           scheduledAt: appointmentDate,
           assignedTo,
-          address: form.type === 'in_person' ? (lead.property_address || null) : null,
           notes: form.notes || null,
           sendReminder: form.sendReminder,
-          phone: lead.phone,
-          leadName: toProperCase(lead.full_name),
         }),
       })
 
