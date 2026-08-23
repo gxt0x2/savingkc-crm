@@ -24,7 +24,7 @@ describe('DispositionModal', () => {
     const html = renderModal()
 
     expect(html).toContain('grid grid-cols-2 xl:grid-cols-3')
-    expect(html).toContain('Reached Heir')
+    expect(html).toContain('Reached Seller')
     expect(html).toContain('No Answer')
     expect(html).toContain('Left Voicemail')
     expect(html).toContain('Dead Lead')
@@ -44,6 +44,8 @@ describe('DispositionModal', () => {
     expect(html).toContain('grid grid-cols-2 xl:grid-cols-3')
     expect(html).toContain('Mark Angela Taylor as lead')
     expect(html).toContain('Verified — this is Angela Taylor')
+    expect(html).toContain('Reached Heir')
+    expect(html).not.toContain('Reached Seller')
     expect(html).not.toContain('Save &amp; Next Number')
     expect(html).not.toContain('Save &amp; Close')
   })

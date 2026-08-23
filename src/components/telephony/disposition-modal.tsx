@@ -221,6 +221,9 @@ export function DispositionModal({
 
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
   const activeNotes = isControlledNotes ? (notes ?? '') : internalNotes
+  const visibleDispositions = useMemo(() => dispositions.map((item) => item.id === 'spoke_with_owner'
+    ? { ...item, label: variant === 'heirQueue' ? 'Reached Heir' : 'Reached Seller' }
+    : item), [dispositions, variant])
   const needsReason = dispositionRequiresReason(activeDisposition)
   const reasonSatisfied = !needsReason || (
     deadReason.trim().length > 0 && (deadReason !== 'other' || activeNotes.trim().length > 0)
@@ -411,8 +414,8 @@ export function DispositionModal({
 
           <div className="px-4">
             <div className="bg-[var(--skc-surface-2)] rounded-[var(--skc-radius-card)] overflow-hidden">
-              {dispositions.map((d, i) => {
-                const isLast = i === dispositions.length - 1
+              {visibleDispositions.map((d, i) => {
+                const isLast = i === visibleDispositions.length - 1
                 const isSelected = d.id === activeDisposition
                 return (
                   <button
@@ -681,7 +684,7 @@ export function DispositionModal({
               </div>
 
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
-                {dispositions.map((d) => {
+                {visibleDispositions.map((d) => {
                   const isSelected = d.id === activeDisposition
                   return (
                     <button
