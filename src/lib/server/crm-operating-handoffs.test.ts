@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc }) }))
 
 import {
+  attestLegacyHandoff,
   acceptDepartmentHandoff,
   finalizeFundedClose,
   finalizeVerifiedFallout,
@@ -62,6 +63,18 @@ describe('seller-to-close operating handoffs', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('crm_accept_department_handoff_v1', {
       target_handoff_id: 'handoff-1', target_actor_email: 'casey@savingkc.com', target_actor_name: 'Casey',
     })
+  })
+
+  it('records legacy evidence through the server command without a client actor', async () => {
+    mocks.rpc.mockResolvedValue({ data: { handoffId: 'handoff-1', status: 'accepted', replayed: false }, error: null })
+    await attestLegacyHandoff({
+      kind: 'assignment_handoff', leadId: 'lead-1', recordId: 'file-1', candidateId: 'offer-1',
+      evidenceReference: 'DocuSeal submission 123', evidenceOccurredAt: '2026-08-01T17:00:00.000Z',
+      actorEmail: 'casey@savingkc.com', actorName: 'Casey',
+    })
+    expect(mocks.rpc).toHaveBeenCalledWith('crm_attest_legacy_handoff_v1', expect.objectContaining({
+      target_kind: 'assignment_handoff', target_actor_email: 'casey@savingkc.com', target_actor_name: 'Casey',
+    }))
   })
 
   it('finalizes verified fallout across lifecycle, TC, Dispositions, and Marketing', async () => {

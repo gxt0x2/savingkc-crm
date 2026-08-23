@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
+import { LegacyHandoffEvidenceDialog } from '@/components/reports/legacy-handoff-evidence-dialog'
 import type { LifecycleReconciliationSnapshot } from '@/lib/server/lifecycle-reconciliation'
 
 async function readLifecycleReconciliation() {
@@ -13,6 +15,7 @@ async function readLifecycleReconciliation() {
 }
 
 export function LifecycleReconciliationPanel() {
+  const [reviewIssue, setReviewIssue] = useState<LifecycleReconciliationSnapshot['issues'][number] | null>(null)
   const { data, error, isLoading, refetch } = useQuery({
     queryKey: ['lifecycle-evidence-reconciliation'],
     queryFn: readLifecycleReconciliation,
@@ -48,10 +51,11 @@ export function LifecycleReconciliationPanel() {
       </div>
       {data.issues.length === 0 ? <div className="flex items-center gap-3 px-5 py-5 text-sm font-bold text-[var(--crm-success)]"><Icon name="verified" />Governed evidence is complete for all reviewed records.</div> : (
         <div className="divide-y divide-[var(--crm-border)]">
-          {data.issues.slice(0, 8).map((issue) => <div key={issue.key} className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><strong className="block truncate text-xs">{issue.title}</strong><span className="mt-0.5 block text-[10px] font-semibold text-[var(--crm-text-muted)]">{issue.detail}</span></div><Link href={issue.href} className="crm-secondary-button inline-flex shrink-0 items-center gap-1 rounded-lg px-3 py-2 text-[10px] font-black">Open record <Icon name="arrow_forward" /></Link></div>)}
+          {data.issues.slice(0, 8).map((issue) => <div key={issue.key} className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><strong className="block truncate text-xs">{issue.title}</strong><span className="mt-0.5 block text-[10px] font-semibold text-[var(--crm-text-muted)]">{issue.detail}</span></div><div className="flex shrink-0 items-center gap-2">{issue.canAttest ? <button type="button" onClick={() => setReviewIssue(issue)} className="crm-primary-button rounded-lg px-3 py-2 text-[10px] font-black">Review evidence</button> : null}<Link href={issue.href} className="crm-secondary-button inline-flex items-center gap-1 rounded-lg px-3 py-2 text-[10px] font-black">Open record <Icon name="arrow_forward" /></Link></div></div>)}
         </div>
       )}
       {data.degraded ? <p className="border-t border-[var(--crm-border)] px-5 py-3 text-xs font-semibold text-[var(--crm-action)]">{data.warning}</p> : null}
+      {reviewIssue ? <LegacyHandoffEvidenceDialog issue={reviewIssue} onClose={() => setReviewIssue(null)} onRecorded={() => { setReviewIssue(null); void refetch() }} /> : null}
     </section>
   )
 }

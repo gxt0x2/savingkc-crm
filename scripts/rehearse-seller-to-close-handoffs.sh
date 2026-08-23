@@ -72,6 +72,14 @@ CREATE TABLE public.dispo_deals (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+CREATE TABLE public.buyer_offers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id uuid NOT NULL REFERENCES public.leads(id),
+  status text NOT NULL DEFAULT 'submitted',
+  assignment_signed_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
 CREATE TABLE public.tc_files (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id uuid REFERENCES public.leads(id),
@@ -95,18 +103,25 @@ INSERT INTO public.leads(id, full_name, source, station, classification, priorit
 VALUES ('10000000-0000-4000-8000-000000000001', 'Seller One', 'Google Ads', 'qualified', 'opportunity', 'hot', 'Casey', 80);
 INSERT INTO public.leads(id, full_name, source, station, classification, priority, assigned_agent, opportunity_score)
 VALUES ('10000000-0000-4000-8000-000000000002', 'Seller Two', 'Direct Mail', 'qualified', 'opportunity', 'normal', 'Casey', 65);
+INSERT INTO public.leads(id, full_name, source, station, classification, priority, assigned_agent, opportunity_score)
+VALUES ('10000000-0000-4000-8000-000000000003', 'Seller Three', 'Referral', 'under_contract', 'opportunity', 'normal', 'Casey', 70);
 INSERT INTO public.crm_opportunities(id) VALUES ('20000000-0000-4000-8000-000000000001');
 INSERT INTO public.crm_opportunities(id) VALUES ('20000000-0000-4000-8000-000000000002');
+INSERT INTO public.crm_opportunities(id) VALUES ('20000000-0000-4000-8000-000000000003');
 INSERT INTO public.crm_lead_entity_links(lead_id, opportunity_id)
 VALUES ('10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001');
 INSERT INTO public.crm_lead_entity_links(lead_id, opportunity_id)
 VALUES ('10000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000002');
+INSERT INTO public.crm_lead_entity_links(lead_id, opportunity_id)
+VALUES ('10000000-0000-4000-8000-000000000003', '20000000-0000-4000-8000-000000000003');
 SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260914120000_crm_lifecycle_commands.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260915120000_seller_to_close_handoffs.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260915120000_seller_to_close_handoffs.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260916120000_handoff_acceptance_verified_fallout.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260917120000_legacy_handoff_attestation.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260917120000_legacy_handoff_attestation.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260916120000_handoff_acceptance_verified_fallout.sql" >/dev/null
 
 "${PSQL[@]}" <<'SQL'
@@ -182,6 +197,46 @@ BEGIN
   IF (SELECT status FROM public.tc_files WHERE id = '40000000-0000-4000-8000-000000000001') <> 'closed' THEN RAISE EXCEPTION 'TC file was not closed'; END IF;
   IF (SELECT count(*) FROM public.crm_marketing_outcomes WHERE outcome_key = 'funded:' || deal_id::text) <> 1 THEN RAISE EXCEPTION 'funded retry duplicated Marketing revenue'; END IF;
   IF (SELECT revenue FROM public.crm_marketing_outcomes WHERE outcome_key = 'funded:' || deal_id::text) <> 24000 THEN RAISE EXCEPTION 'Marketing revenue was incorrect'; END IF;
+END $$;
+
+DO $$
+DECLARE legacy_deal_id uuid := '30000000-0000-4000-8000-000000000003';
+DECLARE legacy_file_id uuid := '40000000-0000-4000-8000-000000000003';
+DECLARE legacy_offer_id uuid := '50000000-0000-4000-8000-000000000003';
+BEGIN
+  INSERT INTO public.dispo_deals(id, lead_id, stage)
+  VALUES (legacy_deal_id, '10000000-0000-4000-8000-000000000003', 'under_contract');
+  INSERT INTO public.buyer_offers(id, lead_id, status)
+  VALUES (legacy_offer_id, '10000000-0000-4000-8000-000000000003', 'accepted');
+  INSERT INTO public.tc_files(id, lead_id, dispo_deal_id, status)
+  VALUES (legacy_file_id, '10000000-0000-4000-8000-000000000003', legacy_deal_id, 'opened');
+
+  PERFORM public.crm_attest_legacy_handoff_v1(
+    'seller_handoff', '10000000-0000-4000-8000-000000000003', legacy_deal_id, NULL,
+    'Signed seller contract in title file 77', '2026-08-01T17:00:00Z',
+    'casey@savingkc.com', 'Casey'
+  );
+  PERFORM public.crm_attest_legacy_handoff_v1(
+    'seller_handoff', '10000000-0000-4000-8000-000000000003', legacy_deal_id, NULL,
+    'Signed seller contract in title file 77', '2026-08-01T17:00:00Z',
+    'casey@savingkc.com', 'Casey'
+  );
+  PERFORM public.crm_attest_legacy_handoff_v1(
+    'assignment_handoff', '10000000-0000-4000-8000-000000000003', legacy_file_id, legacy_offer_id,
+    'Executed assignment in title file 77', '2026-08-05T17:00:00Z',
+    'casey@savingkc.com', 'Casey'
+  );
+  PERFORM public.crm_attest_legacy_handoff_v1(
+    'assignment_handoff', '10000000-0000-4000-8000-000000000003', legacy_file_id, legacy_offer_id,
+    'Executed assignment in title file 77', '2026-08-05T17:00:00Z',
+    'casey@savingkc.com', 'Casey'
+  );
+
+  IF (SELECT count(*) FROM public.crm_department_handoffs WHERE lead_id = '10000000-0000-4000-8000-000000000003') <> 2 THEN RAISE EXCEPTION 'legacy replay duplicated handoffs'; END IF;
+  IF (SELECT count(*) FROM public.lead_activities WHERE lead_id = '10000000-0000-4000-8000-000000000003' AND metadata->>'source' = 'crm_legacy_handoff_attestation_v1') <> 2 THEN RAISE EXCEPTION 'legacy replay duplicated audit activities'; END IF;
+  IF (SELECT assignment_signed_at FROM public.buyer_offers WHERE id = legacy_offer_id) <> '2026-08-05T17:00:00Z'::timestamptz THEN RAISE EXCEPTION 'assignment signed date not recorded'; END IF;
+  IF (SELECT buyer_offer_id FROM public.tc_files WHERE id = legacy_file_id) <> legacy_offer_id THEN RAISE EXCEPTION 'TC file did not link to verified assignment'; END IF;
+  IF EXISTS (SELECT 1 FROM public.crm_department_handoffs WHERE lead_id = '10000000-0000-4000-8000-000000000003' AND evidence_occurred_at IS NULL) THEN RAISE EXCEPTION 'evidence date missing'; END IF;
 END $$;
 
 SELECT public.crm_apply_lifecycle_command_v1(
