@@ -1,12 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), laneLookup: vi.fn(), eq: vi.fn(), readRows: vi.fn() }))
 
 vi.mock('@/lib/supabase/admin', () => ({
-  supabaseAdmin: () => ({ rpc: mocks.rpc }),
+  supabaseAdmin: () => {
+    const query = {
+      select: vi.fn(() => query),
+      order: vi.fn(() => query),
+      limit: vi.fn(() => query),
+      eq: mocks.eq.mockImplementation(() => query),
+      in: mocks.laneLookup,
+      then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(mocks.readRows()).then(resolve, reject),
+    }
+    return { rpc: mocks.rpc, from: vi.fn(() => query) }
+  },
 }))
 
-import { createWorkItem, normalizeWorkItemKind, transitionWorkItem, transitionWorkItemsBulk } from './work-items'
+import { createWorkItem, listWorkItems, normalizeWorkItemKind, transitionWorkItem, transitionWorkItemsBulk } from './work-items'
 
 const row = {
   work_item_key: 'activity:10000000-0000-0000-0000-000000000001',
@@ -31,7 +41,14 @@ const row = {
 }
 
 describe('canonical work-item server service', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.laneLookup.mockImplementation((_field: string, keys: string[]) => Promise.resolve({
+      data: keys.map((key) => ({ work_item_key: key, operational_lane: 'current' })),
+      error: null,
+    }))
+    mocks.readRows.mockReturnValue({ data: [row], error: null })
+  })
 
   it('normalizes legacy UI labels into the canonical kind vocabulary', () => {
     expect(normalizeWorkItemKind('offer')).toBe('send_offer')
@@ -57,6 +74,11 @@ describe('canonical work-item server service', () => {
       p_actor: 'Casey',
       p_idempotency_key: 'create-key-0001',
     }))
+  })
+
+  it('defaults every standard read to the current operational lane', async () => {
+    await expect(listWorkItems({ limit: 10 })).resolves.toHaveLength(1)
+    expect(mocks.eq).toHaveBeenCalledWith('operational_lane', 'current')
   })
 
   it('translates an edit patch to the canonical database field names', async () => {
@@ -124,5 +146,17 @@ describe('canonical work-item server service', () => {
       code: 'conflict',
       message: 'This opportunity already has a primary next action. Refresh and edit it instead.',
     })
+  })
+
+  it('fails closed before mutation when a historical item is not current work', async () => {
+    mocks.laneLookup.mockResolvedValue({ data: [{ work_item_key: row.work_item_key, operational_lane: 'review' }], error: null })
+
+    await expect(transitionWorkItem({
+      key: row.work_item_key,
+      actor: 'Casey',
+      action: 'complete',
+      idempotencyKey: 'test-value',
+    })).rejects.toMatchObject({ code: 'conflict' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 })

@@ -75,6 +75,29 @@ export function normalizeWorkItemKind(value: unknown): 'task' | 'appointment' | 
   return 'task'
 }
 
+export function normalizeWorkItemKey(value: string): string {
+  const key = value.trim()
+  if (key.includes(':')) return key
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)
+    ? `activity:${key}`
+    : key
+}
+
+async function requireCurrentWorkItems(keys: string[]): Promise<string[]> {
+  const normalized = [...new Set(keys.map(normalizeWorkItemKey).filter(Boolean))]
+  if (!normalized.length) throw new WorkItemError('Select at least one current work item.', 'invalid')
+  const { data, error } = await supabaseAdmin()
+    .from('work_items')
+    .select('work_item_key,operational_lane')
+    .in('work_item_key', normalized)
+  if (error) databaseError(error.message)
+  const current = new Set((data || []).flatMap((row) => row.operational_lane === 'current' && typeof row.work_item_key === 'string' ? [row.work_item_key] : []))
+  if (current.size !== normalized.length || normalized.some((key) => !current.has(key))) {
+    throw new WorkItemError('This historical item is read-only and is not part of the current work queue.', 'conflict')
+  }
+  return normalized
+}
+
 function mapWorkItem(row: WorkItemRow): WorkItem {
   if (!row?.work_item_key || !row.source_id || !WORK_ITEM_STATUSES.includes(row.status)) {
     throw new WorkItemError('Work item state is malformed.', 'unavailable')
@@ -109,6 +132,9 @@ function databaseError(message: string): never {
   }
   if (normalized.includes('version_conflict') || normalized.includes('idempotency_conflict')) {
     throw new WorkItemError('Work item changed in another request. Refresh and try again.', 'conflict')
+  }
+  if (normalized.includes('work_item_not_current')) {
+    throw new WorkItemError('This historical item is read-only and is not part of the current work queue.', 'conflict')
   }
   if (normalized.includes('primary_next_action_exists')) {
     throw new WorkItemError(
@@ -162,6 +188,7 @@ export async function listWorkItems(input: {
   if (input.dueBefore) query = query.lte('due_at', input.dueBefore)
   if (input.dueAfter) query = query.gte('due_at', input.dueAfter)
   if (input.completedAfter) query = query.gte('completed_at', input.completedAfter)
+  query = query.eq('operational_lane', 'current')
 
   const { data, error } = await query
   if (error) databaseError(error.message)
@@ -177,6 +204,7 @@ export async function listCompletedWorkItemDates(input: {
     .from('work_items')
     .select('completed_at')
     .eq('status', 'completed')
+    .eq('operational_lane', 'current')
     .not('completed_at', 'is', null)
     .gte('completed_at', input.completedAfter)
     .order('completed_at', { ascending: true })
@@ -231,6 +259,7 @@ export async function transitionWorkItem(input: {
   expectedVersion?: number | null
   patch?: WorkItemPatch
 }): Promise<{ changed: boolean; workItem: WorkItem }> {
+  const [key] = await requireCurrentWorkItems([input.key])
   const patch: Record<string, unknown> = {}
   if (input.patch) {
     if ('title' in input.patch) patch.title = input.patch.title
@@ -241,7 +270,7 @@ export async function transitionWorkItem(input: {
     if ('status' in input.patch) patch.status = input.patch.status
   }
   const { data, error } = await supabaseAdmin().rpc('transition_work_item_v1', {
-    p_work_item_key: input.key,
+    p_work_item_key: key,
     p_actor: input.actor,
     p_action: input.action,
     p_idempotency_key: input.idempotencyKey,
@@ -261,6 +290,7 @@ export async function transitionWorkItemsBulk(input: {
   idempotencyKey: string
   patch?: WorkItemPatch
 }): Promise<{ changed: number; workItems: WorkItem[] }> {
+  const keys = await requireCurrentWorkItems(input.keys)
   const patch: Record<string, unknown> = {}
   if (input.patch) {
     if ('title' in input.patch) patch.title = input.patch.title
@@ -271,7 +301,7 @@ export async function transitionWorkItemsBulk(input: {
     if ('status' in input.patch) patch.status = input.patch.status
   }
   const { data, error } = await supabaseAdmin().rpc('transition_work_items_bulk_v1', {
-    p_work_item_keys: input.keys,
+    p_work_item_keys: keys,
     p_actor: input.actor,
     p_action: input.action,
     p_idempotency_key: input.idempotencyKey,

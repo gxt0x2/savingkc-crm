@@ -60,13 +60,13 @@ describe('TasksPage operating workspace', () => {
   beforeEach(() => {
     refetchMock.mockReset()
     useTaskWorklistMock.mockReset()
-    refetchMock.mockResolvedValue({ data: { tasks } })
+    refetchMock.mockResolvedValue({ data: { tasks: [tasks[0]] } })
     useTaskWorklistMock.mockReturnValue({
       data: {
-        tasks,
-        counts: { all: 2, due_today: 0, overdue: 0, upcoming: 1, completed: 1 },
+        tasks: [tasks[0]],
+        counts: { all: 1, due_today: 0, overdue: 0, upcoming: 1, completed: 0 },
         laneCounts: { current: 1, review: 1, quarantine: 0, all: 2 },
-        pageInfo: { limit: 20, total: 2, hasMore: false, nextCursor: null },
+        pageInfo: { limit: 20, total: 1, hasMore: false, nextCursor: null },
         serverNow: '2026-08-21T15:00:00Z',
       },
       isLoading: false, error: null, refetch: refetchMock, isFetching: false,
@@ -164,60 +164,13 @@ describe('TasksPage operating workspace', () => {
     expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'any', assignee: undefined }))
   })
 
-  it('defaults to current work and switches to review debt without changing records', () => {
+  it('uses only the current server lane and removes historical lane controls', () => {
     render(<TasksPage />)
 
-    expect(screen.getByRole('button', { name: 'Current work 1' })).toHaveAttribute('aria-pressed', 'true')
     expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ lane: 'current' }))
-
-    fireEvent.click(screen.getByRole('button', { name: 'Review debt 1' }))
-    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ lane: 'review' }))
-    expect(screen.getByText(/Review before changing anything/)).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Reviewed task changes' })).toHaveTextContent('Review-only mode')
-    expect(screen.getByRole('button', { name: 'Reopen Review offer' })).toBeDisabled()
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('unlocks review-debt changes only after explicit confirmation', () => {
-    render(<TasksPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Review debt 1' }))
-
-    fireEvent.click(screen.getByRole('button', { name: 'Enable reviewed changes' }))
-    expect(screen.getByRole('button', { name: 'Reopen Review offer' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'I will review each change' }))
-
-    expect(screen.getByRole('button', { name: 'Reopen Review offer' })).toBeEnabled()
-    expect(screen.getByText('Unlinked task')).toBeInTheDocument()
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('keeps automation quarantine visible and locked without changing its source task', () => {
-    const quarantinedTask = {
-      ...tasks[0],
-      id: 'task-auto',
-      title: 'Generated follow-up',
-      operational_lane: 'quarantine' as const,
-      review_reason: 'automation_source' as const,
-    }
-    useTaskWorklistMock.mockImplementation((input: { lane?: string }) => ({
-      data: {
-        tasks: input.lane === 'quarantine' ? [quarantinedTask] : [tasks[0]],
-        counts: { all: 2, due_today: 0, overdue: 0, upcoming: 2, completed: 0 },
-        laneCounts: { current: 1, review: 0, quarantine: 1, all: 2 },
-        pageInfo: { limit: 20, total: 1, hasMore: false, nextCursor: null },
-        serverNow: '2026-08-21T15:00:00Z',
-      },
-      isLoading: false, error: null, refetch: refetchMock, isFetching: false,
-    }))
-
-    render(<TasksPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Automation quarantine 1' }))
-
-    expect(useTaskWorklistMock).toHaveBeenLastCalledWith(expect.objectContaining({ lane: 'quarantine' }))
-    expect(screen.getByText(/Nothing here was deleted or completed/)).toBeInTheDocument()
-    expect(screen.getByText('Automation quarantine', { selector: 'span' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mark Generated follow-up complete' })).toBeDisabled()
-    expect(fetch).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /Review debt/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Automation quarantine/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Review offer')).not.toBeInTheDocument()
   })
 
   it('advances with the opaque server cursor instead of slicing a downloaded task list', () => {
