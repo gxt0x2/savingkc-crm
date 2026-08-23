@@ -14,6 +14,7 @@ import { DEAD_REASONS } from '@/lib/dialer-dispositions'
 import type { DialerQueueContextRow, DialerQueueMetrics } from '@/lib/dialer-queue-contract'
 import { loadDialerActivities, loadDialerLeadContext, type DialerActivity as Activity, type DialerManifest as ManifestShape } from '@/lib/dialer-lead-activity'
 import { DialerSessionCommand } from '@/components/dialer/dialer-session-command'
+import { DialerRouteGate } from '@/components/dialer/dialer-route-gate'
 import {
   createDurableDialerSession,
   loadDialerSavedQueuesWithOpenSession,
@@ -808,7 +809,7 @@ function DialerPageInner() {
       router.push(returnTo)
       return
     }
-    router.push('/dialer')
+    router.push('/prospecting')
   }, [params, router])
 
   const closeSession = useCallback(async () => {
@@ -2933,7 +2934,7 @@ function DarkPill({ children, tone = 'neutral' }: { children: React.ReactNode; t
 export default function DialerPage() {
   return (
     <Suspense fallback={<div className="min-h-[70vh] flex items-center justify-center"><Icon name="progress_activity" className="!text-4xl text-[var(--ck-text-dim)] animate-spin" /></div>}>
-      <DialerPageInner />
+      <DialerRouteGate><DialerPageInner /></DialerRouteGate>
     </Suspense>
   )
 }

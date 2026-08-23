@@ -115,18 +115,11 @@ describe('workspace navigation', () => {
     expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('href', '/marketing/google-ads')
   })
 
-  it('keeps campaign and single-line Dialer execution inside Prospecting', () => {
+  it('does not expose the retired Dialer dashboard as Prospecting navigation', () => {
     navigation.pathname = '/dialer'
     render(<WorkspaceContextNav />)
 
-    const dialerNav = screen.getByRole('navigation', { name: 'Prospecting sections' })
-    expect(within(dialerNav).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
-      '/prospecting', '/dialer', '/dialer?section=queue', '/dialer?section=sessions',
-    ])
-    expect(within(dialerNav).getByRole('link', { name: /Campaigns/ })).toHaveAttribute('href', '/prospecting')
-    expect(within(dialerNav).queryByRole('link', { name: /Inbox/ })).not.toBeInTheDocument()
-    expect(within(dialerNav).queryByRole('link', { name: /Analytics/ })).not.toBeInTheDocument()
-    expect(within(dialerNav).queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Prospecting sections' })).not.toBeInTheDocument()
   })
 
   it('does not present Conversations as a Prospecting subsection', () => {
