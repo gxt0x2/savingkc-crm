@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { buildManifest, type BuildManifestInput, type ManifestV2 } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
@@ -14,6 +16,8 @@ type LegacyManifestCreateInput = BuildManifestInput & {
 
 // GET /api/manifests?lead_id=xxx or ?booking_id=xxx
 export async function GET(req: NextRequest) {
+  const unauthorized = await requireAuthenticatedUser()
+  if (unauthorized) return unauthorized
   recordLegacyManifestApiUse('GET', '/api/manifests')
   try {
     const { searchParams } = new URL(req.url)
@@ -60,6 +64,8 @@ export async function GET(req: NextRequest) {
 
 // POST /api/manifests - Create new manifest
 export async function POST(req: NextRequest) {
+  const actor = await resolveAuthenticatedActor()
+  if (!actor) return legacyManifestJson({ error: 'Unauthorized' }, { status: 401 })
   recordLegacyManifestApiUse('POST', '/api/manifests')
   try {
     const input = await req.json() as LegacyManifestCreateInput
@@ -148,7 +154,7 @@ export async function POST(req: NextRequest) {
             await updateManifestV2_1({
               manifestId,
               subtrees,
-              actor: 'system',
+              actor: actor.name,
               reason: 'api:manifests_post_enrichment',
             })
           } catch (updateErr) {
