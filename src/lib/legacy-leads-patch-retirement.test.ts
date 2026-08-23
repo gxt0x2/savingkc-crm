@@ -16,11 +16,11 @@ describe('legacy broad lead PATCH retirement', () => {
     expect(source).toContain('/disposition`')
   })
 
-  it('keeps the compatibility switch fail-closed in production', () => {
+  it('keeps the compatibility writer unconditionally retired', () => {
     const route = readFileSync('src/app/api/leads/route.ts', 'utf8')
-    expect(route).toContain("process.env.ENABLE_LEGACY_LEADS_PATCH === 'true'")
-    expect(route).toContain("process.env.NODE_ENV !== 'production'")
-    expect(route).toContain("process.env.VERCEL_ENV !== 'production'")
-    expect(route).toContain('legacy_leads_patch_retired')
+    const retirement = readFileSync('src/lib/server/legacy-leads-patch-retirement.ts', 'utf8')
+    expect(route).toContain('retiredLegacyLeadsPatchResponse()')
+    expect(retirement).toContain('legacy_leads_patch_retired')
+    expect(retirement).not.toContain('process.env')
   })
 })

@@ -13,6 +13,7 @@ import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-i
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { getLeadQualificationStatus, qualificationError } from '@/lib/qualification-policy'
 import { isPipelineClassification, PIPELINE_CLASSIFICATION } from '@/lib/pipeline-classification'
+import { retiredLegacyLeadsPatchResponse } from '@/lib/server/legacy-leads-patch-retirement'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -522,26 +523,8 @@ export async function PATCH(req: NextRequest) {
   const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
   if (unauthorized) return unauthorized
 
-  // Operator writes have moved to typed per-contact commands. Keep this old
-  // handler available only for explicit local compatibility rehearsals while
-  // making it impossible to re-enable in production by configuration alone.
-  const legacyPatchEnabled = process.env.ENABLE_LEGACY_LEADS_PATCH === 'true'
-    && process.env.NODE_ENV !== 'production'
-    && process.env.VERCEL_ENV !== 'production'
-  if (!legacyPatchEnabled) {
-    return NextResponse.json({
-      success: false,
-      error: 'Legacy lead updates are retired. Use a typed per-contact command.',
-      code: 'legacy_leads_patch_retired',
-    }, {
-      status: 410,
-      headers: {
-        ...corsHeaders,
-        'Cache-Control': 'private, no-store, max-age=0',
-        Deprecation: 'true',
-      },
-    })
-  }
+  const retired = retiredLegacyLeadsPatchResponse()
+  if (retired) return retired
 
   try {
     const body = await req.json()
@@ -747,7 +730,6 @@ export async function PATCH(req: NextRequest) {
         }
       }
 
-      // Update manifest with disposition notes + mark briefing stale
       if (activity.notes || activity.disposition) {
         try {
           const { updateManifestAndCascade, ensureManifestExists: ensureManifest } = await import('@/lib/manifest-sync')
@@ -756,7 +738,6 @@ export async function PATCH(req: NextRequest) {
           await updateManifestAndCascade(id, (manifest) => {
             const dispo = activity.disposition || ''
 
-            // Add agent notes to manifest
             if (activity.notes) {
               if (!manifest.agentNotes) manifest.agentNotes = []
               manifest.agentNotes.push({
@@ -768,7 +749,6 @@ export async function PATCH(req: NextRequest) {
               })
             }
 
-            // Update disposition on manifest
             if (dispo) {
               if (!manifest.communications) manifest.communications = { transcripts: [] }
               manifest.communications.lastDisposition = dispo
