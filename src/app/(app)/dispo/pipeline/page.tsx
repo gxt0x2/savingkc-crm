@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { cn, formatCurrency } from '@/lib/utils'
 import { CloseoutDialog } from '@/components/dispo/closeout-dialog'
+import { DepartmentHandoffQueue } from '@/components/dispo/department-handoff-queue'
+import { FalloutDialog } from '@/components/dispo/fallout-dialog'
 import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 import { activeDispositionPhases, summarizeDispositionPhase } from '@/lib/dispo/operating-lifecycle'
 import type { DispoDeal, DispoStage, TcFile } from '@/types/dispo'
@@ -20,7 +22,7 @@ const STAGES: { key: DispoStage | 'all'; label: string; icon: string; color: str
   { key: 'negotiating', label: 'Negotiating', icon: 'handshake', color: 'bg-orange-600' },
   { key: 'under_contract', label: 'Under Contract', icon: 'description', color: 'bg-emerald-600' },
   { key: 'closed', label: 'Closed', icon: 'check_circle', color: 'bg-green-700' },
-  { key: 'dead', label: 'Dead', icon: 'cancel', color: 'bg-red-700' },
+  { key: 'dead', label: 'Fell Through', icon: 'cancel', color: 'bg-red-700' },
 ]
 
 function stageConfig(stage: DispoStage) {
@@ -426,6 +428,7 @@ export default function PipelinePage() {
   const [search, setSearch] = useState('')
   const [selectedDeal, setSelectedDeal] = useState<DispoDeal | null>(null)
   const [closeoutTarget, setCloseoutTarget] = useState<{ deal: DispoDeal; mode: 'funding' | 'debrief' } | null>(null)
+  const [falloutTarget, setFalloutTarget] = useState<DispoDeal | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -528,6 +531,12 @@ export default function PipelinePage() {
           )}
         />
       </div>
+
+      <DepartmentHandoffQueue
+        department="dispositions"
+        title="Signed seller contracts waiting for Dispositions"
+        onAccepted={() => void fetchDeals()}
+      />
 
       {/* Stage Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-6">
@@ -801,7 +810,13 @@ export default function PipelinePage() {
         <DealDetail
           deal={selectedDeal}
           onClose={() => setSelectedDeal(null)}
-          onStageChange={handleStageChange}
+          onStageChange={(dealId, stage) => {
+            if (stage === 'dead') {
+              setFalloutTarget(selectedDeal)
+              return
+            }
+            void handleStageChange(dealId, stage)
+          }}
           onRequestCloseout={(mode) => setCloseoutTarget({ deal: selectedDeal, mode })}
         />
       )}
@@ -819,6 +834,20 @@ export default function PipelinePage() {
               : 'Debrief complete. Transaction archived.')
             setTimeout(() => setFeedback(null), 3500)
             fetchDeals()
+          }}
+        />
+      ) : null}
+
+      {falloutTarget ? (
+        <FalloutDialog
+          deal={falloutTarget}
+          onClose={() => setFalloutTarget(null)}
+          onSaved={() => {
+            setFalloutTarget(null)
+            setSelectedDeal(null)
+            setFeedback('Verified fallout recorded. Dispositions, TC, and Marketing are reconciled.')
+            setTimeout(() => setFeedback(null), 3500)
+            void fetchDeals()
           }}
         />
       ) : null}

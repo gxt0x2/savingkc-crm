@@ -79,19 +79,35 @@ CREATE TABLE public.tc_files (
   buyer_offer_id uuid,
   status text,
   next_action text,
+  risk_level text NOT NULL DEFAULT 'normal'
+    CHECK (risk_level IN ('normal', 'watch', 'urgent', 'blocked')),
+  risk_reason text,
+  updated_at timestamptz DEFAULT now()
+);
+CREATE TABLE public.deal_pages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id uuid NOT NULL REFERENCES public.leads(id),
+  is_active boolean NOT NULL DEFAULT true,
   updated_at timestamptz DEFAULT now()
 );
 
 INSERT INTO public.leads(id, full_name, source, station, classification, priority, assigned_agent, opportunity_score)
 VALUES ('10000000-0000-4000-8000-000000000001', 'Seller One', 'Google Ads', 'qualified', 'opportunity', 'hot', 'Casey', 80);
+INSERT INTO public.leads(id, full_name, source, station, classification, priority, assigned_agent, opportunity_score)
+VALUES ('10000000-0000-4000-8000-000000000002', 'Seller Two', 'Direct Mail', 'qualified', 'opportunity', 'normal', 'Casey', 65);
 INSERT INTO public.crm_opportunities(id) VALUES ('20000000-0000-4000-8000-000000000001');
+INSERT INTO public.crm_opportunities(id) VALUES ('20000000-0000-4000-8000-000000000002');
 INSERT INTO public.crm_lead_entity_links(lead_id, opportunity_id)
 VALUES ('10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001');
+INSERT INTO public.crm_lead_entity_links(lead_id, opportunity_id)
+VALUES ('10000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000002');
 SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260914120000_crm_lifecycle_commands.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260915120000_seller_to_close_handoffs.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260915120000_seller_to_close_handoffs.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260916120000_handoff_acceptance_verified_fallout.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260916120000_handoff_acceptance_verified_fallout.sql" >/dev/null
 
 "${PSQL[@]}" <<'SQL'
 SELECT public.crm_apply_lifecycle_command_v1(
@@ -118,6 +134,17 @@ BEGIN
     SELECT 1 FROM public.crm_department_handoffs
     WHERE to_department = 'dispositions' AND target_record_type = 'dispo_deal' AND target_record_id = deal_id
   ) THEN RAISE EXCEPTION 'seller handoff was not linked to its Dispositions deal'; END IF;
+  PERFORM public.crm_accept_department_handoff_v1(
+    (SELECT id FROM public.crm_department_handoffs WHERE to_department = 'dispositions'),
+    'casey@savingkc.com', 'Casey'
+  );
+  PERFORM public.crm_accept_department_handoff_v1(
+    (SELECT id FROM public.crm_department_handoffs WHERE to_department = 'dispositions'),
+    'casey@savingkc.com', 'Casey'
+  );
+  IF (SELECT status FROM public.crm_department_handoffs WHERE to_department = 'dispositions') <> 'accepted' THEN
+    RAISE EXCEPTION 'seller handoff was not accepted';
+  END IF;
 
   INSERT INTO public.tc_files(id, lead_id, dispo_deal_id, buyer_offer_id, status, next_action)
   VALUES (
@@ -155,6 +182,39 @@ BEGIN
   IF (SELECT status FROM public.tc_files WHERE id = '40000000-0000-4000-8000-000000000001') <> 'closed' THEN RAISE EXCEPTION 'TC file was not closed'; END IF;
   IF (SELECT count(*) FROM public.crm_marketing_outcomes WHERE outcome_key = 'funded:' || deal_id::text) <> 1 THEN RAISE EXCEPTION 'funded retry duplicated Marketing revenue'; END IF;
   IF (SELECT revenue FROM public.crm_marketing_outcomes WHERE outcome_key = 'funded:' || deal_id::text) <> 24000 THEN RAISE EXCEPTION 'Marketing revenue was incorrect'; END IF;
+END $$;
+
+SELECT public.crm_apply_lifecycle_command_v1(
+  '10000000-0000-4000-8000-000000000002', '30000000-0000-4000-8000-000000000002',
+  'transition', 'under_contract', 'opportunity', 'normal', NULL, NULL, NULL,
+  'Seller contract signed', 'seller_contract_signed', 'submission-3',
+  'casey@savingkc.com', 'Casey'
+);
+
+DO $$
+DECLARE deal_id uuid;
+BEGIN
+  SELECT id INTO deal_id FROM public.dispo_deals WHERE lead_id = '10000000-0000-4000-8000-000000000002';
+  INSERT INTO public.tc_files(id, lead_id, dispo_deal_id, status, next_action, risk_level)
+  VALUES ('40000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000002', deal_id, 'title_work', 'Resolve title', 'blocked');
+  INSERT INTO public.deal_pages(lead_id, is_active) VALUES ('10000000-0000-4000-8000-000000000002', true);
+
+  PERFORM public.crm_finalize_verified_fallout_v1(
+    deal_id, 'title_issue', 'Title company confirmed an incurable defect.',
+    'Title email dated 2026-08-23', '2026-08-23T18:00:00Z',
+    'casey@savingkc.com', 'Casey'
+  );
+  PERFORM public.crm_finalize_verified_fallout_v1(
+    deal_id, 'title_issue', 'Title company confirmed an incurable defect.',
+    'Title email dated 2026-08-23', '2026-08-23T18:00:00Z',
+    'casey@savingkc.com', 'Casey'
+  );
+
+  IF (SELECT station FROM public.leads WHERE id = '10000000-0000-4000-8000-000000000002') <> 'closed_lost' THEN RAISE EXCEPTION 'fallout did not close lifecycle'; END IF;
+  IF (SELECT stage FROM public.dispo_deals WHERE id = deal_id) <> 'dead' THEN RAISE EXCEPTION 'fallout did not close Dispositions'; END IF;
+  IF (SELECT status FROM public.tc_files WHERE dispo_deal_id = deal_id) <> 'cancelled' THEN RAISE EXCEPTION 'fallout did not cancel TC'; END IF;
+  IF (SELECT is_active FROM public.deal_pages WHERE lead_id = '10000000-0000-4000-8000-000000000002') THEN RAISE EXCEPTION 'fallout did not stop marketing'; END IF;
+  IF (SELECT count(*) FROM public.crm_marketing_outcomes WHERE outcome_key = 'fallout:' || deal_id::text) <> 1 THEN RAISE EXCEPTION 'fallout retry duplicated Marketing outcome'; END IF;
 END $$;
 SQL
 

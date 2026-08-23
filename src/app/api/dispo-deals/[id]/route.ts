@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { validateDispositionStageGate } from '@/lib/dispo/operating-lifecycle'
 import { ensureTcFileForDeal, syncDispositionOperatingTasksForFile } from '@/lib/tc'
 import type { DispoStage, TcTask } from '@/types/dispo'
@@ -83,6 +84,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
     const body = await req.json()
     const db = supabaseAdmin()
@@ -116,8 +119,14 @@ export async function PATCH(
           { status: 409 }
         )
       }
+      if (body.stage === 'dead' && current.stage !== 'dead') {
+        return NextResponse.json(
+          { error: 'Use verified fallout to close a transaction that did not fund' },
+          { status: 409 }
+        )
+      }
 
-      if (body.stage !== current.stage && body.stage !== 'dead') {
+      if (body.stage !== current.stage) {
         const tcFileId = await ensureTcFileForDeal(db, {
           id: current.id,
           leadId: current.lead_id,
