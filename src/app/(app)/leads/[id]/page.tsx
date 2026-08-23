@@ -405,7 +405,7 @@ export default function LeadDetailPage() {
   // Call this after any user action that changes data (note, call, edit, email, etc.)
   const refreshAll = useCallback(() => {
     setRefreshTick(t => t + 1)
-    // Fan out to every sub-card (AriBriefing, PainPoints, SellerGoals, NextAction, FavoriteOrFool, etc.)
+    // Fan out to active intelligence cards so they can refresh their server-owned context.
     // so they all re-read manifest/activities in one go.
     window.dispatchEvent(new CustomEvent('crm:lead-refresh', { detail: { leadId: id } }))
   }, [id])
