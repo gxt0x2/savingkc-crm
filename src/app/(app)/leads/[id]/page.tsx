@@ -96,6 +96,10 @@ interface Lead {
   dead_at?: string | null
   dead_by?: string | null
   entityContext?: CrmEntityContext | null
+  manifest?: ManifestPanelData | null
+  manifestId?: string | null
+  manifestUpdatedAt?: string | null
+  manifestIntelligenceSource?: 'manifest_compatibility' | null
 }
 
 interface ActivityRow {
@@ -188,6 +192,12 @@ function activityTypeToFeedType(type: string): 'sms' | 'call' | 'email' | 'statu
   if (type === 'call') return 'call'
   if (type === 'email') return 'email'
   return 'status_change'
+}
+
+function readObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
 }
 
 function formatAppointmentChip(appointment: AppointmentState | null): string | null {
@@ -461,11 +471,11 @@ function NetProceedsCalc({ leadId, initialArv, initialAskingPrice, initialAssign
 
   const fields: FieldConfig[] = [
     { key: 'arv', label: 'ARV', value: arv, editable: true },
-    { key: 'asIs', label: 'As-Is Valuation', value: asIsValue, editable: true },
+    { key: 'asIs', label: 'As-Is Valuation', value: asIsValue, editable: false },
     { key: 'asking', label: 'Asking Price', value: askingPrice, editable: true },
-    { key: 'mortgage', label: 'Mortgage', value: mortgage, editable: true },
-    { key: 'liens', label: 'Liens', value: liens, editable: true },
-    { key: 'taxes', label: 'Back Taxes', value: taxes, editable: true },
+    { key: 'mortgage', label: 'Mortgage', value: mortgage, editable: false },
+    { key: 'liens', label: 'Liens', value: liens, editable: false },
+    { key: 'taxes', label: 'Back Taxes', value: taxes, editable: false },
   ]
 
   async function saveField(key: string, val: number) {
@@ -484,26 +494,6 @@ function NetProceedsCalc({ leadId, initialArv, initialAskingPrice, initialAssign
         body: JSON.stringify({ id: leadId, [col]: val }),
       })
       return
-    }
-    // For taxes/liens/mortgage — store in the notes as JSON supplement
-    // and update the manifest financials
-    if (key === 'taxes' || key === 'liens' || key === 'mortgage') {
-      const labelMap: Record<string, string> = { taxes: 'back_taxes', liens: 'liens_amount', mortgage: 'mortgage_balance' }
-      // Update via manifest if one exists
-      try {
-        const res = await fetch(`/api/manifests?lead_id=${leadId}`)
-        const data = await res.json()
-        if (data.manifest?.id) {
-          const manifest = data.manifest.manifest || {}
-          if (!manifest.financials) manifest.financials = { liens: [] }
-          manifest.financials[labelMap[key]] = val
-          await fetch(`/api/manifests/${data.manifest.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ manifest }),
-          })
-        }
-      } catch { /* silent */ }
     }
   }
 
@@ -603,7 +593,7 @@ function NetProceedsCalc({ leadId, initialArv, initialAskingPrice, initialAssign
       </div>
 
       <p className="text-[9px] mt-3" style={{ color: 'var(--ck-text-dim)' }}>
-        Double-click any value to edit
+        ARV and asking price are editable. Other values are derived intelligence until canonical financial fields are available.
       </p>
     </section>
   )
@@ -886,7 +876,8 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
 
 // ─── Manifest Panel — compact cockpit summary ────────────────────────────────
 interface ManifestPanelProps {
-  leadId: string
+  manifest: ManifestPanelData | null
+  updatedAt: string | null
 }
 
 interface ManifestPanelData {
@@ -908,11 +899,17 @@ interface ManifestPanelData {
   }
   property?: {
     vacant?: boolean
+    parcel?: string
+    legalDescription?: string
+    legal_description?: string
     taxCollector?: {
       totalOwed?: number | null
       delinquentAmount?: number | null
     }
   }
+  financials?: Record<string, unknown>
+  pipeline?: Record<string, unknown>
+  communications?: Record<string, unknown>
   flags?: {
     redFlags?: unknown
     opportunityFlags?: unknown
@@ -920,95 +917,22 @@ interface ManifestPanelData {
   [key: string]: unknown
 }
 
-function ManifestPanel({ leadId }: ManifestPanelProps) {
-  const [manifest, setManifest] = useState<ManifestPanelData | null>(null)
-  const [loading, setLoading] = useState(true)
+function ManifestPanel({ manifest, updatedAt }: ManifestPanelProps) {
   const [open, setOpen] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
-  const [creating, setCreating] = useState(false)
-
-  useEffect(() => {
-    async function fetchManifest() {
-      setLoading(true)
-      try {
-        const res = await fetch(`/api/manifests?lead_id=${leadId}`)
-        const data = await res.json()
-        if (data.manifest?.manifest && typeof data.manifest.manifest === 'object') {
-          setManifest(data.manifest.manifest as ManifestPanelData)
-        }
-      } catch (err) {
-        console.error('Failed to fetch manifest:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchManifest()
-  }, [leadId])
-
-  async function handleCreateManifest() {
-    setCreating(true)
-    try {
-      const leadRes = await fetch(`/api/leads/${leadId}`, { cache: 'no-store' })
-      const leadData = leadRes.ok ? await leadRes.json() : null
-
-      const nameParts = (leadData?.full_name || 'Unknown').split(' ')
-      const res = await fetch('/api/manifests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          leadId,
-          firstName: nameParts[0] || 'Unknown',
-          lastName: nameParts.slice(1).join(' ') || undefined,
-          phone: leadData?.phone || undefined,
-          email: leadData?.email || undefined,
-          propertyAddress: leadData?.property_address || undefined,
-          city: leadData?.city || undefined,
-          state: leadData?.state || undefined,
-          zip: leadData?.zip || undefined,
-          station: leadData?.station || 'intake',
-          priority: (leadData?.priority === 'hot' ? 'hot' : leadData?.priority === 'high' ? 'warm' : 'cold') as 'hot' | 'warm' | 'cold',
-          motivationScore: leadData?.motivation_score || undefined,
-          sellerSituation: leadData?.seller_situation || undefined,
-          notes: leadData?.notes || undefined,
-          source: 'crm_manual',
-        }),
-      })
-      const data = await res.json()
-      if (data.manifest && typeof data.manifest === 'object') {
-        setManifest(data.manifest as ManifestPanelData)
-      }
-    } catch (err) {
-      console.error('Failed to create manifest:', err)
-    } finally {
-      setCreating(false)
-    }
-  }
 
   const cardStyle: React.CSSProperties = { background: 'var(--ck-surface)', borderColor: 'var(--ck-border)' }
-
-  if (loading) {
-    return (
-      <section className="rounded-2xl p-4 border" style={cardStyle}>
-        <p className="text-xs" style={{ color: 'var(--ck-text-muted)' }}>Loading manifest…</p>
-      </section>
-    )
-  }
 
   if (!manifest) {
     return (
       <section className="rounded-2xl p-4 border" style={cardStyle}>
         <div className="flex items-center gap-2 mb-3">
           <Icon name="description" className="!text-sm !text-[color:var(--ck-accent)]" />
-          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Manifest</h2>
+          <h2 className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Compatibility intelligence</h2>
         </div>
-        <button
-          onClick={handleCreateManifest}
-          disabled={creating}
-          className="w-full h-9 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
-          style={{ background: 'var(--ck-accent)', color: '#fff' }}
-        >
-          {creating ? 'Creating…' : 'Create Manifest'}
-        </button>
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--ck-text-muted)' }}>
+          No derived seller intelligence is available yet. It will populate from canonical activity and enrichment.
+        </p>
       </section>
     )
   }
@@ -1053,7 +977,7 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
       >
         <div className="flex items-center gap-2">
           <Icon name="description" className="!text-sm !text-[color:var(--ck-accent)]" />
-          <span className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Manifest</span>
+          <span className="ck-microlabel !text-[11px] !text-[color:var(--ck-text)]">Compatibility intelligence</span>
           {m.version ? (
             <span className="text-[10px] font-bold" style={{ color: 'var(--ck-text-dim)' }}>v{m.version}</span>
           ) : null}
@@ -1172,7 +1096,7 @@ function ManifestPanel({ leadId }: ManifestPanelProps) {
               {showRaw ? 'Hide JSON' : 'View raw'}
             </button>
             <p className="text-[9px] font-mono" style={{ color: 'var(--ck-text-dim)' }}>
-              {m.manifestId?.slice(0, 12) || ''}
+              {updatedAt ? `Updated ${new Date(updatedAt).toLocaleDateString()}` : ''}
             </p>
           </div>
 
@@ -1309,86 +1233,83 @@ export default function LeadDetailPage() {
           setLead(null)
           return
         }
-        const data = await res.json()
-        setLead(data as Lead)
-        setNextAppointment((data.nextAppointment as AppointmentState | null) ?? null)
+        const data = await res.json() as Lead & { nextAppointment?: AppointmentState | null }
+        setLead(data)
+        setNextAppointment(data.nextAppointment ?? null)
+
+        const manifest = readObject(data.manifest)
+        const financials = readObject(manifest?.financials)
+        const property = readObject(manifest?.property)
+        const assessment = readObject(property?.assessment)
+        const pipeline = readObject(manifest?.pipeline)
+        const rawAppointment = readObject(pipeline?.appointment)
+        const communications = readObject(manifest?.communications)
+
+        setManifestRowId(data.manifestId ?? null)
+        setManifestFinancials({
+          back_taxes: typeof financials?.back_taxes === 'number' ? financials.back_taxes : null,
+          liens_amount: typeof financials?.liens_amount === 'number' ? financials.liens_amount : null,
+          mortgage_balance: typeof financials?.mortgage_balance === 'number' ? financials.mortgage_balance : null,
+        })
+        setManifestProperty(property as ManifestProperty | null)
+        setZestimate(typeof financials?.zillow_zestimate === 'number' && financials.zillow_zestimate > 0
+          ? financials.zillow_zestimate
+          : null)
+        const appraised = typeof assessment?.appraisedTotal === 'number' && assessment.appraisedTotal > 0
+          ? assessment.appraisedTotal
+          : typeof assessment?.totalValue === 'number' && assessment.totalValue > 0
+            ? assessment.totalValue
+            : null
+        setAssessedValue(appraised)
+        setRedfinEstimate(typeof financials?.redfin_estimate === 'number' && financials.redfin_estimate > 0
+          ? financials.redfin_estimate
+          : null)
+
+        const scheduledAt = typeof rawAppointment?.scheduledAt === 'string'
+          && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawAppointment.scheduledAt)
+          ? rawAppointment.scheduledAt
+          : null
+        const parsedAt = scheduledAt ? new Date(scheduledAt) : null
+        setManifestAppointment(rawAppointment && scheduledAt && parsedAt && Number.isFinite(parsedAt.getTime())
+          ? {
+              appointmentId: typeof rawAppointment.appointmentId === 'string' ? rawAppointment.appointmentId : null,
+              type: typeof rawAppointment.type === 'string' ? rawAppointment.type : null,
+              scheduledAt,
+              status: typeof rawAppointment.status === 'string' ? rawAppointment.status : 'scheduled',
+              assignedTo: typeof rawAppointment.assignedTo === 'string' ? rawAppointment.assignedTo : null,
+              address: typeof rawAppointment.address === 'string' ? rawAppointment.address : null,
+              notes: typeof rawAppointment.notes === 'string' ? rawAppointment.notes : null,
+              source: typeof rawAppointment.source === 'string' ? rawAppointment.source : null,
+            }
+          : null)
+        setManifestScore(typeof manifest?.qualificationScore === 'number' ? manifest.qualificationScore : null)
+        const transcripts = communications?.transcripts
+        setManifestTranscripts(Array.isArray(transcripts)
+          ? transcripts.filter((item): item is { date: string; recordingUrl?: string } => {
+              const row = readObject(item)
+              return typeof row?.date === 'string'
+                && (row.recordingUrl === undefined || typeof row.recordingUrl === 'string')
+            })
+          : [])
         loadedLeadIdRef.current = id
       } catch (err) {
         console.error('[lead-detail] Failed to fetch lead:', err)
         setLead(null)
         setNextAppointment(null)
+        setManifestRowId(null)
+        setManifestFinancials({ back_taxes: null, liens_amount: null, mortgage_balance: null })
+        setManifestProperty(null)
+        setZestimate(null)
+        setAssessedValue(null)
+        setRedfinEstimate(null)
+        setManifestAppointment(null)
+        setManifestScore(null)
+        setManifestTranscripts([])
       } finally {
         setLoading(false)
       }
     }
     if (id) fetchLead()
-  }, [id, refreshTick])
-
-  useEffect(() => {
-    async function fetchManifestId() {
-      try {
-        const res = await fetch(`/api/manifests?lead_id=${id}`)
-        const data = await res.json()
-        if (data.manifest?.id) {
-          setManifestRowId(data.manifest.id)
-          const fin = data.manifest.manifest?.financials || {}
-          setManifestFinancials({
-            back_taxes: fin.back_taxes ?? null,
-            liens_amount: fin.liens_amount ?? null,
-            mortgage_balance: fin.mortgage_balance ?? null,
-          })
-          // Store property object for PropertyDetailsCard manifest fallback
-          setManifestProperty(data.manifest.manifest?.property || null)
-          // Two independent values: live Zillow zestimate and county/tax assessed value.
-          const m = data.manifest.manifest || {}
-          const property = m.property || {}
-          const zillow = typeof fin.zillow_zestimate === 'number' && fin.zillow_zestimate > 0
-            ? fin.zillow_zestimate
-            : null
-          const appraised =
-            (typeof property.assessment?.appraisedTotal === 'number' && property.assessment.appraisedTotal > 0
-              ? property.assessment.appraisedTotal
-              : null) ??
-            (typeof property.assessment?.totalValue === 'number' && property.assessment.totalValue > 0
-              ? property.assessment.totalValue
-              : null)
-          setZestimate(zillow)
-          setAssessedValue(appraised)
-          const redfin = typeof fin.redfin_estimate === 'number' && fin.redfin_estimate > 0
-            ? fin.redfin_estimate
-            : null
-          setRedfinEstimate(redfin)
-          // Store appointment data for outcome modal. The manifest builder
-          // sometimes hallucinates an appointment object with prose like
-          // "Not mentioned" / "Not specified" / "none" in scheduledAt; treat
-          // those as no appointment so downstream date formatters don't crash.
-          const rawAppt = data.manifest.manifest?.pipeline?.appointment
-          const isoLike = typeof rawAppt?.scheduledAt === 'string'
-            && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawAppt.scheduledAt)
-          const parsedAt = isoLike ? new Date(rawAppt.scheduledAt as string) : null
-          const validAppt: AppointmentState | null = rawAppt && parsedAt && !isNaN(parsedAt.getTime())
-            ? {
-                appointmentId: typeof rawAppt.appointmentId === 'string' ? rawAppt.appointmentId : null,
-                type: typeof rawAppt.type === 'string' ? rawAppt.type : null,
-                scheduledAt: rawAppt.scheduledAt,
-                status: typeof rawAppt.status === 'string' ? rawAppt.status : 'scheduled',
-                assignedTo: typeof rawAppt.assignedTo === 'string' ? rawAppt.assignedTo : null,
-                address: typeof rawAppt.address === 'string' ? rawAppt.address : null,
-                notes: typeof rawAppt.notes === 'string' ? rawAppt.notes : null,
-                source: typeof rawAppt.source === 'string' ? rawAppt.source : null,
-              }
-            : null
-          setManifestAppointment(validAppt)
-          // Qualification score for header chip
-          const qs = data.manifest.manifest?.qualificationScore
-          setManifestScore(typeof qs === 'number' ? qs : null)
-          // Call transcripts (used to surface recording URLs in the activity feed)
-          const trs = data.manifest.manifest?.communications?.transcripts
-          setManifestTranscripts(Array.isArray(trs) ? trs : [])
-        }
-      } catch { /* silent */ }
-    }
-    if (id) fetchManifestId()
   }, [id, refreshTick])
 
   // On-demand Zillow enrichment: if manifest loaded but has no zestimate yet,
@@ -2368,7 +2289,12 @@ export default function LeadDetailPage() {
               },
               {
                 id: 'manifest-panel',
-                node: <ManifestPanel leadId={id} />,
+                node: (
+                  <ManifestPanel
+                    manifest={lead.manifest ?? null}
+                    updatedAt={lead.manifestUpdatedAt ?? null}
+                  />
+                ),
               },
             ]}
           />

@@ -7,6 +7,7 @@ import { toProperCase, formatPhone } from '@/lib/format'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
+import { useLeadManifestIntelligence } from '@/hooks/use-lead-manifest-intelligence'
 
 // ── Agent → default Twilio number mapping ──
 const AGENT_DEFAULT_NUMBERS: Record<string, string> = {
@@ -125,6 +126,7 @@ export function SmsComposeModal({
   defaultFromPhone = null,
 }: ComposeModalProps) {
   const { user } = useAuth()
+  const { manifest: intelligence } = useLeadManifestIntelligence(lead.id)
   const agentName = getAgentFromEmail(user?.email)
   const titleId = useId()
   const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
@@ -197,24 +199,16 @@ export function SmsComposeModal({
       .then(data => setTemplates(data.templates || []))
       .catch(() => {})
 
-    // Pull parcel + legal description from manifest
-    ;(async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('manifests')
-        .select('manifest')
-        .eq('lead_id', lead.id)
-        .limit(1)
-        .maybeSingle()
-      const m = data?.manifest as ManifestPropertySnapshot
-      if (m?.property) {
-        setPropertyMeta({
-          parcelId: m.property.parcel || undefined,
-          legalDescription: m.property.legalDescription || m.property.legal_description || undefined,
-        })
-      }
-    })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const m = intelligence as ManifestPropertySnapshot
+    if (!m?.property) return
+    setPropertyMeta({
+      parcelId: m.property.parcel || undefined,
+      legalDescription: m.property.legalDescription || m.property.legal_description || undefined,
+    })
+  }, [intelligence])
 
   // ── Realtime subscription for new messages ──
   useEffect(() => {

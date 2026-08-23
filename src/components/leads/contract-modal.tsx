@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
@@ -20,6 +20,9 @@ interface ContractModalProps {
     offer_amount: number | null
     repair_estimate: number | null
     assignment_fee: number | null
+    manifest?: {
+      property?: { parcel?: string; legalDescription?: string; legal_description?: string }
+    } | null
   }
   onClose: () => void
   onSuccess: () => void
@@ -35,8 +38,8 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
     buyerEntity: DEFAULT_BUYING_ENTITY,
     sellerName: toProperCase(lead.full_name),
     propertyAddress: [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', '),
-    parcelId: '',
-    legalDescription: '',
+    parcelId: lead.manifest?.property?.parcel || '',
+    legalDescription: lead.manifest?.property?.legalDescription || lead.manifest?.property?.legal_description || '',
     purchasePrice: lead.offer_amount || mao || 0,
     earnestMoney: 500,
     inspectionDays: 14,
@@ -51,29 +54,6 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
   const fieldIdPrefix = useId()
   const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
 
-  // Pull parcel + legal description from manifest if available
-  useEffect(() => {
-    async function hydrate() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('manifests')
-        .select('manifest')
-        .eq('lead_id', lead.id)
-        .limit(1)
-        .maybeSingle()
-      const m = data?.manifest as {
-        property?: { parcel?: string; legalDescription?: string; legal_description?: string }
-      } | null
-      if (!m) return
-      setForm((prev) => ({
-        ...prev,
-        parcelId: prev.parcelId || m?.property?.parcel || '',
-        legalDescription: prev.legalDescription || m?.property?.legalDescription || m?.property?.legal_description || '',
-      }))
-    }
-    hydrate()
-  }, [lead.id])
-
   function updateField(key: string, value: unknown) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
@@ -87,9 +67,8 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
     setSaving(true)
     setError('')
 
-    const supabase = createClient()
-
     try {
+      const supabase = createClient()
       const { error: activityError } = await supabase.from('lead_activities').insert({
         lead_id: lead.id,
         activity_type: 'contract_sent',

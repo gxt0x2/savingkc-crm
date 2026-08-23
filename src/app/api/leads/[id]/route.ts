@@ -180,7 +180,7 @@ export async function GET(
       .eq('id', id)
       .single(),
     db.from('manifests')
-      .select('manifest')
+      .select('id, manifest, updated_at')
       .eq('lead_id', id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -207,7 +207,8 @@ export async function GET(
   }
 
   const lead = leadRes.data as LeadPayload
-  const manifestContainer = readRecord(manifestRes.data)?.manifest
+  const manifestRow = readRecord(manifestRes.data)
+  const manifestContainer = manifestRow?.manifest
   const manifestRecord = readRecord(manifestContainer)
   const manifest = readRecord(manifestRecord?.manifest) ?? manifestRecord
   const nextAppointment = normalizeAppointment((appointmentRes.data as AppointmentDbRow | null) ?? null)
@@ -227,6 +228,9 @@ export async function GET(
   return NextResponse.json({
     ...lead,
     manifest,
+    manifestId: typeof manifestRow?.id === 'string' ? manifestRow.id : null,
+    manifestUpdatedAt: typeof manifestRow?.updated_at === 'string' ? manifestRow.updated_at : null,
+    manifestIntelligenceSource: manifest ? 'manifest_compatibility' : null,
     nextAppointment,
     entityContext,
   })

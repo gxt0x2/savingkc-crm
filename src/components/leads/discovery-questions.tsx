@@ -7,8 +7,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
+import { useLeadManifestIntelligence } from '@/hooks/use-lead-manifest-intelligence'
 
 type Pillar =
   | 'MOTIVATION'
@@ -60,12 +60,25 @@ interface DiscoveryQuestionsProps {
   }>
 }
 
+type DiscoveryManifest = {
+  communications?: { transcripts?: Array<{ aiSummary?: string; agentNotes?: string; extractedData?: { verbatimQuotes?: string[] } }> }
+  situation?: {
+    motivation?: { primary?: string; signals?: string[]; urgencyLevel?: string }
+    timeline?: { sellerDeadline?: string; preferredClosing?: string }
+    priceExpectations?: { sellerFloor?: number; sellerAsking?: number; minimumAcceptable?: number }
+    competition?: { otherParties?: string[] }
+  }
+  property?: { conditionScore?: number; conditionNotes?: string; vacant?: boolean; occupied?: boolean }
+  owner?: { decisionMakers?: string[]; influencers?: string[]; coOwners?: string[] }
+  ariIntelligence?: { competition?: { competitors?: string[] } }
+}
+
 function hasText(...vals: (string | null | undefined)[]): boolean {
   return vals.some((v) => typeof v === 'string' && v.trim().length > 0)
 }
 
 function analyzeGaps(
-  manifest: any,
+  manifest: DiscoveryManifest | null,
   props: DiscoveryQuestionsProps
 ): Gap[] {
   const gaps: Gap[] = []
@@ -78,7 +91,7 @@ function analyzeGaps(
     .join(' ')
     .toLowerCase()
 
-  const transcripts: any[] = manifest?.communications?.transcripts || []
+  const transcripts = manifest?.communications?.transcripts || []
   const transcriptText = transcripts
     .map((t) => [t.aiSummary, t.agentNotes, ...(t.extractedData?.verbatimQuotes || [])].join(' '))
     .join(' ')
@@ -212,46 +225,29 @@ function analyzeGaps(
 }
 
 export function DiscoveryQuestions(props: DiscoveryQuestionsProps) {
+  return <DiscoveryQuestionsForLead key={props.leadId} {...props} />
+}
+
+function DiscoveryQuestionsForLead(props: DiscoveryQuestionsProps) {
   const { leadId } = props
   const storageKey = `crm_discovery_asked_${leadId}`
   const [asked, setAsked] = useState<Set<Pillar>>(new Set())
-  const [manifest, setManifest] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const { manifest, isLoading: loading } = useLeadManifestIntelligence(leadId)
   const [open, toggleOpen] = useCardCollapse('discovery-questions', false)
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey)
-      if (raw) setAsked(new Set(JSON.parse(raw) as Pillar[]))
-    } catch {
-      /* ignore */
-    }
+    const timer = window.setTimeout(() => {
+      try {
+        const raw = localStorage.getItem(storageKey)
+        if (raw) setAsked(new Set(JSON.parse(raw) as Pillar[]))
+      } catch {
+        /* ignore */
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [storageKey])
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('manifests')
-          .select('manifest')
-          .eq('lead_id', leadId)
-          .limit(1)
-          .maybeSingle()
-        if (!cancelled) setManifest(data?.manifest ?? null)
-      } catch {
-        if (!cancelled) setManifest(null)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    if (leadId) load()
-    return () => { cancelled = true }
-  }, [leadId, props.notes, props.sellerSituation, props.activities?.length])
-
-  const allGaps = useMemo(() => analyzeGaps(manifest, props), [manifest, props])
+  const allGaps = useMemo(() => analyzeGaps(manifest as DiscoveryManifest | null, props), [manifest, props])
   const visible = useMemo(
     () => allGaps.filter((g) => !asked.has(g.pillar)).slice(0, 3),
     [allGaps, asked]
