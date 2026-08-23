@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+vi.mock('./county-audience-inventory', () => ({ CountyAudienceInventory: () => <div>County inventory</div> }))
 import { CampaignAudienceWorkbench } from './campaign-audience-workbench'
 
 const member = {

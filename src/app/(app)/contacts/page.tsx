@@ -13,6 +13,7 @@ import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { ProspectsWorkspaceTab } from '@/components/contacts/prospects-workspace-tab'
 import { ContactsLoadingSkeleton, MobileContactsList } from '@/components/contacts/mobile-contacts-list'
 import { PrimaryNextActionReviewDialog } from '@/components/contacts/primary-next-action-review'
+import { ContactOwnerAssignment } from '@/components/contacts/contact-owner-assignment'
 import type { SortableSmartListTabsProps } from '@/components/contacts/sortable-smart-list-tabs'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
 import { PipelineFilterSelect, PipelineModal, PipelineModalActions } from '@/components/pipeline/pipeline-controls'
@@ -829,7 +830,12 @@ export default function ContactsPage() {
             <div className="crm-panel mt-6 rounded-xl p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{selected.score} / 100</dd></div></dl></div>
             <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{dataGapFilter === 'missing_next_action' ? 'Primary action required' : selected.primaryNextAction?.title || selected.nextActivity?.label || (selected.hubEnriched ? 'Define next action' : 'Loading next action…')}</p>{dataGapFilter === 'missing_next_action' ? <button type="button" onClick={() => setPrimaryReviewContact(selected)} className="crm-primary-button mt-3 h-9 w-full rounded-lg text-xs font-black">Review and resolve</button> : null}</div>
             <div className="mt-5 border-t border-[var(--crm-border)] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[var(--crm-info)]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-info-soft)] p-3 text-xs leading-5 text-[var(--crm-text)]">{selected.lastMessage || 'No recent message'}</p></div>
-            <div className="mt-6 border-t border-[var(--crm-border)] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[var(--crm-text-muted)]">{formatPhone(selected.phone) || 'No phone'}</p><p className="mt-2 break-all text-sm text-[var(--crm-text-muted)]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Owner: {selected.owner || 'Unassigned'}</p></div>
+            <div className="mt-6 border-t border-[var(--crm-border)] pt-5">
+              <h3 className="text-sm font-bold">Contact details</h3>
+              <p className="mt-3 text-sm text-[var(--crm-text-muted)]">{formatPhone(selected.phone) || 'No phone'}</p>
+              <p className="mt-2 break-all text-sm text-[var(--crm-text-muted)]">{selected.email || 'No email'}</p>
+              <ContactOwnerAssignment leadId={selected.id} owner={selected.owner} actorName={signedInAgent()} onChanged={refreshContactScopes} />
+            </div>
             <Link href={`/leads/${selected.id}`} className="crm-primary-button mt-7 flex h-11 items-center justify-center rounded-lg text-sm font-bold">Open full workspace →</Link>
           </> : <p className="text-sm text-[var(--crm-text-dim)]">Select a contact</p>}
         </aside> : null}

@@ -84,6 +84,7 @@ describe('ContactsPage smart-list workspace', () => {
   afterEach(() => {
     cleanup()
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('shows the approved smart-list labels and active-list description', () => {
@@ -211,6 +212,28 @@ describe('ContactsPage smart-list workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close contact details' }))
     expect(contactRow).toHaveClass('border-l-[var(--crm-brand)]')
     expect(contactRow).not.toHaveClass('border-l-[var(--crm-warning)]')
+  })
+
+  it('assigns the selected contact from the details rail', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ContactsPage />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Assign contact owner' }), { target: { value: 'Ernest' } })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/leads/new-intake/lifecycle', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'assign',
+        owner: 'Ernest',
+        reason: 'Direct assignment by Ernest',
+      }),
+    }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Assigned to Ernest.')
+    expect(screen.getByRole('combobox', { name: 'Assign contact owner' })).toHaveValue('Ernest')
   })
 
   it('shows a human review action instead of presenting an advisory suggestion as canonical work', () => {
