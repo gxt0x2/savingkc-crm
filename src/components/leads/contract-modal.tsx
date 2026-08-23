@@ -89,12 +89,12 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
         throw new Error(payload.error || 'Contract terms could not be recorded')
       }
 
-      const leadResponse = await fetch('/api/leads', {
+      const leadResponse = await fetch(`/api/leads/${lead.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: lead.id,
-          offer_amount: form.purchasePrice,
+          kind: 'offer_amount',
+          offerAmount: form.purchasePrice,
         }),
       })
       if (!leadResponse.ok) {
