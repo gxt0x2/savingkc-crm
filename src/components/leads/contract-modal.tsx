@@ -2,7 +2,6 @@
 
 import { useId, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 import { toProperCase, formatPhone } from '@/lib/format'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 
@@ -68,25 +67,27 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
     setError('')
 
     try {
-      const supabase = createClient()
-      const { error: activityError } = await supabase.from('lead_activities').insert({
-        lead_id: lead.id,
-        activity_type: 'contract_sent',
-        description: `Contract terms recorded for ${form.propertyAddress}. Purchase price: $${form.purchasePrice.toLocaleString()}. Closing date: ${form.closingDate}`,
-        agent: 'User',
-        metadata: {
-          buyer: form.buyerEntity,
-          seller: form.sellerName,
-          price: form.purchasePrice,
-          earnest: form.earnestMoney,
-          inspection_days: form.inspectionDays,
-          closing_date: form.closingDate,
-          parcel_id: form.parcelId || undefined,
-          legal_description: form.legalDescription || undefined,
-          escrow_company: form.escrowCompany,
-        },
+      const activityResponse = await fetch(`/api/leads/${lead.id}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'contract_terms',
+          propertyAddress: form.propertyAddress,
+          purchasePrice: form.purchasePrice,
+          closingDate: form.closingDate,
+          buyerEntity: form.buyerEntity,
+          sellerName: form.sellerName,
+          earnestMoney: form.earnestMoney,
+          inspectionDays: form.inspectionDays,
+          parcelId: form.parcelId,
+          legalDescription: form.legalDescription,
+          escrowCompany: form.escrowCompany,
+        }),
       })
-      if (activityError) throw activityError
+      if (!activityResponse.ok) {
+        const payload = await activityResponse.json().catch(() => ({}))
+        throw new Error(payload.error || 'Contract terms could not be recorded')
+      }
 
       const leadResponse = await fetch('/api/leads', {
         method: 'PATCH',

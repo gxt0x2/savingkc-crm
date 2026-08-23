@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
+import { buildLeadActivityInsert } from '@/lib/server/lead-activity-command'
 
 export async function GET(
   req: NextRequest,
@@ -16,15 +17,22 @@ export async function GET(
     const { id } = await params
     const limitParam = parseInt(req.nextUrl.searchParams.get('limit') || '50', 10)
     const limit = Math.min(Math.max(limitParam, 1), 100)
+    const activityType = req.nextUrl.searchParams.get('type')?.trim() || null
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'id required' }, { status: 400 })
     }
+    if (activityType && !/^[a-z][a-z0-9_]{0,49}$/.test(activityType)) {
+      return NextResponse.json({ success: false, error: 'invalid activity type' }, { status: 400 })
+    }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('lead_activities')
       .select('id, activity_type, description, agent, metadata, created_at')
       .eq('lead_id', id)
+    if (activityType) query = query.eq('activity_type', activityType)
+
+    const { data, error } = await query
       .order('created_at', { ascending: false })
       .limit(limit)
 
@@ -51,22 +59,20 @@ export async function POST(
     }
 
     const { id } = await params
-    const body = await req.json() as { description?: string }
-    const description = body.description?.trim()
+    const body = await req.json()
 
-    if (!id || !description) {
-      return NextResponse.json({ success: false, error: 'lead id and description required' }, { status: 400 })
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'lead id required' }, { status: 400 })
+    }
+
+    const command = buildLeadActivityInsert(id, actor.name, body)
+    if (!command.ok) {
+      return NextResponse.json({ success: false, error: command.error }, { status: 400 })
     }
 
     const { data, error } = await supabase
       .from('lead_activities')
-      .insert({
-        lead_id: id,
-        activity_type: 'note',
-        description,
-        agent: actor.name,
-        metadata: { internal: true },
-      })
+      .insert(command.insert)
       .select('id, activity_type, description, agent, metadata, created_at')
       .single()
 

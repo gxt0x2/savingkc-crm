@@ -6,7 +6,6 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 import { CockpitModal } from '@/components/ui/cockpit-modal'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
 
@@ -21,6 +20,14 @@ interface MailPiece {
   verbiage?: string | null
   campaign?: string | null
   description: string
+}
+
+interface ActivityRow {
+  id: string
+  activity_type: string
+  created_at: string
+  description: string | null
+  metadata: Record<string, unknown> | null
 }
 
 interface MailTrackerProps {
@@ -57,25 +64,24 @@ export function MailTracker({ leadId, leadName, onLogged }: MailTrackerProps) {
   async function load() {
     setLoading(true)
     try {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('lead_activities')
-        .select('id, created_at, description, metadata')
-        .eq('lead_id', leadId)
-        .eq('activity_type', 'letter_tracking')
-        .order('created_at', { ascending: false })
-        .limit(10)
+      const response = await fetch(`/api/leads/${leadId}/activities?type=letter_tracking&limit=10`, { cache: 'no-store' })
+      if (!response.ok) throw new Error('Mail history unavailable')
+      const payload = await response.json().catch(() => ({}))
+      const activities = Array.isArray(payload.activities) ? payload.activities as ActivityRow[] : []
 
-      const rows: MailPiece[] = (data || []).map((r: any) => {
-        const md = (r.metadata || {}) as Record<string, any>
+      const rows: MailPiece[] = activities
+        .filter((row) => row.activity_type === 'letter_tracking')
+        .slice(0, 10)
+        .map((r) => {
+        const md = r.metadata || {}
         return {
           id: r.id,
           created_at: r.created_at,
-          piece_type: (md.piece_type || md.letter_type || 'letter') as PieceType,
-          sent_date: md.sent_date || r.created_at,
-          phone_used: md.phone_used ?? null,
-          verbiage: md.verbiage ?? null,
-          campaign: md.campaign ?? null,
+          piece_type: (typeof md.piece_type === 'string' ? md.piece_type : typeof md.letter_type === 'string' ? md.letter_type : 'letter') as PieceType,
+          sent_date: typeof md.sent_date === 'string' ? md.sent_date : r.created_at,
+          phone_used: typeof md.phone_used === 'string' ? md.phone_used : null,
+          verbiage: typeof md.verbiage === 'string' ? md.verbiage : null,
+          campaign: typeof md.campaign === 'string' ? md.campaign : null,
           description: r.description || '',
         }
       })
@@ -95,8 +101,8 @@ export function MailTracker({ leadId, leadName, onLogged }: MailTrackerProps) {
   async function handleDelete(id: string) {
     const ok = window.confirm('Delete this mail log entry?')
     if (!ok) return
-    const supabase = createClient()
-    await supabase.from('lead_activities').delete().eq('id', id)
+    const response = await fetch(`/api/leads/activities/${id}`, { method: 'DELETE' })
+    if (!response.ok) return
     setPieces((prev) => prev.filter((p) => p.id !== id))
     onLogged?.()
   }
@@ -281,33 +287,26 @@ function LogMailModal({ open, onClose, leadId, leadName, onLogged }: LogMailModa
     setSaving(true)
     setError(null)
     try {
-      const supabase = createClient()
-      const label = PIECE_CONFIG[pieceType]?.label || 'Mail'
-      const name = leadName || 'lead'
-      const description =
-        campaign ? `${label} sent to ${name} — ${campaign}` : `${label} sent to ${name}`
-
-      const metadata: Record<string, any> = {
-        piece_type: pieceType,
-        letter_type: pieceType, // legacy key for older activity-feed compat
-        sent_date: sentDate,
-      }
-      if (phoneUsed.trim()) metadata.phone_used = phoneUsed.trim()
-      if (campaign.trim()) metadata.campaign = campaign.trim()
-      if (verbiage.trim()) metadata.verbiage = verbiage.trim()
-
-      const { error: insertError } = await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        activity_type: 'letter_tracking',
-        description,
-        agent: 'User',
-        metadata,
+      const response = await fetch(`/api/leads/${leadId}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'mail_piece',
+          pieceType,
+          sentDate,
+          phoneUsed,
+          campaign,
+          verbiage,
+          leadName,
+        }),
       })
-
-      if (insertError) throw new Error(insertError.message)
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || 'Failed to log mail piece')
+      }
       onLogged()
-    } catch (e: any) {
-      setError(e?.message || 'Failed to log mail piece')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to log mail piece')
     } finally {
       setSaving(false)
     }
@@ -364,7 +363,7 @@ function LogMailModal({ open, onClose, leadId, leadName, onLogged }: LogMailModa
               value={sentDate}
               onChange={(e) => setSentDate(e.target.value)}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ ...inputStyle, colorScheme: 'dark' as any }}
+              style={{ ...inputStyle, colorScheme: 'dark' }}
             />
           </div>
           <div>
