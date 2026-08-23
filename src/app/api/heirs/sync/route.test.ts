@@ -15,18 +15,13 @@ const mocks = vi.hoisted(() => ({
     county: 'Jackson',
     is_deceased: true,
   },
-  deleteError: null as { message: string } | null,
-  insertError: null as { message: string } | null,
-  prospectUpdateError: null as { message: string } | null,
-  activityError: null as { message: string } | null,
-  deletes: 0,
-  phoneInserts: [] as unknown[],
-  activities: [] as Array<Record<string, unknown>>,
+  rpc: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: {
+    rpc: mocks.rpc,
     from(table: string) {
       if (table === 'prospects') {
         return {
@@ -45,43 +40,9 @@ vi.mock('@/lib/supabase-lazy', () => ({
               },
             }
           },
-          update() {
-            return {
-              async eq() {
-                return { error: mocks.prospectUpdateError }
-              },
-            }
-          },
         }
       }
-
-      if (table === 'prospect_phones') {
-        return {
-          delete() {
-            return {
-              eq() {
-                return {
-                  async neq() {
-                    mocks.deletes += 1
-                    return { error: mocks.deleteError }
-                  },
-                }
-              },
-            }
-          },
-          async insert(payload: unknown) {
-            mocks.phoneInserts.push(payload)
-            return { error: mocks.insertError }
-          },
-        }
-      }
-
-      return {
-        async insert(payload: Record<string, unknown>) {
-          mocks.activities.push(payload)
-          return { error: mocks.activityError }
-        },
-      }
+      throw new Error(`Unexpected table access: ${table}`)
     },
   },
 }))
@@ -108,13 +69,7 @@ describe('heir sync trust and containment', () => {
     vi.clearAllMocks()
     vi.unstubAllGlobals()
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
-    mocks.deleteError = null
-    mocks.insertError = null
-    mocks.prospectUpdateError = null
-    mocks.activityError = null
-    mocks.deletes = 0
-    mocks.phoneInserts.length = 0
-    mocks.activities.length = 0
+    mocks.rpc.mockResolvedValue({ data: 1, error: null })
     process.env.SKIPTRACE_SERVICE_URL = 'https://skiptrace.example.com'
   })
 
@@ -130,7 +85,7 @@ describe('heir sync trust and containment', () => {
     expect(response.status).toBe(401)
     expect(parse).not.toHaveBeenCalled()
     expect(provider).not.toHaveBeenCalled()
-    expect(mocks.deletes).toBe(0)
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it('preserves existing heirs when the provider returns no usable phones', async () => {
@@ -139,8 +94,7 @@ describe('heir sync trust and containment', () => {
     const response = await POST(request({ lead_id: 'lead-1' }))
 
     expect(response.status).toBe(422)
-    expect(mocks.deletes).toBe(0)
-    expect(mocks.phoneInserts).toHaveLength(0)
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it('attributes successful sync evidence to the authenticated actor', async () => {
@@ -153,17 +107,20 @@ describe('heir sync trust and containment', () => {
     const response = await POST(request({ lead_id: 'lead-1' }))
 
     expect(response.status).toBe(200)
-    expect(mocks.deletes).toBe(1)
-    expect(mocks.phoneInserts).toHaveLength(1)
-    expect(mocks.activities).toEqual([expect.objectContaining({
-      lead_id: 'lead-1',
-      agent: 'Casey',
-      metadata: expect.objectContaining({ action: 'sync_heirs' }),
-    })])
+    expect(mocks.rpc).toHaveBeenCalledWith('replace_heir_skip_trace_v1', {
+      p_lead_id: 'lead-1',
+      p_prospect_id: 'prospect-1',
+      p_actor: 'Casey',
+      p_rows: [expect.objectContaining({
+        phone: '+18165550100',
+        contact_name: 'Jamie Heir',
+        relationship: 'child',
+      })],
+    })
   })
 
-  it('stops before insertion when stale-row removal fails', async () => {
-    mocks.deleteError = { message: 'delete unavailable' }
+  it('fails without claiming success when the atomic replacement rolls back', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'transaction rolled back' } })
     upstream([{
       name: 'Jamie Heir',
       phones: [{ number: '+18165550100' }],
@@ -172,7 +129,6 @@ describe('heir sync trust and containment', () => {
     const response = await POST(request({ lead_id: 'lead-1' }))
 
     expect(response.status).toBe(500)
-    expect(mocks.phoneInserts).toHaveLength(0)
-    expect(mocks.activities).toHaveLength(0)
+    expect(mocks.rpc).toHaveBeenCalledOnce()
   })
 })
