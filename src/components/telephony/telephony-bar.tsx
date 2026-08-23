@@ -729,6 +729,7 @@ export function DialerPanel({
           agent_identity: agentIdentity,
           from_number: authorized.callerId,
           lead_id: authorized.leadId,
+          clientAttemptId: authorized.clientAttemptId,
           ...heirMeta,
         }),
       }).catch(() => {})
@@ -757,6 +758,7 @@ export function DialerPanel({
             agent_identity: agentIdentity,
             from_number: authorized.callerId,
             lead_id: authorized.leadId,
+            clientAttemptId: authorized.clientAttemptId,
             ...heirMeta,
           }),
         }).catch(() => {})
@@ -957,6 +959,8 @@ export function DialerPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          phone: lastCallPhoneRef.current,
+          event: 'ended',
           status: 'completed',
           outcome: disposition,
           disposition,
@@ -964,6 +968,7 @@ export function DialerPanel({
           from_number: activeCallerId || null,
           agent: activeAgentName,
           duration_seconds: lastCallDurationSecondsRef.current || null,
+          clientAttemptId: durableAttemptId,
           notes: notes || null,
           dead_reason: options?.deadReason ?? null,
         }),
