@@ -28,4 +28,10 @@ describe('operator lifecycle UI trust boundary', () => {
       }
     }
   })
+
+  it('routes the active dialer outcome through the typed per-lead endpoint', () => {
+    const source = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf8')
+    expect(source).toContain('/disposition`')
+    expect(source).not.toMatch(/fetch\(['"]\/api\/leads['"][\s\S]{0,500}?disposition/)
+  })
 })
