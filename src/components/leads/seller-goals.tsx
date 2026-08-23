@@ -6,10 +6,10 @@
 
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
+import { useLeadManifestIntelligence } from '@/hooks/use-lead-manifest-intelligence'
 
 interface SellerGoalsProps {
   leadId: string
@@ -20,6 +20,21 @@ interface SellerGoalsProps {
     description: string | null
     metadata: Record<string, unknown> | null
   }>
+}
+
+type SellerGoalsManifest = {
+  situation?: {
+    type?: string[]
+    motivation?: { urgencyLevel?: string; primary?: string; signals?: string[] }
+    timeline?: { flexibility?: string; sellerDeadline?: string; preferredClosing?: string }
+    priceExpectations?: { sellerFloor?: number; minimumAcceptable?: number; sellerAsking?: number; askingPrice?: number }
+  }
+  property?: {
+    condition?: { overall?: string }
+    vacant?: boolean
+    taxCollector?: { totalOwed?: number; delinquentAmount?: number }
+  }
+  owner?: { deceased?: boolean; decisionMakers?: string[]; coOwners?: string[] }
 }
 
 type Priority = 'critical' | 'high' | 'nominal'
@@ -46,7 +61,7 @@ function formatMoney(n: number): string {
   return `$${n.toLocaleString()}`
 }
 
-function analyzeGoals(manifest: any, props: SellerGoalsProps): Goal[] {
+function analyzeGoals(manifest: SellerGoalsManifest | null, props: SellerGoalsProps): Goal[] {
   const goals: Goal[] = []
   const m = manifest || {}
   const s = m.situation || {}
@@ -227,55 +242,15 @@ function analyzeGoals(manifest: any, props: SellerGoalsProps): Goal[] {
 
 export function SellerGoals(props: SellerGoalsProps) {
   const { leadId } = props
-  const [manifest, setManifest] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
+  const { manifest, updatedAt: updatedAtValue, isLoading: loading } = useLeadManifestIntelligence(leadId)
+  const updatedAt = updatedAtValue ? new Date(updatedAtValue).getTime() : null
   const [open, toggleOpen] = useCardCollapse('core-goals')
 
-  const [refreshTick, setRefreshTick] = useState(0)
-  useEffect(() => {
-    function bump() { setRefreshTick((t) => t + 1) }
-    window.addEventListener('crm:lead-refresh', bump)
-    return () => window.removeEventListener('crm:lead-refresh', bump)
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('manifests')
-          .select('manifest, updated_at')
-          .eq('lead_id', leadId)
-          .limit(1)
-          .maybeSingle()
-        if (!cancelled) {
-          setManifest(data?.manifest ?? null)
-          if (data?.updated_at) setUpdatedAt(new Date(data.updated_at).getTime())
-          else setUpdatedAt(Date.now())
-        }
-      } catch {
-        if (!cancelled) setManifest(null)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    if (leadId) load()
-    return () => { cancelled = true }
-  }, [leadId, props.notes, props.sellerSituation, props.activities?.length, refreshTick])
-
-  const goals = useMemo(() => analyzeGoals(manifest, props), [manifest, props])
+  const goals = useMemo(() => analyzeGoals(manifest as SellerGoalsManifest | null, props), [manifest, props])
 
   const updatedLabel = useMemo(() => {
     if (!updatedAt) return null
-    const diffMin = Math.floor((Date.now() - updatedAt) / 60_000)
-    if (diffMin < 1) return 'updated just now'
-    if (diffMin < 60) return `updated ${diffMin}m ago`
-    const h = Math.floor(diffMin / 60)
-    if (h < 24) return `updated ${h}h ago`
-    return `updated ${Math.floor(h / 24)}d ago`
+    return `updated ${new Date(updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
   }, [updatedAt])
 
   return (

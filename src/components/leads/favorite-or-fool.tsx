@@ -5,10 +5,9 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
+import { useLeadManifestIntelligence } from '@/hooks/use-lead-manifest-intelligence'
 
 interface FavoriteOrFoolProps {
   leadId: string
@@ -395,32 +394,9 @@ function formatLastSeen(activities?: Array<{ activity_type: string; created_at: 
 }
 
 export function FavoriteOrFool({ leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation, classification, priority, isFavorite, opportunityScore, activities }: FavoriteOrFoolProps) {
-  const [manifest, setManifest] = useState<ManifestData>({})
-  const [loading, setLoading] = useState(true)
+  const { manifest: intelligence, isLoading: loading } = useLeadManifestIntelligence(leadId)
+  const manifest = (intelligence ?? {}) as ManifestData
   const [open, toggleOpen] = useCardCollapse('favorite-or-fool')
-  const [refreshTick, setRefreshTick] = useState(0)
-
-  useEffect(() => {
-    function bump() { setRefreshTick((t) => t + 1) }
-    window.addEventListener('crm:lead-refresh', bump)
-    return () => window.removeEventListener('crm:lead-refresh', bump)
-  }, [])
-
-  useEffect(() => {
-    async function fetchManifest() {
-      setLoading(true)
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('manifests')
-        .select('manifest')
-        .eq('lead_id', leadId)
-        .limit(1)
-        .maybeSingle()
-      if (data?.manifest) setManifest(data.manifest as ManifestData)
-      setLoading(false)
-    }
-    fetchManifest()
-  }, [leadId, refreshTick])
 
   const result = diagnose(manifest, {
     leadId, manifestId, motivationScore, arv, offerAmount, repairEstimate, station, notes, sellerSituation,

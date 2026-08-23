@@ -5,8 +5,8 @@
 
 import { useState, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
+import { useLeadManifestIntelligence } from '@/hooks/use-lead-manifest-intelligence'
 
 interface PainPoint {
   period: 'past' | 'present' | 'future'
@@ -23,6 +23,24 @@ interface PainPointsProps {
     description: string | null
     metadata: Record<string, unknown> | null
   }>
+}
+
+type PainManifest = {
+  situation?: {
+    type?: string[]
+    motivation?: { signals?: string[]; secondary?: string[] }
+    objections?: string[]
+    blockers?: string[]
+  }
+  flags?: { redFlags?: string[]; opportunityFlags?: string[] }
+  owner?: { deceased?: boolean; outOfState?: boolean }
+  property?: {
+    vacant?: boolean
+    taxCollector?: { delinquentAmount?: number; totalOwed?: number }
+  }
+  communications?: {
+    transcripts?: Array<{ extractedData?: { painPoints?: string[]; pain_points?: string[] } }>
+  }
 }
 
 // Keywords for fallback extraction from raw text
@@ -140,19 +158,11 @@ function mergeInto(map: Map<string, string>, raw: string): void {
 
 export function PainPoints({ leadId, notes, sellerSituation, motivationScore, activities }: PainPointsProps) {
   const [painPoints, setPainPoints] = useState<PainPoint[]>([])
-  const [loading, setLoading] = useState(true)
+  const { manifest, isLoading: loading } = useLeadManifestIntelligence(leadId)
   const [open, toggleOpen] = useCardCollapse('pain-points')
-  const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
-    function bump() { setRefreshTick((t) => t + 1) }
-    window.addEventListener('crm:lead-refresh', bump)
-    return () => window.removeEventListener('crm:lead-refresh', bump)
-  }, [])
-
-  useEffect(() => {
-    async function analyze() {
-      setLoading(true)
+    function analyze() {
       // Per-period concept-key → best label map (dedupes across sources).
       const buckets: Record<'past' | 'present' | 'future', Map<string, string>> = {
         past: new Map(),
@@ -160,18 +170,10 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
         future: new Map(),
       }
 
-      // 1. Pull from manifest (structured data — most reliable)
-      try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('manifests')
-          .select('manifest')
-          .eq('lead_id', leadId)
-          .limit(1)
-          .maybeSingle()
-
-        const m = data?.manifest as any
-        if (m) {
+      // 1. Use the authenticated server workspace snapshot. Manifest data is
+      // compatibility intelligence here, never a browser-side authority.
+      const m = manifest as PainManifest | null
+      if (m) {
           // Situation types — always go through the enum map so slugs never leak.
           const types: string[] = m.situation?.type || []
           for (const t of types) {
@@ -251,8 +253,7 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
               mergeInto(buckets.present, pp)
             }
           }
-        }
-      } catch { /* silent */ }
+      }
 
       // 2. Keyword extraction from notes/activities (fallback)
       const texts: string[] = []
@@ -277,11 +278,10 @@ export function PainPoints({ leadId, notes, sellerSituation, motivationScore, ac
       if (buckets.future.size) result.push({ period: 'future', items: [...buckets.future.values()] })
 
       setPainPoints(result)
-      setLoading(false)
     }
 
     if (leadId) analyze()
-  }, [leadId, notes, sellerSituation, motivationScore, activities, refreshTick])
+  }, [leadId, notes, sellerSituation, motivationScore, activities, manifest])
 
   const PERIOD_CONFIG = {
     past: { color: 'var(--ck-text-muted)', label: 'Past' },
