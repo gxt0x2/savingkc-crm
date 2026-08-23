@@ -123,3 +123,27 @@ export async function finalizeVerifiedFallout(input: {
     marketingOutcome: Record<string, unknown>
   }
 }
+
+export async function attestLegacyHandoff(input: {
+  kind: 'seller_handoff' | 'assignment_handoff'
+  leadId: string
+  recordId: string
+  candidateId: string | null
+  evidenceReference: string
+  evidenceOccurredAt: string
+  actorEmail: string
+  actorName: string
+}) {
+  const { data, error } = await supabaseAdmin().rpc('crm_attest_legacy_handoff_v1', {
+    target_kind: input.kind,
+    target_lead_id: input.leadId,
+    target_record_id: input.recordId,
+    target_candidate_id: input.candidateId,
+    target_evidence_reference: input.evidenceReference,
+    target_evidence_occurred_at: input.evidenceOccurredAt,
+    target_actor_email: input.actorEmail,
+    target_actor_name: input.actorName,
+  })
+  if (error) throw new CrmOperatingHandoffError(error.message || 'Legacy handoff evidence could not be recorded')
+  return data as { handoffId: string; status: 'accepted'; replayed: boolean; evidenceOccurredAt: string }
+}

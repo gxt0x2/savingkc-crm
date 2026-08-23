@@ -43,6 +43,8 @@ export type LifecycleEvidenceIssue = {
   title: string
   detail: string
   href: string
+  canAttest: boolean
+  candidateId: string | null
 }
 
 export type LifecycleReconciliationSnapshot = {
@@ -99,6 +101,8 @@ export function summarizeLifecycleReconciliation(input: {
         title: label,
         detail: 'Dispositions record predates a verified signed seller-contract handoff.',
         href: `/leads/${deal.lead_id}`,
+        canAttest: true,
+        candidateId: null,
       })
     }
     const expectedOutcome = deal.stage === 'closed' ? 'closed_won' : deal.stage === 'dead' ? 'fell_through' : null
@@ -113,6 +117,8 @@ export function summarizeLifecycleReconciliation(input: {
           ? 'Closed record has no verified funded-close outcome or revenue evidence for Marketing.'
           : 'Fell-through record has no verified zero-revenue outcome for Marketing.',
         href: '/dispo/pipeline?closeout=due',
+        canAttest: false,
+        candidateId: null,
       })
     }
   }
@@ -128,6 +134,8 @@ export function summarizeLifecycleReconciliation(input: {
         title: label,
         detail: 'Closing file is not linked to a Dispositions deal.',
         href: '/dispo/tc',
+        canAttest: false,
+        candidateId: null,
       })
     }
     const offer = file.buyer_offer_id ? offerById.get(file.buyer_offer_id) : undefined
@@ -140,6 +148,8 @@ export function summarizeLifecycleReconciliation(input: {
         title: label,
         detail: 'Closing file lacks a verified executed buyer assignment handoff.',
         href: '/dispo/tc',
+        canAttest: Boolean(file.buyer_offer_id),
+        candidateId: file.buyer_offer_id,
       })
     }
   }
