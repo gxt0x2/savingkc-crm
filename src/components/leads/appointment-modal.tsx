@@ -62,7 +62,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
     setSaving(true)
     setError(null)
 
-    const appointmentDate = `${form.date}T${form.time}:00`
+    const appointmentDate = new Date(`${form.date}T${form.time}:00`).toISOString()
     const assignedTo = form.agent.toLowerCase().includes('casey') ? 'casey' : 'ernest'
 
     try {

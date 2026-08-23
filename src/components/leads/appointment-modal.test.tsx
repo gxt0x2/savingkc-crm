@@ -34,7 +34,8 @@ describe('AppointmentModal', () => {
   it('closes only after the appointment is confirmed by the server', async () => {
     const onClose = vi.fn()
     const onSuccess = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 })))
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     render(<AppointmentModal
@@ -47,5 +48,7 @@ describe('AppointmentModal', () => {
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
     expect(onClose).toHaveBeenCalledOnce()
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { scheduledAt: string }
+    expect(request.scheduledAt).toBe(new Date(`${tomorrow}T10:00:00`).toISOString())
   })
 })
