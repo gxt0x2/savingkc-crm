@@ -211,6 +211,31 @@ describe('ContactsPage smart-list workspace', () => {
     expect(contactRow).not.toHaveClass('border-l-[var(--crm-warning)]')
   })
 
+  it('shows a human review action instead of presenting an advisory suggestion as canonical work', () => {
+    window.history.replaceState(null, '', '/contacts?list=all&gap=missing_next_action')
+    searchParamsMock.mockReturnValue(new URLSearchParams('list=all&gap=missing_next_action'))
+    useQueryMock.mockReturnValue({
+      data: {
+        items: [{ ...contacts[1], nextActivity: { when: null, label: 'AI says send an offer', kind: 'recommended' } }],
+        scopeCounts: { active: 1, prospects: 0, not_leads: 0 },
+        counts: contactSmartListCounts([contacts[1]]),
+        facets: { owners: ['Casey'], sources: ['manual'], tags: [] },
+        pageInfo: { limit: 10, total: 1, hasMore: false, nextCursor: null },
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    })
+
+    render(<ContactsPage />)
+
+    expect(screen.getByText('Human next-action review')).toBeVisible()
+    expect(screen.getAllByText('Primary action required').length).toBeGreaterThan(0)
+    expect(screen.queryByText('AI says send an offer')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review and resolve' })).toBeVisible()
+  })
+
   it('supports bulk selection and opens the full lead workspace on double-click', () => {
     render(<ContactsPage />)
     fireEvent.click(screen.getByRole('button', { name: /^Leads 1$/ }))

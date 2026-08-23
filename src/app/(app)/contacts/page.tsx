@@ -12,6 +12,7 @@ import type { DealStage } from '@/types/pipeline'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { ProspectsWorkspaceTab } from '@/components/contacts/prospects-workspace-tab'
 import { ContactsLoadingSkeleton, MobileContactsList } from '@/components/contacts/mobile-contacts-list'
+import { PrimaryNextActionReviewDialog } from '@/components/contacts/primary-next-action-review'
 import type { SortableSmartListTabsProps } from '@/components/contacts/sortable-smart-list-tabs'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
 import { PipelineFilterSelect, PipelineModal, PipelineModalActions } from '@/components/pipeline/pipeline-controls'
@@ -235,6 +236,7 @@ export default function ContactsPage() {
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([null])
   const [pageIndex, setPageIndex] = useState(0)
   const [dialog, setDialog] = useState<ContactDialog>(null)
+  const [primaryReviewContact, setPrimaryReviewContact] = useState<ContactWorkspaceRow | null>(null)
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT)
   const [viewName, setViewName] = useState('')
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
@@ -397,6 +399,11 @@ export default function ContactsPage() {
       queryClient.invalidateQueries({ queryKey: CONTACT_QUERY_ROOT }),
       queryClient.invalidateQueries({ queryKey: conversationHubQueryKey }),
     ])
+  }
+
+  async function handlePrimaryActionResolved() {
+    setBulkMessage('Primary next action saved. The opportunity has left this review queue.')
+    await refreshContactScopes()
   }
 
   function handleLeadStatusChanged(update: LeadStatusUpdate) {
@@ -690,6 +697,11 @@ export default function ContactsPage() {
               <span className="ml-auto text-sm text-[var(--crm-text-muted)]">{totalResults} results</span>
             </div>
 
+            {dataGapFilter === 'missing_next_action' ? <div className="mt-3 flex flex-col gap-3 rounded-xl border border-[var(--crm-action-border)] bg-[var(--crm-action-soft)] p-4 sm:flex-row sm:items-center" role="status">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--crm-surface)] text-[var(--crm-action)]"><Icon name="rule" /></span>
+              <span className="min-w-0"><strong className="block text-sm text-[var(--crm-ink)]">Human next-action review</strong><span className="mt-0.5 block text-xs leading-5 text-[var(--crm-text-muted)]">Resolve each opportunity by choosing a trustworthy operator task or creating one clear, owned, dated action. AI and manifest suggestions stay advisory.</span></span>
+            </div> : null}
+
             {pageItemsSelected && !activeAllMatchingSelection && totalResults > pageItems.length ? <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-2.5 text-xs font-bold text-[var(--crm-ink)]" role="status"><span>All {pageItems.length} contacts on this page are selected.</span>{totalResults <= MAX_PROSPECTING_QUERY_AUDIENCE ? <button type="button" onClick={() => { setSelectedIds(new Set()); setAllMatchingSelection({ query: audienceQuery, count: totalResults }) }} className="font-black text-[var(--crm-brand)] underline underline-offset-2">Select all {totalResults.toLocaleString()} matching contacts</button> : <span className="text-[var(--crm-text-muted)]">Narrow the list to {MAX_PROSPECTING_QUERY_AUDIENCE.toLocaleString()} or fewer to select every match.</span>}</div> : null}
 
             {activeAllMatchingSelection ? <div className="mt-3 flex flex-wrap items-center justify-center gap-2 rounded-xl border border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] px-4 py-2.5 text-xs font-bold text-[var(--crm-success)]" role="status"><Icon name="select_all" className="text-base" />All {activeAllMatchingSelection.count.toLocaleString()} matching contacts are selected for this campaign audience.<button type="button" onClick={() => setAllMatchingSelection(null)} className="font-black underline underline-offset-2">Clear</button></div> : null}
@@ -734,7 +746,9 @@ export default function ContactsPage() {
               {!isLoading && !error ? pageItems.map((row) => {
                 const displayName = getDisplayLeadName(row.fullName, row.phone)
                 const property = row.address || 'No property linked'
-                const nextAction = row.primaryNextAction?.title || row.nextActivity?.label || (row.hubEnriched ? 'Define next action' : 'Loading next action…')
+                const nextAction = dataGapFilter === 'missing_next_action'
+                  ? 'Primary action required'
+                  : row.primaryNextAction?.title || row.nextActivity?.label || (row.hubEnriched ? 'Define next action' : 'Loading next action…')
                 const selectedRow = detailsOpen && selected?.id === row.id
                 const notLead = isNotLeadOutcome(row.classification, row.station)
                 const pipelineStatus = contactPipelineStatusLabel(row)
@@ -757,7 +771,7 @@ export default function ContactsPage() {
                       <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : row.classification ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]'}`}>{pipelineStatus}</span>
                       <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{smartList === 'hot' ? `Motivation ${row.score} / 100` : notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : row.classification === null ? outreachStatusLabel(row.outreachStatus) : STAGE_LABELS[row.station]}</small>
                     </span>
-                    <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>
+                    {dataGapFilter === 'missing_next_action' ? <button type="button" onClick={(event) => { event.stopPropagation(); setPrimaryReviewContact(row) }} className="flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--crm-action-border)] bg-[var(--crm-surface)] px-2 text-left font-black text-[var(--crm-action)] hover:brightness-95"><Icon name="rule" className="shrink-0 text-[15px]" /><span>{nextAction}</span></button> : <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>}
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>
                   </div>
                 )
@@ -767,7 +781,7 @@ export default function ContactsPage() {
               {isLoading ? <ContactsLoadingSkeleton mobile /> : null}
               {error ? <div className="crm-panel rounded-xl p-6 text-center text-sm text-[var(--crm-danger)]">Contacts could not be loaded. <button type="button" onClick={() => void refetch()} className="font-bold underline">Try again</button></div> : null}
               {!isLoading && !error && pageItems.length === 0 ? <div className="crm-panel rounded-xl p-8 text-center text-sm text-[var(--crm-text-muted)]">No contacts match these filters.</div> : null}
-              {!isLoading && !error ? <MobileContactsList items={pageItems} selectedIds={selectedIds} onToggle={toggleSelected} onOpen={(id) => router.push(`/leads/${id}`)} onCall={openDialer} showScore={smartList === 'hot'} /> : null}
+              {!isLoading && !error ? <MobileContactsList items={pageItems} selectedIds={selectedIds} onToggle={toggleSelected} onOpen={(id) => router.push(`/leads/${id}`)} onCall={openDialer} onReviewPrimary={dataGapFilter === 'missing_next_action' ? setPrimaryReviewContact : undefined} showScore={smartList === 'hot'} /> : null}
             </> : null}
             <div className="mt-5 flex flex-col gap-3 text-xs text-[var(--crm-text-muted)] sm:flex-row sm:items-center md:mt-7">
               <span>Showing {pageItems.length ? pageIndex * CONTACT_PAGE_SIZE + 1 : 0} to {Math.min(pageIndex * CONTACT_PAGE_SIZE + pageItems.length, totalResults)} of {totalResults} results</span>
@@ -804,7 +818,7 @@ export default function ContactsPage() {
               />
             </div>
             <div className="crm-panel mt-6 rounded-xl p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{selected.score} / 100</dd></div></dl></div>
-            <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{selected.primaryNextAction?.title || selected.nextActivity?.label || (selected.hubEnriched ? 'Define next action' : 'Loading next action…')}</p></div>
+            <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{dataGapFilter === 'missing_next_action' ? 'Primary action required' : selected.primaryNextAction?.title || selected.nextActivity?.label || (selected.hubEnriched ? 'Define next action' : 'Loading next action…')}</p>{dataGapFilter === 'missing_next_action' ? <button type="button" onClick={() => setPrimaryReviewContact(selected)} className="crm-primary-button mt-3 h-9 w-full rounded-lg text-xs font-black">Review and resolve</button> : null}</div>
             <div className="mt-5 border-t border-[var(--crm-border)] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[var(--crm-info)]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-info-soft)] p-3 text-xs leading-5 text-[var(--crm-text)]">{selected.lastMessage || 'No recent message'}</p></div>
             <div className="mt-6 border-t border-[var(--crm-border)] pt-5"><h3 className="text-sm font-bold">Contact details</h3><p className="mt-3 text-sm text-[var(--crm-text-muted)]">{formatPhone(selected.phone) || 'No phone'}</p><p className="mt-2 break-all text-sm text-[var(--crm-text-muted)]">{selected.email || 'No email'}</p><p className="mt-2 text-sm text-[var(--crm-text-muted)]">Owner: {selected.owner || 'Unassigned'}</p></div>
             <Link href={`/leads/${selected.id}`} className="crm-primary-button mt-7 flex h-11 items-center justify-center rounded-lg text-sm font-bold">Open full workspace →</Link>
@@ -827,6 +841,7 @@ export default function ContactsPage() {
         </div> : null}
         {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><PipelineModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
       </PipelineModal> : null}
+      {primaryReviewContact ? <PrimaryNextActionReviewDialog leadId={primaryReviewContact.id} contactName={getDisplayLeadName(primaryReviewContact.fullName, primaryReviewContact.phone)} onClose={() => setPrimaryReviewContact(null)} onResolved={handlePrimaryActionResolved} /> : null}
     </>
   )
 }
