@@ -10,7 +10,7 @@ vi.mock('@/lib/manifest-sync', () => ({
   updateManifestAndCascade: mocks.updateManifestAndCascade,
 }))
 
-import { syncLeadActivityMutation } from './lead-activity-sync'
+import { syncLeadActivityCreated, syncLeadActivityMutation } from './lead-activity-sync'
 
 describe('syncLeadActivityMutation', () => {
   beforeEach(() => {
@@ -41,6 +41,34 @@ describe('syncLeadActivityMutation', () => {
       action: 'activity_deleted',
       details: { activityId: 'activity-1', activityType: 'task' },
     }))
+  })
+
+  it('projects a committed manual note with its authenticated actor', async () => {
+    const manifest = {
+      agentNotes: [] as Array<Record<string, unknown>>,
+      ariIntelligence: { briefingStale: false },
+      auditTrail: [] as Array<Record<string, unknown>>,
+    }
+    mocks.ensureManifestExists.mockResolvedValue('manifest-1')
+    mocks.updateManifestAndCascade.mockImplementation(async (_leadId, updater) => {
+      updater(manifest)
+      return true
+    })
+
+    await expect(syncLeadActivityCreated({
+      leadId: 'lead-1',
+      activityId: 'activity-1',
+      activityType: 'note',
+      description: 'Call after 3 PM',
+      actorName: 'Ernest Dodson',
+    })).resolves.toBe(true)
+
+    expect(manifest.agentNotes).toContainEqual(expect.objectContaining({
+      author: 'Ernest Dodson',
+      source: 'manual_note',
+      content: 'Call after 3 PM',
+    }))
+    expect(manifest.ariIntelligence.briefingStale).toBe(true)
   })
 
   it('does not attempt a write when no manifest can be resolved', async () => {

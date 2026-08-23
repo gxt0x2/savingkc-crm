@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
   activityLimit: vi.fn(),
   activityTypeEq: vi.fn(),
+  syncCreated: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -17,6 +18,8 @@ vi.mock('@/lib/supabase/server', () => ({
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: { from: mocks.from },
 }))
+
+vi.mock('@/lib/lead-activity-sync', () => ({ syncLeadActivityCreated: mocks.syncCreated }))
 
 import { GET, POST } from './route'
 
@@ -40,6 +43,7 @@ describe('lead internal notes', () => {
       error: null,
     })
     mocks.profileMaybeSingle.mockResolvedValue({ data: { full_name: 'Ernest Dodson' }, error: null })
+    mocks.syncCreated.mockResolvedValue(true)
     mocks.activityLimit.mockResolvedValue({
       data: [{ id: 'activity-1', activity_type: 'sms', created_at: '2026-08-23T12:00:00.000Z' }],
       error: null,
@@ -85,6 +89,12 @@ describe('lead internal notes', () => {
       activity_type: 'note',
       description: 'Call after 3 PM',
       agent: 'Ernest Dodson',
+    }))
+    expect(mocks.syncCreated).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: 'lead-1',
+      activityId: 'activity-1',
+      description: 'Call after 3 PM',
+      actorName: 'Ernest Dodson',
     }))
   })
 
@@ -140,6 +150,17 @@ describe('lead internal notes', () => {
 
     expect(response.status).toBe(400)
     expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
+  it('returns an honest warning when projection synchronization fails after the activity commits', async () => {
+    mocks.syncCreated.mockRejectedValue(new Error('manifest unavailable'))
+
+    const response = await POST(request({ description: 'Persist this note' }), { params: Promise.resolve({ id: 'lead-1' }) })
+    const body = await response.json()
+
+    expect(response.status).toBe(201)
+    expect(body.activity).toBeTruthy()
+    expect(body.warning).toContain('briefing')
   })
 
   it('returns bounded activity history to an authenticated user', async () => {
