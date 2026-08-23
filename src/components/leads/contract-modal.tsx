@@ -61,7 +61,9 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
         .eq('lead_id', lead.id)
         .limit(1)
         .maybeSingle()
-      const m = data?.manifest as any
+      const m = data?.manifest as {
+        property?: { parcel?: string; legalDescription?: string; legal_description?: string }
+      } | null
       if (!m) return
       setForm((prev) => ({
         ...prev,
@@ -112,12 +114,24 @@ export function ContractModal({ lead, onClose, onSuccess }: ContractModalProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: lead.id,
-          station: 'offer_made',
           offer_amount: form.purchasePrice,
         }),
       })
       if (!leadResponse.ok) {
         const payload = await leadResponse.json().catch(() => ({}))
+        throw new Error(payload.error || 'Lead stage could not be updated')
+      }
+      const lifecycleResponse = await fetch(`/api/leads/${lead.id}/lifecycle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'transition',
+          stage: 'offer_made',
+          reason: 'Purchase terms recorded for seller review',
+        }),
+      })
+      if (!lifecycleResponse.ok) {
+        const payload = await lifecycleResponse.json().catch(() => ({}))
         throw new Error(payload.error || 'Lead stage could not be updated')
       }
 

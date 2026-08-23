@@ -282,15 +282,12 @@ function LeadTriageStrip({
     setSaving(option.value)
     setError(null)
     try {
-      const res = await fetch('/api/leads', {
-        method: 'PATCH',
+      const res = await fetch(`/api/leads/${lead.id}/lifecycle`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: lead.id,
-          classification: option.value,
-          station: option.station,
-          priority: option.priority,
-          opportunity_score: option.score,
+          action: 'transition',
+          stage: option.station,
           ...(option.value === 'dead' ? { deadReason: selectedDeadReason } : {}),
         }),
       })
@@ -298,14 +295,14 @@ function LeadTriageStrip({
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Unable to save triage')
       }
-      onChanged((data.lead || {
+      onChanged({
         ...lead,
-        classification: option.value,
-        station: option.station,
-        priority: option.priority,
+        classification: data.result?.classification ?? option.value,
+        station: data.result?.stage ?? option.station,
+        priority: data.result?.priority ?? option.priority,
         opportunity_score: option.score,
         ...(option.value === 'dead' ? { dead_reason: selectedDeadReason ?? null } : {}),
-      }) as Lead)
+      } as Lead)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save triage')
     } finally {
@@ -772,10 +769,7 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
     zip: lead.zip ?? '',
     county: lead.county ?? '',
     source: lead.source ?? '',
-    station: lead.station ?? '',
-    priority: lead.priority ?? '',
     notes: lead.notes ?? '',
-    assigned_agent: lead.assigned_agent ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -813,9 +807,6 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
     { key: 'zip', label: 'ZIP' },
     { key: 'county', label: 'County' },
     { key: 'source', label: 'Source' },
-    { key: 'station', label: 'Station' },
-    { key: 'priority', label: 'Priority' },
-    { key: 'assigned_agent', label: 'Assigned Agent' },
     { key: 'notes', label: 'Notes', multiline: true },
   ]
 

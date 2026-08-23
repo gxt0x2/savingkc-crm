@@ -26,9 +26,8 @@ interface StageSelectorProps {
 }
 
 /**
- * Inline stage dropdown — calls POST /api/admin/leads/[id]/station
- * (admin/session auth) and cascades through updateManifestAndCascade so
- * scoring + audit stay in sync.
+ * Inline stage dropdown — calls the authenticated, idempotent lifecycle
+ * command. The server owns actor identity, audit, and department handoffs.
  */
 export function StageSelector({
   leadId,
@@ -44,18 +43,20 @@ export function StageSelector({
   const [deadReason, setDeadReason] = useState('')
   const [deadReasonNotes, setDeadReasonNotes] = useState('')
 
-  async function submitStage(next: DealStage, reason = 'manual change from lead page', selectedDeadReason?: string, selectedDeadReasonNotes?: string) {
+  async function submitStage(next: DealStage, reason = 'manual change from lead page', selectedDeadReason?: string, selectedDeadReasonNotes?: string, evidence?: { type: 'seller_contract_signed' }) {
     const prev = value
     setValue(next)
     setPending(true)
     try {
-      const res = await fetch(`/api/admin/leads/${leadId}/station`, {
+      const res = await fetch(`/api/leads/${leadId}/lifecycle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          station: next,
+          action: 'transition',
+          stage: next,
           reason,
+          evidence,
           ...(next === 'dead' ? { deadReason: selectedDeadReason, deadReasonNotes: selectedDeadReasonNotes } : {}),
         }),
       })
@@ -85,6 +86,15 @@ export function StageSelector({
     if (next === 'dead') {
       setValue(prev)
       setDeadDialogOpen(true)
+      return
+    }
+    if (next === 'under_contract') {
+      const confirmed = window.confirm('Confirm the seller purchase agreement is fully executed. This hands the opportunity to Dispositions and creates an audit record.')
+      if (!confirmed) {
+        setValue(prev)
+        return
+      }
+      await submitStage(next, 'Fully executed seller purchase agreement confirmed', undefined, undefined, { type: 'seller_contract_signed' })
       return
     }
     await submitStage(next)
