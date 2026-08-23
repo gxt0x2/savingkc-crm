@@ -48,6 +48,7 @@ export type OperationalReconciliationSnapshot = {
     active: number
     overdue: number
     overdueCurrent: number
+    overdueOperatorCurrent: number
     overdueTerminal: number
     overdueUnlinked: number
     overdueAssigned: number
@@ -177,6 +178,7 @@ export function summarizeOperationalReconciliation(
       active: active.length,
       overdue: overdue.length,
       overdueCurrent: overdue.filter((item) => item.lead_id && !isTerminal(leadById.get(item.lead_id))).length,
+      overdueOperatorCurrent: overdue.filter((item) => item.operational_lane === 'current').length,
       overdueTerminal: overdue.filter((item) => item.lead_id && isTerminal(leadById.get(item.lead_id))).length,
       overdueUnlinked: overdue.filter((item) => !item.lead_id).length,
       overdueAssigned: overdue.filter((item) => item.assigned_to).length,
