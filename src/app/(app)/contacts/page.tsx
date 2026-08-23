@@ -560,26 +560,26 @@ export default function ContactsPage() {
     if (!csvRows.length) return
     setSaving(true)
     setDialogError(null)
-    let imported = 0
     try {
-      for (const row of csvRows) {
-        await createContact({
-          fullName: row.full_name || row.name || [row.first_name, row.last_name].filter(Boolean).join(' '),
-          phone: row.phone || row.phone_number || '',
-          email: row.email || '',
-          address: row.property_address || row.address || '',
-          city: row.city || '',
-          state: row.state || '',
-          zip: row.zip || row.postal_code || '',
-          source: row.source || 'csv_import',
-        })
-        imported += 1
+      const response = await fetch('/api/contacts/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: csvRows }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        const rowLabel = result.row ? ` CSV row ${result.row}.` : ''
+        throw new Error(`${result.error || 'Import failed.'}${rowLabel}`)
       }
       setCsvRows([])
-      setDialog(null)
       await refetch()
+      if (result.warning) {
+        setDialogError(`${result.imported} imported. ${result.warning}`)
+        return
+      }
+      setDialog(null)
     } catch (importError) {
-      setDialogError(`${imported} imported. ${importError instanceof Error ? importError.message : 'Import stopped.'}`)
+      setDialogError(importError instanceof Error ? importError.message : 'No contacts were imported.')
     } finally {
       setSaving(false)
     }
@@ -837,7 +837,7 @@ export default function ContactsPage() {
           <PipelineModalActions saving={saving} submitLabel="Create contact" onCancel={() => setDialog(null)} />
         </form> : null}
         {dialog === 'import' ? <div className="space-y-4">
-          <p className="text-sm leading-6 text-[var(--ck-text-muted)]">Upload a CSV with any of these columns: name, phone, email, address, city, state, ZIP, or source.</p>
+          <p className="text-sm leading-6 text-[var(--ck-text-muted)]">Upload up to 500 prospects with name, phone, email, address, city, state, ZIP, or source columns. Every row is validated first; if one fails, nothing is imported.</p>
           <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--ck-border-strong)] bg-[var(--ck-surface-elev)] text-sm font-semibold text-[var(--ck-text-muted)] hover:border-[var(--ck-accent)]"><Icon name="upload_file" className="mb-2 text-[28px] text-[var(--ck-accent)]" />Choose CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (event) => { const file = event.target.files?.[0]; if (file) setCsvRows(parseCsv(await file.text())) }} /></label>
           {csvRows.length ? <p className="rounded-md bg-[var(--ck-surface-elev)] p-3 text-sm font-semibold text-[var(--ck-accent)]">{csvRows.length} contact{csvRows.length === 1 ? '' : 's'} ready to import.</p> : null}
           {dialogError ? <p className="text-sm font-semibold text-[var(--ck-accent)]">{dialogError}</p> : null}
