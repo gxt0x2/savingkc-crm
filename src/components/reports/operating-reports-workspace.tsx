@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Icon } from '@/components/ui/icon'
 import { AcquisitionsMetricsDashboard } from '@/components/reports/acquisitions-metrics-dashboard'
 import { ExecutiveDashboard } from '@/components/reports/executive-dashboard'
+import { LifecycleReconciliationPanel } from '@/components/reports/lifecycle-reconciliation-panel'
 import { defaultOperatingCustomRange, operatingRangeQuery, ReportDateRangeControl, type OperatingCustomRange } from '@/components/reports/report-date-range-control'
 import { formatLeadSource } from '@/lib/contact-display'
 import type { OperatingReport, OperatingReportPeriod } from '@/lib/operating-report'
@@ -116,10 +117,10 @@ function MarketingView({ report }: { report: OperatingReport }) {
     <>
       <NumberedPanel number="1" title="Core marketing metrics" hint="CRM-attributed outcomes">
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard icon="campaign" label="Lead sources" value={report.marketing.sources.length} numericValue={report.marketing.sources.length} detail="Sources with recorded leads" tone="violet" href="/reports/marketing" />
           <MetricCard icon="group_add" label="Leads" value={report.core.leads} numericValue={report.core.leads} detail="Created in selected period" tone="teal" href="/contacts?list=contacted" series={report.trends.leads} />
-          <MetricCard icon="verified" label="Opportunities" value={report.core.qualified} numericValue={report.core.qualified} detail={`${percent(report.core.qualified, report.core.leads)} opportunity rate`} tone="blue" href="/contacts?min_stage=qualified" series={report.trends.qualified} goal={scaledGoal(report.goals.weeklyQualified, report, 'weekly')} />
-          <MetricCard icon="trophy" label="Top source" value={top ? formatLeadSource(top.source) : 'No data'} numericValue={top?.leads ?? null} detail={top ? `${top.leads} recorded leads` : 'No lead-source records'} tone="green" href="/reports/marketing" />
+          <MetricCard icon="verified" label="Verified funded" value={report.marketing.verifiedOutcomes.closedWon} numericValue={report.marketing.verifiedOutcomes.closedWon} detail="Evidence-backed closed outcomes" tone="green" href="/reports/marketing" />
+          <MetricCard icon="cancel" label="Verified fallout" value={report.marketing.verifiedOutcomes.fellThrough} numericValue={report.marketing.verifiedOutcomes.fellThrough} detail="Evidence-backed zero-revenue outcomes" tone="coral" href="/reports/marketing" />
+          <MetricCard icon="payments" label="Verified revenue" value={money(report.marketing.verifiedOutcomes.revenue)} numericValue={report.marketing.verifiedOutcomes.revenue} detail={top ? `Top lead source: ${formatLeadSource(top.source)}` : 'No verified close outcome in this period'} tone="violet" href="/reports/marketing" />
         </div>
       </NumberedPanel>
       <section className="grid gap-3 xl:grid-cols-[1.25fr_0.75fr]">
@@ -130,6 +131,7 @@ function MarketingView({ report }: { report: OperatingReport }) {
         <NumberedPanel number="4" title="Marketing-to-contract funnel" actionHref="/contacts"><FunnelContent report={report} /></NumberedPanel>
         <NumberedPanel number="5" title="Marketing insights" actionHref="/ai"><InsightRows report={report} /></NumberedPanel>
       </section>
+      <LifecycleReconciliationPanel />
       <section className="crm-panel flex flex-col gap-3 rounded-2xl px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div><p className="crm-eyebrow">Measurement boundary</p><h2 className="mt-1 text-sm font-black">CRM outcomes here; ad-platform economics stay in the Marketing command center.</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Spend, CPL, campaign delivery, and conversion-export health are never backfilled with sample values on this report.</p></div>
         <Link href="/marketing/google-ads" className="crm-secondary-button inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black">Open Google Ads metrics <Icon name="arrow_forward" /></Link>
@@ -141,6 +143,7 @@ function MarketingView({ report }: { report: OperatingReport }) {
 function DispositionsView({ report }: { report: OperatingReport }) {
   return (
     <>
+      <LifecycleReconciliationPanel />
       <section className="crm-panel grid gap-4 rounded-2xl px-5 py-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div><p className="crm-eyebrow">Department health</p><h2 className="mt-1 text-lg font-black">Disposition operating health</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Calculated only from recorded offer coverage, close rate, buyer participation, and completed closeout debriefs.</p></div>
         <div className="flex items-center gap-5"><ScoreRing score={report.dispositions.healthScore} label="Disposition health" tone="green" /><div className="grid grid-cols-2 gap-x-5 gap-y-1.5 text-[10px] font-bold text-[var(--crm-text-muted)]"><ScoreLegend label="Buyer activity" value={report.dispositions.activeBuyers} tone="teal" /><ScoreLegend label="Offer coverage" value={report.dispositions.offerCoverage} suffix="%" tone="green" /><ScoreLegend label="Close rate" value={report.dispositions.closeRate} suffix="%" tone="blue" /><ScoreLegend label="Debriefs complete" value={report.dispositions.debriefCompletion} suffix="%" tone="violet" /></div></div>

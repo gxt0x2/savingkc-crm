@@ -40,6 +40,10 @@ const datasets: Record<string, unknown[]> = {
   buyers: [],
   revenue_transactions: [],
   expense_transactions: [],
+  crm_marketing_outcomes: [{
+    id: 'outcome-1', lead_id: '11111111-1111-4111-8111-111111111111', outcome: 'closed_won', revenue: 12_000,
+    lead_source: 'website', occurred_at: '2026-08-20T12:00:00.000Z', evidence_type: 'funded_closeout',
+  }],
   roles: [],
   buyer_offers: [],
   conversation_thread_state: [{
@@ -86,11 +90,13 @@ describe('GET /api/reports/operating', () => {
     expect(response.headers.get('server-timing')).toContain('activities')
     expect(payload.core).toMatchObject({ leads: 1, qualified: 1, needsReply: 1 })
     expect(payload.communications).toMatchObject({ calls: 1, connectedCalls: 1 })
+    expect(payload.marketing.verifiedOutcomes).toMatchObject({ total: 1, closedWon: 1, revenue: 12_000 })
     expect(payload.availability).toMatchObject({ leads: true, conversations: true, activityComplete: true })
 
     expect(queryCalls).toContainEqual(expect.objectContaining({ table: 'leads', method: 'gte', args: ['created_at', expect.any(String)] }))
     expect(queryCalls).toContainEqual(expect.objectContaining({ table: 'lead_activities', method: 'gte', args: ['created_at', expect.any(String)] }))
     expect(queryCalls.some((call) => call.table === 'conversation_thread_state' && call.method === 'select')).toBe(true)
+    expect(queryCalls.some((call) => call.table === 'crm_marketing_outcomes' && call.method === 'gte')).toBe(true)
     expect(queryCalls.some((call) => call.method === 'limit' && call.args[0] === 20_001)).toBe(true)
   })
 })
