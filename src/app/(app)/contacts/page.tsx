@@ -20,7 +20,7 @@ import { DEAD_REASONS, deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outc
 import { useAuth } from '@/hooks/use-auth'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
 import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
-import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
+import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, canonicalContactSmartList, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
 import { campaignAudienceReturnHref, MAX_PROSPECTING_QUERY_AUDIENCE, prospectingCampaignId, PROSPECTING_AUDIENCE_STORAGE_KEY, serializeProspectingAudienceSelection, type ProspectingAudienceQuery } from '@/lib/prospecting/audience-handoff'
 
@@ -97,7 +97,6 @@ const STAGE_RANK: Record<DealStage, number> = {
   dead: -1,
 }
 
-const SMART_LISTS = new Set<ContactSmartList>(Object.keys(CONTACT_SMART_LIST_COPY) as ContactSmartList[])
 const DATA_GAPS = new Set<DataGap>(['', 'missing_phone', 'missing_email', 'missing_next_action'])
 
 const SMART_LIST_TONES: Record<ContactSmartList, { active: string; count: string }> = {
@@ -218,7 +217,7 @@ export default function ContactsPage() {
   const requestedInitialList = searchParams.get('list') as ContactSmartList | null
   const requestedCampaignId = prospectingCampaignId(searchParams.get('campaign'))
   const requestedCampaignName = (searchParams.get('campaign_name') || '').trim().slice(0, 120)
-  const [smartList, setSmartList] = useState<ContactSmartList>(requestedInitialList && SMART_LISTS.has(requestedInitialList) ? requestedInitialList : 'new')
+  const [smartList, setSmartList] = useState<ContactSmartList>(canonicalContactSmartList(requestedInitialList))
   const [smartListOrder, setSmartListOrder] = useState<ContactSmartListNavigationId[]>([...DEFAULT_CONTACT_SMART_LIST_ORDER])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -273,8 +272,15 @@ export default function ContactsPage() {
     const params = new URLSearchParams(window.location.search)
     const requestedSearch = params.get('search')
     if (requestedSearch) setSearch(requestedSearch)
-    const requestedList = params.get('list') as ContactSmartList | null
-    if (requestedList && SMART_LISTS.has(requestedList)) setSmartList(requestedList)
+    const requestedList = params.get('list')
+    if (requestedList) {
+      const canonicalList = canonicalContactSmartList(requestedList)
+      setSmartList(canonicalList)
+      if (canonicalList !== requestedList) {
+        params.set('list', canonicalList)
+        window.history.replaceState(null, '', `${window.location.pathname}?${params}`)
+      }
+    }
     const requestedStage = params.get('stage')
     if (requestedStage && requestedStage in STAGE_LABELS) setStageFilter(requestedStage)
     const requestedMinimumStage = params.get('min_stage')
@@ -689,7 +695,7 @@ export default function ContactsPage() {
               <div className="relative hidden sm:block">
                 <button type="button" aria-label="Sort" onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')} aria-expanded={toolbarMenu === 'sort'} aria-controls="contact-sort-panel" className="crm-secondary-button flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold"><Icon name="swap_vert" className="text-[16px]" />Sort</button>
                 {toolbarMenu === 'sort' ? <div id="contact-sort-panel" role="dialog" aria-label="Sort contacts" className="crm-panel fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 rounded-2xl p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-11 sm:w-56 sm:rounded-xl">
-                  {([['priority', smartList === 'hot' ? 'Motivation score first' : 'Priority first'], ['recent', 'Recently active'], ['name', 'Name A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); resetPagination(); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
+                  {([['priority', 'Priority first'], ['recent', 'Recently active'], ['name', 'Name A–Z']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setSortBy(value); resetPagination(); setToolbarMenu(null) }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold ${sortBy === value ? 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]'}`}>{label}{sortBy === value ? <Icon name="check" className="text-[16px]" /> : null}</button>)}
                 </div> : null}
               </div>
             <button type="button" onClick={() => void refetch()} aria-label="Refresh contacts" className="crm-icon-button hidden h-9 w-9 items-center justify-center rounded-full sm:flex"><Icon name="refresh" className={isFetching ? 'animate-spin' : ''} /></button>
@@ -769,7 +775,7 @@ export default function ContactsPage() {
                     <span className="min-w-0"><strong className="block truncate font-medium text-[var(--crm-text)]">{property}</strong><small className="text-[var(--crm-text-dim)]">{row.city || ''}</small></span>
                     <span className="min-w-0">
                       <span className={`inline-flex rounded-md border px-2 py-1 font-semibold ${notLead ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : row.classification ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]'}`}>{pipelineStatus}</span>
-                      <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{smartList === 'hot' ? `Motivation ${row.score} / 100` : notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : row.classification === null ? outreachStatusLabel(row.outreachStatus) : STAGE_LABELS[row.station]}</small>
+                      <small className={`mt-1 block truncate text-[10px] ${notLead && !row.deadReason ? 'font-bold text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}>{notLead ? deadReasonLabel(row.deadReason) || 'Reason required' : row.classification === null ? outreachStatusLabel(row.outreachStatus) : STAGE_LABELS[row.station]}</small>
                     </span>
                     {dataGapFilter === 'missing_next_action' ? <button type="button" onClick={(event) => { event.stopPropagation(); setPrimaryReviewContact(row) }} className="flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--crm-action-border)] bg-[var(--crm-surface)] px-2 text-left font-black text-[var(--crm-action)] hover:brightness-95"><Icon name="rule" className="shrink-0 text-[15px]" /><span>{nextAction}</span></button> : <span className={`flex items-start gap-1.5 ${row.primaryNextAction?.overdue ? 'font-bold text-[var(--crm-danger)]' : 'font-semibold text-[var(--crm-action)]'}`}><Icon name={row.primaryNextAction?.overdue ? 'error' : 'schedule'} className="mt-[-1px] shrink-0 text-[15px]" />{nextAction}</span>}
                     <span>{row.owner || 'Unassigned'}</span><span className="text-[var(--crm-text-muted)]">{formatRelativeDate(row.lastActivityAt)}</span><span className="text-[var(--crm-text-muted)]">{formatLeadSource(row.source)}</span>
@@ -781,7 +787,7 @@ export default function ContactsPage() {
               {isLoading ? <ContactsLoadingSkeleton mobile /> : null}
               {error ? <div className="crm-panel rounded-xl p-6 text-center text-sm text-[var(--crm-danger)]">Contacts could not be loaded. <button type="button" onClick={() => void refetch()} className="font-bold underline">Try again</button></div> : null}
               {!isLoading && !error && pageItems.length === 0 ? <div className="crm-panel rounded-xl p-8 text-center text-sm text-[var(--crm-text-muted)]">No contacts match these filters.</div> : null}
-              {!isLoading && !error ? <MobileContactsList items={pageItems} selectedIds={selectedIds} onToggle={toggleSelected} onOpen={(id) => router.push(`/leads/${id}`)} onCall={openDialer} onReviewPrimary={dataGapFilter === 'missing_next_action' ? setPrimaryReviewContact : undefined} showScore={smartList === 'hot'} /> : null}
+              {!isLoading && !error ? <MobileContactsList items={pageItems} selectedIds={selectedIds} onToggle={toggleSelected} onOpen={(id) => router.push(`/leads/${id}`)} onCall={openDialer} onReviewPrimary={dataGapFilter === 'missing_next_action' ? setPrimaryReviewContact : undefined} /> : null}
             </> : null}
             <div className="mt-5 flex flex-col gap-3 text-xs text-[var(--crm-text-muted)] sm:flex-row sm:items-center md:mt-7">
               <span>Showing {pageItems.length ? pageIndex * CONTACT_PAGE_SIZE + 1 : 0} to {Math.min(pageIndex * CONTACT_PAGE_SIZE + pageItems.length, totalResults)} of {totalResults} results</span>

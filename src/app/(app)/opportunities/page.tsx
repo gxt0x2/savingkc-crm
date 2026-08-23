@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
 export default function OpportunitiesPage() {
-  redirect('/contacts?list=hot')
+  redirect('/contacts?list=qualified')
 }

@@ -3,23 +3,16 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TaskReconciliationStrip } from './task-reconciliation-strip'
 
-const { useSnapshot, useProvenance } = vi.hoisted(() => ({
+const { useSnapshot } = vi.hoisted(() => ({
   useSnapshot: vi.fn(),
-  useProvenance: vi.fn(),
 }))
 
 vi.mock('@/hooks/use-operational-reconciliation', () => ({
   useOperationalReconciliation: useSnapshot,
 }))
-vi.mock('@/hooks/use-task-provenance', () => ({
-  useTaskProvenance: useProvenance,
-}))
-
 describe('TaskReconciliationStrip', () => {
   beforeEach(() => {
     useSnapshot.mockReset()
-    useProvenance.mockReset()
-    useProvenance.mockReturnValue({ data: undefined, isLoading: true, error: null })
   })
 
   it('renders honest loading and unavailable states instead of zeros', () => {
@@ -33,7 +26,7 @@ describe('TaskReconciliationStrip', () => {
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
-  it('separates current work from review debt without offering bulk cleanup', () => {
+  it('shows only current work and primary-action integrity', () => {
     useSnapshot.mockReturnValue({
       isLoading: false,
       error: null,
@@ -56,23 +49,22 @@ describe('TaskReconciliationStrip', () => {
 
     render(<TaskReconciliationStrip />)
     const region = screen.getByRole('region', { name: 'Task backlog health' })
-    expect(region).toHaveTextContent('175 overdue total')
-    expect(region).toHaveTextContent('Current-record overdue120')
-    expect(region).toHaveTextContent('Terminal review50')
-    expect(region).toHaveTextContent('Unlinked review5')
-    expect(region).toHaveTextContent('Multiple active18')
+    expect(region).toHaveTextContent('20 active opportunities')
+    expect(region).toHaveTextContent('Current overdue120')
     expect(region).toHaveTextContent('of 20 active opportunities')
     const missingPrimaryLink = screen.getByRole('link', { name: 'Review 7 missing primary' })
     expect(missingPrimaryLink).toHaveTextContent('Missing primary')
     expect(missingPrimaryLink).toHaveTextContent('7')
     expect(missingPrimaryLink).toHaveAttribute('href', '/contacts?list=all&gap=missing_next_action')
     expect(region).toHaveTextContent('Multiple primary2')
-    expect(region).toHaveTextContent('Nothing is auto-closed')
-    expect(region).not.toHaveTextContent('Complete')
-    expect(region).not.toHaveTextContent('Delete')
+    expect(region).toHaveTextContent('Historical evidence stays in the audit record')
+    expect(region).not.toHaveTextContent('Terminal review')
+    expect(region).not.toHaveTextContent('Unlinked review')
+    expect(region).not.toHaveTextContent('Multiple active')
+    expect(region).not.toHaveTextContent('Automation review')
   })
 
-  it('shows provenance evidence without claiming the backlog was quarantined', () => {
+  it('does not render review-debt or automation-quarantine census cards', () => {
     useSnapshot.mockReturnValue({
       isLoading: false,
       error: null,
@@ -92,31 +84,13 @@ describe('TaskReconciliationStrip', () => {
         },
       },
     })
-    useProvenance.mockReturnValue({
-      isLoading: false,
-      error: null,
-      data: {
-        active: 193,
-        classes: {
-          governed_human: { total: 0, active: 0 },
-          approved_workflow: { total: 0, active: 0 },
-          legacy_operator: { total: 47, active: 37 },
-          event_derived: { total: 13, active: 12 },
-          automation_unreviewed: { total: 68, active: 68 },
-          unknown: { total: 80, active: 75 },
-        },
-        quality: { possibleDuplicateRows: 13 },
-      },
-    })
-
     render(<TaskReconciliationStrip />)
     const region = screen.getByRole('region', { name: 'Task backlog health' })
-    expect(region).toHaveTextContent('Task integrity')
-    expect(region).toHaveTextContent('Operator entered37')
-    expect(region).toHaveTextContent('Event backed12')
-    expect(region).toHaveTextContent('Automation review68')
-    expect(region).toHaveTextContent('Unattributed75')
-    expect(region).toHaveTextContent('Possible duplicates13')
-    expect(region).toHaveTextContent('No tasks are hidden, completed, or deleted')
+    expect(region).toHaveTextContent('Current overdue41')
+    expect(screen.getByRole('link', { name: 'Review 5 missing primary' })).toHaveTextContent('5')
+    expect(region).toHaveTextContent('Multiple primary1')
+    expect(region).not.toHaveTextContent('Task integrity')
+    expect(region).not.toHaveTextContent('Review debt')
+    expect(region).not.toHaveTextContent('Quarantine')
   })
 })

@@ -93,7 +93,6 @@ describe('ContactsPage smart-list workspace', () => {
     const smartListButtons = within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder '))
     expect(smartListButtons.map((button) => button.textContent?.replace(/\d+$/, '').trim())).toEqual([
       'New',
-      'Hot Opps',
       'Leads',
       'Opportunities',
       'Appointment Set',
@@ -132,7 +131,6 @@ describe('ContactsPage smart-list workspace', () => {
     expect(smartListButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
       'All 2',
       'New 1',
-      'Hot Opps 1',
       'Leads 1',
       'Opportunities 0',
       'Appointment Set 0',
@@ -145,7 +143,6 @@ describe('ContactsPage smart-list workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset smart-list order' }))
     expect(within(navigation).getAllByRole('button').filter((button) => !button.getAttribute('aria-label')?.startsWith('Reorder ')).map((button) => button.getAttribute('aria-label'))).toEqual([
       'New 1',
-      'Hot Opps 1',
       'Leads 1',
       'Opportunities 0',
       'Appointment Set 0',
@@ -156,15 +153,20 @@ describe('ContactsPage smart-list workspace', () => {
     expect(screen.queryByRole('button', { name: 'Reset smart-list order' })).not.toBeInTheDocument()
   })
 
-  it('shows scored active records in Hot Opps with a visible motivation score', () => {
+  it('does not expose the duplicate Hot Opps lane', () => {
+    render(<ContactsPage />)
+    expect(screen.queryByRole('button', { name: /Hot Opps/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Opportunities 0$/ })).toBeInTheDocument()
+  })
+
+  it('canonicalizes old Hot Opps bookmarks to Opportunities', () => {
+    window.history.replaceState(null, '', '/contacts?list=hot')
+    searchParamsMock.mockReturnValue(new URLSearchParams('list=hot'))
+
     render(<ContactsPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /^Hot Opps 1$/ }))
-
-    expect(screen.getByRole('heading', { name: 'Hot Opps' })).toBeInTheDocument()
-    expect(screen.getAllByText('Active Lead')).toHaveLength(2)
-    expect(screen.getByText('Motivation 20 / 100')).toBeInTheDocument()
-    expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Opportunities' })).toBeInTheDocument()
+    expect(window.location.search).toBe('?list=qualified')
   })
 
   it('changes the header with the smart list and keeps filters behind one compact control', () => {

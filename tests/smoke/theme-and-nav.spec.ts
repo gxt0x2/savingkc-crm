@@ -118,8 +118,8 @@ test('legacy CRM pages resolve to their canonical workspaces', async ({ page }) 
   await expect(page.getByRole('heading', { name: 'In Closing', exact: true })).toBeVisible();
 
   await page.goto('/opportunities', { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(/\/contacts\?list=hot$/);
-  await expect(page.getByRole('heading', { name: 'Hot Opps', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/contacts\?list=qualified$/);
+  await expect(page.getByRole('heading', { name: 'Opportunities', exact: true })).toBeVisible();
 
   await page.goto('/ari', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/ai$/);

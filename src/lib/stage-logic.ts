@@ -203,7 +203,7 @@ export const STAGE_DEFINITIONS: Record<StageId, StageDefinition> = {
     ],
     autoTriggers: ['Contract sent via DocuSeal or manual entry'],
     autoActions: [
-      'Lead automatically appears on Hot Opportunities board',
+      'Lead remains visible in the Opportunities pipeline',
       'Set priority to "hot" if not already',
     ],
     timeoutHours: 72, // 3 days - alert if no response

@@ -32,11 +32,18 @@ describe('task worklist route', () => {
   })
 
   it('forwards only supported query inputs and returns bounded telemetry', async () => {
-    const response = await GET(new Request('https://crm.savingkc.com/api/tasks/worklist?view=overdue&status=active&q=seller&limit=20&sort=newest&lane=review'))
+    const response = await GET(new Request('https://crm.savingkc.com/api/tasks/worklist?view=overdue&status=active&q=seller&limit=20&sort=newest&lane=current'))
     expect(response.status).toBe(200)
-    expect(mocks.worklist).toHaveBeenCalledWith(expect.objectContaining({ view: 'overdue', status: 'active', query: 'seller', limit: 20, sort: 'newest', lane: 'review' }))
+    expect(mocks.worklist).toHaveBeenCalledWith(expect.objectContaining({ view: 'overdue', status: 'active', query: 'seller', limit: 20, sort: 'newest', lane: 'current' }))
     expect(response.headers.get('server-timing')).toContain('task_rows')
     expect(response.headers.get('cache-control')).toContain('no-store')
+  })
+
+  it('retires historical lanes from the operator worklist', async () => {
+    const response = await GET(new Request('https://crm.savingkc.com/api/tasks/worklist?lane=quarantine'))
+    expect(response.status).toBe(410)
+    await expect(response.json()).resolves.toMatchObject({ replacement: '/tasks' })
+    expect(mocks.worklist).not.toHaveBeenCalled()
   })
 
   it('returns 400 for invalid requests and a generic 503 for read-model failures', async () => {

@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic'
 
 const RETIRED_RESPONSE = {
   error: 'HOT_OPPORTUNITIES_SURFACE_RETIRED',
-  message: 'Hot Opps is now part of the Contacts workspace.',
-  replacement: '/contacts?list=hot',
+  message: 'The duplicate Hot Opps lane was retired. Use Opportunities in Contacts.',
+  replacement: '/contacts?list=qualified',
 } as const
 
 function retiredResponse() {

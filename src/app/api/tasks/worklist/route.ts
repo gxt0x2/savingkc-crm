@@ -11,6 +11,13 @@ export async function GET(request: Request) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
   const params = new URL(request.url).searchParams
+  const requestedLane = params.get('lane')
+  if (requestedLane && requestedLane !== 'current') {
+    return NextResponse.json({
+      error: 'Historical task lanes are retired from operator worklists.',
+      replacement: '/tasks',
+    }, { status: 410, headers: NO_STORE })
+  }
   try {
     const page = await getTaskWorklist({
       department: params.get('department') || undefined,
@@ -23,7 +30,7 @@ export async function GET(request: Request) {
       sort: params.get('sort') || undefined,
       limit: params.has('limit') ? Number(params.get('limit')) : undefined,
       cursor: params.get('cursor'),
-      lane: params.get('lane') || undefined,
+      lane: 'current',
     })
     return NextResponse.json(page, {
       headers: {

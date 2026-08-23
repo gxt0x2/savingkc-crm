@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CONTACT_SMART_LISTS,
+  canonicalContactSmartList,
   contactMatchesSmartList,
   contactPipelineStatusLabel,
   contactSmartListCounts,
@@ -27,7 +28,6 @@ describe('contact smart lists', () => {
   it('keeps the approved labels and order', () => {
     expect(CONTACT_SMART_LISTS.map(({ label }) => label)).toEqual([
       'New',
-      'Hot Opps',
       'Leads',
       'Opportunities',
       'Appointment Set',
@@ -40,7 +40,6 @@ describe('contact smart lists', () => {
   it('restores a saved tab order while discarding invalid smart lists', () => {
     expect(normalizeContactSmartListOrder(['all', 'hot', 'all', 'not_leads', 'new'])).toEqual([
       'all',
-      'hot',
       'new',
       'contacted',
       'qualified',
@@ -49,6 +48,7 @@ describe('contact smart lists', () => {
       'in_closing',
     ])
     expect(normalizeContactSmartListOrder(null)).toEqual(CONTACT_SMART_LISTS.map(({ id }) => id))
+    expect(canonicalContactSmartList('hot')).toBe('qualified')
   })
 
   it('keeps Not Leads out of every active pipeline list', () => {

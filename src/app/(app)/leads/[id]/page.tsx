@@ -1666,8 +1666,8 @@ export default function LeadDetailPage() {
         const newStation = a.metadata.new_station as string | undefined
         const opportunityStages = ['qualifying', 'appt_set', 'negotiations']
         if (newStation && opportunityStages.includes(newStation)) {
-          link = '/contacts?list=hot'
-          linkLabel = 'View in Hot Opportunities'
+          link = '/contacts?list=qualified'
+          linkLabel = 'View opportunities'
         }
       }
 

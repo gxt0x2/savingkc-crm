@@ -13,8 +13,8 @@ describe('retired hot opportunities API', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0')
     await expect(response.json()).resolves.toEqual({
       error: 'HOT_OPPORTUNITIES_SURFACE_RETIRED',
-      message: 'Hot Opps is now part of the Contacts workspace.',
-      replacement: '/contacts?list=hot',
+      message: 'The duplicate Hot Opps lane was retired. Use Opportunities in Contacts.',
+      replacement: '/contacts?list=qualified',
     })
   })
 })

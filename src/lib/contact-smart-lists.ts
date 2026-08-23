@@ -3,7 +3,6 @@ import type { DealStage } from '@/types/pipeline'
 
 export type ContactSmartListNavigationId =
   | 'new'
-  | 'hot'
   | 'contacted'
   | 'qualified'
   | 'appointment_set'
@@ -13,6 +12,7 @@ export type ContactSmartListNavigationId =
 
 export type ContactSmartList =
   | ContactSmartListNavigationId
+  | 'hot'
   | 'needs_reply'
   | 'overdue'
   | 'unassigned'
@@ -32,7 +32,6 @@ export interface SmartListContact {
 
 export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigationId; label: string }> = [
   { id: 'new', label: 'New' },
-  { id: 'hot', label: 'Hot Opps' },
   { id: 'contacted', label: 'Leads' },
   { id: 'qualified', label: 'Opportunities' },
   { id: 'appointment_set', label: 'Appointment Set' },
@@ -44,6 +43,14 @@ export const CONTACT_SMART_LISTS: ReadonlyArray<{ id: ContactSmartListNavigation
 export const CONTACT_SMART_LIST_ORDER_STORAGE_KEY = 'savingkc-contact-smart-list-order-v2'
 
 export const DEFAULT_CONTACT_SMART_LIST_ORDER: ReadonlyArray<ContactSmartListNavigationId> = CONTACT_SMART_LISTS.map(({ id }) => id)
+
+export function canonicalContactSmartList(value: string | null | undefined): ContactSmartList {
+  // Keep old bookmarks working without preserving a duplicate pipeline lane.
+  if (value === 'hot') return 'qualified'
+  return value && Object.prototype.hasOwnProperty.call(CONTACT_SMART_LIST_COPY, value)
+    ? value as ContactSmartList
+    : 'new'
+}
 
 export function normalizeContactSmartListOrder(value: unknown): ContactSmartListNavigationId[] {
   if (!Array.isArray(value)) return [...DEFAULT_CONTACT_SMART_LIST_ORDER]
