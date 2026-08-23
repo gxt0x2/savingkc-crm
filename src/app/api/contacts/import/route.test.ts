@@ -10,12 +10,19 @@ const mocks = vi.hoisted(() => ({
   activityError: null as { message: string } | null,
   leadPayloads: [] as unknown[],
   activityPayloads: [] as unknown[],
+  rpcData: null as unknown,
+  rpcError: null as { message?: string; code?: string } | null,
+  rpcCalls: [] as Array<{ name: string; args: unknown }>,
   dbFrom: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: () => ({
+    async rpc(name: string, args: unknown) {
+      mocks.rpcCalls.push({ name, args })
+      return { data: mocks.rpcData, error: mocks.rpcError }
+    },
     from(table: string) {
       mocks.dbFrom(table)
       if (table === 'crm_contact_methods') {
@@ -74,6 +81,9 @@ describe('atomic prospect import', () => {
     mocks.inserted = [{ id: 'lead-1' }]
     mocks.insertError = null
     mocks.activityError = null
+    mocks.rpcData = null
+    mocks.rpcError = null
+    mocks.rpcCalls.length = 0
     mocks.leadPayloads.length = 0
     mocks.activityPayloads.length = 0
   })
@@ -132,6 +142,51 @@ describe('atomic prospect import', () => {
     const response = await POST(request([{ name: 'Seller', phone: '8165550100' }]))
 
     expect(response.status).toBe(500)
+    expect(mocks.activityPayloads).toHaveLength(0)
+  })
+
+  it('imports and enrolls a campaign batch through one database command', async () => {
+    mocks.rpcData = {
+      imported: 1,
+      batchId: 'batch-1',
+      enrollment: { requested: 1, eligible: 1, suppressed: 0, missing: 0 },
+    }
+    const response = await POST(new NextRequest('https://crm.savingkc.com/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        campaignId: '8d94a8d6-e3cd-4ab7-983c-44efcf8c92a2',
+        rows: [{ name: 'Seller', phone: '8165550100' }],
+      }),
+    }))
+
+    expect(response.status).toBe(201)
+    expect(mocks.leadPayloads).toHaveLength(0)
+    expect(mocks.activityPayloads).toHaveLength(0)
+    expect(mocks.rpcCalls).toEqual([{
+      name: 'import_prospecting_campaign_members_v1',
+      args: expect.objectContaining({
+        p_campaign_id: '8d94a8d6-e3cd-4ab7-983c-44efcf8c92a2',
+        p_actor_email: 'casey@savingkc.com',
+        p_actor_name: 'Casey',
+        p_rows: [expect.objectContaining({ id: expect.any(String), phone: '+18165550100' })],
+      }),
+    }])
+  })
+
+  it('does not insert contacts when the campaign transaction fails', async () => {
+    mocks.rpcError = { message: 'campaign_members_locked' }
+    const response = await POST(new NextRequest('https://crm.savingkc.com/api/contacts/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        campaignId: '8d94a8d6-e3cd-4ab7-983c-44efcf8c92a2',
+        rows: [{ name: 'Seller', phone: '8165550100' }],
+      }),
+    }))
+
+    expect(response.status).toBe(409)
+    expect(mocks.leadPayloads).toHaveLength(0)
     expect(mocks.activityPayloads).toHaveLength(0)
   })
 })

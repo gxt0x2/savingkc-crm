@@ -8,8 +8,16 @@ export async function POST(request: NextRequest) {
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   let rows: ReturnType<typeof parseProspectImportRows>
+  let campaignId: string | null = null
   try {
-    rows = parseProspectImportRows(await request.json())
+    const body = await request.json() as { rows?: unknown; campaignId?: unknown }
+    rows = parseProspectImportRows(body)
+    if (body.campaignId !== undefined && body.campaignId !== null && body.campaignId !== '') {
+      if (typeof body.campaignId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.campaignId)) {
+        return NextResponse.json({ error: 'Campaign is invalid' }, { status: 400 })
+      }
+      campaignId = body.campaignId
+    }
   } catch (error) {
     if (error instanceof ProspectImportError) {
       return NextResponse.json({ error: error.message, row: error.row ?? null }, { status: 400 })
@@ -36,6 +44,33 @@ export async function POST(request: NextRequest) {
     }, { status: 409 })
   }
 
+  const batchId = crypto.randomUUID()
+  if (campaignId) {
+    const importRows = rows.map((row) => ({ id: crypto.randomUUID(), ...row }))
+    const { data, error } = await db.rpc('import_prospecting_campaign_members_v1', {
+      p_campaign_id: campaignId,
+      p_actor_email: actor.email,
+      p_actor_name: actor.name,
+      p_batch_id: batchId,
+      p_rows: importRows,
+    })
+    if (error || !data) {
+      const detail = `${error?.message || ''} ${error?.code || ''}`.toLowerCase()
+      if (detail.includes('campaign_not_found')) {
+        return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      }
+      if (detail.includes('campaign_members_locked')) {
+        return NextResponse.json({ error: 'Pause the campaign before changing its audience' }, { status: 409 })
+      }
+      if (detail.includes('prospect_import_existing_contact') || detail.includes('23505')) {
+        return NextResponse.json({ error: 'A phone number already exists in the CRM. Refresh the prospect list and try again.' }, { status: 409 })
+      }
+      console.error('[contacts/import] atomic campaign import failed', error)
+      return NextResponse.json({ error: 'No contacts were imported or added to the campaign' }, { status: 503 })
+    }
+    return NextResponse.json({ success: true, ...data }, { status: 201 })
+  }
+
   const { data: inserted, error: insertError } = await db
     .from('leads')
     .insert(rows)
@@ -45,7 +80,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No contacts were imported' }, { status: 500 })
   }
 
-  const batchId = crypto.randomUUID()
   const { error: activityError } = await db.from('lead_activities').insert(inserted.map((lead) => ({
     lead_id: lead.id,
     activity_type: 'status_change',
