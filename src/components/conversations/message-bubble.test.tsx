@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { MessageBubble } from './message-bubble'
 
@@ -42,6 +42,27 @@ describe('conversation call card', () => {
 
     expect(screen.getByText('No answer')).toBeInTheDocument()
     expect(screen.getByText('—')).toBeInTheDocument()
+  })
+
+  it('keeps a streaming recording duration factual while metadata is not finite', () => {
+    const { container } = render(<MessageBubble message={{
+      id: 'call-streaming',
+      type: 'call',
+      direction: 'received',
+      content: 'Inbound call',
+      timestamp: '10:20 AM',
+      senderInitials: '20',
+      recordingUrl: '/api/recordings/RE123',
+      callDuration: '0:40',
+    }} />)
+
+    const audio = container.querySelector('audio')
+    expect(audio).not.toBeNull()
+    Object.defineProperty(audio, 'duration', { configurable: true, value: Number.POSITIVE_INFINITY })
+    fireEvent.loadedMetadata(audio as HTMLAudioElement)
+
+    expect(screen.queryByText(/Infinity|NaN/)).not.toBeInTheDocument()
+    expect(screen.getAllByText('0:40')).toHaveLength(2)
   })
 })
 

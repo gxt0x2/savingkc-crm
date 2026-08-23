@@ -208,11 +208,13 @@ function CallCard({ message }: { message: Message }) {
   }
 
   function handleTimeUpdate() {
-    setCurrentTime(audioRef.current?.currentTime || 0)
+    const nextTime = audioRef.current?.currentTime
+    setCurrentTime(typeof nextTime === 'number' && Number.isFinite(nextTime) && nextTime >= 0 ? nextTime : 0)
   }
 
   function handleLoadedMetadata() {
-    setDuration(audioRef.current?.duration || 0)
+    const nextDuration = audioRef.current?.duration
+    setDuration(typeof nextDuration === 'number' && Number.isFinite(nextDuration) && nextDuration > 0 ? nextDuration : 0)
   }
 
   function handleEnded() {
@@ -236,6 +238,7 @@ function CallCard({ message }: { message: Message }) {
   }
 
   function fmtTime(s: number) {
+    if (!Number.isFinite(s) || s < 0) return '0:00'
     const m = Math.floor(s / 60)
     const sec = Math.floor(s % 60)
     return `${m}:${sec.toString().padStart(2, '0')}`
