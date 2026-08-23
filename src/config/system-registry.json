@@ -253,8 +253,8 @@
       "owner": "Dispositions and TC",
       "status": "active",
       "routes": ["/dispo/pipeline", "/dispo/tc", "/dispo/offers", "/dispo/buyers", "/dispo/vendors"],
-      "apiRoutes": ["/api/dispo-deals", "/api/dispo-deals/[id]/closeout", "/api/department-handoffs", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
-      "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyer_offers", "buyers", "vendors", "crm_lifecycle_events", "crm_department_handoffs"],
+      "apiRoutes": ["/api/dispo-deals", "/api/dispo-deals/[id]/closeout", "/api/department-handoffs", "/api/reports/lifecycle-reconciliation", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
+      "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyer_offers", "buyers", "vendors", "crm_lifecycle_events", "crm_department_handoffs", "crm_marketing_outcomes"],
       "environment": ["DOCUSEAL_ENABLED", "DOCUSEAL_URL", "DOCUSEAL_TOKEN", "DOCUSEAL_ASSIGNMENT_TEMPLATE_ID", "DOCUSEAL_WEBHOOK_SECRET", "VERCEL_ENV"]
     },
     {
@@ -263,7 +263,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/reports", "/reports/marketing", "/reports/dispositions", "/reports/finance", "/reports/call-sms"],
-      "apiRoutes": ["/api/reports/operating", "/api/financials"],
+      "apiRoutes": ["/api/reports/operating", "/api/reports/lifecycle-reconciliation", "/api/financials"],
       "tables": ["leads", "call_logs", "communications", "dispo_deals", "tc_files", "crm_marketing_outcomes"],
       "environment": []
     },

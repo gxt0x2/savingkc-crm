@@ -1,5 +1,7 @@
 import { buildAcquisitionsReport, type AcquisitionContact, type AcquisitionThread } from './acquisitions-report'
 import { deadReasonLabel, isNotLeadOutcome } from './lead-outcomes'
+import { buildMarketingReport, type OperatingMarketingOutcome } from './operating-marketing-outcomes'
+export type { OperatingMarketingOutcome } from './operating-marketing-outcomes'
 
 export type OperatingReportPeriod = 'today' | '30d' | 'quarter' | 'ytd' | 'all' | 'custom'
 
@@ -117,6 +119,7 @@ export interface OperatingReportInput {
   buyers: OperatingBuyer[]
   revenue: OperatingMoneyRow[]
   expenses: OperatingMoneyRow[]
+  marketingOutcomes?: OperatingMarketingOutcome[]
   goals?: OperatingGoalSet
   availability: Record<string, boolean>
 }
@@ -447,27 +450,7 @@ export function buildOperatingReport(input: OperatingReportInput) {
     speedScore,
   ])
 
-  const revenueByLead = new Map<string, number>()
-  for (const row of input.revenue) {
-    if (!row.deal_id) continue
-    revenueByLead.set(row.deal_id, (revenueByLead.get(row.deal_id) ?? 0) + number(row.amount))
-  }
-  const sourceGroups = new Map<string, { leads: number; qualified: number; appointments: number; contracts: number; revenue: number }>()
-  for (const lead of input.leads) {
-    const source = lead.source?.trim() || 'unknown'
-    const stage = lead.station ?? 'new'
-    const stageIndex = ['new', 'contacted', 'qualified', 'appointment_set', 'offer_made', 'under_contract', 'closed_won'].indexOf(stage)
-    const row = sourceGroups.get(source) ?? { leads: 0, qualified: 0, appointments: 0, contracts: 0, revenue: 0 }
-    row.leads += 1
-    if (stageIndex >= 2) row.qualified += 1
-    if (stageIndex >= 3) row.appointments += 1
-    if (stageIndex >= 5) row.contracts += 1
-    row.revenue += revenueByLead.get(lead.id) ?? 0
-    sourceGroups.set(source, row)
-  }
-  const sources = [...sourceGroups.entries()]
-    .map(([source, row]) => ({ source, ...row, qualificationRate: percentage(row.qualified, row.leads), contractRate: percentage(row.contracts, row.leads) }))
-    .sort((left, right) => right.leads - left.leads || right.revenue - left.revenue)
+  const marketing = buildMarketingReport(input.leads, input.revenue, input.marketingOutcomes)
 
   const grossRevenue = moneySum(input.revenue)
   const expenses = moneySum(input.expenses)
@@ -511,8 +494,8 @@ export function buildOperatingReport(input: OperatingReportInput) {
     debriefOutstanding > 0
       ? `${debriefOutstanding} closed transaction debrief${debriefOutstanding === 1 ? ' is' : 's are'} still outstanding.`
       : 'All recorded closed transactions have completed their closeout loop.',
-    sources[0]
-      ? `${sources[0].source} is the largest recorded lead source with ${sources[0].leads} lead${sources[0].leads === 1 ? '' : 's'} in this period.`
+    marketing.sources[0]
+      ? `${marketing.sources[0].source} is the largest recorded lead source with ${marketing.sources[0].leads} lead${marketing.sources[0].leads === 1 ? '' : 's'} in this period.`
       : 'No lead-source records were created in this period.',
   ]
 
@@ -611,7 +594,7 @@ export function buildOperatingReport(input: OperatingReportInput) {
         costPerTransaction: acquisitionSpend == null || closedDeals.length === 0 ? null : Math.round(acquisitionSpend / closedDeals.length),
       },
     },
-    marketing: { sources },
+    marketing,
     dispositions: {
       activeDeals: activeDeals.length,
       assignedDeals: acceptedDeals.length,

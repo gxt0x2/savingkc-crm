@@ -64,6 +64,18 @@ describe('buildOperatingReport', () => {
     expect(report.bottlenecks.find((row) => row.key === 'debriefs')).toMatchObject({ label: 'Closeouts due among period deals', count: 1, severity: 'high' })
   })
 
+  it('uses only verified outcome evidence for Marketing revenue when the ledger is available', () => {
+    const report = buildOperatingReport(input({
+      marketingOutcomes: [
+        { id: 'outcome-1', lead_id: 'lead-1', outcome: 'closed_won', revenue: 18_500, lead_source: 'google_ads', occurred_at: '2026-07-30T18:00:00.000Z', evidence_type: 'funded_closeout' },
+        { id: 'outcome-2', lead_id: 'lead-2', outcome: 'fell_through', revenue: 0, lead_source: 'referral', occurred_at: '2026-07-31T18:00:00.000Z', evidence_type: 'verified_fallout' },
+      ],
+    }))
+    expect(report.marketing.verifiedOutcomes).toEqual({ total: 2, closedWon: 1, fellThrough: 1, revenue: 18_500 })
+    expect(report.marketing.sources.find((row) => row.source === 'google_ads')).toMatchObject({ revenue: 18_500 })
+    expect(report.marketing.sources.find((row) => row.source === 'referral')).toMatchObject({ revenue: 0 })
+  })
+
   it('combines case-only agent identity variants without changing activity totals', () => {
     const report = buildOperatingReport(input({
       activities: [

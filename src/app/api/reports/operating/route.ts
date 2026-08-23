@@ -4,7 +4,7 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 
-import { buildOperatingReport, type OperatingActivity, type OperatingBuyer, type OperatingDeal, type OperatingLead, type OperatingMoneyRow, type OperatingOffer, type OperatingReportPeriod } from '@/lib/operating-report'
+import { buildOperatingReport, type OperatingActivity, type OperatingBuyer, type OperatingDeal, type OperatingLead, type OperatingMarketingOutcome, type OperatingMoneyRow, type OperatingOffer, type OperatingReportPeriod } from '@/lib/operating-report'
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
 import {
   chunksOf,
@@ -145,7 +145,15 @@ export async function GET(request: NextRequest) {
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
   if (since) expensesQuery = expensesQuery.gte('date', since.toISOString().slice(0, 10))
 
-  const [leadResult, activitySourceResult, appointmentsSourceResult, enhancedDealsResult, buyersSourceResult, revenueSourceResult, expensesSourceResult, rolesResult] = await Promise.all([
+  let marketingOutcomeQuery = db
+    .from('crm_marketing_outcomes')
+    .select('id,lead_id,outcome,revenue,lead_source,occurred_at,evidence_type')
+    .lte('occurred_at', until.toISOString())
+    .order('occurred_at', { ascending: false })
+    .limit(OPERATING_REPORT_ROW_LIMIT + 1)
+  if (since) marketingOutcomeQuery = marketingOutcomeQuery.gte('occurred_at', since.toISOString())
+
+  const [leadResult, activitySourceResult, appointmentsSourceResult, enhancedDealsResult, buyersSourceResult, revenueSourceResult, expensesSourceResult, marketingOutcomeSourceResult, rolesResult] = await Promise.all([
     leadQuery,
     activityQuery,
     appointmentQuery,
@@ -153,11 +161,13 @@ export async function GET(request: NextRequest) {
     buyersQuery,
     revenueQuery,
     expensesQuery,
+    marketingOutcomeQuery,
     db.from('roles').select('name, kpi_targets'),
   ])
 
   if (leadResult.error) return unavailable(`lead query failed: ${leadResult.error.message}`, startedAt)
   if (activitySourceResult.error) return unavailable(`activity query failed: ${activitySourceResult.error.message}`, startedAt)
+  if (marketingOutcomeSourceResult.error) return unavailable(`verified Marketing outcome query failed: ${marketingOutcomeSourceResult.error.message}`, startedAt)
 
   let dealsResult = enhancedDealsResult
   if (enhancedDealsResult.error) {
@@ -176,6 +186,7 @@ export async function GET(request: NextRequest) {
   const buyerBounded = takeBoundedRows((buyersSourceResult.data ?? []) as OperatingBuyer[], OPERATING_REPORT_ROW_LIMIT)
   const revenueBounded = takeBoundedRows((revenueSourceResult.data ?? []) as OperatingMoneyRow[], OPERATING_REPORT_ROW_LIMIT)
   const expenseBounded = takeBoundedRows((expensesSourceResult.data ?? []) as OperatingMoneyRow[], OPERATING_REPORT_ROW_LIMIT)
+  const marketingOutcomeBounded = takeBoundedRows((marketingOutcomeSourceResult.data ?? []) as OperatingMarketingOutcome[], OPERATING_REPORT_ROW_LIMIT)
 
   const offerPeriodQuery = db
     .from('buyer_offers')
@@ -253,6 +264,7 @@ export async function GET(request: NextRequest) {
     offers: !offerPeriodResult.error && linkedOffersError === null && linkedOffersComplete && offerBounded.complete,
     buyers: !buyersSourceResult.error && buyerBounded.complete,
     finance: !revenueSourceResult.error && !expensesSourceResult.error && revenueBounded.complete && expenseBounded.complete,
+    marketingOutcomes: marketingOutcomeBounded.complete,
     activityComplete: activityBounded.complete,
   }
 
@@ -264,6 +276,7 @@ export async function GET(request: NextRequest) {
   const offers = offerPeriodResult.error || linkedOffersError ? [] : offerBounded.rows
   const revenue = revenueSourceResult.error ? [] : revenueBounded.rows
   const expenses = expensesSourceResult.error ? [] : expenseBounded.rows
+  const marketingOutcomes = marketingOutcomeBounded.rows
   const ownerTargets = (rolesResult.data ?? []).find((role) => role.name === 'Owner/Operator')?.kpi_targets as Record<string, unknown> | null | undefined
   const acquisitionTargets = (rolesResult.data ?? []).find((role) => role.name === 'Acquisition Agent')?.kpi_targets as Record<string, unknown> | null | undefined
 
@@ -281,6 +294,7 @@ export async function GET(request: NextRequest) {
     buyers: buyersSourceResult.error ? [] : buyerBounded.rows,
     revenue: revenue as OperatingMoneyRow[],
     expenses: expenses as OperatingMoneyRow[],
+    marketingOutcomes,
     goals: {
       monthlyRevenue: configuredNumber(ownerTargets?.monthly_revenue_target),
       monthlyClosings: configuredNumber(ownerTargets?.deals_closed_per_month),
