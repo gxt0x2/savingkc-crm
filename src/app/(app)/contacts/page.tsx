@@ -564,7 +564,7 @@ export default function ContactsPage() {
       const response = await fetch('/api/contacts/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: csvRows }),
+        body: JSON.stringify({ rows: csvRows, campaignId: requestedCampaignId }),
       })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) {
@@ -573,6 +573,11 @@ export default function ContactsPage() {
       }
       setCsvRows([])
       await refetch()
+      if (requestedCampaignId) {
+        setDialog(null)
+        router.push(campaignAudienceReturnHref(requestedCampaignId))
+        return
+      }
       if (result.warning) {
         setDialogError(`${result.imported} imported. ${result.warning}`)
         return
@@ -837,11 +842,12 @@ export default function ContactsPage() {
           <PipelineModalActions saving={saving} submitLabel="Create contact" onCancel={() => setDialog(null)} />
         </form> : null}
         {dialog === 'import' ? <div className="space-y-4">
-          <p className="text-sm leading-6 text-[var(--ck-text-muted)]">Upload up to 500 prospects with name, phone, email, address, city, state, ZIP, or source columns. Every row is validated first; if one fails, nothing is imported.</p>
+          <p className="text-sm leading-6 text-[var(--ck-text-muted)]">Upload up to 500 prospects with name, phone, email, address, city, state, ZIP, or source columns. Every row is validated first; if one fails, nothing is imported{requestedCampaignId ? ` or added to ${requestedCampaignName || 'the campaign'}` : ''}.</p>
+          {requestedCampaignId ? <p className="rounded-md border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-3 text-sm font-semibold text-[var(--crm-ink)]">The imported prospects will be added to <strong>{requestedCampaignName || 'this draft campaign'}</strong> in the same transaction. DNC and lifecycle checks still apply. No calls or messages will start.</p> : null}
           <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--ck-border-strong)] bg-[var(--ck-surface-elev)] text-sm font-semibold text-[var(--ck-text-muted)] hover:border-[var(--ck-accent)]"><Icon name="upload_file" className="mb-2 text-[28px] text-[var(--ck-accent)]" />Choose CSV<input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (event) => { const file = event.target.files?.[0]; if (file) setCsvRows(parseCsv(await file.text())) }} /></label>
           {csvRows.length ? <p className="rounded-md bg-[var(--ck-surface-elev)] p-3 text-sm font-semibold text-[var(--ck-accent)]">{csvRows.length} contact{csvRows.length === 1 ? '' : 's'} ready to import.</p> : null}
           {dialogError ? <p className="text-sm font-semibold text-[var(--ck-accent)]">{dialogError}</p> : null}
-          <div className="flex gap-3"><button type="button" disabled={saving} onClick={() => setDialog(null)} className="h-10 flex-1 rounded-lg border border-[var(--ck-border-strong)] text-sm font-bold">Cancel</button><button type="button" disabled={saving || !csvRows.length} onClick={() => void submitImport()} className="h-10 flex-1 rounded-lg bg-[var(--ck-accent)] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Importing…' : 'Import contacts'}</button></div>
+          <div className="flex gap-3"><button type="button" disabled={saving} onClick={() => setDialog(null)} className="h-10 flex-1 rounded-lg border border-[var(--ck-border-strong)] text-sm font-bold">Cancel</button><button type="button" disabled={saving || !csvRows.length} onClick={() => void submitImport()} className="h-10 flex-1 rounded-lg bg-[var(--ck-accent)] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Importing…' : requestedCampaignId ? 'Import to campaign' : 'Import contacts'}</button></div>
         </div> : null}
         {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><PipelineModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
       </PipelineModal> : null}
