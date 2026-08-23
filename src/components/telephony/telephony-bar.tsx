@@ -988,6 +988,8 @@ export function DialerPanel({
             mark_as_lead: Boolean(options?.markAsLead),
             verified: options?.verified,
             dead_reason: options?.deadReason ?? null,
+            clientAttemptId: durableAttemptId,
+            appointmentAt: options?.appointmentAt ?? null,
           }),
         })
         if (!response.ok) {
