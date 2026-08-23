@@ -1,18 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { buildManifest, type BuildManifestInput, type ManifestV2 } from '@/lib/manifest-builder'
 import { detectCounty } from '@/lib/county-enrichment'
 import { enrichManifestProperty, scoreManifest } from '@/lib/manifest-enrichment'
 import { supabase } from '@/lib/supabase-lazy'
+import { legacyManifestJson, recordLegacyManifestApiUse } from '@/lib/server/legacy-manifest-api'
+
+type LegacyManifestCreateInput = BuildManifestInput & {
+  propertyCity?: string
+  propertyState?: string
+  propertyZip?: string
+  propertyCounty?: string
+}
 
 // GET /api/manifests?lead_id=xxx or ?booking_id=xxx
 export async function GET(req: NextRequest) {
+  recordLegacyManifestApiUse('GET', '/api/manifests')
   try {
     const { searchParams } = new URL(req.url)
     const leadId = searchParams.get('lead_id')
     const bookingId = searchParams.get('booking_id')
 
     if (!leadId && !bookingId) {
-      return NextResponse.json(
+      return legacyManifestJson(
         { error: 'lead_id or booking_id required' },
         { status: 400 }
       )
@@ -30,19 +39,19 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error('Manifest query error:', error)
-      return NextResponse.json(
+      return legacyManifestJson(
         { error: 'Failed to fetch manifest' },
         { status: 500 }
       )
     }
 
     // Return first manifest if found, or null
-    return NextResponse.json({
+    return legacyManifestJson({
       manifest: data && data.length > 0 ? data[0] : null,
     })
   } catch (err) {
     console.error('Manifests GET error:', err)
-    return NextResponse.json(
+    return legacyManifestJson(
       { error: 'Internal server error' },
       { status: 500 }
     )
@@ -51,12 +60,13 @@ export async function GET(req: NextRequest) {
 
 // POST /api/manifests - Create new manifest
 export async function POST(req: NextRequest) {
+  recordLegacyManifestApiUse('POST', '/api/manifests')
   try {
-    const input: any = await req.json()
+    const input = await req.json() as LegacyManifestCreateInput
 
     // Validate required fields
     if (!input.firstName || (!input.phone && !input.email)) {
-      return NextResponse.json(
+      return legacyManifestJson(
         { error: 'firstName and (phone or email) are required' },
         { status: 400 }
       )
@@ -83,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('Manifest insert error:', error)
-      return NextResponse.json(
+      return legacyManifestJson(
         { error: 'Failed to create manifest' },
         { status: 500 }
       )
@@ -133,7 +143,7 @@ export async function POST(req: NextRequest) {
             const { updateManifestV2_1 } = await import('@/lib/manifest-sync')
             const subtrees: Record<string, unknown> = {}
             for (const key of Object.keys(manifest)) {
-              subtrees[key] = (manifest as any)[key]
+              subtrees[key] = (manifest as unknown as Record<string, unknown>)[key]
             }
             await updateManifestV2_1({
               manifestId,
@@ -150,9 +160,7 @@ export async function POST(req: NextRequest) {
             const prop = manifest.property || {}
             const dwell = prop.dwelling || {}
             const assess = prop.assessment || {}
-            const tax = prop.taxCollector || {}
-
-            const leadUpdates: Record<string, any> = {}
+            const leadUpdates: Record<string, unknown> = {}
             if (dwell.bedrooms) leadUpdates.beds = dwell.bedrooms
             if (dwell.bathrooms) leadUpdates.baths_full = dwell.bathrooms
             if (dwell.sqft) leadUpdates.sqft = dwell.sqft
@@ -175,7 +183,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return legacyManifestJson({
       success: true,
       manifest: manifest,
       id: manifestId,
@@ -184,7 +192,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('Manifests POST error:', err)
-    return NextResponse.json(
+    return legacyManifestJson(
       { error: 'Internal server error' },
       { status: 500 }
     )
