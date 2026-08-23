@@ -36,6 +36,14 @@ describe('legacy CRM surface retirement', () => {
     expect(`${dashboard}\n${acquisitions}`).not.toContain('AcquisitionsReportsWorkspace')
   })
 
+  it('keeps deceased-owner selection inside the canonical dialer queue', () => {
+    expect(existsSync('src/app/api/dialer/deceased-queue/route.ts')).toBe(false)
+
+    const queueRoute = readFileSync('src/app/api/dialer/queue/route.ts', 'utf8')
+    expect(queueRoute).toContain(".eq('is_deceased', true)")
+    expect(queueRoute).toContain(".in('delinquent_years_category', ['2yr', '3yr_plus'])")
+  })
+
   it('routes every visible ARI entry point to the single persistent assistant', () => {
     const navigation = readFileSync('src/components/layout/nav-tab.tsx', 'utf8')
     const reports = readFileSync('src/components/reports/operating-reports-workspace.tsx', 'utf8')
