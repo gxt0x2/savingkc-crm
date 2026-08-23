@@ -462,7 +462,7 @@ test.describe('real iPhone navigation', () => {
     const mobileTransitions = [
       { label: 'Pipeline', href: '/contacts?list=new' },
       { label: 'Prospecting', href: '/prospecting' },
-      { label: 'Task', href: '/tasks' },
+      { label: 'Conversations', href: '/conversations' },
       { label: 'Dashboard', href: '/dashboard' },
     ] as const
     const measured: Array<{ route: string; milliseconds: number }> = []
