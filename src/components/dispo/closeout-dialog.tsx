@@ -111,7 +111,6 @@ export function CloseoutDialog({
           settlementStatementVerified: settlementVerified,
           fundingConfirmed,
           notes,
-          recordedBy: deal.lead?.assigned_agent || 'Ernest',
         }),
       })
       const payload = await response.json()
@@ -140,7 +139,6 @@ export function CloseoutDialog({
           friction,
           lesson,
           processChange,
-          completedBy: deal.lead?.assigned_agent || 'Ernest',
         }),
       })
       const payload = await response.json()

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
-import { finalizeFundedClose } from '@/lib/server/crm-operating-handoffs'
+import { finalizeFundedClose, finalizeVerifiedFallout } from '@/lib/server/crm-operating-handoffs'
 import {
   buildFundingMetrics,
   nextBusinessDayDueAt,
@@ -80,6 +80,30 @@ export async function POST(
     const existingCloseout = current.closeout && typeof current.closeout === 'object'
       ? current.closeout as Record<string, unknown>
       : {}
+
+    if (action === 'record_fallout') {
+      if (current.stage === 'closed' || current.closeout_status === 'awaiting_debrief') {
+        return NextResponse.json({ error: 'A funded transaction cannot be marked as fallout' }, { status: 409 })
+      }
+      const reason = cleanText(body.reason)
+      const allowedReasons = new Set(['seller_cancelled', 'buyer_default', 'title_issue', 'inspection_issue', 'financing_failed', 'other'])
+      const notes = cleanText(body.notes)
+      const evidenceReference = cleanText(body.evidenceReference)
+      if (!allowedReasons.has(reason)) return NextResponse.json({ error: 'Choose a verified fallout reason' }, { status: 400 })
+      if (!notes) return NextResponse.json({ error: 'Explain what caused the transaction to fall through' }, { status: 400 })
+      if (!evidenceReference) return NextResponse.json({ error: 'Reference the cancellation, communication, title note, or other evidence' }, { status: 400 })
+
+      const finalized = await finalizeVerifiedFallout({
+        dealId: id,
+        reason: reason as 'seller_cancelled' | 'buyer_default' | 'title_issue' | 'inspection_issue' | 'financing_failed' | 'other',
+        notes,
+        evidenceReference,
+        occurredAt: new Date().toISOString(),
+        actorEmail: actor.email,
+        actorName: actor.name,
+      })
+      return NextResponse.json({ deal: finalized.deal, next: 'archived_fallout' })
+    }
 
     if (action === 'record_funding') {
       if (current.closeout_status === 'complete' || current.archived_at) {

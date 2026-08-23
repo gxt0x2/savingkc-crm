@@ -210,6 +210,14 @@ export interface DispoCloseoutData {
     completedBy?: string
     completedAt?: string
   }
+  fallout?: {
+    reason?: string
+    notes?: string
+    evidenceReference?: string
+    occurredAt?: string
+    recordedBy?: string
+    recordedAt?: string
+  }
 }
 
 export interface DispoDeal {

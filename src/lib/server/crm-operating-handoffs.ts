@@ -83,3 +83,43 @@ export async function finalizeFundedClose(input: {
     marketingOutcome: Record<string, unknown>
   }
 }
+
+export async function acceptDepartmentHandoff(input: {
+  handoffId: string
+  actorEmail: string
+  actorName: string
+}) {
+  const { data, error } = await supabaseAdmin().rpc('crm_accept_department_handoff_v1', {
+    target_handoff_id: input.handoffId,
+    target_actor_email: input.actorEmail,
+    target_actor_name: input.actorName,
+  })
+  if (error) throw new CrmOperatingHandoffError(error.message || 'Department handoff could not be accepted')
+  return data as { handoffId: string; status: 'accepted'; replayed: boolean }
+}
+
+export async function finalizeVerifiedFallout(input: {
+  dealId: string
+  reason: 'seller_cancelled' | 'buyer_default' | 'title_issue' | 'inspection_issue' | 'financing_failed' | 'other'
+  notes: string
+  evidenceReference: string
+  occurredAt: string
+  actorEmail: string
+  actorName: string
+}) {
+  const { data, error } = await supabaseAdmin().rpc('crm_finalize_verified_fallout_v1', {
+    target_deal_id: input.dealId,
+    target_reason: input.reason,
+    target_notes: input.notes,
+    target_evidence_reference: input.evidenceReference,
+    target_occurred_at: input.occurredAt,
+    target_actor_email: input.actorEmail,
+    target_actor_name: input.actorName,
+  })
+  if (error) throw new CrmOperatingHandoffError(error.message || 'Verified fallout could not be finalized')
+  return data as {
+    deal: Record<string, unknown>
+    lifecycle: Record<string, unknown>
+    marketingOutcome: Record<string, unknown>
+  }
+}

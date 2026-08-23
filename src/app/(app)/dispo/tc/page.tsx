@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
 import { DocusealUnavailableNotice, useDocusealAvailability } from '@/components/dispo/docuseal-availability'
-import { DispoPageHeader, DispoWorkspaceTabs, MetricStrip, NextStepCard } from '@/components/dispo/workspace-ui'
+import { DispoPageHeader, DispoWorkspaceTabs, NextStepCard } from '@/components/dispo/workspace-ui'
+import { TcHandoffStrip } from '@/components/dispo/tc-handoff-strip'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -1471,7 +1472,7 @@ export default function TransactionCoordinatorPage() {
           <DispoWorkspaceTabs tabs={TC_PAGE_TABS} activeKey={pageView} />
         </div>
 
-        <MetricStrip items={metricCards} />
+        <TcHandoffStrip items={metricCards} />
 
         {error && <div className="mb-4 rounded-lg border border-[var(--crm-brand)]/35 bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]">{error}</div>}
 

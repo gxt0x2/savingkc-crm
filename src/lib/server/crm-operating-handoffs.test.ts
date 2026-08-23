@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc }) }))
 
-import { finalizeFundedClose, recordAssignmentToTcHandoff, recordVerifiedMarketingOutcome } from './crm-operating-handoffs'
+import {
+  acceptDepartmentHandoff,
+  finalizeFundedClose,
+  finalizeVerifiedFallout,
+  recordAssignmentToTcHandoff,
+  recordVerifiedMarketingOutcome,
+} from './crm-operating-handoffs'
 
 describe('seller-to-close operating handoffs', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -47,6 +53,27 @@ describe('seller-to-close operating handoffs', () => {
     })
     expect(mocks.rpc).toHaveBeenCalledWith('crm_finalize_funded_close_v1', expect.objectContaining({
       target_deal_id: 'deal-1', target_actor_name: 'Casey', target_net_revenue: 24000,
+    }))
+  })
+
+  it('accepts a department handoff with the verified operator identity', async () => {
+    mocks.rpc.mockResolvedValue({ data: { handoffId: 'handoff-1', status: 'accepted', replayed: false }, error: null })
+    await acceptDepartmentHandoff({ handoffId: 'handoff-1', actorEmail: 'casey@savingkc.com', actorName: 'Casey' })
+    expect(mocks.rpc).toHaveBeenCalledWith('crm_accept_department_handoff_v1', {
+      target_handoff_id: 'handoff-1', target_actor_email: 'casey@savingkc.com', target_actor_name: 'Casey',
+    })
+  })
+
+  it('finalizes verified fallout across lifecycle, TC, Dispositions, and Marketing', async () => {
+    mocks.rpc.mockResolvedValue({ data: { deal: { id: 'deal-1', stage: 'dead' }, lifecycle: {}, marketingOutcome: {} }, error: null })
+    await finalizeVerifiedFallout({
+      dealId: 'deal-1', reason: 'title_issue', notes: 'Title company confirmed an incurable defect.',
+      evidenceReference: 'Title email dated 2026-08-23', occurredAt: '2026-08-23T18:00:00.000Z',
+      actorEmail: 'casey@savingkc.com', actorName: 'Casey',
+    })
+    expect(mocks.rpc).toHaveBeenCalledWith('crm_finalize_verified_fallout_v1', expect.objectContaining({
+      target_deal_id: 'deal-1', target_reason: 'title_issue',
+      target_evidence_reference: 'Title email dated 2026-08-23', target_actor_name: 'Casey',
     }))
   })
 })
