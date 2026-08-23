@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from '@/lib/manifest-builder'
 import { deepMerge, updateManifestV2_1, ManifestWriteError } from '@/lib/manifest-sync'
+import { legacyManifestJson, recordLegacyManifestApiUse } from '@/lib/server/legacy-manifest-api'
 
 function getSupabase() {
   return createClient(
@@ -15,6 +16,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  recordLegacyManifestApiUse('GET', '/api/manifests/[id]')
   try {
     const { id } = await params
     const supabase = getSupabase()
@@ -27,16 +29,16 @@ export async function GET(
 
     if (error) {
       console.error('Manifest fetch error:', error)
-      return NextResponse.json(
+      return legacyManifestJson(
         { error: 'Manifest not found' },
         { status: 404 }
       )
     }
 
-    return NextResponse.json({ manifest: data })
+    return legacyManifestJson({ manifest: data })
   } catch (err) {
     console.error('Manifest GET error:', err)
-    return NextResponse.json(
+    return legacyManifestJson(
       { error: 'Internal server error' },
       { status: 500 }
     )
@@ -48,9 +50,10 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  recordLegacyManifestApiUse('PATCH', '/api/manifests/[id]')
   try {
     const { id } = await params
-    const updates = await req.json()
+    const updates = await req.json() as Record<string, unknown>
     const supabase = getSupabase()
 
     // Fetch existing manifest + lead_id for cascade
@@ -61,7 +64,7 @@ export async function PATCH(
       .single()
 
     if (fetchError || !existing) {
-      return NextResponse.json(
+      return legacyManifestJson(
         { error: 'Manifest not found' },
         { status: 404 }
       )
@@ -69,8 +72,9 @@ export async function PATCH(
 
     const currentManifest = existing.manifest as ManifestV2
 
-    const { agent: _agent, action: _action, details: _details, ...manifestUpdates } = updates
-    const agent = updates.agent || 'system'
+    const { agent: requestedAgent, action: requestedAction, details: requestedDetails, ...manifestUpdates } = updates
+    const agent = typeof requestedAgent === 'string' && requestedAgent.trim() ? requestedAgent : 'system'
+    const action = typeof requestedAction === 'string' && requestedAction.trim() ? requestedAction : 'manifest_updated'
 
     // Deep-merge the caller's partial updates into the current manifest in TS
     // to preserve the endpoint's historical API contract (callers can send
@@ -84,28 +88,27 @@ export async function PATCH(
     // out of the manifest into manifest_history. Until then, both audit
     // channels run in parallel — manifest.auditTrail for the UI that reads
     // it today, manifest_history for the new audit infrastructure.
-    const merged2 = merged as any
-    merged2.auditTrail = [
+    merged.auditTrail = [
       ...(currentManifest.auditTrail ?? []),
       {
         timestamp: new Date().toISOString(),
         agent,
-        action: updates.action || 'manifest_updated',
-        details: updates.details,
+        action,
+        details: requestedDetails,
       },
     ]
-    merged2.ariIntelligence = {
+    merged.ariIntelligence = {
       ...(currentManifest.ariIntelligence ?? {}),
       briefingStale: true,
     }
-    merged2.lastUpdated = new Date().toISOString()
-    merged2.lastUpdatedBy = agent
+    merged.lastUpdated = new Date().toISOString()
+    merged.lastUpdatedBy = agent
 
     // Hand every top-level key as a subtree. The RPC shallow-replaces each
     // one against the current stored value; manifest.manifest.* can't form.
     const subtrees: Record<string, unknown> = {}
-    for (const key of Object.keys(merged2)) {
-      subtrees[key] = merged2[key]
+    for (const key of Object.keys(merged)) {
+      subtrees[key] = merged[key]
     }
 
     try {
@@ -113,17 +116,17 @@ export async function PATCH(
         manifestId: id,
         subtrees,
         actor: agent,
-        reason: updates.action || 'api:manifests_patch',
+        reason: action,
       })
 
       if (!nextManifest) {
-        return NextResponse.json({ error: 'Manifest not found' }, { status: 404 })
+        return legacyManifestJson({ error: 'Manifest not found' }, { status: 404 })
       }
 
-      return NextResponse.json({ success: true, manifest: nextManifest })
+      return legacyManifestJson({ success: true, manifest: nextManifest })
     } catch (err) {
       if (err instanceof ManifestWriteError) {
-        return NextResponse.json(
+        return legacyManifestJson(
           { error: 'Manifest write failed', detail: err.message },
           { status: 500 },
         )
@@ -132,7 +135,7 @@ export async function PATCH(
     }
   } catch (err) {
     console.error('Manifest PATCH error:', err)
-    return NextResponse.json(
+    return legacyManifestJson(
       { error: 'Internal server error' },
       { status: 500 }
     )

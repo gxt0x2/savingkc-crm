@@ -84,3 +84,10 @@ Those comments contradict the released operating model and must not guide new wo
 - Browser components no longer query Manifest directly.
 - Manifest can be rebuilt from durable records or is explicitly labeled historical-only before retirement.
 
+## Containment progress — August 23
+
+- Active React surfaces no longer query the Manifest table or call its CRUD API. Seller-intelligence cards and the Dialer use authenticated, bounded lead/activity endpoints.
+- The unused legacy Manifest Kanban implementation and manual “Create Manifest” UI were removed.
+- As-is value, mortgage, liens, and back taxes remain visible as compatibility intelligence but are read-only until governed canonical financial fields exist.
+- The legacy Manifest GET/POST/PATCH endpoints remain temporarily available for hidden-caller discovery. Every invocation emits a PII-free `legacy_manifest_api_invoked` warning and returns `Deprecation`, `Sunset`, successor, and private/no-store headers.
+- No in-repository caller remains. Endpoint removal is scheduled after telemetry confirms that no external integration depends on them; absence of a source reference alone is not treated as runtime proof.
