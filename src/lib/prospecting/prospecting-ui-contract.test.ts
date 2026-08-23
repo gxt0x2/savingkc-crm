@@ -53,12 +53,13 @@ describe('prospecting workspace UI contract', () => {
     expect(studio).toContain('Saving does not activate it')
   })
 
-  it('consolidates Dialer and Conversations under Prospecting navigation', () => {
+  it('keeps Prospecting self-contained while Conversations remains a first-class workspace', () => {
     expect(navigation).toContain("{ label: 'Prospecting', href: '/prospecting'")
+    expect(navigation).toContain("{ label: 'Conversations', href: '/conversations', icon: 'forum' }")
     expect(navigation).not.toContain("{ label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },\n  { label: 'Ads'")
     expect(appShell).toContain("pathname?.startsWith('/prospecting')")
-    expect(workspaceNavigation).toContain("{ label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer', '/conversations'] }")
-    expect(workspaceNavigation).not.toContain("{ label: 'Conversations', icon: 'forum'")
+    expect(workspaceNavigation).toContain("{ label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer'] }")
+    expect(workspaceNavigation).toContain("{ label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] }")
     expect(workspaceNavigation).not.toContain("{ label: 'Dialer', icon: 'dialpad'")
   })
 })

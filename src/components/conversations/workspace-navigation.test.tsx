@@ -32,12 +32,12 @@ describe('workspace navigation', () => {
     navigation.prefetch.mockReset()
   })
 
-  it('uses the consolidated nine-item reviewer order and hides retired menu labels', () => {
+  it('uses the consolidated reviewer order and keeps the unified inbox first class', () => {
     render(<WorkspaceNav needsReply={3} canReviewCalls />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
-    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Prospecting', 'Calendar', 'Scorecard', 'Task', 'Reports', 'Settings'])
+    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Scorecard', 'Task', 'Reports', 'Settings'])
     expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
     expect(within(navigationRegion).getByRole('link', { name: 'Issue Log' })).toHaveAttribute('href', '/reports/andon')
     expect(within(navigationRegion).queryByRole('link', { name: 'Bottlenecks' })).not.toBeInTheDocument()
@@ -50,13 +50,13 @@ describe('workspace navigation', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
     const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Calendar', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Task', 'Settings',
     ])
     expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/my-day')
 
     rerender(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" canReviewCalls />)
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Calendar', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Task', 'Settings',
     ])
   })
 
@@ -73,7 +73,7 @@ describe('workspace navigation', () => {
 
     const primary = screen.getByRole('navigation', { name: 'Primary CRM navigation' })
     expect(within(primary).getByRole('link', { name: /My Day/ })).toHaveAttribute('aria-current', 'page')
-    expect(within(primary).getByRole('link', { name: /Prospecting/ })).toHaveTextContent('4')
+    expect(within(primary).getByRole('link', { name: /Conversations/ })).toHaveTextContent('4')
 
     fireEvent.click(within(primary).getByRole('button', { name: /More/ }))
     const more = screen.getByRole('dialog', { name: 'More navigation' })
@@ -115,18 +115,25 @@ describe('workspace navigation', () => {
     expect(within(marketingNav).getByRole('link', { name: /Google Ads/ })).toHaveAttribute('href', '/marketing/google-ads')
   })
 
-  it('keeps campaign, single-line Dialer, and Inbox execution in one Prospecting workspace', () => {
+  it('keeps campaign and single-line Dialer execution inside Prospecting', () => {
     navigation.pathname = '/dialer'
     render(<WorkspaceContextNav />)
 
     const dialerNav = screen.getByRole('navigation', { name: 'Prospecting sections' })
     expect(within(dialerNav).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
-      '/prospecting', '/dialer', '/dialer?section=queue', '/dialer?section=sessions', '/conversations',
+      '/prospecting', '/dialer', '/dialer?section=queue', '/dialer?section=sessions',
     ])
     expect(within(dialerNav).getByRole('link', { name: /Campaigns/ })).toHaveAttribute('href', '/prospecting')
-    expect(within(dialerNav).getByRole('link', { name: /Inbox/ })).toHaveAttribute('href', '/conversations')
+    expect(within(dialerNav).queryByRole('link', { name: /Inbox/ })).not.toBeInTheDocument()
     expect(within(dialerNav).queryByRole('link', { name: /Analytics/ })).not.toBeInTheDocument()
     expect(within(dialerNav).queryByRole('link', { name: /Settings/ })).not.toBeInTheDocument()
+  })
+
+  it('does not present Conversations as a Prospecting subsection', () => {
+    navigation.pathname = '/conversations'
+    render(<WorkspaceContextNav />)
+
+    expect(screen.queryByRole('navigation', { name: 'Prospecting sections' })).not.toBeInTheDocument()
   })
 
   it('labels the consolidated workflow library as message templates', () => {

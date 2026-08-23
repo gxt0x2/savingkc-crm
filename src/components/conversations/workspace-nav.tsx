@@ -16,7 +16,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: 'home', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Issue Log', icon: 'warning_amber', href: '/reports/andon', activeOn: ['/reports/andon', '/reports/bottlenecks'] },
   { label: 'Pipeline', icon: 'account_tree', href: '/contacts?list=new', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
-  { label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer', '/conversations'] },
+  { label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer'] },
+  { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Scorecard', icon: 'fact_check', href: '/scorecard', activeOn: ['/scorecard'] },
   { label: 'Task', icon: 'checklist', href: '/tasks', activeOn: ['/tasks'] },
@@ -27,10 +28,10 @@ const NAV_ITEMS: NavItem[] = [
 const CASEY_NAV_ITEMS: NavItem[] = [
   { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] },
   { label: 'Daily Rhythm', icon: 'routine', href: '/checklist', activeOn: ['/checklist'] },
-  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Prospecting', 'Calendar', 'Task', 'Settings'].includes(item.label)),
+  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Task', 'Settings'].includes(item.label)),
 ]
 
-const WARM_NAV_LABELS = new Set(['Dashboard', 'My Day', 'Pipeline', 'Prospecting', 'Task'])
+const WARM_NAV_LABELS = new Set(['Dashboard', 'My Day', 'Pipeline', 'Prospecting', 'Conversations', 'Task'])
 
 function workspaceItemsFor(userEmail?: string | null, canReviewCalls = false) {
   const isCasey = isCaseyCrmUser(userEmail)
@@ -71,7 +72,7 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
     >
       <Icon name={item.icon} className={cn('text-[19px]', active ? 'text-[var(--crm-brand)]' : 'text-current')} />
       <span className={cn('min-w-0 flex-1 truncate', collapsed && 'sr-only')}>{item.label}</span>
-      {item.label === 'Prospecting' && needsReply !== null && needsReply > 0 ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[9px] font-black text-white">{needsReply}</span> : null}
+      {item.label === 'Conversations' && needsReply !== null && needsReply > 0 ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[9px] font-black text-white">{needsReply}</span> : null}
     </Link>
   )
 }
@@ -108,8 +109,8 @@ export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = fal
   const [moreOpen, setMoreOpen] = useState(false)
   const navItems = workspaceItemsFor(userEmail, canReviewCalls)
   const primaryLabels = isCaseyCrmUser(userEmail)
-    ? ['My Day', 'Pipeline', 'Prospecting', 'Task']
-    : ['Dashboard', 'Pipeline', 'Prospecting', 'Task']
+    ? ['My Day', 'Pipeline', 'Prospecting', 'Conversations']
+    : ['Dashboard', 'Pipeline', 'Prospecting', 'Conversations']
   const primaryItems = primaryLabels.flatMap((label) => navItems.filter((item) => item.label === label))
   const moreItems = navItems.filter((item) => !primaryLabels.includes(item.label))
 
@@ -143,7 +144,7 @@ export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = fal
       <nav className="fixed inset-x-0 bottom-0 z-[60] grid h-[calc(4.25rem+env(safe-area-inset-bottom))] grid-cols-5 border-t border-[var(--crm-border)] bg-[color:var(--crm-surface)]/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(0,0,0,.12)] backdrop-blur-xl lg:hidden" aria-label="Primary CRM navigation">
         {primaryItems.map((item) => {
           const active = isItemActive(item, pathname)
-          return <Link key={item.label} href={item.href} aria-current={active ? 'page' : undefined} className={cn('relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold', active ? 'text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={item.icon} className="text-[22px]" /><span className="max-w-full truncate">{item.label}</span>{item.label === 'Prospecting' && needsReply !== null && needsReply > 0 ? <span className="absolute right-[18%] top-1.5 min-w-4 rounded-full bg-[var(--crm-brand)] px-1 text-center text-[9px] text-white">{needsReply > 99 ? '99+' : needsReply}</span> : null}</Link>
+          return <Link key={item.label} href={item.href} aria-current={active ? 'page' : undefined} className={cn('relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold', active ? 'text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={item.icon} className="text-[22px]" /><span className="max-w-full truncate">{item.label}</span>{item.label === 'Conversations' && needsReply !== null && needsReply > 0 ? <span className="absolute right-[18%] top-1.5 min-w-4 rounded-full bg-[var(--crm-brand)] px-1 text-center text-[9px] text-white">{needsReply > 99 ? '99+' : needsReply}</span> : null}</Link>
         })}
         <button type="button" onClick={() => setMoreOpen(true)} aria-expanded={moreOpen} className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold text-[var(--crm-text-muted)]"><Icon name="menu" className="text-[22px]" /><span>More</span></button>
       </nav>

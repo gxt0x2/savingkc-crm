@@ -33,16 +33,6 @@ const GROUPS: ContextGroup[] = [
     items: [
       { label: 'Campaigns', href: '/prospecting', icon: 'campaign', matchPath: '/prospecting' },
       { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk', matchPath: '/dialer' },
-      { label: 'Inbox', href: '/conversations', icon: 'forum', matchPath: '/conversations' },
-    ],
-  },
-  {
-    label: 'Prospecting',
-    pathPrefix: '/conversations',
-    items: [
-      { label: 'Campaigns', href: '/prospecting', icon: 'campaign', matchPath: '/prospecting' },
-      { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk', matchPath: '/dialer' },
-      { label: 'Inbox', href: '/conversations', icon: 'forum', matchPath: '/conversations' },
     ],
   },
   {
@@ -89,7 +79,6 @@ const GROUPS: ContextGroup[] = [
       { label: 'Overview', href: '/dialer', icon: 'space_dashboard', section: 'overview' },
       { label: 'Call queue', href: '/dialer?section=queue', icon: 'format_list_numbered', section: 'queue' },
       { label: 'Sessions', href: '/dialer?section=sessions', icon: 'play_circle', section: 'sessions' },
-      { label: 'Inbox', href: '/conversations', icon: 'forum', matchPath: '/conversations' },
     ],
   },
   {
