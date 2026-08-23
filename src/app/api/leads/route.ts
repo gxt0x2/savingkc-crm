@@ -522,6 +522,27 @@ export async function PATCH(req: NextRequest) {
   const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
   if (unauthorized) return unauthorized
 
+  // Operator writes have moved to typed per-contact commands. Keep this old
+  // handler available only for explicit local compatibility rehearsals while
+  // making it impossible to re-enable in production by configuration alone.
+  const legacyPatchEnabled = process.env.ENABLE_LEGACY_LEADS_PATCH === 'true'
+    && process.env.NODE_ENV !== 'production'
+    && process.env.VERCEL_ENV !== 'production'
+  if (!legacyPatchEnabled) {
+    return NextResponse.json({
+      success: false,
+      error: 'Legacy lead updates are retired. Use a typed per-contact command.',
+      code: 'legacy_leads_patch_retired',
+    }, {
+      status: 410,
+      headers: {
+        ...corsHeaders,
+        'Cache-Control': 'private, no-store, max-age=0',
+        Deprecation: 'true',
+      },
+    })
+  }
+
   try {
     const body = await req.json()
     const { id, activity, actor, deadReasonNotes, ...fields } = body

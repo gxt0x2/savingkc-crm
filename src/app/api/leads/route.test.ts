@@ -77,4 +77,17 @@ describe('/api/leads route-local containment', () => {
     await expect(response.json()).resolves.toEqual({ success: true, leads: [], total: 0 })
     expect(mocks.from).toHaveBeenCalledWith('leads')
   })
+
+  it('retires broad authenticated lead PATCH access before database access', async () => {
+    mocks.requireAuthenticatedUser.mockResolvedValue(null)
+
+    const response = await PATCH(jsonRequest('PATCH', {
+      id: 'lead-1', station: 'closed_won', is_admin: true, actor: 'Spoofed',
+    }))
+
+    expect(response.status).toBe(410)
+    await expect(response.json()).resolves.toMatchObject({ code: 'legacy_leads_patch_retired' })
+    expect(response.headers.get('deprecation')).toBe('true')
+    expect(mocks.from).not.toHaveBeenCalled()
+  })
 })
