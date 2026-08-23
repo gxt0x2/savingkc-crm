@@ -13,6 +13,7 @@ export interface LeadDispositionCommand {
   notes: string | null
   phone: string | null
   appointmentAt: string | null
+  clientAttemptId: string | null
 }
 
 export type LeadDispositionCommandResult =
@@ -55,6 +56,7 @@ export function buildLeadDispositionCommand(input: unknown, now = Date.now()): L
       notes: cleanText(body.notes, 5_000),
       phone: cleanText(body.phone, 100),
       appointmentAt,
+      clientAttemptId: cleanText(body.clientAttemptId, 100),
     },
   }
 }
@@ -65,15 +67,47 @@ export interface RecordedLeadDisposition {
   projectionSynced: boolean
 }
 
+interface DispositionActivityRow {
+  id: string
+  metadata: Record<string, unknown> | null
+}
+
+async function findAttemptActivity(
+  leadId: string,
+  activityType: 'appointment' | 'call',
+  source: 'call_disposition' | 'telephony_bar',
+  clientAttemptId: string | null,
+): Promise<DispositionActivityRow | null> {
+  if (!clientAttemptId) return null
+  const { data, error } = await supabase
+    .from('lead_activities')
+    .select('id,metadata')
+    .eq('lead_id', leadId)
+    .eq('activity_type', activityType)
+    .contains('metadata', { source, client_attempt_id: clientAttemptId })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error('Existing call outcome could not be verified')
+  return (data as DispositionActivityRow | null) ?? null
+}
+
 export async function recordLeadDisposition(
   leadId: string,
   actorName: string,
   command: LeadDispositionCommand,
 ): Promise<RecordedLeadDisposition> {
-  const { disposition, notes, phone, appointmentAt } = command
+  const { disposition, notes, phone, appointmentAt, clientAttemptId } = command
   const actorId = actorName.toLowerCase().includes('ernest') ? 'ernest' : 'casey'
   let appointmentId: string | null = null
   let appointmentActivityId: string | null = null
+  let activity = await findAttemptActivity(leadId, 'call', 'telephony_bar', clientAttemptId)
+  if (activity && (
+    activity.metadata?.disposition !== disposition
+    || (activity.metadata?.scheduled_at ?? null) !== appointmentAt
+  )) {
+    throw new Error('This dialer attempt was already saved with a different outcome')
+  }
 
   if (disposition === 'appointment_set' && appointmentAt) {
     const appointment = await upsertAppointmentFromCall({
@@ -87,9 +121,14 @@ export async function recordLeadDisposition(
     if (!appointment) throw new Error('Appointment could not be saved')
     appointmentId = appointment.id
 
-    const { data: appointmentActivity, error: appointmentActivityError } = await supabase
-      .from('lead_activities')
-      .insert({
+    let appointmentActivity = await findAttemptActivity(
+      leadId,
+      'appointment',
+      'call_disposition',
+      clientAttemptId,
+    )
+    if (!appointmentActivity) {
+      const { data, error } = await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'appointment',
         description: `Appointment scheduled from call for ${appointment.scheduled_at}${notes ? ` - ${notes}` : ''}`,
@@ -103,17 +142,28 @@ export async function recordLeadDisposition(
           notes,
           status: 'scheduled',
           source: 'call_disposition',
+          client_attempt_id: clientAttemptId,
         },
       })
       .select('id')
       .maybeSingle()
-    if (appointmentActivityError) throw new Error('Appointment activity could not be saved')
+      if (error) {
+        appointmentActivity = await findAttemptActivity(
+          leadId,
+          'appointment',
+          'call_disposition',
+          clientAttemptId,
+        )
+        if (!appointmentActivity) throw new Error('Appointment activity could not be saved')
+      } else {
+        appointmentActivity = data as DispositionActivityRow | null
+      }
+    }
     appointmentActivityId = appointmentActivity?.id ?? null
   }
 
-  const { data: activity, error: activityError } = await supabase
-    .from('lead_activities')
-    .insert({
+  if (!activity) {
+    const { data, error } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'call',
       description: `Call: ${disposition.replace(/_/g, ' ')}${notes ? ` - ${notes}` : ''}`,
@@ -126,11 +176,18 @@ export async function recordLeadDisposition(
         source: 'telephony_bar',
         appointment_id: appointmentId,
         scheduled_at: appointmentAt,
+        client_attempt_id: clientAttemptId,
       },
     })
     .select('id')
     .maybeSingle()
-  if (activityError) throw new Error('Call outcome could not be saved')
+    if (error) {
+      activity = await findAttemptActivity(leadId, 'call', 'telephony_bar', clientAttemptId)
+      if (!activity) throw new Error('Call outcome could not be saved')
+    } else {
+      activity = data as DispositionActivityRow | null
+    }
+  }
 
   const leadPatch: Record<string, unknown> = {
     call_result: disposition,
@@ -147,7 +204,11 @@ export async function recordLeadDisposition(
   try {
     await ensureManifestExists(leadId)
     projectionSynced = await updateManifestAndCascade(leadId, (manifest) => {
-    if (notes) {
+    const alreadyProjected = Boolean(clientAttemptId && manifest.auditTrail?.some((entry) => {
+      const details = entry.details as Record<string, unknown> | undefined
+      return details?.clientAttemptId === clientAttemptId
+    }))
+    if (notes && !alreadyProjected) {
       manifest.agentNotes = manifest.agentNotes ?? []
       manifest.agentNotes.push({
         timestamp: new Date().toISOString(),
@@ -180,7 +241,7 @@ export async function recordLeadDisposition(
         address: null,
         notes,
       }
-    } else if (disposition === 'callback_requested') {
+    } else if (disposition === 'callback_requested' && !alreadyProjected) {
       manifest.ariIntelligence = manifest.ariIntelligence ?? {}
       manifest.ariIntelligence.recommendedActions = manifest.ariIntelligence.recommendedActions ?? []
       manifest.ariIntelligence.recommendedActions.push({
@@ -199,12 +260,14 @@ export async function recordLeadDisposition(
     manifest.ariIntelligence = manifest.ariIntelligence ?? {}
     manifest.ariIntelligence.briefingStale = true
     manifest.auditTrail = manifest.auditTrail ?? []
-    manifest.auditTrail.push({
-      timestamp: new Date().toISOString(),
-      agent: actorName,
-      action: 'call_disposition',
-      details: { disposition, phone, activityId: activity?.id ?? null, appointmentId },
-    })
+    if (!alreadyProjected) {
+      manifest.auditTrail.push({
+        timestamp: new Date().toISOString(),
+        agent: actorName,
+        action: 'call_disposition',
+        details: { disposition, phone, activityId: activity?.id ?? null, appointmentId, clientAttemptId },
+      })
+    }
     }, `disposition:${disposition}`)
   } catch (error) {
     console.error('[lead disposition] compatibility projection failed:', error)

@@ -1012,6 +1012,7 @@ export function DialerPanel({
             notes,
             phone: lastCallPhoneRef.current,
             appointmentAt: options?.appointmentAt ?? null,
+            clientAttemptId: durableAttemptId,
           }),
         })
         if (!response.ok) {
