@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { toProperCase, formatPhone } from '@/lib/format'
-import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { useLeadManifestIntelligence } from '@/hooks/use-lead-manifest-intelligence'
@@ -167,17 +166,16 @@ export function SmsComposeModal({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Fetch conversation history ──
-  async function fetchHistory() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('lead_activities')
-      .select('id, activity_type, description, agent, metadata, created_at')
-      .eq('lead_id', lead.id)
-      .in('activity_type', SMS_ACTIVITY_TYPES)
-      .order('created_at', { ascending: true })
-      .limit(50)
-    if (data) setMessages(data)
-  }
+  const fetchHistory = useCallback(async () => {
+    const response = await fetch(`/api/leads/${lead.id}/activities?limit=100`, { cache: 'no-store' })
+    if (!response.ok) return
+    const payload = await response.json().catch(() => ({}))
+    const activities = Array.isArray(payload.activities) ? payload.activities as Activity[] : []
+    setMessages(activities
+      .filter((activity) => SMS_ACTIVITY_TYPES.includes(activity.activity_type))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .slice(-50))
+  }, [lead.id])
 
   // ── Auto-detect reply number from the active SMS thread unless manually changed ──
   useEffect(() => {
@@ -193,13 +191,15 @@ export function SmsComposeModal({
 
   // ── Load history + templates + property meta on mount ──
   useEffect(() => {
-    fetchHistory()
+    void fetchHistory()
+  }, [fetchHistory])
+
+  useEffect(() => {
     fetch('/api/sms-templates')
       .then(r => r.json())
       .then(data => setTemplates(data.templates || []))
       .catch(() => {})
-
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const m = intelligence as ManifestPropertySnapshot
@@ -210,30 +210,16 @@ export function SmsComposeModal({
     })
   }, [intelligence])
 
-  // ── Realtime subscription for new messages ──
+  // The parent workspace owns the one lead-activity subscription. Reuse its
+  // refresh event so opening this modal does not create another database client.
   useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`sms-modal-${lead.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'lead_activities',
-          filter: `lead_id=eq.${lead.id}`,
-        },
-        (payload: { new?: { activity_type?: string } }) => {
-          const type = payload.new?.activity_type
-          if (type && SMS_ACTIVITY_TYPES.includes(type)) {
-            fetchHistory()
-          }
-        }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [lead.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    function handleRefresh(event: Event) {
+      const detail = (event as CustomEvent<{ leadId?: string }>).detail
+      if (detail?.leadId === lead.id) void fetchHistory()
+    }
+    window.addEventListener('crm:lead-refresh', handleRefresh)
+    return () => window.removeEventListener('crm:lead-refresh', handleRefresh)
+  }, [fetchHistory, lead.id])
 
   // ── Auto-scroll on new messages ──
   useEffect(() => {
