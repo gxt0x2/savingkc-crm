@@ -8,6 +8,7 @@ const acquisitionTabs = [
   { label: 'ARI', href: '/ai', icon: 'assistant' },
   { label: 'Pipeline', href: '/contacts', icon: 'account_tree' },
   { label: 'Prospecting', href: '/prospecting', icon: 'campaign' },
+  { label: 'Conversations', href: '/conversations', icon: 'forum' },
   { label: 'Workflows', href: '/workflows', icon: 'account_tree' },
   { label: 'Calendar', href: '/calendar?department=acquisitions', icon: 'calendar_today' },
   { label: 'Ads', href: '/marketing/google-ads', icon: 'monitoring' },
@@ -67,8 +68,9 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
     )) return true
     if (href === '/workflows' && pathname?.startsWith('/workflows')) return true
     if (href === '/prospecting' && (
-      pathname?.startsWith('/prospecting') || pathname?.startsWith('/conversations') || pathname?.startsWith('/dialer')
+      pathname?.startsWith('/prospecting') || pathname?.startsWith('/dialer')
     )) return true
+    if (href === '/conversations' && pathname?.startsWith('/conversations')) return true
     if (href === '/marketing' && pathname?.startsWith('/marketing')) return true
     if (href === '/dashboard' && pathname?.startsWith('/dashboard')) return true
     if (href === '/calendar?view=agenda') return pathname?.startsWith('/calendar') && searchParams.get('view') === 'agenda'

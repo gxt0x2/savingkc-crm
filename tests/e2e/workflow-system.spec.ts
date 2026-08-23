@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test('phone system, workflow registry, AI surface, and dialer navigation are connected', async ({ page }) => {
+test('phone system, workflow registry, AI surface, and canonical workspace navigation are connected', async ({ page }) => {
   test.setTimeout(90_000)
   await page.goto('/workflows')
   await expect(page.getByRole('heading', { name: 'Workflows', exact: true })).toBeVisible()
@@ -16,7 +16,9 @@ test('phone system, workflow registry, AI surface, and dialer navigation are con
   const destinations = await mainNav.getByRole('link').evaluateAll((links) =>
     links.map((link) => link.getAttribute('href')),
   )
-  expect(destinations.indexOf('/dialer')).toBe(destinations.indexOf('/conversations') + 1)
+  expect(destinations).toContain('/prospecting')
+  expect(destinations).toContain('/conversations')
+  expect(destinations).not.toContain('/dialer')
 
   await page.locator('a[href="/workflows?section=phones"]').first().click()
   await expect(page).toHaveURL(/\/workflows\?section=phones/)

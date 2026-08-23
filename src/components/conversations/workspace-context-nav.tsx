@@ -28,24 +28,6 @@ const DASHBOARD_CONTEXT_ITEMS: ContextItem[] = [
 
 const GROUPS: ContextGroup[] = [
   {
-    label: 'Prospecting',
-    pathPrefix: '/prospecting',
-    items: [
-      { label: 'Campaigns', href: '/prospecting', icon: 'campaign', matchPath: '/prospecting' },
-      { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk', matchPath: '/dialer' },
-      { label: 'Inbox', href: '/conversations', icon: 'forum', matchPath: '/conversations' },
-    ],
-  },
-  {
-    label: 'Prospecting',
-    pathPrefix: '/conversations',
-    items: [
-      { label: 'Campaigns', href: '/prospecting', icon: 'campaign', matchPath: '/prospecting' },
-      { label: 'Dialer', href: '/dialer', icon: 'phone_in_talk', matchPath: '/dialer' },
-      { label: 'Inbox', href: '/conversations', icon: 'forum', matchPath: '/conversations' },
-    ],
-  },
-  {
     label: 'Dashboards',
     pathPrefix: '/dashboard',
     items: DASHBOARD_CONTEXT_ITEMS,
@@ -79,17 +61,6 @@ const GROUPS: ContextGroup[] = [
       { label: 'All workflows', href: '/workflows?section=all', icon: 'schema', section: 'all' },
       { label: 'Message templates', href: '/workflows?section=templates', icon: 'mark_email_read', section: 'templates' },
       { label: 'Entity integrity', href: '/workflows?section=entities', icon: 'hub', section: 'entities' },
-    ],
-  },
-  {
-    label: 'Prospecting',
-    pathPrefix: '/dialer',
-    items: [
-      { label: 'Campaigns', href: '/prospecting', icon: 'campaign', matchPath: '/prospecting' },
-      { label: 'Overview', href: '/dialer', icon: 'space_dashboard', section: 'overview' },
-      { label: 'Call queue', href: '/dialer?section=queue', icon: 'format_list_numbered', section: 'queue' },
-      { label: 'Sessions', href: '/dialer?section=sessions', icon: 'play_circle', section: 'sessions' },
-      { label: 'Inbox', href: '/conversations', icon: 'forum', matchPath: '/conversations' },
     ],
   },
   {
@@ -136,7 +107,7 @@ export function WorkspaceContextNav() {
 
   if (!group) return null
 
-  const selectedSection = group.pathPrefix === '/dialer' || group.pathPrefix === '/workflows'
+  const selectedSection = group.pathPrefix === '/workflows'
     ? searchParams.get('section') || 'overview'
     : searchParams.get('view') || ''
 

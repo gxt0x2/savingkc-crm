@@ -315,10 +315,6 @@ async function expectRouteReady(page: Page, route: string) {
     await expect(page.getByText('Loading calendar...', { exact: true })).toHaveCount(0)
     return
   }
-  if (pathname === '/dialer') {
-    await expect(page.getByRole('heading', { name: 'Dialer overview' })).toBeVisible()
-    await expect(page.getByText(contact.fullName, { exact: true }).first()).toBeVisible()
-  }
 }
 
 async function ensureAuthenticated(page: Page) {
@@ -355,7 +351,7 @@ test.afterEach(async ({ page }) => {
   expect(forbiddenRequests.get(page) ?? [], 'Performance runs may not prefetch unselected lead details or external Google fonts').toEqual([])
 })
 
-for (const route of ['/dashboard', '/contacts?list=new', '/prospecting', '/conversations', '/tasks', '/calendar?department=acquisitions', '/dialer']) {
+for (const route of ['/dashboard', '/contacts?list=new', '/prospecting', '/conversations', '/tasks', '/calendar?department=acquisitions']) {
   test(`cold authenticated route is useful in under 1000ms on ${route}`, async ({ page }, testInfo) => {
     test.setTimeout(60_000)
     let startedAt = Date.now()
@@ -466,7 +462,7 @@ test.describe('real iPhone navigation', () => {
     const mobileTransitions = [
       { label: 'Pipeline', href: '/contacts?list=new' },
       { label: 'Prospecting', href: '/prospecting' },
-      { label: 'Task', href: '/tasks' },
+      { label: 'Conversations', href: '/conversations' },
       { label: 'Dashboard', href: '/dashboard' },
     ] as const
     const measured: Array<{ route: string; milliseconds: number }> = []

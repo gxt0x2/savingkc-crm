@@ -228,7 +228,7 @@ function CallSmsView({ report }: { report: OperatingReport }) {
         <NumberedPanel number="4" title="Agent activity"><AgentTableRows report={report} /></NumberedPanel>
         <NumberedPanel number="5" title="Unresolved attention" actionHref="/conversations?reply=needs_reply"><CommunicationAttention report={report} /></NumberedPanel>
       </section>
-      <section className="flex justify-end"><Link href="/dialer" className="crm-primary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-black">Open dialer <Icon name="arrow_forward" /></Link></section>
+      <section className="flex justify-end"><Link href="/prospecting" className="crm-primary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-black">Open Prospecting <Icon name="arrow_forward" /></Link></section>
     </>
   )
 }

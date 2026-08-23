@@ -1,18 +1,16 @@
 import { supabase } from '@/lib/supabase-lazy'
+import {
+  buildCountySavedViews,
+  type CountyPropertyClass,
+  type CountyProspectAudienceRow,
+  type CountySavedViewSummary,
+} from '@/lib/prospecting/county-saved-views'
 
-export type CountyPropertyClass = 'residential' | 'land' | 'unknown'
-
-export interface CountyProspectAudienceRow {
-  delinquency: '2yr' | '3yr_plus'
-  deceased: boolean
-  propertyClass: CountyPropertyClass
-  total: number
-  withPhoneCandidate: number
-  linkedLeads: number
-}
+export type { CountyPropertyClass, CountyProspectAudienceRow } from '@/lib/prospecting/county-saved-views'
 
 export interface CountyProspectAudienceSummary {
   rows: CountyProspectAudienceRow[]
+  savedViews: CountySavedViewSummary[]
   classified: number
   needsPropertyClass: number
   withPhoneCandidate: number
@@ -42,6 +40,7 @@ export async function readCountyProspectAudienceSummary(): Promise<CountyProspec
 
   return {
     rows,
+    savedViews: buildCountySavedViews(rows),
     classified: rows.filter((row) => row.propertyClass !== 'unknown').reduce((sum, row) => sum + row.total, 0),
     needsPropertyClass: rows.filter((row) => row.propertyClass === 'unknown').reduce((sum, row) => sum + row.total, 0),
     withPhoneCandidate: rows.reduce((sum, row) => sum + row.withPhoneCandidate, 0),

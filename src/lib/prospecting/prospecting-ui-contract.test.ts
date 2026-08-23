@@ -10,6 +10,9 @@ const contacts = readFileSync(join(process.cwd(), 'src/app/(app)/contacts/page.t
 const navigation = readFileSync(join(process.cwd(), 'src/components/layout/nav-tab.tsx'), 'utf8')
 const appShell = readFileSync(join(process.cwd(), 'src/components/layout/app-shell.tsx'), 'utf8')
 const workspaceNavigation = readFileSync(join(process.cwd(), 'src/components/conversations/workspace-nav.tsx'), 'utf8')
+const contextNavigation = readFileSync(join(process.cwd(), 'src/components/conversations/workspace-context-nav.tsx'), 'utf8')
+const dialerPage = readFileSync(join(process.cwd(), 'src/app/(app)/dialer/page.tsx'), 'utf8')
+const dialerRouteGate = readFileSync(join(process.cwd(), 'src/components/dialer/dialer-route-gate.tsx'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
@@ -53,12 +56,17 @@ describe('prospecting workspace UI contract', () => {
     expect(studio).toContain('Saving does not activate it')
   })
 
-  it('consolidates Dialer and Conversations under Prospecting navigation', () => {
+  it('keeps Prospecting self-contained while Conversations remains a first-class workspace', () => {
     expect(navigation).toContain("{ label: 'Prospecting', href: '/prospecting'")
+    expect(navigation).toContain("{ label: 'Conversations', href: '/conversations', icon: 'forum' }")
     expect(navigation).not.toContain("{ label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },\n  { label: 'Ads'")
     expect(appShell).toContain("pathname?.startsWith('/prospecting')")
-    expect(workspaceNavigation).toContain("{ label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer', '/conversations'] }")
-    expect(workspaceNavigation).not.toContain("{ label: 'Conversations', icon: 'forum'")
+    expect(workspaceNavigation).toContain("{ label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer'] }")
+    expect(workspaceNavigation).toContain("{ label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] }")
     expect(workspaceNavigation).not.toContain("{ label: 'Dialer', icon: 'dialpad'")
+    expect(contextNavigation).not.toContain("pathPrefix: '/prospecting'")
+    expect(contextNavigation).not.toContain("pathPrefix: '/dialer'")
+    expect(dialerPage).toContain('<DialerRouteGate><DialerPageInner /></DialerRouteGate>')
+    expect(dialerRouteGate).toContain("if (!hasExecutionContext) router.replace('/prospecting')")
   })
 })
