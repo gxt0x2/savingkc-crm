@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync('src/app/(app)/leads/[id]/page.tsx', 'utf8')
+const addNoteSource = readFileSync('src/components/leads/add-note.tsx', 'utf8')
+const smsComposerSource = readFileSync('src/components/leads/sms-compose-modal.tsx', 'utf8')
 
 describe('lead workspace retirement boundary', () => {
   it('keeps the canonical workspace and removes the unreachable legacy cockpit', () => {
@@ -32,5 +34,13 @@ describe('lead workspace retirement boundary', () => {
     ]
 
     for (const file of retiredFiles) expect(existsSync(file)).toBe(false)
+  })
+
+  it('routes active note and SMS-history access through authenticated server APIs', () => {
+    expect(addNoteSource).toContain("fetch(`/api/leads/${leadId}/activities`")
+    expect(smsComposerSource).toContain("fetch(`/api/leads/${lead.id}/activities?limit=100`")
+    expect(addNoteSource).not.toContain('@/lib/supabase/client')
+    expect(smsComposerSource).not.toContain('@/lib/supabase/client')
+    expect(smsComposerSource).not.toContain(".from('lead_activities')")
   })
 })

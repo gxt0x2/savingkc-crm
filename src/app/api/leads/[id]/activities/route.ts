@@ -3,12 +3,16 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
+    if (unauthorized) return unauthorized
+
     const { id } = await params
     const limitParam = parseInt(req.nextUrl.searchParams.get('limit') || '50', 10)
     const limit = Math.min(Math.max(limitParam, 1), 100)

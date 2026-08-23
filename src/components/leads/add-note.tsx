@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { createClient } from '@/lib/supabase/client'
 
 interface AddNoteProps {
   leadId: string
@@ -18,30 +17,26 @@ interface AddNoteProps {
 export function AddNote({ leadId, onNoteAdded, alwaysExpanded, hideHeading, hideCancel }: AddNoteProps) {
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(!!alwaysExpanded)
 
   async function handleSubmit() {
     if (!content.trim()) return
     setSaving(true)
+    setError(null)
 
-    const supabase = createClient()
-    const now = new Date().toISOString()
-
-    const { data, error } = await supabase
-      .from('lead_activities')
-      .insert({
-        lead_id: leadId,
-        activity_type: 'note',
-        description: content.trim(),
-        agent: 'User',
-        metadata: { source: 'manual_note' },
-        created_at: now,
+    try {
+      const response = await fetch(`/api/leads/${leadId}/activities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: content.trim() }),
       })
-      .select('id, activity_type, description, agent, metadata, created_at')
-      .single()
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload.activity) {
+        throw new Error(payload.error || 'Unable to save note')
+      }
 
-    if (!error && data) {
-      onNoteAdded(data as { id: string; activity_type: string; description: string; agent: string; metadata: Record<string, unknown> | null; created_at: string })
+      onNoteAdded(payload.activity as { id: string; activity_type: string; description: string; agent: string; metadata: Record<string, unknown> | null; created_at: string })
 
       // Trigger manifest update + briefing refresh via server API
       fetch('/api/leads', {
@@ -59,9 +54,11 @@ export function AddNote({ leadId, onNoteAdded, alwaysExpanded, hideHeading, hide
 
       setContent('')
       setExpanded(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save note')
+    } finally {
+      setSaving(false)
     }
-
-    setSaving(false)
   }
 
   if (!expanded) {
@@ -100,6 +97,11 @@ export function AddNote({ leadId, onNoteAdded, alwaysExpanded, hideHeading, hide
         }}
         rows={4}
       />
+      {error && (
+        <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ck-accent-bright)' }}>
+          {error}
+        </p>
+      )}
       <div className="flex justify-end gap-2 mt-3">
         {!hideCancel && (
           <button
