@@ -4,6 +4,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { ensureTcFileForSignedAssignment } from '@/lib/tc'
+import { recordAssignmentToTcHandoff } from '@/lib/server/crm-operating-handoffs'
 
 function sharedSecretsMatch(supplied: string, expected: string): boolean {
   const suppliedBytes = Buffer.from(supplied, 'utf8')
@@ -66,8 +67,16 @@ export async function POST(req: NextRequest) {
           .eq('assignment_submission_id', String(submissionId))
 
         if (updates.assignment_signed_at) {
-          await ensureTcFileForSignedAssignment(db, String(submissionId)).catch((err) => {
-            console.error('[docuseal webhook] TC file sync failed:', err)
+          const tcFile = await ensureTcFileForSignedAssignment(db, String(submissionId))
+          if (!tcFile?.buyer_offer_id) throw new Error('Signed assignment could not be linked to its TC file')
+          await recordAssignmentToTcHandoff({
+            commandId: tcFile.id,
+            leadId: tcFile.lead_id,
+            buyerOfferId: tcFile.buyer_offer_id,
+            tcFileId: tcFile.id,
+            evidenceReference: String(submissionId),
+            actorEmail: 'docuseal@savingkc.system',
+            actorName: 'DocuSeal',
           })
         }
       }

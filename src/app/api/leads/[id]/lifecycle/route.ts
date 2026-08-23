@@ -66,6 +66,15 @@ export async function POST(
   if (action === 'transition' && !stage) {
     return NextResponse.json({ success: false, error: 'Choose a valid lifecycle stage' }, { status: 400 })
   }
+  if (stage === 'closed_won' || stage === 'closed_lost') {
+    return NextResponse.json({
+      success: false,
+      error: stage === 'closed_won'
+        ? 'Use funded transaction closeout to mark an opportunity Closed Won.'
+        : 'Use the verified fallout workflow to mark an opportunity Closed Lost.',
+      code: 'governed_closeout_required',
+    }, { status: 409 })
+  }
 
   let owner = action === 'assign'
     ? body.owner === null ? null : cleanText(body.owner)

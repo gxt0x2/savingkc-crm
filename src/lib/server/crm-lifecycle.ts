@@ -102,7 +102,7 @@ export async function applyCrmLifecycleCommand(input: {
   deadReason: string | null
   deadReasonNotes: string | null
   reason: string | null
-  evidenceType: 'seller_contract_signed' | null
+  evidenceType: 'seller_contract_signed' | 'funding_confirmed' | 'verified_fallout' | null
   evidenceReference: string | null
   actorEmail: string
   actorName: string

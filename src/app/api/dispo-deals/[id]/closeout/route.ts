@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { finalizeFundedClose } from '@/lib/server/crm-operating-handoffs'
 import {
   buildFundingMetrics,
   nextBusinessDayDueAt,
@@ -11,26 +13,6 @@ import {
   type DebriefInput,
   type FundingCloseoutInput,
 } from '@/lib/dispo/closeout'
-
-let columnsReady = false
-
-async function ensureCloseoutColumns() {
-  if (columnsReady) return
-  const db = supabaseAdmin()
-  const statements = [
-    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS closeout_status text NOT NULL DEFAULT 'not_started'`,
-    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS closeout jsonb NOT NULL DEFAULT '{}'::jsonb`,
-    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS closed_at timestamptz`,
-    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS debrief_due_at timestamptz`,
-    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS debrief_completed_at timestamptz`,
-    `ALTER TABLE dispo_deals ADD COLUMN IF NOT EXISTS archived_at timestamptz`,
-  ]
-  for (const sql of statements) {
-    const { error } = await db.rpc('exec_sql', { sql_query: sql })
-    if (error) throw new Error(`Could not prepare close-out fields: ${error.message}`)
-  }
-  columnsReady = true
-}
 
 function money(value: unknown): number {
   if (typeof value === 'number') return value
@@ -72,7 +54,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await ensureCloseoutColumns()
+    const actor = await resolveAuthenticatedActor()
+    if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
     const body = await req.json()
     const action = cleanText(body.action)
@@ -113,7 +96,7 @@ export async function POST(
         settlementStatementVerified: body.settlementStatementVerified === true,
         fundingConfirmed: body.fundingConfirmed === true,
         notes: cleanText(body.notes) || null,
-        recordedBy: cleanText(body.recordedBy) || lead?.assigned_agent || 'Unassigned',
+        recordedBy: actor.name,
       }
       const errors = validateFundingCloseout(input)
       if (errors.length > 0) return NextResponse.json({ error: errors[0], errors }, { status: 400 })
@@ -143,29 +126,20 @@ export async function POST(
         },
       }
 
-      const { data: deal, error: updateError } = await db
-        .from('dispo_deals')
-        .update({
-          stage: 'closed',
-          assignment_fee: input.finalAssignmentFee,
-          close_date: input.fundedAt.slice(0, 10),
-          closeout_status: 'awaiting_debrief',
-          closeout,
-          closed_at: input.fundedAt,
-          debrief_due_at: debriefDueAt,
-          archived_at: null,
-          updated_at: recordedAt,
-        })
-        .eq('id', id)
-        .select('*')
-        .single()
+      const finalized = await finalizeFundedClose({
+        dealId: id,
+        closeout,
+        fundedAt: input.fundedAt,
+        assignmentFee: input.finalAssignmentFee,
+        closeDate: input.fundedAt.slice(0, 10),
+        debriefDueAt,
+        actorEmail: actor.email,
+        actorName: actor.name,
+        netRevenue: metrics.netRevenue,
+      })
+      const deal = finalized.deal
 
-      if (updateError) throw new Error(updateError.message)
-
-      await Promise.all([
-        db.from('deal_pages').update({ is_active: false, updated_at: recordedAt }).eq('lead_id', current.lead_id),
-        db.from('tc_files').update({ status: 'closed', next_action: null, updated_at: recordedAt }).eq('dispo_deal_id', id),
-      ])
+      await db.from('deal_pages').update({ is_active: false, updated_at: recordedAt }).eq('lead_id', current.lead_id)
 
       if (firstCloseout) {
         await Promise.all([
@@ -242,7 +216,7 @@ export async function POST(
         friction: cleanText(body.friction),
         lesson: cleanText(body.lesson),
         processChange: cleanText(body.processChange),
-        completedBy: cleanText(body.completedBy) || lead?.assigned_agent || 'Unassigned',
+        completedBy: actor.name,
       }
       const errors = validateDebrief(input)
       if (errors.length > 0) return NextResponse.json({ error: errors[0], errors }, { status: 400 })

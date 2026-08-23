@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   timingSafeEqual: vi.fn(),
   supabaseAdmin: vi.fn(),
   ensureTcFileForSignedAssignment: vi.fn(),
+  recordAssignmentToTcHandoff: vi.fn(),
   from: vi.fn(),
   update: vi.fn(),
   eq: vi.fn(),
@@ -20,6 +21,9 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/tc', () => ({
   ensureTcFileForSignedAssignment: mocks.ensureTcFileForSignedAssignment,
+}))
+vi.mock('@/lib/server/crm-operating-handoffs', () => ({
+  recordAssignmentToTcHandoff: mocks.recordAssignmentToTcHandoff,
 }))
 
 import { POST } from './route'
@@ -50,7 +54,12 @@ describe('DocuSeal webhook authentication', () => {
     mocks.update.mockReturnValue({ eq: mocks.eq })
     mocks.from.mockReturnValue({ update: mocks.update })
     mocks.supabaseAdmin.mockReturnValue({ from: mocks.from })
-    mocks.ensureTcFileForSignedAssignment.mockResolvedValue(null)
+    mocks.ensureTcFileForSignedAssignment.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      lead_id: '22222222-2222-4222-8222-222222222222',
+      buyer_offer_id: '33333333-3333-4333-8333-333333333333',
+    })
+    mocks.recordAssignmentToTcHandoff.mockResolvedValue({ handoffId: 'handoff-1', status: 'accepted' })
   })
 
   afterEach(() => {
@@ -99,5 +108,11 @@ describe('DocuSeal webhook authentication', () => {
       expect.objectContaining({ from: mocks.from }),
       '123',
     )
+    expect(mocks.recordAssignmentToTcHandoff).toHaveBeenCalledWith(expect.objectContaining({
+      commandId: '11111111-1111-4111-8111-111111111111',
+      buyerOfferId: '33333333-3333-4333-8333-333333333333',
+      evidenceReference: '123',
+      actorName: 'DocuSeal',
+    }))
   })
 })
