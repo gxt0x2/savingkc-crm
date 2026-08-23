@@ -36,6 +36,7 @@ describe('TaskReconciliationStrip', () => {
         workItems: {
           overdue: 175,
           overdueCurrent: 120,
+          overdueOperatorCurrent: 11,
           overdueTerminal: 50,
           overdueUnlinked: 5,
           leadsWithMultipleActive: 18,
@@ -50,7 +51,7 @@ describe('TaskReconciliationStrip', () => {
     render(<TaskReconciliationStrip />)
     const region = screen.getByRole('region', { name: 'Task backlog health' })
     expect(region).toHaveTextContent('20 active opportunities')
-    expect(region).toHaveTextContent('Current overdue120')
+    expect(region).toHaveTextContent('Current overdue11')
     expect(region).toHaveTextContent('of 20 active opportunities')
     const missingPrimaryLink = screen.getByRole('link', { name: 'Review 7 missing primary' })
     expect(missingPrimaryLink).toHaveTextContent('Missing primary')
@@ -74,6 +75,7 @@ describe('TaskReconciliationStrip', () => {
         workItems: {
           overdue: 175,
           overdueCurrent: 41,
+          overdueOperatorCurrent: 11,
           overdueTerminal: 131,
           overdueUnlinked: 3,
           leadsWithMultipleActive: 45,
@@ -86,7 +88,7 @@ describe('TaskReconciliationStrip', () => {
     })
     render(<TaskReconciliationStrip />)
     const region = screen.getByRole('region', { name: 'Task backlog health' })
-    expect(region).toHaveTextContent('Current overdue41')
+    expect(region).toHaveTextContent('Current overdue11')
     expect(screen.getByRole('link', { name: 'Review 5 missing primary' })).toHaveTextContent('5')
     expect(region).toHaveTextContent('Multiple primary1')
     expect(region).not.toHaveTextContent('Task integrity')

@@ -32,6 +32,7 @@ describe('summarizeOperationalReconciliation', () => {
       active: 4,
       overdue: 4,
       overdueCurrent: 2,
+      overdueOperatorCurrent: 2,
       overdueTerminal: 1,
       overdueUnlinked: 1,
       leadsWithMultipleActive: 1,

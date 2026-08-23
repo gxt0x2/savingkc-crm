@@ -59,7 +59,7 @@ export function TaskReconciliationStrip() {
         <span className="text-xs font-semibold text-[var(--crm-text-muted)]">{data.workItems.activeOpportunities.toLocaleString()} active opportunities</span>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
-        <Metric label="Current overdue" value={data.workItems.overdueCurrent} note="operator work past due" tone={data.workItems.overdueCurrent > 0 ? 'warning' : 'default'} />
+        <Metric label="Current overdue" value={data.workItems.overdueOperatorCurrent} note="operator work past due" tone={data.workItems.overdueOperatorCurrent > 0 ? 'warning' : 'default'} />
         <Metric label="Missing primary" value={data.workItems.opportunitiesWithNoPrimary} note={`of ${data.workItems.activeOpportunities} active opportunities`} tone={data.workItems.opportunitiesWithNoPrimary > 0 ? 'warning' : 'default'} href={data.workItems.opportunitiesWithNoPrimary > 0 ? '/contacts?list=all&gap=missing_next_action' : undefined} />
         <Metric label="Multiple primary" value={data.workItems.opportunitiesWithMultiplePrimary} note="active opportunities with more than one" tone={data.workItems.opportunitiesWithMultiplePrimary > 0 ? 'warning' : 'default'} />
       </div>
