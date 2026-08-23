@@ -11,7 +11,18 @@ describe('lead disposition commands', () => {
         notes: 'Call tomorrow',
         phone: '8165550100',
         appointmentAt: null,
+        clientAttemptId: null,
       },
+    })
+  })
+
+  it('keeps the durable dialer attempt identity for retry-safe evidence writes', () => {
+    expect(buildLeadDispositionCommand({
+      disposition: 'no_answer',
+      clientAttemptId: ' attempt-123 ',
+    })).toMatchObject({
+      ok: true,
+      command: { clientAttemptId: 'attempt-123' },
     })
   })
 
