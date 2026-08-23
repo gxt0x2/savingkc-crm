@@ -1,7 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
+import { buildLeadProfilePatch } from '@/lib/server/lead-profile-command'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 type JsonRecord = Record<string, unknown>
@@ -166,6 +169,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const unauthorized = await requireAuthenticatedUser({ success: false, error: 'Unauthorized' })
+  if (unauthorized) return unauthorized
+
   const { id } = await params
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
@@ -234,4 +240,42 @@ export async function GET(
     nextAppointment,
     entityContext,
   })
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const actor = await resolveAuthenticatedActor()
+  if (!actor) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  if (!id) return NextResponse.json({ success: false, error: 'Contact id is required' }, { status: 400 })
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const command = buildLeadProfilePatch(body)
+  if (!command.ok) {
+    return NextResponse.json({ success: false, error: command.error }, { status: 400 })
+  }
+
+  const { data, error } = await supabaseAdmin()
+    .from('leads')
+    .update({ ...command.patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle()
+
+  if (error) {
+    console.error('[leads/:id] profile update failed:', error.message)
+    return NextResponse.json({ success: false, error: 'Contact could not be saved' }, { status: 500 })
+  }
+  if (!data) return NextResponse.json({ success: false, error: 'Contact not found' }, { status: 404 })
+
+  return NextResponse.json({ success: true, lead: data })
 }

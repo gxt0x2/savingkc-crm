@@ -218,10 +218,10 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
     setSaving(true)
     setSaveError(null)
     try {
-      const res = await fetch('/api/leads', {
+      const res = await fetch(`/api/leads/${lead.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: lead.id, ...form }),
+        body: JSON.stringify({ kind: 'profile', profile: form }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
