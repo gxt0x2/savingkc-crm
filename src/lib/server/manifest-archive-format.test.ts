@@ -7,6 +7,7 @@ import {
   MANIFEST_ARCHIVE_FORMAT,
   archiveLine,
   assertExternalArchiveDestination,
+  assertExpectedSupabaseProject,
   createArchiveDigest,
   stableJson,
   validateArchiveReceipt,
@@ -37,6 +38,13 @@ describe('Manifest archive format', () => {
       'outside the Git repository',
     )
     expect(assertExternalArchiveDestination('/secure/crm-archive', '/workspace/crm')).toBe('/secure/crm-archive')
+  })
+
+  it('binds an export to the explicitly reviewed Supabase project', () => {
+    expect(assertExpectedSupabaseProject('https://abcdefgh.supabase.co', 'abcdefgh')).toBe('abcdefgh')
+    expect(() => assertExpectedSupabaseProject('https://abcdefgh.supabase.co', 'different')).toThrow(
+      'does not match --project-ref',
+    )
   })
 
   it('validates the two-table checksum receipt', () => {
@@ -100,7 +108,7 @@ describe('Manifest archive format', () => {
   it('fails before credentials when asked to export into the repository', () => {
     const result = spawnSync(
       process.execPath,
-      ['scripts/archive/export-manifest-history.mjs', '--output-dir', process.cwd()],
+      ['scripts/archive/export-manifest-history.mjs', '--output-dir', process.cwd(), '--project-ref', 'abcdefgh'],
       {
         cwd: process.cwd(),
         encoding: 'utf8',

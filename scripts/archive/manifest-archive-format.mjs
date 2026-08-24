@@ -50,6 +50,18 @@ export function assertExternalArchiveDestination(outputDirectory, repositoryRoot
   return output
 }
 
+export function assertExpectedSupabaseProject(sourceUrl, expectedProjectRef) {
+  if (!/^[a-z0-9]{8,32}$/.test(expectedProjectRef)) {
+    throw new Error('--project-ref must be a valid Supabase project reference.')
+  }
+  const host = new URL(sourceUrl).hostname
+  const actualProjectRef = host.endsWith('.supabase.co') ? host.slice(0, -'.supabase.co'.length) : null
+  if (!actualProjectRef || actualProjectRef !== expectedProjectRef) {
+    throw new Error('Configured Supabase URL does not match --project-ref.')
+  }
+  return actualProjectRef
+}
+
 export function validateArchiveReceipt(receipt) {
   if (!receipt || receipt.format !== MANIFEST_ARCHIVE_FORMAT) {
     throw new Error(`Archive receipt must use ${MANIFEST_ARCHIVE_FORMAT}.`)

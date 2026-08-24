@@ -18,6 +18,7 @@ import {
   MANIFEST_ARCHIVE_FORMAT,
   archiveLine,
   assertExternalArchiveDestination,
+  assertExpectedSupabaseProject,
   createArchiveDigest,
   stableJson,
 } from './manifest-archive-format.mjs'
@@ -38,11 +39,6 @@ function requiredOption(name) {
 
 function safeTimestamp() {
   return new Date().toISOString().replaceAll(':', '').replaceAll('.', '')
-}
-
-function sourceProjectRef(sourceUrl) {
-  const host = new URL(sourceUrl).hostname
-  return host.endsWith('.supabase.co') ? host.slice(0, -'.supabase.co'.length) : 'custom-supabase-host'
 }
 
 async function exactCount(supabase, table) {
@@ -114,6 +110,7 @@ async function main() {
   const sourceUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!sourceUrl || !serviceKey) throw new Error('Supabase URL and service credential are required.')
+  const projectRef = assertExpectedSupabaseProject(sourceUrl, requiredOption('--project-ref'))
 
   const archiveDirectory = join(outputParent, `savingkc-manifest-archive-${safeTimestamp()}`)
   mkdirSync(archiveDirectory, { mode: 0o700 })
@@ -132,7 +129,7 @@ async function main() {
     const receipt = {
       format: MANIFEST_ARCHIVE_FORMAT,
       generatedAt: new Date().toISOString(),
-      sourceProjectRef: sourceProjectRef(sourceUrl),
+      sourceProjectRef: projectRef,
       tables,
     }
     writeFileSync(join(archiveDirectory, 'receipt.json'), `${stableJson(receipt)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
