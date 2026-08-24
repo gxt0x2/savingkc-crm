@@ -54,6 +54,57 @@ export interface CrmEntityHealth {
   projectionCoverage: number
 }
 
+export type CrmEntityAuthority = 'canonical_entities' | 'lead_compatibility'
+
+type CompatibilityLeadProfile = Record<string, unknown> & {
+  full_name?: string | null
+  phone?: string | null
+  email?: string | null
+  property_address?: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+  station?: string | null
+  classification?: string | null
+  priority?: string | null
+  assigned_agent?: string | null
+}
+
+/**
+ * Makes the normalized entity projection authoritative for the contact-workspace
+ * fields it owns. The compatibility lead remains an explicit fallback while the
+ * wider Manifest/lead cutover is still in progress.
+ */
+export function applyCrmEntityAuthority<T extends CompatibilityLeadProfile>(
+  lead: T,
+  context: CrmEntityContext,
+): T & { entityAuthority: CrmEntityAuthority } {
+  if (!context.available || !context.linked || context.degraded || !context.person || !context.opportunity) {
+    return { ...lead, entityAuthority: 'lead_compatibility' }
+  }
+
+  const primaryPhone = context.contactMethods.find((method) => method.type === 'phone' && method.isPrimary)
+    ?? context.contactMethods.find((method) => method.type === 'phone')
+  const primaryEmail = context.contactMethods.find((method) => method.type === 'email' && method.isPrimary)
+    ?? context.contactMethods.find((method) => method.type === 'email')
+
+  return {
+    ...lead,
+    full_name: context.person.displayName,
+    phone: primaryPhone?.value ?? lead.phone ?? null,
+    email: primaryEmail?.value ?? lead.email ?? null,
+    property_address: context.property?.address ?? lead.property_address ?? null,
+    city: context.property?.city ?? lead.city ?? null,
+    state: context.property?.state ?? lead.state ?? null,
+    zip: context.property?.zip ?? lead.zip ?? null,
+    station: context.opportunity.stage,
+    classification: context.opportunity.classification,
+    priority: context.opportunity.priority,
+    assigned_agent: context.opportunity.ownerName,
+    entityAuthority: 'canonical_entities',
+  }
+}
+
 function unavailableContext(): CrmEntityContext {
   return {
     available: false,
