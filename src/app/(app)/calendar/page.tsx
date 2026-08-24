@@ -225,7 +225,7 @@ function CalendarContent() {
             setEditingTask(null)
             window.location.reload()
           }}
-          onDeleted={() => {
+          onCancelled={() => {
             setEditingTask(null)
             window.location.reload()
           }}

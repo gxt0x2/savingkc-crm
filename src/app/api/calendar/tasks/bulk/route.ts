@@ -6,7 +6,7 @@ import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { transitionWorkItemsBulk, WorkItemError, type WorkItemPatch } from '@/lib/server/work-items'
 
-type BulkTaskAction = 'complete' | 'reopen' | 'assign' | 'delete'
+type BulkTaskAction = 'complete' | 'reopen' | 'assign' | 'cancel'
 
 export async function POST(req: NextRequest) {
   const actor = await resolveAuthenticatedActor()
@@ -26,22 +26,20 @@ export async function POST(req: NextRequest) {
 
   if (ids.length === 0) return NextResponse.json({ success: false, error: 'Select at least one task' }, { status: 400 })
   if (ids.length > 200) return NextResponse.json({ success: false, error: 'Select no more than 200 tasks' }, { status: 400 })
-  if (!['complete', 'reopen', 'assign', 'delete'].includes(action)) {
+  if (!['complete', 'reopen', 'assign', 'cancel'].includes(action)) {
     return NextResponse.json({ success: false, error: 'Unsupported bulk task action' }, { status: 400 })
   }
 
   const patch: WorkItemPatch = {}
-  let canonicalAction: 'complete' | 'reopen' | 'cancel' | 'edit' = action === 'delete'
-    ? 'cancel'
-    : action === 'assign'
-      ? 'edit'
-      : action
+  let canonicalAction: 'complete' | 'reopen' | 'cancel' | 'edit' = action === 'assign'
+    ? 'edit'
+    : action
   if (action === 'assign') {
     const requestedAssignee = body.assignedTo === null || typeof body.assignedTo === 'string' ? body.assignedTo : undefined
     if (requestedAssignee === undefined) {
       return NextResponse.json({ success: false, error: 'Choose an assignee' }, { status: 400 })
     }
-    const assignment = resolveTaskAssignee(requestedAssignee, actor.name, { defaultToActor: false })
+    const assignment = resolveTaskAssignee(requestedAssignee, actor.name, { defaultToActor: false, allowUnassigned: true })
     if (!assignment.authorized) {
       return NextResponse.json({ success: false, error: 'Task assignee is not authorized' }, { status: 403 })
     }

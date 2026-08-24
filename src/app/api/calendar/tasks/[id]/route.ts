@@ -49,7 +49,7 @@ export async function PATCH(
     ...(patch.status !== undefined ? { status: patch.status } : {}),
   }
   if (patch.assignedTo !== undefined) {
-    const assignment = resolveTaskAssignee(patch.assignedTo, actor.name, { defaultToActor: false })
+    const assignment = resolveTaskAssignee(patch.assignedTo, actor.name, { defaultToActor: false, allowUnassigned: true })
     if (!assignment.authorized) {
       return NextResponse.json({ success: false, error: 'Task assignee is not authorized' }, { status: 403 })
     }

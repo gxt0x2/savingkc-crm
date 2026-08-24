@@ -1183,7 +1183,7 @@ export default function LeadDetailPage() {
             )
             refreshAll()
           }}
-          onDeleted={(taskId) => {
+          onCancelled={(taskId) => {
             // Remove from local state
             setActivities((prev) => prev.filter((a) => a.id !== taskId))
             refreshAll()

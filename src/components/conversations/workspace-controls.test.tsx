@@ -469,7 +469,10 @@ describe('rebuilt conversation workspace controls', () => {
     expect(screen.getByRole('button', { name: 'Assign to Casey' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Complete next action' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads/tasks/task-1', expect.objectContaining({ method: 'PATCH' })))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/calendar/tasks/task-1', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'completed' }),
+    })))
   })
 
   it('keeps mutation errors visible on a resolved thread with no next action', async () => {
@@ -568,5 +571,34 @@ describe('rebuilt conversation workspace controls', () => {
     })))
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('edits a next action through the canonical work-item service', async () => {
+    const onSaved = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, taskId: 'activity:task-1' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<NextActionDialog
+      leadId="lead-1"
+      leadName="Marcus Johnson"
+      action={{ id: 'task-1', title: 'Call seller', dueAt: '2026-08-24T15:00:00.000Z', owner: 'Casey', overdue: false }}
+      defaultOwner={null}
+      onClose={() => {}}
+      onSaved={onSaved}
+    />)
+
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'Call seller with revised offer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save action' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/calendar/tasks/task-1', expect.objectContaining({
+      method: 'PATCH',
+      body: expect.stringContaining('"assignedTo":"Casey"'),
+    })))
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
+    expect(requestBody).not.toHaveProperty('taskType')
+    expect(onSaved).toHaveBeenCalledOnce()
   })
 })

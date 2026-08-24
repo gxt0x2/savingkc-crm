@@ -18,8 +18,8 @@ type TaskDueFilter = 'any' | 'no_due' | 'seven_days' | 'thirty_days'
 type TaskTypeFilter = 'any' | 'follow_up' | 'callback' | 'appointment' | 'offer' | 'general'
 type TaskSort = 'due_asc' | 'due_desc' | 'newest' | 'title'
 type ToolbarMenu = 'filters' | 'sort' | null
-type BulkAction = '' | 'complete' | 'reopen' | 'delete' | `assign:${string}`
-type DeleteRequest = { kind: 'single' | 'bulk'; ids: string[]; label: string }
+type BulkAction = '' | 'complete' | 'reopen' | 'cancel' | `assign:${string}`
+type CancelRequest = { kind: 'single' | 'bulk'; ids: string[]; label: string }
 
 const PAGE_SIZE = 20
 const EMPTY_TASKS: Task[] = []
@@ -87,7 +87,7 @@ export default function TasksPage() {
   const [newTaskOpen, setNewTaskOpen] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
-  const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null)
+  const [cancelRequest, setCancelRequest] = useState<CancelRequest | null>(null)
   const [pagination, setPagination] = useState<{ key: string; cursors: Array<string | null> }>({ key: '', cursors: [null] })
   const [now] = useState(() => Date.now())
 
@@ -240,8 +240,8 @@ export default function TasksPage() {
   async function applyBulkAction() {
     if (!bulkAction || selectedIds.size === 0) return
     const ids = [...selectedIds]
-    if (bulkAction === 'delete') {
-      setDeleteRequest({ kind: 'bulk', ids, label: `${ids.length} selected tasks` })
+    if (bulkAction === 'cancel') {
+      setCancelRequest({ kind: 'bulk', ids, label: `${ids.length} selected tasks` })
       return
     }
 
@@ -288,10 +288,10 @@ export default function TasksPage() {
     }
   }
 
-  async function confirmDelete() {
-    if (!deleteRequest) return
-    const request = deleteRequest
-    setDeleteRequest(null)
+  async function confirmCancel() {
+    if (!cancelRequest) return
+    const request = cancelRequest
+    setCancelRequest(null)
     setMessage(null)
     if (request.kind === 'single') setBusyIds((current) => new Set(current).add(request.ids[0]))
     else setBulkSaving(true)
@@ -303,18 +303,18 @@ export default function TasksPage() {
         : await fetch('/api/calendar/tasks/bulk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: request.ids, action: 'delete' }),
+            body: JSON.stringify({ ids: request.ids, action: 'cancel' }),
           })
       const payload = await response.json()
-      if (!response.ok || !payload.success) throw new Error(payload.error || 'Task deletion failed')
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Task cancellation failed')
       setSelectedIds((current) => new Set([...current].filter((id) => !request.ids.includes(id))))
       setSelectedTaskId(null)
-      setMessage({ tone: 'success', text: `${request.ids.length} task${request.ids.length === 1 ? '' : 's'} deleted.` })
+      setMessage({ tone: 'success', text: `${request.ids.length} task${request.ids.length === 1 ? '' : 's'} cancelled. Audit history was retained.` })
       setBulkAction('')
       await refreshWorklist()
     } catch (mutationError) {
       setHiddenTaskIds((current) => new Set([...current].filter((id) => !request.ids.includes(id))))
-      setMessage({ tone: 'error', text: mutationError instanceof Error ? mutationError.message : 'Task deletion failed' })
+      setMessage({ tone: 'error', text: mutationError instanceof Error ? mutationError.message : 'Task cancellation failed' })
     } finally {
       if (request.kind === 'single') {
         setBusyIds((current) => {
@@ -400,7 +400,7 @@ export default function TasksPage() {
                 {ASSIGNEES.map((name) => <option key={name} value={`assign:${name}`}>Assign to {name}</option>)}
                 <option value="assign:">Set unassigned</option>
               </optgroup>
-              <option value="delete">Delete tasks…</option>
+              <option value="cancel">Cancel tasks…</option>
             </select>
             <button type="button" onClick={() => void applyBulkAction()} disabled={!bulkAction || bulkSaving} className="crm-primary-button h-9 rounded-lg px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45">{bulkSaving ? 'Applying…' : 'Apply'}</button>
             <button type="button" onClick={() => { setSelectedIds(new Set()); setBulkAction('') }} disabled={bulkSaving} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-bold">Clear selection</button>
@@ -429,7 +429,7 @@ export default function TasksPage() {
                 <span className="min-w-0">{task.contact_id ? <Link href={`/leads/${task.contact_id}`} prefetch={false} className="block truncate font-bold text-[var(--crm-info)] hover:underline">{name}</Link> : <strong className="block truncate text-[var(--crm-text-muted)]">{name}</strong>}<small className="mt-0.5 block truncate text-[var(--crm-text-muted)]">{task.property_address || 'No property linked'}</small></span>
                 <span className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--crm-info-soft)] text-[10px] font-black text-[var(--crm-info)]">{assigneeInitials(task.assigned_to)}</span><span className="truncate font-semibold">{task.assigned_to || 'Unassigned'}</span></span>
                 <span className={`flex items-center gap-1.5 font-semibold ${overdue ? 'text-[var(--crm-danger)]' : completed ? 'text-[var(--crm-success)]' : 'text-[var(--crm-text)]'}`}><Icon name={completed ? 'check_circle' : overdue ? 'error' : 'event'} className="text-[16px]" />{dueLabel(task)}</span>
-                <span className="flex justify-end gap-1"><button type="button" onClick={() => setEditingTaskId(task.id)} aria-label={`Edit ${task.title}`} title="Edit task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="edit" className="text-[17px]" /></button><button type="button" onClick={() => setDeleteRequest({ kind: 'single', ids: [task.id], label: task.title })} aria-label={`Delete ${task.title}`} title="Delete task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg hover:!border-[var(--crm-danger-border)] hover:!bg-[var(--crm-danger-soft)] hover:!text-[var(--crm-danger)]"><Icon name="delete" className="text-[17px]" /></button></span>
+                <span className="flex justify-end gap-1"><button type="button" onClick={() => setEditingTaskId(task.id)} aria-label={`Edit ${task.title}`} title="Edit task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg"><Icon name="edit" className="text-[17px]" /></button><button type="button" onClick={() => setCancelRequest({ kind: 'single', ids: [task.id], label: task.title })} aria-label={`Cancel ${task.title}`} title="Cancel task" className="crm-icon-button flex h-8 w-8 items-center justify-center rounded-lg hover:!border-[var(--crm-danger-border)] hover:!bg-[var(--crm-danger-soft)] hover:!text-[var(--crm-danger)]"><Icon name="cancel" className="text-[17px]" /></button></span>
               </div>
             }) : null}
           </div> : <div className="mt-3 space-y-2" aria-label="Tasks">
@@ -459,10 +459,10 @@ export default function TasksPage() {
         </section>
       </main>
 
-      {selectedTask ? <TaskDetails task={selectedTask} onClose={() => setSelectedTaskId(null)} onEdit={() => { setEditingTaskId(selectedTask.id); setSelectedTaskId(null) }} onToggle={() => void updateTask(selectedTask.id, { status: selectedTask.status === 'completed' ? 'pending' : 'completed' })} onDelete={() => setDeleteRequest({ kind: 'single', ids: [selectedTask.id], label: selectedTask.title })} /> : null}
+      {selectedTask ? <TaskDetails task={selectedTask} onClose={() => setSelectedTaskId(null)} onEdit={() => { setEditingTaskId(selectedTask.id); setSelectedTaskId(null) }} onToggle={() => void updateTask(selectedTask.id, { status: selectedTask.status === 'completed' ? 'pending' : 'completed' })} onCancel={() => setCancelRequest({ kind: 'single', ids: [selectedTask.id], label: selectedTask.title })} /> : null}
       {newTaskOpen ? <NewTaskModal department="acquisitions" showLeadSelector onClose={() => setNewTaskOpen(false)} onCreated={() => { setNewTaskOpen(false); void refreshWorklist() }} /> : null}
-      {editingTask ? <EditTaskModal taskId={editingTask.id} initialTitle={editingTask.title} initialMetadata={{ task_type: editingTask.type, due_date: editingTask.due_date || undefined, assigned_to: editingTask.assigned_to || undefined, notes: editingTask.description || undefined, status: editingTask.status === 'overdue' ? 'pending' : editingTask.status, priority: 'normal', source: 'tasks' }} onClose={() => setEditingTaskId(null)} onSaved={() => { setEditingTaskId(null); void refreshWorklist() }} onDeleted={() => { setEditingTaskId(null); void refreshWorklist() }} /> : null}
-      {deleteRequest ? <ConfirmDeleteDialog request={deleteRequest} saving={bulkSaving || deleteRequest.ids.some((id) => busyIds.has(id))} onCancel={() => setDeleteRequest(null)} onConfirm={() => void confirmDelete()} /> : null}
+      {editingTask ? <EditTaskModal taskId={editingTask.id} initialTitle={editingTask.title} initialMetadata={{ task_type: editingTask.type, due_date: editingTask.due_date || undefined, assigned_to: editingTask.assigned_to || undefined, notes: editingTask.description || undefined, status: editingTask.status === 'overdue' ? 'pending' : editingTask.status, priority: 'normal', source: 'tasks' }} onClose={() => setEditingTaskId(null)} onSaved={() => { setEditingTaskId(null); void refreshWorklist() }} onCancelled={() => { setEditingTaskId(null); void refreshWorklist() }} /> : null}
+      {cancelRequest ? <ConfirmCancelDialog request={cancelRequest} saving={bulkSaving || cancelRequest.ids.some((id) => busyIds.has(id))} onClose={() => setCancelRequest(null)} onConfirm={() => void confirmCancel()} /> : null}
     </>
   )
 }
@@ -471,12 +471,12 @@ function TaskFilterSelect({ label, value, onChange, options }: { label: string; 
   return <label><span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">{label}</span><select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className="crm-field h-10 w-full rounded-lg px-3 text-xs font-semibold"><option value="">Any</option>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>
 }
 
-function TaskDetails({ task, onClose, onEdit, onToggle, onDelete }: { task: Task; onClose: () => void; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
-  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><aside role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="h-full w-full max-w-md overflow-y-auto bg-[var(--crm-surface)] p-6 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><p className="crm-eyebrow">Task details</p><h2 id="task-detail-title" className="mt-1 text-xl font-black">{task.title}</h2></div><button type="button" onClick={onClose} aria-label="Close task details" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button></div><dl className="mt-6 divide-y divide-[var(--crm-border)]">{[['Status', task.status], ['Due', dueLabel(task)], ['Assigned', task.assigned_to || 'Unassigned'], ['Contact', contactName(task)], ['Property', task.property_address || 'Not linked'], ['Description', task.description || 'No description recorded']].map(([label, value]) => <div key={label} className="py-4"><dt className="text-[10px] font-black uppercase tracking-[0.1em] text-[var(--crm-text-muted)]">{label}</dt><dd className="mt-1 text-sm font-semibold">{value}</dd></div>)}</dl><div className="mt-6 grid grid-cols-2 gap-2"><button type="button" onClick={onToggle} className="crm-primary-button rounded-lg px-4 py-2.5 text-sm font-black">{task.status === 'completed' ? 'Reopen task' : 'Mark completed'}</button><button type="button" onClick={onEdit} className="crm-secondary-button rounded-lg px-4 py-2.5 text-sm font-black">Edit task</button>{task.contact_id ? <Link href={`/leads/${task.contact_id}`} prefetch={false} className="crm-secondary-button rounded-lg px-4 py-2.5 text-center text-sm font-black">Open contact</Link> : null}<button type="button" onClick={onDelete} className="rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2.5 text-sm font-black text-[var(--crm-danger)]">Delete task</button></div></aside></div>
+function TaskDetails({ task, onClose, onEdit, onToggle, onCancel }: { task: Task; onClose: () => void; onEdit: () => void; onToggle: () => void; onCancel: () => void }) {
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><aside role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="h-full w-full max-w-md overflow-y-auto bg-[var(--crm-surface)] p-6 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><p className="crm-eyebrow">Task details</p><h2 id="task-detail-title" className="mt-1 text-xl font-black">{task.title}</h2></div><button type="button" onClick={onClose} aria-label="Close task details" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button></div><dl className="mt-6 divide-y divide-[var(--crm-border)]">{[['Status', task.status], ['Due', dueLabel(task)], ['Assigned', task.assigned_to || 'Unassigned'], ['Contact', contactName(task)], ['Property', task.property_address || 'Not linked'], ['Description', task.description || 'No description recorded']].map(([label, value]) => <div key={label} className="py-4"><dt className="text-[10px] font-black uppercase tracking-[0.1em] text-[var(--crm-text-muted)]">{label}</dt><dd className="mt-1 text-sm font-semibold">{value}</dd></div>)}</dl><div className="mt-6 grid grid-cols-2 gap-2"><button type="button" onClick={onToggle} className="crm-primary-button rounded-lg px-4 py-2.5 text-sm font-black">{task.status === 'completed' ? 'Reopen task' : 'Mark completed'}</button><button type="button" onClick={onEdit} className="crm-secondary-button rounded-lg px-4 py-2.5 text-sm font-black">Edit task</button>{task.contact_id ? <Link href={`/leads/${task.contact_id}`} prefetch={false} className="crm-secondary-button rounded-lg px-4 py-2.5 text-center text-sm font-black">Open contact</Link> : null}<button type="button" onClick={onCancel} className="rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2.5 text-sm font-black text-[var(--crm-danger)]">Cancel task</button></div></aside></div>
 }
 
-function ConfirmDeleteDialog({ request, saving, onCancel, onConfirm }: { request: DeleteRequest; saving: boolean; onCancel: () => void; onConfirm: () => void }) {
-  return <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/55 p-4"><div role="alertdialog" aria-modal="true" aria-labelledby="delete-task-title" className="crm-panel-raised w-full max-w-md rounded-2xl p-6"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]"><Icon name="delete" /></div><h2 id="delete-task-title" className="mt-4 text-xl font-black">Delete {request.kind === 'bulk' ? 'selected tasks' : 'task'}?</h2><p className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">{request.label}</strong> will be permanently removed. This cannot be undone.</p><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onCancel} disabled={saving} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-bold">Cancel</button><button type="button" onClick={onConfirm} disabled={saving} className="h-10 rounded-lg border border-[var(--crm-danger)] bg-[var(--crm-danger)] px-4 text-sm font-black text-white disabled:opacity-45">{saving ? 'Deleting…' : 'Delete'}</button></div></div></div>
+function ConfirmCancelDialog({ request, saving, onClose, onConfirm }: { request: CancelRequest; saving: boolean; onClose: () => void; onConfirm: () => void }) {
+  return <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/55 p-4"><div role="alertdialog" aria-modal="true" aria-labelledby="cancel-task-title" className="crm-panel-raised w-full max-w-md rounded-2xl p-6"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]"><Icon name="cancel" /></div><h2 id="cancel-task-title" className="mt-4 text-xl font-black">Cancel {request.kind === 'bulk' ? 'selected tasks' : 'task'}?</h2><p className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">{request.label}</strong> will leave the active queue. Its audit history will be retained.</p><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-bold">Keep task</button><button type="button" onClick={onConfirm} disabled={saving} className="h-10 rounded-lg border border-[var(--crm-danger)] bg-[var(--crm-danger)] px-4 text-sm font-black text-white disabled:opacity-45">{saving ? 'Cancelling…' : 'Cancel task'}</button></div></div></div>
 }
 
 function TaskSkeleton() {
