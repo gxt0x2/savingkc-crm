@@ -396,10 +396,10 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     name: 'Morning Operating Brief',
     description: 'Builds the agent start-of-day priorities from real tasks, conversations, pipeline state, and call queue.',
     category: 'operating_rhythm', status: 'active', health: 'healthy', owner: SYSTEM_OWNER,
-    trigger: { type: 'manual', surface: 'ARI Insights' },
+    trigger: { type: 'manual', surface: 'Daily Rhythm' },
     actions: [{ type: 'execute', label: 'Assemble live operating context' }, { type: 'execute', label: 'Rank today’s work' }],
-    implementation: implementation(['/api/rhythm/morning', '/api/ari/coaching'], { mutatesData: false }),
-    version: 1, lastRunAt: null,
+    implementation: implementation(['/api/rhythm/morning'], { mutatesData: false }),
+    version: 2, lastRunAt: null,
   },
   {
     id: 'end-of-day-reconciliation',
