@@ -34,8 +34,8 @@ export function RecordOfferModal({
   const [method, setMethod] = useState<OfferMethod>('verbal')
   const [amount, setAmount] = useState(currentAmount ? String(Math.round(currentAmount)) : '')
   const [notes, setNotes] = useState('')
+  const [commandId] = useState(() => crypto.randomUUID())
   const [saving, setSaving] = useState(false)
-  const [partiallySaved, setPartiallySaved] = useState(false)
   const [error, setError] = useState('')
 
   async function saveOffer() {
@@ -44,15 +44,11 @@ export function RecordOfferModal({
     try {
       const response = await fetch(`/api/leads/${leadId}/offer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': commandId },
         body: JSON.stringify({ amount, method, notes }),
       })
-      const result = await response.json().catch(() => ({})) as { error?: string; offerSaved?: boolean }
+      const result = await response.json().catch(() => ({})) as { error?: string }
       if (!response.ok) {
-        if (result.offerSaved) {
-          setPartiallySaved(true)
-          onSaved()
-        }
         throw new Error(result.error || 'The offer could not be recorded.')
       }
       onSaved()
@@ -152,13 +148,11 @@ export function RecordOfferModal({
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-5 py-4">
-          <button type="button" onClick={onClose} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-bold">{partiallySaved ? 'Close' : 'Cancel'}</button>
-          {!partiallySaved ? (
-            <button type="button" onClick={saveOffer} disabled={saving || !amount} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50">
-              <Icon name={saving ? 'hourglass_empty' : 'check'} className="text-[17px]" />
-              {saving ? 'Saving...' : currentAmount ? 'Update offer' : 'Record offer'}
-            </button>
-          ) : null}
+          <button type="button" onClick={onClose} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-bold">Cancel</button>
+          <button type="button" onClick={saveOffer} disabled={saving || !amount} className="crm-primary-button flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50">
+            <Icon name={saving ? 'hourglass_empty' : 'check'} className="text-[17px]" />
+            {saving ? 'Saving...' : currentAmount ? 'Update offer' : 'Record offer'}
+          </button>
         </footer>
       </div>
     </div>

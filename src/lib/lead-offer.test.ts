@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  nextStageAfterOffer,
-  offerActivityDescription,
-  parseLeadOfferInput,
-} from './lead-offer'
+import { parseLeadOfferInput } from './lead-offer'
 
 describe('lead offer operating rules', () => {
   it('normalizes currency input and preserves the offer method', () => {
@@ -23,18 +19,5 @@ describe('lead offer operating rules', () => {
       success: false,
       error: 'Choose whether the offer was verbal or written.',
     })
-  })
-
-  it('advances active work to offer made without demoting later stages', () => {
-    expect(nextStageAfterOffer('qualified')).toBe('offer_made')
-    expect(nextStageAfterOffer('appointment_set')).toBe('offer_made')
-    expect(nextStageAfterOffer('under_contract')).toBe('under_contract')
-    expect(nextStageAfterOffer('closed_won')).toBe('closed_won')
-    expect(nextStageAfterOffer('dead')).toBeNull()
-  })
-
-  it('creates a human-readable audit description', () => {
-    expect(offerActivityDescription({ amount: 112_500, method: 'verbal', notes: null }))
-      .toBe('Verbal offer made: $112,500')
   })
 })

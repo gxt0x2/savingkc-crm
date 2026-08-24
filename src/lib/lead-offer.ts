@@ -12,9 +12,6 @@ export type LeadOfferParseResult =
   | { success: true; data: LeadOfferInput }
   | { success: false; error: string }
 
-const TERMINAL_STAGES = new Set(['dead', 'closed_lost'])
-const POST_OFFER_STAGES = new Set(['offer_made', 'under_contract', 'in_closing', 'contract', 'closed_won', 'closed'])
-
 export function parseLeadOfferInput(value: unknown): LeadOfferParseResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { success: false, error: 'Offer details are required.' }
@@ -48,21 +45,4 @@ export function parseLeadOfferInput(value: unknown): LeadOfferParseResult {
       notes: notes || null,
     },
   }
-}
-
-export function nextStageAfterOffer(currentStage: string | null | undefined): string | null {
-  const normalized = String(currentStage || '').trim().toLowerCase()
-  if (TERMINAL_STAGES.has(normalized)) return null
-  if (POST_OFFER_STAGES.has(normalized)) return normalized
-  return 'offer_made'
-}
-
-export function offerActivityDescription(input: LeadOfferInput): string {
-  const amount = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(input.amount)
-  const method = input.method === 'written' ? 'Written' : 'Verbal'
-  return `${method} offer made: ${amount}${input.notes ? ` — ${input.notes}` : ''}`
 }
