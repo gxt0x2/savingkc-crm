@@ -42,6 +42,13 @@ describe('canonical appointment cutover contract', () => {
     expect(existsSync(resolve(root, 'src/app/api/workers/appointment-reminder/route.ts'))).toBe(false)
     expect(existsSync(resolve(root, 'src/lib/ghost-protocol-appointment.ts'))).toBe(false)
     expect(existsSync(resolve(root, 'src/lib/ghost-risk-calculator.ts'))).toBe(false)
+    expect(existsSync(resolve(root, 'src/lib/ghost-protocol-pipeline.ts'))).toBe(false)
+    expect(existsSync(resolve(root, 'src/components/leads/ghost-protocol-controls.tsx'))).toBe(false)
+    expect(existsSync(resolve(root, 'src/components/dashboard/ghost-protocol-widget.tsx'))).toBe(false)
+    expect(existsSync(resolve(root, 'src/app/api/ghost-protocol/pause/route.ts'))).toBe(false)
+    expect(existsSync(resolve(root, 'src/app/api/ghost-protocol/resume/route.ts'))).toBe(false)
+    expect(existsSync(resolve(root, 'src/app/api/ghost-protocol/cancel/route.ts'))).toBe(false)
+    expect(existsSync(resolve(root, 'src/app/api/ghost-protocol/stats/route.ts'))).toBe(false)
   })
 
   it('ships a service-only booking RPC with slot and privacy invariants', () => {
