@@ -8,7 +8,6 @@ import {
   logTcEvent,
   maybeLogTcRevenue,
   seedStandardTcTasks,
-  syncTcStatusToManifest,
 } from '@/lib/tc'
 
 const ALLOWED_FIELDS = [
@@ -112,8 +111,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await db.from('dispo_deals').update({ stage: 'closed', updated_at: new Date().toISOString() }).eq('id', file.dispo_deal_id)
       await maybeLogTcRevenue(db, id)
     }
-    await syncTcStatusToManifest(db, id)
-
     return NextResponse.json({ file })
   } catch (err) {
     console.error('[tc/files/:id PATCH] error:', err)
