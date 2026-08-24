@@ -3,6 +3,7 @@ import { isWithinProspectingWindow, nextProspectingWindow, renderProspectingTemp
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { resolveSmsCaps } from '@/lib/twilio-a2p'
 import { supabase } from '@/lib/supabase-lazy'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 function deliveryStatusCallback(actionId: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -17,7 +18,10 @@ type ClaimedCampaignAction = {
   campaignId: string
   memberId: string
   stepId: string
-  leadId: string
+  subjectKind: 'lead' | 'prospect'
+  leadId: string | null
+  prospectId: string | null
+  prospectPhoneId: string | null
   attemptCount: number
   phone: string
   timezone: string
@@ -40,7 +44,12 @@ function validClaim(value: unknown): value is ClaimedCampaignAction {
     && typeof row.campaignId === 'string'
     && typeof row.memberId === 'string'
     && typeof row.stepId === 'string'
-    && typeof row.leadId === 'string'
+    && (row.subjectKind === 'lead' || row.subjectKind === 'prospect')
+    && (typeof row.leadId === 'string' || row.leadId === null)
+    && (typeof row.prospectId === 'string' || row.prospectId === null)
+    && (typeof row.prospectPhoneId === 'string' || row.prospectPhoneId === null)
+    && ((row.subjectKind === 'lead' && typeof row.leadId === 'string' && row.prospectId === null)
+      || (row.subjectKind === 'prospect' && row.leadId === null && typeof row.prospectId === 'string'))
     && typeof row.phone === 'string'
     && typeof row.timezone === 'string'
     && typeof row.bodyTemplate === 'string'
@@ -88,20 +97,42 @@ async function processAction(action: ClaimedCampaignAction, workerToken: string)
     return 'deferred'
   }
 
-  const { data: lead, error: leadError } = await supabase
-    .from('leads')
-    .select('id,full_name,phone,property_address')
-    .eq('id', action.leadId)
-    .maybeSingle()
-  if (leadError) throw leadError
-  if (!lead) {
-    await finishAction(action, workerToken, 'blocked', { errorCode: 'lead_not_found' })
-    return 'blocked'
+  let fullName = ''
+  let propertyAddress = ''
+  if (action.subjectKind === 'lead' && action.leadId) {
+    const { data: lead, error: leadError } = await supabase
+      .from('leads')
+      .select('id,full_name,property_address')
+      .eq('id', action.leadId)
+      .maybeSingle()
+    if (leadError) throw leadError
+    if (!lead) {
+      await finishAction(action, workerToken, 'blocked', { errorCode: 'lead_not_found' })
+      return 'blocked'
+    }
+    fullName = String(lead.full_name || '')
+    propertyAddress = String(lead.property_address || '')
+  } else if (action.subjectKind === 'prospect' && action.prospectId) {
+    const { data: prospect, error: prospectError } = await supabase
+      .from('prospects')
+      .select('id,owner_1,situs_street,situs_city,situs_state,situs_zip')
+      .eq('id', action.prospectId)
+      .maybeSingle()
+    if (prospectError) throw prospectError
+    if (!prospect) {
+      await finishAction(action, workerToken, 'blocked', { errorCode: 'prospect_not_found' })
+      return 'blocked'
+    }
+    fullName = String(prospect.owner_1 || '')
+    propertyAddress = [prospect.situs_street, prospect.situs_city, prospect.situs_state, prospect.situs_zip]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(', ')
   }
 
   const body = renderProspectingTemplate(action.bodyTemplate, {
-    fullName: lead.full_name,
-    propertyAddress: lead.property_address,
+    fullName,
+    propertyAddress,
     agentName: action.ownerName,
   })
   if (!body) {
@@ -130,6 +161,7 @@ async function processAction(action: ClaimedCampaignAction, workerToken: string)
     return 'deferred'
   }
 
+  const normalizedPhone = normalizePhoneToE164(action.phone)
   const send = await sendLeadSms({
     leadId: action.leadId,
     phone: action.phone,
@@ -142,6 +174,14 @@ async function processAction(action: ClaimedCampaignAction, workerToken: string)
       prospecting_campaign_member_id: action.memberId,
       prospecting_campaign_action_id: action.id,
       prospecting_campaign_step_id: action.stepId,
+      subject_kind: action.subjectKind,
+      prospect_id: action.prospectId,
+      prospect_phone_id: action.prospectPhoneId,
+      ...(action.leadId
+        ? { thread_key: `lead:${action.leadId}` }
+        : normalizedPhone
+          ? { thread_key: `phone:${normalizedPhone}` }
+          : {}),
     },
     statusCallback: deliveryStatusCallback(action.id),
   })

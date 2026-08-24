@@ -11,6 +11,8 @@ const firstPage = {
     actor: 'Prospecting worker',
     memberId: 'member-1',
     leadId: '11111111-1111-4111-8111-111111111111',
+    prospectId: null,
+    conversationThreadId: '11111111-1111-4111-8111-111111111111',
     actionId: 'action-1',
     status: 'sent',
     sellerName: 'Helen Seller',
@@ -106,6 +108,22 @@ describe('CampaignActivityFeed', () => {
     expect(await screen.findByText('Seller replied')).toBeVisible()
     expect(screen.getByText('Yes, I would consider an offer.')).toBeVisible()
     expect(screen.getByRole('link', { name: 'Open conversation' })).toHaveAttribute('href', '/conversations?lead=11111111-1111-4111-8111-111111111111')
+  })
+
+  it('hands an unpromoted source Prospect to the same authoritative phone inbox', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      items: [{
+        ...firstPage.items[0],
+        leadId: null,
+        prospectId: '22222222-2222-4222-8222-222222222222',
+        conversationThreadId: 'phone:+19135550123',
+        sellerName: 'Jordan Seller',
+      }],
+      pageInfo: { limit: 25, hasMore: false, nextCursor: null },
+    }) }))
+    render(<CampaignActivityFeed campaignId="campaign-1" />)
+    expect(await screen.findByText('Jordan Seller')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open conversation' })).toHaveAttribute('href', '/conversations?lead=phone%3A%2B19135550123')
   })
 
   it('names dialer batches and saved call outcomes in operator language', async () => {

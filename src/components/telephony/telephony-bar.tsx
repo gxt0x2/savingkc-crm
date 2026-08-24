@@ -7,36 +7,20 @@ import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers
 import { DispositionModal, DispositionType } from './disposition-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
-import { isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositions'
+import { DIALER_DISPOSITIONS, isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
 import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
+import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
+import {
+  createClientAttemptId,
+  requestDialerCallIntent,
+  type DialerCallIntentKind,
+} from '@/lib/telephony/dialer-client-preflight'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
-type DialerCallIntentKind = 'manual' | 'lead' | 'heir'
-
-type DialerCallIntentAllowedResponse = {
-  allowed: true
-  intent: string
-  to: string
-  callerId: string
-  kind: DialerCallIntentKind
-  leadId: string | null
-  prospectPhoneId: string | null
-  clientAttemptId: string
-  sessionId?: string | null
-}
-
-type DialerCallIntentDeniedResponse = {
-  allowed: false
-  error?: string
-  reason?: string
-}
-
-type DialerCallIntentResponse = DialerCallIntentAllowedResponse | DialerCallIntentDeniedResponse
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TwilioDevice = any
 type TwilioErrorLike = {
@@ -82,15 +66,7 @@ interface RecentCall {
 // A single entry in the heir-dialer queue. The property stays pinned (leadId +
 // propertyAddress + deceasedOwnerName) while heirName/relation/phone rotate per
 // item.
-export interface HeirQueueItem {
-  prospect_phone_id: string
-  phone: string
-  heirName: string
-  relation: string
-  leadId: string
-  propertyAddress: string
-  deceasedOwnerName: string
-}
+export type HeirQueueItem = HeirDialerQueueItem
 
 interface DialerPanelProps {
   open: boolean
@@ -165,47 +141,6 @@ function extractTwilioErrorMessage(err: unknown): string {
     if (typeof obj.name === 'string' && obj.name.trim()) return obj.name.trim()
   }
   return 'Dialer failed to initialize. Please retry.'
-}
-
-function createClientAttemptId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-async function requestDialerCallIntent(input: {
-  phone: string
-  callerId: string
-  kind: DialerCallIntentKind
-  leadId: string | null
-  prospectPhoneId: string | null
-  clientAttemptId: string
-  sessionId?: string | null
-}): Promise<DialerCallIntentAllowedResponse> {
-  const response = await fetch('/api/dialer/call-intents', {
-    method: 'POST',
-    cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-  const payload = await response.json().catch(() => null) as DialerCallIntentResponse | null
-  if (!response.ok || !payload?.allowed) {
-    const denial = payload?.allowed === false ? payload : null
-    throw new Error(denial?.error || denial?.reason || 'This call is not allowed. Review the number and try again.')
-  }
-  if (!payload.intent || !payload.to || !payload.callerId || !payload.kind || !payload.clientAttemptId) {
-    throw new Error('Call authorization returned an incomplete response. Try again.')
-  }
-  return {
-    allowed: true,
-    intent: payload.intent,
-    to: payload.to,
-    callerId: payload.callerId,
-    kind: payload.kind,
-    leadId: payload.leadId ?? null,
-    prospectPhoneId: payload.prospectPhoneId ?? null,
-    clientAttemptId: payload.clientAttemptId,
-    sessionId: payload.sessionId ?? input.sessionId ?? null,
-  }
 }
 
 function isNonFatalAudioWarning(err: unknown): boolean {
@@ -444,7 +379,7 @@ export function DialerPanel({
       }
       const first = pendingQueue[0]
       setSelectedLead({
-        id: first.leadId,
+        id: first.leadId ?? `prospect:${first.prospectId}`,
         full_name: first.heirName,
         phone: first.phone,
         property_address: first.propertyAddress,
@@ -635,15 +570,22 @@ export function DialerPanel({
         ? rotatedCallerId
         : (effectiveCallerId || '')
       const queueItemAtStart = queueItem
-      const leadIdAtStart = queueItemAtStart?.leadId || selectedLead?.id || null
+      const leadIdAtStart = queueItemAtStart ? queueItemAtStart.leadId : selectedLead?.id || null
+      const prospectIdAtStart = queueItemAtStart?.prospectId || null
       const prospectPhoneIdAtStart = queueItemAtStart?.prospect_phone_id || null
-      const kind: DialerCallIntentKind = queueItemAtStart ? 'heir' : leadIdAtStart ? 'lead' : 'manual'
+      const kind: DialerCallIntentKind = queueItemAtStart
+        ? queueItemAtStart.leadId
+          ? queueItemAtStart.prospect_phone_id ? 'heir' : 'lead'
+          : 'prospect'
+        : leadIdAtStart ? 'lead' : 'manual'
       const authorized = await requestDialerCallIntent({
         phone: number,
         callerId: callerIdForThisCall,
         kind,
-        leadId: kind === 'manual' ? null : leadIdAtStart,
-        prospectPhoneId: kind === 'heir' ? prospectPhoneIdAtStart : null,
+        leadId: kind === 'lead' || kind === 'heir' ? leadIdAtStart : null,
+        prospectId: kind === 'prospect' ? prospectIdAtStart : null,
+        prospectPhoneId: kind === 'heir' || kind === 'prospect' ? prospectPhoneIdAtStart : null,
+        campaignMemberId: queueItemAtStart?.campaignMemberId ?? null,
         clientAttemptId: createClientAttemptId(),
         sessionId: queueItemAtStart ? pendingSessionId : null,
       })
@@ -716,6 +658,8 @@ export function DialerPanel({
             heir_name: activeQueueItemRef.current.heirName,
             heir_relation: activeQueueItemRef.current.relation,
             prospect_phone_id: activeQueueItemRef.current.prospect_phone_id,
+            prospect_id: activeQueueItemRef.current.prospectId,
+            campaign_member_id: activeQueueItemRef.current.campaignMemberId,
             prospect_owner_name: activeQueueItemRef.current.deceasedOwnerName,
           }
         : null
@@ -897,7 +841,7 @@ export function DialerPanel({
     if (!normalizedNext) return false
     if (queueItem) {
       return normalizedNext === normalizePhoneToE164(queueItem.phone)
-        && selectedLead?.id === queueItem.leadId
+        && selectedLead?.id === (queueItem.leadId ?? `prospect:${queueItem.prospectId}`)
     }
     return Boolean(selectedLead && normalizedNext === normalizePhoneToE164(selectedLead.phone))
   }
@@ -952,7 +896,8 @@ export function DialerPanel({
         return false
       }
     }
-    if (!selectedLead) {
+    const activeItem = activeQueueItemRef.current
+    if (!selectedLead && !activeItem) {
       // Manual dial without a lead — log to call_log so the disposition is
       // not lost. The handler returns true so the modal closes cleanly.
       await fetch('/api/call-log', {
@@ -975,9 +920,8 @@ export function DialerPanel({
       }).catch(() => {})
       return true
     }
-    const activeItem = activeQueueItemRef.current
     try {
-      if (activeItem) {
+      if (activeItem?.prospect_phone_id) {
         // Heir-dialer path: log to prospect_phones + activity feed via our own
         // endpoint (which handles verification + dead-lead rollup in one call).
         const response = await fetch('/api/heirs/attempt', {
@@ -988,6 +932,8 @@ export function DialerPanel({
             disposition,
             notes,
             lead_id: activeItem.leadId,
+            prospect_id: activeItem.prospectId,
+            campaign_member_id: activeItem.campaignMemberId,
             agent: activeAgentName,
             duration: lastCallDurationSecondsRef.current || null,
             mark_as_lead: Boolean(options?.markAsLead),
@@ -1002,16 +948,22 @@ export function DialerPanel({
           throw new Error(payload?.error || 'Could not save heir disposition.')
         }
         window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
-          detail: { leadId: activeItem.leadId, prospectPhoneId: activeItem.prospect_phone_id },
+          detail: {
+            leadId: activeItem.leadId,
+            prospectId: activeItem.prospectId,
+            prospectPhoneId: activeItem.prospect_phone_id,
+          },
         }))
       } else {
+        const dispositionLeadId = activeItem?.leadId ?? selectedLead?.id ?? null
+        if (!dispositionLeadId) throw new Error('Lead context is required to save this disposition.')
         if (markedDead) {
-          await transitionLeadLifecycle(selectedLead.id, {
+          await transitionLeadLifecycle(dispositionLeadId, {
             stage: 'dead', deadReason: options?.deadReason ?? null,
             deadReasonNotes: notes || null, reason: notes || 'Marked dead from call disposition',
           })
         }
-        const response = await fetch(`/api/leads/${selectedLead.id}/disposition`, {
+        const response = await fetch(`/api/leads/${dispositionLeadId}/disposition`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1028,7 +980,13 @@ export function DialerPanel({
         }
       }
       window.dispatchEvent(new CustomEvent('crm:disposition-logged', {
-        detail: { leadId: selectedLead.id, disposition, reached: isReachedDisposition(disposition), dead: markedDead },
+        detail: {
+          leadId: activeItem?.leadId ?? selectedLead?.id ?? null,
+          prospectId: activeItem?.prospectId ?? null,
+          disposition,
+          reached: isReachedDisposition(disposition),
+          dead: markedDead,
+        },
       }))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save disposition.')
@@ -1071,10 +1029,14 @@ export function DialerPanel({
     if (next >= queue.length) {
       // Queue complete — let listeners (e.g. /dialer page) advance to the
       // next lead before we reset local state.
-      const finishedLeadId = queue[queueIndex]?.leadId
-      if (finishedLeadId) {
+      const finishedItem = queue[queueIndex]
+      if (finishedItem) {
         window.dispatchEvent(new CustomEvent('heir-queue-complete', {
-          detail: { leadId: finishedLeadId },
+          detail: {
+            leadId: finishedItem.leadId,
+            prospectId: finishedItem.prospectId,
+            campaignMemberId: finishedItem.campaignMemberId,
+          },
         }))
       }
       setQueue(null)
@@ -1086,7 +1048,7 @@ export function DialerPanel({
     setQueueIndex(next)
     const item = queue[next]
     setSelectedLead({
-      id: item.leadId,
+      id: item.leadId ?? `prospect:${item.prospectId}`,
       full_name: item.heirName,
       phone: item.phone,
       property_address: item.propertyAddress,
@@ -1109,7 +1071,7 @@ export function DialerPanel({
     setQueueIndex(prev)
     const item = queue[prev]
     setSelectedLead({
-      id: item.leadId,
+      id: item.leadId ?? `prospect:${item.prospectId}`,
       full_name: item.heirName,
       phone: item.phone,
       property_address: item.propertyAddress,
@@ -1382,12 +1344,16 @@ export function DialerPanel({
                   {selectedLead.property_address && (
                     <p className="text-xs text-white/50 truncate">{selectedLead.property_address}{selectedLead.city ? `, ${selectedLead.city}` : ''}</p>
                   )}
-                  <a
+                  {queueItem && !queueItem.leadId ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-300 mt-1.5">
+                      Source Prospect · not yet promoted
+                    </span>
+                  ) : <a
                     href={`/leads/${selectedLead.id}`}
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-[#FF6D6D] hover:text-white mt-1.5 transition-colors"
                   >
                     View Lead <Icon name="arrow_forward" size="text-xs" />
-                  </a>
+                  </a>}
                 </div>
                 <button
                   onClick={clearSelectedLead}
@@ -1701,15 +1667,18 @@ export function DialerPanel({
         phoneNumber={lastCallPhoneRef.current}
         leadName={selectedLead?.full_name}
         callDuration={lastCallDuration || undefined}
+        dispositions={dispositionQueueItem && !dispositionQueueItem.leadId
+          ? DIALER_DISPOSITIONS.filter((item) => item.id !== 'appointment_set')
+          : undefined}
         aiSummary={postCallReview?.summary}
         aiSummaryStatus={postCallReview?.status}
-        markAsLeadAvailable={Boolean(dispositionQueueItem)}
-        markAsLeadLabel={dispositionQueueItem ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
-        showVerifyToggle={Boolean(dispositionQueueItem)}
-        verifyLabel={dispositionQueueItem ? `Verified — this is ${dispositionQueueItem.heirName}` : undefined}
+        markAsLeadAvailable={Boolean(dispositionQueueItem?.leadId && dispositionQueueItem.prospect_phone_id)}
+        markAsLeadLabel={dispositionQueueItem?.leadId && dispositionQueueItem.prospect_phone_id ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
+        showVerifyToggle={Boolean(dispositionQueueItem?.prospect_phone_id)}
+        verifyLabel={dispositionQueueItem?.prospect_phone_id ? `Verified — this is ${dispositionQueueItem.heirName}` : undefined}
         variant={dispositionQueueItem ? 'heirQueue' : 'standard'}
         primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save & Next Lead'}
-        nextActions={selectedLead ? [
+        nextActions={selectedLead && (!dispositionQueueItem || dispositionQueueItem.leadId) ? [
           { id: 'set_next_activity', label: 'Set Next Activity', icon: 'event_note' },
         ] : []}
         onNextActionPick={(actionId) => {

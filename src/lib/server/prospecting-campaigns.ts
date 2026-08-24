@@ -10,6 +10,7 @@ import {
 } from '@/lib/prospecting/campaign-contract'
 import { parseDialerSession } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
+import type { CountyDeceasedFilter, CountyPropertyClassFilter, CountySavedViewDefinition } from '@/lib/prospecting/county-saved-views'
 
 export class ProspectingCampaignError extends Error {
   constructor(public code: string, public status: number, message: string) {
@@ -74,6 +75,7 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('campaign_dialer_complete')) return new ProspectingCampaignError('campaign_dialer_complete', 409, 'Every ready contact has been worked. Review skipped or suppressed contacts before starting another batch')
   if (detail.includes('campaign_setup_locked')) return new ProspectingCampaignError('campaign_setup_locked', 409, 'Only a campaign that has never run can be edited')
   if (detail.includes('campaign_member_in_active_dialer_batch')) return new ProspectingCampaignError('campaign_member_in_active_dialer_batch', 409, 'Stop the open calling session before removing this contact')
+  if (detail.includes('county_audience_changed')) return new ProspectingCampaignError('county_audience_changed', 409, 'The county Saved View changed after review. Refresh it and confirm the current audience')
   if (detail.includes('campaign_members_locked') || detail.includes('invalid_campaign_transition')) return new ProspectingCampaignError('invalid_campaign_state', 409, 'Pause the campaign before changing its audience')
   if (detail.includes('invalid_') || detail.includes('23514') || detail.includes('23505') || detail.includes('22p02')) return new ProspectingCampaignError('invalid_campaign', 400, 'Campaign details are invalid')
   if (detail.includes('does not exist') || detail.includes('pgrst202') || detail.includes('42p01') || detail.includes('42883')) {
@@ -180,15 +182,12 @@ function mapStep(row: { id: string; position: number; delay_minutes: number; bod
   return { id: row.id, position: row.position, delayMinutes: row.delay_minutes, bodyTemplate: row.body_template }
 }
 
-function embeddedLead(value: unknown): ProspectingCampaignMember['lead'] {
-  const row = Array.isArray(value) ? value[0] : value
-  if (!row || typeof row !== 'object') return null
-  const lead = row as Record<string, unknown>
+function embeddedSubject(row: Record<string, unknown>): ProspectingCampaignMember['lead'] {
   return {
-    fullName: typeof lead.full_name === 'string' ? lead.full_name : null,
-    propertyAddress: typeof lead.property_address === 'string' ? lead.property_address : null,
-    station: typeof lead.station === 'string' ? lead.station : null,
-    classification: typeof lead.classification === 'string' ? lead.classification : null,
+    fullName: typeof row.subject_name === 'string' ? row.subject_name : null,
+    propertyAddress: typeof row.subject_property_address === 'string' ? row.subject_property_address : null,
+    station: typeof row.subject_station === 'string' ? row.subject_station : null,
+    classification: typeof row.subject_classification === 'string' ? row.subject_classification : null,
   }
 }
 
@@ -206,16 +205,19 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     .eq('campaign_id', campaignId)
     .order('position')
     .limit(12)
-  const membersPromise = supabase
-    .from('prospecting_campaign_members')
-    .select('id,lead_id,phone_snapshot,timezone,status,suppression_reason,current_step_position,next_action_at,enrolled_at,leads(full_name,property_address,station,classification)')
-    .eq('campaign_id', campaignId)
-    .neq('status', 'removed')
-    .order('enrolled_at', { ascending: false })
-    .limit(100)
+  const membersPromise = supabase.rpc('prospecting_campaign_member_page_v3', {
+    p_actor_email: actor.email,
+    p_campaign_id: campaignId,
+    p_status: 'all',
+    p_query: null,
+    p_limit: 100,
+    p_after_enrolled_at: null,
+    p_after_id: null,
+  })
   const counts = Promise.all([
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).neq('status', 'removed'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'active'),
+    supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'needs_review'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'suppressed'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'replied'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'completed'),
@@ -237,18 +239,26 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
   for (const result of countResults) if (result.error) throw databaseError(result.error)
   for (const result of operationResults) if (result.error) throw databaseError(result.error)
 
-  const members: ProspectingCampaignMember[] = (membersResult.data || []).map((row) => ({
-    id: row.id,
-    leadId: row.lead_id,
-    phone: row.phone_snapshot,
-    timezone: row.timezone,
-    status: row.status as ProspectingCampaignMember['status'],
-    suppressionReason: row.suppression_reason,
-    currentStepPosition: row.current_step_position,
-    nextActionAt: row.next_action_at,
-    enrolledAt: row.enrolled_at,
-    lead: embeddedLead(row.leads),
-  }))
+  const members: ProspectingCampaignMember[] = ((membersResult.data || []) as unknown[]).map((value: unknown) => {
+    const row = value as Record<string, unknown>
+    return {
+      id: String(row.id),
+      subjectKind: row.subject_kind as 'lead' | 'prospect',
+      leadId: typeof row.lead_id === 'string' ? row.lead_id : null,
+      prospectId: typeof row.prospect_id === 'string' ? row.prospect_id : null,
+      enrollmentSource: row.enrollment_source as 'crm_lead' | 'county_saved_view',
+      phone: String(row.phone_snapshot || ''),
+      timezone: String(row.timezone || ''),
+      status: row.status as ProspectingCampaignMember['status'],
+      suppressionReason: typeof row.suppression_reason === 'string' ? row.suppression_reason : null,
+      currentStepPosition: Number(row.current_step_position) || 0,
+      nextActionAt: typeof row.next_action_at === 'string' ? row.next_action_at : null,
+      enrolledAt: String(row.enrolled_at),
+      readyContactCount: Number(row.ready_contact_count) || 0,
+      suppressedContactCount: Number(row.suppressed_contact_count) || 0,
+      lead: embeddedSubject(row),
+    }
+  })
   return {
     ...mapCampaign(campaignResult.data as CampaignRow),
     steps: (stepsResult.data || []).map(mapStep),
@@ -256,12 +266,13 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     stats: {
       total: countResults[0].count || 0,
       active: countResults[1].count || 0,
-      suppressed: countResults[2].count || 0,
-      replied: countResults[3].count || 0,
-      completed: countResults[4].count || 0,
-      sent: countResults[5].count || 0,
-      delivered: countResults[6].count || 0,
-      failed: countResults[7].count || 0,
+      needsReview: countResults[2].count || 0,
+      suppressed: countResults[3].count || 0,
+      replied: countResults[4].count || 0,
+      completed: countResults[5].count || 0,
+      sent: countResults[6].count || 0,
+      delivered: countResults[7].count || 0,
+      failed: countResults[8].count || 0,
     },
     operations: {
       queued: operationResults[0].count || 0,
@@ -281,6 +292,35 @@ export async function enrollProspectingCampaignMembers(actor: AuthenticatedActor
   })
   if (error) throw databaseError(error)
   return data as { requested: number; eligible: number; suppressed: number; missing: number }
+}
+
+export async function enrollCountyProspectingCampaignMembers(
+  actor: AuthenticatedActor,
+  campaignId: string,
+  input: {
+    savedView: CountySavedViewDefinition['id']
+    deceasedFilter: CountyDeceasedFilter
+    propertyFilter: CountyPropertyClassFilter
+    reviewedCount: number
+  },
+) {
+  if (!['tax_2yr', 'tax_3yr_plus'].includes(input.savedView)
+    || !['all', 'deceased', 'non_deceased'].includes(input.deceasedFilter)
+    || !['all', 'residential', 'land', 'unknown'].includes(input.propertyFilter)
+    || !Number.isInteger(input.reviewedCount) || input.reviewedCount < 1 || input.reviewedCount > 25_000) {
+    throw new ProspectingCampaignError('invalid_county_audience', 400, 'Choose a non-empty county Saved View and review its filters')
+  }
+  const { data, error } = await supabase.rpc('enroll_county_prospecting_campaign_members_v1', {
+    p_campaign_id: campaignId,
+    p_actor_email: actor.email,
+    p_actor_name: actor.name,
+    p_saved_view: input.savedView,
+    p_deceased_filter: input.deceasedFilter,
+    p_property_filter: input.propertyFilter,
+    p_reviewed_count: input.reviewedCount,
+  })
+  if (error) throw databaseError(error)
+  return data as { requested: number; subjects: number; eligible: number; needsReview: number; suppressed: number; missing: number }
 }
 
 export async function removeProspectingCampaignMember(actor: AuthenticatedActor, campaignId: string, memberId: string) {
@@ -340,7 +380,7 @@ export async function launchProspectingDialerCampaign(actor: AuthenticatedActor,
   if (campaign.status !== 'active') throw new ProspectingCampaignError('invalid_campaign_state', 409, 'Activate the campaign before starting calls')
   const callerId = normalizePhoneToE164(campaign.callerId || '')
   if (!callerId) throw new ProspectingCampaignError('caller_id_required', 409, 'Choose a calling number before starting')
-  const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v1', {
+  const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v2', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_actor_name: actor.name,

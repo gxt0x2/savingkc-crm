@@ -59,14 +59,19 @@ export interface ProspectingCampaignStep {
 
 export interface ProspectingCampaignMember {
   id: string
-  leadId: string
+  subjectKind: 'lead' | 'prospect'
+  leadId: string | null
+  prospectId: string | null
+  enrollmentSource: 'crm_lead' | 'county_saved_view'
   phone: string
   timezone: string
-  status: 'active' | 'suppressed' | 'replied' | 'completed' | 'removed'
+  status: 'active' | 'needs_review' | 'suppressed' | 'replied' | 'completed' | 'removed'
   suppressionReason: string | null
   currentStepPosition: number
   nextActionAt: string | null
   enrolledAt: string
+  readyContactCount: number
+  suppressedContactCount: number
   lead: {
     fullName: string | null
     propertyAddress: string | null
@@ -80,12 +85,27 @@ export interface ProspectingCampaignMemberPage {
   pageInfo: { limit: number; hasMore: boolean; nextCursor: string | null }
 }
 
+export interface ProspectingCampaignMemberContact {
+  id: string
+  sourceKind: 'prospect_phone' | 'lead_primary'
+  prospectId: string | null
+  prospectPhoneId: string | null
+  phone: string
+  contactName: string | null
+  relationship: string | null
+  phoneType: string | null
+  status: 'ready' | 'suppressed' | 'removed'
+  suppressionReason: string | null
+  selectedForSms: boolean
+}
+
 export interface ProspectingCampaignDetail extends ProspectingCampaignSummary {
   steps: ProspectingCampaignStep[]
   members: ProspectingCampaignMember[]
   stats: {
     total: number
     active: number
+    needsReview: number
     suppressed: number
     replied: number
     completed: number
@@ -107,6 +127,8 @@ export interface ProspectingCampaignActivity {
   actor: string
   memberId: string | null
   leadId: string | null
+  prospectId: string | null
+  conversationThreadId: string | null
   actionId: string | null
   status: 'queued' | 'processing' | 'sent' | 'delivered' | 'replied' | 'blocked' | 'failed' | 'cancelled' | null
   sellerName: string | null

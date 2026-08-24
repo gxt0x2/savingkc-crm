@@ -16,6 +16,7 @@ const heirsPayload = {
       phones: [
         {
           id: 'phone-fresh',
+          prospect_id: 'prospect-1',
           number: '+18160000001',
           type: 'mobile',
           connected: null,
@@ -26,6 +27,7 @@ const heirsPayload = {
         },
         {
           id: 'phone-no-answer',
+          prospect_id: 'prospect-1',
           number: '+18160000002',
           type: 'mobile',
           connected: null,
@@ -36,6 +38,7 @@ const heirsPayload = {
         },
         {
           id: 'phone-disconnected',
+          prospect_id: 'prospect-1',
           number: '+18160000003',
           type: 'mobile',
           connected: null,
@@ -46,6 +49,7 @@ const heirsPayload = {
         },
         {
           id: 'phone-dnc',
+          prospect_id: 'prospect-1',
           number: '+18160000006',
           type: 'mobile',
           connected: null,
@@ -56,6 +60,7 @@ const heirsPayload = {
         },
         {
           id: 'phone-wrong',
+          prospect_id: 'prospect-1',
           number: '+18160000007',
           type: 'mobile',
           connected: null,
@@ -75,6 +80,7 @@ const heirsPayload = {
       phones: [
         {
           id: 'phone-verified',
+          prospect_id: 'prospect-1',
           number: '+18160000004',
           type: 'mobile',
           connected: null,
@@ -85,6 +91,7 @@ const heirsPayload = {
         },
         {
           id: 'phone-second-fresh',
+          prospect_id: 'prospect-1',
           number: '+18160000005',
           type: 'mobile',
           connected: null,
@@ -142,7 +149,7 @@ describe('HeirsSection dial queue', () => {
 
     renderHeirsSection()
 
-    const callButton = await screen.findByRole('button', { name: /Call heirs \(4\)/i })
+    const callButton = await screen.findByRole('button', { name: /Call all \(4\)/i })
     fireEvent.click(callButton)
 
     await waitFor(() => expect(queueEvents).toHaveLength(1))
@@ -159,6 +166,73 @@ describe('HeirsSection dial queue', () => {
       'lead-1',
     ])
 
+    window.removeEventListener('open-dialer-queue', onQueue)
+  })
+
+  it('queues associated phones for an unpromoted source Prospect without a Lead ID', async () => {
+    mockHeirsFetch()
+    const queueEvents: CustomEvent[] = []
+    const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
+    window.addEventListener('open-dialer-queue', onQueue)
+
+    renderHeirsSection({ leadId: null, prospectId: 'prospect-1', campaignMemberId: 'member-1' })
+
+    fireEvent.click(await screen.findByRole('button', { name: /Call all \(4\)/i }))
+    await waitFor(() => expect(queueEvents).toHaveLength(1))
+
+    expect(fetch).toHaveBeenCalledWith('/api/heirs?prospect_id=prospect-1&campaign_member_id=member-1')
+    expect(queueEvents[0].detail.queue).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        leadId: null,
+        prospectId: 'prospect-1',
+        campaignMemberId: 'member-1',
+      }),
+    ]))
+    expect(screen.queryByRole('button', { name: /skip trace/i })).not.toBeInTheDocument()
+    window.removeEventListener('open-dialer-queue', onQueue)
+  })
+
+  it('keeps a reviewed Lead-primary snapshot callable without inventing source-phone provenance', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        heirs: [{
+          key: 'Owner::owner',
+          contact_name: 'Original Owner',
+          relationship: 'owner',
+          address: null,
+          unattempted_count: 1,
+          phones: [{
+            id: 'snapshot-owner',
+            snapshot_id: 'snapshot-owner',
+            prospect_id: null,
+            prospect_phone_id: null,
+            number: '+18165550109',
+            type: 'mobile',
+            connected: null,
+            status: 'ready',
+            attempted: false,
+            last_disposition: null,
+            last_attempt_at: null,
+          }],
+        }],
+      }),
+    }))
+    const queueEvents: CustomEvent[] = []
+    const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
+    window.addEventListener('open-dialer-queue', onQueue)
+
+    renderHeirsSection({ campaignMemberId: 'member-lead-1' })
+    fireEvent.click(await screen.findByRole('button', { name: /Call all \(1\)/i }))
+    await waitFor(() => expect(queueEvents).toHaveLength(1))
+
+    expect(queueEvents[0].detail.queue[0]).toMatchObject({
+      leadId: 'lead-1',
+      prospectId: null,
+      prospect_phone_id: null,
+      campaignMemberId: 'member-lead-1',
+    })
+    expect(screen.queryByLabelText('Verify this number')).not.toBeInTheDocument()
     window.removeEventListener('open-dialer-queue', onQueue)
   })
 

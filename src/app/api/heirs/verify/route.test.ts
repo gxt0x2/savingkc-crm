@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
   phoneRow: {
     id: 'phone-1',
+    prospect_id: 'prospect-1',
     phone: '+18165550100',
     contact_name: 'Jamie Heir',
     relationship: 'child',
     prospects: { lead_id: 'lead-1' },
   } as {
     id: string
+    prospect_id: string
     phone: string
     contact_name: string | null
     relationship: string | null
@@ -78,6 +80,7 @@ describe('heir verification mutation trust', () => {
     mocks.activities.length = 0
     mocks.phoneRow = {
       id: 'phone-1',
+      prospect_id: 'prospect-1',
       phone: '+18165550100',
       contact_name: 'Jamie Heir',
       relationship: 'child',
@@ -140,6 +143,7 @@ describe('heir verification mutation trust', () => {
   it('refuses orphaned phone evidence instead of trusting a client lead', async () => {
     mocks.phoneRow = {
       id: 'phone-1',
+      prospect_id: 'prospect-1',
       phone: '+18165550100',
       contact_name: 'Jamie Heir',
       relationship: 'child',
@@ -172,5 +176,31 @@ describe('heir verification mutation trust', () => {
       verified: true,
       warning: expect.stringContaining('activity timeline'),
     })
+  })
+
+  it('verifies an unpromoted source Prospect and writes phone-thread evidence', async () => {
+    mocks.phoneRow = {
+      id: 'phone-1',
+      prospect_id: 'prospect-1',
+      phone: '+18165550100',
+      contact_name: 'Jamie Heir',
+      relationship: 'child',
+      prospects: { lead_id: null },
+    }
+
+    const response = await POST(request({
+      prospect_phone_id: 'phone-1',
+      prospect_id: 'prospect-1',
+      verified: true,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.activities).toEqual([expect.objectContaining({
+      lead_id: null,
+      metadata: expect.objectContaining({
+        prospect_id: 'prospect-1',
+        thread_key: 'phone:+18165550100',
+      }),
+    })])
   })
 })

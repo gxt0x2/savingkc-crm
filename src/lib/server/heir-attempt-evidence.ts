@@ -6,7 +6,8 @@ export interface HeirAttemptEvidenceRow {
 }
 
 interface EvidenceInput {
-  leadId: string
+  leadId: string | null
+  prospectId?: string | null
   activityType: 'appointment' | 'call' | 'status_change'
   clientAttemptId: string | null
   action?: 'appointment_set' | 'mark_dead' | 'mark_as_lead'
@@ -22,15 +23,19 @@ export async function findHeirAttemptEvidence(
     client_attempt_id: input.clientAttemptId,
   }
   if (input.action) metadata.action = input.action
+  if (input.prospectId) metadata.prospect_id = input.prospectId
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('lead_activities')
     .select('id,metadata')
-    .eq('lead_id', input.leadId)
     .eq('activity_type', input.activityType)
     .contains('metadata', metadata)
     .order('created_at', { ascending: false })
     .limit(1)
+  query = input.leadId
+    ? query.eq('lead_id', input.leadId)
+    : query.is('lead_id', null)
+  const { data, error } = await query
     .maybeSingle()
   if (error) throw new Error('Existing heir call outcome could not be verified')
   return (data as HeirAttemptEvidenceRow | null) ?? null

@@ -18,7 +18,10 @@ const action = {
   campaignId: '22222222-2222-4222-8222-222222222222',
   memberId: '33333333-3333-4333-8333-333333333333',
   stepId: '44444444-4444-4444-8444-444444444444',
+  subjectKind: 'lead' as const,
   leadId: '55555555-5555-4555-8555-555555555555',
+  prospectId: null,
+  prospectPhoneId: null,
   attemptCount: 1,
   phone: '+19135550123',
   timezone: 'America/Chicago',
@@ -38,6 +41,24 @@ function leadBuilder() {
     eq: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({
       data: { id: action.leadId, full_name: 'Alex Seller', phone: action.phone, property_address: '1 Main St' },
+      error: null,
+    }),
+  }
+}
+
+function prospectBuilder() {
+  return {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: {
+        id: '66666666-6666-4666-8666-666666666666',
+        owner_1: 'Jordan Seller',
+        situs_street: '2 Oak Ave',
+        situs_city: 'Kansas City',
+        situs_state: 'MO',
+        situs_zip: '64118',
+      },
       error: null,
     }),
   }
@@ -85,6 +106,43 @@ describe('prospecting campaign worker', () => {
     await expect(processProspectingCampaignActions(1)).resolves.toMatchObject({ blocked: 1, sent: 0 })
     expect(mocks.rpc).toHaveBeenCalledWith('finish_prospecting_campaign_action_v1', expect.objectContaining({
       p_result: 'blocked', p_error_code: 'do_not_contact',
+    }))
+  })
+
+  it('sends an explicitly reviewed source Prospect recipient without creating a shadow Lead', async () => {
+    const prospectAction = {
+      ...action,
+      subjectKind: 'prospect' as const,
+      leadId: null,
+      prospectId: '66666666-6666-4666-8666-666666666666',
+      prospectPhoneId: '77777777-7777-4777-8777-777777777777',
+    }
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'prospects') return prospectBuilder()
+      throw new Error(`Unexpected table ${table}`)
+    })
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === 'claim_prospecting_campaign_action_v1') return Promise.resolve({ data: prospectAction, error: null })
+      if (name === 'reserve_prospecting_sms_send_v1') return Promise.resolve({ data: { reserved: true }, error: null })
+      if (name === 'finish_prospecting_campaign_action_v1') return Promise.resolve({ data: { status: 'sent' }, error: null })
+      throw new Error(`Unexpected RPC ${name}`)
+    })
+    mocks.send.mockResolvedValue({
+      status: 'sent', sid: 'SM456', from: action.fromPhone,
+      persisted: true, deliveryState: 'delivered_and_persisted',
+    })
+
+    await expect(processProspectingCampaignActions(1)).resolves.toMatchObject({ sent: 1 })
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: null,
+      phone: action.phone,
+      body: 'Hi Jordan, this is Casey about 2 Oak Ave, Kansas City, MO, 64118.',
+      metadata: expect.objectContaining({
+        subject_kind: 'prospect',
+        prospect_id: prospectAction.prospectId,
+        prospect_phone_id: prospectAction.prospectPhoneId,
+        thread_key: `phone:${action.phone}`,
+      }),
     }))
   })
 

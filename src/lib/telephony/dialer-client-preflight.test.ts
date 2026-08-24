@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const webDialerSource = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf8')
+const webPreflightSource = readFileSync('src/lib/telephony/dialer-client-preflight.ts', 'utf8')
 const mobileVoiceSource = readFileSync('apps/mobile/src/lib/twilio-voice-service.ts', 'utf8')
 const mobileApiSource = readFileSync('apps/mobile/src/lib/api.ts', 'utf8')
 const mobileAppSource = readFileSync('apps/mobile/App.tsx', 'utf8')
@@ -23,6 +24,8 @@ describe('outbound dialer client preflight', () => {
   })
 
   it('authorizes web and mobile calls before connecting or entering calling state', () => {
+    expect(webPreflightSource).toContain("fetch('/api/dialer/call-intents'")
+    expect(webPreflightSource).toContain('campaignMemberId: string | null')
     const webPreflight = webDialerSource.indexOf('const authorized = await requestDialerCallIntent({')
     const webCalling = webDialerSource.indexOf("setStatusLogged('calling')", webPreflight)
     const webConnect = webDialerSource.indexOf('deviceRef.current.connect({', webPreflight)
@@ -33,6 +36,11 @@ describe('outbound dialer client preflight', () => {
     expect(webConnect).toBeGreaterThan(webPreflight)
     expect(webStartedLog).toBeGreaterThan(webPreflight)
     expect(webDialerSource).toContain('DialIntentToken: authorized.intent')
+    expect(webDialerSource).toContain("queueItemAtStart.prospect_phone_id ? 'heir' : 'lead'")
+    expect(webDialerSource).toContain(": 'prospect'")
+    expect(webDialerSource).toContain('prospectId: kind === \'prospect\' ? prospectIdAtStart : null')
+    expect(webDialerSource).toContain('campaignMemberId: queueItemAtStart?.campaignMemberId ?? null')
+    expect(webDialerSource).toContain('const dispositionLeadId = activeItem?.leadId ?? selectedLead?.id ?? null')
 
     const mobilePreflight = mobileVoiceSource.indexOf('const authorized = await requestMobileCallIntent({')
     const mobileConnecting = mobileVoiceSource.indexOf("input.onState('connecting')", mobilePreflight)

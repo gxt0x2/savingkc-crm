@@ -5,6 +5,7 @@ import { findHeirAttemptEvidence, insertHeirAttemptEvidenceOnce } from '@/lib/se
 import { recordHeirAppointment } from '@/lib/server/heir-appointment-command'
 import { supabase } from '@/lib/supabase-lazy'
 import { isMissingColumnError } from '@/lib/schema-compat'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 // POST /api/heirs/attempt
 // body: {
@@ -34,6 +35,8 @@ export async function POST(req: Request) {
       disposition,
       notes,
       requestedLeadId,
+      requestedProspectId,
+      campaignMemberId,
       durationSeconds,
       markAsLead,
       verified,
@@ -80,17 +83,29 @@ export async function POST(req: Request) {
     }
 
     const resolvedLeadId = phoneRow.prospects?.lead_id ?? null
-    if (!resolvedLeadId) {
-      return NextResponse.json({ error: 'Heir phone has no linked contact record' }, { status: 409 })
-    }
+    const resolvedProspectId = phoneRow.prospect_id
     if (requestedLeadId && requestedLeadId !== resolvedLeadId) {
       return NextResponse.json({ error: 'Heir phone does not belong to that contact' }, { status: 409 })
     }
-    const existingCall = resolvedLeadId ? await findHeirAttemptEvidence({
+    if (requestedProspectId && requestedProspectId !== resolvedProspectId) {
+      return NextResponse.json({ error: 'Heir phone does not belong to that source prospect' }, { status: 409 })
+    }
+    if (!resolvedLeadId && !requestedProspectId) {
+      return NextResponse.json({ error: 'Source prospect context is required for this heir phone' }, { status: 409 })
+    }
+    if (!resolvedLeadId && (appointmentAt || markAsLead)) {
+      return NextResponse.json({
+        error: appointmentAt
+          ? 'Promote this prospect to a Lead before scheduling an appointment.'
+          : 'Use the reviewed promotion action before making this person a Lead.',
+      }, { status: 409 })
+    }
+    const existingCall = await findHeirAttemptEvidence({
       leadId: resolvedLeadId,
+      prospectId: resolvedProspectId,
       activityType: 'call',
       clientAttemptId,
-    }) : null
+    })
     if (existingCall && (
       existingCall.metadata?.disposition !== disposition
       || existingCall.metadata?.prospect_phone_id !== phoneRow.id
@@ -157,7 +172,7 @@ export async function POST(req: Request) {
     // 2. Canonical activity evidence — property timeline.
     {
       const appointment = appointmentAt ? await recordHeirAppointment({
-        leadId: resolvedLeadId,
+        leadId: resolvedLeadId!,
         actorName,
         appointmentAt,
         notes,
@@ -167,6 +182,7 @@ export async function POST(req: Request) {
       }) : null
       await insertHeirAttemptEvidenceOnce({
         leadId: resolvedLeadId,
+        prospectId: resolvedProspectId,
         activityType: 'call',
         clientAttemptId,
         payload: {
@@ -181,6 +197,11 @@ export async function POST(req: Request) {
             duration: durationSeconds,
             notes,
             source: 'heir_dialer',
+            prospect_id: resolvedProspectId,
+            campaign_member_id: campaignMemberId,
+            thread_key: resolvedLeadId
+              ? `lead:${resolvedLeadId}`
+              : `phone:${normalizePhoneToE164(phoneRow.phone) ?? phoneRow.phone}`,
             client_attempt_id: clientAttemptId,
             prospect_phone_id: phoneRow.id,
             heir_name: phoneRow.contact_name,
@@ -216,6 +237,7 @@ export async function POST(req: Request) {
 
         await insertHeirAttemptEvidenceOnce({
           leadId: resolvedLeadId,
+          prospectId: resolvedProspectId,
           activityType: 'status_change',
           clientAttemptId,
           action: 'mark_dead',
@@ -255,6 +277,7 @@ export async function POST(req: Request) {
 
         await insertHeirAttemptEvidenceOnce({
           leadId: resolvedLeadId,
+          prospectId: resolvedProspectId,
           activityType: 'status_change',
           clientAttemptId,
           action: 'mark_as_lead',
@@ -282,6 +305,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
+      leadId: resolvedLeadId,
+      prospectId: resolvedProspectId,
       disposition,
       verified: verificationResult,
       dead: isDead,

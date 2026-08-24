@@ -21,7 +21,7 @@ const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assis
 const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
 
 interface ProspectingCallingContextRailProps {
-  leadId: string
+  leadId: string | null
   lead: ProspectingCallingLead | null
   prospect: ProspectingCallingProspect | null
   ownerName: string
@@ -130,7 +130,8 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
           <h1 className="truncate text-xl font-black leading-tight text-[var(--ck-text)]">{props.prospect?.situs_street || props.lead?.property_address || '—'}</h1>
           <p className="mt-0.5 text-sm text-[var(--ck-text-muted)]">{[props.prospect?.situs_city || props.lead?.city, props.prospect?.situs_state || props.lead?.state].filter(Boolean).join(', ')}{(props.prospect?.situs_zip || props.lead?.zip) ? ` ${props.prospect?.situs_zip || props.lead?.zip}` : ''}</p>
         </div>
-        <Link href={`/leads/${props.leadId}`} prefetch={false} target="_blank" title="Open full lead profile in a new tab" className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Profile <Icon name="open_in_new" size="text-xs" /></Link>
+        {props.leadId ? <Link href={`/leads/${props.leadId}`} prefetch={false} target="_blank" title="Open full lead profile in a new tab" className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Profile <Icon name="open_in_new" size="text-xs" /></Link>
+          : <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">Source Prospect</span>}
       </div>
 
       <div className="mb-4 rounded-lg border border-[#E32E2E]/30 bg-[#E32E2E]/10 p-3">
@@ -159,7 +160,9 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
         <div className="inline-flex rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-0.5">{([['texts', 'Text Hub'], ['activity', 'Communications'], ['recent_calls', 'Recent Calls']] as const).map(([tab, label]) => <button key={tab} type="button" onClick={() => props.onTabChange(tab)} className={`rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${props.activeTab === tab ? 'bg-[#E32E2E] text-white' : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'}`}>{label}</button>)}</div>
         <span className="text-[10px] text-[var(--ck-text-dim)]">{props.activeTab === 'texts' ? `${commsSummary.sms} texts` : props.activeTab === 'activity' ? `${commsEvents.length} touches` : `${props.recentCalls.length} recent`}</span>
       </div>
-      {props.activeTab === 'texts' ? <SmsThreadPanel leadId={props.leadId} leadName={props.ownerName} phone={props.lead?.phone} propertyAddress={props.situsAddress} activities={props.activities} defaultFromPhone={props.callerId || null} onRefresh={props.onRefreshActivities} />
+      {props.activeTab === 'texts' ? props.leadId
+        ? <SmsThreadPanel leadId={props.leadId} leadName={props.ownerName} phone={props.lead?.phone} propertyAddress={props.situsAddress} activities={props.activities} defaultFromPhone={props.callerId || null} onRefresh={props.onRefreshActivities} />
+        : <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-xs leading-5 text-[var(--ck-text-muted)]">SMS stays locked until a reviewed recipient is selected from the campaign audience. Calling this source Prospect does not create a Lead.</div>
         : props.activeTab === 'activity' ? <div className="space-y-3"><CommsSummaryBar summary={commsSummary} /><div className="border-t border-[var(--ck-border)] pt-3"><CommsTimeline events={commsEvents} emptyHint="No calls, texts, or emails logged for this lead yet." /></div></div>
           : <RecentCalls calls={props.recentCalls} />}
     </section>

@@ -98,6 +98,14 @@ export async function GET(req: NextRequest) {
         headers: NO_STORE_HEADERS,
       })
     }
+    const explicitProspectIdsRequested = searchParams.has('prospect_ids')
+    const explicitProspectIds = parseLeadIds(searchParams.get('prospect_ids'))
+    if (explicitProspectIdsRequested && explicitProspectIds.length === 0) {
+      return NextResponse.json({ success: false, error: 'No valid prospect IDs supplied' }, {
+        status: 400,
+        headers: NO_STORE_HEADERS,
+      })
+    }
     const cohortLeadIds = explicitLeadIds.length > 0
       ? []
       : await resolveCohortLeadIds(searchParams.get('cohort'))
@@ -107,7 +115,30 @@ export async function GET(req: NextRequest) {
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 1000) : 1000
 
     if (idsOnly) {
-      return NextResponse.json({ success: true, leadIds: requestedLeadIds }, { headers: NO_STORE_HEADERS })
+      return NextResponse.json({ success: true, leadIds: requestedLeadIds, prospectIds: explicitProspectIds }, { headers: NO_STORE_HEADERS })
+    }
+
+    if (requestedLeadIds.length === 0 && explicitProspectIds.length > 0) {
+      const projectionStartedAt = performance.now()
+      const { data, error } = await supabase
+        .from('prospects')
+        .select(EXPANDED_PROSPECT_SELECT)
+        .in('id', explicitProspectIds)
+        .limit(explicitProspectIds.length)
+      if (error) {
+        console.error('[dialer/queue] Prospect context lookup failed', error.message)
+        return NextResponse.json({ success: false, error: 'Dialer context is unavailable' }, { status: 500, headers: NO_STORE_HEADERS })
+      }
+      const projectionDuration = performance.now() - projectionStartedAt
+      return NextResponse.json({
+        success: true,
+        leads: [],
+        queueContext: [],
+        queueMetrics: null,
+        prospects: data || [],
+        coOwners: [],
+        queuePolicy: { callingWindowOpen: isWithinDialerCallingHours() },
+      }, { headers: successHeaders(requestStartedAt, projectionDuration, { leads: 0, context: 0, prospects: data?.length ?? 0, eligible: data?.length ?? 0 }) })
     }
 
     const projectionStartedAt = performance.now()
@@ -139,12 +170,15 @@ export async function GET(req: NextRequest) {
         })
       }
 
-      const [prospectResult, coOwnerResult] = await Promise.all([
+      const [prospectResult, explicitProspectResult, coOwnerResult] = await Promise.all([
         supabase
           .from('prospects')
           .select(EXPANDED_PROSPECT_SELECT)
           .in('lead_id', leadIds)
           .limit(Math.min(Math.max(leadIds.length * 5, 100), 1000)),
+        explicitProspectIds.length > 0
+          ? supabase.from('prospects').select(EXPANDED_PROSPECT_SELECT).in('id', explicitProspectIds).limit(explicitProspectIds.length)
+          : Promise.resolve({ data: [], error: null }),
         supabase
           .from('lead_co_owners')
           .select('lead_id, name')
@@ -153,9 +187,10 @@ export async function GET(req: NextRequest) {
           .limit(Math.min(Math.max(leadIds.length * 10, 100), 1000)),
       ])
 
-      if (prospectResult.error || coOwnerResult.error) {
+      if (prospectResult.error || explicitProspectResult.error || coOwnerResult.error) {
         console.error('[dialer/queue] Context lookup failed', {
           prospects: prospectResult.error?.message,
+          explicitProspects: explicitProspectResult.error?.message,
           coOwners: coOwnerResult.error?.message,
         })
         return NextResponse.json({ success: false, error: 'Dialer context is unavailable' }, { status: 500, headers: NO_STORE_HEADERS })
@@ -166,14 +201,14 @@ export async function GET(req: NextRequest) {
         leads: page.leads,
         queueContext: [],
         queueMetrics: page.queueMetrics,
-        prospects: prospectResult.data || [],
+        prospects: Array.from(new Map([...(prospectResult.data || []), ...(explicitProspectResult.data || [])].map((prospect) => [prospect.id, prospect])).values()),
         coOwners: coOwnerResult.data || [],
         queuePolicy: { callingWindowOpen: isWithinDialerCallingHours() },
       }, {
         headers: successHeaders(requestStartedAt, projectionDuration, {
           leads: page.leads.length,
           context: 0,
-          prospects: prospectResult.data?.length ?? 0,
+          prospects: new Set([...(prospectResult.data || []), ...(explicitProspectResult.data || [])].map((prospect) => prospect.id)).size,
           eligible: page.totalCount,
         }),
       })

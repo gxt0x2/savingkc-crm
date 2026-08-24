@@ -33,6 +33,7 @@ function eventPresentation(item: ProspectingCampaignActivity) {
   if (normalized.includes('schedule_set') || normalized.includes('schedule_updated')) return { icon: 'schedule', label: 'Send schedule updated', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
   if (normalized.includes('enrolled')) return { icon: 'person_add', label: 'Audience enrolled', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
   if (normalized.includes('member_removed')) return { icon: 'person_remove', label: 'Contact removed', tone: 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]' }
+  if (normalized.includes('sms_recipient_reviewed')) return { icon: 'verified_user', label: 'SMS recipient approved', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' }
   if (normalized.includes('dialer_batch_started')) return { icon: 'phone_in_talk', label: 'Calling batch started', tone: 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' }
   if (normalized.includes('member_call_completed')) return { icon: 'fact_check', label: 'Call outcome saved', tone: 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]' }
   return { icon: 'history', label: normalized.replaceAll('_', ' '), tone: 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]' }
@@ -126,7 +127,7 @@ export function CampaignActivityFeed({ campaignId }: { campaignId: string }) {
             {item.propertyAddress ? <p className="mt-1 truncate text-[10px] text-[var(--crm-text-muted)]">{item.propertyAddress}</p> : null}
             {item.body ? <p className="mt-2 line-clamp-2 rounded-lg bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs leading-5 text-[var(--crm-ink)]">{item.body}</p> : null}
             {item.errorCode ? <p className="mt-2 text-[10px] font-bold capitalize text-[var(--crm-warning)]">Reason: {reasonLabel(item.errorCode)}</p> : null}
-            {item.leadId ? <Link href={`/conversations?lead=${encodeURIComponent(item.leadId)}`} className="mt-2 inline-flex items-center gap-1 text-[10px] font-black text-[var(--crm-brand)] hover:underline"><Icon name="forum" className="text-sm" />Open conversation</Link> : null}
+            {item.conversationThreadId ? <Link href={`/conversations?lead=${encodeURIComponent(item.conversationThreadId)}`} className="mt-2 inline-flex items-center gap-1 text-[10px] font-black text-[var(--crm-brand)] hover:underline"><Icon name="forum" className="text-sm" />Open conversation</Link> : null}
           </div>
         </li>
       })}</ol> : null}

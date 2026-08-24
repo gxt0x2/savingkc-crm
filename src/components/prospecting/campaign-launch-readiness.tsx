@@ -13,6 +13,7 @@ export function CampaignLaunchReadiness({ campaign, actionPending, onActivate }:
     { label: 'Eligible audience', detail: campaign.stats.active > 0 ? `${campaign.stats.active} seller${campaign.stats.active === 1 ? '' : 's'} ready` : 'Add at least one eligible seller', ready: campaign.stats.active > 0 },
     { label: isSms ? 'Approved texting number' : 'Approved caller ID', detail: (isSms ? campaign.fromPhone : campaign.callerId) || 'Choose an approved team number', ready: Boolean(isSms ? campaign.fromPhone : campaign.callerId) },
     { label: isSms ? 'Message sequence' : 'Human-owned calling floor', detail: isSms ? `${campaign.steps.length} reviewed step${campaign.steps.length === 1 ? '' : 's'}` : 'No calls are placed automatically', ready: !isSms || campaign.steps.length > 0 },
+    ...(isSms ? [{ label: 'Recipient review', detail: campaign.stats.needsReview > 0 ? `${campaign.stats.needsReview} source prospect${campaign.stats.needsReview === 1 ? '' : 's'} remain inert until a recipient is chosen` : 'Every source prospect has a reviewed recipient', ready: true }] : []),
     { label: 'Safety exclusions', detail: `${campaign.stats.suppressed} suppressed; every action is rechecked`, ready: true },
   ]
   const blockers = items.filter((item) => !item.ready)
