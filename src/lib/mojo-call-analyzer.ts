@@ -1,7 +1,11 @@
 /**
  * Analyze call transcript with AI to extract seller intelligence.
- * Uses Groq Llama 3.3 70B for fast, free analysis.
+ * Uses the configured Groq structured-text model for fast analysis.
  */
+import { GROQ_STRUCTURED_TEXT_MODEL } from '@/lib/ai/groq-models'
+
+export const MOJO_CALL_ANALYZER_MODEL = GROQ_STRUCTURED_TEXT_MODEL
+
 export interface CallAnalysisResult {
   summary?: string
   aiSummary?: string
@@ -55,6 +59,7 @@ export interface CallAnalysisResult {
 export async function analyzeCallTranscript(
   transcript: string,
   _manifest?: unknown,
+  request: typeof fetch = fetch,
 ): Promise<CallAnalysisResult> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
@@ -130,16 +135,17 @@ Respond in JSON with these fields (skip any field where there's no data):
 
 Be specific. Use actual numbers and quotes from the transcript. Don't make up data that isn't in the call.`
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const res = await request('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: MOJO_CALL_ANALYZER_MODEL,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2000,
+      response_format: { type: 'json_object' },
+      max_completion_tokens: 4000,
       temperature: 0.3,
     }),
   })

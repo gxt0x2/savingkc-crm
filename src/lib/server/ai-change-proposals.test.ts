@@ -15,6 +15,7 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
 }))
 
 import { createCallAnalysisLeadProposal, decideAiChangeProposal } from './ai-change-proposals'
+import { MOJO_CALL_ANALYZER_MODEL } from '@/lib/mojo-call-analyzer'
 
 function chain(result: { data: unknown; error: unknown }) {
   const builder: Record<string, ReturnType<typeof vi.fn>> = {
@@ -81,6 +82,8 @@ describe('server AI change proposals', () => {
     expect(inserted).toMatchObject({
       entity_id: 'lead-1',
       source_type: 'call_analysis',
+      provider: 'groq',
+      model: MOJO_CALL_ANALYZER_MODEL,
       proposed_changes: { motivation_score: 8, classification: 'opportunity' },
       base_snapshot: { motivation_score: 4, classification: 'lead' },
     })

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { GROQ_STRUCTURED_TEXT_MODEL } from '@/lib/ai/groq-models'
 
 import {
   getCallReviewFramework,
@@ -14,7 +15,7 @@ import {
 } from '@/lib/marketing/call-recordings'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
-export const CALL_REVIEW_AI_MODEL = 'llama-3.3-70b-versatile'
+export const CALL_REVIEW_AI_MODEL = GROQ_STRUCTURED_TEXT_MODEL
 
 const assessmentSchema = z.object({
   id: z.string(),
@@ -85,8 +86,9 @@ ${transcript.slice(0, 30000)}`
       body: JSON.stringify({
         model: CALL_REVIEW_AI_MODEL,
         messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
         temperature: 0.1,
-        max_tokens: 6000,
+        max_completion_tokens: 6000,
       }),
     },
   )

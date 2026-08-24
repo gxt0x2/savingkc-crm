@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getCallReviewFramework } from './call-review-frameworks'
-import { generateAiCallReview } from './call-review-ai'
+import { CALL_REVIEW_AI_MODEL, generateAiCallReview } from './call-review-ai'
 
 const framework = getCallReviewFramework('junior_acquisitions')!
 const originalApiKey = process.env.GROQ_API_KEY
@@ -16,9 +16,11 @@ describe('AI call review pre-scoring', () => {
   })
 
   it('normalizes transcript evidence and fills every scorecard item', async () => {
-    const request = vi.fn(
-      async () =>
-        new Response(
+    const requestMock = vi.fn(
+      async (requestInput: RequestInfo | URL, requestInit?: RequestInit) => {
+        expect(requestInput).toBe('https://api.groq.com/openai/v1/chat/completions')
+        expect(requestInit?.method).toBe('POST')
+        return new Response(
           JSON.stringify({
             choices: [
               {
@@ -41,8 +43,10 @@ describe('AI call review pre-scoring', () => {
             ],
           }),
           { status: 200 },
-        ),
-    ) as unknown as typeof fetch
+        )
+      },
+    )
+    const request = requestMock as unknown as typeof fetch
 
     const result = await generateAiCallReview(
       'Seller: We need to sell before the tax auction. Agent: Tell me more about that.',
@@ -65,6 +69,11 @@ describe('AI call review pre-scoring', () => {
       ),
     )
     expect(result.scoring.needsCoaching).toBe(true)
+    expect(JSON.parse(String((requestMock.mock.calls[0]?.[1] as RequestInit)?.body))).toMatchObject({
+      model: CALL_REVIEW_AI_MODEL,
+      response_format: { type: 'json_object' },
+      max_completion_tokens: 6000,
+    })
   })
 
   it('fails closed when AI scoring is not configured', async () => {
