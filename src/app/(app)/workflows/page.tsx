@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { WorkflowRunPanel } from '@/components/workflows/workflow-run-panel'
+import { WorkflowDraftValidation } from '@/components/workflows/workflow-draft-validation'
 import { SmsTemplateManager } from '@/components/workflows/sms-template-manager'
 import { EntityIntegrityPanel } from '@/components/workflows/entity-integrity-panel'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
@@ -483,6 +484,7 @@ function WorkflowDetails({ workflow }: { workflow: WorkflowDefinition }) {
       <section><h3 className="text-xs font-black uppercase tracking-[0.14em] text-[var(--crm-text-muted)]">Trigger</h3><div className="mt-2 flex items-center gap-3 rounded-xl border border-[var(--crm-info)]/25 bg-[var(--crm-info-soft)] p-3 text-sm font-bold text-[var(--crm-info)]"><Icon name="bolt" />{triggerLabel(workflow.trigger)}</div></section>
       <section><h3 className="text-xs font-black uppercase tracking-[0.14em] text-[var(--crm-text-muted)]">Action sequence</h3><ol className="mt-3 space-y-3">{workflow.actions.map((action, index) => <li key={`${action.type}-${index}`} className="flex items-start gap-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--crm-violet-soft)] text-xs font-black text-[var(--crm-violet)]">{index + 1}</span><p className="pt-1 text-sm font-semibold leading-5 text-[var(--crm-ink)]">{actionLabel(action)}</p></li>)}</ol></section>
       <section><h3 className="text-xs font-black uppercase tracking-[0.14em] text-[var(--crm-text-muted)]">Implementation</h3><div className="mt-2 space-y-2">{workflow.implementation.sourceFiles.map((source) => <code key={source} className="block rounded-lg bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs text-[var(--crm-text-muted)]">{source}</code>)}</div>{workflow.implementation.schedule ? <p className="mt-3 text-xs text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">Schedule:</strong> {workflow.implementation.schedule}</p> : null}</section>
+      {workflow.status === 'draft' ? <WorkflowDraftValidation workflowId={workflow.id} /> : null}
     </div>
   )
 }

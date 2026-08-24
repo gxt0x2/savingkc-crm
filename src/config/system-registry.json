@@ -370,7 +370,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/workflows"],
-      "apiRoutes": ["/api/workflows/definitions", "/api/workflows/phone-system", "/api/workflows/summary", "/api/workflows/runs", "/api/workflows/runs/[id]/decision", "/api/workers/workflow-runs", "/api/sms-templates"],
+      "apiRoutes": ["/api/workflows/definitions", "/api/workflows/definitions/[id]/validation", "/api/workflows/phone-system", "/api/workflows/summary", "/api/workflows/runs", "/api/workflows/runs/[id]/decision", "/api/workers/workflow-runs", "/api/sms-templates"],
       "tables": ["workflow_definition_versions", "workflow_runs", "workflow_run_steps", "workflow_approvals", "workflow_run_events", "work_items", "work_item_events", "lead_activities", "leads", "phone_number_registry", "sms_templates"],
       "environment": ["CRON_SECRET"],
       "crons": [

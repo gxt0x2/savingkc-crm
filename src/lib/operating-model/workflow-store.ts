@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { WorkflowCategory, WorkflowDefinition } from './types'
+import type { WorkflowCategory, WorkflowDefinition, WorkflowImplementation } from './types'
 import { validateWorkflowDefinition } from './workflow-catalog'
 
 const KEY_PREFIX = 'workflow_definition:v1:'
@@ -25,6 +25,35 @@ export type StoredWorkflowDefinition = {
     createdAt: string
     updatedAt: string
     rollbackPlan: string
+  }
+}
+
+export type WorkflowDraftValidationCheck = {
+  id: 'definition_contract' | 'draft_state' | 'approval_boundary' | 'rollback_plan' | 'executor_mapping'
+  label: string
+  status: 'pass' | 'warning' | 'blocked'
+  detail: string
+}
+
+export type WorkflowDraftValidationReport = {
+  workflowId: string
+  workflowVersion: number
+  generatedAt: string
+  mode: 'validation_only'
+  readyForReview: boolean
+  readyForPublish: false
+  checks: WorkflowDraftValidationCheck[]
+  plannedEffects: Array<{
+    order: number
+    label: string
+    executor: 'not_wired'
+    effect: 'read_only' | 'potential_crm_write'
+  }>
+  boundary: {
+    mutatesData: boolean
+    approvalPolicy: WorkflowImplementation['approvalPolicy']
+    protectedResources: string[]
+    execution: WorkflowImplementation['execution']
   }
 }
 
@@ -104,6 +133,103 @@ export async function readStoredWorkflowDefinitions(db: SupabaseClient): Promise
       return []
     }
   }).sort((a, b) => b.governance.updatedAt.localeCompare(a.governance.updatedAt))
+}
+
+export async function readStoredWorkflowDefinition(db: SupabaseClient, workflowId: string): Promise<StoredWorkflowDefinition | null> {
+  const { data, error } = await db
+    .from('system_config')
+    .select('value')
+    .eq('key', `${KEY_PREFIX}${workflowId}`)
+    .maybeSingle()
+  if (error) throw new Error(`Workflow registry unavailable: ${error.message}`)
+  if (!data?.value) return null
+  try {
+    const parsed = JSON.parse(String(data.value)) as StoredWorkflowDefinition
+    return parsed?.definition?.id === workflowId && parsed?.governance?.createdAt ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+export function validateStoredWorkflowDraft(
+  stored: StoredWorkflowDefinition,
+  now = new Date(),
+): WorkflowDraftValidationReport {
+  const { definition, governance } = stored
+  const contractIssues = validateWorkflowDefinition(definition)
+  const contractErrors = contractIssues.filter((issue) => issue.severity === 'error')
+  const contractWarnings = contractIssues.filter((issue) => issue.severity === 'warning')
+  const approvalIsExplicit = definition.implementation.approvalPolicy === 'user_confirmation'
+    || definition.implementation.approvalPolicy === 'admin_only'
+  const rollbackPresent = governance.rollbackPlan.trim().length > 0
+  const isDraft = definition.status === 'draft'
+  const isStoredConfiguration = definition.implementation.execution === 'configuration'
+  const everyActionIsDescriptive = definition.actions.every((action) => action.type === 'execute')
+
+  const checks: WorkflowDraftValidationCheck[] = [
+    {
+      id: 'definition_contract',
+      label: 'Definition contract',
+      status: contractErrors.length > 0 ? 'blocked' : contractWarnings.length > 0 ? 'warning' : 'pass',
+      detail: contractErrors.length > 0
+        ? contractErrors.map((issue) => issue.message).join(' ')
+        : contractWarnings.length > 0
+          ? contractWarnings.map((issue) => issue.message).join(' ')
+          : 'Required identity, trigger, ownership, and action fields are present.',
+    },
+    {
+      id: 'draft_state',
+      label: 'Draft isolation',
+      status: isDraft ? 'pass' : 'blocked',
+      detail: isDraft
+        ? 'This definition is isolated from execution and cannot run by being viewed or validated.'
+        : 'Only draft definitions may use this validation path.',
+    },
+    {
+      id: 'approval_boundary',
+      label: 'Approval boundary',
+      status: approvalIsExplicit ? 'pass' : 'blocked',
+      detail: approvalIsExplicit
+        ? `Execution would require ${definition.implementation.approvalPolicy.replaceAll('_', ' ')} approval.`
+        : 'A human approval boundary is required before publication.',
+    },
+    {
+      id: 'rollback_plan',
+      label: 'Rollback plan',
+      status: rollbackPresent ? 'pass' : 'blocked',
+      detail: rollbackPresent ? governance.rollbackPlan : 'A rollback plan is required before publication.',
+    },
+    {
+      id: 'executor_mapping',
+      label: 'Executable action mapping',
+      status: 'blocked',
+      detail: isStoredConfiguration && everyActionIsDescriptive
+        ? 'The actions are descriptive only. Each step must be mapped to a governed executor and rehearsed before publication.'
+        : 'This stored definition has no approved executable publication path.',
+    },
+  ]
+
+  return {
+    workflowId: definition.id,
+    workflowVersion: definition.version,
+    generatedAt: now.toISOString(),
+    mode: 'validation_only',
+    readyForReview: checks.every((check) => check.id === 'executor_mapping' || check.status !== 'blocked'),
+    readyForPublish: false,
+    checks,
+    plannedEffects: definition.actions.map((action, index) => ({
+      order: index + 1,
+      label: action.type === 'execute' ? action.label : action.type.replaceAll('_', ' '),
+      executor: 'not_wired',
+      effect: definition.implementation.mutatesData ? 'potential_crm_write' : 'read_only',
+    })),
+    boundary: {
+      mutatesData: definition.implementation.mutatesData,
+      approvalPolicy: definition.implementation.approvalPolicy,
+      protectedResources: [...(definition.protectedResources ?? [])],
+      execution: definition.implementation.execution,
+    },
+  }
 }
 
 export async function saveWorkflowDraft(db: SupabaseClient, draft: StoredWorkflowDefinition): Promise<void> {
