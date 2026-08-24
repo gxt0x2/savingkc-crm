@@ -1,155 +1,107 @@
-/**
- * POST /api/leads/appointment-outcome
- *
- * Records the outcome of a scheduled appointment.
- * Updates manifest, logs to lead_activities, and triggers auto-advance if completed.
- */
+/** Record a human-reviewed outcome on the canonical appointment row. */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { updateManifestV2_1 } from '@/lib/manifest-sync'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
-import { regenerateBriefing } from '@/lib/briefing-regen'
+import { supabase } from '@/lib/supabase-lazy'
 
 const VALID_OUTCOMES = ['completed', 'no_show', 'cancelled', 'rescheduled'] as const
 type Outcome = (typeof VALID_OUTCOMES)[number]
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 export async function POST(req: NextRequest) {
+  const actor = await resolveAuthenticatedActor()
+  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
-    const body = await req.json()
-    const { leadId, appointmentId, outcome, notes } = body as {
-      leadId: string
-      appointmentId?: string
-      outcome: Outcome
-      notes?: string
+    const body = await req.json() as Record<string, unknown>
+    const leadId = body.leadId
+    const requestedAppointmentId = body.appointmentId
+    const outcome = body.outcome
+    const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 4000) : ''
+
+    if (!isUuid(leadId) || !VALID_OUTCOMES.includes(outcome as Outcome)) {
+      return NextResponse.json({ error: 'A valid contact and outcome are required' }, { status: 400 })
+    }
+    if (requestedAppointmentId != null && !isUuid(requestedAppointmentId)) {
+      return NextResponse.json({ error: 'Invalid appointment identifier' }, { status: 400 })
     }
 
-    if (!leadId || !outcome) {
-      return NextResponse.json(
-        { error: 'leadId and outcome are required' },
-        { status: 400 },
-      )
+    let appointmentQuery = supabase
+      .from('appointments')
+      .select('id, notes, scheduled_at, status')
+      .eq('lead_id', leadId)
+    if (isUuid(requestedAppointmentId)) {
+      appointmentQuery = appointmentQuery.eq('id', requestedAppointmentId)
+    } else {
+      appointmentQuery = appointmentQuery
+        .in('status', ['scheduled', 'confirmed', 'rescheduled'])
+        .order('scheduled_at', { ascending: false })
+        .limit(1)
     }
 
-    if (!VALID_OUTCOMES.includes(outcome)) {
-      return NextResponse.json(
-        { error: `Invalid outcome. Must be one of: ${VALID_OUTCOMES.join(', ')}` },
-        { status: 400 },
-      )
-    }
+    const { data: appointment, error: loadError } = await appointmentQuery.maybeSingle()
+    if (loadError) return NextResponse.json({ error: 'Appointment could not be loaded' }, { status: 500 })
+    if (!appointment) return NextResponse.json({ error: 'Appointment not found' }, { status: 404 })
 
     const now = new Date().toISOString()
-
-    // 1. Update manifest: set appointment status, audit trail, briefingStale
-    const updated = await updateManifestV2_1({
-      leadId,
-      compute: (current: any) => {
-        const prevAppt = current.pipeline?.appointment ?? {}
-        const nextAppt: any = {
-          ...prevAppt,
-          status: outcome,
-          outcomeRecordedAt: now,
-        }
-        if (notes) nextAppt.outcomeNotes = notes
-        if (outcome === 'no_show') {
-          nextAppt.reEngagement = { needed: true, reason: 'no_show', markedAt: now }
-        }
-
-        return {
-          pipeline: {
-            ...(current.pipeline ?? {}),
-            appointment: nextAppt,
-          },
-          auditTrail: [
-            ...(current.auditTrail ?? []),
-            {
-              timestamp: now,
-              agent: 'casey',
-              action: 'appointment_outcome',
-              details: {
-                outcome,
-                appointmentId: appointmentId || null,
-                notes: notes || null,
-              },
-            },
-          ],
-          ariIntelligence: {
-            ...(current.ariIntelligence ?? {}),
-            briefingStale: true,
-          },
-        }
-      },
-      actor: 'casey',
-      reason: 'api:appointment-outcome',
-    })
-
-    if (!updated) {
-      return NextResponse.json(
-        { error: 'Lead manifest not found' },
-        { status: 404 },
-      )
-    }
-
-    // 2. Log to lead_activities
-    const supabase = getSupabase()
-    if (appointmentId) {
-      await supabase
-        .from('appointments')
-        .update({
-          status: outcome,
-          ...(notes ? { notes } : {}),
-          updated_at: now,
-        })
-        .eq('id', appointmentId)
-        .eq('lead_id', leadId)
+    const { error: outcomeError } = await supabase
+      .from('appointments')
+      .update({
+        status: outcome,
+        ...(notes ? { notes } : {}),
+        updated_at: now,
+      })
+      .eq('id', appointment.id)
+      .eq('lead_id', leadId)
+    if (outcomeError) {
+      return NextResponse.json({ error: 'Appointment outcome could not be saved' }, { status: 500 })
     }
 
     const outcomeLabels: Record<Outcome, string> = {
       completed: 'Appointment completed',
       no_show: 'Appointment no-show',
       cancelled: 'Appointment cancelled',
-      rescheduled: 'Appointment rescheduled',
+      rescheduled: 'Appointment needs rescheduling',
     }
-
-    await supabase.from('lead_activities').insert({
+    const { error: activityError } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'appointment_outcome',
-      description: outcomeLabels[outcome] + (notes ? `: ${notes}` : ''),
-      agent: 'Casey',
+      description: outcomeLabels[outcome as Outcome] + (notes ? `: ${notes}` : ''),
+      agent: actor.name,
       metadata: {
+        appointment_id: appointment.id,
         outcome,
-        appointmentId: appointmentId || null,
         notes: notes || null,
-        recordedAt: now,
+        recorded_at: now,
+        actor_email: actor.email,
+        source: 'appointment_outcome_review',
       },
     })
 
-    // 3. If completed, check auto-advance
     let autoAdvance = null
     if (outcome === 'completed') {
-      autoAdvance = await checkAutoAdvance(leadId, 'appointment_completed')
+      autoAdvance = await checkAutoAdvance(leadId, 'appointment_completed').catch((error) => {
+        console.error('[appointment-outcome] lifecycle advance failed:', error)
+        return null
+      })
     }
-
-    // 4. Eager briefing regen — appointment outcome is high-value
-    regenerateBriefing(leadId, `appointment_${outcome}`).catch(() => {})
 
     return NextResponse.json({
       success: true,
+      appointmentId: appointment.id,
       outcome,
-      autoAdvance: autoAdvance || null,
+      autoAdvance,
+      ...(activityError ? {
+        warning: 'The outcome was saved, but its timeline entry is pending. Do not submit it again.',
+      } : {}),
     })
-  } catch (err: any) {
-    console.error('appointment-outcome error:', err)
-    return NextResponse.json(
-      { error: err.message || 'Internal server error' },
-      { status: 500 },
-    )
+  } catch (error) {
+    console.error('[appointment-outcome] failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

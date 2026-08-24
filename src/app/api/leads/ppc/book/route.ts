@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomUUID } from 'crypto'
 import { z } from 'zod'
-import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { supabase } from '@/lib/supabase-lazy'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
+import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 
 export const runtime = 'nodejs'
 
@@ -12,7 +11,7 @@ export const runtime = 'nodejs'
  * Cal.com booking webhook target — fires when a PPC visitor books a call.
  *
  * Two responsibilities:
- *   1. Stamp the manifest with appointment details and advance the station.
+ *   1. Record the canonical appointment and advance the governed lifecycle.
  *   2. Queue the `appointment_booked` Google Ads conversion server-side using
  *      the stored attribution. Server-side is mandatory for the high-value
  *      event; client-side firing would drop offline-conversion attribution.
@@ -98,6 +97,10 @@ export async function POST(req: NextRequest) {
 
   let leadId = leadIdFromBody ?? null
   if (!leadId && manifestId) {
+    console.warn(JSON.stringify({
+      event: 'legacy_ppc_booking_manifest_identifier_used',
+      replacement: 'leadId',
+    }))
     const { data } = await supabase
       .from('manifests')
       .select('lead_id')
@@ -134,60 +137,29 @@ export async function POST(req: NextRequest) {
     sourceCallId: parsed.bookingId ?? null,
     assignedTo: 'casey',
   })
-  const appointmentId = canonicalAppointment?.id ?? parsed.bookingId ?? randomUUID()
-
-  try {
-    await updateManifestAndCascade(
-      leadId,
-      (m) => {
-        m.currentStation = 'appointment_set'
-        m.priority = 'hot'
-        m.pipeline = m.pipeline ?? {}
-        m.pipeline.appointment = {
-          appointmentId,
-          type: 'phone_call',
-          scheduledAt: scheduledIso,
-          createdAt: new Date().toISOString(),
-          status: 'scheduled',
-          confirmationCount: 0,
-          lastSellerResponse: null,
-          ghostRiskScore: 0,
-          ghostProtocolActive: false,
-          reminderAutomationEnabled: true,
-          reminderAutomationEnabledAt: new Date().toISOString(),
-          reminderAutomationSource: 'ppc-landing-book',
-          automationLog: [],
-          assignedTo: 'casey',
-          address: null,
-          notes: appointmentNotes || null,
-        }
-        m.booking = {
-          ...(m.booking ?? {}),
-          bookingId: parsed.bookingId ?? undefined,
-          scheduledDate: scheduledIso.slice(0, 10),
-          scheduledTime: parsed.scheduledTime ?? scheduledIso.slice(11, 16),
-          scheduledAt: scheduledIso,
-        }
-      },
-      'ppc-landing-book',
-    )
-  } catch (err) {
-    console.error('[ppc/book] cascade failed', err)
-    return NextResponse.json({ ok: false, error: 'Cascade failed' }, { status: 500 })
+  if (!canonicalAppointment) {
+    return NextResponse.json({ ok: false, error: 'Appointment could not be saved' }, { status: 500 })
   }
+  const appointmentId = canonicalAppointment.id
 
-  await supabase
+  const warnings: string[] = []
+  const { error: snapshotError } = await supabase
     .from('leads')
     .update({
-      station: 'appointment_set',
-      priority: 'hot',
       appointment_date: scheduledIso,
       appointment_notes: appointmentNotes || 'PPC booking',
       updated_at: new Date().toISOString(),
     })
     .eq('id', leadId)
+  if (snapshotError) warnings.push('The contact appointment snapshot is pending.')
 
-  const { data: appointmentActivity } = await supabase
+  const lifecycle = await checkAutoAdvance(leadId, 'appointment_set').catch((error) => {
+    console.error('[ppc/book] lifecycle advance failed:', error)
+    warnings.push('The lifecycle stage refresh is pending.')
+    return { advanced: false }
+  })
+
+  const { data: appointmentActivity, error: activityError } = await supabase
     .from('lead_activities')
     .insert({
       lead_id: leadId,
@@ -213,6 +185,7 @@ export async function POST(req: NextRequest) {
     })
     .select('id')
     .maybeSingle()
+  if (activityError) warnings.push('The appointment timeline entry is pending.')
 
   const conversion = await queuePpcAppointmentBookedConversion({
     leadId,
@@ -229,9 +202,11 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     leadId,
-    manifestId: manifestId ?? null,
+    manifestId: null,
     appointmentId,
     scheduledAt: scheduledIso,
+    lifecycleAdvanced: lifecycle.advanced,
     conversion,
+    ...(warnings.length > 0 ? { warning: warnings.join(' ') } : {}),
   })
 }

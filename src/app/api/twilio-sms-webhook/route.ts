@@ -13,6 +13,7 @@ import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { processInboundSmsConsent } from '@/lib/sms-consent-audit'
 import { supabase } from '@/lib/supabase-lazy'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
+import { recordAppointmentSmsResponse } from '@/lib/server/appointment-sms-response'
 import {
   googleAdsNewTextTeamMessage,
   markLeadAsGoogleAdsPhoneLead,
@@ -242,58 +243,27 @@ export async function POST(req: Request) {
     // ── Keyword detection and internal escalation ───────────
     const msg = messageBody.trim().toUpperCase()
 
-    // ── Quick-confirm: if lead has active appointment, low-friction keywords confirm it ──
-    const CONFIRM_KEYWORDS = new Set(['1', 'YES', 'YES!', 'Y', 'YEP', 'YEAH', 'YA', 'OK', 'OKAY', 'SURE', 'SOUNDS GOOD', 'CONFIRM', 'CONFIRMED', 'CONFIRM!', 'YES PLEASE', 'PERFECT', 'SEE YOU THEN', 'WILL BE THERE', 'IM GOOD', "I'M GOOD", 'WORKS FOR ME'])
-    if (leadId && CONFIRM_KEYWORDS.has(msg)) {
-      // Check if this lead has an active appointment
-      const { data: manifestRow } = await supabase
-        .from('manifests')
-        .select('manifest')
-        .eq('lead_id', leadId)
-        .single()
-
-      const appt = manifestRow?.manifest?.pipeline?.appointment
-      const activeStatuses = ['scheduled', 'confirmed', 'reconfirmed']
-      if (appt && activeStatuses.includes(appt.status)) {
-        // Route to appointment confirmation instead of "wants to sell" flow
-        try {
-          const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-
-          await updateManifestAndCascade(leadId, (manifest) => {
-            const a = manifest.pipeline?.appointment
-            if (!a) return
-            a.confirmationCount = (a.confirmationCount || 0) + 1
-            a.lastSellerResponse = new Date().toISOString()
-            a.status = a.confirmationCount > 1 ? 'reconfirmed' : 'confirmed'
-            a.ghostRiskScore = Math.max(0, (a.ghostRiskScore || 0) - 30)
-
-            if (!a.automationLog) a.automationLog = []
-            a.automationLog.push({
-              timestamp: new Date().toISOString(),
-              action: 'seller_confirmed',
-              channel: 'sms',
-              sellerResponded: true,
-            })
-
-            if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-            manifest.ariIntelligence.briefingStale = true
-          }, 'twilio:quick_confirm')
-
-          await supabase.from('lead_activities').insert({
-            lead_id: leadId,
-            activity_type: 'appointment_confirmed',
-            description: `Seller confirmed appointment via SMS ("${messageBody.trim()}")`,
-            agent: 'Seller',
-            metadata: { source: 'sms_reply', keyword: msg, original_message: messageBody.trim() },
-          })
-
-          regenerateBriefing(leadId, 'appointment_confirmed').catch(() => {})
-
+    // Appointment replies are grounded in the canonical appointment row. A
+    // free-form reply remains a normal conversation; it does not create a
+    // heuristic risk score or an automation task.
+    if (leadId) {
+      try {
+        const appointmentResponse = await recordAppointmentSmsResponse({
+          leadId,
+          message: messageBody,
+          messageSid: messageSid || null,
+        })
+        if (appointmentResponse.handled) {
+          regenerateBriefing(
+            leadId,
+            appointmentResponse.response === 'confirm' ? 'appointment_confirmed' : 'appointment_rescheduled',
+          ).catch(() => {})
           return emptyTwimlResponse()
-        } catch (err) {
-          console.error('Quick-confirm failed:', err)
-          // Fall through to normal YES handling
         }
+      } catch (error) {
+        console.error('[twilio-sms-webhook] canonical appointment response failed:', error)
+        // Keep the inbound conversation actionable rather than acknowledging a
+        // state change that was not persisted.
       }
     }
 
@@ -380,152 +350,6 @@ export async function POST(req: Request) {
       }
 
       return emptyTwimlResponse()
-    }
-
-    // ── CONFIRM/CONFIRMED keyword (Sprint 1 S1-04) ──
-    if (msg === 'CONFIRM' || msg === 'CONFIRMED' || msg === 'CONFIRM!') {
-      if (leadId) {
-        try {
-          const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-
-          // Update manifest with confirmation
-          await updateManifestAndCascade(leadId, (manifest) => {
-            const appt = manifest.pipeline?.appointment
-            if (appt) {
-              // Increment confirmation count
-              appt.confirmationCount = (appt.confirmationCount || 0) + 1
-
-              // Set last seller response
-              appt.lastSellerResponse = new Date().toISOString()
-
-              // Update status to confirmed/reconfirmed
-              if (appt.status === 'confirmed' || appt.confirmationCount > 1) {
-                appt.status = 'reconfirmed'
-              } else {
-                appt.status = 'confirmed'
-              }
-
-              // Lower ghost risk score on confirmation
-              appt.ghostRiskScore = Math.max(0, (appt.ghostRiskScore || 0) - 30)
-
-              // Log to automation log
-              if (!appt.automationLog) appt.automationLog = []
-              appt.automationLog.push({
-                timestamp: new Date().toISOString(),
-                action: 'seller_confirmed',
-                channel: 'sms',
-                sellerResponded: true,
-              })
-            }
-
-            // Mark briefing as stale
-            if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-            manifest.ariIntelligence.briefingStale = true
-
-            // Add to audit trail
-            if (!manifest.auditTrail) manifest.auditTrail = []
-            manifest.auditTrail.push({
-              timestamp: new Date().toISOString(),
-              agent: 'twilio:confirm_reply',
-              action: 'appointment_confirmed',
-              details: {
-                confirmationCount: manifest.pipeline?.appointment?.confirmationCount || 0,
-                status: manifest.pipeline?.appointment?.status,
-              },
-            })
-          }, 'twilio:confirm_reply')
-
-          // Log to lead_activities for timeline
-          await supabase.from('lead_activities').insert({
-            lead_id: leadId,
-            activity_type: 'appointment_confirmed',
-            description: 'Seller confirmed appointment via SMS',
-            agent: 'Seller',
-            metadata: { source: 'sms_reply', keyword: 'CONFIRM' },
-          })
-
-          // Eager briefing regen — appointment confirmation is high-value
-          regenerateBriefing(leadId, 'appointment_confirmed').catch(() => {})
-
-          return emptyTwimlResponse()
-        } catch (err) {
-          console.error('Failed to process CONFIRM keyword:', err)
-        }
-      }
-      // If no lead found, fall through to default handling
-    }
-
-    // ── Active appointment reply handler (any inbound from lead with scheduled appt) ──
-    if (leadId) {
-      try {
-        const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-        const { calculateGhostRisk } = await import('@/lib/ghost-risk-calculator')
-
-        // Fetch current manifest to check for active appointment
-        const { data: manifestRow } = await supabase
-          .from('lead_manifest')
-          .select('manifest')
-          .eq('lead_id', leadId)
-          .single()
-
-        const manifest = manifestRow?.manifest
-        const appt = manifest?.pipeline?.appointment
-        const activeStatuses = ['scheduled', 'confirmed', 'reconfirmed']
-
-        if (appt && activeStatuses.includes(appt.status)) {
-          // Reschedule language detection
-          const lowerMsg = messageBody.trim().toLowerCase()
-          const reschedulePatterns = [
-            'reschedule',
-            "can't make it",
-            'cant make it',
-            'another time',
-            'push back',
-            'different day',
-            'different time',
-          ]
-          // 'move' checked with word boundary to avoid false positives
-          const isReschedule = reschedulePatterns.some(p => lowerMsg.includes(p)) ||
-            /\bmove\b/.test(lowerMsg)
-
-          await updateManifestAndCascade(leadId, (m) => {
-            const a = m.pipeline?.appointment
-            if (!a) return
-
-            // Record seller response timestamp
-            a.lastSellerResponse = new Date().toISOString()
-
-            // Push to automation log
-            if (!a.automationLog) a.automationLog = []
-            a.automationLog.push({
-              timestamp: new Date().toISOString(),
-              action: 'seller_reply',
-              channel: 'sms',
-              sellerResponded: true,
-            })
-
-            if (isReschedule) {
-              // Seller wants to reschedule
-              a.status = 'rescheduled'
-            } else {
-              // Ambiguous reply — bump ghost risk slightly
-              a.ghostRiskScore = (a.ghostRiskScore || 0) + 15
-            }
-
-            // Recalculate ghost risk from full manifest
-            const recalculated = calculateGhostRisk(m)
-            a.ghostRiskScore = recalculated
-
-            // Mark briefing as stale
-            if (!m.ariIntelligence) m.ariIntelligence = {}
-            m.ariIntelligence.briefingStale = true
-          }, 'twilio:appointment_reply')
-
-        }
-      } catch (err) {
-        console.error('Appointment reply handler error:', err)
-      }
-      // Fall through — do not return early
     }
 
     // ── STOP / DNC handling (secondary logging — TCPA opt-out already handled above) ──

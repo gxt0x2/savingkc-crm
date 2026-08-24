@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   notifyGoogleAdsTeam: vi.fn(),
   resolveGoogleAdsLeadContext: vi.fn(),
   processInboundSmsConsent: vi.fn(),
+  recordAppointmentSmsResponse: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -91,8 +92,8 @@ vi.mock('@/lib/google-ads-phone', () => ({
   resolveGoogleAdsLeadContext: mocks.resolveGoogleAdsLeadContext,
 }))
 
-vi.mock('@/lib/ghost-risk-calculator', () => ({
-  calculateGhostRisk: vi.fn(() => 0),
+vi.mock('@/lib/server/appointment-sms-response', () => ({
+  recordAppointmentSmsResponse: mocks.recordAppointmentSmsResponse,
 }))
 
 import { POST } from './route'
@@ -174,6 +175,11 @@ describe('twilio SMS webhook seller responses', () => {
     mocks.safeSendSMS.mockResolvedValue({ success: true, sid: 'SM-alert' })
     mocks.isGoogleAdsPhoneNumber.mockReturnValue(false)
     mocks.resolveGoogleAdsLeadContext.mockResolvedValue({ leadId: null, leadName: null })
+    mocks.recordAppointmentSmsResponse.mockImplementation(async ({ message }: { message: string }) => (
+      message.trim().toUpperCase() === 'CONFIRM'
+        ? { handled: true, appointmentId: 'appointment-1', response: 'confirm' }
+        : { handled: false }
+    ))
     mocks.from.mockImplementation((table: string) => supabaseChain(table))
   })
 
@@ -196,12 +202,12 @@ describe('twilio SMS webhook seller responses', () => {
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.safeSendSMS).not.toHaveBeenCalledWith(expect.objectContaining({ to: PROSPECT_PHONE }))
-    expect(inserts.some(({ table, payload }) => (
-      table === 'lead_activities' &&
-      typeof payload === 'object' &&
-      payload !== null &&
-      (payload as { activity_type?: string }).activity_type === 'appointment_confirmed'
-    ))).toBe(true)
+    expect(mocks.recordAppointmentSmsResponse).toHaveBeenCalledWith({
+      leadId: 'lead-123',
+      message: 'CONFIRM',
+      messageSid: 'SM-CONFIRM',
+    })
+    expect(mocks.regenerateBriefing).toHaveBeenCalledWith('lead-123', 'appointment_confirmed')
   })
 
   it('keeps TCPA STOP acknowledgement intact', async () => {
