@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { notifyNewLead } from '@/lib/ari-briefing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
@@ -410,40 +409,6 @@ export async function POST(req: NextRequest) {
     const resolvedLeadId = leadId as string
     await removeMergedPartialLead(sessionLead, resolvedLeadId)
 
-    const manifestId = await ensureManifestExists(resolvedLeadId)
-    if (!manifestId) {
-      console.error('[website-lead] manifest bootstrap failed for lead', resolvedLeadId)
-      return NextResponse.json({ success: false, error: 'Manifest unavailable' }, { status: 500, headers: corsHeaders })
-    }
-
-    await updateManifestAndCascade(
-      resolvedLeadId,
-      (manifest) => {
-        manifest.source = leadSource
-        manifest.leadSource = leadSource
-        manifest.priority = isGoogleAds ? 'hot' : 'warm'
-        if (address && !manifest.property.address) manifest.property.address = address
-        if (normalizedPhone && !manifest.owner.phones?.includes(normalizedPhone)) {
-          manifest.owner.phones = [normalizedPhone, ...(manifest.owner.phones ?? [])]
-        }
-        if (email && !manifest.owner.emails?.includes(email)) {
-          manifest.owner.emails = [email, ...(manifest.owner.emails ?? [])]
-        }
-        manifest.owner.fullName = name
-        manifest.acquisition = {
-          source: leadSource,
-          channel: isGoogleAds ? 'google-ads' : 'website',
-          attribution: {
-            ...attribution,
-            landingUrl: landingUrl ?? undefined,
-            referrer: referrer ?? undefined,
-            capturedAt: new Date().toISOString(),
-          },
-        }
-      },
-      leadSource,
-    )
-
     const activityId = await upsertWebsiteLeadActivity({
       leadId: resolvedLeadId,
       formSource,
@@ -477,7 +442,6 @@ export async function POST(req: NextRequest) {
         eventName: 'lead_submitted',
         eventCategory: 'form',
         leadId: resolvedLeadId,
-        manifestId,
         activityId,
         dedupeKey: `lead:${resolvedLeadId}:website_lead_submitted`,
         optimizationRole: 'primary',
@@ -508,7 +472,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, leadId: resolvedLeadId, manifestId }, { headers: corsHeaders })
+    return NextResponse.json({ success: true, leadId: resolvedLeadId }, { headers: corsHeaders })
   } catch (err) {
     console.error('leads route error:', err)
     return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500, headers: corsHeaders })
