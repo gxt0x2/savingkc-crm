@@ -17,7 +17,7 @@ export interface AgentDailyStats {
   followups_missed: number
   leads_advanced: number
   leads_stagnant: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -264,148 +264,8 @@ export function generateCoachingInsight(stats: AgentDailyStats): string {
 export interface AnthropicCoachingPayload {
   agent_id: string
   stats_summary: AgentDailyStats[]
-  recent_activities: any[]
-  lead_pipeline: any[]
-}
-
-// ---------------------------------------------------------------------------
-// Appointment Show Rate Stats
-// ---------------------------------------------------------------------------
-
-export interface AppointmentStats {
-  showRate30Day: number           // completed / (completed + no_show) * 100
-  showRateByType: {
-    phone: number
-    inPerson: number
-  }
-  confirmationRate: number         // % with confirmationCount >= 1
-  ghostProtocolActivationRate: number  // % that triggered ghost protocol
-  ghostProtocolRecoveryRate: number    // % of ghost-triggered that still showed
-  avgConfirmationCount: number
-  totalAppointments: number
-  completed: number
-  noShows: number
-  cancelled: number
-  rescheduled: number
-}
-
-/**
- * Query manifests table and compute appointment show rate metrics.
- * Looks at appointments from the last 30 days by default.
- */
-export async function getAppointmentStats(days: number = 30): Promise<AppointmentStats> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const supabase = createClient(supabaseUrl, supabaseKey)
-
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - days)
-  const cutoffISO = cutoff.toISOString()
-
-  // Fetch all manifests that have an appointment
-  const { data: rows } = await supabase
-    .from('manifests')
-    .select('id, manifest, appointment_status, updated_at')
-    .not('appointment_status', 'is', null)
-    .gte('updated_at', cutoffISO)
-
-  const manifests = (rows || []) as Array<{
-    id: string
-    manifest: any
-    appointment_status: string | null
-    updated_at: string
-  }>
-
-  let completed = 0
-  let noShows = 0
-  let cancelled = 0
-  let rescheduled = 0
-  let phoneCompleted = 0
-  let phoneTotal = 0
-  let inPersonCompleted = 0
-  let inPersonTotal = 0
-  let withConfirmation = 0
-  let totalConfirmations = 0
-  let ghostTriggered = 0
-  let ghostRecovered = 0
-  let totalWithAppointment = 0
-
-  for (const row of manifests) {
-    const appt = row.manifest?.pipeline?.appointment
-    if (!appt) continue
-
-    totalWithAppointment++
-
-    const status = appt.status || row.appointment_status
-    const type = (appt.type || '').toLowerCase()
-    const confirmCount = appt.confirmationCount ?? 0
-    const ghostActive = appt.ghostProtocolActive === true
-
-    // Count outcomes
-    if (status === 'completed') completed++
-    else if (status === 'no_show') noShows++
-    else if (status === 'cancelled') cancelled++
-    else if (status === 'rescheduled') rescheduled++
-
-    // By type (only count resolved appointments)
-    const isPhone = type === 'phone_call' || type === 'google_meet'
-    const isInPerson = type === 'in_person'
-
-    if (isPhone) {
-      phoneTotal++
-      if (status === 'completed') phoneCompleted++
-    } else if (isInPerson) {
-      inPersonTotal++
-      if (status === 'completed') inPersonCompleted++
-    }
-
-    // Confirmation tracking
-    if (confirmCount >= 1) withConfirmation++
-    totalConfirmations += confirmCount
-
-    // Ghost protocol tracking
-    if (ghostActive) {
-      ghostTriggered++
-      if (status === 'completed') ghostRecovered++
-    }
-  }
-
-  const resolvedCount = completed + noShows
-  const showRate30Day = resolvedCount > 0
-    ? Math.round((completed / resolvedCount) * 100)
-    : 0
-
-  const phoneResolved = phoneTotal > 0 ? phoneTotal : 0
-  const inPersonResolved = inPersonTotal > 0 ? inPersonTotal : 0
-
-  return {
-    showRate30Day,
-    showRateByType: {
-      phone: phoneResolved > 0
-        ? Math.round((phoneCompleted / phoneResolved) * 100)
-        : 0,
-      inPerson: inPersonResolved > 0
-        ? Math.round((inPersonCompleted / inPersonResolved) * 100)
-        : 0,
-    },
-    confirmationRate: totalWithAppointment > 0
-      ? Math.round((withConfirmation / totalWithAppointment) * 100)
-      : 0,
-    ghostProtocolActivationRate: totalWithAppointment > 0
-      ? Math.round((ghostTriggered / totalWithAppointment) * 100)
-      : 0,
-    ghostProtocolRecoveryRate: ghostTriggered > 0
-      ? Math.round((ghostRecovered / ghostTriggered) * 100)
-      : 0,
-    avgConfirmationCount: totalWithAppointment > 0
-      ? Math.round((totalConfirmations / totalWithAppointment) * 10) / 10
-      : 0,
-    totalAppointments: totalWithAppointment,
-    completed,
-    noShows,
-    cancelled,
-    rescheduled,
-  }
+  recent_activities: unknown[]
+  lead_pipeline: unknown[]
 }
 
 export async function generateAICoaching(
