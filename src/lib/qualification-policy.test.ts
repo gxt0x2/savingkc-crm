@@ -3,40 +3,33 @@ import { evaluateQualification, qualificationError } from './qualification-polic
 
 describe('evaluateQualification', () => {
   it('requires all four qualification pillars', () => {
-    const status = evaluateQualification({
-      lead: { four_pillars: { TIMELINE: true, CONDITION: true } },
-    })
+    const status = evaluateQualification([
+      { pillar: 'TIMELINE', evidence: 'Within 30 days', status: 'verified' },
+      { pillar: 'CONDITION', evidence: 'Roof and kitchen need repair', status: 'verified' },
+    ])
 
     expect(status.qualified).toBe(false)
     expect(status.missing).toEqual(['MOTIVATION', 'PRICE'])
     expect(qualificationError(status)).toContain('MOTIVATION, PRICE')
   })
 
-  it('accepts explicit pillar evidence collected by a qualification workflow', () => {
-    expect(evaluateQualification({
-      activityMetadata: [{ TIMELINE: true, CONDITION: true, MOTIVATION: true, PRICE: true }],
-    })).toMatchObject({ qualified: true, missing: [] })
+  it('accepts all four human-verified pillars', () => {
+    expect(evaluateQualification([
+      { pillar: 'TIMELINE', evidence: 'Within 30 days', status: 'verified' },
+      { pillar: 'CONDITION', evidence: 'Fair condition', status: 'verified' },
+      { pillar: 'MOTIVATION', evidence: 'Inherited property', status: 'verified' },
+      { pillar: 'PRICE', evidence: '$125,000 with flexibility', status: 'verified' },
+    ])).toMatchObject({ qualified: true, missing: [] })
   })
 
-  it('recognizes structured manifest evidence without treating empty scaffolding as evidence', () => {
-    const incomplete = evaluateQualification({
-      manifest: {
-        situation: { timeline: {}, motivation: {}, priceExpectations: {} },
-        property: { condition: {} },
-      },
-    })
-    expect(incomplete.qualified).toBe(false)
+  it('does not treat imported legacy evidence as verified CRM fact', () => {
+    const status = evaluateQualification([
+      { pillar: 'TIMELINE', evidence: 'Within 30 days', status: 'needs_review' },
+      { pillar: 'CONDITION', evidence: 'Fair condition', status: 'needs_review' },
+      { pillar: 'MOTIVATION', evidence: 'Inherited property', status: 'needs_review' },
+      { pillar: 'PRICE', evidence: '$125,000', status: 'needs_review' },
+    ])
 
-    const complete = evaluateQualification({
-      manifest: {
-        situation: {
-          timeline: { preferredClosing: 'Within 30 days' },
-          motivation: { primary: 'Inherited property' },
-          priceExpectations: { priceFlexibility: 'medium' },
-        },
-        property: { condition: { overall: 'fair' } },
-      },
-    })
-    expect(complete).toMatchObject({ qualified: true, missing: [] })
+    expect(status).toMatchObject({ qualified: false, missing: ['TIMELINE', 'CONDITION', 'MOTIVATION', 'PRICE'] })
   })
 })
