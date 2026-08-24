@@ -1,43 +1,38 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const dialerPageSource = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
+const compatibilityPage = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
+const prospectingPage = readFileSync('src/app/(app)/prospecting/page.tsx', 'utf8')
+const callingFloor = readFileSync('src/components/prospecting/prospecting-calling-floor.tsx', 'utf8')
 
-describe('dialer UI truth contract', () => {
-  it('presents the implemented single-line session without unsupported controls', () => {
-    expect(dialerPageSource).toContain('Single-line dialing')
-    expect(dialerPageSource).toContain('Start single-line session')
-    expect(dialerPageSource).toContain('One number at a time')
-
-    for (const unsupportedToken of [
-      'Power Dialer',
-      'Click To Call',
-      'Lines</span>',
-      'Use Call Hammer',
-      'Voicemail Call Hammer',
-      'Voicemail Drop',
-      'Callback Message',
-      'Auto Send Email',
-      'Auto Email On',
-      'Redial Caller ID',
-      'lineDialCount',
-      'setDialMode',
-    ]) {
-      expect(dialerPageSource).not.toContain(unsupportedToken)
-    }
+describe('Prospecting calling-floor truth contract', () => {
+  it('keeps the old Dialer URL as redirect-only compatibility', () => {
+    expect(compatibilityPage).toContain("redirect(query ? `/prospecting?${query}` : '/prospecting')")
+    expect(compatibilityPage).not.toContain('DialerOverview')
+    expect(compatibilityPage).not.toContain('DialerHome')
+    expect(existsSync('src/components/dialer/dialer-route-gate.tsx')).toBe(false)
+    expect(existsSync('src/components/dialer/dialer-session-history.tsx')).toBe(false)
   })
 
-  it('retains saved-list URL compatibility and working ring configuration', () => {
-    expect(dialerPageSource).toContain("query.set('call_hammer'")
-    expect(dialerPageSource).toContain("query.set('voicemail_call_hammer'")
-    expect(dialerPageSource).toContain("query.set('ring_count'")
-    expect(dialerPageSource).toContain('redialCallerId')
+  it('owns the live durable session inside Prospecting', () => {
+    expect(prospectingPage).toContain('ProspectingCallingFloor')
+    expect(callingFloor).toContain('loadDurableDialerSession')
+    expect(callingFloor).toContain('transitionDurableDialerSession')
+    expect(callingFloor).toContain('durableSession?.callerId || requestedCallerId')
+    expect(callingFloor).toContain('<DialerSessionCommand')
+    expect(callingFloor).toContain('<HeirsSection')
+    expect(callingFloor).toContain('Safety checked before every dial')
   })
 
-  it('exposes the full durable session batch without hiding it inside Refine', () => {
-    expect(dialerPageSource).toContain('const maximumSessionPreview = Math.min(queue.length, 100)')
-    expect(dialerPageSource).toContain('`Show all ${queue.length}`')
-    expect(dialerPageSource).toContain("'Show first 100'")
-    expect(dialerPageSource).toContain('setVisibleLimit(maximumSessionPreview)')
+  it('does not carry the obsolete queue-builder dashboard into Prospecting', () => {
+    for (const obsolete of [
+      'function DialerHome',
+      'function DialerOverview',
+      'QUEUE_PRESETS',
+      'Build custom queue',
+      'Single-line dialing',
+      'Start single-line session',
+      'saved-list-meta',
+    ]) expect(callingFloor).not.toContain(obsolete)
   })
 })

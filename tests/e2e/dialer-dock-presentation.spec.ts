@@ -132,6 +132,7 @@ async function installSyntheticRoutes(page: Page) {
             mailing_state: null,
             mailing_zip: null,
             county: 'Jackson',
+            is_deceased: true,
           },
         ],
       },
@@ -236,11 +237,17 @@ test.describe('dialer dock presentation synthetic checks', () => {
     await installSyntheticRoutes(page)
   })
 
-  test('header dialer opens docked, not as a popup, outside the dialer page', async ({ page }) => {
-    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
-    await page.getByRole('button', { name: 'Open dialer' }).click()
-
-    await expectDialerDocked(page)
+  test('header dialer remains a modal outside the calling floor', async ({ page }) => {
+    await page.goto('/settings', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Open phone dialer' }).click()
+    await expect(page.getByRole('heading', { name: 'Dialer' })).toBeVisible()
+    const modalState = await page.evaluate(() => {
+      const heading = Array.from(document.querySelectorAll('h2')).find((element) => element.textContent?.trim() === 'Dialer')
+      const shell = heading?.closest('div[class*="fixed"]') as HTMLElement | null
+      return String(shell?.className ?? '')
+    })
+    expect(modalState).toContain('inset-0')
+    expect(modalState).toContain('items-center')
   })
 
   test('heir queue launch calls every heir phone and opens docked without a backdrop', async ({ page }) => {
@@ -249,7 +256,8 @@ test.describe('dialer dock presentation synthetic checks', () => {
       { waitUntil: 'domcontentloaded' },
     )
 
-    await expect(page.getByText('1 of 1 leads')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Calling floor command center' })).toBeVisible()
+    await expect(page.getByText('1/1', { exact: true })).toBeVisible()
     await expect(page.getByText('3+ Year Deceased Tax')).toBeVisible()
 
     await page.getByRole('button', { name: /Call heirs \(2\)/ }).click()

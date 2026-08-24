@@ -24,7 +24,7 @@ Operating rules:
 - Never invent a count, route, owner, outcome, or workflow state.
 - Cite the CRM sources returned by tools when stating CRM facts. Do not invent URLs.
 - You currently have read-only tools. If the user asks you to send a call or message, reassign a record, move a stage, publish a workflow, change routing, delete data, or spend money, do not claim it happened. Return a concrete proposed change, affected records, validation checks, rollback, and the confirmation required.
-- Prefer concise, operational answers. Lead with the answer and link the user to the relevant CRM surface using paths such as /contacts, /conversations, /dialer, /workflows?section=phones, /workflows?section=all, /reports, or /reports/andon.
+- Prefer concise, operational answers. Lead with the answer and link the user to the relevant CRM surface using paths such as /contacts, /conversations, /prospecting, /workflows?section=phones, /workflows?section=all, /reports, or /reports/andon.
 - Treat phone-number purpose and to/from identity as protected. Flag mismatches rather than assuming they are correct.`
 
 export function createCommandAgent(actor: AssistantActor) {

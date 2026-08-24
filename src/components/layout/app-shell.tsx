@@ -109,10 +109,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
   const useUserLightTheme = hydrated && userTheme === 'light'
   const useLightLogo = useUserLightTheme
-  // The dedicated /dialer workspace already has its own call context and
-  // progress UI. Keep the softphone docked there so closing a disposition does
-  // not re-open a full-screen dialer over the heir queue.
-  const dialerPresentation = pathname?.startsWith('/dialer') ? 'dock' : 'modal'
+  // The Prospecting calling floor owns its call context and progress UI. Keep
+  // the softphone docked there so saving a disposition does not open a second
+  // full-screen dialer over the heir queue. `/dialer` remains redirect-only
+  // compatibility for previously shared session links.
+  const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
+    searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort'),
+  )
+  const dialerPresentation = pathname?.startsWith('/dialer') || isProspectingCallingFloor ? 'dock' : 'modal'
   const effectiveWorkspaceEmail = pathname?.startsWith('/my-day') || pathname?.startsWith('/scorecard')
     ? 'casey@savingkc.com'
     : viewedAgentEmail || user?.email
