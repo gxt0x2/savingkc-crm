@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getAppointmentStats } from '@/lib/agent-stats'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  try {
-    const stats = await getAppointmentStats(30)
-    return NextResponse.json(stats)
-  } catch (err: any) {
-    console.error('[appointment-stats] Error:', err)
-    return NextResponse.json(
-      { error: 'Failed to fetch appointment stats' },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json({
+    error: 'The Manifest-derived appointment dashboard is retired. Use the canonical operating report.',
+    code: 'manifest_appointment_dashboard_retired',
+    replacement: '/api/reports/operating?period=30d',
+  }, { status: 410 })
 }
