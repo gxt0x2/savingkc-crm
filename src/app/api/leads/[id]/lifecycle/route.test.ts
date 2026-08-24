@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   apply: vi.fn(),
   appointment: vi.fn(),
   qualification: vi.fn(),
-  manifest: vi.fn(),
   qualifiedConversion: vi.fn(),
   appointmentConversion: vi.fn(),
 }))
@@ -21,7 +20,6 @@ vi.mock('@/lib/qualification-policy', () => ({
   getLeadQualificationStatus: mocks.qualification,
   qualificationError: () => 'Qualification evidence is incomplete',
 }))
-vi.mock('@/lib/manifest-sync', () => ({ updateManifestAndCascade: mocks.manifest }))
 vi.mock('@/lib/ppc/qualified-lead-conversion', () => ({ queuePpcQualifiedLeadConversion: mocks.qualifiedConversion }))
 vi.mock('@/lib/ppc/appointment-booked-conversion', () => ({ queuePpcAppointmentBookedConversion: mocks.appointmentConversion }))
 
@@ -44,7 +42,6 @@ describe('lead lifecycle command route', () => {
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
     mocks.qualification.mockResolvedValue({ qualified: true, missing: [] })
     mocks.appointment.mockResolvedValue(true)
-    mocks.manifest.mockResolvedValue(true)
     mocks.qualifiedConversion.mockResolvedValue({ queued: true })
     mocks.appointmentConversion.mockResolvedValue({ queued: true })
     mocks.apply.mockResolvedValue({
@@ -75,6 +72,7 @@ describe('lead lifecycle command route', () => {
       actorName: 'Casey',
       stage: 'contacted',
     }))
+    await expect(response.json()).resolves.not.toHaveProperty('compatibilityWarning')
   })
 
   it('requires a structured reason before a terminal dead transition', async () => {

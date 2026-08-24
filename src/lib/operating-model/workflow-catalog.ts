@@ -247,8 +247,8 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     category: 'pipeline', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
     trigger: { type: 'opportunity_stage_changed', toStage: 'qualified' },
     actions: [{ type: 'execute', label: 'Validate required stage evidence' }, { type: 'execute', label: 'Advance canonical stage' }, { type: 'create_next_action', actionType: 'task', title: 'Complete stage next action', dueOffsetMinutes: 60 }],
-    implementation: implementation(['/api/stage/validate', '/api/stage/advance', 'src/lib/pipeline-automation.ts']),
-    version: 1, lastRunAt: null,
+    implementation: implementation(['/api/leads/[id]/lifecycle', 'src/lib/server/crm-lifecycle.ts']),
+    version: 2, lastRunAt: null,
   },
   {
     id: 'stage-timeout',

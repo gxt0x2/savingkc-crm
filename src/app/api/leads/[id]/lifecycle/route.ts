@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { DEAD_REASONS, cleanDeadReason } from '@/lib/lead-outcomes'
-import { updateManifestAndCascade } from '@/lib/manifest-sync'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { getLeadQualificationStatus, qualificationError } from '@/lib/qualification-policy'
@@ -14,7 +13,6 @@ import {
   CrmLifecycleError,
   isCrmLifecycleStage,
   leadHasGovernedAppointment,
-  lifecycleFieldsForStage,
   type CrmLifecycleCommandType,
 } from '@/lib/server/crm-lifecycle'
 
@@ -156,23 +154,7 @@ export async function POST(
       actorName: actor.name,
     })
 
-    let compatibilityWarning: string | null = null
     if (action === 'transition' && stage) {
-      const fields = lifecycleFieldsForStage(stage)
-      const manifestUpdated = await updateManifestAndCascade(id, (manifest) => {
-        manifest.currentStation = stage
-        manifest.priority = fields.priority
-        if (fields.classification === null) {
-          ;(manifest as { scoring?: unknown }).scoring = null
-        } else if (manifest.scoring) {
-          manifest.scoring.classification = fields.classification
-          manifest.scoring.worth_enriching = fields.classification !== 'dead'
-          manifest.scoring.scored_at = new Date().toISOString()
-          manifest.scoring.scored_by = 'notes'
-        }
-      }, 'crm_lifecycle_command_v1').catch(() => false)
-      if (!manifestUpdated) compatibilityWarning = 'Lifecycle saved; legacy manifest refresh is pending.'
-
       await queuePpcQualifiedLeadConversion({
         leadId: id,
         fromStation: result.fromStage ?? null,
@@ -192,7 +174,7 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({ success: true, result, compatibilityWarning })
+    return NextResponse.json({ success: true, result })
   } catch (error) {
     if (error instanceof CrmLifecycleError) {
       return NextResponse.json({ success: false, error: error.message }, { status: statusForError(error) })
