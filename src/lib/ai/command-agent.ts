@@ -73,14 +73,10 @@ export function createCommandAgent(actor: AssistantActor) {
 
   return new ToolLoopAgent({
     id: 'savingkc-command-agent',
-    model: 'openai/gpt-5.4-mini',
+    model: 'openai/gpt-5.6-luna',
     instructions: `${instructions}\n\nSigned-in actor: ${actor.fullName} (${actor.access}). Only use tools exposed for this actor.`,
     stopWhen: isStepCount(8),
     temperature: 0.2,
     tools: agentTools,
   })
-}
-
-export function commandAgentInstructions() {
-  return instructions
 }

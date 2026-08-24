@@ -162,6 +162,36 @@
         "path": "src/app/api/setup/manifests/route.ts",
         "replacement": "versioned Supabase migrations",
         "reason": "Migration SQL belongs in source-controlled migrations, not a runtime response."
+      },
+      {
+        "path": "src/app/api/ari/briefing/route.ts",
+        "replacement": "/api/ai/threads and the canonical briefing worker",
+        "reason": "The dead ARI event feed duplicated the persistent assistant and had no live product consumer."
+      },
+      {
+        "path": "src/app/api/ari/call-queue/route.ts",
+        "replacement": "/api/dialer/queue and /prospecting",
+        "reason": "Call prioritization belongs to the server-owned Prospecting session engine, not a second ARI queue."
+      },
+      {
+        "path": "src/app/api/ari/coaching/route.ts",
+        "replacement": "/api/rhythm/morning and /api/rhythm/eod",
+        "reason": "Daily operating guidance now comes from the canonical rhythm read models and unified assistant."
+      },
+      {
+        "path": "src/app/api/ari/follow-ups/route.ts",
+        "replacement": "/api/tasks/worklist",
+        "reason": "Follow-up work must use the canonical work-item service rather than a legacy task projection."
+      },
+      {
+        "path": "src/app/api/ari/inbox/route.ts",
+        "replacement": "/api/conversations/hub",
+        "reason": "Communication attention has one authoritative bounded inbox read model."
+      },
+      {
+        "path": "src/app/api/ari/pipeline-actions/route.ts",
+        "replacement": "/api/contacts and /api/reports/operating",
+        "reason": "Pipeline work is owned by the canonical contact workspace and operating snapshot."
       }
     ]
   },
@@ -312,7 +342,7 @@
       "routes": ["/ai"],
       "apiRoutes": ["/api/ai/command", "/api/ai/next-action-proposal", "/api/ai/threads", "/api/ai/threads/[id]", "/api/ari/generate-briefing"],
       "tables": ["assistant_threads", "assistant_messages", "assistant_generations", "assistant_confirmations", "briefings", "crm_briefing_jobs", "agent_profiles"],
-      "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "GROQ_API_KEY", "OPENROUTER_API_KEY"]
+      "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"]
     },
     {
       "id": "ai_change_governance",

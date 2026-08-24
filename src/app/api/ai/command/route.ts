@@ -1,14 +1,8 @@
 import { NextResponse } from 'next/server'
 import type { ModelMessage } from 'ai'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
-import { assistantActorCanReadCompanyWide, resolveAssistantActor, type AssistantActor } from '@/lib/assistant/auth'
-import {
-  readAssistantAttention,
-  readAssistantOperatingSnapshot,
-  readAssistantPhoneSystem,
-  readAssistantWorkflowRegistry,
-} from '@/lib/assistant/queries'
-import { createCommandAgent, commandAgentInstructions } from '@/lib/ai/command-agent'
+import { assistantActorCanReadCompanyWide, resolveAssistantActor } from '@/lib/assistant/auth'
+import { createCommandAgent } from '@/lib/ai/command-agent'
 import {
   AssistantGenerationError,
   buildAssistantToolTrace,
@@ -17,28 +11,14 @@ import {
   loadAssistantThread,
   replayAssistantGeneration,
   startAssistantGeneration,
-  type AssistantSource,
   type AssistantSurface,
-  type AssistantToolTrace,
-  type AssistantUsage,
 } from '@/lib/ai/generation-store'
-import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 type CommandMessage = { role: 'user' | 'assistant'; content: string }
 type CommandAttachment = { name: string; mediaType: string; dataUrl: string; base64: string; size: number }
-type ProviderReply = {
-  reply: string
-  provider: string
-  model: string
-  finishReason: string
-  usage: AssistantUsage
-  toolTrace: AssistantToolTrace[]
-  sources: AssistantSource[]
-}
-
 const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie' }
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/json', 'application/pdf', 'image/heic', 'image/jpeg', 'image/png',
@@ -105,87 +85,6 @@ function gatewayMessages(messages: CommandMessage[], attachments: CommandAttachm
   })
 }
 
-function textAttachmentContext(attachments: CommandAttachment[]) {
-  return attachments.flatMap((attachment) => {
-    if (!(attachment.mediaType.startsWith('text/') || attachment.mediaType === 'application/json')) return []
-    const text = Buffer.from(attachment.base64, 'base64').toString('utf8').slice(0, 24_000)
-    return [`Attached file ${attachment.name} (${attachment.mediaType}):\n${text}`]
-  }).join('\n\n')
-}
-
-function collectSources(values: unknown[]): AssistantSource[] {
-  const unique = new Map<string, AssistantSource>()
-  for (const value of values) {
-    if (!value || typeof value !== 'object' || !Array.isArray((value as { sources?: unknown }).sources)) continue
-    for (const item of (value as { sources: unknown[] }).sources) {
-      if (!item || typeof item !== 'object') continue
-      const source = item as AssistantSource
-      if (source.name && /^https?:\/\//i.test(source.url)) unique.set(`${source.name}|${source.url}`, source)
-    }
-  }
-  return [...unique.values()].slice(0, 30)
-}
-
-async function directProviderReply(actor: AssistantActor, messages: CommandMessage[], attachments: CommandAttachment[]): Promise<ProviderReply> {
-  const db = supabaseAdmin()
-  const contextValues = assistantActorCanReadCompanyWide(actor)
-    ? await Promise.all([readAssistantOperatingSnapshot(30), readAssistantWorkflowRegistry(db), Promise.resolve(readAssistantPhoneSystem())])
-    : [await readAssistantAttention(db, actor, 15)]
-  const sources = collectSources(contextValues)
-  const system = `${commandAgentInstructions()}\n\nSigned-in actor: ${actor.fullName} (${actor.access}). The following authorized, live read-only context was loaded for this request:\n${JSON.stringify(contextValues)}`
-  const groqKey = process.env.GROQ_API_KEY
-  const openRouterKey = process.env.OPENROUTER_API_KEY
-  if (!groqKey && !openRouterKey) throw new Error('No AI provider is configured')
-  const binaryAttachments = attachments.filter((attachment) => !(attachment.mediaType.startsWith('text/') || attachment.mediaType === 'application/json'))
-  if (binaryAttachments.some((attachment) => attachment.mediaType === 'application/pdf') || (binaryAttachments.length > 0 && !openRouterKey)) {
-    throw new AssistantGenerationError('attachment_provider_unavailable', 400, binaryAttachments.some((attachment) => attachment.mediaType === 'application/pdf')
-      ? 'PDF attachments require AI Gateway.'
-      : 'Image attachments require AI Gateway or OpenRouter.')
-  }
-  const attachmentContext = textAttachmentContext(attachments)
-  const enrichedMessages = messages.map((message, index) => index === messages.length - 1 && message.role === 'user' && attachmentContext
-    ? { ...message, content: `${message.content}\n\n${attachmentContext}` }
-    : message)
-  const openRouterMessages = enrichedMessages.map((message, index) => {
-    if (message.role !== 'user' || index !== enrichedMessages.length - 1 || binaryAttachments.length === 0) return message
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: message.content },
-        ...binaryAttachments.filter((attachment) => attachment.mediaType.startsWith('image/')).map((attachment) => ({ type: 'image_url', image_url: { url: attachment.dataUrl } })),
-      ],
-    }
-  })
-
-  const usingGroq = Boolean(groqKey && binaryAttachments.length === 0)
-  const model = usingGroq ? 'groq/llama-3.3-70b-versatile' : 'openrouter/anthropic/claude-3.5-haiku'
-  const response = usingGroq
-    ? await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 900, temperature: 0.2, messages: [{ role: 'system', content: system }, ...enrichedMessages] }),
-      })
-    : await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openRouterKey}`, 'HTTP-Referer': 'https://crm.savingkc.com', 'X-Title': 'SavingKC AI Assistant' },
-        body: JSON.stringify({ model: 'anthropic/claude-3.5-haiku', max_tokens: 900, temperature: 0.2, messages: [{ role: 'system', content: system }, ...openRouterMessages] }),
-      })
-  if (!response.ok) throw new Error(`AI provider returned ${response.status}`)
-  const data = await response.json()
-  const reply = typeof data?.choices?.[0]?.message?.content === 'string' ? data.choices[0].message.content.trim() : ''
-  if (!reply) throw new Error('AI provider returned no answer')
-  const inputTokens = Number.isInteger(data?.usage?.prompt_tokens) ? data.usage.prompt_tokens : null
-  const outputTokens = Number.isInteger(data?.usage?.completion_tokens) ? data.usage.completion_tokens : null
-  const totalTokens = Number.isInteger(data?.usage?.total_tokens) ? data.usage.total_tokens : null
-  return {
-    reply,
-    provider: usingGroq ? 'groq' : 'openrouter',
-    model,
-    finishReason: String(data?.choices?.[0]?.finish_reason || 'stop'),
-    usage: { inputTokens, outputTokens, totalTokens, cacheReadTokens: null },
-    toolTrace: [],
-    sources,
-  }
-}
-
 function responsePayload(result: Awaited<ReturnType<typeof replayAssistantGeneration>>) {
   return {
     reply: result.reply,
@@ -198,9 +97,9 @@ function responsePayload(result: Awaited<ReturnType<typeof replayAssistantGenera
     finishReason: result.finishReason,
     usage: result.usage,
     estimatedCostMicros: result.estimatedCostMicros,
-    grounded: true,
+    grounded: result.sources.length > 0,
     execution: 'read_only',
-    approvalRequiredFor: ['calls and messages', 'assignment', 'stage changes', 'workflow publishing', 'phone routing changes', 'deletes', 'spending'],
+    approvalRequiredFor: ['calls and messages', 'task creation', 'assignment', 'stage changes', 'workflow publishing', 'phone routing changes', 'deletes', 'spending'],
   }
 }
 
@@ -250,33 +149,31 @@ export async function POST(request: Request) {
       .slice(-20)
       .map((message) => ({ role: message.role as CommandMessage['role'], content: message.content }))
     const gatewayAvailable = Boolean(process.env.AI_GATEWAY_API_KEY || (process.env.VERCEL === '1' && process.env.VERCEL_OIDC_TOKEN))
-    let providerReply: ProviderReply
-    if (gatewayAvailable) {
-      const result = await createCommandAgent(actor).generate({ messages: gatewayMessages(messages, attachments) })
-      const traced = buildAssistantToolTrace(result.toolResults.map((toolResult) => ({
-        toolCallId: toolResult.toolCallId,
-        toolName: toolResult.toolName,
-        input: toolResult.input,
-        output: toolResult.output,
-      })))
-      const provider = result.finalStep.model.provider
-      const modelId = result.finalStep.model.modelId
-      providerReply = {
-        reply: result.text.trim(),
-        provider,
-        model: modelId.includes('/') ? modelId : `${provider}/${modelId}`,
-        finishReason: result.finishReason,
-        usage: {
-          inputTokens: result.usage.inputTokens ?? null,
-          outputTokens: result.usage.outputTokens ?? null,
-          totalTokens: result.usage.totalTokens ?? null,
-          cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? null,
-        },
-        toolTrace: traced.trace,
-        sources: traced.sources,
-      }
-    } else {
-      providerReply = await directProviderReply(actor, messages, attachments)
+    if (!gatewayAvailable) {
+      throw new AssistantGenerationError('gateway_unavailable', 503, 'The governed AI Gateway is not configured in this environment.')
+    }
+    const result = await createCommandAgent(actor).generate({ messages: gatewayMessages(messages, attachments) })
+    const traced = buildAssistantToolTrace(result.toolResults.map((toolResult) => ({
+      toolCallId: toolResult.toolCallId,
+      toolName: toolResult.toolName,
+      input: toolResult.input,
+      output: toolResult.output,
+    })))
+    const provider = result.finalStep.model.provider
+    const modelId = result.finalStep.model.modelId
+    const providerReply = {
+      reply: result.text.trim(),
+      provider,
+      model: modelId.includes('/') ? modelId : `${provider}/${modelId}`,
+      finishReason: result.finishReason,
+      usage: {
+        inputTokens: result.usage.inputTokens ?? null,
+        outputTokens: result.usage.outputTokens ?? null,
+        totalTokens: result.usage.totalTokens ?? null,
+        cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? null,
+      },
+      toolTrace: traced.trace,
+      sources: traced.sources,
     }
     if (!providerReply.reply) throw new Error('AI provider returned no answer')
 
@@ -290,7 +187,12 @@ export async function POST(request: Request) {
       usage: providerReply.usage,
       toolTrace: providerReply.toolTrace,
       sources: providerReply.sources,
-      metadata: { surface: cleanSurface(body?.surface), readOnly: true },
+      metadata: {
+        surface: cleanSurface(body?.surface),
+        readOnly: true,
+        permissionProfile: actor.access,
+        toolScope: assistantActorCanReadCompanyWide(actor) ? 'company_wide' : 'assigned_records',
+      },
     })
     const completed = await replayAssistantGeneration(actor.email, started.generationId)
     return NextResponse.json(responsePayload(completed), { headers: HEADERS })
