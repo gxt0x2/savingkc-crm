@@ -146,20 +146,46 @@ describe('canonical lead briefing service', () => {
     expect(mocks.failGeneration).not.toHaveBeenCalled()
   })
 
-  it('fails closed and records the generation failure when Groq rejects the request', async () => {
+  it('uses a low-confidence evidence-only fallback when Groq rejects the request', async () => {
     process.env.GROQ_API_KEY = 'test-key'
     mocks.generateGroq.mockRejectedValue(new Error('groq_briefing_request_failed:429'))
 
     await expect(generateCanonicalLeadBriefing({
       claim: { leadId, revision: 3, claimToken, reason: 'activity_changed', requestedBy: 'system:activity_trigger' },
-    })).rejects.toThrow('groq_briefing_request_failed:429')
+    })).resolves.toMatchObject({ briefing: { confidence: 'low' } })
 
     expect(mocks.generateText).not.toHaveBeenCalled()
-    expect(mocks.rpc).not.toHaveBeenCalledWith('save_current_briefing_v1', expect.anything())
-    expect(mocks.failGeneration).toHaveBeenCalledWith(expect.objectContaining({
-      generationId: 'generation-1',
-      code: 'canonical_briefing_generation_failed',
+    expect(mocks.completeGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'savingkc',
+      model: 'savingkc/canonical-evidence-fallback-v1',
+      finishReason: 'fallback',
+      metadata: expect.objectContaining({
+        providerPolicy: 'configured_groq_with_evidence_fallback',
+        fallbackReason: 'groq_briefing_request_failed:429',
+      }),
     }))
+    expect(mocks.rpc).toHaveBeenCalledWith('save_current_briefing_v1', expect.objectContaining({ p_lead_id: leadId }))
+    expect(mocks.failGeneration).not.toHaveBeenCalled()
+  })
+
+  it('does not expose malformed model output in fallback provenance', async () => {
+    process.env.GROQ_API_KEY = 'test-key'
+    mocks.generateGroq.mockResolvedValue({
+      output: { situation: 'private malformed provider output' },
+      provider: 'groq',
+      model: 'groq/openai/gpt-oss-120b',
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, cacheReadTokens: null },
+    })
+
+    await generateCanonicalLeadBriefing({
+      claim: { leadId, revision: 3, claimToken, reason: 'activity_changed', requestedBy: 'system:activity_trigger' },
+    })
+
+    expect(mocks.completeGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ fallbackReason: 'groq_briefing_output_invalid' }),
+    }))
+    expect(JSON.stringify(mocks.completeGeneration.mock.calls[0]?.[0])).not.toContain('private malformed provider output')
   })
 
   it('queues a refresh through the durable revision service', async () => {

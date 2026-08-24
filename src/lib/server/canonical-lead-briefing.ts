@@ -6,6 +6,7 @@ import {
   LEAD_BRIEFING_MODEL,
   LEAD_BRIEFING_PROMPT_VERSION,
   LEAD_BRIEFING_SYSTEM_PROMPT,
+  buildExtractiveLeadBriefing,
   buildLeadBriefingEvidence,
   leadBriefingSchema,
   leadBriefingInputFingerprint,
@@ -97,7 +98,29 @@ async function generateBriefingModel(evidence: ReturnType<typeof buildLeadBriefi
   const system = LEAD_BRIEFING_SYSTEM_PROMPT
   const prompt = leadBriefingPrompt(evidence)
   if (process.env.GROQ_API_KEY?.trim()) {
-    return generateGroqLeadBriefing({ system, prompt })
+    try {
+      const result = await generateGroqLeadBriefing({ system, prompt })
+      return { ...result, output: normalizeLeadBriefing(result.output, evidence) }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : ''
+      const fallbackReason = /^groq_briefing_[a-z_]+(?::\d{3})?$/.test(errorMessage)
+        ? errorMessage
+        : 'groq_briefing_output_invalid'
+      console.warn('[briefing-worker] using evidence-only briefing fallback', { fallbackReason })
+      return {
+        output: buildExtractiveLeadBriefing(evidence),
+        provider: 'savingkc',
+        model: 'savingkc/canonical-evidence-fallback-v1',
+        finishReason: 'fallback',
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          cacheReadTokens: null,
+        },
+        fallbackReason,
+      }
+    }
   }
 
   const result = await generateText({
@@ -322,7 +345,10 @@ export async function generateCanonicalLeadBriefing(input: {
           inputFingerprint: fingerprint,
           evidence: evidence.filter((item) => briefing.evidenceIds.includes(item.id)),
           confidence: briefing.confidence,
-          providerPolicy: process.env.GROQ_API_KEY?.trim() ? 'configured_groq' : 'ai_gateway',
+          providerPolicy: result.provider === 'savingkc'
+            ? 'configured_groq_with_evidence_fallback'
+            : process.env.GROQ_API_KEY?.trim() ? 'configured_groq' : 'ai_gateway',
+          ...('fallbackReason' in result ? { fallbackReason: result.fallbackReason } : {}),
         },
       })
     }
