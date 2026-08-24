@@ -25,6 +25,12 @@
         "reason": "Update the visible in-call elapsed-time counter once per second; this timer does not poll the network."
       },
       {
+        "path": "src/app/(public)/ppc/SellLanding.tsx",
+        "minimumIntervalMs": 2000,
+        "reason": "Read the active embedded testimonial player's local progress every two seconds only while it is playing so 25, 50, and 75 percent analytics fire once; this does not poll the CRM or a network API.",
+        "targetDate": "2026-11-30"
+      },
+      {
         "path": "src/components/telephony/use-dialer-post-call-review.ts",
         "minimumIntervalMs": 3000,
         "reason": "Poll only while a just-ended durable Dialer attempt is awaiting provider transcription, stop on terminal state, and cap the wait at 20 requests so disposition never blocks on AI.",
