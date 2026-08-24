@@ -30,8 +30,6 @@ describe('Hot Engine runtime retirement', () => {
   })
 
   it('removes the executable engine and Manifest-triggered reranking', () => {
-    const manifestSync = source('src/lib/manifest-sync.ts')
-
     for (const path of [
       'src/lib/hot-engine/ari-signal.ts',
       'src/lib/hot-engine/cache.ts',
@@ -43,7 +41,7 @@ describe('Hot Engine runtime retirement', () => {
       expect(existsSync(resolve(root, path)), path).toBe(false)
     }
 
-    expect(manifestSync).not.toMatch(/hot-engine|processHotEngineEvent|classifyManifestChange/)
+    expect(existsSync(resolve(root, 'src/lib/manifest-sync.ts'))).toBe(false)
   })
 
   it('retains the canonical Contacts score source', () => {
