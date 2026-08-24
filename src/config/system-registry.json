@@ -186,9 +186,16 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/contacts", "/leads/[id]", "/opportunities"],
-      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/enrich", "/api/enrich/batch", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
-      "tables": ["leads", "lead_activities", "lead_tasks", "manifests", "manifest_history", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
-      "environment": []
+      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
+      "tables": ["leads", "lead_activities", "lead_tasks", "manifests", "manifest_history", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
+      "environment": ["CRON_SECRET"],
+      "crons": [
+        {
+          "path": "/api/workers/property-enrichment",
+          "schedule": "*/5 * * * *",
+          "highFrequencyReason": "Claim a tiny durable batch so every lead intake path gets canonical county and prospect evidence without blocking intake."
+        }
+      ]
     },
     {
       "id": "conversations",

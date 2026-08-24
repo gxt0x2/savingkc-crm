@@ -1,35 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { ensureManifestExists } from '@/lib/manifest-sync'
+import { NextResponse } from 'next/server'
 
-/**
- * POST /api/leads/ensure-manifest
- * Ensures a manifest exists for a lead (creates if missing)
- * Used by appointment modal before updating manifest
- */
-export async function POST(req: NextRequest) {
-  try {
-    const { leadId } = await req.json()
-
-    if (!leadId) {
-      return NextResponse.json(
-        { error: 'leadId required' },
-        { status: 400 }
-      )
-    }
-
-    // Create manifest if it doesn't exist
-    const manifestId = await ensureManifestExists(leadId)
-
-    return NextResponse.json({
-      success: true,
-      manifestId,
-      created: !!manifestId,
-    })
-  } catch (err) {
-    console.error('ensure-manifest error:', err)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
+/** Compatibility tombstone. Internal legacy readers remain until their data
+ * parity slices land, but no caller may create new compatibility state here. */
+export async function POST() {
+  return NextResponse.json({
+    error: 'Manifest bootstrap is retired. Lead intake and enrichment are canonical and automatic.',
+    replacement: '/api/workers/property-enrichment',
+  }, {
+    status: 410,
+    headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+  })
 }

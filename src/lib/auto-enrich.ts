@@ -158,7 +158,7 @@ async function enrichFromCounty(
 async function loadLead(leadId: string) {
   const { data, error } = await getSupabase()
     .from('leads')
-    .select('id,phone,property_address,city,state,zip,county,source')
+    .select('id,phone,property_address,city,state,zip,county,source,is_parked')
     .eq('id', leadId)
     .maybeSingle()
   if (error) throw new Error(`Lead enrichment lookup failed: ${error.message}`)
@@ -196,27 +196,24 @@ async function completedSources(leadId: string): Promise<Set<string>> {
   return new Set((data || []).map((row) => row.source))
 }
 
-/** Run missing enrichment sources after lead creation without blocking intake. */
+/** Run missing enrichment sources. Infrastructure failures reject for durable retry. */
 export async function autoEnrichLead(leadId: string): Promise<void> {
-  try {
-    const lead = await loadLead(leadId)
-    if (!lead) return
-    // County-prospect imports are already projected by the prospect link trigger.
-    if (typeof lead.source === 'string' && lead.source.startsWith('tax_delinquent_')) return
+  const lead = await loadLead(leadId)
+  if (!lead) return
+  // County-prospect imports are already projected by the prospect link trigger.
+  if (lead.is_parked === true || (typeof lead.source === 'string' && lead.source.startsWith('tax_delinquent_'))) return
 
-    const completed = await completedSources(leadId)
-    const jobs: Promise<boolean>[] = []
-    const phone = cleanText(lead.phone)
-    if (phone && !completed.has('prospect_match')) jobs.push(enrichFromProspect(leadId, phone, false))
-    const propertyInput = countyInput(lead)
-    if (propertyInput && !completed.has('county_assessor')) jobs.push(enrichFromCounty(leadId, propertyInput, false))
+  const completed = await completedSources(leadId)
+  const jobs: Promise<boolean>[] = []
+  const phone = cleanText(lead.phone)
+  if (phone && !completed.has('prospect_match')) jobs.push(enrichFromProspect(leadId, phone, false))
+  const propertyInput = countyInput(lead)
+  if (propertyInput && !completed.has('county_assessor')) jobs.push(enrichFromCounty(leadId, propertyInput, false))
 
-    const results = await Promise.allSettled(jobs)
-    for (const result of results) {
-      if (result.status === 'rejected') console.error('[auto-enrich] Source failed for lead', leadId, result.reason)
-    }
-  } catch (error) {
-    console.error('[auto-enrich] Failed for lead', leadId, error)
+  const results = await Promise.allSettled(jobs)
+  const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (failures.length > 0) {
+    throw new AggregateError(failures.map((failure) => failure.reason), `Canonical enrichment failed for lead ${leadId}`)
   }
 }
 

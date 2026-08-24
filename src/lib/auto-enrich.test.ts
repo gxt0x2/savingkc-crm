@@ -49,4 +49,9 @@ describe('canonical automatic enrichment', () => {
     expect(direct).not.toMatch(/manifest-sync|from\(['"]manifests|updateManifest/i)
     expect(batch).not.toMatch(/manifest-sync|from\(['"]manifests|updateManifest/i)
   })
+
+  it('is no longer triggered by Manifest bootstrap', () => {
+    const manifestSync = fs.readFileSync('src/lib/manifest-sync.ts', 'utf8')
+    expect(manifestSync).not.toMatch(/autoEnrichLead|from ['"]\.\/auto-enrich/)
+  })
 })
