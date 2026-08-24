@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
-import { safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
+import { applyCrmEntityAuthority, safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
 import { buildLeadProfilePatch } from '@/lib/server/lead-profile-command'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -212,7 +212,7 @@ export async function GET(
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
   }
 
-  const lead = leadRes.data as LeadPayload
+  const lead = applyCrmEntityAuthority(leadRes.data as LeadPayload, entityContext)
   const manifestRow = readRecord(manifestRes.data)
   const manifestContainer = manifestRow?.manifest
   const manifestRecord = readRecord(manifestContainer)
@@ -277,5 +277,10 @@ export async function PATCH(
   }
   if (!data) return NextResponse.json({ success: false, error: 'Contact not found' }, { status: 404 })
 
-  return NextResponse.json({ success: true, lead: data })
+  const entityContext = await safeReadLeadEntityContext(id)
+  return NextResponse.json({
+    success: true,
+    lead: applyCrmEntityAuthority(data as LeadPayload, entityContext),
+    entityContext,
+  })
 }

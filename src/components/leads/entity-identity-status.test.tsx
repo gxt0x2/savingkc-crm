@@ -33,7 +33,7 @@ describe('EntityIdentityStatus', () => {
         isPrimary: true, deliverabilityStatus: 'unknown', smsConsentStatus: 'opted_out',
       }],
     })} />)
-    expect(screen.getByText('Identity linked')).toBeInTheDocument()
+    expect(screen.getByText('Canonical record')).toBeInTheDocument()
     expect(screen.getByText('SMS opted out')).toBeInTheDocument()
   })
 

@@ -12,7 +12,28 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }))
 
-import { isEntityFoundationUnavailable, readLeadEntityContext, safeReadLeadEntityContext } from './crm-entity-foundation'
+import {
+  applyCrmEntityAuthority,
+  isEntityFoundationUnavailable,
+  readLeadEntityContext,
+  safeReadLeadEntityContext,
+  type CrmEntityContext,
+} from './crm-entity-foundation'
+
+const canonicalContext: CrmEntityContext = {
+  available: true,
+  linked: true,
+  degraded: false,
+  projectedAt: '2026-08-24T02:30:00.000Z',
+  person: { id: 'person-1', displayName: 'Canonical Seller', recordStatus: 'active' },
+  contactMethods: [
+    { id: 'email-1', type: 'email', value: 'seller@example.com', normalizedValue: 'seller@example.com', isPrimary: true, deliverabilityStatus: 'unknown', smsConsentStatus: 'not_applicable' },
+    { id: 'phone-1', type: 'phone', value: '+18165550123', normalizedValue: '+18165550123', isPrimary: true, deliverabilityStatus: 'unknown', smsConsentStatus: 'unknown' },
+  ],
+  property: { id: 'property-1', address: '123 Main St', city: 'Kansas City', state: 'MO', zip: '64111', parcelId: null },
+  opportunity: { id: 'opportunity-1', stage: 'qualified', classification: 'opportunity', priority: 'hot', ownerName: null, lifecycleStatus: 'open' },
+  openIdentityConflicts: 0,
+}
 
 describe('CRM entity foundation server reads', () => {
   beforeEach(() => mocks.maybeSingle.mockReset())
@@ -42,5 +63,48 @@ describe('CRM entity foundation server reads', () => {
     })
     expect(consoleSpy).toHaveBeenCalledOnce()
     consoleSpy.mockRestore()
+  })
+
+  it('makes linked canonical identity, property, and opportunity values authoritative', () => {
+    expect(applyCrmEntityAuthority({
+      id: 'lead-1',
+      full_name: 'Stale name',
+      phone: '+18160000000',
+      email: 'stale@example.com',
+      property_address: 'Old address',
+      city: 'Old city',
+      state: 'KS',
+      zip: '66000',
+      station: 'new',
+      classification: 'lead',
+      priority: 'warm',
+      assigned_agent: 'Casey',
+    }, canonicalContext)).toMatchObject({
+      id: 'lead-1',
+      full_name: 'Canonical Seller',
+      phone: '+18165550123',
+      email: 'seller@example.com',
+      property_address: '123 Main St',
+      city: 'Kansas City',
+      state: 'MO',
+      zip: '64111',
+      station: 'qualified',
+      classification: 'opportunity',
+      priority: 'hot',
+      assigned_agent: null,
+      entityAuthority: 'canonical_entities',
+    })
+  })
+
+  it('falls back explicitly when canonical entities are unavailable', () => {
+    const lead = { id: 'lead-1', full_name: 'Compatibility Seller', station: 'lead' }
+    expect(applyCrmEntityAuthority(lead, {
+      ...canonicalContext,
+      available: false,
+      linked: false,
+      degraded: true,
+      person: null,
+      opportunity: null,
+    })).toEqual({ ...lead, entityAuthority: 'lead_compatibility' })
   })
 })
