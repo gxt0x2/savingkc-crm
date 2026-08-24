@@ -113,4 +113,9 @@ Before merging application code, verify:
 - no unexpected SMS action, dialer session, lifecycle event, workflow run, or Lead was created during apply; and
 - the pre-migration Manifest and Manifest-history row counts remain unchanged.
 
+If the post-apply privilege check finds historical broad grants or write policies,
+apply `20261009120000_manifest_archive_read_only.sql` as a separately approved
+corrective migration before merging. It revokes only direct write/delete access
+to the two retained Manifest tables; it does not change or delete business data.
+
 Then merge PR `#532`, verify the exact production deployment SHA, run the signed-in desktop and mobile acceptance set, and begin the controlled pilot. Physical Manifest archival remains a later, separately reviewed encrypted-data operation; this release disables operational authority and writers but does not delete historical rows.
