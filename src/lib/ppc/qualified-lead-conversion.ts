@@ -57,7 +57,6 @@ export async function queuePpcQualifiedLeadConversion(input: {
     eventName: 'qualified_lead',
     eventCategory: 'form',
     leadId: input.leadId,
-    manifestId: context.manifestId,
     dedupeKey: `lead:${input.leadId}:qualified_lead`,
     optimizationRole: 'primary',
     approvedForGoogleAds: true,

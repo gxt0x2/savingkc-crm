@@ -76,25 +76,18 @@ describe('queuePpcQualifiedLeadConversion', () => {
         }
       }
 
-      if (table === 'manifests') {
+      if (table === 'ppc_tracking_events') {
         return {
           select: () => ({
             eq: () => ({
               order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({
-                    data: {
-                      id: 'manifest-1',
-                      manifest: {
-                        acquisition: {
-                          source: 'ppc-landing',
-                          channel: 'google-ads',
-                          attribution: { gclid: 'manifest-click' },
-                        },
-                      },
-                    },
+                limit: async () => ({
+                  data: [{
+                    traffic_source: 'google_ads',
+                    gclid: 'tracking-click',
+                    payload: { attribution: { channel: 'google-ads' } },
+                  }],
                     error: null,
-                  }),
                 }),
               }),
             }),
@@ -172,28 +165,18 @@ describe('queuePpcQualifiedLeadConversion', () => {
         }
       }
 
-      if (table === 'manifests') {
+      if (table === 'ppc_tracking_events') {
         return {
           select: () => ({
             eq: () => ({
               order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({
-                    data: {
-                      id: 'manifest-call-1',
-                      manifest: {
-                        acquisition: {
-                          source: 'google_ads_phone',
-                          channel: 'google-ads',
-                          attribution: {
-                            traffic_source: 'google_ads',
-                            campaign: 'Search 2026',
-                          },
-                        },
-                      },
-                    },
+                limit: async () => ({
+                  data: [{
+                    traffic_source: 'google_ads',
+                    campaign: 'Search 2026',
+                    payload: { attribution: { channel: 'google-ads' } },
+                  }],
                     error: null,
-                  }),
                 }),
               }),
             }),

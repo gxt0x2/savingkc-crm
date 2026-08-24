@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { paidSourceIdentifier, paidSourceIdentifierType, paidSourceLabel } from '@/lib/marketing/paid-source'
+import { attributionFromTrackingRows, type PpcTrackingAttributionRow } from '@/lib/ppc/tracking-attribution'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const PAID_LEAD_SOURCES = new Set([
@@ -61,15 +62,15 @@ function exportDestinations(payload: Record<string, unknown> | null): Array<{ de
     .filter((row) => row.destination !== 'unknown')
 }
 
-function normalizeAttribution(row: OutboxRow | null, manifestAttribution: Record<string, unknown>): Record<string, unknown> {
+function normalizeAttribution(row: OutboxRow | null, trackingAttribution: Record<string, unknown>): Record<string, unknown> {
   const attribution = readRecord(row?.attribution)
   const payload = readRecord(row?.payload)
   return {
     ...attribution,
-    ...manifestAttribution,
     ...payload,
-    click_id: text(row?.click_id) || text(manifestAttribution.click_id),
-    click_id_type: text(row?.click_id_type) || text(manifestAttribution.click_id_type),
+    ...trackingAttribution,
+    click_id: text(trackingAttribution.click_id) || text(row?.click_id),
+    click_id_type: text(trackingAttribution.click_id_type) || text(row?.click_id_type),
   }
 }
 
@@ -110,19 +111,22 @@ export async function GET(
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   const db = supabaseAdmin()
-  const [{ data: lead, error: leadError }, { data: manifestRow }, { data: outboxRows }] = await Promise.all([
+  const [
+    { data: lead, error: leadError },
+    { data: trackingRows, error: trackingError },
+    { data: outboxRows, error: outboxError },
+  ] = await Promise.all([
     db
       .from('leads')
       .select('id, source, station')
       .eq('id', id)
       .maybeSingle(),
     db
-      .from('manifests')
-      .select('manifest')
+      .from('ppc_tracking_events')
+      .select('traffic_source, campaign, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, gbraid, wbraid, gad_source, gad_campaignid, gad_adgroupid, page_path, page_location, page_referrer, payload, event_time')
       .eq('lead_id', id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order('event_time', { ascending: false })
+      .limit(10),
     db
       .from('ppc_conversion_outbox')
       .select('id, event_name, status, optimization_role, event_time, sent_at, click_id, click_id_type, attribution, payload, attempts, last_error')
@@ -132,21 +136,19 @@ export async function GET(
   ])
 
   if (leadError) return NextResponse.json({ error: leadError.message }, { status: 500 })
+  if (trackingError) return NextResponse.json({ error: trackingError.message }, { status: 500 })
+  if (outboxError) return NextResponse.json({ error: outboxError.message }, { status: 500 })
   if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
-  const manifest = readRecord(manifestRow?.manifest)
-  const acquisition = readRecord(manifest.acquisition)
-  const manifestAttribution = {
-    ...readRecord(acquisition.attribution),
-    source: acquisition.source,
-    channel: acquisition.channel,
-  }
+  const trackingAttribution = attributionFromTrackingRows(
+    trackingRows as PpcTrackingAttributionRow[] | null | undefined,
+  )
   const rows = (outboxRows ?? []) as OutboxRow[]
   const latestRowByEvent = new Map<string, OutboxRow>()
   for (const row of rows) {
     if (!latestRowByEvent.has(row.event_name)) latestRowByEvent.set(row.event_name, row)
   }
-  const attribution = normalizeAttribution(rows[0] ?? null, manifestAttribution)
+  const attribution = normalizeAttribution(rows[0] ?? null, trackingAttribution)
   const paid = isPaidLead(lead.source, attribution, rows)
 
   const warnings: string[] = []

@@ -48,28 +48,19 @@ function mockPpcLeadContext() {
       }
     }
 
-    if (table === 'manifests') {
+    if (table === 'ppc_tracking_events') {
       return {
         select: () => ({
           eq: () => ({
             order: () => ({
-              limit: () => ({
-                maybeSingle: async () => ({
-                  data: {
-                    id: 'manifest-1',
-                    manifest: {
-                      acquisition: {
-                        source: 'ppc-landing',
-                        channel: 'google-ads',
-                        attribution: {
-                          gclid: 'manifest-click',
-                          campaign: 'Search 2026',
-                        },
-                      },
-                    },
-                  },
+              limit: async () => ({
+                data: [{
+                  traffic_source: 'google_ads',
+                  campaign: 'Search 2026',
+                  gclid: 'tracking-click',
+                  payload: { attribution: { channel: 'google-ads' } },
+                }],
                   error: null,
-                }),
               }),
             }),
           }),
@@ -132,7 +123,6 @@ describe('queuePpcAppointmentBookedConversion', () => {
       eventName: 'appointment_booked',
       eventCategory: 'appointment',
       leadId: 'lead-1',
-      manifestId: 'manifest-1',
       activityId: 'activity-1',
       dedupeKey: 'lead:lead-1:appointment_booked',
       optimizationRole: 'secondary',
@@ -140,7 +130,7 @@ describe('queuePpcAppointmentBookedConversion', () => {
       conversionValue: 1,
       eventTime: '2026-06-06T15:00:00.000Z',
       attribution: expect.objectContaining({
-        gclid: 'manifest-click',
+        gclid: 'tracking-click',
         campaign: 'Search 2026',
       }),
       payload: expect.objectContaining({
@@ -178,28 +168,18 @@ describe('queuePpcAppointmentBookedConversion', () => {
         }
       }
 
-      if (table === 'manifests') {
+      if (table === 'ppc_tracking_events') {
         return {
           select: () => ({
             eq: () => ({
               order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({
-                    data: {
-                      id: 'manifest-call-1',
-                      manifest: {
-                        acquisition: {
-                          source: 'google_ads_phone',
-                          channel: 'google-ads',
-                          attribution: {
-                            traffic_source: 'google_ads',
-                            campaign: 'Search 2026',
-                          },
-                        },
-                      },
-                    },
+                limit: async () => ({
+                  data: [{
+                    traffic_source: 'google_ads',
+                    campaign: 'Search 2026',
+                    payload: { attribution: { channel: 'google-ads' } },
+                  }],
                     error: null,
-                  }),
                 }),
               }),
             }),
@@ -270,14 +250,12 @@ describe('queuePpcAppointmentBookedConversion', () => {
         }
       }
 
-      if (table === 'manifests') {
+      if (table === 'ppc_tracking_events') {
         return {
           select: () => ({
             eq: () => ({
               order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({ data: null, error: null }),
-                }),
+                limit: async () => ({ data: [], error: null }),
               }),
             }),
           }),
