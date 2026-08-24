@@ -24,6 +24,8 @@ describe('Mojo supervised recovery contract', () => {
     expect(plist).toContain('<integer>900</integer>')
     expect(sessionHealth).toContain('export async function clearMojoSyncIssue')
     expect(sync).toContain("await clearMojoSyncIssue('mojo-sync')")
+    expect(sync).toContain('Fetching contact details for provider contact ${contactId}')
+    expect(sync).not.toContain('Fetching contact details for ${entry.contactName}')
     expect(mojoHealth).toContain("configValue('mojo_sync_last_ok_at')")
   })
 

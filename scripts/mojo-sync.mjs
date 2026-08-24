@@ -524,7 +524,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     }
 
     // Fetch full contact details from Mojo (address, phone, email)
-    log(`  Fetching contact details for ${entry.contactName} (${contactId})...`)
+    log(`  Fetching contact details for provider contact ${contactId}...`)
     const contactDetails = await fetchContactDetails(sessionId, contactId)
 
     // Check for recording from today's recording report
