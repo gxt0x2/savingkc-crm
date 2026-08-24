@@ -15,15 +15,18 @@ const retiredAriRoutes = [
 ]
 
 describe('governed AI runtime', () => {
-  it('uses one Gateway tool path and the current governed model', () => {
+  it('uses one governed tool path with Groq text capacity and Gateway attachment compatibility', () => {
     const route = read('src/app/api/ai/command/route.ts')
     const agent = read('src/lib/ai/command-agent.ts')
 
     expect(route).not.toContain('api.groq.com')
     expect(route).not.toContain('openrouter.ai')
     expect(route).not.toContain('directProviderReply')
-    expect(route).toContain("AssistantGenerationError('gateway_unavailable', 503")
-    expect(agent).toContain("model: 'openai/gpt-5.6-luna'")
+    expect(route).toContain("if (attachments.length === 0 && groqAvailable) return 'groq'")
+    expect(route).toContain("if (gatewayAvailable) return 'gateway'")
+    expect(route).toContain("AssistantGenerationError('ai_provider_unavailable', 503")
+    expect(agent).toContain("baseURL: 'https://api.groq.com/openai/v1'")
+    expect(agent).toContain('model: commandModel(provider)')
   })
 
   it('keeps the retired ARI operational stack out of runtime source', () => {
@@ -42,7 +45,7 @@ describe('governed AI runtime', () => {
     expect(readFileNames('src/components/ari')).toEqual([])
 
     const assistant = registry.features.find((feature) => feature.id === 'unified_ai_assistant')
-    expect(assistant?.environment).toEqual(['AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'])
+    expect(assistant?.environment).toEqual(['GROQ_API_KEY', 'AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'])
   })
 })
 

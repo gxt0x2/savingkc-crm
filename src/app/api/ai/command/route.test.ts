@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   fail: vi.fn(),
   generate: vi.fn(),
+  createAgent: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.authenticated }))
@@ -23,7 +24,10 @@ vi.mock('@/lib/assistant/queries', () => ({
   readAssistantWorkflowRegistry: vi.fn(),
 }))
 vi.mock('@/lib/ai/command-agent', () => ({
-  createCommandAgent: () => ({ generate: mocks.generate }),
+  createCommandAgent: (...args: unknown[]) => {
+    mocks.createAgent(...args)
+    return { generate: mocks.generate }
+  },
 }))
 vi.mock('@/lib/ai/generation-store', () => ({
   AssistantGenerationError: class AssistantGenerationError extends Error {
@@ -56,6 +60,7 @@ const completed = {
 describe('durable AI command route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    delete process.env.GROQ_API_KEY
     process.env.AI_GATEWAY_API_KEY = 'configured'
     mocks.authenticated.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
     mocks.resolveActor.mockResolvedValue({ email: 'casey@savingkc.com', fullName: 'Casey', role: 'agent', access: 'agent' })
@@ -89,6 +94,7 @@ describe('durable AI command route', () => {
       actorEmail: 'casey@savingkc.com', actorName: 'Casey', requestId: 'request-123', surface: 'giraffe',
     }))
     expect(mocks.start.mock.invocationCallOrder[0]).toBeLessThan(mocks.generate.mock.invocationCallOrder[0])
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ email: 'casey@savingkc.com' }), 'gateway')
     expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({
       actorEmail: 'casey@savingkc.com', provider: 'openai', model: 'openai/gpt-5.6-luna',
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cacheReadTokens: 0 },
@@ -98,6 +104,32 @@ describe('durable AI command route', () => {
       reply: 'Grounded answer', threadId: 'thread-1', execution: 'read_only', grounded: false,
       approvalRequiredFor: expect.arrayContaining(['task creation', 'calls and messages']),
     })
+  })
+
+  it('prefers the configured Groq tool agent for text requests and records the direct provider', async () => {
+    process.env.GROQ_API_KEY = 'configured'
+    mocks.generate.mockResolvedValueOnce({
+      text: 'Groq grounded answer', toolResults: [], finishReason: 'stop',
+      finalStep: { model: { provider: 'groq.chat', modelId: 'openai/gpt-oss-120b' } },
+      usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18, inputTokenDetails: { cacheReadTokens: null } },
+    })
+    const response = await POST(request({ messages: [{ role: 'user', content: 'What needs attention?' }] }))
+    expect(response.status).toBe(200)
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ email: 'casey@savingkc.com' }), 'groq')
+    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'groq', model: 'groq/openai/gpt-oss-120b',
+      usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18, cacheReadTokens: null },
+    }))
+  })
+
+  it('keeps attachments on the governed Gateway instead of sending them to the text-only Groq model', async () => {
+    process.env.GROQ_API_KEY = 'configured'
+    const response = await POST(request({
+      messages: [{ role: 'user', content: 'Review this file' }],
+      attachments: [{ name: 'note.txt', mediaType: 'text/plain', dataUrl: 'data:text/plain;base64,SGVsbG8=' }],
+    }))
+    expect(response.status).toBe(200)
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.anything(), 'gateway')
   })
 
   it('replays a completed idempotent request without calling the model', async () => {
@@ -116,18 +148,28 @@ describe('durable AI command route', () => {
     expect(await response.json()).toEqual({ error: 'The AI Assistant could not complete this request.' })
   })
 
-  it('fails closed and records the attempt when the governed Gateway is unavailable', async () => {
+  it('does not silently fall back to the paid Gateway when the configured Groq path fails', async () => {
+    process.env.GROQ_API_KEY = 'configured'
+    mocks.generate.mockRejectedValue(new Error('groq rate limit'))
+    const response = await POST(request({ messages: [{ role: 'user', content: 'hello' }] }))
+    expect(response.status).toBe(500)
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1)
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.anything(), 'groq')
+    expect(mocks.fail).toHaveBeenCalledWith(expect.objectContaining({ code: 'generation_failed' }))
+  })
+
+  it('fails closed and records the attempt when no governed provider is available', async () => {
     delete process.env.AI_GATEWAY_API_KEY
     delete process.env.VERCEL_OIDC_TOKEN
     const response = await POST(request({ messages: [{ role: 'user', content: 'hello' }] }))
     expect(response.status).toBe(503)
     expect(mocks.generate).not.toHaveBeenCalled()
     expect(mocks.fail).toHaveBeenCalledWith(expect.objectContaining({
-      generationId: 'generation-1', actorEmail: 'casey@savingkc.com', code: 'gateway_unavailable',
+      generationId: 'generation-1', actorEmail: 'casey@savingkc.com', code: 'ai_provider_unavailable',
     }))
     expect(await response.json()).toEqual({
-      error: 'The governed AI Gateway is not configured in this environment.',
-      code: 'gateway_unavailable',
+      error: 'No governed AI provider is configured in this environment.',
+      code: 'ai_provider_unavailable',
     })
   })
 })

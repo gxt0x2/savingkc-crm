@@ -1,6 +1,8 @@
 import { ToolLoopAgent, isStepCount, tool, type ToolSet } from 'ai'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { z } from 'zod'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
+import { GROQ_STRUCTURED_TEXT_MODEL } from '@/lib/ai/groq-models'
 import {
   readAssistantAttention,
   readAssistantCommunications,
@@ -27,7 +29,32 @@ Operating rules:
 - Prefer concise, operational answers. Lead with the answer and link the user to the relevant CRM surface using paths such as /contacts, /conversations, /prospecting, /workflows?section=phones, /workflows?section=all, /reports, or /reports/andon.
 - Treat phone-number purpose and to/from identity as protected. Flag mismatches rather than assuming they are correct.`
 
-export function createCommandAgent(actor: AssistantActor) {
+export type CommandAgentProvider = 'gateway' | 'groq'
+
+function commandModel(provider: CommandAgentProvider) {
+  if (provider === 'gateway') return 'openai/gpt-5.6-luna'
+
+  const apiKey = process.env.GROQ_API_KEY?.trim()
+  if (!apiKey) throw new Error('groq_command_not_configured')
+  return createOpenAICompatible({
+    name: 'groq',
+    baseURL: 'https://api.groq.com/openai/v1',
+    apiKey,
+    transformRequestBody: (body) => ({
+      ...body,
+      messages: Array.isArray(body.messages)
+        ? body.messages.map((message) => {
+            if (!message || typeof message !== 'object' || Array.isArray(message)) return message
+            const clean = { ...message }
+            delete clean.reasoning_content
+            return clean
+          })
+        : body.messages,
+    }),
+  }).chatModel(GROQ_STRUCTURED_TEXT_MODEL)
+}
+
+export function createCommandAgent(actor: AssistantActor, provider: CommandAgentProvider = 'gateway') {
   const db = supabaseAdmin()
   const scopedTools = {
     getMyAttention: tool({
@@ -73,7 +100,7 @@ export function createCommandAgent(actor: AssistantActor) {
 
   return new ToolLoopAgent({
     id: 'savingkc-command-agent',
-    model: 'openai/gpt-5.6-luna',
+    model: commandModel(provider),
     instructions: `${instructions}\n\nSigned-in actor: ${actor.fullName} (${actor.access}). Only use tools exposed for this actor.`,
     stopWhen: isStepCount(8),
     temperature: 0.2,

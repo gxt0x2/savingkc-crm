@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import type { ModelMessage } from 'ai'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { assistantActorCanReadCompanyWide, resolveAssistantActor } from '@/lib/assistant/auth'
-import { createCommandAgent } from '@/lib/ai/command-agent'
+import { createCommandAgent, type CommandAgentProvider } from '@/lib/ai/command-agent'
+import { GROQ_STRUCTURED_TEXT_MODEL } from '@/lib/ai/groq-models'
 import {
   AssistantGenerationError,
   buildAssistantToolTrace,
@@ -62,6 +63,18 @@ function cleanSurface(value: unknown): AssistantSurface {
 function cleanRequestId(value: unknown): string {
   const requestId = typeof value === 'string' ? value.trim() : ''
   return requestId && requestId.length <= 160 ? requestId : crypto.randomUUID()
+}
+
+function commandProvider(attachments: CommandAttachment[]): CommandAgentProvider {
+  const groqAvailable = Boolean(process.env.GROQ_API_KEY?.trim())
+  const gatewayAvailable = Boolean(process.env.AI_GATEWAY_API_KEY || (process.env.VERCEL === '1' && process.env.VERCEL_OIDC_TOKEN))
+
+  if (attachments.length === 0 && groqAvailable) return 'groq'
+  if (gatewayAvailable) return 'gateway'
+  if (attachments.length > 0 && groqAvailable) {
+    throw new AssistantGenerationError('attachment_provider_unavailable', 503, 'File attachments require the governed AI Gateway, which is not available.')
+  }
+  throw new AssistantGenerationError('ai_provider_unavailable', 503, 'No governed AI provider is configured in this environment.')
 }
 
 function gatewayMessages(messages: CommandMessage[], attachments: CommandAttachment[]): ModelMessage[] {
@@ -148,23 +161,22 @@ export async function POST(request: Request) {
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .slice(-20)
       .map((message) => ({ role: message.role as CommandMessage['role'], content: message.content }))
-    const gatewayAvailable = Boolean(process.env.AI_GATEWAY_API_KEY || (process.env.VERCEL === '1' && process.env.VERCEL_OIDC_TOKEN))
-    if (!gatewayAvailable) {
-      throw new AssistantGenerationError('gateway_unavailable', 503, 'The governed AI Gateway is not configured in this environment.')
-    }
-    const result = await createCommandAgent(actor).generate({ messages: gatewayMessages(messages, attachments) })
+    const selectedProvider = commandProvider(attachments)
+    const result = await createCommandAgent(actor, selectedProvider).generate({ messages: gatewayMessages(messages, attachments) })
     const traced = buildAssistantToolTrace(result.toolResults.map((toolResult) => ({
       toolCallId: toolResult.toolCallId,
       toolName: toolResult.toolName,
       input: toolResult.input,
       output: toolResult.output,
     })))
-    const provider = result.finalStep.model.provider
-    const modelId = result.finalStep.model.modelId
+    const provider = selectedProvider === 'groq' ? 'groq' : result.finalStep.model.provider
+    const modelId = selectedProvider === 'groq' ? GROQ_STRUCTURED_TEXT_MODEL : result.finalStep.model.modelId
     const providerReply = {
       reply: result.text.trim(),
       provider,
-      model: modelId.includes('/') ? modelId : `${provider}/${modelId}`,
+      model: selectedProvider === 'groq'
+        ? `groq/${modelId}`
+        : modelId.includes('/') ? modelId : `${provider}/${modelId}`,
       finishReason: result.finishReason,
       usage: {
         inputTokens: result.usage.inputTokens ?? null,

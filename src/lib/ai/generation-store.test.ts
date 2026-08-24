@@ -32,14 +32,18 @@ describe('assistant generation accounting', () => {
     })
   })
 
-  it('does not invent cost for an unpriced fallback model', () => {
+  it('records the verified Groq model price in integer microdollars', () => {
     expect(estimateAssistantCostMicros('groq/openai/gpt-oss-120b', {
       inputTokens: 100,
       outputTokens: 100,
       totalTokens: 200,
       cacheReadTokens: null,
-    })).toBeNull()
-    expect(assistantPricingSnapshot('groq/openai/gpt-oss-120b')).toMatchObject({ source: 'unpriced' })
+    })).toBe(75)
+    expect(assistantPricingSnapshot('groq/openai/gpt-oss-120b')).toMatchObject({
+      model: 'groq/openai/gpt-oss-120b',
+      source: 'groq-model-catalog',
+      currency: 'USD',
+    })
   })
 
   it('deduplicates valid sources and stores bounded tool provenance without outputs', () => {

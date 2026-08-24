@@ -342,7 +342,7 @@
       "routes": ["/ai"],
       "apiRoutes": ["/api/ai/command", "/api/ai/next-action-proposal", "/api/ai/threads", "/api/ai/threads/[id]", "/api/ari/generate-briefing"],
       "tables": ["assistant_threads", "assistant_messages", "assistant_generations", "assistant_confirmations", "briefings", "crm_briefing_jobs", "agent_profiles"],
-      "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"]
+      "environment": ["GROQ_API_KEY", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"]
     },
     {
       "id": "ai_change_governance",
