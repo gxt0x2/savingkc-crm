@@ -318,8 +318,7 @@ export function applyPpcLeadIntelligenceToManifest(
 ): PpcLeadIntelligenceResult {
   const changed: string[] = []
   const now = cleanText(input.capturedAt) ?? new Date().toISOString()
-  const sellerSituation = buildPpcSellerSituationSummary(input)
-  const motivationScore = scorePpcLead(input)
+  const { sellerSituation, motivationScore } = derivePpcLeadIntelligence(input)
 
   manifest.source = input.source?.startsWith('ppc_form_') ? 'ppc-landing' : manifest.source
   manifest.leadSource = 'ppc-landing'
@@ -472,8 +471,17 @@ export function applyPpcLeadIntelligenceToManifest(
   }
 }
 
+export function derivePpcLeadIntelligence(input: PpcLeadIntelligenceInput): PpcLeadIntelligenceResult {
+  return {
+    sellerSituation: buildPpcSellerSituationSummary(input),
+    motivationScore: scorePpcLead(input),
+    changed: [],
+  }
+}
+
 export function buildPpcLeadCacheUpdates(result: PpcLeadIntelligenceResult): Record<string, unknown> {
   const updates: Record<string, unknown> = {}
   if (result.sellerSituation) updates.seller_situation = result.sellerSituation
+  if (result.motivationScore) updates.motivation_score = result.motivationScore
   return updates
 }

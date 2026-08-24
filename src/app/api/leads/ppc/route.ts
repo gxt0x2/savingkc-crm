@@ -3,15 +3,14 @@ import { z } from 'zod'
 import { createHash } from 'node:crypto'
 import { mkdir, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { startPpcFormLeadAgentCallback } from '@/lib/lead-form-callback'
 import { buildUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
 import { DEFAULT_PPC_CAMPAIGN, ppcCampaignForPagePath } from '@/lib/ppc/campaigns'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { getPpcRequestContext } from '@/lib/ppc/request-context'
 import {
-  applyPpcLeadIntelligenceToManifest,
   buildPpcLeadCacheUpdates,
+  derivePpcLeadIntelligence,
   type PpcLeadIntelligenceInput,
 } from '@/lib/ppc/lead-intelligence'
 import {
@@ -584,7 +583,6 @@ export async function POST(req: NextRequest) {
       test: true,
       notificationsSkipped: true,
       conversionSuppressed: true,
-      manifestId: null,
       leadId: null,
     }, { headers: corsHeaders })
   }
@@ -640,7 +638,7 @@ export async function POST(req: NextRequest) {
         console.error('[ppc/lead] insert failed — queuing offline', error)
         await queueLeadOffline(parsed, error)
         return NextResponse.json(
-          { ok: true, queued: true, manifestId: null, leadId: null },
+          { ok: true, queued: true, leadId: null },
           { headers: corsHeaders },
         )
       }
@@ -657,22 +655,14 @@ export async function POST(req: NextRequest) {
         ...(cityState.zip ? { zip: cityState.zip } : {}),
         ...(cityState.county ? { county: cityState.county } : {}),
       }
-      await supabase
+      const { error: leadUpdateError } = await supabase
         .from('leads')
         .update(leadUpdate)
         .eq('id', leadId)
+      if (leadUpdateError) throw leadUpdateError
     }
 
     const resolvedLeadId: string = leadId as string
-    const manifestId = await ensureManifestExists(resolvedLeadId)
-    if (!manifestId) {
-      console.error('[ppc/lead] manifest bootstrap failed for lead', resolvedLeadId)
-      return NextResponse.json(
-        { ok: false, error: 'Manifest unavailable' },
-        { status: 500, headers: corsHeaders },
-      )
-    }
-
     const ppcLeadIntelligence: PpcLeadIntelligenceInput = {
       source: `ppc_form_${intent}`,
       formStatus: intent === 'submit'
@@ -693,37 +683,43 @@ export async function POST(req: NextRequest) {
       county: cityState.county,
       attribution,
     }
-    let leadCacheUpdates: Record<string, unknown> = {}
+    const leadIntelligence = derivePpcLeadIntelligence(ppcLeadIntelligence)
+    const leadCacheUpdates = buildPpcLeadCacheUpdates(leadIntelligence)
+    const { data: currentLeadCache, error: currentLeadError } = await supabase
+      .from('leads')
+      .select('seller_situation, motivation_score, priority')
+      .eq('id', resolvedLeadId)
+      .maybeSingle()
+    if (currentLeadError) throw currentLeadError
 
-    await updateManifestAndCascade(
-      resolvedLeadId,
-      (m) => {
-        m.priority = timeline ? TIMELINE_TO_PRIORITY[timeline] : 'warm'
-        if (address && !m.property.address) m.property.address = address
-        if (phoneE164 && !m.owner.phones?.includes(phoneE164)) {
-          m.owner.phones = [phoneE164, ...(m.owner.phones ?? [])]
-        }
-        if (email && !m.owner.emails?.includes(email)) {
-          m.owner.emails = [email, ...(m.owner.emails ?? [])]
-        }
-        if (fullName) m.owner.fullName = fullName
-        const result = applyPpcLeadIntelligenceToManifest(m, ppcLeadIntelligence)
-        leadCacheUpdates = buildPpcLeadCacheUpdates(result)
-      },
-      PPC_SOURCE,
-    )
-
-    if (Object.keys(leadCacheUpdates).length > 0) {
-      const { data: currentLeadCache } = await supabase
-        .from('leads')
-        .select('seller_situation')
-        .eq('id', resolvedLeadId)
-        .maybeSingle()
-      const currentSellerSituation = cleanText((currentLeadCache as { seller_situation?: string | null } | null)?.seller_situation)
-      if (!currentSellerSituation || currentSellerSituation.startsWith('PPC intake:')) {
-        await supabase.from('leads').update(leadCacheUpdates).eq('id', resolvedLeadId)
-      }
+    const currentLead = currentLeadCache as {
+      seller_situation?: string | null
+      motivation_score?: number | null
+      priority?: string | null
+    } | null
+    const currentSellerSituation = cleanText(currentLead?.seller_situation)
+    if (currentSellerSituation && !currentSellerSituation.startsWith('PPC intake:')) {
+      delete leadCacheUpdates.seller_situation
     }
+    if (
+      typeof currentLead?.motivation_score === 'number' &&
+      typeof leadIntelligence.motivationScore === 'number' &&
+      currentLead.motivation_score > leadIntelligence.motivationScore
+    ) {
+      delete leadCacheUpdates.motivation_score
+    }
+    const nextPriority = currentLead?.priority === 'hot'
+      ? 'hot'
+      : timeline ? TIMELINE_TO_PRIORITY[timeline] : 'warm'
+
+    const { error: intelligenceUpdateError } = await supabase
+      .from('leads')
+      .update({
+        ...leadCacheUpdates,
+        priority: nextPriority,
+      })
+      .eq('id', resolvedLeadId)
+    if (intelligenceUpdateError) throw intelligenceUpdateError
 
     if (intent === 'potential') {
       const activityId = await upsertPpcFormActivity({
@@ -753,7 +749,6 @@ export async function POST(req: NextRequest) {
         sessionId: parsed.sessionId,
         visitorId: parsed.visitorId,
         leadId: resolvedLeadId,
-        manifestId,
         activityId,
         pagePath: landingPagePath,
         formStep,
@@ -782,7 +777,6 @@ export async function POST(req: NextRequest) {
         ok: true,
         potential: true,
         formStatus: 'potential_no_submit',
-        manifestId,
         leadId: resolvedLeadId,
       }, { headers: corsHeaders })
     }
@@ -815,7 +809,6 @@ export async function POST(req: NextRequest) {
         sessionId: parsed.sessionId,
         visitorId: parsed.visitorId,
         leadId: resolvedLeadId,
-        manifestId,
         activityId,
         pagePath: landingPagePath,
         formStep,
@@ -840,7 +833,6 @@ export async function POST(req: NextRequest) {
         ok: true,
         autosaved: true,
         formStatus: 'stage_3_complete_no_submit',
-        manifestId,
         leadId: resolvedLeadId,
       }, { headers: corsHeaders })
     }
@@ -887,7 +879,6 @@ export async function POST(req: NextRequest) {
         eventName: 'lead_submitted',
         eventCategory: 'form',
         leadId: resolvedLeadId,
-        manifestId,
         activityId,
         dedupeKey: conversionEventId,
         optimizationRole: 'primary',
@@ -917,7 +908,6 @@ export async function POST(req: NextRequest) {
       sessionId: parsed.sessionId,
       visitorId: parsed.visitorId,
       leadId: resolvedLeadId,
-      manifestId,
       activityId,
       pagePath: landingPagePath,
       formStep,
@@ -958,7 +948,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      manifestId,
       leadId: resolvedLeadId,
       conversionEventId: `lead:${resolvedLeadId}:lead_submitted`,
       ...(isTestLead ? { notificationsSkipped: true, conversionSuppressed: true } : {}),
@@ -966,6 +955,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[ppc/lead] unexpected error — queuing offline', err)
     await queueLeadOffline(parsed, err)
-    return NextResponse.json({ ok: true, queued: true, manifestId: null, leadId: null }, { headers: corsHeaders })
+    return NextResponse.json({ ok: true, queued: true, leadId: null }, { headers: corsHeaders })
   }
 }

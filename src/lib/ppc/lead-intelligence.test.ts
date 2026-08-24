@@ -3,6 +3,7 @@ import { buildManifest } from '@/lib/manifest-builder'
 import {
   applyPpcLeadIntelligenceToManifest,
   buildPpcLeadCacheUpdates,
+  derivePpcLeadIntelligence,
   ppcLeadIntelligenceFromActivityMetadata,
 } from './lead-intelligence'
 
@@ -46,6 +47,26 @@ describe('PPC lead intelligence promotion', () => {
     expect(manifest.ariIntelligence?.briefingStale).toBe(true)
     expect(buildPpcLeadCacheUpdates(result)).toMatchObject({
       seller_situation: result.sellerSituation,
+      motivation_score: 10,
+    })
+  })
+
+  it('derives typed CRM updates directly from explicit seller answers', () => {
+    const result = derivePpcLeadIntelligence({
+      source: 'ppc_form_submit',
+      formStatus: 'submitted',
+      situation: 'tax-delinquent',
+      timeline: '60-days',
+      condition: 'major-repair',
+      county: 'Jackson',
+      state: 'MO',
+    })
+
+    expect(result.sellerSituation).toContain('Tax delinquency or tax sale concern')
+    expect(result.motivationScore).toBeGreaterThanOrEqual(7)
+    expect(buildPpcLeadCacheUpdates(result)).toMatchObject({
+      seller_situation: result.sellerSituation,
+      motivation_score: result.motivationScore,
     })
   })
 

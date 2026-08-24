@@ -303,7 +303,6 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [bookingOpen, setBookingOpen] = useState(false)
-  const [manifestId, setManifestId] = useState<string | null>(null)
   const [leadId, setLeadId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [quizStartedFired, setQuizStartedFired] = useState(false)
@@ -558,7 +557,6 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         const json = await r.json().catch(() => null)
         if (r.ok && json?.ok) {
           potentialLeadKeyRef.current = potentialLeadKey
-          if (json.manifestId) setManifestId(json.manifestId)
           if (json.leadId) setLeadId(json.leadId)
         }
       } catch {
@@ -619,7 +617,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         const json = await r.json().catch(() => null)
         if (r.ok && json?.ok) {
           stage3AutosavedKeyRef.current = autosaveKey
-          if (json.manifestId) setManifestId(json.manifestId)
+          if (json.leadId) setLeadId(json.leadId)
           const stage3Payload = {
             form_step: finalStep,
             form_status: 'stage_3_complete_no_submit',
@@ -787,7 +785,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
           form_step: finalStep,
           form_status: 'submitted',
           form_submitted: true,
-          stage3_autosaved: Boolean(manifestId || json.manifestId),
+          stage3_autosaved: Boolean(leadId || json.leadId),
           has_address: true,
           has_name: true,
           has_phone: true,
@@ -800,7 +798,6 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         })
       }
       setLeadId(json.leadId ?? null)
-      setManifestId(json.manifestId ?? null)
       setSubmitted(true)
     } catch (e) {
       trackFormError(e instanceof Error ? e.message : 'Submit failed. Please try again or call us.', 'submit', finalStep)
@@ -816,7 +813,6 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
     const base = process.env.NEXT_PUBLIC_BOOKING_URL ?? 'https://savingkc.com/call/'
     const params = new URLSearchParams({ source: 'ppc-landing' })
     if (leadId) params.set('leadId', leadId)
-    if (manifestId) params.set('manifestId', manifestId)
     return `${base}?${params.toString()}`
   })()
 
