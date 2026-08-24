@@ -255,7 +255,7 @@ describe('workflow run service', () => {
             work_item_key: 'activity:task-1', source_kind: 'activity', source_id: 'task-1',
             lead_id: running.input.leadId, tc_file_id: null, kind: 'task', title: 'Make first contact',
             description: null, status: 'pending', priority: 'urgent', due_at: running.input.dueAt,
-            assigned_to: 'Acquisitions', department: 'acquisitions', role: 'setter',
+            assigned_to: null, department: 'acquisitions', role: 'setter',
             primary_next_action: true, version: 1, source_created_at: running.created_at,
             completed_at: null, updated_at: running.updated_at,
           },
@@ -269,8 +269,16 @@ describe('workflow run service', () => {
     const maybeSingle = vi.fn()
       .mockResolvedValueOnce({ data: null, error: null })
       .mockResolvedValueOnce({ data: null, error: null })
-    const from = vi.fn((table: string) => table === 'work_items'
-      ? {
+    const from = vi.fn((table: string) => {
+      if (table === 'leads') {
+        return {
+          select: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: { assigned_agent: null }, error: null }) }),
+          }),
+        }
+      }
+      if (table === 'work_items') {
+        return {
           select: () => ({
             eq: () => ({
               eq: () => ({
@@ -283,14 +291,16 @@ describe('workflow run service', () => {
             }),
           }),
         }
-      : {
-          select: () => ({
+      }
+      return {
+        select: () => ({
             eq: () => ({
               eq: () => ({ contains: () => ({ limit: () => ({ maybeSingle }) }) }),
             }),
-          }),
-          insert: () => ({ select: () => ({ single: async () => ({ data: { id: 'status-1' }, error: null }) }) }),
-        })
+        }),
+        insert: () => ({ select: () => ({ single: async () => ({ data: { id: 'status-1' }, error: null }) }) }),
+      }
+    })
 
     const result = await executeWorkflowRun(running.id, 'worker:test', { rpc, from } as unknown as SupabaseClient)
     expect(result?.status).toBe('succeeded')

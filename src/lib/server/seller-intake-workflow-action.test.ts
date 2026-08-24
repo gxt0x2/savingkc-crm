@@ -43,14 +43,23 @@ function database(
     { data: null, error: null },
   ],
   primary: { data: { work_item_key: string } | null; error: { message: string } | null } = { data: null, error: null },
+  owner: { data: { assigned_agent: string | null } | null; error: { message: string } | null } = {
+    data: { assigned_agent: null },
+    error: null,
+  },
 ) {
   const maybeSingle = vi.fn()
   for (const result of lookups) maybeSingle.mockResolvedValueOnce(result)
   const primaryMaybeSingle = vi.fn().mockResolvedValue(primary)
+  const ownerMaybeSingle = vi.fn().mockResolvedValue(owner)
   const statusSingle = vi.fn().mockResolvedValue({ data: { id: 'status-activity-1' }, error: null })
   const insert = vi.fn(() => ({ select: () => ({ single: statusSingle }) }))
-  const from = vi.fn((table: string) => table === 'work_items'
-    ? {
+  const from = vi.fn((table: string) => {
+    if (table === 'leads') {
+      return { select: () => ({ eq: () => ({ maybeSingle: ownerMaybeSingle }) }) }
+    }
+    if (table === 'work_items') {
+      return {
         select: () => ({
           eq: () => ({
             eq: () => ({
@@ -61,8 +70,9 @@ function database(
           }),
         }),
       }
-    : {
-        select: () => ({
+    }
+    return {
+      select: () => ({
           eq: () => ({
             eq: () => ({
               contains: () => ({
@@ -70,9 +80,10 @@ function database(
               }),
             }),
           }),
-        }),
-        insert,
-      })
+      }),
+      insert,
+    }
+  })
   return { db: { from } as unknown as SupabaseClient, from, insert, statusSingle }
 }
 
@@ -127,6 +138,8 @@ describe('seller intake governed workflow action', () => {
       created: true,
       leadId: LEAD_ID,
       workItemKey: 'activity:task-1',
+      owner: null,
+      assignmentRequired: true,
       statusActivityId: 'status-activity-1',
     })
     expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({
@@ -134,6 +147,8 @@ describe('seller intake governed workflow action', () => {
       leadId: LEAD_ID,
       kind: 'task',
       title: 'Make first contact',
+      assignedTo: null,
+      department: 'acquisitions',
       primaryNextAction: true,
       provenance: expect.objectContaining({
         event_backed: true,
@@ -149,6 +164,9 @@ describe('seller intake governed workflow action', () => {
         workflow_run_id: RUN_ID,
         conversation_attention: 'needs_reply',
         acknowledgement_allowed: true,
+        owner_kind: 'team_queue',
+        owner_name: null,
+        assignment_required: true,
       }),
     }))
     expect(insert).not.toHaveBeenCalledWith(expect.objectContaining({ activity_type: 'task' }))
@@ -190,5 +208,61 @@ describe('seller intake governed workflow action', () => {
     expect(result).toMatchObject({ created: false, workItemKey: 'activity:existing-primary' })
     expect(mocks.createWorkItem).not.toHaveBeenCalled()
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ activity_type: 'status_change' }))
+  })
+
+  it('assigns the first action only when a factual human owner already exists', async () => {
+    const { db, insert } = database(undefined, undefined, { data: { assigned_agent: 'Casey' }, error: null })
+
+    const result = await executeSellerIntakeWorkflow({
+      runId: RUN_ID,
+      workflowVersion: 2,
+      definitionHash: 'a'.repeat(64),
+      triggerKind: 'lead_form_submitted',
+      requestedBy: 'SavingKC Operations',
+      payload: payload(),
+    }, db)
+
+    expect(result).toMatchObject({ owner: 'Casey', assignmentRequired: false })
+    expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({ assignedTo: 'Casey' }), db)
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ owner_kind: 'agent', owner_name: 'Casey', assignment_required: false }),
+    }))
+  })
+
+  it('keeps a department label in the team queue instead of treating it as a person', async () => {
+    const { db } = database(undefined, undefined, { data: { assigned_agent: 'Acquisitions' }, error: null })
+
+    const result = await executeSellerIntakeWorkflow({
+      runId: RUN_ID,
+      workflowVersion: 2,
+      definitionHash: 'a'.repeat(64),
+      triggerKind: 'lead_form_submitted',
+      requestedBy: 'SavingKC Operations',
+      payload: payload(),
+    }, db)
+
+    expect(result).toMatchObject({ owner: null, assignmentRequired: true })
+    expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({
+      assignedTo: null,
+      department: 'acquisitions',
+    }), db)
+  })
+
+  it('fails closed when the owner source cannot be read', async () => {
+    const { db, insert } = database(undefined, undefined, {
+      data: null,
+      error: { message: 'owner query unavailable' },
+    })
+
+    await expect(executeSellerIntakeWorkflow({
+      runId: RUN_ID,
+      workflowVersion: 2,
+      definitionHash: 'a'.repeat(64),
+      triggerKind: 'lead_form_submitted',
+      requestedBy: 'SavingKC Operations',
+      payload: payload(),
+    }, db)).rejects.toThrow('Seller intake owner lookup failed')
+    expect(mocks.createWorkItem).not.toHaveBeenCalled()
+    expect(insert).not.toHaveBeenCalled()
   })
 })

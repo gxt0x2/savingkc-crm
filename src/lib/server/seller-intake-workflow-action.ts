@@ -8,6 +8,7 @@ import { createWorkItem, WorkItemError } from '@/lib/server/work-items'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const TRIGGER_KEY_PATTERN = /^seller-form-intake:[a-f0-9]{24}$/
 const DEFINITION_HASH_PATTERN = /^[a-f0-9]{64}$/i
+const DEPARTMENT_NAMES = new Set(['acquisitions', 'dispositions', 'marketing', 'transaction coordination'])
 
 type SellerIntakeWorkflowPayload = {
   leadId: string
@@ -94,6 +95,18 @@ async function findExistingPrimaryWorkItem(db: SupabaseClient, leadId: string): 
   return typeof data?.work_item_key === 'string' ? data.work_item_key : null
 }
 
+async function findCurrentLeadOwner(db: SupabaseClient, leadId: string): Promise<string | null> {
+  const { data, error } = await db
+    .from('leads')
+    .select('assigned_agent')
+    .eq('id', leadId)
+    .maybeSingle()
+  if (error) throw new Error(`Seller intake owner lookup failed: ${error.message}`)
+  if (!data) throw new Error('Seller intake owner lookup failed: lead was not found')
+  const owner = typeof data.assigned_agent === 'string' ? data.assigned_agent.trim() : ''
+  return owner && !DEPARTMENT_NAMES.has(owner.toLowerCase()) ? owner : null
+}
+
 async function findExistingIntakeEvent(
   db: SupabaseClient,
   leadId: string,
@@ -143,6 +156,8 @@ export async function executeSellerIntakeWorkflow(input: {
     }
   }
 
+  const owner = await findCurrentLeadOwner(db, payload.leadId)
+
   let workItemKey = await findExistingPrimaryWorkItem(db, payload.leadId)
   let workItemCreated = false
   if (!workItemKey) {
@@ -155,7 +170,7 @@ export async function executeSellerIntakeWorkflow(input: {
         title: 'Make first contact',
         notes: 'Respond to the new seller inquiry and record the factual outcome.',
         dueAt: payload.dueAt,
-        assignedTo: 'Acquisitions',
+        assignedTo: owner,
         department: 'acquisitions',
         role: 'setter',
         priority: 'urgent',
@@ -188,7 +203,7 @@ export async function executeSellerIntakeWorkflow(input: {
     .insert({
       lead_id: payload.leadId,
       activity_type: 'status_change',
-      description: 'Seller intake workflow established ownership and conversation state.',
+      description: 'Seller intake workflow established conversation state and a primary action.',
       agent: input.requestedBy,
       metadata: {
         source: 'governed_workflow',
@@ -203,9 +218,10 @@ export async function executeSellerIntakeWorkflow(input: {
         form_source: payload.formSource,
         record_kind: 'opportunity',
         opportunity_stage: 'new',
-        owner_kind: 'team',
-        owner_id: 'acquisitions',
-        owner_name: 'Acquisitions',
+        owner_kind: owner ? 'agent' : 'team_queue',
+        owner_name: owner,
+        department: 'acquisitions',
+        assignment_required: owner === null,
         identity_keys: payload.identityKeys,
         conversation_attention: 'needs_reply',
         acknowledgement_channel: 'sms',
@@ -224,6 +240,8 @@ export async function executeSellerIntakeWorkflow(input: {
     created: workItemCreated,
     leadId: payload.leadId,
     workItemKey,
+    owner,
+    assignmentRequired: owner === null,
     statusActivityId: statusActivity.id,
   }
 }
