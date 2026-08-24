@@ -3,12 +3,6 @@ import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 
-const WORKER_SECRET =
-  process.env.ADMIN_API_SECRET ||
-  process.env.CRON_SECRET ||
-  process.env.DEPLOY_SECRET ||
-  ''
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -53,17 +47,6 @@ export async function POST(req: NextRequest) {
     await Promise.allSettled(messages)
 
     console.log(`EOD submitted — ${smsBody}`)
-
-    // Trigger immediate Mojo refresh (INT-02)
-    try {
-      await fetch(`${req.nextUrl.origin}/api/workers/mojo-sync?force=true`, {
-        method: 'POST',
-        headers: WORKER_SECRET ? { authorization: `Bearer ${WORKER_SECRET}` } : undefined,
-      })
-      console.log('Mojo refresh triggered')
-    } catch (mojoErr) {
-      console.error('Mojo refresh failed (non-fatal):', mojoErr)
-    }
 
     return NextResponse.json({ success: true })
   } catch (err) {

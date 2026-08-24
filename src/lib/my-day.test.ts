@@ -109,6 +109,25 @@ describe('Casey My Day model', () => {
     expect(report.week.rows.find((row) => row.key === 'conversations')?.days).toEqual([5, 5, 0, 0, 0])
   })
 
+  it('counts canonical Mojo call facts without relying on the retired file-based worker', () => {
+    const mojoCall = activity({
+      id: 'mojo-call-event',
+      activity_type: 'call',
+      agent: 'Mojo Email Sync',
+      metadata: {
+        source: 'mojo_call_event',
+        disposition: 'Motivated seller',
+        outcome: 'meaningful_conversation',
+      },
+      created_at: '2026-08-04T18:00:00.000Z',
+    })
+    const report = buildMyDay(input({ activities: [...input().activities, mojoCall] }))
+
+    expect(report.funnel[0].value).toBe(31)
+    expect(report.funnel[1].value).toBe(10)
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 21, 0, 0, 0])
+  })
+
   it('turns Casey-assigned work into real commitments and call-list candidates', () => {
     const report = buildMyDay(input())
     expect(report.queue).toHaveLength(1)

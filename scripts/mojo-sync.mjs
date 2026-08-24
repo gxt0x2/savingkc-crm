@@ -141,7 +141,7 @@ async function processMojoQueue(reason = 'scheduled_sync') {
     }
     const result = await res.json().catch(() => null)
     if (result) {
-      log(`Queue processor: processed=${result.processed ?? 0}, failed=${result.failed ?? 0}, pending batch=${result.total_claimed ?? 0}`)
+      log(`Queue processor: claimed=${result.claimed ?? 0}, completed=${result.completed ?? 0}, retrying=${result.pending ?? 0}, dead-letter=${result.deadLetter ?? 0}, failed=${result.failed ?? 0}`)
     }
   } catch (err) {
     logError(`Queue processor failed during ${reason}`, err)

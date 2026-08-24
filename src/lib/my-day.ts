@@ -363,20 +363,26 @@ function callReviewReason(activity: MyDayActivity): string {
 
 export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const stats = input.stats.filter((row) => row.date.startsWith(input.month))
-  // Mojo owns agent_daily_stats. Native CRM and Heir Dialer dispositions are
-  // immutable lead activities, so add those source-specific events here rather
-  // than mutating Mojo's daily aggregate and risking a later sync overwrite.
+  // Historical Mojo totals remain in agent_daily_stats. New provider calls and
+  // native dialer outcomes are immutable activities, so add only those
+  // canonical events; the retired file-based Mojo worker cannot overwrite them.
   const nativeDialerActivities = input.activities.filter((activity) => {
     if (activity.activity_type.toLowerCase() !== 'call') return false
-    if (!(activity.agent || '').toLowerCase().includes('casey')) return false
     const source = text(activity.metadata?.source).toLowerCase()
     const disposition = text(activity.metadata?.disposition)
-    return Boolean(disposition) && !source.includes('mojo') && isWithinMonth(activity.created_at, input.month)
+    const isCanonicalMojo = source === 'mojo_call_event'
+    if (!isCanonicalMojo && !(activity.agent || '').toLowerCase().includes('casey')) return false
+    return Boolean(disposition) && isWithinMonth(activity.created_at, input.month)
   })
+  const isMeaningfulActivity = (activity: MyDayActivity) => {
+    const outcome = text(activity.metadata?.outcome).toLowerCase()
+    return ['callback_scheduled', 'meaningful_conversation', 'appointment_set', 'not_interested', 'already_sold', 'listed'].includes(outcome)
+      || isReachedDisposition(text(activity.metadata?.disposition))
+  }
   const hasCallData = input.availability.agentStats || nativeDialerActivities.length > 0
   const calls = hasCallData ? stats.reduce((sum, row) => sum + number(row.calls_made), 0) + nativeDialerActivities.length : null
   const conversations = hasCallData
-    ? stats.reduce((sum, row) => sum + number(row.meaningful_conversations), 0) + nativeDialerActivities.filter((activity) => isReachedDisposition(text(activity.metadata?.disposition))).length
+    ? stats.reduce((sum, row) => sum + number(row.meaningful_conversations), 0) + nativeDialerActivities.filter(isMeaningfulActivity).length
     : null
   const leadEntries = new Map(input.leads
     .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinMonth(lead.created_at, input.month))
@@ -408,7 +414,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const days = weekDateKeys(input)
   const statsByDate = new Map(stats.map((row) => [row.date, row]))
   const nativeCallsByDay = valuesByDay(nativeDialerActivities.map((activity) => activity.created_at), days)
-  const nativeConversationsByDay = valuesByDay(nativeDialerActivities.filter((activity) => isReachedDisposition(text(activity.metadata?.disposition))).map((activity) => activity.created_at), days)
+  const nativeConversationsByDay = valuesByDay(nativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
   const weeklyRowValues: MyDayWeeklyRow[] = [
     {
       key: 'calls', label: 'Calls', icon: 'call', tone: 'blue',
