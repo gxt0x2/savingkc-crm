@@ -13,7 +13,6 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
       include: [
-        'src/lib/manifest/**',
         'src/app/**/dashboard/lib/bottleneck.ts',
         'src/app/**/dashboard/components/**/*.{ts,tsx}',
       ],
