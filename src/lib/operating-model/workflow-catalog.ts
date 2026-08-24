@@ -371,12 +371,12 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
     id: 'mojo-call-sync',
     name: 'Mojo Call Sync',
-    description: 'Processes queued Mojo calling records into canonical leads, activities, outcomes, and attribution.',
+    description: 'Supervises one authenticated Mojo fetcher, then processes queued call evidence through explicit field ownership and freshness controls.',
     category: 'data_sync', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
     trigger: { type: 'scheduled', schedule: 'Every 15 minutes' },
-    actions: [{ type: 'execute', label: 'Claim queued Mojo records' }, { type: 'normalize_identity' }, { type: 'execute', label: 'Persist call outcome and lead state' }],
-    implementation: implementation(['/api/cron/process-mojo-queue', '/api/mojo/sync', 'src/lib/server/mojo-call-import.ts'], { execution: 'worker', schedule: '*/15 * * * *' }),
-    version: 2, lastRunAt: null,
+    actions: [{ type: 'execute', label: 'Fetch provider evidence with one supervised runner' }, { type: 'execute', label: 'Claim queued Mojo records' }, { type: 'normalize_identity' }, { type: 'execute', label: 'Persist approved call outcome and lead state' }],
+    implementation: implementation(['/api/cron/process-mojo-queue', '/api/mojo/sync', 'scripts/mojo-supervised-runner.mjs', 'src/lib/server/mojo-call-import.ts'], { execution: 'worker', schedule: '*/15 * * * *' }),
+    version: 3, lastRunAt: null,
   },
   {
     id: 'gmail-communication-sync',

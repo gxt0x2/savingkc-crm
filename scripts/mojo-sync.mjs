@@ -2,7 +2,7 @@
 /**
  * Mojo Sync Script v3
  * Pulls call activity from Mojo's activity-stream API, syncs ONLY meaningful
- * conversations to CRM manifests.
+ * conversations to canonical CRM call evidence.
  *
  * MEANINGFUL = Casey had a real conversation and dispositioned to:
  *   - "Follow Up" (group 7)
@@ -20,6 +20,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   clearMojoSessionIssue,
+  clearMojoSyncIssue,
   isMojoSessionError,
   loadMojoEnv,
   markLocalSessionExpired,
@@ -100,33 +101,24 @@ async function readLastSyncTimestamp() {
       signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) {
-      log(`Config read failed (${res.status}) — using epoch`)
-      return new Date(0).toISOString()
+      throw new Error(`Config read failed (${res.status}); refusing an unbounded fallback`)
     }
     const data = await res.json()
     return data.value || new Date(0).toISOString()
   } catch (err) {
-    logError('Failed to read last_mojo_sync_timestamp from CRM — using epoch', err)
-    return new Date(0).toISOString()
+    throw new Error(`Failed to read last_mojo_sync_timestamp from CRM: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
 async function writeLastSyncTimestamp(timestamp) {
-  try {
-    const res = await fetch(CRM_CONFIG_URL, {
-      method: 'POST',
-      headers: adminHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) {
-      log(`Config write failed (${res.status})`)
-    } else {
-      log(`Updated last_mojo_sync_timestamp to ${timestamp}`)
-    }
-  } catch (err) {
-    logError('Failed to write last_mojo_sync_timestamp to CRM', err)
-  }
+  const res = await fetch(CRM_CONFIG_URL, {
+    method: 'POST',
+    headers: adminHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`Config write failed (${res.status})`)
+  log(`Updated last_mojo_sync_timestamp to ${timestamp}`)
 }
 
 async function processMojoQueue(reason = 'scheduled_sync') {
@@ -283,7 +275,7 @@ async function fetchContactDetails(sessionId, contactId) {
       }
     }
 
-    log(`  Contact ${contactId} details: addr="${result.address}", city="${result.city}", state="${result.state}", zip="${result.zip}", phone="${result.phone}", followUp="${result.followUpDate}"`)
+    log(`  Contact ${contactId} details fetched: phone=${Boolean(result.phone)}, email=${Boolean(result.email)}, addressEvidence=${Boolean(result.address)}, followUp=${Boolean(result.followUpDate)}`)
   } catch (err) {
     logError(`Failed to fetch contact ${contactId}`, err)
   }
@@ -482,13 +474,13 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
       case ACTIVITY_APPOINTMENT: {
         entry.hasAppointment = true
         entry.followUpDate = details.datetime || entry.followUpDate || ''
-        log(`  Appointment set for ${entry.contactName}: ${entry.followUpDate || 'time missing'}`)
+        log(`  Appointment evidence found for contact ${contactId}`)
         break
       }
       case ACTIVITY_FOLLOWUP: {
         // Casey set a follow-up call — details.datetime is the scheduled time
         entry.followUpDate = details.datetime || ''
-        log(`  Follow-up scheduled for ${entry.contactName}: ${entry.followUpDate}`)
+        log(`  Follow-up evidence found for contact ${contactId}`)
         break
       }
       case ACTIVITY_GROUP: {
@@ -538,7 +530,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     // Check for recording from today's recording report
     const recording = recordingMap?.get(Number(contactId))
     if (recording) {
-      log(`  Found recording for ${entry.contactName}: ${recording.duration}s (record_id: ${recording.recordId})`)
+      log(`  Found recording for contact ${contactId}: ${recording.duration}s (record_id: ${recording.recordId})`)
     }
 
     // Use follow-up date from activity stream or contact details
@@ -600,7 +592,7 @@ async function sync() {
       return { ok: false, error: 'no_session' }
     }
 
-    log(`Using session: ${session.sessionId.substring(0, 20)}...`)
+    log('Using validated Mojo session')
     await pushSessionToCRM(session.sessionId)
 
     const state = readState()
@@ -648,17 +640,12 @@ async function sync() {
       await processMojoQueue('no_new_calls')
       log(`No new calls since ${lastSyncTimestamp}`)
       await clearMojoSessionIssue('mojo-sync')
+      await clearMojoSyncIssue('mojo-sync')
       return { ok: true, processed: 0 }
     }
 
     // Log what we're syncing
-    for (const c of calls) {
-      log(`  → ${c.contact_name} (${c.phone_number || 'no phone'}) — ${c.disposition}`)
-      if (c.notes) {
-        const preview = c.notes.substring(0, 120).replace(/\n/g, ' ')
-        log(`    Notes: ${preview}${c.notes.length > 120 ? '...' : ''}`)
-      }
-    }
+    for (const c of calls) log(`  -> ${c.record_id} — ${c.disposition}`)
 
     // POST to CRM
     log(`Posting ${calls.length} meaningful calls to CRM...`)
@@ -686,6 +673,7 @@ async function sync() {
     const newTimestamp = maxCallTimestamp || new Date().toISOString()
     await writeLastSyncTimestamp(newTimestamp)
     await clearMojoSessionIssue('mojo-sync')
+    await clearMojoSyncIssue('mojo-sync')
 
     return { ok: true, ...crmResult }
   } catch (err) {
