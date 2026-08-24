@@ -6,7 +6,6 @@ import {
 import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
-import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
 import { safeSendSMS } from '@/lib/safe-communications'
@@ -88,10 +87,6 @@ export function googleAdsAttribution(capturedAt = new Date().toISOString(), call
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 function canCreateLeadFromCallerPhone(raw: string): boolean {
   const normalized = raw.trim().toLowerCase()
   return Boolean(normalized && !normalized.includes('anonymous') && !normalized.includes('blocked'))
@@ -109,51 +104,10 @@ async function updateLeadSource(leadId: string, calledNumber?: string | null): P
   }
 }
 
-export async function markLeadAsGoogleAdsPhoneLead(leadId: string, from: string, name?: string | null, calledNumber?: string | null): Promise<void> {
+export async function markLeadAsGoogleAdsPhoneLead(leadId: string, from: string, _name?: string | null, calledNumber?: string | null): Promise<void> {
   if (isInternalTestPhone(from)) return
 
-  const profile = profileFor(calledNumber)
   await updateLeadSource(leadId, calledNumber)
-
-  try {
-    const manifestId = await ensureManifestExists(leadId)
-    if (!manifestId) return
-
-    await updateManifestAndCascade(
-      leadId,
-      (manifest) => {
-        const mutable = manifest as unknown as Record<string, unknown>
-        const owner = isRecord(mutable.owner) ? mutable.owner : {}
-        const existingPhones = Array.isArray(owner.phones) ? owner.phones.filter((phone): phone is string => typeof phone === 'string') : []
-
-        mutable.source = profile.source
-        mutable.leadSource = profile.source
-        mutable.priority = 'hot'
-        mutable.owner = {
-          ...owner,
-          phones: existingPhones.includes(from) ? existingPhones : [from, ...existingPhones],
-          fullName: typeof owner.fullName === 'string' && owner.fullName.trim()
-            ? owner.fullName
-            : name || `${profile.label} Caller ${callerPhoneLabel(from)}`,
-        }
-
-        const acquisition = isRecord(mutable.acquisition) ? mutable.acquisition : {}
-        const priorAttribution = isRecord(acquisition.attribution) ? acquisition.attribution : {}
-        mutable.acquisition = {
-          ...acquisition,
-          source: profile.source,
-          channel: 'google-ads',
-          attribution: {
-            ...priorAttribution,
-            ...googleAdsAttribution(new Date().toISOString(), calledNumber),
-          },
-        }
-      },
-      'google-ads-phone',
-    )
-  } catch (error) {
-    console.error('[GOOGLE-ADS-PHONE] Manifest bootstrap failed:', error)
-  }
 }
 
 async function findExistingLeadByPhone(phone: string): Promise<{ id: string; full_name: string | null } | null> {
