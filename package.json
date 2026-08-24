@@ -38,7 +38,9 @@
     "audit:worktrees": "node scripts/maintenance/audit-worktrees.mjs",
     "telephony:carrier-fallbacks": "node scripts/telephony/configure-carrier-fallbacks.mjs",
     "hygiene": "npm run gate:hygiene",
-    "preview": "npm run gate:canonical && vercel deploy --yes"
+    "preview": "npm run gate:canonical && vercel deploy --yes",
+    "manifest:archive:export": "node scripts/archive/export-manifest-history.mjs",
+    "manifest:archive:verify": "node scripts/archive/verify-manifest-history.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

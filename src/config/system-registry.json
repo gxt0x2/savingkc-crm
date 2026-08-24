@@ -484,7 +484,7 @@
       "routes": ["/settings/system-health"],
       "apiRoutes": ["/api/system-hygiene", "/api/cron/data-retention"],
       "tables": ["data_retention_policies", "data_retention_runs", "system_workers", "manifests", "manifest_history", "hot_score_audit_trail", "google_ads_reporting_sync_runs", "openai_ads_reporting_sync_runs", "sms_delivery_log"],
-      "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF", "WORKTREE_AUDIT_MAIN_REF"],
+      "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF", "WORKTREE_AUDIT_MAIN_REF", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
         { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
       ]
