@@ -23,6 +23,31 @@ The August 24, 2026 preflight found:
 - 24,544 source prospects and 24,210 source phone rows; and
 - no `prospecting_campaign_member_contacts` table before migration, as expected.
 
+The current production schema is ahead of its migration ledger in a few
+places: the 722 legacy qualification hints, canonical briefing queue, and
+Manifest writer shutdown already exist, while the subject-aware Prospecting,
+verified intake, and department-hardening functions do not. None of the twenty
+versions below are recorded remotely. Do not mark the entire train applied with
+`migration repair`; execute the idempotent files so the missing artifacts are
+created and the ledger becomes truthful.
+
+The full-data rehearsal found these exact migration-time effects:
+
+- 280 canonical properties are linked to a Lead; 30 currently have a genuine
+  source-backed fact change (29 occupancy values and one tax/delinquency fact);
+- those 30 property changes queue 30 internal AI briefing refreshes through the
+  already-deployed briefing trigger; they do not call or message a seller;
+- all 722 legacy Manifest qualification hints are already present as
+  `needs_review`, so the idempotent backfill inserts zero additional hints;
+- zero current briefings require duplicate-current repair and zero PPC
+  attribution rows require backfill; and
+- campaign members, queued/processing campaign actions, Dialer sessions,
+  Dialer attempts, and Dialer events all remain zero.
+
+Re-run the read-only fact comparison immediately before apply. The exact
+property/briefing count may change with legitimate CRM activity; require every
+other count above to remain inert.
+
 No preflight, migration rehearsal, enrollment, or browser smoke test placed a call, sent a message, created a Lead, or changed a production row.
 
 ## Required migration order
@@ -50,7 +75,15 @@ Apply exactly these migrations, in order:
 19. `20261007120000_verified_seller_intake_workflow.sql`
 20. `20261008120000_department_responsibility_hardening.sql`
 
-All twenty were applied twice without error to an isolated PostgreSQL 17 clone of the current production `public` schema. The rehearsal also verified canonical contact reads, subject-aware dialing, reviewed SMS contacts, verified seller intake, service-role boundaries, and the Acquisitions → Dispositions → Transaction Coordination responsibility mapping.
+All twenty were applied twice without error to an isolated PostgreSQL 17 clone
+of the current production `public` schema and current public data. The
+325-MB/10,668-row `manifest_history` table was excluded from the local data copy
+because none of the migrations reads or changes it; its production count is a
+separate invariant. The second pass produced no additional business rows or
+briefing revisions. The rehearsal also verified canonical contact reads,
+subject-aware dialing, reviewed SMS contacts, verified seller intake,
+service-role boundaries, and the Acquisitions → Dispositions → Transaction
+Coordination responsibility mapping.
 
 ## Safe Supabase procedure
 
@@ -75,6 +108,8 @@ Before merging application code, verify:
 - application runtime roles cannot write Manifest history;
 - canonical contact, property, qualification, offer, appointment, attribution, AI briefing, workflow, and department functions exist with service-role-only permissions;
 - Prospecting remains inert until a human enrolls and separately activates reviewed work;
+- the expected source-backed property changes created only the matching number
+  of internal briefing jobs, with no duplicate revision on replay;
 - no unexpected SMS action, dialer session, lifecycle event, workflow run, or Lead was created during apply; and
 - the pre-migration Manifest and Manifest-history row counts remain unchanged.
 

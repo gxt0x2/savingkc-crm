@@ -14,6 +14,10 @@ describe('canonical CRM property facts', () => {
     expect(migration).toContain('prospect_row.earliest_delinquent_year')
     expect(migration).toContain('prospect_row.occupancy_status')
     expect(migration).toContain("regexp_replace(btrim(lead_row.lot_size::text), ',', '', 'g')::numeric")
+    expect(migration).toContain('IS DISTINCT FROM property.lot_size')
+    expect(migration).toContain('IS DISTINCT FROM property.data_enriched_at')
+    expect(migration).toContain('lead.data_enriched_at DESC NULLS LAST')
+    expect(migration).toContain('SELECT DISTINCT ON (link.property_id)')
     expect(migration).not.toMatch(/\bmanifests\b/i)
   })
 
