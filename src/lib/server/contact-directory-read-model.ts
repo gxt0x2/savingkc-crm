@@ -128,7 +128,7 @@ export async function readContactDirectoryPage(
   query: ContactDirectoryQuery,
   db: ContactDirectoryDatabase = supabaseAdmin(),
 ): Promise<ContactDirectoryPage> {
-  const { data, error } = await db.rpc('contact_workspace_page_v3', {
+  const { data, error } = await db.rpc('contact_workspace_page_v4', {
     target_smart_list: query.smartList,
     target_scope: query.scope,
     target_limit: query.limit,
