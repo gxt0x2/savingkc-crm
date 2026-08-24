@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { supabase } from '@/lib/supabase-lazy'
 import { isMissingColumnError } from '@/lib/schema-compat'
+import {
+  buildCampaignCallContactGroups,
+  type CampaignCallContactHistory,
+  type CampaignCallContactSnapshot,
+} from '@/lib/server/prospecting-campaign-call-contacts'
 
 interface HeirPhoneRow {
   id: string
@@ -60,27 +65,49 @@ function dedupePhones(phones: HeirPhoneRow[]): HeirPhoneRow[] {
   return order.map((k) => byNumber.get(k)!)
 }
 
-// GET /api/heirs?lead_id=<uuid>
+// GET /api/heirs?lead_id=<uuid> or ?prospect_id=<uuid>
 //
-// Returns heirs for a lead by joining its prospects → prospect_phones, grouped
-// by (contact_name, relationship). A "heir" here is any prospect_phone with a
-// relationship that isn't 'owner' — daughter, son, spouse, sister, etc.
+// Returns every associated person for a Lead or source Prospect by joining its
+// prospects → prospect_phones and grouping by (contact_name, relationship).
+// Owner-labeled rows remain visible: the reviewed campaign contract promises
+// that no associated phone silently disappears from the calling floor.
 export async function GET(req: Request) {
   const unauthorized = await requireAuthenticatedUser()
   if (unauthorized) return unauthorized
 
   const url = new URL(req.url)
   const leadId = url.searchParams.get('lead_id')
+  const prospectId = url.searchParams.get('prospect_id')
+  const campaignMemberId = url.searchParams.get('campaign_member_id')
 
-  if (!leadId) {
-    return NextResponse.json({ error: 'lead_id required' }, { status: 400 })
+  if ((!leadId && !prospectId) || (leadId && prospectId)) {
+    return NextResponse.json({ error: 'Provide exactly one lead_id or prospect_id' }, { status: 400 })
+  }
+
+
+  if (campaignMemberId) {
+    const { data: member, error: memberError } = await supabase
+      .from('prospecting_campaign_members')
+      .select('id,subject_kind,lead_id,prospect_id')
+      .eq('id', campaignMemberId)
+      .maybeSingle<{
+        id: string
+        subject_kind: 'lead' | 'prospect'
+        lead_id: string | null
+        prospect_id: string | null
+      }>()
+    if (memberError) return NextResponse.json({ error: 'Campaign audience is unavailable' }, { status: 500 })
+    if (!member || member.lead_id !== leadId || member.prospect_id !== prospectId) {
+      return NextResponse.json({ error: 'Campaign member does not match this calling record' }, { status: 409 })
+    }
   }
 
   // Step 1: find all prospect_ids linked to this lead.
-  const { data: prospects, error: pErr } = await supabase
+  let prospectQuery = supabase
     .from('prospects')
     .select('id, owner_1, is_deceased, is_skip_traced, county, situs_address, delinquent_years_category')
-    .eq('lead_id', leadId)
+  prospectQuery = leadId ? prospectQuery.eq('lead_id', leadId) : prospectQuery.eq('id', prospectId!)
+  const { data: prospects, error: pErr } = await prospectQuery
 
   if (pErr) {
     return NextResponse.json({ error: pErr.message }, { status: 500 })
@@ -96,9 +123,49 @@ export async function GET(req: Request) {
 
   const prospectIds = prospects.map((p) => p.id)
 
-  // Step 2: pull every phone for those prospects. Owner phones are kept
-  // separately so the UI can still show the deceased owner's own number if
-  // useful, but heir rows only include non-owner relationships.
+  if (campaignMemberId) {
+    const { data: contacts, error: contactsError } = await supabase
+      .from('prospecting_campaign_member_contacts')
+      .select('id,source_kind,prospect_id,prospect_phone_id,phone_snapshot,contact_name,relationship,phone_type,status,suppression_reason,enrolled_at')
+      .eq('member_id', campaignMemberId)
+      .neq('status', 'removed')
+      .order('enrolled_at', { ascending: true })
+      .limit(500)
+    if (contactsError) return NextResponse.json({ error: 'Reviewed campaign contacts are unavailable' }, { status: 500 })
+
+    const contactRows = (contacts ?? []) as CampaignCallContactSnapshot[]
+    const phoneIds = contactRows.flatMap((contact) => contact.prospect_phone_id ? [contact.prospect_phone_id] : [])
+    const historyByPhone = new Map<string, CampaignCallContactHistory>()
+    if (phoneIds.length > 0) {
+      const readHistory = (columns: string) => supabase
+        .from('prospect_phones')
+        .select(columns)
+        .in('id', phoneIds)
+        .limit(phoneIds.length)
+      let historyResult = await readHistory('id,attempted,last_disposition,last_attempt_at,is_verified_contact,verified_at,verified_by')
+      if (historyResult.error && isMissingColumnError(historyResult.error)) {
+        historyResult = await readHistory('id,attempted,last_disposition,last_attempt_at')
+      }
+      if (historyResult.error) {
+        return NextResponse.json({ error: 'Campaign contact history is unavailable' }, { status: 500 })
+      }
+      for (const row of (historyResult.data ?? []) as unknown as Array<CampaignCallContactHistory & { id: string }>) {
+        historyByPhone.set(row.id, row)
+      }
+    }
+    const heirs = buildCampaignCallContactGroups(contactRows, historyByPhone)
+
+    return NextResponse.json({
+      heirs,
+      prospect: prospects[0],
+      is_deceased: prospects.some((p) => p.is_deceased),
+      is_skip_traced: prospects.some((p) => p.is_skip_traced),
+      last_skip_traced_at: contactRows.at(-1)?.enrolled_at ?? null,
+      source: 'campaign_snapshot',
+    })
+  }
+
+  // Step 2: pull every associated phone for those prospects.
   // The verify columns come from 20260602_dialer_redesign.sql. If that migration
   // hasn't reached this environment yet, retry without them so the heirs list
   // still renders (verified flags just default to false/null) instead of 500ing.
@@ -120,10 +187,6 @@ export async function GET(req: Request) {
   }
   const phones = (phRes.data ?? []) as unknown as HeirPhoneRow[]
 
-  const heirPhones = phones.filter(
-    (p) => (p.relationship ?? '').toLowerCase() !== 'owner',
-  )
-
   // Step 3: group by (contact_name || unknown-N, relationship) so that
   // multiple phones for the same relative roll up into one heir card.
   const groups = new Map<string, {
@@ -134,7 +197,7 @@ export async function GET(req: Request) {
     phones: HeirPhoneRow[]
   }>()
 
-  heirPhones.forEach((p, idx) => {
+  phones.forEach((p, idx) => {
     const name = (p.contact_name ?? '').trim() || `Unknown ${idx + 1}`
     const relation = (p.relationship ?? '').trim() || 'relative'
     const key = `${name}::${relation}`
@@ -159,9 +222,14 @@ export async function GET(req: Request) {
         unattempted_count: phones.filter((p) => !p.attempted).length,
         phones: phones.map((p) => ({
           id: p.id,
+          snapshot_id: null,
+          prospect_id: p.prospect_id,
+          prospect_phone_id: p.id,
           number: p.phone,
           type: p.phone_type,
           connected: p.phone_connected,
+          status: 'ready',
+          suppression_reason: null,
           attempted: p.attempted ?? false,
           last_disposition: p.last_disposition,
           last_attempt_at: p.last_attempt_at,

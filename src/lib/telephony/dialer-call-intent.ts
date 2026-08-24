@@ -1,7 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
-export type DialerCallIntentKind = 'manual' | 'lead' | 'heir'
+export type DialerCallIntentKind = 'manual' | 'lead' | 'heir' | 'prospect'
 export type DialerCallIntentSource =
   | 'web_manual'
   | 'web_click_to_call'
@@ -18,7 +18,9 @@ export interface DialerCallIntentClaims {
   kind: DialerCallIntentKind
   source: DialerCallIntentSource
   leadId: string | null
+  prospectId: string | null
   prospectPhoneId: string | null
+  campaignMemberId: string | null
   clientAttemptId: string
   issuedAt: number
   expiresAt: number
@@ -50,7 +52,9 @@ export function createDialerCallIntent(
     kind: DialerCallIntentKind
     source: DialerCallIntentSource
     leadId?: string | null
+    prospectId?: string | null
     prospectPhoneId?: string | null
+    campaignMemberId?: string | null
     clientAttemptId?: string | null
   },
   options: { secret?: string; now?: Date } = {},
@@ -69,7 +73,9 @@ export function createDialerCallIntent(
     kind: input.kind,
     source: input.source,
     leadId: input.leadId?.trim() || null,
+    prospectId: input.prospectId?.trim() || null,
     prospectPhoneId: input.prospectPhoneId?.trim() || null,
+    campaignMemberId: input.campaignMemberId?.trim() || null,
     clientAttemptId: input.clientAttemptId?.trim() || randomUUID(),
     issuedAt: nowSeconds,
     expiresAt: nowSeconds + INTENT_TTL_SECONDS,
@@ -86,7 +92,7 @@ function isClaims(value: unknown): value is DialerCallIntentClaims {
   if (claims.version !== 1) return false
   if (!claims.identity || typeof claims.identity !== 'string') return false
   if (!normalizePhoneToE164(claims.to) || !normalizePhoneToE164(claims.callerId)) return false
-  if (!['manual', 'lead', 'heir'].includes(String(claims.kind))) return false
+  if (!['manual', 'lead', 'heir', 'prospect'].includes(String(claims.kind))) return false
   if (![
     'web_manual',
     'web_click_to_call',
@@ -99,14 +105,16 @@ function isClaims(value: unknown): value is DialerCallIntentClaims {
     (claims.kind === 'manual' && ['web_manual', 'mobile_manual'].includes(String(claims.source)))
     || (claims.kind === 'lead' && ['web_click_to_call', 'web_power_dialer', 'mobile_lead'].includes(String(claims.source)))
     || (claims.kind === 'heir' && claims.source === 'web_heir_dialer')
+    || (claims.kind === 'prospect' && claims.source === 'web_heir_dialer')
   )
   if (!sourceMatchesKind) return false
   if (typeof claims.clientAttemptId !== 'string' || !claims.clientAttemptId) return false
   if (typeof claims.nonce !== 'string' || !claims.nonce) return false
   if (!Number.isInteger(claims.issuedAt) || !Number.isInteger(claims.expiresAt)) return false
-  if (claims.kind === 'manual' && (claims.leadId || claims.prospectPhoneId)) return false
-  if (claims.kind === 'lead' && (!claims.leadId || claims.prospectPhoneId)) return false
-  if (claims.kind === 'heir' && (!claims.leadId || !claims.prospectPhoneId)) return false
+  if (claims.kind === 'manual' && (claims.leadId || claims.prospectId || claims.prospectPhoneId || claims.campaignMemberId)) return false
+  if (claims.kind === 'lead' && (!claims.leadId || claims.prospectId || claims.prospectPhoneId)) return false
+  if (claims.kind === 'heir' && (!claims.leadId || claims.prospectId || !claims.prospectPhoneId)) return false
+  if (claims.kind === 'prospect' && (claims.leadId || !claims.prospectId || !claims.prospectPhoneId)) return false
   return true
 }
 
@@ -139,6 +147,11 @@ export function verifyDialerCallIntent(
     claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
   } catch {
     return { valid: false, reason: 'malformed' }
+  }
+  if (claims && typeof claims === 'object' && !Array.isArray(claims)) {
+    const record = claims as Record<string, unknown>
+    if (!('prospectId' in record)) record.prospectId = null
+    if (!('campaignMemberId' in record)) record.campaignMemberId = null
   }
   if (!isClaims(claims)) return { valid: false, reason: 'invalid_claims' }
 

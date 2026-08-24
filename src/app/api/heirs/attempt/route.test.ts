@@ -14,6 +14,14 @@ const mocks = vi.hoisted(() => ({
     prospect_id: 'prospect-1',
     verified_source: null as string | null,
     prospects: { lead_id: 'lead-1', owner_1: 'Original Owner' },
+  } as {
+    id: string
+    phone: string
+    contact_name: string | null
+    relationship: string | null
+    prospect_id: string
+    verified_source: string | null
+    prospects: { lead_id: string | null; owner_1: string | null } | null
   },
   updates: [] as Array<{ table: string; payload: Record<string, unknown>; id: unknown }>,
 }))
@@ -64,6 +72,7 @@ describe('heir attempt mutation trust', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.updates.length = 0
+    mocks.phoneRow.prospects = { lead_id: 'lead-1', owner_1: 'Original Owner' }
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
     mocks.findEvidence.mockResolvedValue(null)
     mocks.insertEvidence.mockResolvedValue({ id: 'activity-1', metadata: null })
@@ -117,6 +126,58 @@ describe('heir attempt mutation trust', () => {
     expect(response.status).toBe(409)
     expect(mocks.updates).toHaveLength(0)
     expect(mocks.insertEvidence).not.toHaveBeenCalled()
+  })
+
+  it('records an unpromoted source Prospect without creating or requiring a Lead', async () => {
+    mocks.phoneRow.prospects = { lead_id: null, owner_1: 'Original Owner' }
+
+    const response = await POST(request({
+      prospect_phone_id: 'phone-1',
+      prospect_id: 'prospect-1',
+      campaign_member_id: 'member-1',
+      disposition: 'no_answer',
+      clientAttemptId: 'attempt-source-1',
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      leadId: null,
+      prospectId: 'prospect-1',
+    })
+    expect(mocks.insertEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: null,
+      prospectId: 'prospect-1',
+      payload: expect.objectContaining({
+        lead_id: null,
+        metadata: expect.objectContaining({
+          prospect_id: 'prospect-1',
+          campaign_member_id: 'member-1',
+          thread_key: 'phone:+18165550100',
+        }),
+      }),
+    }))
+    expect(mocks.updates.some((update) => update.table === 'leads')).toBe(false)
+  })
+
+  it('requires source context and blocks Lead-only actions before mutation', async () => {
+    mocks.phoneRow.prospects = { lead_id: null, owner_1: 'Original Owner' }
+
+    const missingContext = await POST(request({
+      prospect_phone_id: 'phone-1',
+      disposition: 'no_answer',
+    }))
+    expect(missingContext.status).toBe(409)
+
+    const appointment = await POST(request({
+      prospect_phone_id: 'phone-1',
+      prospect_id: 'prospect-1',
+      disposition: 'appointment_set',
+      appointmentAt: '2027-08-24T15:00:00.000Z',
+    }))
+    expect(appointment.status).toBe(409)
+    expect(mocks.updates).toHaveLength(0)
+    expect(mocks.recordAppointment).not.toHaveBeenCalled()
   })
 
   it('rejects an unknown outcome before querying the heir phone', async () => {

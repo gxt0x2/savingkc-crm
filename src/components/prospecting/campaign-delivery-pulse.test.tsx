@@ -7,7 +7,7 @@ import { CampaignDeliveryPulse } from './campaign-delivery-pulse'
 
 const campaign = {
   id: 'campaign-1', name: 'Absentee owners', kind: 'sms', status: 'active', ownerEmail: 'ernest@savingkc.com', ownerName: 'Ernest', callerId: null, fromPhone: '+18163077835', defaultTimezone: 'America/Chicago', sendWindowStart: '09:00', sendWindowEnd: '19:00', sendDays: [1, 2, 3, 4, 5, 6], perHour: 75, perDay: 500, createdAt: '2026-08-21T10:00:00.000Z', updatedAt: '2026-08-21T11:00:00.000Z', activatedAt: '2026-08-21T11:00:00.000Z', pausedAt: null, completedAt: null,
-  steps: [], members: [], stats: { total: 10, active: 8, suppressed: 2, replied: 0, completed: 0, sent: 3, delivered: 2, failed: 0 }, operations: { queued: 5, processing: 1, nextActionAt: '2026-08-22T14:00:00.000Z', lastSentAt: '2026-08-21T20:00:00.000Z' },
+  steps: [], members: [], stats: { total: 10, active: 8, needsReview: 0, suppressed: 2, replied: 0, completed: 0, sent: 3, delivered: 2, failed: 0 }, operations: { queued: 5, processing: 1, nextActionAt: '2026-08-22T14:00:00.000Z', lastSentAt: '2026-08-21T20:00:00.000Z' },
 } satisfies ProspectingCampaignDetail
 
 describe('CampaignDeliveryPulse', () => {

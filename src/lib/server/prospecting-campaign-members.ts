@@ -3,13 +3,16 @@ import type { ProspectingCampaignMember, ProspectingCampaignMemberPage } from '@
 import { ProspectingCampaignError } from '@/lib/server/prospecting-campaigns'
 import { supabase } from '@/lib/supabase-lazy'
 
-export const CAMPAIGN_MEMBER_FILTERS = ['all', 'active', 'suppressed', 'replied', 'completed', 'removed'] as const
+export const CAMPAIGN_MEMBER_FILTERS = ['all', 'active', 'needs_review', 'suppressed', 'replied', 'completed', 'removed'] as const
 export type CampaignMemberFilter = typeof CAMPAIGN_MEMBER_FILTERS[number]
 type Cursor = { enrolledAt: string; id: string; status: CampaignMemberFilter; query: string }
 
 type CampaignMemberRow = {
   id: string
-  lead_id: string
+  subject_kind: 'lead' | 'prospect'
+  lead_id: string | null
+  prospect_id: string | null
+  enrollment_source: 'crm_lead' | 'county_saved_view'
   phone_snapshot: string
   timezone: string
   status: ProspectingCampaignMember['status']
@@ -17,10 +20,12 @@ type CampaignMemberRow = {
   current_step_position: number
   next_action_at: string | null
   enrolled_at: string
-  lead_full_name: string | null
-  lead_property_address: string | null
-  lead_station: string | null
-  lead_classification: string | null
+  subject_name: string | null
+  subject_property_address: string | null
+  subject_station: string | null
+  subject_classification: string | null
+  ready_contact_count: number | string
+  suppressed_contact_count: number | string
 }
 
 function normalizeSearch(value: string | null | undefined) {
@@ -47,10 +52,10 @@ function encodeCursor(cursor: Cursor) {
 
 function embeddedLead(row: CampaignMemberRow): ProspectingCampaignMember['lead'] {
   return {
-    fullName: row.lead_full_name,
-    propertyAddress: row.lead_property_address,
-    station: row.lead_station,
-    classification: row.lead_classification,
+    fullName: row.subject_name,
+    propertyAddress: row.subject_property_address,
+    station: row.subject_station,
+    classification: row.subject_classification,
   }
 }
 
@@ -67,7 +72,7 @@ export async function listProspectingCampaignMembers(
   const query = normalizeSearch(options.query)
   const cursor = decodeCursor(options.cursor, status, query)
 
-  const result = await supabase.rpc('prospecting_campaign_member_page_v2', {
+  const result = await supabase.rpc('prospecting_campaign_member_page_v3', {
     p_actor_email: actor.email,
     p_campaign_id: campaignId,
     p_status: status,
@@ -85,7 +90,10 @@ export async function listProspectingCampaignMembers(
   const rows = allRows.slice(0, limit)
   const items: ProspectingCampaignMember[] = rows.map((row) => ({
     id: row.id,
+    subjectKind: row.subject_kind,
     leadId: row.lead_id,
+    prospectId: row.prospect_id,
+    enrollmentSource: row.enrollment_source,
     phone: row.phone_snapshot,
     timezone: row.timezone,
     status: row.status as ProspectingCampaignMember['status'],
@@ -93,6 +101,8 @@ export async function listProspectingCampaignMembers(
     currentStepPosition: row.current_step_position,
     nextActionAt: row.next_action_at,
     enrolledAt: row.enrolled_at,
+    readyContactCount: Number(row.ready_contact_count) || 0,
+    suppressedContactCount: Number(row.suppressed_contact_count) || 0,
     lead: embeddedLead(row),
   }))
   const hasMore = allRows.length > limit

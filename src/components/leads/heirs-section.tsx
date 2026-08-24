@@ -3,58 +3,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
-import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
+import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { CallingQueueReadiness } from '@/components/dialer/calling-queue-readiness'
 import {
-  dispositionStopsNumber,
-  isReachedDisposition,
   dispositionLabel as canonicalDispositionLabel,
 } from '@/lib/dialer-dispositions'
-
-// Dialer queue item — sent to DialerPanel so it can cycle through heirs while
-// the property stays pinned. `leadId` is the property's lead_id, never the
-// relative's.
-export interface HeirDialerQueueItem {
-  prospect_phone_id: string
-  phone: string
-  heirName: string
-  relation: string
-  leadId: string
-  propertyAddress: string
-  deceasedOwnerName: string
-}
-
-export interface HeirPhone {
-  id: string
-  number: string
-  type: string | null
-  connected: string | null
-  attempted: boolean
-  last_disposition: string | null
-  last_attempt_at: string | null
-  is_verified_contact?: boolean
-  verified_at?: string | null
-  verified_by?: string | null
-}
-
-export interface Heir {
-  key: string
-  contact_name: string
-  relationship: string
-  address: string | null
-  unattempted_count: number
-  phones: HeirPhone[]
-}
-
-export interface HeirDialerSettings {
-  callerId?: string | null
-  agent?: string | null
-  mode?: 'power' | 'predictive' | string | null
-  pacing?: number | null
-}
+import {
+  dispatchHeirQueue,
+  isAutoCallablePhone,
+  isVerifiedPhone,
+  sourceProspectPhoneId,
+  verifiedPhoneOf,
+  type Heir,
+  type HeirDialerQueueItem,
+  type HeirPhone,
+} from '@/lib/heir-dialer-queue'
 
 interface HeirsSectionProps {
-  leadId: string
+  leadId: string | null
+  prospectId?: string | null
+  campaignMemberId?: string | null
   deceasedOwnerName: string
   propertyAddress: string
   defaultExpanded?: boolean
@@ -72,49 +40,11 @@ interface HeirsSectionProps {
   dialerSessionId?: string | null
 }
 
-function dispatchHeirQueue(
-  queue: HeirDialerQueueItem[],
-  callerId?: string | null,
-  callerPlan?: Partial<DialerCallerPlan> | null,
-  options?: { autoDial?: boolean; ringCount?: number | null },
-  sessionId?: string | null,
-) {
-  if (queue.length === 0) return
-  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean; ringCount?: number; sessionId?: string } = { queue }
-  if (typeof callerId === 'string' && callerId.trim()) detail.callerId = callerId.trim()
-  const normalizedPlan = normalizeDialerCallerPlan(callerPlan, typeof callerId === 'string' ? callerId.trim() : '')
-  detail.callerPlan = normalizedPlan
-  if (options?.autoDial) detail.autoDial = true
-  if (options?.ringCount && options.ringCount > 0) detail.ringCount = options.ringCount
-  if (sessionId) detail.sessionId = sessionId
-  window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail }))
-}
-
 function phoneIcon(type: string | null): string {
   const t = (type ?? '').toLowerCase()
   if (t.includes('mobile') || t.includes('cell') || t.includes('wireless')) return 'smartphone'
   if (t.includes('voip')) return 'settings_phone'
   return 'phone'
-}
-
-// A phone is "verified" when we know it really belongs to this heir. That's
-// true when the agent explicitly verified it (is_verified_contact, persisted
-// server-side and manually toggleable) OR when the last disposition means they
-// actually reached the person (reached === true in the shared taxonomy). The
-// disposition fallback keeps historical calls — logged before the verified
-// column existed — showing the green signal.
-function isVerifiedPhone(p: HeirPhone): boolean {
-  return Boolean(p.is_verified_contact) || isReachedDisposition(p.last_disposition)
-}
-
-function verifiedPhoneOf(heir: Heir): HeirPhone | null {
-  return heir.phones.find(isVerifiedPhone) ?? null
-}
-
-function isAutoCallablePhone(p: HeirPhone): boolean {
-  return Boolean(p.number?.trim())
-    && p.connected?.toLowerCase() !== 'disconnected'
-    && !dispositionStopsNumber(p.last_disposition)
 }
 
 function dispositionLabel(d: string | null): string {
@@ -131,6 +61,8 @@ function daysAgo(iso: string | null): string {
 
 export function HeirsSection({
   leadId,
+  prospectId = null,
+  campaignMemberId = null,
   deceasedOwnerName,
   propertyAddress,
   defaultExpanded = false,
@@ -150,7 +82,8 @@ export function HeirsSection({
   const [isSyncing, setIsSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(defaultExpanded)
-  const autoStartedLeadRef = useRef<string | null>(null)
+  const autoStartedSubjectRef = useRef<string | null>(null)
+  const subjectKey = leadId ? `lead:${leadId}` : prospectId ? `prospect:${prospectId}` : null
 
   // Currently-dialing prospect_phone_id — populated from the telephony bar's
   // heir-queue-state event. The matching heir row auto-expands; the rest stay
@@ -169,7 +102,14 @@ export function HeirsSection({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/heirs?lead_id=${encodeURIComponent(leadId)}`)
+      if (!subjectKey) throw new Error('Lead or source Prospect context is required')
+      const query = leadId
+        ? `lead_id=${encodeURIComponent(leadId)}`
+        : `prospect_id=${encodeURIComponent(prospectId!)}`
+      const campaignQuery = campaignMemberId
+        ? `&campaign_member_id=${encodeURIComponent(campaignMemberId)}`
+        : ''
+      const res = await fetch(`/api/heirs?${query}${campaignQuery}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to load heirs')
       setHeirs(data.heirs || [])
@@ -179,7 +119,7 @@ export function HeirsSection({
     } finally {
       setLoading(false)
     }
-  }, [leadId])
+  }, [campaignMemberId, leadId, prospectId, subjectKey])
 
   useEffect(() => { load() }, [load])
 
@@ -187,13 +127,17 @@ export function HeirsSection({
   useEffect(() => {
     function onAttempt(e: Event) {
       const detail = (e as CustomEvent).detail
-      if (!detail || detail.leadId === leadId) load()
+      if (!detail || (leadId && detail.leadId === leadId) || (prospectId && detail.prospectId === prospectId)) load()
     }
     window.addEventListener('heir-attempt-logged', onAttempt)
     return () => window.removeEventListener('heir-attempt-logged', onAttempt)
-  }, [leadId, load])
+  }, [leadId, load, prospectId])
 
   async function runSync() {
+    if (!leadId) {
+      setError('Source Prospect phones are preserved from the reviewed county record. Promote the Prospect before requesting a new skip trace.')
+      return
+    }
     setIsSyncing(true)
     setError(null)
     try {
@@ -232,17 +176,24 @@ export function HeirsSection({
   // Manual verify / unverify of a single number. Persists server-side and
   // reloads so the green signal + queue eligibility stay in sync.
   const toggleVerify = useCallback(async (phone: HeirPhone, nextVerified: boolean) => {
+    const prospectPhoneId = sourceProspectPhoneId(phone)
+    if (!prospectPhoneId) return
     try {
       const res = await fetch('/api/heirs/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prospect_phone_id: phone.id, verified: nextVerified, lead_id: leadId }),
+        body: JSON.stringify({
+          prospect_phone_id: prospectPhoneId,
+          verified: nextVerified,
+          lead_id: leadId,
+          prospect_id: phone.prospect_id,
+        }),
       })
       const data = await res.json().catch(() => null)
       if (!res.ok) {
         throw new Error(data?.error || 'Could not update verification')
       }
-      window.dispatchEvent(new CustomEvent('heir-attempt-logged', { detail: { leadId } }))
+      window.dispatchEvent(new CustomEvent('heir-attempt-logged', { detail: { leadId, prospectId: phone.prospect_id } }))
       await load()
       if (data?.warning) setError(data.warning)
     } catch (e) {
@@ -252,15 +203,17 @@ export function HeirsSection({
 
   const mapHeirPhones = useCallback((h: Heir, phones: HeirPhone[]): HeirDialerQueueItem[] => {
     return phones.map((p) => ({
-      prospect_phone_id: p.id,
+      prospect_phone_id: sourceProspectPhoneId(p),
+      prospectId: p.prospect_id ?? prospectId,
       phone: p.number,
       heirName: toProperCase(h.contact_name),
       relation: h.relationship,
       leadId,
+      campaignMemberId,
       propertyAddress,
       deceasedOwnerName,
     }))
-  }, [deceasedOwnerName, leadId, propertyAddress])
+  }, [campaignMemberId, deceasedOwnerName, leadId, propertyAddress, prospectId])
 
   // AUTO / BULK path (Call heirs, auto-start). Queue every callable listed
   // number for this property, grouped by heir. Attempted/verified phones stay
@@ -299,8 +252,8 @@ export function HeirsSection({
     // let the agent retry rather than silently auto-advancing to the next
     // deceased owner without calling anyone.
     if (error) return
-    if (autoStartedLeadRef.current === leadId) return
-    autoStartedLeadRef.current = leadId
+    if (!subjectKey || autoStartedSubjectRef.current === subjectKey) return
+    autoStartedSubjectRef.current = subjectKey
 
     const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
 
@@ -310,7 +263,7 @@ export function HeirsSection({
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, leadId, loading, onAutoStartEmpty, onAutoStartHandled, ringCount])
+  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, ringCount, subjectKey])
 
   return (
     <section className={`ck-card overflow-hidden ${expanded ? (collapsible ? 'p-6' : 'p-0') : 'px-6 py-4'}`}>
@@ -322,7 +275,7 @@ export function HeirsSection({
         <div className="flex items-center gap-3 min-w-0">
           <Icon name="diversity_3" className="!text-xl text-[var(--ck-text-muted)] shrink-0" />
           <h2 className="text-sm font-black uppercase tracking-widest text-[var(--ck-text)]">
-            {collapsible ? 'Heirs' : 'Callable people'}
+            {collapsible ? 'Associated people' : 'Callable people'}
             {totalHeirs > 0 && (
               <span className="ml-2 text-[var(--ck-text-dim)] font-bold">
                 ({totalHeirs} · {totalPhones} {totalPhones === 1 ? 'phone' : 'phones'})
@@ -340,10 +293,10 @@ export function HeirsSection({
             <button
               onClick={(e) => { e.stopPropagation(); queueAll() }}
               className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
-              title="Cycle through every callable listed heir phone on this lead"
+              title="Cycle through every callable listed associated phone on this property"
             >
               <Icon name="call" size="text-sm" />
-              Call heirs ({queuedPhones})
+              Call all ({queuedPhones})
             </button>
           )}
           {collapsible && (
@@ -381,23 +334,25 @@ export function HeirsSection({
       {!loading && totalHeirs === 0 && (
         <div className="text-center py-10">
           <Icon name="person_search" className="!text-5xl text-[var(--ck-text-dim)] mb-3" />
-          <p className="text-sm font-bold text-[var(--ck-text)] mb-1">No heirs on file yet</p>
+          <p className="text-sm font-bold text-[var(--ck-text)] mb-1">No associated people on file yet</p>
           <p className="text-xs text-[var(--ck-text-muted)] mb-5 max-w-sm mx-auto leading-relaxed">
-            Run skip trace on the deceased owner to find living relatives and their phone numbers.
+            Run skip trace to find owners, relatives, and their reviewed phone numbers.
           </p>
-          <button
+          {leadId ? <button
             onClick={runSync}
             disabled={isSyncing}
             className="bg-[#E32E2E] hover:bg-[#C42626] disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-black uppercase tracking-wide inline-flex items-center gap-2 shadow-sm transition-colors"
           >
             <Icon name={isSyncing ? 'progress_activity' : 'person_search'} size="text-base" className={isSyncing ? 'animate-spin' : ''} />
             {isSyncing ? 'Running skip trace…' : 'Run skip trace'}
-          </button>
+          </button> : (
+            <p className="text-xs text-[var(--ck-text-muted)]">No associated people were included in this source record.</p>
+          )}
         </div>
       )}
 
       {/* Populated — alternating rows */}
-      {!loading && totalHeirs > 0 && (
+      {!loading && totalHeirs > 0 && leadId && (
         <div className="space-y-2">
           {heirs.map((heir, idx) => (
             <HeirRow
@@ -650,8 +605,10 @@ function PhonePill({
 
       <div className="flex-1" />
 
-      {/* Verify / unverify toggle — manual override of the green signal. */}
-      <button
+      {/* Verify / unverify is available only when the snapshot still points to
+          the canonical source phone row. Lead-primary snapshots remain callable
+          through Lead policy without inventing source-phone provenance. */}
+      {sourceProspectPhoneId(phone) ? <button
         onClick={() => onToggleVerify(!verified)}
         className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors border ${
           verified
@@ -663,7 +620,7 @@ function PhonePill({
         aria-pressed={verified}
       >
         <Icon name={verified ? 'verified' : 'verified_user'} size="text-sm" filled={verified} />
-      </button>
+      </button> : null}
 
       {onSms && (
         <button

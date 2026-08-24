@@ -214,6 +214,39 @@ describe('server dialer call eligibility', () => {
     expect(db.client.from).not.toHaveBeenCalledWith('manifests')
   })
 
+  it('authorizes only the exact associated phone for an unpromoted source Prospect', async () => {
+    const sourceInput: OutboundDialerCallInput = {
+      ...baseInput,
+      phone: '+19135550777',
+      leadId: null,
+      prospectId: 'prospect-1',
+      prospectPhoneId: 'prospect-phone-1',
+      source: 'web_heir_dialer',
+    }
+    const db = database({
+      prospect_phones: [{
+        id: 'prospect-phone-1',
+        phone: '+19135550777',
+        prospect_id: 'prospect-1',
+        phone_connected: null,
+        last_disposition: null,
+        prospects: { lead_id: null },
+      }],
+    })
+
+    expect(await evaluateOutboundDialerCall(sourceInput, { db: db.client })).toMatchObject({
+      allowed: true,
+      leadId: null,
+      prospectId: 'prospect-1',
+      prospectPhoneId: 'prospect-phone-1',
+    })
+    expect(await evaluateOutboundDialerCall({ ...sourceInput, prospectId: 'prospect-2' }, { db: db.client })).toMatchObject({
+      allowed: false,
+      reason: 'destination_mismatch',
+      reasonSource: 'prospect_phone_context',
+    })
+  })
+
   it('writes a deterministic blocked audit using the client attempt before the provider SID', async () => {
     const db = database()
     const result: OutboundDialerCallDecision = {
@@ -224,6 +257,7 @@ describe('server dialer call eligibility', () => {
       policyVersion: 'dialer_safety_v1',
       checkedAt: '2026-08-17T17:00:00.000Z',
       leadId: 'lead-1',
+      prospectId: null,
       prospectPhoneId: null,
       reasonSource: 'sms_opt_outs.reason',
     }

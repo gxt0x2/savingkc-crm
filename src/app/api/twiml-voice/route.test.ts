@@ -37,6 +37,7 @@ const allowedDecision = {
   policyVersion: 'dialer_safety_v1' as const,
   checkedAt: CHECKED_AT,
   leadId: null,
+  prospectId: null,
   prospectPhoneId: null,
 }
 
@@ -48,7 +49,9 @@ const blockedDecision = {
   policyVersion: 'dialer_safety_v1' as const,
   checkedAt: CHECKED_AT,
   leadId: 'lead-1',
+  prospectId: null,
   prospectPhoneId: null,
+  campaignMemberId: null,
   reasonSource: 'contact_policy_records',
 }
 
@@ -60,11 +63,24 @@ const validLeadClaims = {
   kind: 'lead' as const,
   source: 'web_click_to_call' as const,
   leadId: 'lead-1',
+  prospectId: null,
   prospectPhoneId: null,
+  campaignMemberId: null,
   clientAttemptId: 'attempt-1',
   issuedAt: 1_787_151_970,
   expiresAt: 1_787_152_060,
   nonce: 'nonce-1',
+}
+
+const validProspectClaims = {
+  ...validLeadClaims,
+  kind: 'prospect' as const,
+  source: 'web_heir_dialer' as const,
+  leadId: null,
+  prospectId: 'prospect-1',
+  prospectPhoneId: 'prospect-phone-1',
+  campaignMemberId: 'campaign-member-1',
+  clientAttemptId: 'attempt-prospect-1',
 }
 
 function twilioRequest(
@@ -190,6 +206,7 @@ describe('TwiML request containment', () => {
     expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith({
       phone: DESTINATION,
       leadId: null,
+      prospectId: null,
       prospectPhoneId: null,
       source: 'legacy_sdk',
       identity: 'ernest',
@@ -230,6 +247,7 @@ describe('TwiML request containment', () => {
     expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith({
       phone: DESTINATION,
       leadId: 'lead-1',
+      prospectId: null,
       prospectPhoneId: null,
       source: 'web_click_to_call',
       identity: 'ernest',
@@ -239,6 +257,37 @@ describe('TwiML request containment', () => {
     })
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
+  })
+
+  it('rechecks a signed source-Prospect destination without a shadow Lead', async () => {
+    mocks.verifyDialerCallIntent.mockReturnValue({ valid: true, claims: validProspectClaims })
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({
+      ...allowedDecision,
+      prospectId: 'prospect-1',
+      prospectPhoneId: 'prospect-phone-1',
+    })
+
+    const { response, text } = await responseText(outboundRequest({
+      DialIntentToken: 'signed-prospect-intent',
+      ProspectId: 'prospect-1',
+      ProspectPhoneId: 'prospect-phone-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith({
+      phone: DESTINATION,
+      leadId: null,
+      prospectId: 'prospect-1',
+      prospectPhoneId: 'prospect-phone-1',
+      source: 'web_heir_dialer',
+      identity: 'ernest',
+      callerId: ERNEST_CALLER_ID,
+      callSid: 'CA_test_outbound',
+      clientAttemptId: 'attempt-prospect-1',
+    })
+    expect(text.match(/<Dial\b/g)).toHaveLength(1)
+    expect(text).toContain(`>${DESTINATION}</Number>`)
+    expect(text).not.toContain('leadId=prospect-1')
   })
 
   it('fails closed when a present intent is invalid or expired', async () => {

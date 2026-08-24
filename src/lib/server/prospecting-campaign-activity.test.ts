@@ -26,4 +26,11 @@ describe('prospecting campaign activity data plane', () => {
     expect(source).toContain("new ProspectingCampaignError('invalid_activity_filter', 400")
     expect(migration).toContain('(campaign_id, event_type, created_at DESC, id DESC)')
   })
+
+  it('hydrates source Prospect provenance and returns the canonical phone inbox key', () => {
+    expect(source).toContain('prospects(owner_1,situs_street,situs_city,situs_state,situs_zip)')
+    expect(source).toContain("member?.subject_kind === 'prospect'")
+    expect(source).toContain('conversationThreadId: leadId || (normalizedPhone ? `phone:${normalizedPhone}` : null)')
+    expect(source).toContain("'campaign_sms_recipient_reviewed'")
+  })
 })

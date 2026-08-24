@@ -18,6 +18,8 @@ describe('heir attempt commands', () => {
         disposition: 'callback_requested',
         notes: 'Call Friday',
         requestedLeadId: 'lead-1',
+        requestedProspectId: null,
+        campaignMemberId: null,
         durationSeconds: 42,
         markAsLead: false,
         verified: null,
@@ -26,6 +28,22 @@ describe('heir attempt commands', () => {
         clientAttemptId: 'attempt-1',
         reached: true,
         dead: false,
+      },
+    })
+  })
+
+  it('preserves source prospect and campaign-member context', () => {
+    expect(buildHeirAttemptCommand({
+      prospect_phone_id: 'phone-1',
+      prospect_id: ' prospect-1 ',
+      campaign_member_id: ' member-1 ',
+      disposition: 'no_answer',
+    })).toMatchObject({
+      ok: true,
+      command: {
+        requestedLeadId: null,
+        requestedProspectId: 'prospect-1',
+        campaignMemberId: 'member-1',
       },
     })
   })

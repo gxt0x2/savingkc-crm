@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { supabase } from '@/lib/supabase-lazy'
 import { isMissingColumnError } from '@/lib/schema-compat'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 // POST /api/heirs/verify
 // body: { prospect_phone_id, verified: boolean, lead_id? }
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
-    const { prospect_phone_id, verified, lead_id } = body
+    const { prospect_phone_id, verified, lead_id, prospect_id } = body
 
     if (!prospect_phone_id || typeof verified !== 'boolean') {
       return NextResponse.json(
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
       .eq('id', prospect_phone_id)
       .single<{
         id: string
+        prospect_id: string
         phone: string
         contact_name: string | null
         relationship: string | null
@@ -43,11 +45,15 @@ export async function POST(req: Request) {
     }
 
     const resolvedLeadId = phoneRow.prospects?.lead_id ?? null
-    if (!resolvedLeadId || (lead_id && lead_id !== resolvedLeadId)) {
+    const resolvedProspectId = phoneRow.prospect_id
+    if ((lead_id && lead_id !== resolvedLeadId) || (prospect_id && prospect_id !== resolvedProspectId)) {
       return NextResponse.json(
-        { error: 'Selected heir phone does not belong to this lead' },
+        { error: 'Selected heir phone does not belong to this record' },
         { status: 409 },
       )
+    }
+    if (!resolvedLeadId && !prospect_id) {
+      return NextResponse.json({ error: 'Source prospect context is required for this heir phone' }, { status: 409 })
     }
 
     const now = new Date().toISOString()
@@ -81,6 +87,10 @@ export async function POST(req: Request) {
       agent: actor.name,
       metadata: {
         source: 'heir_dialer',
+        prospect_id: resolvedProspectId,
+        thread_key: resolvedLeadId
+          ? `lead:${resolvedLeadId}`
+          : `phone:${normalizePhoneToE164(phoneRow.phone) ?? phoneRow.phone}`,
         action: verified ? 'verify_contact' : 'unverify_contact',
         prospect_phone_id,
         heir_name: phoneRow.contact_name,

@@ -101,6 +101,7 @@ function blockedDecision(input: {
   message: string
   normalizedPhone?: string | null
   leadId?: string | null
+  prospectId?: string | null
   prospectPhoneId?: string | null
 }): BlockedDialerCallDecision {
   return {
@@ -109,6 +110,7 @@ function blockedDecision(input: {
     checkedAt: new Date().toISOString(),
     normalizedPhone: input.normalizedPhone ?? null,
     leadId: input.leadId ?? null,
+    prospectId: input.prospectId ?? null,
     prospectPhoneId: input.prospectPhoneId ?? null,
     reason: input.reason ?? 'policy_unavailable',
     reasonSource: input.reasonSource,
@@ -220,6 +222,7 @@ export async function POST(req: Request) {
 
       let source: OutboundDialerCallSource = 'legacy_sdk'
       let leadId: string | null = null
+      let prospectId: string | null = null
       let prospectPhoneId: string | null = null
       let clientAttemptId: string | null = null
 
@@ -248,23 +251,27 @@ export async function POST(req: Request) {
         const { claims } = intentVerification
         source = claims.source
         leadId = claims.leadId
+        prospectId = claims.prospectId
         prospectPhoneId = claims.prospectPhoneId
         clientAttemptId = claims.clientAttemptId
         outboundContext = {
           ...outboundContext,
           source,
           leadId,
+          prospectId,
           prospectPhoneId,
           clientAttemptId,
         }
 
         const bodyLeadId = getFormString(body, ['LeadId', 'leadId', 'lead_id'])
+        const bodyProspectId = getFormString(body, ['ProspectId', 'prospectId', 'prospect_id'])
         const bodyProspectPhoneId = getFormString(body, ['ProspectPhoneId', 'prospectPhoneId', 'prospect_phone_id'])
         const contextMismatch =
           claims.identity !== identity
           || claims.to !== sanitizedTo
           || claims.callerId !== callerId
           || Boolean(bodyLeadId && bodyLeadId !== claims.leadId)
+          || Boolean(bodyProspectId && bodyProspectId !== claims.prospectId)
           || Boolean(bodyProspectPhoneId && bodyProspectPhoneId !== claims.prospectPhoneId)
 
         if (contextMismatch) {
@@ -274,6 +281,7 @@ export async function POST(req: Request) {
             message: 'The approved call does not match this destination or caller identity.',
             normalizedPhone: sanitizedTo,
             leadId,
+            prospectId,
             prospectPhoneId,
           }), outboundContext)
         }
@@ -282,6 +290,7 @@ export async function POST(req: Request) {
       const policyInput: OutboundDialerCallInput = {
         phone: sanitizedTo,
         leadId,
+        prospectId,
         prospectPhoneId,
         source,
         identity,
@@ -301,6 +310,7 @@ export async function POST(req: Request) {
           message: 'Calling is paused because the safety check is unavailable.',
           normalizedPhone: sanitizedTo,
           leadId,
+          prospectId,
           prospectPhoneId,
         })
       }

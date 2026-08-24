@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(join(process.cwd(), 'src/lib/server/prospecting-campaign-members.ts'), 'utf8')
 const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20260904134500_prospecting_campaign_audience_search.sql'), 'utf8')
+const subjectMigration = readFileSync(join(process.cwd(), 'supabase/migrations/20261006120000_prospecting_campaign_subjects.sql'), 'utf8')
 
 describe('prospecting campaign audience data plane', () => {
   it('delegates ownership and search to one service-only database boundary', () => {
-    expect(source).toContain("rpc('prospecting_campaign_member_page_v2'")
-    expect(migration).toContain('lower(campaign.owner_email) = clean_actor')
-    expect(migration).toContain('REVOKE ALL ON FUNCTION public.prospecting_campaign_member_page_v2')
-    expect(migration).toContain('TO service_role')
+    expect(source).toContain("rpc('prospecting_campaign_member_page_v3'")
+    expect(subjectMigration).toContain('lower(campaign.owner_email) = clean_actor')
+    expect(subjectMigration).toContain('REVOKE ALL ON FUNCTION public.prospecting_campaign_member_page_v3')
+    expect(subjectMigration).toContain('TO service_role')
   })
 
   it('uses a maintained trigram projection and a capped keyset page', () => {
@@ -20,11 +21,14 @@ describe('prospecting campaign audience data plane', () => {
     expect(migration).toContain('LIMIT safe_limit + 1')
     expect(migration).toContain('member.current_step_position::integer')
     expect(source).toContain('p_after_enrolled_at: cursor?.enrolledAt || null')
+    expect(subjectMigration).toContain('ORDER BY member.enrolled_at DESC, member.id DESC')
+    expect(subjectMigration).toContain('LIMIT safe_limit + 1')
   })
 
   it('refreshes indexed search text when either the member or lead identity changes', () => {
     expect(migration).toContain('set_prospecting_campaign_member_search_v1')
     expect(migration).toContain('refresh_prospecting_campaign_member_search_from_lead_v1')
     expect(migration).toContain('AFTER UPDATE OF full_name, property_address, phone')
+    expect(subjectMigration).toContain('refresh_prospecting_campaign_member_search_from_prospect_v1')
   })
 })

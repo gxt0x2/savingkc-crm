@@ -10,7 +10,7 @@ describe('prospecting campaign operations detail', () => {
     expect(source).toContain(".eq('status', 'processing')")
     expect(source).toContain("select('id', { count: 'exact', head: true })")
     expect(source).toContain(".eq('status', 'delivered')")
-    expect(source).toContain('delivered: countResults[6].count || 0')
+    expect(source).toContain('delivered: countResults[7].count || 0')
   })
 
   it('bounds the next and latest action lookups to one row', () => {

@@ -24,6 +24,7 @@ export async function recordHeirAppointment(input: {
 
   const activity = await insertHeirAttemptEvidenceOnce({
     leadId: input.leadId,
+    prospectId: null,
     activityType: 'appointment',
     clientAttemptId: input.clientAttemptId,
     action: 'appointment_set',

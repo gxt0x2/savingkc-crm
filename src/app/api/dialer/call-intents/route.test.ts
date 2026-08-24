@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   recordBlockedDialerCall: vi.fn(),
   createDialerCallIntent: vi.fn(),
   authorizeDialerSessionAttempt: vi.fn(),
+  getDialerSession: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.resolveAuthenticatedActor }))
@@ -18,6 +19,7 @@ vi.mock('@/lib/server/dialer-call-eligibility', () => ({
 vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: mocks.createDialerCallIntent }))
 vi.mock('@/lib/server/dialer-session-engine', () => ({
   authorizeDialerSessionAttempt: mocks.authorizeDialerSessionAttempt,
+  getDialerSession: mocks.getDialerSession,
   DialerSessionError: class DialerSessionError extends Error {},
   isUuid: (value: unknown) => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value),
 }))
@@ -38,6 +40,7 @@ const allowed = {
   policyVersion: 'dialer_safety_v1',
   checkedAt: '2026-08-19T17:00:00.000Z',
   leadId: 'lead-1',
+  prospectId: null,
   prospectPhoneId: null,
 }
 
@@ -54,7 +57,9 @@ describe('web dialer call intent authorization', () => {
         callerId: '+18167277667',
         kind: 'lead',
         leadId: 'lead-1',
+        prospectId: null,
         prospectPhoneId: null,
+        campaignMemberId: null,
         clientAttemptId: 'attempt-1',
         expiresAt: 123,
       },
@@ -113,7 +118,9 @@ describe('web dialer call intent authorization', () => {
       kind: 'lead',
       source: 'web_power_dialer',
       leadId: 'lead-1',
+      prospectId: null,
       prospectPhoneId: null,
+      campaignMemberId: null,
       clientAttemptId: 'attempt-1',
     })
     expect(await response.json()).toMatchObject({ allowed: true, intent: 'signed-intent' })
@@ -124,6 +131,11 @@ describe('web dialer call intent authorization', () => {
     const leadId = '00000000-0000-4000-8000-000000000011'
     mocks.evaluateOutboundDialerCall.mockResolvedValue({ ...allowed, leadId })
     mocks.authorizeDialerSessionAttempt.mockResolvedValue({ id: 'attempt-row' })
+    mocks.createDialerCallIntent.mockReturnValue({
+      token: 'signed-intent',
+      claims: { to: '+19135550123', callerId: '+18167277667', kind: 'lead', leadId, prospectId: null, prospectPhoneId: null, campaignMemberId: null, clientAttemptId: 'attempt-1', expiresAt: 123 },
+    })
+    mocks.getDialerSession.mockResolvedValue({ currentSubjectKind: 'lead', currentSubjectId: leadId, currentCampaignMemberId: null })
 
     const response = await POST(request({
       phone: '(913) 555-0123',
@@ -139,10 +151,74 @@ describe('web dialer call intent authorization', () => {
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
       sessionId,
       clientAttemptId: 'attempt-1',
+      subjectKind: 'lead',
+      subjectId: leadId,
+      campaignMemberId: null,
       leadId,
+      prospectId: null,
       prospectPhoneId: null,
       phone: '+19135550123',
       callerId: '+18167277667',
     })
+  })
+
+  it('authorizes a session-bound source Prospect without inventing a Lead', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000020'
+    const prospectId = '00000000-0000-4000-8000-000000000021'
+    const prospectPhoneId = '00000000-0000-4000-8000-000000000022'
+    const campaignMemberId = '00000000-0000-4000-8000-000000000023'
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({
+      ...allowed,
+      leadId: null,
+      prospectId,
+      prospectPhoneId,
+    })
+    mocks.authorizeDialerSessionAttempt.mockResolvedValue({ id: 'attempt-row' })
+    mocks.createDialerCallIntent.mockReturnValue({
+      token: 'signed-prospect-intent',
+      claims: {
+        to: '+19135550123',
+        callerId: '+18167277667',
+        kind: 'prospect',
+        leadId: null,
+        prospectId,
+        prospectPhoneId,
+        campaignMemberId,
+        clientAttemptId: 'attempt-prospect-1',
+        expiresAt: 123,
+      },
+    })
+    mocks.getDialerSession.mockResolvedValue({
+      currentSubjectKind: 'prospect',
+      currentSubjectId: prospectId,
+      currentCampaignMemberId: campaignMemberId,
+    })
+
+    const response = await POST(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'prospect',
+      prospectId,
+      prospectPhoneId,
+      campaignMemberId,
+      sessionId,
+      clientAttemptId: 'attempt-prospect-1',
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      allowed: true,
+      leadId: null,
+      prospectId,
+      campaignMemberId,
+    })
+    expect(mocks.authorizeDialerSessionAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      subjectKind: 'prospect',
+      subjectId: prospectId,
+      leadId: null,
+      prospectId,
+      prospectPhoneId,
+      campaignMemberId,
+    }))
   })
 })

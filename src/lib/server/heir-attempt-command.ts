@@ -11,6 +11,8 @@ export interface HeirAttemptCommand {
   disposition: DispositionId
   notes: string | null
   requestedLeadId: string | null
+  requestedProspectId: string | null
+  campaignMemberId: string | null
   durationSeconds: number | null
   markAsLead: boolean
   verified: boolean | null
@@ -72,6 +74,8 @@ export function buildHeirAttemptCommand(input: unknown, now = Date.now()): HeirA
       disposition,
       notes: cleanText(body.notes, 5_000),
       requestedLeadId: cleanText(body.lead_id, 100),
+      requestedProspectId: cleanText(body.prospect_id, 100),
+      campaignMemberId: cleanText(body.campaign_member_id, 100),
       durationSeconds: duration,
       markAsLead,
       verified,

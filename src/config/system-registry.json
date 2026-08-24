@@ -229,8 +229,8 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/prospecting", "/dialer", "/conversations"],
-      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/launch", "/api/workers/prospecting-campaigns"],
-      "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "sms_opt_outs", "sms_delivery_log"],
+      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/members/[memberId]/contacts", "/api/prospecting/campaigns/[id]/launch", "/api/workers/prospecting-campaigns"],
+      "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_member_contacts", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "sms_opt_outs", "sms_delivery_log"],
       "environment": ["CRON_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"],
       "crons": [
         {

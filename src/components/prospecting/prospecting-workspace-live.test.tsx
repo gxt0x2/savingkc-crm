@@ -22,7 +22,7 @@ vi.mock('@/components/prospecting/campaign-dashboard', () => ({
 
 const baseCampaign: ProspectingCampaignDetail = {
   id: 'campaign-1', name: 'Live sellers', kind: 'sms', status: 'active', ownerEmail: 'ernest@savingkc.com', ownerName: 'Ernest', callerId: null, fromPhone: '+18164292900', defaultTimezone: 'America/Chicago', sendWindowStart: '09:00', sendWindowEnd: '19:00', sendDays: [1, 2, 3, 4, 5, 6], perHour: 25, perDay: 100, createdAt: '2026-08-21T20:00:00.000Z', updatedAt: '2026-08-21T20:00:00.000Z', activatedAt: '2026-08-21T20:00:00.000Z', pausedAt: null, completedAt: null,
-  steps: [{ id: 'step-1', position: 1, delayMinutes: 0, bodyTemplate: 'Hello' }], members: [], stats: { total: 1, active: 1, suppressed: 0, replied: 0, completed: 0, sent: 1, delivered: 1, failed: 0 }, operations: { queued: 0, processing: 0, nextActionAt: null, lastSentAt: '2026-08-21T20:00:00.000Z' },
+  steps: [{ id: 'step-1', position: 1, delayMinutes: 0, bodyTemplate: 'Hello' }], members: [], stats: { total: 1, active: 1, needsReview: 0, suppressed: 0, replied: 0, completed: 0, sent: 1, delivered: 1, failed: 0 }, operations: { queued: 0, processing: 0, nextActionAt: null, lastSentAt: '2026-08-21T20:00:00.000Z' },
 }
 
 async function flushEffects() {

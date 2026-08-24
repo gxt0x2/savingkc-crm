@@ -15,6 +15,7 @@ import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import {
   authorizeDialerSessionAttempt,
   DialerSessionError,
+  getDialerSession,
   isUuid,
 } from '@/lib/server/dialer-session-engine'
 
@@ -35,7 +36,7 @@ function json(body: Record<string, unknown>, status = 200) {
 }
 
 function sourceForKind(kind: DialerCallIntentKind): DialerCallIntentSource {
-  if (kind === 'heir') return 'web_heir_dialer'
+  if (kind === 'heir' || kind === 'prospect') return 'web_heir_dialer'
   if (kind === 'lead') return 'web_power_dialer'
   return 'web_manual'
 }
@@ -57,17 +58,20 @@ export async function POST(request: Request) {
 
   const phone = text(body.phone)
   const leadId = text(body.leadId)
+  const prospectId = text(body.prospectId)
   const prospectPhoneId = text(body.prospectPhoneId)
+  const campaignMemberId = text(body.campaignMemberId)
   const clientAttemptId = text(body.clientAttemptId)
   const sessionId = text(body.sessionId)
   const kind = text(body.kind) as DialerCallIntentKind | null
-  if (!phone || !kind || !['manual', 'lead', 'heir'].includes(kind)) {
+  if (!phone || !kind || !['manual', 'lead', 'heir', 'prospect'].includes(kind)) {
     return json({ allowed: false, error: 'Phone and a valid call kind are required' }, 400)
   }
   if (
-    (kind === 'manual' && (leadId || prospectPhoneId))
-    || (kind === 'lead' && (!leadId || prospectPhoneId))
-    || (kind === 'heir' && (!leadId || !prospectPhoneId))
+    (kind === 'manual' && (leadId || prospectId || prospectPhoneId || campaignMemberId))
+    || (kind === 'lead' && (!leadId || prospectId || prospectPhoneId))
+    || (kind === 'heir' && (!leadId || prospectId || !prospectPhoneId))
+    || (kind === 'prospect' && (leadId || !prospectId || !prospectPhoneId))
   ) {
     return json({ allowed: false, error: 'Call context does not match the selected contact', reason: 'destination_mismatch' }, 409)
   }
@@ -85,6 +89,7 @@ export async function POST(request: Request) {
   const policyInput = {
     phone,
     leadId,
+    prospectId,
     prospectPhoneId,
     source: sourceForKind(kind),
     identity: profile.identity,
@@ -105,18 +110,30 @@ export async function POST(request: Request) {
       kind,
       source: policyInput.source,
       leadId: policy.leadId,
+      prospectId: policy.prospectId,
       prospectPhoneId: policy.prospectPhoneId,
+      campaignMemberId,
       clientAttemptId,
     })
     if (sessionId) {
-      if (!policy.leadId || !clientAttemptId) {
+      if (!clientAttemptId) {
         return json({ allowed: false, error: 'Dialer session context is incomplete', reason: 'session_context_mismatch' }, 409)
+      }
+      const session = await getDialerSession(actor, sessionId)
+      if (session.currentSubjectKind !== issued.claims.kind && !(session.currentSubjectKind === 'lead' && issued.claims.kind === 'heir')
+        || session.currentSubjectId !== (issued.claims.leadId || issued.claims.prospectId)
+        || session.currentCampaignMemberId !== issued.claims.campaignMemberId) {
+        return json({ allowed: false, error: 'Call context does not match the active session', reason: 'session_context_mismatch' }, 409)
       }
       await authorizeDialerSessionAttempt({
         actor,
         sessionId,
         clientAttemptId,
+        subjectKind: session.currentSubjectKind,
+        subjectId: session.currentSubjectId,
+        campaignMemberId: session.currentCampaignMemberId,
         leadId: policy.leadId,
+        prospectId: policy.prospectId,
         prospectPhoneId: policy.prospectPhoneId,
         phone: issued.claims.to,
         callerId: issued.claims.callerId,
@@ -129,7 +146,9 @@ export async function POST(request: Request) {
       callerId: issued.claims.callerId,
       kind: issued.claims.kind,
       leadId: issued.claims.leadId,
+      prospectId: issued.claims.prospectId,
       prospectPhoneId: issued.claims.prospectPhoneId,
+      campaignMemberId: issued.claims.campaignMemberId,
       clientAttemptId: issued.claims.clientAttemptId,
       sessionId,
       expiresAt: issued.claims.expiresAt,
@@ -147,6 +166,7 @@ export async function POST(request: Request) {
       policyVersion: policy.policyVersion,
       checkedAt: policy.checkedAt,
       leadId: policy.leadId,
+      prospectId: policy.prospectId,
       prospectPhoneId: policy.prospectPhoneId,
       reasonSource: 'intent_signing',
     })
