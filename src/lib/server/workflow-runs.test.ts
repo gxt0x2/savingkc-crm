@@ -248,6 +248,13 @@ describe('workflow run service', () => {
     const rpc = vi.fn(async (name: string) => {
       calls.push(name)
       if (name === 'workflow_claim_specific_run_v1') return { data: running, error: null }
+      if (name === 'crm_assign_owner_if_unassigned_v1') return {
+        data: {
+          eventId: 'lifecycle-event-1', leadId: running.input.leadId,
+          owner: 'Acquisitions', applied: true, replayed: false,
+        },
+        error: null,
+      }
       if (name === 'create_work_item_v2') return {
         data: {
           created: true,
@@ -296,6 +303,7 @@ describe('workflow run service', () => {
     expect(result?.status).toBe('succeeded')
     expect(calls).toEqual([
       'workflow_claim_specific_run_v1',
+      'crm_assign_owner_if_unassigned_v1',
       'create_work_item_v2',
       'workflow_record_step_v1',
       'workflow_finish_run_v2',
@@ -304,6 +312,8 @@ describe('workflow run service', () => {
       p_step_key: 'establish_seller_intake',
       p_output: expect.objectContaining({
         workItemKey: 'activity:task-1',
+        owner: 'Acquisitions',
+        lifecycleEventId: 'lifecycle-event-1',
         statusActivityId: 'status-1',
       }),
     }))
