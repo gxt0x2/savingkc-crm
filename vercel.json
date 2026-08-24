@@ -14,10 +14,6 @@
       "schedule": "15 13 * * *"
     },
     {
-      "path": "/api/hot-opportunities/cron",
-      "schedule": "0 14 * * *"
-    },
-    {
       "path": "/api/workers/ppc-conversion-export",
       "schedule": "*/15 * * * *"
     },

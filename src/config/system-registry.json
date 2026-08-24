@@ -435,16 +435,15 @@
       "owner": "Operations",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/cron/sweep-briefings", "/api/ari/generate-briefing", "/api/hot-opportunities/cron"],
-      "tables": ["briefings", "crm_briefing_jobs", "assistant_generations", "hot_score_audit_trail"],
+      "apiRoutes": ["/api/cron/sweep-briefings", "/api/ari/generate-briefing"],
+      "tables": ["briefings", "crm_briefing_jobs", "assistant_generations"],
       "environment": ["CRON_SECRET", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"],
       "crons": [
         {
           "path": "/api/cron/sweep-briefings",
           "schedule": "*/5 * * * *",
           "highFrequencyReason": "Claim at most three coalesced, revision-safe briefing refreshes so seller evidence stays current without blocking CRM writes."
-        },
-        { "path": "/api/hot-opportunities/cron", "schedule": "0 14 * * *" }
+        }
       ]
     },
     {

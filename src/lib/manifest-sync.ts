@@ -1,21 +1,18 @@
 /**
- * Manifest Sync — Single Source of Truth
+ * Manifest compatibility sync
  *
- * ARCHITECTURE: The manifest is the ONLY source of truth for lead state.
- * All derived fields (leads.station, leads.priority, leads.motivation_score)
- * are cascaded FROM the manifest via saveManifest(). No other code should
- * write these fields to the leads table directly.
+ * Legacy workflows may still update Manifest JSON while the CRM transitions to
+ * canonical lead, work-item, lifecycle, and communication records. This module
+ * keeps those remaining writes compatible without driving opportunity ranking.
  *
- * Flow: event → update manifest → saveManifest() → cascade to leads table
+ * Flow: legacy event → update manifest → saveManifest() → compatibility cascade
  *
- * Used by: twilio-sms-webhook, twilio-missed-call, conversations/send,
- *          call-log, ghost-protocol, pipeline-auto-advance, mojo/reprocess
+ * Do not add new callers. New workflows must write canonical records directly.
  */
 
 import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from './manifest-builder'
 import { buildManifest } from './manifest-builder'
-import { classifyManifestChange, processHotEngineEvent } from './hot-engine/event-bus'
 import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
 import { normalizeDealStage } from '../types/pipeline'
 
@@ -79,7 +76,7 @@ async function getManifestForLead(leadId: string): Promise<{ rowId: string; lead
  *   - manifest_history row on every save
  *   - shallow per-subtree replacement via RPC
  *   - denormalized column sync atomic with the JSONB write
- *   - leads-table cascade and hot-engine event fire on the TS side
+ *   - leads-table compatibility cascade on the TS side
  *
  * The leadId and previousManifest parameters are now ignored — V2.1 resolves
  * leadId from manifestId and refetches previousManifest for its own diff.
@@ -353,17 +350,7 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     .eq('lead_id', leadId)
     .limit(1)
 
-  if (existing && existing.length > 0) {
-    processHotEngineEvent({
-      type: 'manifest_created',
-      leadId,
-      source: 'manifest_bootstrap',
-      tier1: false,
-    }).catch(err =>
-      console.error('[hot-engine] Manifest-created event processing failed:', err)
-    )
-    return existing[0].id
-  }
+  if (existing && existing.length > 0) return existing[0].id
 
   // Fetch the lead to build a manifest
   const { data: lead } = await supabase
@@ -413,15 +400,6 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     return null
   }
 
-  processHotEngineEvent({
-    type: 'manifest_created',
-    leadId,
-    source: 'manifest_bootstrap',
-    tier1: false,
-  }).catch(err =>
-    console.error('[hot-engine] Manifest-created event processing failed:', err)
-  )
-
   return inserted?.id || null
 }
 
@@ -459,8 +437,8 @@ export async function updateManifestAndCascade(
   const result = await updateManifestV2_1({
     leadId,
     compute: (current) => {
-      // Clone so the mutator can't accidentally alter our previousManifest
-      // reference (used for the hot-engine diff inside updateManifestV2_1).
+      // Clone so the mutator cannot alter the current Manifest reference used
+      // by updateManifestV2_1 to compute the replacement subtrees.
       const clone = JSON.parse(JSON.stringify(current)) as ManifestV2
       updater(clone)
       const cloneRecord = clone as unknown as Record<string, unknown>
@@ -664,8 +642,7 @@ function sanitizeDatePlaceholderValue(
 /**
  * V2.1 write path. Routes through the update_manifest_and_cascade Postgres
  * RPC for shallow per-subtree replacement + history row + denormalized
- * column sync, then cascades to the leads table and fires the hot-engine
- * event bus on the TS side (those live outside the RPC for now).
+ * column sync, then performs the remaining leads-table compatibility cascade.
  *
  * Returns the updated manifest, or null if the target manifest doesn't exist.
  * Throws ManifestWriteError for validation / RPC / auth failures.
@@ -685,7 +662,7 @@ export async function updateManifestV2_1(
 
   const supabase = getSupabase()
 
-  // Resolve manifestId + capture pre-write state (for hot-engine diff).
+  // Resolve manifestId and capture the current state for computed updates.
   let manifestId = params.manifestId
   let leadId: string | null = params.leadId ?? null
   let previousManifest: ManifestV2 | null = null
@@ -771,21 +748,6 @@ export async function updateManifestV2_1(
     }
     if (Object.keys(leadUpdate).length > 0) {
       await supabase.from('leads').update(leadUpdate).eq('id', leadId)
-    }
-  }
-
-  // Hot-engine event bus — fire-and-forget, same as saveManifest.
-  if (leadId && previousManifest) {
-    const diff = classifyManifestChange(previousManifest, manifest, params.actor)
-    if (diff?.invalidating) {
-      processHotEngineEvent({
-        type: diff.eventType,
-        leadId,
-        source: params.actor,
-        tier1: diff.tier1,
-      }).catch((err) =>
-        console.error('[hot-engine] Event processing failed:', err),
-      )
     }
   }
 
