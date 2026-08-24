@@ -1,23 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { updateManifestAndCascade, ensureManifestExists } from '@/lib/manifest-sync'
-import { randomUUID } from 'crypto'
 import { supabase } from '@/lib/supabase-lazy'
 import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
-import { normalizeDealStage } from '@/types/pipeline'
-import { queuePpcQualifiedLeadConversion } from '@/lib/ppc/qualified-lead-conversion'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { buildAppointmentCommand } from '@/lib/server/appointment-command'
-
-// Stations that should auto-advance to appointment_set when an appointment
-// is scheduled. We never demote a more-advanced station (offer_made,
-// under_contract) and never resurrect a terminal one (dead, closed_*).
-const ADVANCE_FROM_STATIONS = new Set(['new', 'contacted', 'qualified'])
 
 /**
  * POST /api/leads/create-appointment
- * Server-side appointment creation — bypasses RLS on manifests table
+ * Server-side appointment creation against canonical appointment records.
  */
 export async function POST(req: NextRequest) {
   const actor = await resolveAuthenticatedActor()
@@ -30,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     const { data: leadRow, error: leadError } = await supabase
       .from('leads')
-      .select('station, phone, full_name, property_address')
+      .select('phone, full_name, property_address')
       .eq('id', leadId)
       .maybeSingle()
     if (leadError) return NextResponse.json({ error: 'Contact could not be loaded' }, { status: 500 })
@@ -38,9 +30,6 @@ export async function POST(req: NextRequest) {
     const address = type === 'in_person' ? leadRow.property_address ?? null : null
     const phone = typeof leadRow.phone === 'string' ? leadRow.phone : null
     const leadName = typeof leadRow.full_name === 'string' ? leadRow.full_name : null
-
-    // 1. Ensure manifest exists
-    await ensureManifestExists(leadId)
 
     const canonicalAppointment = await upsertAppointmentFromCall({
       leadId,
@@ -51,80 +40,29 @@ export async function POST(req: NextRequest) {
       source: 'manual',
       assignedTo,
     })
-    const appointmentId = canonicalAppointment?.id ?? randomUUID()
-    const scheduledIso = canonicalAppointment?.scheduled_at ?? scheduledAt
-
-    // 2. Update manifest with appointment object
-    const updated = await updateManifestAndCascade(leadId, (manifest) => {
-      manifest.pipeline.appointment = {
-        appointmentId,
-        type,
-        scheduledAt: scheduledIso,
-        createdAt: new Date().toISOString(),
-        status: 'scheduled',
-        confirmationCount: 0,
-        lastSellerResponse: null,
-        ghostRiskScore: 0,
-        ghostProtocolActive: false,
-        reminderAutomationEnabled: true,
-        reminderAutomationEnabledAt: new Date().toISOString(),
-        reminderAutomationSource: 'appointment_modal',
-        automationLog: [],
-        assignedTo,
-        address: canonicalAppointment?.address ?? address,
-        notes: canonicalAppointment?.notes ?? notes,
-      }
-
-      if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-      manifest.ariIntelligence.briefingStale = true
-
-      if (!manifest.auditTrail) manifest.auditTrail = []
-      manifest.auditTrail.push({
-        timestamp: new Date().toISOString(),
-        agent: actor.name,
-        action: 'appointment_created',
-        details: { type, scheduledAt: scheduledIso, assignedTo, notes },
-      })
-    }, 'appointment_modal')
-
-    // 2b. Auto-advance station to appointment_set when applicable. Without
-    // this, leads stay at new/contacted/qualified after booking and miss the
-    // appointment_set stage value in scoring.
-    const currentStage = normalizeDealStage(leadRow?.station)
-    const leadAppointmentPatch: Record<string, unknown> = {
-      appointment_date: scheduledIso,
-      appointment_notes: canonicalAppointment?.notes ?? notes ?? null,
-      updated_at: new Date().toISOString(),
+    if (!canonicalAppointment) {
+      return NextResponse.json({ error: 'Appointment could not be saved' }, { status: 500 })
     }
-    if (currentStage && ADVANCE_FROM_STATIONS.has(currentStage)) {
-      leadAppointmentPatch.station = 'appointment_set'
-    }
-    await supabase
+    const appointmentId = canonicalAppointment.id
+    const scheduledIso = canonicalAppointment.scheduled_at
+
+    const { error: snapshotError } = await supabase
       .from('leads')
-      .update(leadAppointmentPatch)
+      .update({
+        appointment_date: scheduledIso,
+        appointment_notes: canonicalAppointment.notes ?? notes ?? null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', leadId)
-
-    if (currentStage && ADVANCE_FROM_STATIONS.has(currentStage)) {
-      await updateManifestAndCascade(leadId, (manifest) => {
-        manifest.currentStation = 'appointment_set'
-        manifest.auditTrail = manifest.auditTrail ?? []
-        manifest.auditTrail.push({
-          timestamp: new Date().toISOString(),
-          agent: actor.name,
-          action: 'station_auto_advanced',
-          details: { from: leadRow?.station, to: 'appointment_set', trigger: 'appointment_created' },
-        })
-      }, 'appointment_modal:auto_advance').catch(() => false)
-      await queuePpcQualifiedLeadConversion({
-        leadId,
-        fromStation: leadRow?.station ?? null,
-        toStation: 'appointment_set',
-        changedBy: actor.name,
-        reason: 'appointment_created',
-      }).catch((error) => console.error('[create-appointment] PPC qualified conversion queue failed:', error))
+    if (snapshotError) {
+      return NextResponse.json({
+        error: 'The appointment was saved, but the contact snapshot could not be refreshed. Do not create it again.',
+        appointmentSaved: true,
+        appointmentId,
+      }, { status: 500 })
     }
 
-    // 3. Log to lead_activities for calendar/timeline display
+    // Log to lead_activities for calendar/timeline display.
     const typeLabels: Record<string, string> = {
       in_person: 'In-Person Visit',
       phone_call: 'Phone Call',
@@ -138,7 +76,7 @@ export async function POST(req: NextRequest) {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
     })
 
-    const { data: appointmentActivity } = await supabase.from('lead_activities').insert({
+    const { data: appointmentActivity, error: activityError } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'appointment',
       description: `Appointment scheduled: ${typeLabel} on ${dateDisplay} at ${timeDisplay} with ${assignedTo}${notes ? `. Notes: ${notes}` : ''}`,
@@ -154,6 +92,14 @@ export async function POST(req: NextRequest) {
       },
     }).select('id').maybeSingle()
 
+    const warnings: string[] = []
+    if (activityError) warnings.push('The appointment timeline entry is pending.')
+    const lifecycle = await checkAutoAdvance(leadId, 'appointment_set').catch((error) => {
+      console.error('[create-appointment] lifecycle advance failed:', error)
+      warnings.push('The lifecycle stage refresh is pending.')
+      return { advanced: false }
+    })
+
     await queuePpcAppointmentBookedConversion({
       leadId,
       appointmentId,
@@ -164,7 +110,7 @@ export async function POST(req: NextRequest) {
       source: 'appointment_modal',
     }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 
-    // 4. Create SMS reminder task if requested
+    // Create SMS reminder task if requested.
     if (sendReminder && phone) {
       const reminderBody = `Hi ${leadName || 'there'}, your appointment with Saving KC is confirmed for ${dateDisplay} at ${timeDisplay}. We look forward to speaking with you!`
 
@@ -186,7 +132,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       appointmentId,
-      manifestUpdated: updated,
+      lifecycleAdvanced: lifecycle.advanced,
+      ...(warnings.length > 0 ? { warning: `Appointment saved. ${warnings.join(' ')} Do not create it again.` } : {}),
     })
   } catch (err) {
     console.error('create-appointment error:', err)

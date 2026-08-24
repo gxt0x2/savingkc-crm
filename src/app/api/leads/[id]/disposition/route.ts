@@ -32,9 +32,7 @@ export async function POST(
       success: true,
       activityId: result.activityId,
       appointmentId: result.appointmentId,
-      ...(result.projectionSynced ? {} : {
-        warning: 'Outcome saved, but the lead briefing could not be refreshed.',
-      }),
+      ...(result.warning ? { warning: result.warning } : {}),
     }, { status: 201 })
   } catch (error) {
     console.error('[leads/:id/disposition] save failed:', error)
