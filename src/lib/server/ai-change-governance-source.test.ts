@@ -17,10 +17,12 @@ describe('recording callback AI governance boundary', () => {
     expect(callback).not.toContain('syncCoOwners')
   })
 
-  it('does not write unapproved model intelligence into the manifest', () => {
-    expect(callback).toContain('extractedData: null')
-    expect(callback).not.toContain('manifest.situation.motivation.score = analysis')
-    expect(callback).not.toContain('manifest.scoring.classification = analysis')
-    expect(callback).not.toContain('reminderAutomationSource:')
+  it('stores recording evidence canonically and never writes Manifest compatibility state', () => {
+    expect(callback).toContain("source: 'whisper_transcription'")
+    expect(callback).toContain("source: 'call_analysis'")
+    expect(callback).toContain('recordingUrl: `${recordingUrl}.mp3`')
+    expect(callback).toContain('transcript_evidence_write_failed')
+    expect(callback).toContain('call_analysis_evidence_write_failed')
+    expect(callback).not.toMatch(/manifest-sync|MutableManifest|updateManifestAndCascade|briefingStale/i)
   })
 })

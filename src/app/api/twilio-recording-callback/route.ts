@@ -49,14 +49,6 @@ type RecordingContext = {
   is_test?: boolean
 }
 
-type JsonObject = Record<string, unknown>
-
-type MutableManifest = JsonObject & {
-  communications?: { transcripts: JsonObject[] }
-  ariIntelligence?: JsonObject & { briefingStale?: boolean }
-  auditTrail?: JsonObject[]
-}
-
 // WebRTC-initiated calls record against the parent leg whose To/From are
 // client identifiers rather than the dialed number. When the lookup-by-phone
 // falls through, we ask Twilio for the child legs and match on their `to`.
@@ -93,7 +85,7 @@ async function resolveLeadIdFromChildLegs(callSid: string): Promise<string | nul
 /**
  * Twilio recording status callback.
  * Called automatically when a call recording is ready.
- * Downloads → transcribes → analyzes → stores in manifest.
+ * Downloads → transcribes → analyzes → stores canonical CRM evidence.
  */
 export async function POST(req: Request) {
   try {
@@ -350,100 +342,61 @@ async function processRecording(
 
   console.log(`[recording-callback] Transcript (${transcript.length} chars): ${transcript.slice(0, 100)}...`)
 
-  // 3. Save transcript to lead_activities
-  await supabase.from('lead_activities').insert({
+  const evidenceContext = {
+    recordingSid,
+    recordingUrl: `${recordingUrl}.mp3`,
+    duration,
+    recordingSource: context.source || 'twilio_recording_callback',
+    traffic_source: context.traffic_source || null,
+    campaign: context.campaign || null,
+    calledNumber: context.calledNumber || context.to || null,
+    callerPhone: context.from || null,
+  }
+
+  // 3. Save the provider-backed transcript as canonical activity evidence.
+  const { error: transcriptError } = await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'note',
     description: `Call transcript: ${transcript.slice(0, 500)}${transcript.length > 500 ? '...' : ''}`,
     agent: 'AI',
     metadata: {
       source: 'whisper_transcription',
-      recordingSid,
+      ...evidenceContext,
       fullTranscript: transcript,
-      duration,
     },
   })
+  if (transcriptError) throw new Error(`transcript_evidence_write_failed:${transcriptError.message}`)
 
   // 4. Analyze transcript with AI
   const analysis = await analyzeCallTranscript(transcript)
 
   // 5. Save analysis to lead_activities
   if (analysis) {
-    await supabase.from('lead_activities').insert({
+    const { error: analysisError } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'note',
       description: `AI Call Analysis: ${analysis.aiSummary || analysis.summary || 'Analysis complete'}`,
       agent: 'AI',
-      metadata: { source: 'call_analysis', analysis },
+      metadata: { source: 'call_analysis', ...evidenceContext, analysis },
     })
+    if (analysisError) throw new Error(`call_analysis_evidence_write_failed:${analysisError.message}`)
 
     // 6. Persist factual call evidence. AI-extracted lead fields are written
     // only through the explicit ai_change_proposals approval boundary.
-    await supabase.from('leads').update({
+    const { error: leadEvidenceError } = await supabase.from('leads').update({
       transcript,
       call_duration_seconds: duration,
       updated_at: new Date().toISOString(),
     }).eq('id', leadId)
+    if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
   } else {
     // No analysis available but still refresh the transcript + duration
-    await supabase.from('leads').update({
+    const { error: leadEvidenceError } = await supabase.from('leads').update({
       transcript,
       call_duration_seconds: duration,
       updated_at: new Date().toISOString(),
     }).eq('id', leadId)
-  }
-
-  // 7. Update manifest with transcript + analysis
-  try {
-    const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-    await updateManifestAndCascade(leadId, (baseManifest) => {
-      const manifest = baseManifest as unknown as MutableManifest
-      // Store transcript
-      if (!manifest.communications) manifest.communications = { transcripts: [] }
-      manifest.communications.transcripts.push({
-        id: `call-${recordingSid}`,
-        date: new Date().toISOString(),
-        duration,
-        agent: 'Casey',
-        recordingUrl: recordingUrl + '.mp3',
-        source: context.source || 'twilio_recording_callback',
-        trafficSource: context.traffic_source || null,
-        campaign: context.campaign || null,
-        calledNumber: context.calledNumber || context.to || null,
-        callerPhone: context.from || null,
-        fullTranscript: transcript,
-        aiSummary: analysis?.summary || analysis?.aiSummary || null,
-        extractedData: null,
-      })
-
-      // Mark briefing stale
-      if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-      manifest.ariIntelligence.briefingStale = true
-
-      // Audit trail
-      if (!manifest.auditTrail) manifest.auditTrail = []
-      manifest.auditTrail.push({
-        timestamp: new Date().toISOString(),
-        agent: 'system:recording_callback',
-        action: 'transcript_added',
-        details: {
-          recordingSid,
-          duration,
-          transcriptLength: transcript.length,
-          hasAnalysis: !!analysis,
-          source: context.source || 'twilio_recording_callback',
-          traffic_source: context.traffic_source || null,
-          campaign: context.campaign || null,
-          calledNumber: context.calledNumber || context.to || null,
-        },
-      })
-    }, 'system:recording_callback')
-
-    // Eager briefing regen — transcript is high-value intelligence
-    const { regenerateBriefing } = await import('@/lib/briefing-regen')
-    await regenerateBriefing(leadId, 'transcript_added').catch(() => {})
-  } catch (err) {
-    console.error('[recording-callback] Manifest update failed:', err)
+    if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
   }
 
   console.log(`[recording-callback] Recording processed for lead ${leadId}: transcript=${transcript.length} chars, analysis=${!!analysis}`)
