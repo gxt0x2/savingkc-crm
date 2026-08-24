@@ -51,6 +51,7 @@ export interface ContactRow {
   lastMessage: string
   lastActivityAt: string
   primaryNextAction: ConversationHubThread['primaryNextAction']
+  entityAuthority: 'canonical_entities' | 'lead_compatibility'
 }
 
 interface ManifestPayload {
@@ -208,6 +209,7 @@ export async function GET(request: NextRequest) {
             owner: item.primary_next_action_owner ?? item.owner,
             overdue: Boolean(dueAt && new Date(dueAt) < new Date()),
           } : null,
+          entityAuthority: item.entity_authority,
         }
       })
 
