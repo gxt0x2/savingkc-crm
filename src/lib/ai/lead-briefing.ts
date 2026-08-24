@@ -231,6 +231,21 @@ export function normalizeLeadBriefing(value: unknown, evidence: LeadBriefingEvid
   return { ...parsed, evidenceIds }
 }
 
+export function buildExtractiveLeadBriefing(evidence: LeadBriefingEvidence[]): LeadBriefing {
+  const primary = evidence.find((item) => item.id.startsWith('canonical:'))
+    || evidence.find((item) => item.id.startsWith('lead:'))
+    || evidence[0]
+  if (!primary) throw new Error('briefing_evidence_unavailable')
+
+  return normalizeLeadBriefing({
+    situation: `Verified CRM record (${primary.label}): ${primary.summary}`.slice(0, 1_200),
+    motivation: 'The current CRM evidence does not establish a verified seller motivation. Confirm why the seller is considering a sale, their desired outcome, and their timing before relying on an inferred motive.',
+    strategy: 'Review the cited CRM record before contact. Use the next human conversation to confirm motivation, timeline, decision makers, property condition, and price expectations; do not change the record or make a commitment from this fallback briefing alone.',
+    confidence: 'low',
+    evidenceIds: [primary.id],
+  }, evidence)
+}
+
 export function leadBriefingSources(briefing: LeadBriefing, evidence: LeadBriefingEvidence[]): AssistantSource[] {
   const selected = new Set(briefing.evidenceIds)
   return evidence.filter((item) => selected.has(item.id)).map((item) => ({
