@@ -373,8 +373,8 @@
       "crons": [
         {
           "path": "/api/cron/google-ads-reporting-sync",
-          "schedule": "*/10 * * * *",
-          "highFrequencyReason": "Keep campaign performance current enough for the live marketing dashboard while avoiding per-page polling."
+          "schedule": "0 * * * *",
+          "highFrequencyReason": "Refresh campaign performance hourly without spending production capacity on near-real-time polling."
         },
         {
           "path": "/api/cron/google-ads-missed-calls",
@@ -425,8 +425,8 @@
       "environment": ["MOJO_USERNAME", "MOJO_PASSWORD"],
       "crons": [
         { "path": "/api/cron/process-mojo-queue", "schedule": "*/15 * * * *" },
-        { "path": "/api/cron/sync-mojo-emails", "schedule": "*/15 13-22 * * 1-5" },
-        { "path": "/api/admin/mojo-health", "schedule": "*/15 13-22 * * 1-5" }
+        { "path": "/api/cron/sync-mojo-emails", "schedule": "0 13-22 * * 1-5" },
+        { "path": "/api/admin/mojo-health", "schedule": "5 13-22 * * 1-5" }
       ]
     },
     {
