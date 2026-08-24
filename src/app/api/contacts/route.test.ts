@@ -79,6 +79,7 @@ describe('contacts GET', () => {
         primary_next_action_id: null, primary_next_action_title: null,
         primary_next_action_due_at: null, primary_next_action_owner: null,
         first_outbound_at: null, outreach_status: 'unattempted', manifest: {},
+        entity_authority: 'canonical_entities',
       }],
       totalCount: 1,
       hasMore: false,
@@ -94,7 +95,11 @@ describe('contacts GET', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(payload).toMatchObject({
-      items: [expect.objectContaining({ id: '00000000-0000-4000-8000-000000000001', score: 81 })],
+      items: [expect.objectContaining({
+        id: '00000000-0000-4000-8000-000000000001',
+        score: 81,
+        entityAuthority: 'canonical_entities',
+      })],
       counts: { new: 1, all: 1 },
       pageInfo: { limit: 10, total: 1, hasMore: false, nextCursor: null },
     })
