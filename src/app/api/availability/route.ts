@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { centralSlotDateTime } from '@/lib/server/appointment-time'
 import { supabase } from '@/lib/supabase-lazy'
 
 const corsHeaders = {
@@ -76,11 +77,7 @@ export async function GET(req: NextRequest) {
         const time = formatTime12h(h, m)
         const slotTime = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:00`
         
-        // Determine CT offset (CDT = -05:00, CST = -06:00)
-        // Use a rough check: CDT is Mar-Nov
-        const month = dateInCT.getMonth() + 1
-        const offset = (month >= 3 && month <= 10) ? '-05:00' : '-06:00'
-        const datetime = `${dateStr}T${slotTime}${offset}`
+        const datetime = centralSlotDateTime(dateStr, slotTime)
 
         allSlots.push({ time, datetime, slot_time: slotTime })
       }

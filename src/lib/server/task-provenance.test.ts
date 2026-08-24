@@ -93,11 +93,12 @@ describe('task provenance census', () => {
 
   it('prevents the website booking audit row from becoming another authoritative task', () => {
     const route = readFileSync('src/app/api/book/route.ts', 'utf8')
-    const marker = 'Call booked via /call page'
+    const marker = 'Call appointment scheduled for'
     const start = route.lastIndexOf("await supabase.from('lead_activities').insert({", route.indexOf(marker))
     const block = route.slice(start, route.indexOf('})', route.indexOf(marker)) + 2)
-    expect(block).toContain("activity_type: 'status_change'")
-    expect(block).toContain("source: 'website_booking_event'")
+    expect(block).toContain("activity_type: 'appointment'")
+    expect(block).toContain('appointment_id: booking.appointmentId')
+    expect(block).toContain('booking_id: booking.bookingId')
     expect(block).not.toContain("activity_type: 'task'")
   })
 

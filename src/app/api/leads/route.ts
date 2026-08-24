@@ -621,75 +621,15 @@ export async function PATCH(req: NextRequest) {
       fields.opportunity_score = typeof fields.opportunity_score === 'number' ? fields.opportunity_score : 0
     }
 
-    // CRITICAL: Handle appointment_set disposition → manifest write
+    // A disposition is not an appointment. The old route invented tomorrow's
+    // date and wrote it to Manifest, producing false calendar records. Require
+    // the purpose-built appointment command with an explicit date and time.
     if (activity?.disposition === 'appointment_set') {
-      const { updateManifestAndCascade, ensureManifestExists } = await import('@/lib/manifest-sync')
-      const { checkAutoAdvance } = await import('@/lib/pipeline-auto-advance')
-      const { randomUUID } = await import('crypto')
-
-      // 0. Ensure manifest exists
-      await ensureManifestExists(id)
-
-      // 1. Update manifest with appointment object
-      await updateManifestAndCascade(id, (manifest) => {
-        // Create appointment object with all required fields
-        manifest.pipeline.appointment = {
-          appointmentId: randomUUID(),
-          type: 'phone_call', // Default from disposition - can be changed via modal
-          scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Default: tomorrow same time
-          createdAt: new Date().toISOString(),
-          status: 'scheduled',
-          confirmationCount: 0,
-          lastSellerResponse: null,
-          ghostRiskScore: 0,
-          ghostProtocolActive: false,
-          reminderAutomationEnabled: true,
-          reminderAutomationEnabledAt: new Date().toISOString(),
-          reminderAutomationSource: 'call_disposition',
-          automationLog: [],
-          assignedTo: activityAgentId,
-          address: null,
-          notes: activity.notes || null,
-        }
-
-        // Mark briefing as stale
-        if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-        manifest.ariIntelligence.briefingStale = true
-
-        // Add to audit trail
-        if (!manifest.auditTrail) manifest.auditTrail = []
-        manifest.auditTrail.push({
-          timestamp: new Date().toISOString(),
-          agent: 'disposition:appointment_set',
-          action: 'appointment_created',
-          details: {
-            source: 'call_disposition',
-            notes: activity.notes,
-          },
-        })
-      }, 'disposition:appointment_set')
-
-      // 2. Fire appointment_set auto-advance trigger
-      await checkAutoAdvance(id, 'appointment_set')
-
-      // 3. Log to lead_activities for timeline/calendar display
-      const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-      await supabase.from('lead_activities').insert({
-        lead_id: id,
-        activity_type: 'appointment',
-        description: `Appointment scheduled during call${activity.notes ? ': ' + activity.notes : ''}`,
-        agent: activityAgent,
-        metadata: {
-          source: 'call_disposition',
-          disposition: activity.disposition,
-          scheduled_at: scheduledAt,
-          due_date: scheduledAt, // Calendar reads due_date
-          status: 'scheduled',
-        },
-      })
-
-      // Eager briefing regen for appointment_set
-      regenerateBriefing(id, 'appointment_set').catch(() => {})
+      return NextResponse.json({
+        success: false,
+        code: 'appointment_details_required',
+        error: 'Choose the appointment date, time, type, and owner before saving.',
+      }, { status: 409, headers: corsHeaders })
     } else if (activity) {
       // Skip lead_activities insert for notes (already inserted by frontend)
       const isNoteOnly = activity.disposition === 'note_added' || activity.type === 'note'
