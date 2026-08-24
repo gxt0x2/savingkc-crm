@@ -43,20 +43,12 @@ function database(
     { data: null, error: null },
   ],
   primary: { data: { work_item_key: string } | null; error: { message: string } | null } = { data: null, error: null },
-  assignment: {
-    data: { eventId: string | null; leadId: string; owner: string; applied: boolean; replayed: boolean }
-    error: { message: string; code?: string } | null
-  } = {
-    data: { eventId: 'lifecycle-event-1', leadId: LEAD_ID, owner: 'Acquisitions', applied: true, replayed: false },
-    error: null,
-  },
 ) {
   const maybeSingle = vi.fn()
   for (const result of lookups) maybeSingle.mockResolvedValueOnce(result)
   const primaryMaybeSingle = vi.fn().mockResolvedValue(primary)
   const statusSingle = vi.fn().mockResolvedValue({ data: { id: 'status-activity-1' }, error: null })
   const insert = vi.fn(() => ({ select: () => ({ single: statusSingle }) }))
-  const rpc = vi.fn().mockResolvedValue(assignment)
   const from = vi.fn((table: string) => table === 'work_items'
     ? {
         select: () => ({
@@ -81,7 +73,7 @@ function database(
         }),
         insert,
       })
-  return { db: { from, rpc } as unknown as SupabaseClient, from, rpc, insert, statusSingle }
+  return { db: { from } as unknown as SupabaseClient, from, insert, statusSingle }
 }
 
 describe('seller intake governed workflow action', () => {
@@ -121,7 +113,7 @@ describe('seller intake governed workflow action', () => {
   })
 
   it('creates one canonical work item with workflow provenance, then records the intake event', async () => {
-    const { db, rpc, insert } = database()
+    const { db, insert } = database()
     const result = await executeSellerIntakeWorkflow({
       runId: RUN_ID,
       workflowVersion: 2,
@@ -135,24 +127,13 @@ describe('seller intake governed workflow action', () => {
       created: true,
       leadId: LEAD_ID,
       workItemKey: 'activity:task-1',
-      owner: 'Acquisitions',
-      ownerAssignmentApplied: true,
-      lifecycleEventId: 'lifecycle-event-1',
       statusActivityId: 'status-activity-1',
     })
-    expect(rpc).toHaveBeenCalledWith('crm_assign_owner_if_unassigned_v1', expect.objectContaining({
-      target_lead_id: LEAD_ID,
-      target_command_id: RUN_ID,
-      target_owner: 'Acquisitions',
-      target_actor_email: 'automation@savingkc.com',
-      target_actor_name: 'SavingKC Operations',
-    }))
     expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: `${RUN_ID}:seller-intake-primary`,
       leadId: LEAD_ID,
       kind: 'task',
       title: 'Make first contact',
-      assignedTo: 'Acquisitions',
       primaryNextAction: true,
       provenance: expect.objectContaining({
         event_backed: true,
@@ -168,16 +149,13 @@ describe('seller intake governed workflow action', () => {
         workflow_run_id: RUN_ID,
         conversation_attention: 'needs_reply',
         acknowledgement_allowed: true,
-        owner_name: 'Acquisitions',
-        owner_assignment_applied: true,
-        owner_assignment_event_id: 'lifecycle-event-1',
       }),
     }))
     expect(insert).not.toHaveBeenCalledWith(expect.objectContaining({ activity_type: 'task' }))
   })
 
   it('recognizes a legacy deterministic event and does not duplicate its task', async () => {
-    const { db, rpc, insert } = database([
+    const { db, insert } = database([
       { data: null, error: null },
       { data: { id: 'legacy-status-1' }, error: null },
     ])
@@ -192,7 +170,6 @@ describe('seller intake governed workflow action', () => {
 
     expect(result).toMatchObject({ created: false, legacyCompatible: true, statusActivityId: 'legacy-status-1' })
     expect(mocks.createWorkItem).not.toHaveBeenCalled()
-    expect(rpc).not.toHaveBeenCalled()
     expect(insert).not.toHaveBeenCalled()
   })
 
@@ -213,27 +190,5 @@ describe('seller intake governed workflow action', () => {
     expect(result).toMatchObject({ created: false, workItemKey: 'activity:existing-primary' })
     expect(mocks.createWorkItem).not.toHaveBeenCalled()
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ activity_type: 'status_change' }))
-  })
-
-  it('preserves an existing human owner and assigns the first action to that owner', async () => {
-    const { db } = database(undefined, undefined, {
-      data: { eventId: null, leadId: LEAD_ID, owner: 'Casey', applied: false, replayed: false },
-      error: null,
-    })
-
-    const result = await executeSellerIntakeWorkflow({
-      runId: RUN_ID,
-      workflowVersion: 2,
-      definitionHash: 'a'.repeat(64),
-      triggerKind: 'lead_form_submitted',
-      requestedBy: 'SavingKC Operations',
-      payload: payload(),
-    }, db)
-
-    expect(result).toMatchObject({ owner: 'Casey', ownerAssignmentApplied: false })
-    expect(mocks.createWorkItem).toHaveBeenCalledWith(
-      expect.objectContaining({ assignedTo: 'Casey' }),
-      db,
-    )
   })
 })

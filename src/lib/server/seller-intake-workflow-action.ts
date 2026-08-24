@@ -3,7 +3,6 @@ import {
   SELLER_INTAKE_WORKFLOW_ID,
   SELLER_INTAKE_WORKFLOW_VERSION,
 } from '@/lib/operating-model/seller-intake'
-import { assignCrmOwnerIfUnassigned } from '@/lib/server/crm-lifecycle'
 import { createWorkItem, WorkItemError } from '@/lib/server/work-items'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -144,16 +143,6 @@ export async function executeSellerIntakeWorkflow(input: {
     }
   }
 
-  const assignment = await assignCrmOwnerIfUnassigned({
-    leadId: payload.leadId,
-    commandId: input.runId,
-    owner: 'Acquisitions',
-    reason: 'Verified seller form submitted',
-    evidenceReference: `workflow-run:${input.runId}`,
-    actorEmail: 'automation@savingkc.com',
-    actorName: input.requestedBy,
-  }, db)
-
   let workItemKey = await findExistingPrimaryWorkItem(db, payload.leadId)
   let workItemCreated = false
   if (!workItemKey) {
@@ -166,7 +155,7 @@ export async function executeSellerIntakeWorkflow(input: {
         title: 'Make first contact',
         notes: 'Respond to the new seller inquiry and record the factual outcome.',
         dueAt: payload.dueAt,
-        assignedTo: assignment.owner,
+        assignedTo: 'Acquisitions',
         department: 'acquisitions',
         role: 'setter',
         priority: 'urgent',
@@ -214,9 +203,9 @@ export async function executeSellerIntakeWorkflow(input: {
         form_source: payload.formSource,
         record_kind: 'opportunity',
         opportunity_stage: 'new',
-        owner_name: assignment.owner,
-        owner_assignment_applied: assignment.applied,
-        owner_assignment_event_id: assignment.eventId,
+        owner_kind: 'team',
+        owner_id: 'acquisitions',
+        owner_name: 'Acquisitions',
         identity_keys: payload.identityKeys,
         conversation_attention: 'needs_reply',
         acknowledgement_channel: 'sms',
@@ -235,9 +224,6 @@ export async function executeSellerIntakeWorkflow(input: {
     created: workItemCreated,
     leadId: payload.leadId,
     workItemKey,
-    owner: assignment.owner,
-    ownerAssignmentApplied: assignment.applied,
-    lifecycleEventId: assignment.eventId,
     statusActivityId: statusActivity.id,
   }
 }

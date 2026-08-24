@@ -1,4 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import type { DealStage } from '@/types/pipeline'
 
@@ -29,14 +28,6 @@ export type CrmLifecycleResult = {
   fromDepartment?: string
   toDepartment?: string
   handoffCreated?: boolean
-  replayed: boolean
-}
-
-export type CrmOwnerAssignmentResult = {
-  eventId: string | null
-  leadId: string
-  owner: string
-  applied: boolean
   replayed: boolean
 }
 
@@ -115,9 +106,9 @@ export async function applyCrmLifecycleCommand(input: {
   evidenceReference: string | null
   actorEmail: string
   actorName: string
-}, db: SupabaseClient = supabaseAdmin()): Promise<CrmLifecycleResult> {
+}): Promise<CrmLifecycleResult> {
   const fields = input.stage ? lifecycleFieldsForStage(input.stage) : { classification: null, priority: null }
-  const { data, error } = await db.rpc('crm_apply_lifecycle_command_v1', {
+  const { data, error } = await supabaseAdmin().rpc('crm_apply_lifecycle_command_v1', {
     target_lead_id: input.leadId,
     target_command_id: input.commandId,
     target_command_type: input.commandType,
@@ -147,47 +138,4 @@ export async function applyCrmLifecycleCommand(input: {
     throw new CrmLifecycleError('Lifecycle service returned an invalid result', 'unavailable')
   }
   return data as CrmLifecycleResult
-}
-
-export async function assignCrmOwnerIfUnassigned(input: {
-  leadId: string
-  commandId: string
-  owner: string
-  reason: string
-  evidenceReference: string
-  actorEmail: string
-  actorName: string
-}, db: SupabaseClient = supabaseAdmin()): Promise<CrmOwnerAssignmentResult> {
-  const { data, error } = await db.rpc('crm_assign_owner_if_unassigned_v1', {
-    target_lead_id: input.leadId,
-    target_command_id: input.commandId,
-    target_owner: input.owner,
-    target_reason: input.reason,
-    target_evidence_reference: input.evidenceReference,
-    target_actor_email: input.actorEmail,
-    target_actor_name: input.actorName,
-  })
-  if (error) {
-    const message = error.message ?? 'Owner assignment failed'
-    if (message.includes('lead_not_found')) throw new CrmLifecycleError('Contact not found', 'not_found')
-    if (message.includes('owner_required') || message.includes('actor_required') || message.includes('command_id_required')) {
-      throw new CrmLifecycleError('Owner assignment is invalid', 'invalid')
-    }
-    if (error.code === '23505') throw new CrmLifecycleError('Owner assignment conflicted with another update', 'conflict')
-    throw new CrmLifecycleError('Owner assignment service is unavailable', 'unavailable')
-  }
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new CrmLifecycleError('Owner assignment service returned an invalid result', 'unavailable')
-  }
-  const result = data as Partial<CrmOwnerAssignmentResult>
-  if (
-    typeof result.leadId !== 'string'
-    || typeof result.owner !== 'string'
-    || typeof result.applied !== 'boolean'
-    || typeof result.replayed !== 'boolean'
-    || (result.eventId !== null && typeof result.eventId !== 'string')
-  ) {
-    throw new CrmLifecycleError('Owner assignment service returned an invalid result', 'unavailable')
-  }
-  return result as CrmOwnerAssignmentResult
 }

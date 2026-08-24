@@ -147,7 +147,6 @@ describe('task provenance census', () => {
     expect(intake).not.toMatch(/activity_type\s*:\s*['"]task['"]/)
     expect(intake).not.toContain(".from('lead_activities')")
     expect(action).toContain('createWorkItem({')
-    expect(action).toContain('assignCrmOwnerIfUnassigned({')
     expect(action).toContain("activity_type: 'status_change'")
     expect(action).not.toMatch(/activity_type\s*:\s*['"]task['"]/)
     expect(action).toContain("event_type: 'lead_form_submitted'")
