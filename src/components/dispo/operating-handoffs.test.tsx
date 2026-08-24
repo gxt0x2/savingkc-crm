@@ -40,6 +40,8 @@ describe('seller-to-close operator handoffs', () => {
 
     render(<TcHandoffStrip items={[]} />)
 
+    expect(screen.getByRole('heading', { name: 'Executed assignments awaiting TC acceptance' })).toBeTruthy()
+
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       '/api/department-handoffs?department=transaction_coordination&status=pending',
       { cache: 'no-store' },

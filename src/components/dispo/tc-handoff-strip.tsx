@@ -17,7 +17,7 @@ export function TcHandoffStrip({ items }: { items: MetricItem[] }) {
       <DepartmentHandoffQueue
         department="transaction_coordination"
         status="pending"
-        title="Executed assignments waiting for Closing Coordination"
+        title="Executed assignments awaiting TC acceptance"
       />
     </>
   )
