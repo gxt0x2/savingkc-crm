@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { isCurrentUserAdmin } from '@/lib/auth/admin'
-import { buildMyDay, normalizeMyDayMonth, type MyDayActivity, type MyDayAgentStat, type MyDayAppointment, type MyDayData, type MyDayGoalSet, type MyDayLead } from '@/lib/my-day'
+import { buildMyDay, normalizeMyDayMonth, type MyDayActivity, type MyDayAgentStat, type MyDayAppointment, type MyDayData, type MyDayGoalSet, type MyDayLead, type MyDayPerformanceRow } from '@/lib/my-day'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 
@@ -39,7 +39,7 @@ export async function loadCaseyMyDay(monthValue?: string | null, now = new Date(
   activityEnd.setUTCDate(activityEnd.getUTCDate() + 1)
   const commitmentEnd = new Date(now.getTime() + 14 * 86_400_000).toISOString()
 
-  const [statsResult, leadsResult, rolesResult] = await Promise.all([
+  const [statsResult, performanceResult, leadsResult, rolesResult] = await Promise.all([
     db
       .from('agent_daily_stats')
       .select('date, calls_made, meaningful_conversations, followups_completed, followups_missed, metadata')
@@ -47,6 +47,13 @@ export async function loadCaseyMyDay(monthValue?: string | null, now = new Date(
       .gte('date', monthStart)
       .lte('date', monthEnd.slice(0, 10))
       .order('date', { ascending: true }),
+    db
+      .from('mojo_agent_daily_performance')
+      .select('metric_date, dialing_seconds, in_progress_seconds, calls, contacts, leads, appointments, source_fetched_at')
+      .eq('agent_key', 'casey')
+      .gte('metric_date', monthStart)
+      .lte('metric_date', monthEnd.slice(0, 10))
+      .order('metric_date', { ascending: true }),
     db
       .from('leads')
       .select('id, full_name, phone, property_address, city, source, station, priority, assigned_agent, created_at, updated_at')
@@ -113,6 +120,7 @@ export async function loadCaseyMyDay(monthValue?: string | null, now = new Date(
     month,
     now,
     stats: statsResult.error ? [] : (statsResult.data ?? []) as MyDayAgentStat[],
+    performance: performanceResult.error ? [] : (performanceResult.data ?? []) as MyDayPerformanceRow[],
     leads,
     activities: (activityResult.data ?? []) as MyDayActivity[],
     tasks: dedupeActivities([
@@ -122,6 +130,7 @@ export async function loadCaseyMyDay(monthValue?: string | null, now = new Date(
     appointments: appointmentsResult.error ? [] : (appointmentsResult.data ?? []) as MyDayAppointment[],
     goals,
     availability: {
+      mojoPerformance: !performanceResult.error,
       agentStats: !statsResult.error,
       appointments: !appointmentsResult.error,
       habits: false,

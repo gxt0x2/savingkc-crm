@@ -371,12 +371,12 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
     id: 'mojo-call-sync',
     name: 'Mojo Call Sync',
-    description: 'Supervises one authenticated Mojo fetcher, then processes queued call evidence through explicit field ownership and freshness controls.',
+    description: 'Supervises one authenticated Mojo fetcher, stores authoritative daily KPI snapshots, then processes filtered call evidence through explicit field ownership and freshness controls.',
     category: 'data_sync', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
     trigger: { type: 'scheduled', schedule: 'Every 15 minutes' },
-    actions: [{ type: 'execute', label: 'Fetch provider evidence with one supervised runner' }, { type: 'execute', label: 'Claim queued Mojo records' }, { type: 'normalize_identity' }, { type: 'execute', label: 'Persist approved call outcome and lead state' }],
-    implementation: implementation(['/api/cron/process-mojo-queue', '/api/mojo/sync', 'scripts/mojo-supervised-runner.mjs', 'src/lib/server/mojo-call-import.ts'], { execution: 'worker', schedule: '*/15 * * * *' }),
-    version: 3, lastRunAt: null,
+    actions: [{ type: 'execute', label: 'Fetch authoritative provider KPI totals' }, { type: 'execute', label: 'Upsert the daily performance snapshot' }, { type: 'execute', label: 'Fetch filtered contact evidence' }, { type: 'execute', label: 'Claim queued Mojo records' }, { type: 'normalize_identity' }, { type: 'execute', label: 'Persist approved call outcome and lead state' }],
+    implementation: implementation(['/api/admin/mojo-performance', '/api/cron/process-mojo-queue', '/api/mojo/sync', 'scripts/mojo-supervised-runner.mjs', 'scripts/mojo-kpi-snapshot.mjs', 'src/lib/server/mojo-call-import.ts'], { execution: 'worker', schedule: '*/15 * * * *' }),
+    version: 4, lastRunAt: null,
   },
   {
     id: 'gmail-communication-sync',

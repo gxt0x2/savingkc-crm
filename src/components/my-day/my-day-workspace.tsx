@@ -86,6 +86,27 @@ function metricValue(value: number | null) {
   return value === null ? '—' : value.toLocaleString()
 }
 
+function dialingTime(seconds: number | null) {
+  if (seconds === null) return 'Dialing time unavailable'
+  const totalMinutes = Math.floor(seconds / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours} hr ${String(minutes).padStart(2, '0')} min dialing`
+}
+
+function sourceFreshness(value: string | null) {
+  if (!value) return 'Update time unavailable'
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return 'Update time unavailable'
+  return `Updated ${new Intl.DateTimeFormat('en-US', {
+    timeZone: MY_DAY_TIME_ZONE,
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)}`
+}
+
 function ordinalDay(day: number) {
   const remainder = day % 100
   if (remainder >= 11 && remainder <= 13) return `${day}th`
@@ -100,10 +121,20 @@ function formatWeekRange(endValue: string) {
   return `${month(start)} ${ordinalDay(start.getUTCDate())} – ${month(end)} ${ordinalDay(end.getUTCDate())}`
 }
 
-function FunnelCard({ metrics }: { metrics: MyDayMetric[] }) {
+function FunnelCard({ data }: { data: MyDayData }) {
+  const { metrics, performance } = { metrics: data.funnel, performance: data.performance }
   return (
     <section aria-labelledby="conversion-funnel-title" className="crm-panel rounded-xl px-4 py-4 sm:px-5">
-      <h2 id="conversion-funnel-title" className="text-[22px] font-black tracking-[-0.02em]">Conversion Funnel</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="conversion-funnel-title" className="text-[22px] font-black tracking-[-0.02em]">Conversion Funnel</h2>
+        {performance.status === 'available' ? (
+          <p className="text-[11px] font-bold text-[var(--crm-text-muted)]">Mojo source · {dialingTime(performance.dialingSeconds)} · {sourceFreshness(performance.sourceFetchedAt)}</p>
+        ) : performance.status === 'partial' ? (
+          <p className="text-[11px] font-bold text-[var(--crm-warning)]">Mojo performance incomplete · totals are withheld</p>
+        ) : (
+          <p className="text-[11px] font-bold text-[var(--crm-danger)]">Mojo performance unavailable · call totals are not inferred</p>
+        )}
+      </div>
       <div className="mt-3 overflow-x-auto">
         <div className="grid min-w-[1080px] grid-cols-7 xl:min-w-0">
           {metrics.map((metric, index) => {
@@ -317,7 +348,7 @@ export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initia
         </div>
       </header>
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void changeMonth(data.month, true)} className="underline">Retry</button></div> : null}
-      <FunnelCard metrics={data.funnel} />
+      <FunnelCard data={data} />
       <WeeklySnapshot data={data} />
       {canReviewCalls ? <MyDayCallReview onReviewActiveChange={setScorecardActive} /> : null}
       <CaseyAndonQueue />

@@ -19,6 +19,8 @@
     "mojo:session:manual": "node scripts/mojo-extract-session.mjs --manual",
     "mojo:refresh": "node scripts/mojo-cron-runner.mjs refresh",
     "mojo:reconcile": "tsx scripts/mojo-reconcile-backfill.mts",
+    "mojo:performance:reconcile": "tsx scripts/mojo-performance-reconcile.mts",
+    "mojo:performance:apply-reviewed": "tsx scripts/mojo-performance-apply-reviewed.mts",
     "mojo:apply-reviewed": "tsx scripts/mojo-apply-reviewed-backfill.mts",
     "mojo:supervised": "node scripts/mojo-supervised-runner.mjs",
     "mojo:email": "node scripts/mojo-email-sync.mjs",

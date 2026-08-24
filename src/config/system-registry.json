@@ -287,7 +287,7 @@
       "status": "active",
       "routes": ["/reports/acquisitions", "/my-day"],
       "apiRoutes": ["/api/my-day", "/api/marketing/call-recordings"],
-      "tables": ["leads", "lead_stage_history", "offers", "agent_daily_stats"],
+      "tables": ["leads", "lead_stage_history", "offers", "agent_daily_stats", "mojo_agent_daily_performance"],
       "environment": ["GROQ_API_KEY"]
     },
     {
@@ -450,9 +450,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/mojo/sync", "/api/mojo/reprocess", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/admin/mojo-health"],
-      "tables": ["mojo_call_queue", "crm_mojo_call_events", "agent_daily_stats", "system_config", "leads", "lead_activities", "appointments", "work_items", "crm_lifecycle_events", "sms_opt_outs", "system_workers"],
-      "environment": ["MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SUPERVISED_TIMEOUT_MS"],
+      "apiRoutes": ["/api/mojo/sync", "/api/mojo/reprocess", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/admin/mojo-health", "/api/admin/mojo-performance"],
+      "tables": ["mojo_call_queue", "crm_mojo_call_events", "mojo_agent_daily_performance", "agent_daily_stats", "system_config", "leads", "lead_activities", "appointments", "work_items", "crm_lifecycle_events", "sms_opt_outs", "system_workers"],
+      "environment": ["MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SUPERVISED_TIMEOUT_MS", "CRM_PERFORMANCE_URL"],
       "crons": [
         { "path": "/api/cron/process-mojo-queue", "schedule": "*/15 * * * *" },
         { "path": "/api/cron/sync-mojo-emails", "schedule": "*/15 13-22 * * 1-5" },
