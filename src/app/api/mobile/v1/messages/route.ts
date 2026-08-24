@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
-import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -79,7 +78,6 @@ export async function POST(req: NextRequest) {
     })
     if (activityError) throw new Error(activityError.message)
     checkAutoAdvance(leadId, 'outbound_contact').catch((error) => console.error('[mobile-message] auto advance failed', error))
-    onCommunicationEvent(leadId, { type: 'email', content: body }).catch((error) => console.error('[mobile-message] manifest sync failed', error))
     return NextResponse.json({ success: true, channel, sent }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
     const status = error instanceof MobileAuthError ? error.status : 500

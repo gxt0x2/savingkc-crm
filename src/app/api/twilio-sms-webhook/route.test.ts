@@ -10,9 +10,6 @@ const mocks = vi.hoisted(() => ({
   handleOptIn: vi.fn(),
   isStopKeyword: vi.fn(),
   isStartKeyword: vi.fn(),
-  onCommunicationEvent: vi.fn(),
-  ensureManifestExists: vi.fn(),
-  updateManifestAndCascade: vi.fn(),
   regenerateBriefing: vi.fn(),
   sendPushToAgents: vi.fn(),
   lookupProspectByPhone: vi.fn(),
@@ -51,12 +48,6 @@ vi.mock('@/lib/sms-opt-out', () => ({
 
 vi.mock('@/lib/sms-consent-audit', () => ({
   processInboundSmsConsent: mocks.processInboundSmsConsent,
-}))
-
-vi.mock('@/lib/manifest-sync', () => ({
-  onCommunicationEvent: mocks.onCommunicationEvent,
-  ensureManifestExists: mocks.ensureManifestExists,
-  updateManifestAndCascade: mocks.updateManifestAndCascade,
 }))
 
 vi.mock('@/lib/briefing-regen', () => ({
@@ -164,9 +155,6 @@ describe('twilio SMS webhook seller responses', () => {
     ))
     mocks.isStopKeyword.mockImplementation((value: string) => value.trim().toUpperCase() === 'STOP')
     mocks.isStartKeyword.mockImplementation((value: string) => value.trim().toUpperCase() === 'START')
-    mocks.onCommunicationEvent.mockResolvedValue(undefined)
-    mocks.ensureManifestExists.mockResolvedValue(undefined)
-    mocks.updateManifestAndCascade.mockResolvedValue(true)
     mocks.regenerateBriefing.mockResolvedValue(undefined)
     mocks.sendPushToAgents.mockResolvedValue(1)
     mocks.lookupProspectByPhone.mockResolvedValue([])

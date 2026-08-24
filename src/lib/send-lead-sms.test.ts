@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   logSmsSend: vi.fn(),
   safeSendSMS: vi.fn(),
   checkAutoAdvance: vi.fn(),
-  onCommunicationEvent: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -22,7 +21,6 @@ vi.mock('@/lib/sms-dedup', () => ({
 }))
 vi.mock('@/lib/safe-communications', () => ({ safeSendSMS: mocks.safeSendSMS }))
 vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.checkAutoAdvance }))
-vi.mock('@/lib/manifest-sync', () => ({ onCommunicationEvent: mocks.onCommunicationEvent }))
 
 import { resolveSmsFromNumber, sendLeadSms } from './send-lead-sms'
 
@@ -41,7 +39,6 @@ describe('conversation SMS sender resolution and persistence', () => {
       senderMismatch: false,
     })
     mocks.checkAutoAdvance.mockResolvedValue(undefined)
-    mocks.onCommunicationEvent.mockResolvedValue(undefined)
     mocks.insert.mockResolvedValue({ error: null })
     mocks.from.mockReturnValue({ insert: mocks.insert })
   })

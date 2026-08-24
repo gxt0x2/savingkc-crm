@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
   context: vi.fn(),
   evidence: vi.fn(),
-  communication: vi.fn(),
   advance: vi.fn(),
   CallLogContextError: class CallLogContextError extends Error {
     constructor(message: string, readonly status = 409) {
@@ -23,7 +22,6 @@ vi.mock('@/lib/server/call-log-evidence', () => ({ insertCallLogEvidenceOnce: mo
 vi.mock('@/lib/telephony/agent-identity', () => ({
   resolveAgentTelephonyProfile: () => ({ identity: 'agent:casey' }),
 }))
-vi.mock('@/lib/manifest-sync', () => ({ onCommunicationEvent: mocks.communication }))
 vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.advance }))
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: {
@@ -51,7 +49,6 @@ describe('call log trust boundary', () => {
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
     mocks.context.mockResolvedValue({ leadId: 'lead-1', leadName: 'Seller', heir: null })
     mocks.evidence.mockResolvedValue({ id: 'activity-1', created: true })
-    mocks.communication.mockResolvedValue(undefined)
     mocks.advance.mockResolvedValue(undefined)
   })
 

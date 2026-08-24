@@ -9,7 +9,6 @@ import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
-import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { supabase } from '@/lib/supabase-lazy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { isAllowedSmsSender, normalizeTwilioNumber } from '@/lib/twilio-numbers'
@@ -164,7 +163,6 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
 
   if (leadId) {
     checkAutoAdvance(leadId, 'outbound_contact').catch((err) => console.error('[AUTO-ADVANCE] Failed:', err))
-    onCommunicationEvent(leadId, { type: 'outbound_sms', content: body }).catch((err) => console.error('[MANIFEST-SYNC] Failed:', err))
   }
 
   if (persistenceError) {

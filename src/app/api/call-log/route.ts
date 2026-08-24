@@ -6,7 +6,6 @@ import { resolveCallLogContext, CallLogContextError } from '@/lib/server/call-lo
 import { buildCallLogCommand } from '@/lib/server/call-log-command'
 import { insertCallLogEvidenceOnce } from '@/lib/server/call-log-evidence'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
-import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 export const dynamic = 'force-dynamic'
@@ -59,10 +58,8 @@ export async function POST(req: Request) {
     const heirLabel = context.heir ? `${context.heir.name || 'heir'} (${context.heir.relationship || 'relative'})` : null
     const source = isHeirCall ? 'heir_dialer' : 'telephony_bar'
     const action = command.event === 'started' ? 'call_started' : 'call_ended'
-    let telemetryCreated = false
-
     if (command.event === 'started') {
-      const telemetry = await insertCallLogEvidenceOnce({
+      await insertCallLogEvidenceOnce({
         leadId: context.leadId,
         source,
         event: action,
@@ -91,9 +88,8 @@ export async function POST(req: Request) {
           },
         },
       })
-      telemetryCreated = telemetry.created
     } else {
-      const telemetry = await insertCallLogEvidenceOnce({
+      await insertCallLogEvidenceOnce({
         leadId: context.leadId,
         source,
         event: action,
@@ -127,15 +123,6 @@ export async function POST(req: Request) {
           },
         },
       })
-      telemetryCreated = telemetry.created
-    }
-
-    // Log outbound attempt to the manifest immediately, but do not treat a
-    // browser-initiated dial as a true contact until a final connected outcome
-    // is known. The Twilio Voice SDK accept event only proves the browser leg
-    // opened; it does not prove the seller answered.
-    if (telemetryCreated && context.leadId && command.event === 'started') {
-      onCommunicationEvent(context.leadId, { type: 'outbound_call' }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
     }
 
     // On call end: refresh denormalized last-call snapshot on the lead row
