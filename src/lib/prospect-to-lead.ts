@@ -1,6 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { buildManifest } from './manifest-builder'
-import { onCommunicationEvent } from './manifest-sync'
 import type { ProspectMatch } from './prospect-lookup'
 
 function getSupabase() {
@@ -12,7 +10,8 @@ function getSupabase() {
 
 /**
  * Create an enriched lead from a prospect match.
- * Pre-fills property, tax, owner data + builds a full manifest.
+ * Pre-fills the canonical contact fields and preserves the linked prospect as
+ * the source of truth for property, tax, owner, and source-list evidence.
  * Returns the lead ID or null if creation failed.
  */
 export async function createEnrichedLeadFromProspect(
@@ -61,8 +60,10 @@ export async function createEnrichedLeadFromProspect(
     email: match.email_1 || null,
     property_address: match.situs_street || match.situs_address || null,
     city: city || null,
+    state: state || null,
     zip: zip || null,
     county: match.county || null,
+    parcel_id: match.parcel_id || null,
     source,
     station: 'new',
     priority,
@@ -77,110 +78,27 @@ export async function createEnrichedLeadFromProspect(
     .update({ lead_id: leadId })
     .eq('id', match.prospect_id)
 
-  // Build manifest with prospect enrichment
-  const firstName = match.owner_1_first || fullName.split(' ')[0] || 'Unknown'
-  const lastName = match.owner_1_last || fullName.split(' ').slice(1).join(' ') || undefined
-
-  const manifest = buildManifest({
-    firstName,
-    lastName,
-    phone: inboundPhone,
-    email: match.email_1 || undefined,
-    propertyAddress: match.situs_street || match.situs_address || undefined,
-    source,
-    leadId,
-    station: 'new',
-    priority,
-  })
-
-  // Enrich manifest with prospect data
-  manifest.lastUpdatedBy = 'system:prospect_import'
-  manifest.property.parcel = match.parcel_id
-
-  if (match.cumulative_due) {
-    manifest.property.taxCollector = {
-      ...manifest.property.taxCollector,
-      totalOwed: match.cumulative_due,
-      delinquentAmount: match.cumulative_due,
-      yearsDelinquent: match.earliest_delinquent_year
-        ? new Date().getFullYear() - match.earliest_delinquent_year
-        : undefined,
-    }
-  }
-
-  if (match.total_market_value) {
-    manifest.property.assessment = {
-      ...manifest.property.assessment,
-      totalValue: match.total_market_value,
-    }
-  }
-
-  if (match.occupancy_status) {
-    (manifest.property as any).occupancy = match.occupancy_status
-  }
-
-  if (!manifest.financials) manifest.financials = {}
-  if (match.zestimate) {
-    manifest.financials.arv = match.zestimate
-  }
-  if (match.cumulative_due) {
-    manifest.financials.back_taxes = match.cumulative_due
-  }
-
-  manifest.owner.deceased = match.is_deceased || false
-  manifest.owner.outOfState = !!(match.mailing_state && match.situs_state &&
-    match.mailing_state.toUpperCase() !== match.situs_state.toUpperCase())
-
-  if (match.email_1) manifest.owner.emails = [match.email_1]
-  if (match.email_2) manifest.owner.emails = [...(manifest.owner.emails || []), match.email_2]
-
-  // Situation type
-  manifest.situation.type = ['tax_delinquent']
-  if (match.is_deceased) manifest.situation.type.push('inherited')
-
-  // Opportunity flags
-  const flags: string[] = []
-  if (match.is_deceased) flags.push('deceased_owner')
-  if (match.delinquent_years_category === '3yr_plus') flags.push('3yr_tax_delinquent')
-  if (match.occupancy_status?.toLowerCase().includes('absentee')) flags.push('vacant_property')
-  if (manifest.owner.outOfState) flags.push('out_of_state_owner')
-  manifest.flags.opportunityFlags = flags
-
-  // Motivation signals
-  manifest.situation.motivation = {
-    ...manifest.situation.motivation,
-    signals: ['tax_delinquent_county_list', 'seller_called_in'],
-  }
-
-  // Audit trail
-  manifest.auditTrail.push({
-    timestamp: new Date().toISOString(),
-    agent: 'system:prospect_match',
-    action: 'enriched_from_prospect',
-    details: {
+  const { error: promotionEvidenceError } = await supabase.from('lead_activities').insert({
+    lead_id: leadId,
+    activity_type: 'status_change',
+    description: `Prospect promoted to a lead from the ${match.county} County tax list.`,
+    agent: 'System',
+    metadata: {
+      source: 'prospect_promotion',
+      prospect_id: match.prospect_id,
       parcel_id: match.parcel_id,
       county: match.county,
       cumulative_due: match.cumulative_due,
-      is_deceased: match.is_deceased,
+      earliest_delinquent_year: match.earliest_delinquent_year,
       delinquent_years_category: match.delinquent_years_category,
+      is_deceased: match.is_deceased,
+      occupancy_status: match.occupancy_status,
       phone_relationship: match.relationship,
     },
   })
-
-  // Insert manifest
-  await supabase.from('manifests').insert({
-    lead_id: leadId,
-    version: 2,
-    manifest,
-    current_station: 'new',
-    priority,
-    tier: match.delinquent_years_category === '3yr_plus' && match.is_deceased ? 'S' :
-          match.delinquent_years_category === '3yr_plus' ? 'A' : 'B',
-  })
-
-  // Fire communication event (async, non-blocking)
-  const eventType = source.includes('call') ? 'inbound_call' : 'inbound_sms'
-  onCommunicationEvent(leadId, { type: eventType as any }).catch(err => console.error('[MANIFEST] Failed:', err))
+  if (promotionEvidenceError) {
+    console.error('[prospect-to-lead] Failed to store promotion evidence:', promotionEvidenceError)
+  }
 
   return leadId
 }
