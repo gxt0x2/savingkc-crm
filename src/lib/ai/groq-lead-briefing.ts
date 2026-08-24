@@ -1,6 +1,7 @@
 import type { AssistantUsage } from '@/lib/ai/generation-store'
+import { GROQ_STRUCTURED_TEXT_MODEL } from '@/lib/ai/groq-models'
 
-export const GROQ_LEAD_BRIEFING_MODEL = 'openai/gpt-oss-120b'
+export const GROQ_LEAD_BRIEFING_MODEL = GROQ_STRUCTURED_TEXT_MODEL
 
 type GroqChatPayload = {
   choices?: Array<{

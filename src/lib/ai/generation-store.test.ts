@@ -33,13 +33,13 @@ describe('assistant generation accounting', () => {
   })
 
   it('does not invent cost for an unpriced fallback model', () => {
-    expect(estimateAssistantCostMicros('groq/llama-3.3-70b-versatile', {
+    expect(estimateAssistantCostMicros('groq/openai/gpt-oss-120b', {
       inputTokens: 100,
       outputTokens: 100,
       totalTokens: 200,
       cacheReadTokens: null,
     })).toBeNull()
-    expect(assistantPricingSnapshot('groq/llama-3.3-70b-versatile')).toMatchObject({ source: 'unpriced' })
+    expect(assistantPricingSnapshot('groq/openai/gpt-oss-120b')).toMatchObject({ source: 'unpriced' })
   })
 
   it('deduplicates valid sources and stores bounded tool provenance without outputs', () => {

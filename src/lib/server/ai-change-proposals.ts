@@ -6,7 +6,7 @@ import {
   type AiChangeProposal,
   type AiLeadField,
 } from '@/lib/ai-change-proposal'
-import type { CallAnalysisResult } from '@/lib/mojo-call-analyzer'
+import { MOJO_CALL_ANALYZER_MODEL, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 import { DialerSessionError, getDialerSession } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -94,7 +94,7 @@ export async function createCallAnalysisLeadProposal(input: {
     base_snapshot: proposal.baseSnapshot,
     payload_hash: payloadHash,
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: MOJO_CALL_ANALYZER_MODEL,
     prompt_version: 'mojo-call-analyzer-v1',
     requested_by: 'system:recording_callback',
   }
