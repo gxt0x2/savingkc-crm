@@ -134,9 +134,6 @@ export async function POST(req: Request) {
 
         // Get intelligent auto-text response using new messaging system
         const { getMissedCallResponse } = await import('@/lib/missed-call-messaging')
-        const { getAgentRouting } = await import('@/lib/agent-routing')
-
-        const routing = getAgentRouting(to || TWILIO_PHONE)
         const response = await getMissedCallResponse({
           leadId,
           leadName,
@@ -206,22 +203,6 @@ export async function POST(req: Request) {
           },
         })
 
-        // 5-min callback task assigned to the agent whose number was called
-        await supabase.from('lead_activities').insert({
-          lead_id: leadId,
-          activity_type: 'task',
-          description: `Callback: Missed call from ${leadName}`,
-          agent: 'System',
-          metadata: {
-            task_type: 'callback',
-            due_date: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-            assigned_to: routing.primary.name,
-            priority: 'critical',
-            status: 'pending',
-            source: 'twilio_missed_call',
-            call_sid: callSid,
-          }
-        })
       } else if (!leadId) {
         // ── UNKNOWN CALLER MISSED CALL ──
         let newLeadId: string | null = null

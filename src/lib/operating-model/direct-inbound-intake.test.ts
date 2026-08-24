@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { buildDirectInboundLeadSeed, buildDirectInboundQualificationTask } from './direct-inbound-intake'
+import { describe, expect, it } from 'vitest'
+import { buildDirectInboundLeadSeed } from './direct-inbound-intake'
 
 describe('direct inbound caller intake', () => {
   const input = {
@@ -19,21 +19,5 @@ describe('direct inbound caller intake', () => {
       classification: null,
       assigned_agent: 'Ernest',
     })
-  })
-
-  it('creates a dedupeable owner-specific qualification action', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-03T15:00:00.000Z'))
-    expect(buildDirectInboundQualificationTask(input)).toMatchObject({
-      activity_type: 'task',
-      metadata: {
-        source: 'direct_inbound_intake',
-        call_sid: 'CA123',
-        assigned_to: 'Ernest',
-        status: 'pending',
-        due_date: '2026-08-03T15:15:00.000Z',
-      },
-    })
-    vi.useRealTimers()
   })
 })

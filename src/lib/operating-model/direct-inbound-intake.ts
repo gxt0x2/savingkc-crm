@@ -6,10 +6,7 @@ export type DirectInboundLeadSeedInput = {
   callSid: string
 }
 
-/**
- * A connected call proves communication, not seller qualification. Unknown
- * callers enter New with an owner and an explicit qualification action.
- */
+/** A connected call proves communication, not seller qualification. */
 export function buildDirectInboundLeadSeed(input: DirectInboundLeadSeedInput) {
   return {
     full_name: `New caller · ${input.displayPhone}`,
@@ -20,22 +17,5 @@ export function buildDirectInboundLeadSeed(input: DirectInboundLeadSeedInput) {
     classification: null,
     assigned_agent: input.assignedAgent,
     notes: `Connected inbound call to ${input.calledNumber}. The seller has not been confirmed as an opportunity.`,
-  }
-}
-
-export function buildDirectInboundQualificationTask(input: DirectInboundLeadSeedInput) {
-  return {
-    activity_type: 'task',
-    description: `Qualify new caller ${input.displayPhone}`,
-    agent: 'System',
-    metadata: {
-      source: 'direct_inbound_intake',
-      call_sid: input.callSid,
-      task_type: 'qualification',
-      due_date: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      assigned_to: input.assignedAgent,
-      priority: 'high',
-      status: 'pending',
-    },
   }
 }

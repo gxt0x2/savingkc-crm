@@ -361,25 +361,8 @@ export async function POST(req: Request) {
         })
       }
 
-      // Create callback task + Ari briefing event
-      const primaryName = isOfficeHours() ? 'Casey' : 'Ernest'
+      // Conversations owns reply actionability; the briefing remains supporting context.
       if (yesLeadId) {
-        await supabase.from('lead_activities').insert({
-          lead_id: yesLeadId,
-          activity_type: 'task',
-          description: `URGENT: ${leadName !== 'Unknown' ? leadName : from} replied YES — call back NOW`,
-          agent: 'Ari',
-          metadata: {
-            task_type: 'callback',
-            due_date: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-            assigned_to: primaryName,
-            priority: 'critical',
-            status: 'pending',
-            source: 'twilio_sms_event',
-            message_sid: messageSid,
-          },
-        })
-
         await supabase.from('ari_briefing_events').insert({
           event_type: 'yes_reply_seller',
           priority: 'critical',
@@ -538,24 +521,6 @@ export async function POST(req: Request) {
             m.ariIntelligence.briefingStale = true
           }, 'twilio:appointment_reply')
 
-          // If reschedule, create urgent callback task for Casey
-          if (isReschedule) {
-            await supabase.from('lead_activities').insert({
-              lead_id: leadId,
-              activity_type: 'task',
-              description: `URGENT: ${leadName} wants to reschedule appointment. Message: "${messageBody.slice(0, 100)}"`,
-              agent: 'System',
-              metadata: {
-                task_type: 'callback',
-                due_date: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-                assigned_to: 'Casey',
-                priority: 'critical',
-                status: 'pending',
-                source: 'twilio_sms_event',
-                message_sid: messageSid,
-              },
-            })
-          }
         }
       } catch (err) {
         console.error('Appointment reply handler error:', err)
@@ -685,26 +650,6 @@ export async function POST(req: Request) {
           description: smsAlert,
           agent: 'System',
           metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: prospectMatch ? 'prospect_sms_alert' : 'unknown_sms_alert' },
-        })
-
-        // Create callback task
-        const primaryAgent = isOfficeHours() ? 'Casey' : 'Ernest'
-        await supabase.from('lead_activities').insert({
-          lead_id: newLeadId,
-          activity_type: 'task',
-          description: prospectMatch
-            ? `TAX PROSPECT: ${prospectMatch.owner_1 || from} texted. ${formatProspectAlert(prospectMatch)}`
-            : `Follow up: Unknown number ${from} texted "${messageBody.slice(0, 60)}"`,
-          agent: 'System',
-          metadata: {
-            task_type: 'callback',
-            due_date: new Date(Date.now() + (prospectMatch ? 5 : 15) * 60 * 1000).toISOString(),
-            assigned_to: primaryAgent,
-            priority: prospectMatch ? 'critical' : 'high',
-            status: 'pending',
-            source: 'twilio_sms_event',
-            message_sid: messageSid,
-          },
         })
 
         // Push notification

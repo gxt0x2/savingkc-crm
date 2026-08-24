@@ -187,9 +187,8 @@ describe('twilio SMS webhook seller responses', () => {
       table === 'lead_activities' &&
       typeof payload === 'object' &&
       payload !== null &&
-      (payload as { activity_type?: string; metadata?: { priority?: string } }).activity_type === 'task' &&
-      (payload as { metadata?: { priority?: string } }).metadata?.priority === 'critical'
-    ))).toBe(true)
+      (payload as { activity_type?: string }).activity_type === 'task'
+    ))).toBe(false)
   })
 
   it('does not send a canned TwiML reply back to a prospect who texts CONFIRM', async () => {

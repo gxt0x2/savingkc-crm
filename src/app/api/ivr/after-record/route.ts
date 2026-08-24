@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { getAgentRouting } from '@/lib/agent-routing'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
@@ -29,8 +28,6 @@ export async function POST(req: Request) {
     const body = await req.formData()
     const recordingUrl = body.get('RecordingUrl') as string
     const recordingSid = body.get('RecordingSid') as string
-
-    const routing = getAgentRouting(calledNumber)
 
   // Find or create lead (dedup by phone)
   let leadId = ''
@@ -114,32 +111,12 @@ export async function POST(req: Request) {
     },
   })
 
-  // Create callback task
   if (leadId) {
-    await supabase.from('lead_activities').insert({
-      lead_id: leadId,
-      activity_type: 'task',
-      description: `URGENT: Call back inbound seller at ${from} — voicemail left`,
-      agent: 'Ari',
-      metadata: {
-        task_type: 'callback',
-        due_date: new Date(Date.now() + 3 * 60 * 1000).toISOString(),
-        assigned_to: routing.primary.name,
-        priority: 'critical',
-        status: 'pending',
-        source: 'twilio_after_record',
-        call_sid: callSid,
-        recording_sid: recordingSid,
-        escalate_after_minutes: 3,
-        escalate_to: routing.secondary.phone
-      }
-    })
-
     await supabase.from('ari_briefing_events').insert({
       event_type: 'inbound_seller_voicemail',
       priority: 'critical',
       title: `[URGENT] Inbound seller voicemail from ${from}`,
-      description: `Both agents missed. Voicemail left. Callback task created.`,
+      description: `Both agents missed. Voicemail left and the conversation needs a reply.`,
       lead_id: leadId,
       action_url: `/leads/${leadId}`
     })
