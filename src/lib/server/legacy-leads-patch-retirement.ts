@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 /** The broad writer is retired; typed per-contact commands own operator writes. */
-export function retiredLegacyLeadsPatchResponse(): NextResponse | null {
+export function retiredLegacyLeadsPatchResponse(): NextResponse {
   return NextResponse.json({
     success: false,
     error: 'Legacy lead updates are retired. Use a typed per-contact command.',
