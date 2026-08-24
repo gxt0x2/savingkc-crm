@@ -9,6 +9,16 @@ import { parseAiChangeProposal, type AiChangeProposal } from '@/lib/ai-change-pr
 
 export type DialerSessionStatus = 'active' | 'paused' | 'completed' | 'stopped'
 
+export type DialerQueueSubjectKind = 'lead' | 'prospect'
+
+export interface DialerQueueSubject {
+  kind: DialerQueueSubjectKind
+  id: string
+  leadId: string | null
+  prospectId: string | null
+  campaignMemberId: string | null
+}
+
 export interface DialerSessionState {
   id: string
   status: DialerSessionStatus
@@ -17,9 +27,14 @@ export interface DialerSessionState {
   queueKey: string
   savedQueueId: string | null
   leadIds: string[]
+  queueItems: DialerQueueSubject[]
   queueSize: number
   currentIndex: number
   currentLeadId: string | null
+  currentProspectId: string | null
+  currentSubjectKind: DialerQueueSubjectKind
+  currentSubjectId: string
+  currentCampaignMemberId: string | null
   callerId: string | null
   dialsCompleted: number
   contacts: number
@@ -36,7 +51,11 @@ export interface DialerAttemptState {
   id: string
   session_id: string
   client_attempt_id: string
+  subject_kind: DialerQueueSubjectKind
+  subject_id: string
+  campaign_member_id: string | null
   lead_id: string | null
+  prospect_id: string | null
   prospect_phone_id: string | null
   phone: string
   caller_id: string
@@ -99,6 +118,35 @@ function normalizeLeadIds(value: unknown): string[] {
   return value.filter(isUuid).map((item) => item.trim())
 }
 
+function normalizeQueueItems(value: unknown, legacyLeadIds: string[]): DialerQueueSubject[] {
+  const source = Array.isArray(value) ? value : legacyLeadIds
+  const items = source.flatMap((raw): DialerQueueSubject[] => {
+    if (isUuid(raw)) {
+      const id = raw.trim()
+      return [{ kind: 'lead', id, leadId: id, prospectId: null, campaignMemberId: null }]
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+    const row = raw as Record<string, unknown>
+    const kind = textValue(row.kind)
+    const id = textValue(row.id)
+    const leadId = textValue(row.leadId)
+    const prospectId = textValue(row.prospectId)
+    const campaignMemberId = textValue(row.campaignMemberId)
+    if (!id || !isUuid(id) || !kind || !['lead', 'prospect'].includes(kind)) return []
+    if (campaignMemberId && !isUuid(campaignMemberId)) return []
+    if (kind === 'lead' && (leadId !== id || prospectId)) return []
+    if (kind === 'prospect' && (prospectId !== id || leadId)) return []
+    return [{
+      kind: kind as DialerQueueSubjectKind,
+      id,
+      leadId: kind === 'lead' ? id : null,
+      prospectId: kind === 'prospect' ? id : null,
+      campaignMemberId,
+    }]
+  })
+  return items
+}
+
 function numberRecord(value: unknown): Record<string, number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return Object.fromEntries(Object.entries(value).flatMap(([key, count]) => {
@@ -120,10 +168,22 @@ export function parseDialerSession(value: unknown): DialerSessionState {
   if (!id || !isUuid(id) || !actorEmail || !agentName || !queueKey || !startedAt || !updatedAt || !status || !['active', 'paused', 'completed', 'stopped'].includes(status)) {
     throw new DialerSessionError('invalid_session_payload', 503, 'Dialer session data is unavailable')
   }
-  const leadIds = normalizeLeadIds(row.leadIds)
+  const legacyLeadIds = normalizeLeadIds(row.leadIds)
+  const queueItems = normalizeQueueItems(row.queueItems, legacyLeadIds)
   const queueSize = numberValue(row.queueSize)
   const currentIndex = numberValue(row.currentIndex)
-  if (queueSize < 1 || leadIds.length !== queueSize || currentIndex < 0 || currentIndex >= queueSize) {
+  if (queueSize < 1 || queueItems.length !== queueSize || currentIndex < 0 || currentIndex >= queueSize) {
+    throw new DialerSessionError('invalid_session_payload', 503, 'Dialer session data is unavailable')
+  }
+  const currentItem = queueItems[currentIndex]
+  const currentSubjectKind = textValue(row.currentSubjectKind) || currentItem.kind
+  const currentSubjectId = textValue(row.currentSubjectId) || currentItem.id
+  const currentLeadId = textValue(row.currentLeadId) || currentItem.leadId
+  const currentProspectId = textValue(row.currentProspectId) || currentItem.prospectId
+  const currentCampaignMemberId = textValue(row.currentCampaignMemberId) || currentItem.campaignMemberId
+  if (currentSubjectKind !== currentItem.kind || currentSubjectId !== currentItem.id
+    || currentLeadId !== currentItem.leadId || currentProspectId !== currentItem.prospectId
+    || currentCampaignMemberId !== currentItem.campaignMemberId) {
     throw new DialerSessionError('invalid_session_payload', 503, 'Dialer session data is unavailable')
   }
   return {
@@ -133,10 +193,15 @@ export function parseDialerSession(value: unknown): DialerSessionState {
     agentName,
     queueKey,
     savedQueueId: textValue(row.savedQueueId),
-    leadIds,
+    leadIds: queueItems.flatMap((item) => item.leadId ? [item.leadId] : []),
+    queueItems,
     queueSize,
     currentIndex,
-    currentLeadId: textValue(row.currentLeadId),
+    currentLeadId,
+    currentProspectId,
+    currentSubjectKind: currentItem.kind,
+    currentSubjectId: currentItem.id,
+    currentCampaignMemberId,
     callerId: textValue(row.callerId),
     dialsCompleted: numberValue(row.dialsCompleted),
     contacts: numberValue(row.contacts),
@@ -155,7 +220,7 @@ function mapDatabaseError(error: { message?: string; code?: string } | null | un
   if (raw.includes('session_not_found')) return new DialerSessionError('session_not_found', 404, 'Dialer session not found')
   if (raw.includes('call_in_progress') || raw.includes('attempt_in_progress')) return new DialerSessionError('call_in_progress', 409, 'Finish or disposition the current call first')
   if (raw.includes('session_not_active')) return new DialerSessionError('session_not_active', 409, 'Resume the dialer session before calling')
-  if (raw.includes('session_lead_mismatch') || raw.includes('attempt_context_mismatch')) return new DialerSessionError('session_context_mismatch', 409, 'The selected contact no longer matches the active dialer session')
+  if (raw.includes('session_lead_mismatch') || raw.includes('session_subject_mismatch') || raw.includes('attempt_context_mismatch')) return new DialerSessionError('session_context_mismatch', 409, 'The selected contact no longer matches the active dialer session')
   if (raw.includes('disposition_required')) return new DialerSessionError('disposition_required', 409, 'Save a call outcome before advancing')
   if (raw.includes('disposition_conflict')) return new DialerSessionError('disposition_conflict', 409, 'This attempt already has a different saved outcome')
   if (raw.includes('skip_reason_required')) return new DialerSessionError('skip_reason_required', 400, 'A skip reason is required')
@@ -180,11 +245,14 @@ export async function startDialerSession(input: {
   }
   if (input.savedQueueId && !isUuid(input.savedQueueId)) throw new DialerSessionError('invalid_saved_queue', 400, 'Saved queue is invalid')
 
-  const { data, error } = await supabase.rpc('start_dialer_session_v1', {
+  const queueItems: DialerQueueSubject[] = leadIds.map((id) => ({
+    kind: 'lead', id, leadId: id, prospectId: null, campaignMemberId: null,
+  }))
+  const { data, error } = await supabase.rpc('start_dialer_session_v2', {
     p_actor_email: input.actor.email,
     p_agent_name: input.actor.name,
     p_queue_key: input.queueKey.trim() || 'custom',
-    p_lead_ids: leadIds,
+    p_queue_items: queueItems,
     p_caller_id: input.callerId.trim(),
     p_saved_queue_id: input.savedQueueId || null,
     p_settings_snapshot: input.settings || {},
@@ -205,6 +273,10 @@ type DialerSessionRow = {
   queue_size: number
   current_index: number
   current_lead_id: string | null
+  current_prospect_id: string | null
+  current_subject_kind: DialerQueueSubjectKind | null
+  current_subject_id: string | null
+  current_campaign_member_id: string | null
   caller_id: string | null
   dials_completed: number
   contacts: number
@@ -225,10 +297,15 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
     agentName: row.agent_name,
     queueKey: row.queue_key,
     savedQueueId: row.saved_queue_id,
-    leadIds: row.queue_snapshot,
+    leadIds: Array.isArray(row.queue_snapshot) ? row.queue_snapshot.filter(isUuid) : [],
+    queueItems: row.queue_snapshot,
     queueSize: row.queue_size,
     currentIndex: row.current_index,
     currentLeadId: row.current_lead_id,
+    currentProspectId: row.current_prospect_id,
+    currentSubjectKind: row.current_subject_kind,
+    currentSubjectId: row.current_subject_id,
+    currentCampaignMemberId: row.current_campaign_member_id,
     callerId: row.caller_id,
     dialsCompleted: row.dials_completed,
     contacts: row.contacts,
@@ -242,7 +319,7 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
   })
 }
 
-const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,caller_id,dials_completed,contacts,skips,outcomes,started_at,paused_at,ended_at,updated_at,state_version'
+const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,current_prospect_id,current_subject_kind,current_subject_id,current_campaign_member_id,caller_id,dials_completed,contacts,skips,outcomes,started_at,paused_at,ended_at,updated_at,state_version'
 
 type HistoryCursor = { timestamp: string; id: string }
 
@@ -315,7 +392,7 @@ export async function getDialerAttemptHistory(
   const cursor = decodeHistoryCursor(options.cursor || null)
   let query = supabase
     .from('dialer_session_attempts')
-    .select('id,session_id,client_attempt_id,lead_id,prospect_phone_id,phone,caller_id,status,disposition,duration_seconds,reached,started_at,connected_at,ended_at,dispositioned_at,advanced_at,created_at,updated_at,post_call_status,post_call_summary,post_call_snapshot,post_call_completed_at,post_call_updated_at,recording_sid,provider_call_sid')
+    .select('id,session_id,client_attempt_id,subject_kind,subject_id,campaign_member_id,lead_id,prospect_id,prospect_phone_id,phone,caller_id,status,disposition,duration_seconds,reached,started_at,connected_at,ended_at,dispositioned_at,advanced_at,created_at,updated_at,post_call_status,post_call_summary,post_call_snapshot,post_call_completed_at,post_call_updated_at,recording_sid,provider_call_sid')
     .eq('session_id', session.id)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -327,6 +404,7 @@ export async function getDialerAttemptHistory(
   if (error) throw mapDatabaseError(error)
   const rows = ((data || []) as DialerAttemptRow[]).slice(0, limit)
   const leadIds = Array.from(new Set(rows.flatMap((row) => row.lead_id ? [row.lead_id] : [])))
+  const prospectIds = Array.from(new Set(rows.flatMap((row) => row.prospect_id ? [row.prospect_id] : [])))
   const proposalLookup = new Map<string, AiChangeProposal>()
   if (rows.length > 0) {
     const { data: proposals, error: proposalError } = await supabase
@@ -340,6 +418,7 @@ export async function getDialerAttemptHistory(
     }
   }
   const leadLookup = new Map<string, { full_name: string | null; property_address: string | null }>()
+  const prospectLookup = new Map<string, { owner_1: string | null; situs_street: string | null; situs_city: string | null; situs_state: string | null; situs_zip: string | null }>()
   if (leadIds.length > 0) {
     const { data: leads, error: leadError } = await supabase
       .from('leads')
@@ -348,11 +427,23 @@ export async function getDialerAttemptHistory(
     if (leadError) throw mapDatabaseError(leadError)
     for (const lead of leads || []) leadLookup.set(lead.id, lead)
   }
+  if (prospectIds.length > 0) {
+    const { data: prospects, error: prospectError } = await supabase
+      .from('prospects')
+      .select('id,owner_1,situs_street,situs_city,situs_state,situs_zip')
+      .in('id', prospectIds)
+    if (prospectError) throw mapDatabaseError(prospectError)
+    for (const prospect of prospects || []) prospectLookup.set(prospect.id, prospect)
+  }
   const items = rows.map((row) => ({
       id: row.id,
       session_id: row.session_id,
       client_attempt_id: row.client_attempt_id,
+      subject_kind: row.subject_kind,
+      subject_id: row.subject_id,
+      campaign_member_id: row.campaign_member_id,
       lead_id: row.lead_id,
+      prospect_id: row.prospect_id,
       prospect_phone_id: row.prospect_phone_id,
       phone: row.phone,
       caller_id: row.caller_id,
@@ -367,8 +458,14 @@ export async function getDialerAttemptHistory(
       advanced_at: row.advanced_at,
       created_at: row.created_at,
       updated_at: row.updated_at,
-      leadName: row.lead_id ? leadLookup.get(row.lead_id)?.full_name || null : null,
-      propertyAddress: row.lead_id ? leadLookup.get(row.lead_id)?.property_address || null : null,
+      leadName: row.lead_id
+        ? leadLookup.get(row.lead_id)?.full_name || null
+        : row.prospect_id ? prospectLookup.get(row.prospect_id)?.owner_1 || null : null,
+      propertyAddress: row.lead_id
+        ? leadLookup.get(row.lead_id)?.property_address || null
+        : row.prospect_id
+          ? [prospectLookup.get(row.prospect_id)?.situs_street, prospectLookup.get(row.prospect_id)?.situs_city, prospectLookup.get(row.prospect_id)?.situs_state, prospectLookup.get(row.prospect_id)?.situs_zip].filter(Boolean).join(', ') || null
+          : null,
       postCallReview: parseDialerPostCallReview(row, proposalLookup.get(row.id) || null),
   }))
   const hasMore = ((data || []) as DialerAttemptRow[]).length > limit
@@ -433,19 +530,32 @@ export async function authorizeDialerSessionAttempt(input: {
   actor: AuthenticatedActor
   sessionId: string
   clientAttemptId: string
-  leadId: string
+  subjectKind: DialerQueueSubjectKind
+  subjectId: string
+  campaignMemberId: string | null
+  leadId: string | null
+  prospectId: string | null
   prospectPhoneId: string | null
   phone: string
   callerId: string
 }): Promise<DialerAttemptState> {
-  if (!isUuid(input.sessionId) || !isUuid(input.leadId) || (input.prospectPhoneId && !isUuid(input.prospectPhoneId))) {
+  if (!isUuid(input.sessionId) || !isUuid(input.subjectId)
+    || (input.campaignMemberId && !isUuid(input.campaignMemberId))
+    || (input.leadId && !isUuid(input.leadId)) || (input.prospectId && !isUuid(input.prospectId))
+    || (input.prospectPhoneId && !isUuid(input.prospectPhoneId))
+    || (input.subjectKind === 'lead' && (input.leadId !== input.subjectId || input.prospectId))
+    || (input.subjectKind === 'prospect' && (input.prospectId !== input.subjectId || input.leadId || !input.prospectPhoneId))) {
     throw new DialerSessionError('invalid_attempt_context', 400, 'Call context is invalid')
   }
-  const { data, error } = await supabase.rpc('authorize_dialer_attempt_v1', {
+  const { data, error } = await supabase.rpc('authorize_dialer_attempt_v2', {
     p_session_id: input.sessionId,
     p_actor_email: input.actor.email,
     p_client_attempt_id: input.clientAttemptId,
+    p_subject_kind: input.subjectKind,
+    p_subject_id: input.subjectId,
+    p_campaign_member_id: input.campaignMemberId,
     p_lead_id: input.leadId,
+    p_prospect_id: input.prospectId,
     p_prospect_phone_id: input.prospectPhoneId,
     p_phone: input.phone,
     p_caller_id: input.callerId,

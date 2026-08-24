@@ -15,6 +15,7 @@ import {
   loadDurableDialerSession,
   transitionDurableDialerSession,
   type DurableDialerSession,
+  type DurableDialerQueueSubject,
 } from '@/lib/dialer-session-client'
 import type {
   ProspectingCallingLead as LeadSummary,
@@ -33,7 +34,9 @@ interface QueueState {
     heirName: string
     relation: string
     prospect_phone_id: string
-    leadId: string
+    leadId: string | null
+    prospectId: string
+    campaignMemberId: string | null
   } | null
   queueIndex: number
   queueLength: number
@@ -51,7 +54,7 @@ function joinAddress(parts: Array<string | null | undefined>): string {
 export function ProspectingCallingFloor() {
   const router = useRouter()
   const params = useSearchParams()
-  const [leadIds, setLeadIds] = useState<string[]>([])
+  const [subjects, setSubjects] = useState<DurableDialerQueueSubject[]>([])
   const [leads, setLeads] = useState<Record<string, LeadSummary>>({})
   const [prospects, setProspects] = useState<Record<string, ProspectSummary | null>>({})
   const [coOwners, setCoOwners] = useState<Record<string, string[]>>({})
@@ -67,7 +70,7 @@ export function ProspectingCallingFloor() {
 
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
-  const [autoQueueLeadId, setAutoQueueLeadId] = useState<string | null>(null)
+  const [autoQueueSubjectKey, setAutoQueueSubjectKey] = useState<string | null>(null)
   const [durableSession, setDurableSession] = useState<DurableDialerSession | null>(null)
   const [sessionActionPending, setSessionActionPending] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
@@ -84,9 +87,12 @@ export function ProspectingCallingFloor() {
   const [markDeadBusy, setMarkDeadBusy] = useState(false)
   const [markDeadError, setMarkDeadError] = useState<string | null>(null)
 
-  const currentLeadId: string | null = leadIds[currentIndex] ?? null
+  const currentSubject = subjects[currentIndex] ?? null
+  const currentSubjectKey = currentSubject ? `${currentSubject.kind}:${currentSubject.id}` : null
+  const currentLeadId: string | null = currentSubject?.leadId ?? null
+  const currentProspectId: string | null = currentSubject?.prospectId ?? null
   const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? null : null
-  const currentProspect: ProspectSummary | null = currentLeadId ? prospects[currentLeadId] ?? null : null
+  const currentProspect: ProspectSummary | null = currentSubjectKey ? prospects[currentSubjectKey] ?? null : null
   const durableSessionId = params.get('session_id')?.trim() || ''
   const requestedCallerId = params.get('caller_id')?.trim() || ''
   const sessionCallerId = durableSession?.callerId || requestedCallerId
@@ -121,7 +127,9 @@ export function ProspectingCallingFloor() {
     currentLeadIdRef.current = currentLeadId
   }, [currentLeadId])
 
-  // Resolve cohort → lead_ids
+  // Resolve the durable subject queue. Legacy URLs remain Lead-only, while new
+  // campaign sessions preserve unpromoted source Prospects without creating
+  // shadow CRM Leads.
   useEffect(() => {
     async function resolveIds() {
       setLoading(true)
@@ -130,7 +138,9 @@ export function ProspectingCallingFloor() {
         try {
           const session = await loadDurableDialerSession(durableSessionId)
           setDurableSession(session)
-          setLeadIds(session.leadIds)
+          setSubjects(session.queueItems.length > 0
+            ? session.queueItems
+            : session.leadIds.map((id) => ({ kind: 'lead' as const, id, leadId: id, prospectId: null, campaignMemberId: null })))
           setCurrentIndex(session.currentIndex)
           setSessionDials(session.dialsCompleted)
           setSessionContacts(session.contacts)
@@ -138,7 +148,7 @@ export function ProspectingCallingFloor() {
           return
         } catch (sessionError) {
           setResolveError(sessionError instanceof Error ? sessionError.message : 'Could not load the dialer session.')
-          setLeadIds([])
+          setSubjects([])
           setLoading(false)
           return
         }
@@ -147,7 +157,7 @@ export function ProspectingCallingFloor() {
       const explicit = params.get('lead_ids')
       if (explicit) {
         const ids = explicit.split(',').map((s) => s.trim()).filter(Boolean)
-        setLeadIds(ids)
+        setSubjects(ids.map((id: string) => ({ kind: 'lead', id, leadId: id, prospectId: null, campaignMemberId: null })))
         setLoading(false)
         return
       }
@@ -163,11 +173,11 @@ export function ProspectingCallingFloor() {
         const ids = Array.isArray(payload.leadIds)
           ? payload.leadIds.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
           : []
-        setLeadIds(ids)
+        setSubjects(ids.map((id: string) => ({ kind: 'lead', id, leadId: id, prospectId: null, campaignMemberId: null })))
         setLoading(false)
         return
       }
-      setLeadIds([])
+      setSubjects([])
       setLoading(false)
     }
     resolveIds()
@@ -175,21 +185,26 @@ export function ProspectingCallingFloor() {
 
   useEffect(() => {
     if (durableSessionId) return
-    if (leadIds.length === 0) return
+    if (subjects.length === 0) return
     const requested = Number(startIndexParam ?? '0')
     const safeIndex = Number.isFinite(requested) ? Math.max(0, Math.floor(requested)) : 0
     const timeout = window.setTimeout(() => {
-      setCurrentIndex(Math.min(safeIndex, Math.max(leadIds.length - 1, 0)))
+      setCurrentIndex(Math.min(safeIndex, Math.max(subjects.length - 1, 0)))
     }, 0)
     return () => window.clearTimeout(timeout)
-  }, [durableSessionId, leadIds.length, startIndexParam])
+  }, [durableSessionId, startIndexParam, subjects.length])
 
-  // Batch-load leads + prospects for the cohort
+  // Batch-load Lead and source-Prospect context for the subject queue.
   useEffect(() => {
-    if (leadIds.length === 0) return
+    if (subjects.length === 0) return
 
     async function load() {
-      const response = await fetch(`/api/dialer/queue?lead_ids=${encodeURIComponent(leadIds.join(','))}`, { cache: 'no-store' })
+      const leadIds = subjects.flatMap((subject) => subject.leadId ? [subject.leadId] : [])
+      const prospectIds = subjects.flatMap((subject) => subject.prospectId ? [subject.prospectId] : [])
+      const query = new URLSearchParams()
+      if (leadIds.length > 0) query.set('lead_ids', leadIds.join(','))
+      if (prospectIds.length > 0) query.set('prospect_ids', prospectIds.join(','))
+      const response = await fetch(`/api/dialer/queue?${query.toString()}`, { cache: 'no-store' })
       const payload = await response.json()
       if (!response.ok) {
         setResolveError(payload?.error || 'Could not load dialer leads.')
@@ -205,9 +220,14 @@ export function ProspectingCallingFloor() {
       setLeads(leadMap)
 
       const prospectMap: Record<string, ProspectSummary | null> = {}
-      leadIds.forEach((id) => { prospectMap[id] = null })
+      subjects.forEach((subject) => { prospectMap[`${subject.kind}:${subject.id}`] = null })
       ;(prospectRows as (ProspectSummary & { lead_id: string })[] | null)?.forEach((p) => {
-        prospectMap[p.lead_id] = p
+        const sourceKey = `prospect:${p.id}`
+        if (sourceKey in prospectMap) prospectMap[sourceKey] = p
+        if (p.lead_id) {
+          const leadKey = `lead:${p.lead_id}`
+          if (leadKey in prospectMap && prospectMap[leadKey] === null) prospectMap[leadKey] = p
+        }
       })
       setProspects(prospectMap)
 
@@ -222,11 +242,14 @@ export function ProspectingCallingFloor() {
       setCoOwners(coOwnerMap)
     }
     load()
-  }, [leadIds])
+  }, [subjects])
 
   // Load the bounded communication history for the current lead only.
   useEffect(() => {
-    if (!currentLeadId) return
+    if (!currentLeadId) {
+      setActivities([])
+      return
+    }
     const requestedLeadId = currentLeadId
     let cancelled = false
     void loadDialerActivities(requestedLeadId)
@@ -264,7 +287,7 @@ export function ProspectingCallingFloor() {
   }, [currentLeadId, refreshActivities])
 
   useEffect(() => {
-    if (leadIds.length === 0 || leftTab !== 'recent_calls') return
+    if (subjects.length === 0 || leftTab !== 'recent_calls') return
     async function loadRecentCalls() {
       try {
         const res = await fetch('/api/call-log?limit=50')
@@ -273,7 +296,7 @@ export function ProspectingCallingFloor() {
       } catch {}
     }
     loadRecentCalls()
-  }, [leadIds.length, leftTab])
+  }, [leftTab, subjects.length])
 
   // Listen to queue-state events from the telephony bar
   useEffect(() => {
@@ -286,12 +309,14 @@ export function ProspectingCallingFloor() {
 
   const applyDurableSession = useCallback((session: DurableDialerSession) => {
     setDurableSession(session)
-    setLeadIds(session.leadIds)
+    setSubjects(session.queueItems.length > 0
+      ? session.queueItems
+      : session.leadIds.map((id) => ({ kind: 'lead' as const, id, leadId: id, prospectId: null, campaignMemberId: null })))
     setCurrentIndex(session.currentIndex)
     setSessionDials(session.dialsCompleted)
     setSessionContacts(session.contacts)
-    if (session.status === 'active' && session.currentLeadId) setAutoQueueLeadId(session.currentLeadId)
-    if (session.status === 'completed' || session.status === 'stopped') setAutoQueueLeadId(null)
+    if (session.status === 'active') setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
+    if (session.status === 'completed' || session.status === 'stopped') setAutoQueueSubjectKey(null)
   }, [])
 
   useEffect(() => {
@@ -304,10 +329,11 @@ export function ProspectingCallingFloor() {
   }, [applyDurableSession, durableSessionId])
 
   const advance = useCallback((autoQueueNextLead = false) => {
-    const next = Math.min(currentIndex + 1, leadIds.length - 1)
+    const next = Math.min(currentIndex + 1, subjects.length - 1)
     setCurrentIndex(next)
-    if (autoQueueNextLead && next !== currentIndex) setAutoQueueLeadId(leadIds[next] || null)
-  }, [currentIndex, leadIds])
+    const nextSubject = subjects[next]
+    if (autoQueueNextLead && next !== currentIndex && nextSubject) setAutoQueueSubjectKey(`${nextSubject.kind}:${nextSubject.id}`)
+  }, [currentIndex, subjects])
 
   const back = useCallback(() => {
     setCurrentIndex((i) => Math.max(i - 1, 0))
@@ -348,7 +374,7 @@ export function ProspectingCallingFloor() {
     // agent stays in control (run skip trace, re-call, or press → to move on).
     // Auto-advance to the next record only happens after a record's heirs have
     // actually been called (the heir-queue-complete handler).
-    setAutoQueueLeadId(null)
+    setAutoQueueSubjectKey(null)
   }, [])
 
   const navigateAwayFromSession = useCallback(() => {
@@ -381,13 +407,16 @@ export function ProspectingCallingFloor() {
     function onQueueComplete(e: Event) {
       if (durableSessionId) return
       const detail = (e as CustomEvent).detail
-      if (detail?.leadId === currentLeadId) {
+      if (
+        (currentLeadId && detail?.leadId === currentLeadId)
+        || (currentProspectId && detail?.prospectId === currentProspectId)
+      ) {
         setTimeout(() => advance(true), 400)
       }
     }
     window.addEventListener('heir-queue-complete', onQueueComplete)
     return () => window.removeEventListener('heir-queue-complete', onQueueComplete)
-  }, [currentLeadId, advance, durableSessionId])
+  }, [advance, currentLeadId, currentProspectId, durableSessionId])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -497,7 +526,7 @@ export function ProspectingCallingFloor() {
       : delinquentYears
       ? `${delinquentYears} deceased tax list`
       : 'Dialer queue')
-  if (!loading && leadIds.length === 0 && !resolveError) {
+  if (!loading && subjects.length === 0 && !resolveError) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-6">
         <div className="ck-card p-8 max-w-md text-center">
@@ -530,7 +559,7 @@ export function ProspectingCallingFloor() {
     )
   }
 
-  if (loading || leadIds.length === 0) {
+  if (loading || subjects.length === 0) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center">
         <Icon name="progress_activity" className="!text-4xl text-[var(--ck-text-dim)] animate-spin" />
@@ -543,7 +572,7 @@ export function ProspectingCallingFloor() {
       <DialerSessionCommand
         queueLabel={inferredQueueLabel}
         currentIndex={currentIndex}
-        queueSize={leadIds.length}
+        queueSize={subjects.length}
         callerId={sessionCallerId}
         durableSessionId={durableSessionId}
         durableStatus={durableSession?.status}
@@ -565,7 +594,7 @@ export function ProspectingCallingFloor() {
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
         {/* Supporting rail — property context, AI evidence, and communications. */}
         <ProspectingCallingContextRail
-          leadId={currentLeadId || ""}
+          leadId={currentLeadId}
           lead={currentLead}
           prospect={currentProspect}
           ownerName={ownerName}
@@ -579,7 +608,7 @@ export function ProspectingCallingFloor() {
           activeTab={leftTab}
           callerId={sessionCallerId}
           currentIndex={currentIndex}
-          queueSize={leadIds.length}
+          queueSize={subjects.length}
           onTabChange={setLeftTab}
           onRefreshActivities={() => { void refreshActivities() }}
         />
@@ -596,10 +625,12 @@ export function ProspectingCallingFloor() {
               <Icon name="shield" size="text-sm" className="text-emerald-500" /> Safety checked before every dial
             </div>
           </div>
-          {currentLeadId && (
+          {currentSubject && (
             <HeirsSection
-              key={currentLeadId}
+              key={currentSubjectKey}
               leadId={currentLeadId}
+              prospectId={currentProspectId}
+              campaignMemberId={currentSubject.campaignMemberId}
               deceasedOwnerName={ownerName}
               propertyAddress={situsAddress}
               dialerCallerId={sessionCallerId || null}
@@ -607,12 +638,12 @@ export function ProspectingCallingFloor() {
               callHammerEnabled={sessionUseCallHammer}
               ringCount={sessionRingCount}
               dialerSessionId={durableSessionId || null}
-              autoStart={autoQueueLeadId === currentLeadId}
-              onAutoStartHandled={() => setAutoQueueLeadId(null)}
+              autoStart={autoQueueSubjectKey === currentSubjectKey}
+              onAutoStartHandled={() => setAutoQueueSubjectKey(null)}
               onAutoStartEmpty={handleAutoStartEmpty}
               defaultExpanded
               collapsible={false}
-              onSmsPhone={setSmsTarget}
+              onSmsPhone={currentLeadId ? setSmsTarget : undefined}
             />
           )}
         </main>

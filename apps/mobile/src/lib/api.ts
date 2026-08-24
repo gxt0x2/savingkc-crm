@@ -10,6 +10,7 @@ import type {
   CrmLead,
   LeadDetailResponse,
   LeadsResponse,
+  MobileWorkResponse,
   MobileSession,
   VoiceTokenResponse,
 } from '../types'
@@ -17,6 +18,7 @@ import type {
 type ApiOptions = {
   accessToken?: string | null
   signal?: AbortSignal
+  idempotencyKey?: string
 }
 
 export class CrmApiError extends Error {
@@ -26,6 +28,14 @@ export class CrmApiError extends Error {
   ) {
     super(message)
   }
+}
+
+function clientRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
+    const value = Math.floor(Math.random() * 16)
+    return (token === 'x' ? value : (value & 0x3) | 0x8).toString(16)
+  })
 }
 
 export async function fetchLeads(options: ApiOptions = {}): Promise<CrmLead[]> {
@@ -146,6 +156,7 @@ async function mobileRequest<T>(path: string, options: ApiOptions & { method?: '
       Accept: 'application/json',
       ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal: options.signal,
@@ -170,6 +181,45 @@ export async function sendMobileMessage(input: { accessToken: string; leadId: st
     accessToken: input.accessToken,
     method: 'POST',
     body: input,
+  })
+}
+
+export async function fetchMobileWork(input: {
+  accessToken: string
+  department: 'acquisitions' | 'dispositions' | 'tc'
+  scope: 'mine' | 'unassigned'
+  signal?: AbortSignal
+}) {
+  const query = new URLSearchParams({ department: input.department, scope: input.scope })
+  return mobileRequest<MobileWorkResponse>(`/api/mobile/v1/work?${query}`, {
+    accessToken: input.accessToken,
+    signal: input.signal,
+  })
+}
+
+export async function assignMobileOwner(input: { accessToken: string; leadId: string; owner: string | null }) {
+  return mobileRequest<{ success: true; owner: string | null }>(`/api/mobile/v1/leads/${encodeURIComponent(input.leadId)}/owner`, {
+    accessToken: input.accessToken,
+    idempotencyKey: clientRequestId(),
+    method: 'POST',
+    body: { owner: input.owner },
+  })
+}
+
+export async function completeMobileWorkItem(input: { accessToken: string; key: string; expectedVersion: number }) {
+  return mobileRequest<{ success: true; changed: boolean; taskId: string; version: number }>(`/api/mobile/v1/work-items/${encodeURIComponent(input.key)}/complete`, {
+    accessToken: input.accessToken,
+    idempotencyKey: clientRequestId(),
+    method: 'POST',
+    body: { expectedVersion: input.expectedVersion },
+  })
+}
+
+export async function acceptMobileHandoff(input: { accessToken: string; handoffId: string }) {
+  return mobileRequest<{ success: true }>(`/api/mobile/v1/handoffs/${encodeURIComponent(input.handoffId)}/accept`, {
+    accessToken: input.accessToken,
+    idempotencyKey: clientRequestId(),
+    method: 'POST',
   })
 }
 

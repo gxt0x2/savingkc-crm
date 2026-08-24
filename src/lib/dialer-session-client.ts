@@ -1,5 +1,13 @@
 import type { DialerPostCallReview } from '@/lib/dialer-post-call-review'
 
+export interface DurableDialerQueueSubject {
+  kind: 'lead' | 'prospect'
+  id: string
+  leadId: string | null
+  prospectId: string | null
+  campaignMemberId: string | null
+}
+
 export interface DurableDialerSession {
   id: string
   status: 'active' | 'paused' | 'completed' | 'stopped'
@@ -8,9 +16,14 @@ export interface DurableDialerSession {
   queueKey: string
   savedQueueId: string | null
   leadIds: string[]
+  queueItems: DurableDialerQueueSubject[]
   queueSize: number
   currentIndex: number
   currentLeadId: string | null
+  currentProspectId: string | null
+  currentSubjectKind: 'lead' | 'prospect'
+  currentSubjectId: string
+  currentCampaignMemberId: string | null
   callerId: string | null
   dialsCompleted: number
   contacts: number
@@ -25,7 +38,11 @@ export interface DurableDialerSession {
 export interface DurableDialerAttempt {
   id: string
   client_attempt_id: string
+  subject_kind: 'lead' | 'prospect'
+  subject_id: string
+  campaign_member_id: string | null
   lead_id: string | null
+  prospect_id: string | null
   phone: string
   caller_id: string
   status: 'authorized' | 'dialing' | 'connected' | 'awaiting_disposition' | 'dispositioned' | 'failed' | 'cancelled'

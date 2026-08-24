@@ -23,9 +23,14 @@ function session(overrides: Record<string, unknown> = {}) {
     queueKey: 'cold_prospecting',
     savedQueueId: null,
     leadIds: [leadId],
+    queueItems: [{ kind: 'lead', id: leadId, leadId, prospectId: null, campaignMemberId: null }],
     queueSize: 1,
     currentIndex: 0,
     currentLeadId: leadId,
+    currentProspectId: null,
+    currentSubjectKind: 'lead',
+    currentSubjectId: leadId,
+    currentCampaignMemberId: null,
     callerId: '+18167277667',
     dialsCompleted: 0,
     contacts: 0,
@@ -66,10 +71,10 @@ describe('durable dialer session engine', () => {
 
     expect(result.created).toBe(true)
     expect(result.session.currentLeadId).toBe(leadId)
-    expect(mocks.rpc).toHaveBeenCalledWith('start_dialer_session_v1', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('start_dialer_session_v2', expect.objectContaining({
       p_actor_email: 'casey@savingkc.com',
       p_agent_name: 'Casey',
-      p_lead_ids: [leadId],
+      p_queue_items: [{ kind: 'lead', id: leadId, leadId, prospectId: null, campaignMemberId: null }],
       p_caller_id: '+18167277667',
       p_settings_snapshot: { ringCount: 4 },
     }))
@@ -87,7 +92,7 @@ describe('durable dialer session engine', () => {
   })
 
   it('rejects malformed database payloads instead of inventing client state', () => {
-    expect(() => parseDialerSession({ ...session(), leadIds: 'not-an-array' })).toThrow(DialerSessionError)
+    expect(() => parseDialerSession({ ...session(), leadIds: 'not-an-array', queueItems: 'not-an-array' })).toThrow(DialerSessionError)
     expect(() => parseDialerSession({ ...session(), queueSize: 2 })).toThrow(DialerSessionError)
     expect(() => parseDialerSession({ ...session(), status: 'mystery' })).toThrow(DialerSessionError)
   })
@@ -107,6 +112,10 @@ describe('durable dialer session engine', () => {
       queue_size: item.queueSize,
       current_index: item.currentIndex,
       current_lead_id: item.currentLeadId,
+      current_prospect_id: item.currentProspectId,
+      current_subject_kind: item.currentSubjectKind,
+      current_subject_id: item.currentSubjectId,
+      current_campaign_member_id: item.currentCampaignMemberId,
       caller_id: item.callerId,
       dials_completed: item.dialsCompleted,
       contacts: item.contacts,

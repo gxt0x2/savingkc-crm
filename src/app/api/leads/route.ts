@@ -432,9 +432,9 @@ export async function POST(req: NextRequest) {
         smsConsent,
       })
     } catch (err) {
-      // The operating-model projection is additive during migration. Preserve
-      // successful lead capture while making projection failures observable.
-      console.error('[website-lead] operating state projection failed:', err)
+      // The governed workflow is additive during migration. Preserve successful
+      // lead capture while making workflow start or execution failures observable.
+      console.error('[website-lead] seller intake workflow failed:', err)
     }
 
     if (isGoogleAds && !externalSideEffectsDisabled()) {

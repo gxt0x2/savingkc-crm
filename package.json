@@ -33,11 +33,14 @@
     "gate:dialer": "node scripts/ci/check-dialer-ringback.mjs",
     "gate:mobile": "npm --prefix apps/mobile run healthcheck",
     "gate:performance-bundles": "node scripts/ci/check-performance-bundles.mjs",
+    "prospecting:preflight": "node scripts/ci/check-prospecting-v1-production-preflight.mjs",
     "gate:security": "node scripts/ci/check-e2e-secret-fallbacks.mjs && npm audit --audit-level=high",
     "audit:worktrees": "node scripts/maintenance/audit-worktrees.mjs",
     "telephony:carrier-fallbacks": "node scripts/telephony/configure-carrier-fallbacks.mjs",
     "hygiene": "npm run gate:hygiene",
-    "preview": "npm run gate:canonical && vercel deploy --yes"
+    "preview": "npm run gate:canonical && vercel deploy --yes",
+    "manifest:archive:export": "node scripts/archive/export-manifest-history.mjs",
+    "manifest:archive:verify": "node scripts/archive/verify-manifest-history.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -5,6 +5,10 @@ const migration = readFileSync(
   'supabase/migrations/20261005120000_retire_manifest_runtime_writers.sql',
   'utf8',
 )
+const archiveReadOnlyMigration = readFileSync(
+  'supabase/migrations/20261009120000_manifest_archive_read_only.sql',
+  'utf8',
+)
 const canonicalDecisionMigration = readFileSync(
   'supabase/migrations/20261002120000_ai_change_proposal_manifest_retirement.sql',
   'utf8',
@@ -34,5 +38,17 @@ describe('Manifest database-writer retirement migration', () => {
     expect(migration).toContain("SET LOCAL statement_timeout = '30s'")
     expect(migration).not.toMatch(/DROP TABLE|DELETE FROM public\.manifests|TRUNCATE/)
     expect(migration).toContain('Historical Manifest JSON retained read-only')
+  })
+
+  it('makes both retained Manifest tables read-only to every application runtime role', () => {
+    expect(archiveReadOnlyMigration).toContain("SET LOCAL lock_timeout = '5s'")
+    expect(archiveReadOnlyMigration).toContain("SET LOCAL statement_timeout = '30s'")
+    expect(archiveReadOnlyMigration).toMatch(
+      /REVOKE INSERT, UPDATE, DELETE, TRUNCATE\s+ON TABLE public\.manifests, public\.manifest_history\s+FROM PUBLIC, anon, authenticated, service_role/,
+    )
+    expect(archiveReadOnlyMigration).toContain('DROP POLICY IF EXISTS "Authenticated full access" ON public.manifests')
+    expect(archiveReadOnlyMigration).toContain('DROP POLICY IF EXISTS "Authenticated full access" ON public.manifest_history')
+    expect(archiveReadOnlyMigration).toContain('CREATE POLICY "Authenticated read-only"')
+    expect(archiveReadOnlyMigration).not.toMatch(/DROP TABLE|DELETE FROM|TRUNCATE TABLE/)
   })
 })

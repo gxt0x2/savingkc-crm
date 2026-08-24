@@ -30,6 +30,7 @@ export type OutboundDialerCallSource =
 export interface OutboundDialerCallInput {
   phone: string
   leadId?: string | null
+  prospectId?: string | null
   prospectPhoneId?: string | null
   source: OutboundDialerCallSource
   identity?: string | null
@@ -43,6 +44,7 @@ export type OutboundDialerCallDecision = DialerCallDecision & {
   policyVersion: typeof DIALER_POLICY_VERSION
   checkedAt: string
   leadId: string | null
+  prospectId: string | null
   prospectPhoneId: string | null
   reasonSource?: string
 }
@@ -113,13 +115,14 @@ function uniqueById<T extends { id: string }>(rows: readonly T[]): T[] {
 
 function decision(
   value: DialerCallDecision,
-  input: { checkedAt: string; leadId?: string | null; prospectPhoneId?: string | null; reasonSource?: string },
+  input: { checkedAt: string; leadId?: string | null; prospectId?: string | null; prospectPhoneId?: string | null; reasonSource?: string },
 ): OutboundDialerCallDecision {
   return {
     ...value,
     policyVersion: DIALER_POLICY_VERSION,
     checkedAt: input.checkedAt,
     leadId: input.leadId ?? null,
+    prospectId: input.prospectId ?? null,
     prospectPhoneId: input.prospectPhoneId ?? null,
     ...(input.reasonSource ? { reasonSource: input.reasonSource } : {}),
   }
@@ -129,6 +132,7 @@ function policyUnavailable(input: OutboundDialerCallInput, checkedAt: string): O
   return decision(dialerCallBlock('policy_unavailable', normalizePhoneToE164(input.phone)), {
     checkedAt,
     leadId: input.leadId,
+    prospectId: input.prospectId,
     prospectPhoneId: input.prospectPhoneId,
     reasonSource: 'policy_runtime',
   })
@@ -274,14 +278,26 @@ async function evaluateOutboundDialerCallUnchecked(
     const exactLead = exactLeadResult.data as unknown as LeadRow | null
     const exactProspectPhone = exactProspectPhoneResult.data as unknown as ProspectPhoneRow | null
 
+    if (input.prospectId && !input.prospectPhoneId) {
+      return decision(dialerCallBlock('destination_mismatch', normalizedPhone), {
+        checkedAt,
+        leadId: input.leadId,
+        prospectId: input.prospectId,
+        prospectPhoneId: input.prospectPhoneId,
+        reasonSource: 'prospect_context',
+      })
+    }
+
     if (input.prospectPhoneId) {
       const prospectMatches = exactProspectPhone
         && normalizePhoneToE164(exactProspectPhone.phone) === normalizedPhone
         && (!input.leadId || linkedLeadId(exactProspectPhone) === input.leadId)
+        && (!input.prospectId || exactProspectPhone.prospect_id === input.prospectId)
       if (!prospectMatches) {
         return decision(dialerCallBlock('destination_mismatch', normalizedPhone), {
           checkedAt,
           leadId: input.leadId,
+          prospectId: input.prospectId,
           prospectPhoneId: input.prospectPhoneId,
           reasonSource: 'prospect_phone_context',
         })
@@ -293,6 +309,7 @@ async function evaluateOutboundDialerCallUnchecked(
         return decision(dialerCallBlock('destination_mismatch', normalizedPhone), {
           checkedAt,
           leadId: input.leadId,
+          prospectId: input.prospectId,
           prospectPhoneId: input.prospectPhoneId,
           reasonSource: 'lead_context',
         })
@@ -303,6 +320,7 @@ async function evaluateOutboundDialerCallUnchecked(
         return decision(dialerCallBlock('destination_mismatch', normalizedPhone), {
           checkedAt,
           leadId: input.leadId,
+          prospectId: input.prospectId,
           prospectPhoneId: input.prospectPhoneId,
           reasonSource: 'lead_context',
         })
@@ -353,10 +371,13 @@ async function evaluateOutboundDialerCallUnchecked(
       callingHoursExempt: input.source === 'form_lead_callback' || input.source === 'google_ads_callback',
     })
 
-    const resolvedLeadId = input.leadId ?? leads[0]?.id ?? prospectPhones.map(linkedLeadId).find(Boolean) ?? null
+    const resolvedLeadId = input.prospectId
+      ? null
+      : input.leadId ?? leads[0]?.id ?? prospectPhones.map(linkedLeadId).find(Boolean) ?? null
     return decision(policyDecision, {
       checkedAt,
       leadId: resolvedLeadId,
+      prospectId: input.prospectId ?? exactProspectPhone?.prospect_id ?? null,
       prospectPhoneId: input.prospectPhoneId ?? exactProspectPhone?.id ?? null,
       reasonSource: exactReasonSource({
         result: policyDecision,
@@ -420,6 +441,7 @@ export async function recordBlockedDialerCall(
       phone: result.normalizedPhone,
       to: result.normalizedPhone,
       lead_id: result.leadId,
+      prospect_id: result.prospectId,
       prospect_phone_id: result.prospectPhoneId,
       dial_source: input.source,
       identity: input.identity ?? null,

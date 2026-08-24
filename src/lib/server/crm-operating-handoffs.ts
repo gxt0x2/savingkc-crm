@@ -27,7 +27,7 @@ export async function recordAssignmentToTcHandoff(input: {
     target_reason: 'Fully executed buyer assignment received by Transaction Coordination',
   })
   if (error) throw new CrmOperatingHandoffError(error.message || 'TC handoff could not be recorded')
-  return data as { handoffId: string; status: 'accepted'; replayed: boolean }
+  return data as { handoffId: string; status: 'pending' | 'accepted'; replayed: boolean }
 }
 
 export async function recordVerifiedMarketingOutcome(input: {

@@ -22,7 +22,8 @@ describe('prospecting reply handoff', () => {
   it('keeps trigger execution private and returns reply provenance through the bounded activity feed', () => {
     expect(migration).toContain('FROM PUBLIC, anon, authenticated')
     expect(migration).toContain('TO service_role')
-    expect(activity).toContain("select('id,lead_id,phone_snapshot,leads(full_name,property_address)')")
+    expect(activity).toContain("select('id,subject_kind,lead_id,prospect_id,phone_snapshot,leads(full_name,property_address),prospects(owner_1,situs_street,situs_city,situs_state,situs_zip)')")
+    expect(activity).toContain('conversationThreadId: leadId || (normalizedPhone ? `phone:${normalizedPhone}` : null)')
     expect(activity).toContain('body: text(metadata.message) || text(action?.rendered_body)')
   })
 })

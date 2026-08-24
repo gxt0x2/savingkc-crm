@@ -123,8 +123,23 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260917120000_legacy_handoff_attestation.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260917120000_legacy_handoff_attestation.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260916120000_handoff_acceptance_verified_fallout.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261008120000_department_responsibility_hardening.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261008120000_department_responsibility_hardening.sql" >/dev/null
 
 "${PSQL[@]}" <<'SQL'
+DO $$
+BEGIN
+  IF public.crm_department_for_stage('new') <> 'acquisitions' THEN
+    RAISE EXCEPTION 'New seller work was not assigned to Acquisitions';
+  END IF;
+  IF public.crm_department_for_stage('under_contract') <> 'dispositions' THEN
+    RAISE EXCEPTION 'Signed seller work was not assigned to Dispositions';
+  END IF;
+  IF public.crm_department_for_stage('closing') <> 'transaction_coordination' THEN
+    RAISE EXCEPTION 'Closing work was not assigned to Transaction Coordination';
+  END IF;
+END $$;
+
 SELECT public.crm_apply_lifecycle_command_v1(
   '10000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001',
   'transition', 'under_contract', 'opportunity', 'hot', NULL, NULL, NULL,
@@ -181,6 +196,16 @@ BEGIN
   );
   IF (SELECT count(*) FROM public.crm_department_handoffs WHERE to_department = 'transaction_coordination') <> 1 THEN
     RAISE EXCEPTION 'assignment retry duplicated the TC handoff';
+  END IF;
+  IF (SELECT status FROM public.crm_department_handoffs WHERE to_department = 'transaction_coordination') <> 'pending' THEN
+    RAISE EXCEPTION 'system-created TC handoff was not pending receiver acceptance';
+  END IF;
+  PERFORM public.crm_accept_department_handoff_v1(
+    (SELECT id FROM public.crm_department_handoffs WHERE to_department = 'transaction_coordination'),
+    'casey@savingkc.com', 'Casey'
+  );
+  IF (SELECT status FROM public.crm_department_handoffs WHERE to_department = 'transaction_coordination') <> 'accepted' THEN
+    RAISE EXCEPTION 'TC handoff was not accepted by the receiving operator';
   END IF;
 
   PERFORM public.crm_finalize_funded_close_v1(

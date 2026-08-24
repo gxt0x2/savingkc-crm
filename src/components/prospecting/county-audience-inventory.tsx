@@ -44,12 +44,24 @@ function phoneCandidateLabel(count: number) {
   return `${count.toLocaleString()} phone candidate${count === 1 ? '' : 's'}`
 }
 
-export function CountyAudienceInventory() {
+export function CountyAudienceInventory({
+  campaignId,
+  campaignKind,
+  onEnrolled,
+}: {
+  campaignId?: string
+  campaignKind?: 'dialer' | 'sms'
+  onEnrolled?: () => void | Promise<void>
+} = {}) {
   const [summary, setSummary] = useState<CountyProspectAudienceSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [viewId, setViewId] = useState<CountySavedViewDefinition['id']>('tax_2yr')
   const [deceasedFilter, setDeceasedFilter] = useState<CountyDeceasedFilter>('all')
   const [propertyFilter, setPropertyFilter] = useState<CountyPropertyClassFilter>('all')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [enrolling, setEnrolling] = useState(false)
+  const [enrollmentNotice, setEnrollmentNotice] = useState<string | null>(null)
+  const [enrollmentError, setEnrollmentError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -70,6 +82,38 @@ export function CountyAudienceInventory() {
   const views = summary?.savedViews ?? (summary ? buildCountySavedViews(summary.rows) : [])
   const activeView = selectedView(views, viewId)
   const activeMetrics = activeView ? filterCountySavedView(activeView, deceasedFilter, propertyFilter) : null
+
+  async function enrollReviewedAudience() {
+    if (!campaignId || !activeView || !activeMetrics || activeMetrics.total < 1 || enrolling) return
+    setEnrolling(true)
+    setEnrollmentError(null)
+    setEnrollmentNotice(null)
+    try {
+      const response = await fetch(`/api/prospecting/campaigns/${encodeURIComponent(campaignId)}/members`, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countyAudience: {
+          savedView: activeView.id,
+          deceasedFilter,
+          propertyFilter,
+          reviewedCount: activeMetrics.total,
+        } }),
+      })
+      const body = await response.json().catch(() => null) as { enrollment?: { subjects?: number; eligible?: number; needsReview?: number; suppressed?: number; missing?: number }; error?: string } | null
+      if (!response.ok || !body?.enrollment) throw new Error(body?.error || 'County audience could not be enrolled')
+      const result = body.enrollment
+      setConfirmOpen(false)
+      setEnrollmentNotice(campaignKind === 'sms'
+        ? `${Number(result.subjects) || 0} seller groups added. ${Number(result.needsReview) || 0} require an explicit SMS recipient before activation.`
+        : `${Number(result.subjects) || 0} seller groups added with ${Number(result.eligible) || 0} ready to call. No calls were placed.`)
+      await onEnrolled?.()
+    } catch (caught) {
+      setEnrollmentError(caught instanceof Error ? caught.message : 'County audience could not be enrolled')
+    } finally {
+      setEnrolling(false)
+    }
+  }
 
   return <section className="mt-5 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4" aria-label="County prospect saved views">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -109,9 +153,13 @@ export function CountyAudienceInventory() {
         </div>
 
         <div className="mt-3 grid gap-2 rounded-lg bg-[var(--crm-surface-subtle)] px-3 py-2 text-[10px] font-semibold text-[var(--crm-text-muted)] sm:grid-cols-3"><span><strong className="text-[var(--crm-ink)]">{activeMetrics.total.toLocaleString()}</strong> eligible source records</span><span><strong className="text-[var(--crm-ink)]">{activeMetrics.withPhoneCandidate.toLocaleString()}</strong> with a phone candidate</span><span><strong className="text-[var(--crm-ink)]">{activeMetrics.linkedLeads.toLocaleString()}</strong> linked to CRM</span></div>
+        {campaignId ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--crm-border)] pt-4"><p className="max-w-xl text-[10px] leading-4 text-[var(--crm-text-muted)]">Enrollment snapshots every associated phone. Linked records use their existing Lead; unlinked county records remain Prospects. Nothing is called or messaged by this action.</p><button type="button" onClick={() => { setEnrollmentError(null); setConfirmOpen(true) }} disabled={activeMetrics.total < 1 || enrolling} className="crm-primary-button h-10 rounded-lg px-4 text-xs font-black disabled:opacity-40">Review {activeMetrics.total.toLocaleString()} for enrollment</button></div> : null}
+        {enrollmentNotice ? <p role="status" className="mt-3 rounded-lg bg-[var(--crm-success-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-success)]">{enrollmentNotice}</p> : null}
+        {enrollmentError ? <p role="alert" className="mt-3 rounded-lg bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-danger)]">{enrollmentError}</p> : null}
       </div>
 
       {summary.needsPropertyClass > 0 ? <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs text-[var(--crm-ink)]"><Icon name="fact_check" className="mt-0.5 text-base text-[var(--crm-warning)]" /><p><strong>{summary.needsPropertyClass.toLocaleString()} records remain visible under Needs classification.</strong> County or import evidence can move them into Residential or Land later; valuation and occupancy are not used as guesses.</p></div> : null}
+      {confirmOpen ? <div className="fixed inset-0 z-[90] grid place-items-center bg-[#101711]/60 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !enrolling) setConfirmOpen(false) }}><section role="dialog" aria-modal="true" aria-labelledby="county-enrollment-title" className="crm-panel w-full max-w-lg rounded-2xl p-6 shadow-2xl"><p className="crm-eyebrow">Reviewed source enrollment</p><h2 id="county-enrollment-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Add {activeMetrics.total.toLocaleString()} matching records?</h2><p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">{activeView.label} · {DECEASED_FILTERS.find((item) => item.value === deceasedFilter)?.label} · {PROPERTY_FILTERS.find((item) => item.value === propertyFilter)?.label}</p><div className="mt-4 rounded-xl bg-[var(--crm-surface-subtle)] p-4 text-xs leading-5 text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">This is inert enrollment.</strong> Existing Lead links are deduplicated, unlinked records remain source Prospects, blocked phones remain visible but unusable, and {campaignKind === 'sms' ? 'every source Prospect waits for an explicit recipient choice.' : 'calls begin only after campaign activation and a human starts the calling floor.'}</div>{enrollmentError ? <p role="alert" className="mt-3 text-xs font-bold text-[var(--crm-danger)]">{enrollmentError}</p> : null}<div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setConfirmOpen(false)} disabled={enrolling} className="crm-secondary-button h-10 rounded-lg px-4 text-xs font-black">Cancel</button><button type="button" onClick={() => void enrollReviewedAudience()} disabled={enrolling} className="crm-primary-button h-10 rounded-lg px-4 text-xs font-black disabled:opacity-50">{enrolling ? 'Adding reviewed audience…' : 'Add reviewed audience'}</button></div></section></div> : null}
     </> : null}
   </section>
 }

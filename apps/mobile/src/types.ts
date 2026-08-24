@@ -37,7 +37,67 @@ export type CrmActivity = {
 export type LeadDetailResponse = {
   lead?: CrmLead
   activities?: CrmActivity[]
+  operations?: LeadOperations
   error?: string
+}
+
+export type MobileWorkItem = {
+  key: string
+  leadId: string | null
+  title: string
+  description: string | null
+  status: 'pending' | 'completed' | 'blocked'
+  priority: string
+  dueAt: string | null
+  assignedTo: string | null
+  department: string
+  primaryNextAction: boolean
+  version: number
+  contact?: {
+    id: string
+    fullName: string | null
+    propertyAddress: string | null
+  } | null
+}
+
+export type MobileHandoff = {
+  id: string
+  lead_id: string
+  from_department: string
+  to_department: string
+  status: 'pending' | 'accepted' | 'completed'
+  assigned_to: string | null
+  reason: string | null
+  evidence_type: string | null
+  created_at: string
+  leads?: {
+    id: string
+    full_name: string | null
+    property_address: string | null
+    city: string | null
+    state: string | null
+    station: string | null
+    assigned_agent: string | null
+  } | null
+}
+
+export type LeadOperations = {
+  department: 'acquisitions' | 'dispositions' | 'transaction_coordination' | 'closed'
+  owner: string | null
+  primaryNextAction: MobileWorkItem | null
+  tasksAvailable: boolean
+  pendingHandoffs: MobileHandoff[]
+  handoffsAvailable: boolean
+}
+
+export type MobileWorkResponse = {
+  actor: string
+  department: 'acquisitions' | 'dispositions' | 'tc'
+  scope: 'mine' | 'unassigned'
+  tasks: MobileWorkItem[]
+  taskCounts: Record<string, number>
+  handoffs: MobileHandoff[]
+  serverNow: string
 }
 
 export type CallOutcome = 'connected' | 'missed' | 'voicemail' | 'bad_number' | 'busy' | 'unknown'
@@ -78,6 +138,9 @@ export type MobileSession = {
     outboundDeviceDialer: boolean
     callDisposition: boolean
     twilioNativeVoice: boolean
+    workQueue: boolean
+    ownerAssignment: boolean
+    handoffAcceptance: boolean
   }
 }
 

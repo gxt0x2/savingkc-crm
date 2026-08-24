@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
         policyVersion: policy.policyVersion,
         checkedAt: policy.checkedAt,
         leadId: policy.leadId,
+        prospectId: null,
         prospectPhoneId: policy.prospectPhoneId,
         reasonSource: 'intent_signing',
       })

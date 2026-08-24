@@ -221,7 +221,7 @@ export async function createWorkItem(input: {
   title: string
   notes?: string | null
   dueAt?: string | null
-  assignedTo: string
+  assignedTo: string | null
   department: string
   role?: string | null
   priority?: string

@@ -23,7 +23,6 @@ vi.mock('@/lib/assistant/queries', () => ({
   readAssistantWorkflowRegistry: vi.fn(),
 }))
 vi.mock('@/lib/ai/command-agent', () => ({
-  commandAgentInstructions: () => 'instructions',
   createCommandAgent: () => ({ generate: mocks.generate }),
 }))
 vi.mock('@/lib/ai/generation-store', () => ({
@@ -50,7 +49,7 @@ function request(body: Record<string, unknown>) {
 
 const completed = {
   generationId: 'generation-1', threadId: 'thread-1', responseMessageId: 'response-1', status: 'complete',
-  reply: 'Grounded answer', sources: [], provider: 'openai', model: 'openai/gpt-5.4-mini', finishReason: 'stop',
+  reply: 'Grounded answer', sources: [], provider: 'openai', model: 'openai/gpt-5.6-luna', finishReason: 'stop',
   usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cacheReadTokens: 0 }, estimatedCostMicros: 30,
 }
 
@@ -64,7 +63,7 @@ describe('durable AI command route', () => {
     mocks.load.mockResolvedValue({ thread: { id: 'thread-1' }, messages: [{ id: 'request-1', role: 'user', content: 'What needs attention?', attachments: [], sources: [] }] })
     mocks.generate.mockResolvedValue({
       text: 'Grounded answer', toolResults: [], finishReason: 'stop',
-      finalStep: { model: { provider: 'openai', modelId: 'gpt-5.4-mini' } },
+      finalStep: { model: { provider: 'openai', modelId: 'gpt-5.6-luna' } },
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, inputTokenDetails: { cacheReadTokens: 0 } },
     })
     mocks.replay.mockResolvedValue(completed)
@@ -91,10 +90,14 @@ describe('durable AI command route', () => {
     }))
     expect(mocks.start.mock.invocationCallOrder[0]).toBeLessThan(mocks.generate.mock.invocationCallOrder[0])
     expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({
-      actorEmail: 'casey@savingkc.com', provider: 'openai', model: 'openai/gpt-5.4-mini',
+      actorEmail: 'casey@savingkc.com', provider: 'openai', model: 'openai/gpt-5.6-luna',
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cacheReadTokens: 0 },
+      metadata: expect.objectContaining({ permissionProfile: 'agent', toolScope: 'assigned_records' }),
     }))
-    expect(await response.json()).toMatchObject({ reply: 'Grounded answer', threadId: 'thread-1', execution: 'read_only' })
+    expect(await response.json()).toMatchObject({
+      reply: 'Grounded answer', threadId: 'thread-1', execution: 'read_only', grounded: false,
+      approvalRequiredFor: expect.arrayContaining(['task creation', 'calls and messages']),
+    })
   })
 
   it('replays a completed idempotent request without calling the model', async () => {
@@ -111,5 +114,20 @@ describe('durable AI command route', () => {
     expect(response.status).toBe(500)
     expect(mocks.fail).toHaveBeenCalledWith(expect.objectContaining({ generationId: 'generation-1', actorEmail: 'casey@savingkc.com' }))
     expect(await response.json()).toEqual({ error: 'The AI Assistant could not complete this request.' })
+  })
+
+  it('fails closed and records the attempt when the governed Gateway is unavailable', async () => {
+    delete process.env.AI_GATEWAY_API_KEY
+    delete process.env.VERCEL_OIDC_TOKEN
+    const response = await POST(request({ messages: [{ role: 'user', content: 'hello' }] }))
+    expect(response.status).toBe(503)
+    expect(mocks.generate).not.toHaveBeenCalled()
+    expect(mocks.fail).toHaveBeenCalledWith(expect.objectContaining({
+      generationId: 'generation-1', actorEmail: 'casey@savingkc.com', code: 'gateway_unavailable',
+    }))
+    expect(await response.json()).toEqual({
+      error: 'The governed AI Gateway is not configured in this environment.',
+      code: 'gateway_unavailable',
+    })
   })
 })

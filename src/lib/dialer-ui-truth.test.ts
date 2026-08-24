@@ -22,6 +22,9 @@ describe('Prospecting calling-floor truth contract', () => {
     expect(callingFloor).toContain('<DialerSessionCommand')
     expect(callingFloor).toContain('<HeirsSection')
     expect(callingFloor).toContain('Safety checked before every dial')
+    expect(callingFloor).toContain('session.queueItems')
+    expect(callingFloor).toContain('prospect_ids')
+    expect(callingFloor).toContain('prospectId={currentProspectId}')
   })
 
   it('does not carry the obsolete queue-builder dashboard into Prospecting', () => {

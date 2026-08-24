@@ -25,6 +25,10 @@ ALTER TABLE public.crm_properties
   ADD COLUMN IF NOT EXISTS data_source text,
   ADD COLUMN IF NOT EXISTS data_enriched_at timestamptz;
 
+CREATE INDEX IF NOT EXISTS idx_crm_lead_entity_links_property
+  ON public.crm_lead_entity_links (property_id, lead_id)
+  WHERE property_id IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION public.sync_crm_property_facts_for_lead(target_lead_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -35,31 +39,47 @@ DECLARE
   lead_row public.leads%ROWTYPE;
   prospect_row public.prospects%ROWTYPE;
   target_property_id uuid;
+  parsed_lot_size numeric;
+  desired_data_source text;
 BEGIN
-  SELECT * INTO lead_row FROM public.leads WHERE id = target_lead_id;
-  IF NOT FOUND THEN RETURN; END IF;
-
   SELECT property_id INTO target_property_id
   FROM public.crm_lead_entity_links
   WHERE lead_id = target_lead_id;
   IF target_property_id IS NULL THEN RETURN; END IF;
 
-  SELECT * INTO prospect_row
-  FROM public.prospects
-  WHERE lead_id = target_lead_id
-  ORDER BY id
+  -- More than one seller record can legitimately reference the same property.
+  -- Resolve one deterministic, freshest source so repeated syncs cannot make
+  -- canonical property facts oscillate between linked Leads.
+  SELECT lead.* INTO lead_row
+  FROM public.crm_lead_entity_links AS link
+  JOIN public.leads AS lead ON lead.id = link.lead_id
+  WHERE link.property_id = target_property_id
+  ORDER BY lead.data_enriched_at DESC NULLS LAST,
+    lead.updated_at DESC NULLS LAST,
+    lead.id DESC
   LIMIT 1;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  SELECT prospect.* INTO prospect_row
+  FROM public.crm_lead_entity_links AS link
+  JOIN public.prospects AS prospect ON prospect.lead_id = link.lead_id
+  WHERE link.property_id = target_property_id
+  ORDER BY prospect.updated_at DESC NULLS LAST,
+    prospect.created_at DESC NULLS LAST,
+    prospect.id DESC
+  LIMIT 1;
+
+  IF regexp_replace(btrim(lead_row.lot_size::text), ',', '', 'g') ~ '^[0-9]+(?:\.[0-9]+)?$' THEN
+    parsed_lot_size := regexp_replace(btrim(lead_row.lot_size::text), ',', '', 'g')::numeric;
+  END IF;
+  desired_data_source := coalesce(
+    lead_row.data_source,
+    CASE WHEN prospect_row.id IS NOT NULL THEN 'county_prospect' END
+  );
 
   UPDATE public.crm_properties AS property
   SET
-    lot_size = coalesce(
-      CASE
-        WHEN regexp_replace(btrim(lead_row.lot_size::text), ',', '', 'g') ~ '^[0-9]+(?:\.[0-9]+)?$'
-          THEN regexp_replace(btrim(lead_row.lot_size::text), ',', '', 'g')::numeric
-        ELSE NULL
-      END,
-      property.lot_size
-    ),
+    lot_size = coalesce(parsed_lot_size, property.lot_size),
     bathrooms_full = coalesce(lead_row.baths_full, property.bathrooms_full),
     bathrooms_half = coalesce(lead_row.baths_half, property.bathrooms_half),
     basement_type = coalesce(lead_row.basement_type, property.basement_type),
@@ -78,12 +98,33 @@ BEGIN
     zestimate = coalesce(prospect_row.zestimate, property.zestimate),
     total_market_value = coalesce(prospect_row.total_market_value, property.total_market_value),
     occupancy_status = coalesce(prospect_row.occupancy_status, property.occupancy_status),
-    data_source = coalesce(lead_row.data_source,
-      CASE WHEN prospect_row.id IS NOT NULL THEN 'county_prospect' END,
-      property.data_source),
+    data_source = coalesce(desired_data_source, property.data_source),
     data_enriched_at = coalesce(lead_row.data_enriched_at, property.data_enriched_at),
     updated_at = now()
-  WHERE property.id = target_property_id;
+  WHERE property.id = target_property_id
+    AND (
+      (parsed_lot_size IS NOT NULL AND parsed_lot_size IS DISTINCT FROM property.lot_size)
+      OR (lead_row.baths_full IS NOT NULL AND lead_row.baths_full IS DISTINCT FROM property.bathrooms_full)
+      OR (lead_row.baths_half IS NOT NULL AND lead_row.baths_half IS DISTINCT FROM property.bathrooms_half)
+      OR (lead_row.basement_type IS NOT NULL AND lead_row.basement_type IS DISTINCT FROM property.basement_type)
+      OR (lead_row.stories IS NOT NULL AND lead_row.stories IS DISTINCT FROM property.stories)
+      OR (lead_row.garage_spaces IS NOT NULL AND lead_row.garage_spaces IS DISTINCT FROM property.garage_spaces)
+      OR (lead_row.roof_type IS NOT NULL AND lead_row.roof_type IS DISTINCT FROM property.roof_type)
+      OR (lead_row.heating IS NOT NULL AND lead_row.heating IS DISTINCT FROM property.heating)
+      OR (lead_row.cooling IS NOT NULL AND lead_row.cooling IS DISTINCT FROM property.cooling)
+      OR (lead_row.zoning IS NOT NULL AND lead_row.zoning IS DISTINCT FROM property.zoning)
+      OR (lead_row.hoa_amount IS NOT NULL AND lead_row.hoa_amount IS DISTINCT FROM property.hoa_amount)
+      OR (lead_row.tax_assessment IS NOT NULL AND lead_row.tax_assessment IS DISTINCT FROM property.tax_assessment)
+      OR (prospect_row.cumulative_due IS NOT NULL AND prospect_row.cumulative_due IS DISTINCT FROM property.tax_owed)
+      OR (prospect_row.earliest_delinquent_year IS NOT NULL AND prospect_row.earliest_delinquent_year IS DISTINCT FROM property.first_delinquent_year)
+      OR (lead_row.last_sale_date IS NOT NULL AND lead_row.last_sale_date IS DISTINCT FROM property.last_sale_date)
+      OR (lead_row.last_sale_price IS NOT NULL AND lead_row.last_sale_price IS DISTINCT FROM property.last_sale_price)
+      OR (prospect_row.zestimate IS NOT NULL AND prospect_row.zestimate IS DISTINCT FROM property.zestimate)
+      OR (prospect_row.total_market_value IS NOT NULL AND prospect_row.total_market_value IS DISTINCT FROM property.total_market_value)
+      OR (prospect_row.occupancy_status IS NOT NULL AND prospect_row.occupancy_status IS DISTINCT FROM property.occupancy_status)
+      OR (desired_data_source IS NOT NULL AND desired_data_source IS DISTINCT FROM property.data_source)
+      OR (lead_row.data_enriched_at IS NOT NULL AND lead_row.data_enriched_at IS DISTINCT FROM property.data_enriched_at)
+    );
 END
 $$;
 
@@ -194,10 +235,14 @@ GRANT EXECUTE ON FUNCTION public.update_crm_property_enrichment_v1(
   uuid, numeric, numeric, numeric, date, numeric, numeric, integer, text, timestamptz
 ) TO service_role;
 
-SELECT public.sync_crm_property_facts_for_lead(link.lead_id)
-FROM public.crm_lead_entity_links AS link
-WHERE link.property_id IS NOT NULL
-ORDER BY link.lead_id;
+SELECT public.sync_crm_property_facts_for_lead(source.lead_id)
+FROM (
+  SELECT DISTINCT ON (link.property_id) link.lead_id, link.property_id
+  FROM public.crm_lead_entity_links AS link
+  WHERE link.property_id IS NOT NULL
+  ORDER BY link.property_id, link.lead_id
+) AS source
+ORDER BY source.property_id;
 
 COMMENT ON FUNCTION public.update_crm_property_enrichment_v1(
   uuid, numeric, numeric, numeric, date, numeric, numeric, integer, text, timestamptz

@@ -46,10 +46,12 @@ describe('launchProspectingDialerCampaign', () => {
   })
 
   it('delegates batch claiming and session creation to one server transaction', async () => {
-    mocks.rpc.mockResolvedValue({ data: { created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 }, error: null })
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: { created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 }, error: null }))
     const result = await launchProspectingDialerCampaign(actor, campaignId)
 
-    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v1', {
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v2', {
       p_campaign_id: campaignId,
       p_actor_email: actor.email,
       p_actor_name: actor.name,
@@ -59,7 +61,9 @@ describe('launchProspectingDialerCampaign', () => {
   })
 
   it('returns an actionable message after every ready contact is worked', async () => {
-    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'campaign_dialer_complete' } })
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: null, error: { message: 'campaign_dialer_complete' } }))
     await expect(launchProspectingDialerCampaign(actor, campaignId)).rejects.toMatchObject({
       code: 'campaign_dialer_complete',
       status: 409,

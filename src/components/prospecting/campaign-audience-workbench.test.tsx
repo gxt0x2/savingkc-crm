@@ -6,8 +6,8 @@ vi.mock('./county-audience-inventory', () => ({ CountyAudienceInventory: () => <
 import { CampaignAudienceWorkbench } from './campaign-audience-workbench'
 
 const member = {
-  id: 'member-1', leadId: 'lead-1', phone: '+18165550123', timezone: 'America/Chicago', status: 'active' as const,
-  suppressionReason: null, currentStepPosition: 1, nextActionAt: '2026-08-22T15:00:00.000Z', enrolledAt: '2026-08-21T15:00:00.000Z',
+  id: 'member-1', subjectKind: 'lead' as const, leadId: 'lead-1', prospectId: null, enrollmentSource: 'crm_lead' as const, phone: '+18165550123', timezone: 'America/Chicago', status: 'active' as const,
+  suppressionReason: null, currentStepPosition: 1, nextActionAt: '2026-08-22T15:00:00.000Z', enrolledAt: '2026-08-21T15:00:00.000Z', readyContactCount: 1, suppressedContactCount: 0,
   lead: { fullName: 'Helen Seller', propertyAddress: '123 Main Street', station: 'prospect', classification: 'warm' },
 }
 

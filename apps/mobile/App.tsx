@@ -19,7 +19,10 @@ import { fetchConversationDetail, fetchConversations, fetchLeadDetail, fetchLead
 import { enqueueCallEvent, flushCallOutbox, getQueuedCallEvents } from './src/lib/call-outbox'
 import { registerTwilioVoice, startTwilioVoiceCall, type IncomingVoiceCall, type NativeVoiceCall, type VoiceState } from './src/lib/twilio-voice-service'
 import { getSupabaseClient } from './src/lib/supabase'
-import type { CallOutcome, ConversationThread, CrmActivity, CrmLead } from './src/types'
+import type { CallOutcome, ConversationThread, CrmLead } from './src/types'
+import { LeadOperationsCard } from './src/components/lead-operations-card'
+import { WorkScreen } from './src/components/work-screen'
+import { ActivityRow } from './src/components/activity-row'
 
 const queryClient = new QueryClient()
 
@@ -159,7 +162,7 @@ function LoginScreen() {
   )
 }
 
-type MobileTab = 'contacts' | 'conversations' | 'phone'
+type MobileTab = 'contacts' | 'work' | 'conversations' | 'phone'
 
 function MobileWorkspace({ accessToken, email }: { accessToken: string; email: string }) {
   const supabase = getSupabaseClient()
@@ -297,7 +300,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
       {incomingCall ? <View style={styles.incomingBanner}><View style={{ flex: 1 }}><Text style={styles.incomingTitle}>Incoming call</Text><Text style={styles.incomingNumber}>{incomingCall.from}</Text></View><Pressable onPress={rejectIncomingCall} style={styles.declineButton}><Text style={styles.primaryButtonText}>Decline</Text></Pressable><Pressable onPress={acceptIncomingCall} style={styles.answerButton}><Text style={styles.primaryButtonText}>Answer</Text></Pressable></View> : null}
 
       <View style={styles.mobileTabs}>
-        {(['contacts', 'conversations', 'phone'] as MobileTab[]).map((tab) => <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.mobileTab, activeTab === tab && styles.mobileTabActive]}><Text style={[styles.mobileTabText, activeTab === tab && styles.mobileTabTextActive]}>{tab === 'contacts' ? 'Contacts' : tab === 'conversations' ? 'Conversations' : 'Phone'}</Text></Pressable>)}
+        {(['contacts', 'work', 'conversations', 'phone'] as MobileTab[]).map((tab) => <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.mobileTab, activeTab === tab && styles.mobileTabActive]}><Text style={[styles.mobileTabText, activeTab === tab && styles.mobileTabTextActive]}>{tab === 'contacts' ? 'Contacts' : tab === 'work' ? 'Work' : tab === 'conversations' ? 'Inbox' : 'Phone'}</Text></Pressable>)}
       </View>
 
       {queuedEvents > 0 ? (
@@ -335,7 +338,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
           refreshing={leadsQuery.isFetching}
           onRefresh={() => leadsQuery.refetch()}
         />
-      )}</> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
+      )}</> : activeTab === 'work' ? <WorkScreen accessToken={accessToken} onOpenLead={setSelectedLeadId} /> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
     </SafeAreaView>
   )
 }
@@ -500,6 +503,7 @@ function LeadDetailScreen({
 
   const lead = detailQuery.data?.lead
   const activities = detailQuery.data?.activities || []
+  const operations = detailQuery.data?.operations
 
   async function startCall() {
     if (!lead?.phone || activeCall) return
@@ -607,6 +611,14 @@ function LeadDetailScreen({
             <Text style={styles.body}>{lead.property_address || formatLocation(lead) || 'No address yet'}</Text>
           </View>
 
+          {operations ? <LeadOperationsCard accessToken={accessToken} leadId={lead.id} operations={operations} onChanged={async () => {
+            await Promise.all([
+              detailQuery.refetch(),
+              queryClient.invalidateQueries({ queryKey: ['leads'] }),
+              queryClient.invalidateQueries({ queryKey: ['mobile-work'] }),
+            ])
+          }} /> : null}
+
           <View style={styles.panel}>
             <Text style={styles.sectionTitle}>Contact</Text>
             <Text style={styles.leadMeta}>{lead.phone || 'No phone'}</Text>
@@ -659,16 +671,6 @@ function LeadDetailScreen({
         </ScrollView>
       ) : null}
     </SafeAreaView>
-  )
-}
-
-function ActivityRow({ activity }: { activity: CrmActivity }) {
-  return (
-    <View style={styles.activityRow}>
-      <Text style={styles.activityType}>{activity.activity_type}</Text>
-      <Text style={styles.leadMeta}>{activity.description || 'No description'}</Text>
-      <Text style={styles.activityDate}>{new Date(activity.created_at).toLocaleString()}</Text>
-    </View>
   )
 }
 
@@ -1021,18 +1023,6 @@ const styles = StyleSheet.create({
     minHeight: 88,
     paddingTop: 12,
     textAlignVertical: 'top',
-  },
-  activityRow: {
-    borderTopColor: '#E2E8F0',
-    borderTopWidth: 1,
-    gap: 4,
-    paddingTop: 10,
-  },
-  activityType: {
-    color: '#111827',
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
   },
   activityDate: {
     color: '#7b8794',

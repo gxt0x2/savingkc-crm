@@ -162,6 +162,36 @@
         "path": "src/app/api/setup/manifests/route.ts",
         "replacement": "versioned Supabase migrations",
         "reason": "Migration SQL belongs in source-controlled migrations, not a runtime response."
+      },
+      {
+        "path": "src/app/api/ari/briefing/route.ts",
+        "replacement": "/api/ai/threads and the canonical briefing worker",
+        "reason": "The dead ARI event feed duplicated the persistent assistant and had no live product consumer."
+      },
+      {
+        "path": "src/app/api/ari/call-queue/route.ts",
+        "replacement": "/api/dialer/queue and /prospecting",
+        "reason": "Call prioritization belongs to the server-owned Prospecting session engine, not a second ARI queue."
+      },
+      {
+        "path": "src/app/api/ari/coaching/route.ts",
+        "replacement": "/api/rhythm/morning and /api/rhythm/eod",
+        "reason": "Daily operating guidance now comes from the canonical rhythm read models and unified assistant."
+      },
+      {
+        "path": "src/app/api/ari/follow-ups/route.ts",
+        "replacement": "/api/tasks/worklist",
+        "reason": "Follow-up work must use the canonical work-item service rather than a legacy task projection."
+      },
+      {
+        "path": "src/app/api/ari/inbox/route.ts",
+        "replacement": "/api/conversations/hub",
+        "reason": "Communication attention has one authoritative bounded inbox read model."
+      },
+      {
+        "path": "src/app/api/ari/pipeline-actions/route.ts",
+        "replacement": "/api/contacts and /api/reports/operating",
+        "reason": "Pipeline work is owned by the canonical contact workspace and operating snapshot."
       }
     ]
   },
@@ -192,7 +222,7 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/contacts", "/leads/[id]", "/opportunities"],
-      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
+      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/mobile/v1/leads", "/api/mobile/v1/leads/[id]", "/api/mobile/v1/leads/[id]/owner", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
       "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
       "environment": ["CRON_SECRET"],
       "crons": [
@@ -229,9 +259,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/prospecting", "/dialer", "/conversations"],
-      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/launch", "/api/workers/prospecting-campaigns"],
-      "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "sms_opt_outs", "sms_delivery_log"],
-      "environment": ["CRON_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"],
+      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/members/[memberId]/contacts", "/api/prospecting/campaigns/[id]/launch", "/api/workers/prospecting-campaigns"],
+      "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_member_contacts", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "prospects", "prospect_phones", "sms_opt_outs", "sms_delivery_log"],
+      "environment": ["CRON_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
         {
           "path": "/api/workers/prospecting-campaigns",
@@ -246,7 +276,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/calendar", "/tasks"],
-      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk"],
+      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete"],
       "tables": ["appointments", "leads", "lead_activities", "lead_tasks", "tc_tasks", "work_items", "work_item_events"],
       "environment": []
     },
@@ -266,7 +296,7 @@
       "owner": "Dispositions and TC",
       "status": "active",
       "routes": ["/dispo/pipeline", "/dispo/tc", "/dispo/offers", "/dispo/buyers", "/dispo/vendors"],
-      "apiRoutes": ["/api/dispo-deals", "/api/dispo-deals/[id]/closeout", "/api/department-handoffs", "/api/reports/lifecycle-reconciliation", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
+      "apiRoutes": ["/api/dispo-deals", "/api/dispo-deals/[id]/closeout", "/api/department-handoffs", "/api/mobile/v1/handoffs/[id]/accept", "/api/reports/lifecycle-reconciliation", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
       "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyer_offers", "buyers", "vendors", "crm_lifecycle_events", "crm_department_handoffs", "crm_marketing_outcomes"],
       "environment": ["DOCUSEAL_ENABLED", "DOCUSEAL_URL", "DOCUSEAL_TOKEN", "DOCUSEAL_ASSIGNMENT_TEMPLATE_ID", "DOCUSEAL_WEBHOOK_SECRET", "VERCEL_ENV"]
     },
@@ -312,7 +342,7 @@
       "routes": ["/ai"],
       "apiRoutes": ["/api/ai/command", "/api/ai/next-action-proposal", "/api/ai/threads", "/api/ai/threads/[id]", "/api/ari/generate-briefing"],
       "tables": ["assistant_threads", "assistant_messages", "assistant_generations", "assistant_confirmations", "briefings", "crm_briefing_jobs", "agent_profiles"],
-      "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "GROQ_API_KEY", "OPENROUTER_API_KEY"]
+      "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"]
     },
     {
       "id": "ai_change_governance",
@@ -454,7 +484,7 @@
       "routes": ["/settings/system-health"],
       "apiRoutes": ["/api/system-hygiene", "/api/cron/data-retention"],
       "tables": ["data_retention_policies", "data_retention_runs", "system_workers", "manifests", "manifest_history", "hot_score_audit_trail", "google_ads_reporting_sync_runs", "openai_ads_reporting_sync_runs", "sms_delivery_log"],
-      "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF", "WORKTREE_AUDIT_MAIN_REF"],
+      "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF", "WORKTREE_AUDIT_MAIN_REF", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
         { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
       ]
