@@ -51,10 +51,11 @@ describe('server dialer pre-call brief', () => {
 
   it('assembles bounded evidence only after verifying session ownership', async () => {
     const lead = query({ data: { id: 'lead-1', full_name: 'Seller One', property_address: '1 Main St', city: 'Kansas City', state: 'MO', zip: '64101', station: 'contacted', priority: 'high', motivation_score: 7, property_condition: null, asking_price: null, opportunity_score: 70, classification: 'opportunity' }, error: null })
-    const briefing = query({ data: { situation: 'Inherited property.', motivation: 'Wants a quick close.', strategy: 'Confirm the price floor.', generated_at: '2026-08-20T15:00:00Z' }, error: null })
+    const briefing = query({ data: { situation: 'Inherited property.', motivation: 'Wants a quick close.', strategy: 'Confirm the price floor.', generated_at: '2026-08-20T15:00:00Z', prompt_version: 'canonical-lead-briefing-v1', source_revision: 2 }, error: null })
+    const briefingJob = query({ data: { status: 'completed', revision: 2 }, error: null })
     const appointment = query({ data: null, error: null })
     const coOwners = query({ data: [{ name: 'Pat Seller' }], error: null })
-    mocks.from.mockImplementation((table: string) => ({ leads: lead, briefings: briefing, appointments: appointment, lead_co_owners: coOwners })[table])
+    mocks.from.mockImplementation((table: string) => ({ leads: lead, briefings: briefing, crm_briefing_jobs: briefingJob, appointments: appointment, lead_co_owners: coOwners })[table])
 
     const result = await getDialerPreCallBrief({ email: 'casey@savingkc.com', name: 'Casey' }, 'session-1')
 

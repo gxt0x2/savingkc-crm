@@ -11,7 +11,8 @@ import { listWorkItems, type WorkItem } from '@/lib/server/work-items'
 import { supabase } from '@/lib/supabase-lazy'
 
 const LEAD_SELECT = 'id,full_name,property_address,city,state,zip,station,priority,motivation_score,property_condition,asking_price,opportunity_score,classification'
-const BRIEFING_SELECT = 'situation,motivation,strategy,generated_at'
+const BRIEFING_SELECT = 'situation,motivation,strategy,generated_at,prompt_version,source_revision'
+const BRIEFING_JOB_SELECT = 'status,revision'
 const APPOINTMENT_SELECT = 'id,scheduled_at,type,status,notes'
 
 function cleanText(value: unknown, max = 280): string | null {
@@ -85,15 +86,16 @@ export async function getDialerPreCallBrief(actor: AuthenticatedActor, sessionId
   const leadId = session.currentLeadId
   const nowIso = new Date().toISOString()
 
-  const [leadResult, briefingResult, timeline, workItems, appointmentResult, coOwnerResult] = await Promise.all([
+  const [leadResult, briefingResult, briefingJobResult, timeline, workItems, appointmentResult, coOwnerResult] = await Promise.all([
     supabase.from('leads').select(LEAD_SELECT).eq('id', leadId).maybeSingle(),
     supabase.from('briefings').select(BRIEFING_SELECT).eq('lead_id', leadId).eq('is_current', true).order('generated_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('crm_briefing_jobs').select(BRIEFING_JOB_SELECT).eq('lead_id', leadId).maybeSingle(),
     readConversationTimeline({ threadId: leadId, limit: 20 }),
     listWorkItems({ leadId, statuses: ['pending', 'blocked'], limit: 10 }),
     supabase.from('appointments').select(APPOINTMENT_SELECT).eq('lead_id', leadId).in('status', ['scheduled', 'confirmed', 'rescheduled']).gte('scheduled_at', nowIso).order('scheduled_at', { ascending: true }).limit(1).maybeSingle(),
     supabase.from('lead_co_owners').select('name').eq('lead_id', leadId).order('created_at', { ascending: true }).limit(10),
   ])
-  const firstError = leadResult.error || briefingResult.error || appointmentResult.error || coOwnerResult.error
+  const firstError = leadResult.error || briefingResult.error || briefingJobResult.error || appointmentResult.error || coOwnerResult.error
   if (firstError) throw new DialerSessionError('pre_call_brief_unavailable', 503, 'Pre-call brief is unavailable')
   if (!leadResult.data) throw new DialerSessionError('lead_not_found', 404, 'Current contact was not found')
 
@@ -119,12 +121,16 @@ export async function getDialerPreCallBrief(actor: AuthenticatedActor, sessionId
   const briefingStrategy = cleanText(briefing?.strategy, 700)
   const latestEvidenceAt = recentEvidence[0]?.createdAt ? new Date(recentEvidence[0].createdAt).getTime() : 0
   const briefingTime = briefingAt ? new Date(briefingAt).getTime() : 0
+  const briefingRevision = Number(briefing?.source_revision || 0)
+  const job = briefingJobResult.data as Record<string, unknown> | null
+  const jobRevision = Number(job?.revision || 0)
+  const canonicalRefreshPending = Boolean(job) && (job?.status !== 'completed' || briefingRevision < jobRevision)
   const aiBriefing = briefingAt && (briefingSituation || briefingMotivation || briefingStrategy) ? {
     situation: briefingSituation,
     motivation: briefingMotivation,
     strategy: briefingStrategy,
     generatedAt: briefingAt,
-    freshness: latestEvidenceAt > briefingTime ? 'stale' as const : 'current' as const,
+    freshness: canonicalRefreshPending || latestEvidenceAt > briefingTime ? 'stale' as const : 'current' as const,
   } : null
 
   const address = [lead.property_address, lead.city, lead.state, lead.zip]
@@ -144,6 +150,6 @@ export async function getDialerPreCallBrief(actor: AuthenticatedActor, sessionId
     questions: questions(lead, Boolean(nextObjective), coOwners),
     coOwners,
     recentEvidence,
-    sourceRowCount: timeline.items.length + workItems.length + (appointment ? 1 : 0) + coOwners.length + (briefing ? 1 : 0),
+    sourceRowCount: timeline.items.length + workItems.length + (appointment ? 1 : 0) + coOwners.length + (briefing ? 1 : 0) + (job ? 1 : 0),
   }
 }

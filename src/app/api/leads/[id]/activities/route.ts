@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase-lazy'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { buildLeadActivityInsert } from '@/lib/server/lead-activity-command'
-import { syncLeadActivityCreated } from '@/lib/lead-activity-sync'
 
 export async function GET(
   req: NextRequest,
@@ -81,25 +80,9 @@ export async function POST(
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
 
-    let projectionSynced = false
-    try {
-      projectionSynced = await syncLeadActivityCreated({
-        leadId: id,
-        activityId: data.id,
-        activityType: data.activity_type,
-        description: data.description,
-        actorName: actor.name,
-      })
-    } catch (error) {
-      console.error('[leads/:id/activities] projection sync failed:', error)
-    }
-
     return NextResponse.json({
       success: true,
       activity: data,
-      ...(projectionSynced ? {} : {
-        warning: 'Activity saved, but the lead briefing could not be refreshed.',
-      }),
     }, { status: 201 })
   } catch (err) {
     console.error('[leads/:id/activities] create note failed:', err)

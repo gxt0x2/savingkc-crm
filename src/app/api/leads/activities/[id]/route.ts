@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { supabase } from '@/lib/supabase-lazy'
-import { syncLeadActivityMutation } from '@/lib/lead-activity-sync'
 
 const EDITABLE_ACTIVITY_TYPES = ['note', 'letter_tracking']
 const TASK_ACTIVITY_TYPES = ['task', 'appointment', 'follow_up', 'callback', 'send_offer']
@@ -67,28 +66,9 @@ export async function PATCH(
       )
     }
 
-    // Get lead_id to trigger manifest update
-    const { data: activityData } = await supabase
-      .from('lead_activities')
-      .select('lead_id')
-      .eq('id', id)
-      .single()
-
-    const projectionSynced = activityData?.lead_id
-      ? await syncLeadActivityMutation({
-        leadId: activityData.lead_id,
-        activityId: id,
-        activityType: data.activity_type,
-        mutation: 'updated',
-      })
-      : true
-
     return NextResponse.json({
       success: true,
       activity: data,
-      ...(projectionSynced ? {} : {
-        warning: 'Activity saved, but the lead briefing could not be refreshed.',
-      }),
     })
   } catch (err) {
     console.error('Error updating note:', err)
@@ -111,7 +91,7 @@ export async function DELETE(
 
     const { id } = await params
 
-    // Get lead_id before deletion for manifest update
+    // Read the immutable activity kind before enforcing the deletion boundary.
     const { data: activityData } = await supabase
       .from('lead_activities')
       .select('lead_id, activity_type')
@@ -144,21 +124,8 @@ export async function DELETE(
       )
     }
 
-    // Trigger manifest update
-    const projectionSynced = activityData?.lead_id
-      ? await syncLeadActivityMutation({
-        leadId: activityData.lead_id,
-        activityId: id,
-        activityType: activityData.activity_type,
-        mutation: 'deleted',
-      })
-      : true
-
     return NextResponse.json({
       success: true,
-      ...(projectionSynced ? {} : {
-        warning: 'Activity deleted, but the lead briefing could not be refreshed.',
-      }),
     })
   } catch (err) {
     console.error('Error deleting activity:', err)

@@ -45,7 +45,11 @@ export interface CrmEntityContext {
     zoning?: string | null
     hoaAmount?: number | null
     taxAssessment?: number | null
+    assessedValue?: number | null
+    landValue?: number | null
+    improvementValue?: number | null
     taxOwed?: number | null
+    taxStatus?: string | null
     firstDelinquentYear?: number | null
     lastSaleDate?: string | null
     lastSalePrice?: number | null
@@ -53,6 +57,10 @@ export interface CrmEntityContext {
     redfinEstimate?: number | null
     totalMarketValue?: number | null
     occupancyStatus?: string | null
+    propertyOwnerName?: string | null
+    ownerMailingAddress?: string | null
+    ownerIsDeceased?: boolean | null
+    ownerIsOutOfState?: boolean | null
     dataSource?: string | null
     dataEnrichedAt?: string | null
   } | null
@@ -185,7 +193,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       .order('is_primary', { ascending: false }),
     linkData.property_id
       ? db.from('crm_properties')
-        .select('id, address, city, state, zip, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, tax_owed, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, data_source, data_enriched_at')
+        .select('id, address, city, state, zip, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, assessed_value, land_value, improvement_value, tax_owed, tax_status, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, property_owner_name, owner_mailing_address, owner_is_deceased, owner_is_out_of_state, data_source, data_enriched_at')
         .eq('id', linkData.property_id)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -252,7 +260,11 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       zoning: property.zoning,
       hoaAmount: property.hoa_amount,
       taxAssessment: property.tax_assessment,
+      assessedValue: property.assessed_value,
+      landValue: property.land_value,
+      improvementValue: property.improvement_value,
       taxOwed: property.tax_owed,
+      taxStatus: property.tax_status,
       firstDelinquentYear: property.first_delinquent_year,
       lastSaleDate: property.last_sale_date,
       lastSalePrice: property.last_sale_price,
@@ -260,6 +272,10 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       redfinEstimate: property.redfin_estimate,
       totalMarketValue: property.total_market_value,
       occupancyStatus: property.occupancy_status,
+      propertyOwnerName: property.property_owner_name,
+      ownerMailingAddress: property.owner_mailing_address,
+      ownerIsDeceased: property.owner_is_deceased,
+      ownerIsOutOfState: property.owner_is_out_of_state,
       dataSource: property.data_source,
       dataEnrichedAt: property.data_enriched_at,
     } : null,

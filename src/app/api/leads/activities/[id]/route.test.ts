@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   deleteRow: vi.fn(),
   resolveAuthenticatedActor: vi.fn(),
-  syncLeadActivityMutation: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({
@@ -17,17 +16,12 @@ vi.mock('@/lib/supabase-lazy', () => ({
   supabase: { from: mocks.from },
 }))
 
-vi.mock('@/lib/lead-activity-sync', () => ({
-  syncLeadActivityMutation: mocks.syncLeadActivityMutation,
-}))
-
 import { DELETE, PATCH } from './route'
 
-describe('lead activity projection sync', () => {
+describe('canonical lead activity mutations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.resolveAuthenticatedActor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
-    mocks.syncLeadActivityMutation.mockResolvedValue(true)
     mocks.from.mockImplementation(() => ({
       update: (payload: unknown) => {
         mocks.update(payload)
@@ -67,7 +61,7 @@ describe('lead activity projection sync', () => {
     }))
   })
 
-  it('calls the manifest domain sync directly after an edit', async () => {
+  it('edits the canonical activity without a legacy projection write', async () => {
     const request = new NextRequest('https://crm.savingkc.com/api/leads/activities/activity-1', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -77,16 +71,11 @@ describe('lead activity projection sync', () => {
     const response = await PATCH(request, { params: Promise.resolve({ id: 'activity-1' }) })
 
     expect(response.status).toBe(200)
-    expect(mocks.syncLeadActivityMutation).toHaveBeenCalledWith({
-      leadId: 'lead-1',
-      activityId: 'activity-1',
-      activityType: 'note',
-      mutation: 'updated',
-    })
+    expect(mocks.update).toHaveBeenCalledWith({ description: 'Updated note' })
+    expect(mocks.from).toHaveBeenCalledTimes(1)
   })
 
-  it('reports a projection warning without pretending the activity edit failed', async () => {
-    mocks.syncLeadActivityMutation.mockResolvedValue(false)
+  it('returns the committed canonical activity with no projection warning', async () => {
     const request = new NextRequest('https://crm.savingkc.com/api/leads/activities/activity-1', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -98,7 +87,7 @@ describe('lead activity projection sync', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
       success: true,
-      warning: expect.stringContaining('briefing'),
+      activity: expect.objectContaining({ id: 'activity-1' }),
     })
   })
 
