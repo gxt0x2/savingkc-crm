@@ -9,7 +9,7 @@ import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
 import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
-import { getTwilioClient, safeSendSMS } from '@/lib/safe-communications'
+import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 
 const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
@@ -72,12 +72,6 @@ export function googleAdsMissedCallerMessage(calledNumber?: string | null): stri
     return "Hey, this is Saving KC Homebuyers. Sorry we missed your call about property taxes. Are you looking to sell the property? Reply here and we'll help."
   }
   return "Hey, this is Saving KC Homebuyers. Sorry we missed your call. Are you looking to sell a property? Reply here and we'll help."
-}
-
-export function googleAdsEscalationReminderMessage(from: string, leadId?: string | null, calledNumber?: string | null): string {
-  const profile = profileFor(calledNumber)
-  const leadUrl = googleAdsLeadUrl(leadId)
-  return `REMINDER: ${profile.label} call from ${callerPhoneLabel(from)} still needs a callback. Starting agent callback now.${leadUrl ? `\n${leadUrl}` : ''}`
 }
 
 export function googleAdsAttribution(capturedAt = new Date().toISOString(), calledNumber?: string | null): Record<string, unknown> {
@@ -293,128 +287,5 @@ export async function notifyGoogleAdsTeam(
         ...options.metadata,
       },
     })
-  }
-}
-
-export async function createGoogleAdsMissedEscalationTask(input: {
-  leadId: string
-  from: string
-  calledNumber: string
-  callSid: string
-  dialCallSid: string
-  dialCallDuration: number | null
-  routing: AgentRouting
-}): Promise<{ taskId: string | null; dueDate: string; missedAt: string; metadata: Record<string, unknown> }> {
-  const profile = profileFor(input.calledNumber)
-  const dueDate = new Date(Date.now() + 5 * 60 * 1000).toISOString()
-  const missedAt = new Date().toISOString()
-  const isTest = isInternalTestPhone(input.from)
-  const metadata = {
-    task_type: 'google_ads_missed_call_escalation',
-    source: profile.source,
-    traffic_source: 'google_ads',
-    campaign: profile.campaign,
-    tracking_number: profile.trackingDigits,
-    landing_page: profile.landingPage,
-    phone_profile: profile.key,
-    due_date: dueDate,
-    missed_at: missedAt,
-    status: isTest ? 'skipped' : 'pending',
-    priority: 'critical',
-    is_test: isTest,
-    skipped_reason: isTest ? 'internal_test_phone' : undefined,
-    seller_phone: input.from,
-    called_number: input.calledNumber || profile.number,
-    callSid: input.callSid,
-    dialCallSid: input.dialCallSid,
-    dialCallDuration: input.dialCallDuration,
-    assigned_to: input.routing.primary.name,
-    primary_agent_name: input.routing.primary.name,
-    primary_agent_phone: input.routing.primary.phone,
-    secondary_agent_name: input.routing.secondary.name,
-    secondary_agent_phone: input.routing.secondary.phone,
-  }
-
-  if (isTest) {
-    return { taskId: null, dueDate, missedAt, metadata }
-  }
-
-  const { data, error } = await supabase.from('lead_activities').insert({
-    lead_id: input.leadId,
-    activity_type: 'task',
-    description: `${profile.label} missed call escalation for ${callerPhoneLabel(input.from)}`,
-    agent: 'Ari',
-    metadata,
-  }).select('id').single()
-
-  if (error) {
-    console.error('[GOOGLE-ADS-PHONE] Failed to create missed escalation task:', error)
-  }
-
-  return { taskId: data?.id || null, dueDate, missedAt, metadata }
-}
-
-export async function hasGoogleAdsLeadRespondedSince(leadId: string, sinceIso: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('lead_activities')
-    .select('id, activity_type, metadata, created_at')
-    .eq('lead_id', leadId)
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(50)
-
-  if (error) {
-    console.error('[GOOGLE-ADS-PHONE] Response check failed:', error)
-    return false
-  }
-
-  return (data || []).some((activity) => {
-    const metadata = isRecord(activity.metadata) ? activity.metadata : {}
-    const direction = typeof metadata.direction === 'string' ? metadata.direction.toLowerCase() : ''
-    const outcome = typeof metadata.outcome === 'string' ? metadata.outcome.toLowerCase() : ''
-    const status = typeof metadata.status === 'string' ? metadata.status.toLowerCase() : ''
-    const dialStatus = typeof metadata.dialStatus === 'string' ? metadata.dialStatus.toLowerCase() : ''
-
-    if (activity.activity_type === 'sms' && ['received', 'inbound'].includes(direction)) return true
-    if (activity.activity_type === 'call' && ['connected', 'completed', 'answered'].includes(outcome || status || dialStatus)) return true
-
-    return false
-  })
-}
-
-export async function startGoogleAdsAgentCallback(input: {
-  leadId: string
-  leadPhone: string
-  calledNumber: string
-  agentName: string
-  agentPhone: string
-  triggerCallSid?: string
-}): Promise<{ started: boolean; sid?: string; error?: string }> {
-  const client = getTwilioClient()
-  if (!client) {
-    return { started: false, error: 'Twilio client not initialized' }
-  }
-
-  const callbackUrl = new URL('/api/ivr/google-ads-agent-callback', BASE_URL)
-  callbackUrl.searchParams.set('leadId', input.leadId)
-  callbackUrl.searchParams.set('leadPhone', input.leadPhone)
-  callbackUrl.searchParams.set('calledNumber', input.calledNumber || GOOGLE_ADS_PHONE_NUMBER)
-  callbackUrl.searchParams.set('agentName', input.agentName)
-  callbackUrl.searchParams.set('agentPhone', input.agentPhone)
-  if (input.triggerCallSid) callbackUrl.searchParams.set('triggerCallSid', input.triggerCallSid)
-
-  try {
-    const call = await client.calls.create({
-      to: input.agentPhone,
-      from: input.calledNumber || GOOGLE_ADS_PHONE_NUMBER,
-      url: callbackUrl.toString(),
-      method: 'POST',
-      timeout: 20,
-    })
-
-    return { started: true, sid: call.sid }
-  } catch (error) {
-    console.error('[GOOGLE-ADS-PHONE] Agent callback failed:', error)
-    return { started: false, error: error instanceof Error ? error.message : 'Unknown Twilio error' }
   }
 }

@@ -122,26 +122,6 @@ export async function POST(req: Request) {
     })
   } catch {}
 
-  // Create callback task
-  if (resolvedLeadId) {
-    await supabase.from('lead_activities').insert({
-      lead_id: resolvedLeadId,
-      activity_type: 'task',
-      description: `Listen & callback: Voicemail from ${from} (${recordingDuration}s)`,
-      agent: 'System',
-      metadata: {
-        task_type: 'callback',
-        due_date: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        assigned_to: agent || 'Casey',
-        priority: 'high',
-        status: 'pending',
-        source: 'twilio_voicemail',
-        recording_sid: recordingSid,
-        recordingUrl,
-      }
-    })
-  }
-
   // Async transcript analysis (fire-and-forget)
   if (recordingUrl && resolvedLeadId) {
     transcribeAndAnalyze(recordingUrl, recordingSid, resolvedLeadId).catch(err =>

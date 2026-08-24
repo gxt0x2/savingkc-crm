@@ -75,26 +75,3 @@ export function buildCarrierFallbackSmsLeadSeed(input: {
     notes: `Inbound SMS was captured by the carrier fallback on ${input.to}. MessageSid: ${input.messageSid}`,
   }
 }
-
-export function buildCarrierFallbackSmsTask(input: {
-  from: string
-  to: string
-  assignedAgent: string
-  messageSid: string
-}) {
-  return {
-    activity_type: 'task',
-    description: `Review carrier fallback SMS from ${input.from}`,
-    agent: 'System',
-    metadata: {
-      source: 'carrier_sms_fallback',
-      message_sid: input.messageSid,
-      called_number: input.to,
-      task_type: 'reply',
-      due_date: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      assigned_to: input.assignedAgent,
-      priority: 'high',
-      status: 'pending',
-    },
-  }
-}

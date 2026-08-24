@@ -6,7 +6,6 @@ import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { processInboundSmsConsent } from '@/lib/sms-consent-audit'
 import {
   buildCarrierFallbackSmsLeadSeed,
-  buildCarrierFallbackSmsTask,
   emptyTwiml,
 } from '@/lib/telephony/carrier-fallback'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
@@ -73,12 +72,6 @@ export async function POST(request: Request) {
         .single()
       if (error) throw error
       leadId = created?.id || null
-      if (leadId) {
-        await supabase.from('lead_activities').insert({
-          lead_id: leadId,
-          ...buildCarrierFallbackSmsTask({ from, to, assignedAgent: routing.primary.name, messageSid }),
-        })
-      }
     }
 
     await supabase.from('lead_activities').insert({

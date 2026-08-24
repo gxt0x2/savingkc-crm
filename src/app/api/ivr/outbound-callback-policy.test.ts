@@ -19,7 +19,6 @@ vi.mock('@/lib/server/dialer-call-eligibility', () => ({
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { from: mocks.from } }))
 
 import { POST as formCallback } from './form-lead-agent-callback/route'
-import { POST as googleCallback } from './google-ads-agent-callback/route'
 
 function request(path: string) {
   const form = new FormData()
@@ -55,11 +54,8 @@ describe('server-created outbound callback policy', () => {
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
   })
 
-  it.each([
-    ['/api/ivr/form-lead-agent-callback?leadId=lead-1&leadPhone=%2B19135550123&callerId=%2B18163077835&agentName=Casey', formCallback],
-    ['/api/ivr/google-ads-agent-callback?leadId=lead-1&leadPhone=%2B19135550123&calledNumber=%2B18166088808&agentName=Casey', googleCallback],
-  ] as const)('blocks a suppressed seller leg before emitting a dialable verb', async (path, handler) => {
-    const response = await handler(request(path))
+  it('blocks a suppressed seller leg before emitting a dialable verb', async () => {
+    const response = await formCallback(request('/api/ivr/form-lead-agent-callback?leadId=lead-1&leadPhone=%2B19135550123&callerId=%2B18163077835&agentName=Casey'))
     const twiml = await response.text()
 
     expect(response.status).toBe(200)
@@ -69,15 +65,12 @@ describe('server-created outbound callback policy', () => {
     expect(mocks.from).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['/api/ivr/form-lead-agent-callback?leadId=lead-1&leadPhone=%2B19135550123&callerId=%2B18163077835&batchId=batch-1', formCallback],
-    ['/api/ivr/google-ads-agent-callback?leadId=lead-1&leadPhone=%2B19135550123', googleCallback],
-  ] as const)('contains a provider-validator failure before body, policy, or database work', async (path, handler) => {
+  it('contains a provider-validator failure before body, policy, or database work', async () => {
     mocks.validateTwilioWebhook.mockRejectedValue(new Error('validator unavailable'))
-    const callbackRequest = request(path)
+    const callbackRequest = request('/api/ivr/form-lead-agent-callback?leadId=lead-1&leadPhone=%2B19135550123&callerId=%2B18163077835&batchId=batch-1')
     const formData = vi.spyOn(callbackRequest, 'formData')
 
-    const response = await handler(callbackRequest)
+    const response = await formCallback(callbackRequest)
     const twiml = await response.text()
 
     expect(response.status).toBe(403)
@@ -88,15 +81,12 @@ describe('server-created outbound callback policy', () => {
     expect(mocks.from).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['/api/ivr/form-lead-agent-callback?leadId=lead-1&leadPhone=%2B19135550123&callerId=%2B18163077835&batchId=batch-1', formCallback],
-    ['/api/ivr/google-ads-agent-callback?leadId=lead-1&leadPhone=%2B19135550123', googleCallback],
-  ] as const)('rejects an invalid provider signature before body, policy, or database work', async (path, handler) => {
+  it('rejects an invalid provider signature before body, policy, or database work', async () => {
     mocks.validateTwilioWebhook.mockResolvedValue(false)
-    const callbackRequest = request(path)
+    const callbackRequest = request('/api/ivr/form-lead-agent-callback?leadId=lead-1&leadPhone=%2B19135550123&callerId=%2B18163077835&batchId=batch-1')
     const formData = vi.spyOn(callbackRequest, 'formData')
 
-    const response = await handler(callbackRequest)
+    const response = await formCallback(callbackRequest)
     const twiml = await response.text()
 
     expect(response.status).toBe(403)
@@ -157,18 +147,6 @@ describe('server-created outbound callback policy', () => {
     expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledTimes(2)
     expect(mocks.from).toHaveBeenCalledTimes(2)
     expect(mocks.recordBlockedDialerCall).toHaveBeenCalledOnce()
-  })
-
-  it('preserves the Google Ads seller leg when the live policy allows it', async () => {
-    mocks.evaluateOutboundDialerCall.mockResolvedValue(allowed)
-
-    const response = await googleCallback(request('/api/ivr/google-ads-agent-callback?leadId=lead-1&leadPhone=(913)%20555-0123&calledNumber=%2B18166088808&agentName=Casey'))
-    const twiml = await response.text()
-
-    expect(response.status).toBe(200)
-    expect(twiml.match(/<Dial\b/g)).toHaveLength(1)
-    expect(twiml).toContain('<Number>+19135550123</Number>')
-    expect(mocks.recordBlockedDialerCall).not.toHaveBeenCalled()
   })
 
   it('preserves the claimed form-lead seller leg when the live policy allows it', async () => {

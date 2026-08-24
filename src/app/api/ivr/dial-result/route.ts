@@ -13,7 +13,6 @@ import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
 import { ensureManifestExists, onCommunicationEvent } from '@/lib/manifest-sync'
 import {
   buildDirectInboundLeadSeed,
-  buildDirectInboundQualificationTask,
 } from '@/lib/operating-model/direct-inbound-intake'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
@@ -25,7 +24,6 @@ import {
   parseCallDurationSeconds,
 } from '@/lib/call-quality-events'
 import {
-  createGoogleAdsMissedEscalationTask,
   googleAdsMissedCallerMessage,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
@@ -160,23 +158,6 @@ async function ensureUnknownDirectInboundContact(input: {
   await ensureManifestExists(leadId).catch((error) => {
     console.error('[DIAL-RESULT] Direct caller manifest creation failed:', error)
   })
-
-  const { data: existingTask } = await supabase
-    .from('lead_activities')
-    .select('id')
-    .eq('lead_id', leadId)
-    .eq('activity_type', 'task')
-    .eq('metadata->>source', 'direct_inbound_intake')
-    .eq('metadata->>call_sid', input.callSid)
-    .limit(1)
-    .maybeSingle()
-
-  if (!existingTask?.id) {
-    await supabase.from('lead_activities').insert({
-      lead_id: leadId,
-      ...buildDirectInboundQualificationTask(seedInput),
-    })
-  }
 
   await supabase.from('ari_briefing_events').insert({
     event_type: 'inbound_call',
@@ -396,7 +377,7 @@ export async function POST(req: Request) {
         agentName: routing.primary.name,
       })
 
-      // Mark pending callback tasks done for known leads.
+      // Preserve legacy pending callback history without creating new provider-derived tasks.
       if (resolvedLeadId) {
         onCommunicationEvent(resolvedLeadId, { type: 'inbound_call' }).catch((error) => {
           console.error('[DIAL-RESULT] Manifest communication update failed:', error)
@@ -464,17 +445,6 @@ export async function POST(req: Request) {
         }
       })
 
-      if (!isInternalTestCaller) {
-        await createGoogleAdsMissedEscalationTask({
-          leadId: resolvedLeadId,
-          from,
-          calledNumber,
-          callSid: parentCallSid,
-          dialCallSid,
-          dialCallDuration,
-          routing,
-        })
-      }
     } else {
     // Alert both agents for IVR calls
     const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
@@ -511,24 +481,6 @@ export async function POST(req: Request) {
       metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type }
     })
 
-    // Urgent callback task
-    await supabase.from('lead_activities').insert({
-      lead_id: resolvedLeadId,
-      activity_type: 'task',
-      description: `URGENT: Call back ${from} — both agents missed`,
-      agent: 'Ari',
-      metadata: {
-        task_type: 'callback',
-        due_date: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-        assigned_to: routing.primary.name,
-        priority: 'critical',
-        status: 'pending',
-        source: 'twilio_dial_result',
-        call_sid: parentCallSid,
-        dial_call_sid: dialCallSid,
-        seller_phone: from
-      }
-    })
     }
   }
 

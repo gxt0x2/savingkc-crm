@@ -18,6 +18,12 @@ function getSupabase() {
   )
 }
 
+function withoutMetadata<T extends Record<string, unknown>>(row: T): Omit<T, 'metadata'> {
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== 'metadata'),
+  ) as Omit<T, 'metadata'>
+}
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -87,10 +93,9 @@ export async function createBriefingEvent(
 
   if (error) {
     if (error.code === 'PGRST204' && error.message?.includes("'metadata' column")) {
-      const { metadata: _metadata, ...rowWithoutMetadata } = row
       const retry = await supabase
         .from('ari_briefing_events')
-        .insert(rowWithoutMetadata)
+        .insert(withoutMetadata(row))
         .select('id')
         .single()
       if (!retry.error) return { success: true, id: retry.data.id }
@@ -127,7 +132,7 @@ export async function createBriefingEvents(
   if (error) {
     if (error.code === 'PGRST204' && error.message?.includes("'metadata' column")) {
       const retry = await supabase.from('ari_briefing_events').insert(
-        rows.map(({ metadata: _metadata, ...row }) => row),
+        rows.map(withoutMetadata),
       )
       if (!retry.error) return { success: true, count: events.length }
     }
@@ -401,7 +406,7 @@ export async function notifyMissedCall(
     priority: 'high',
     title: `Missed call: ${leadName || phoneNumber}`,
     description: leadId
-      ? `Missed call from ${leadName}. Auto text-back sent, callback task created.`
+      ? `Missed call from ${leadName}. Auto text-back sent and the conversation needs a reply.`
       : `Missed call from unknown number ${phoneNumber}. Generic text-back sent.`,
     lead_id: leadId || undefined,
     action_url: leadId ? `/leads/${leadId}` : undefined,

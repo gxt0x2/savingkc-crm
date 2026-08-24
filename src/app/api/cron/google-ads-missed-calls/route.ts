@@ -8,23 +8,19 @@ function parseBool(value: string | null): boolean {
   return value === '1' || value === 'true' || value === 'yes'
 }
 
-function parsePositiveInt(value: string | null): number | undefined {
-  if (!value) return undefined
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined
-}
-
 async function handle(req: NextRequest) {
   const unauthorized = await requireAdminOrSecret(req)
   if (unauthorized) return unauthorized
 
   const url = new URL(req.url)
   const dryRun = parseBool(url.searchParams.get('dryRun'))
-  const limit = parsePositiveInt(url.searchParams.get('limit'))
-  const twilioLookbackMinutes = parsePositiveInt(url.searchParams.get('twilioLookbackMinutes'))
+  const rawLookback = Number(url.searchParams.get('twilioLookbackMinutes'))
+  const twilioLookbackMinutes = Number.isFinite(rawLookback) && rawLookback > 0
+    ? Math.floor(rawLookback)
+    : undefined
 
   try {
-    const result = await runGoogleAdsMissedCallReconciliation({ dryRun, limit, twilioLookbackMinutes })
+    const result = await runGoogleAdsMissedCallReconciliation({ dryRun, twilioLookbackMinutes })
     return NextResponse.json(result)
   } catch (error) {
     console.error('[google-ads-missed-calls] reconciliation failed', error)
