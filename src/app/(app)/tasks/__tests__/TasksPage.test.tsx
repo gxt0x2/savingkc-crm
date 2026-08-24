@@ -108,15 +108,17 @@ describe('TasksPage operating workspace', () => {
     expect(screen.getByRole('button', { name: 'Reopen Call seller' })).toBeInTheDocument()
   })
 
-  it('confirms and deletes an individual task', async () => {
+  it('confirms and cancels an individual task while retaining audit history', async () => {
     render(<TasksPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Call seller' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel Call seller' }))
     const dialog = screen.getByRole('alertdialog')
     expect(within(dialog).getByText('Call seller')).toBeInTheDocument()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    expect(within(dialog).getByText(/audit history will be retained/i)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel task' }))
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/calendar/tasks/task-1', { method: 'DELETE' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('1 task cancelled. Audit history was retained.')
     expect(screen.queryByRole('button', { name: /Call seller/ })).not.toBeInTheDocument()
   })
 
@@ -133,6 +135,21 @@ describe('TasksPage operating workspace', () => {
       body: JSON.stringify({ ids: ['task-1'], action: 'complete' }),
     })))
     expect(await screen.findByRole('status')).toHaveTextContent('2 tasks updated.')
+  })
+
+  it('uses the canonical cancel action for a bulk cancellation', async () => {
+    render(<TasksPage />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select tasks on this page' }))
+    const bulkBar = screen.getByRole('region', { name: 'Bulk task changes' })
+    fireEvent.change(within(bulkBar).getByRole('combobox', { name: 'Bulk action' }), { target: { value: 'cancel' } })
+    fireEvent.click(within(bulkBar).getByRole('button', { name: 'Apply' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel task' }))
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/calendar/tasks/bulk', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ ids: ['task-1'], action: 'cancel' }),
+    })))
   })
 
   it('sends governed filters to the bounded server worklist', () => {

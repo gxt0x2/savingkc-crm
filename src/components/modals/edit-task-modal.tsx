@@ -17,7 +17,7 @@ interface EditTaskModalProps {
   }
   onClose: () => void
   onSaved: (taskId: string, newTitle: string, newMetadata: Record<string, unknown>) => void
-  onDeleted?: (taskId: string) => void
+  onCancelled?: (taskId: string) => void
 }
 
 export function EditTaskModal({
@@ -26,7 +26,7 @@ export function EditTaskModal({
   initialMetadata,
   onClose,
   onSaved,
-  onDeleted
+  onCancelled
 }: EditTaskModalProps) {
   const [title, setTitle] = useState(initialTitle)
   const [taskType, setTaskType] = useState(initialMetadata.task_type || 'follow_up')
@@ -39,12 +39,12 @@ export function EditTaskModal({
     d.setHours(d.getHours() + 1, 0, 0, 0)
     return d.toISOString().slice(0, 16)
   })
-  const [assignedTo, setAssignedTo] = useState(initialMetadata.assigned_to || 'Casey')
+  const [assignedTo, setAssignedTo] = useState(initialMetadata.assigned_to || '')
   const [notes, setNotes] = useState(initialMetadata.notes || '')
   const [status, setStatus] = useState(initialMetadata.status || 'pending')
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -90,8 +90,8 @@ export function EditTaskModal({
     }
   }
 
-  async function handleDelete() {
-    setDeleting(true)
+  async function handleCancel() {
+    setCancelling(true)
 
     try {
       const res = await fetch(`/api/calendar/tasks/${taskId}`, {
@@ -101,18 +101,18 @@ export function EditTaskModal({
       const data = await res.json()
 
       if (!res.ok || !data.success) {
-        console.error('Failed to delete task:', data.error)
-        alert('Failed to delete task')
+        console.error('Failed to cancel task:', data.error)
+        alert('Failed to cancel task')
         return
       }
 
-      onDeleted?.(taskId)
+      onCancelled?.(taskId)
       onClose()
     } catch (err) {
-      console.error('Error deleting task:', err)
-      alert('Failed to delete task')
+      console.error('Error cancelling task:', err)
+      alert('Failed to cancel task')
     } finally {
-      setDeleting(false)
+      setCancelling(false)
     }
   }
 
@@ -212,11 +212,11 @@ export function EditTaskModal({
         <div className="flex justify-between border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-6 py-4">
           <button
             type="button"
-            onClick={() => setShowDeleteConfirm(true)}
-            disabled={deleting}
+            onClick={() => setShowCancelConfirm(true)}
+            disabled={cancelling}
             className="rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-sm font-bold text-[var(--crm-danger)] disabled:opacity-50"
           >
-            Delete Task
+            Cancel Task
           </button>
           <div className="flex gap-2">
             <button
@@ -246,32 +246,32 @@ export function EditTaskModal({
           </div>
         </div>
 
-        {/* Delete Confirmation */}
-        {showDeleteConfirm && (
+        {/* Cancellation keeps the durable audit record. */}
+        {showCancelConfirm && (
           <div className="absolute inset-0 bg-black/70 rounded-xl flex items-center justify-center p-6">
             <div className="crm-panel-raised max-w-sm rounded-xl p-6 shadow-xl">
-              <h3 className="mb-2 text-lg font-bold text-[var(--crm-danger)]">Delete task?</h3>
+              <h3 className="mb-2 text-lg font-bold text-[var(--crm-danger)]">Cancel task?</h3>
               <p className="mb-4 text-sm text-[var(--crm-text-muted)]">
-                This action cannot be undone. The task will be permanently deleted.
+                This task will leave the active queue. Its audit history will be retained.
               </p>
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowDeleteConfirm(false)}
+                  onClick={() => setShowCancelConfirm(false)}
                   className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold"
                 >
-                  Cancel
+                  Keep task
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setShowDeleteConfirm(false)
-                    handleDelete()
+                    setShowCancelConfirm(false)
+                    handleCancel()
                   }}
-                  disabled={deleting}
+                  disabled={cancelling}
                   className="rounded-lg bg-[var(--crm-danger)] px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
                 >
-                  {deleting ? 'Deleting...' : 'Delete'}
+                  {cancelling ? 'Cancelling...' : 'Cancel task'}
                 </button>
               </div>
             </div>

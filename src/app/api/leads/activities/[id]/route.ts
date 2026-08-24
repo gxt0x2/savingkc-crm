@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
-import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { supabase } from '@/lib/supabase-lazy'
 import { syncLeadActivityMutation } from '@/lib/lead-activity-sync'
 
-const EDITABLE_ACTIVITY_TYPES = ['note', 'task', 'appointment', 'follow_up', 'callback', 'send_offer']
+const EDITABLE_ACTIVITY_TYPES = ['note', 'letter_tracking']
+const TASK_ACTIVITY_TYPES = ['task', 'appointment', 'follow_up', 'callback', 'send_offer']
+
+function canonicalTaskMutationResponse(id: string) {
+  return NextResponse.json({
+    success: false,
+    error: 'Task mutations moved to the canonical work-item service',
+    replacement: `/api/calendar/tasks/${encodeURIComponent(id)}`,
+  }, { status: 410 })
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -18,7 +26,11 @@ export async function PATCH(
 
     const { id } = await params
     const body = await req.json()
-    const { description, metadata, activity_type } = body
+    const { description, activity_type: activityType } = body
+
+    if (typeof activityType === 'string' && TASK_ACTIVITY_TYPES.includes(activityType)) {
+      return canonicalTaskMutationResponse(id)
+    }
 
     if (!description || typeof description !== 'string') {
       return NextResponse.json(
@@ -30,27 +42,6 @@ export async function PATCH(
     // Build update object
     const updateData: Record<string, unknown> = {
       description: description.trim()
-    }
-
-    // For calendar-style tasks, allow metadata updates while preserving the row's existing activity_type.
-    if (activity_type === 'task' && metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-      const taskMetadata = metadata as Record<string, unknown>
-      const assignment = resolveTaskAssignee(taskMetadata.assigned_to, authenticatedActor.name, { defaultToActor: true })
-      if (!assignment.authorized || !assignment.assignedTo) {
-        return NextResponse.json({ success: false, error: 'Task assignee is not authorized' }, { status: 403 })
-      }
-      const trustedTaskMetadata = { ...taskMetadata }
-      delete trustedTaskMetadata.actor
-      delete trustedTaskMetadata.agent
-      delete trustedTaskMetadata.created_by
-      delete trustedTaskMetadata.createdBy
-      delete trustedTaskMetadata.updated_by
-      delete trustedTaskMetadata.updatedBy
-      updateData.metadata = {
-        ...trustedTaskMetadata,
-        assigned_to: assignment.assignedTo,
-        updated_by: authenticatedActor.name,
-      }
     }
 
     const { data, error } = await supabase
@@ -127,7 +118,11 @@ export async function DELETE(
       .eq('id', id)
       .single()
 
-    // Only allow deletion of notes and calendar-style tasks.
+    // Task-shaped activities are cancelled through the canonical work-item
+    // service. This generic route is limited to editable notes and mail logs.
+    if (activityData && TASK_ACTIVITY_TYPES.includes(activityData.activity_type)) {
+      return canonicalTaskMutationResponse(id)
+    }
     if (activityData && !EDITABLE_ACTIVITY_TYPES.includes(activityData.activity_type)) {
       return NextResponse.json(
         { success: false, error: 'Cannot delete this activity type' },

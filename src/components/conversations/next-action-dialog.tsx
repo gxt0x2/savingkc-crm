@@ -37,7 +37,7 @@ export function NextActionDialog({
 }) {
   const [title, setTitle] = useState(action?.title ?? '')
   const [taskType, setTaskType] = useState('follow_up')
-  const [assignedTo, setAssignedTo] = useState(action?.owner || defaultOwner || 'Ernest')
+  const [assignedTo, setAssignedTo] = useState(action ? action.owner || '__unchanged' : defaultOwner || '__me')
   const [dueDate, setDueDate] = useState(() => dateTimeLocal(action?.dueAt ?? null))
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -55,24 +55,16 @@ export function NextActionDialog({
 
     try {
       const dueAt = new Date(dueDate).toISOString()
+      const owner = assignedTo === '__me' || assignedTo === '__unchanged' ? {} : { assignedTo }
       const response = action
-        ? await fetch(`/api/leads/activities/${action.id}`, {
+        ? await fetch(`/api/calendar/tasks/${action.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              description: title.trim(),
-              activity_type: 'task',
-              metadata: {
-                task_type: taskType,
-                due_date: dueAt,
-                assigned_to: assignedTo,
-                department: 'acquisitions',
-                priority: 'normal',
-                status: 'pending',
-                notes: notes.trim() || undefined,
-                source: 'conversation_hub',
-                primary_next_action: true,
-              },
+              title: title.trim(),
+              dueDate: dueAt,
+              notes: notes.trim(),
+              ...owner,
             }),
           })
         : await fetch('/api/calendar/tasks', {
@@ -82,7 +74,7 @@ export function NextActionDialog({
               title: title.trim(),
               taskType,
               dueDate: dueAt,
-              assignedTo,
+              ...owner,
               role: 'setter',
               notes: notes.trim(),
               leadId,
@@ -130,7 +122,7 @@ export function NextActionDialog({
           </label>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-xs font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]" htmlFor={`${fieldId}-type`}>
+            {!action ? <label className="block text-xs font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]" htmlFor={`${fieldId}-type`}>
               Type
               <select id={`${fieldId}-type`} value={taskType} onChange={(event) => setTaskType(event.target.value)} className="crm-field mt-2 h-11 w-full rounded-lg px-3 text-sm font-semibold normal-case tracking-normal">
                 <option value="follow_up">Follow-up</option>
@@ -139,12 +131,14 @@ export function NextActionDialog({
                 <option value="research">Research</option>
                 <option value="offer">Send offer</option>
               </select>
-            </label>
+            </label> : null}
             <label className="block text-xs font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]" htmlFor={`${fieldId}-owner`}>
               Owner
               <select id={`${fieldId}-owner`} value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)} className="crm-field mt-2 h-11 w-full rounded-lg px-3 text-sm font-semibold normal-case tracking-normal">
+                {action?.owner ? null : <option value={action ? '__unchanged' : '__me'}>{action ? 'Keep unassigned' : 'Me (current user)'}</option>}
                 <option value="Ernest">Ernest</option>
                 <option value="Casey">Casey</option>
+                <option value="Gertha">Gertha</option>
               </select>
             </label>
           </div>

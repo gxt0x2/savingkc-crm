@@ -126,7 +126,7 @@ export function ThreadView({
     setCompletingTask(true)
     setTaskError(null)
     try {
-      const response = await fetch(`/api/leads/tasks/${contact.nextAction.id}`, {
+      const response = await fetch(`/api/calendar/tasks/${contact.nextAction.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'completed' }),

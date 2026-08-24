@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   update: vi.fn(),
+  deleteRow: vi.fn(),
   resolveAuthenticatedActor: vi.fn(),
   syncLeadActivityMutation: vi.fn(),
 }))
@@ -52,7 +53,15 @@ describe('lead activity projection sync', () => {
       },
       select: () => ({
         eq: () => ({
-          single: async () => ({ data: { lead_id: 'lead-1' }, error: null }),
+          single: async () => ({ data: { lead_id: 'lead-1', activity_type: 'note' }, error: null }),
+        }),
+      }),
+      delete: () => ({
+        eq: () => ({
+          in: async () => {
+            mocks.deleteRow()
+            return { error: null }
+          },
         }),
       }),
     }))
@@ -93,7 +102,7 @@ describe('lead activity projection sync', () => {
     })
   })
 
-  it('attributes a task edit to Casey and authorizes an explicit operating-team owner', async () => {
+  it('redirects task-shaped edits to the canonical work-item service', async () => {
     const request = new NextRequest('https://crm.savingkc.com/api/leads/activities/activity-1', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -113,51 +122,10 @@ describe('lead activity projection sync', () => {
 
     const response = await PATCH(request, { params: Promise.resolve({ id: 'activity-1' }) })
 
-    expect(response.status).toBe(200)
-    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({
-        assigned_to: 'Ernest',
-        updated_by: 'Casey',
-      }),
-    }))
-    const update = mocks.update.mock.calls[0]?.[0] as { metadata?: Record<string, unknown> }
-    expect(update.metadata).not.toHaveProperty('actor')
-    expect(update.metadata).not.toHaveProperty('created_by')
-  })
-
-  it('defaults an omitted task owner to Casey', async () => {
-    const request = new NextRequest('https://crm.savingkc.com/api/leads/activities/activity-1', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        description: 'Review the offer',
-        activity_type: 'task',
-        metadata: { status: 'pending' },
-      }),
+    expect(response.status).toBe(410)
+    await expect(response.json()).resolves.toMatchObject({
+      replacement: '/api/calendar/tasks/activity-1',
     })
-
-    const response = await PATCH(request, { params: Promise.resolve({ id: 'activity-1' }) })
-
-    expect(response.status).toBe(200)
-    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({ assigned_to: 'Casey', updated_by: 'Casey' }),
-    }))
-  })
-
-  it('rejects an unrecognized task owner before updating', async () => {
-    const request = new NextRequest('https://crm.savingkc.com/api/leads/activities/activity-1', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        description: 'Review the offer',
-        activity_type: 'task',
-        metadata: { assigned_to: 'Spoofed Agent' },
-      }),
-    })
-
-    const response = await PATCH(request, { params: Promise.resolve({ id: 'activity-1' }) })
-
-    expect(response.status).toBe(403)
     expect(mocks.from).not.toHaveBeenCalled()
     expect(mocks.update).not.toHaveBeenCalled()
   })
@@ -174,6 +142,35 @@ describe('lead activity projection sync', () => {
 
     expect(response.status).toBe(401)
     expect(mocks.from).not.toHaveBeenCalled()
+  })
+
+  it('redirects task-shaped deletes to the canonical work-item service', async () => {
+    mocks.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          single: async () => ({ data: { lead_id: 'lead-1', activity_type: 'task' }, error: null }),
+        }),
+      }),
+      delete: () => ({
+        eq: () => ({
+          in: async () => {
+            mocks.deleteRow()
+            return { error: null }
+          },
+        }),
+      }),
+    }))
+    const request = new NextRequest('https://crm.savingkc.com/api/leads/activities/activity-1', {
+      method: 'DELETE',
+    })
+
+    const response = await DELETE(request, { params: Promise.resolve({ id: 'activity-1' }) })
+
+    expect(response.status).toBe(410)
+    await expect(response.json()).resolves.toMatchObject({
+      replacement: '/api/calendar/tasks/activity-1',
+    })
+    expect(mocks.deleteRow).not.toHaveBeenCalled()
   })
 
   it('denies unauthenticated activity deletes before reading activity data', async () => {

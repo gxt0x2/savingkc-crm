@@ -55,6 +55,18 @@ describe('calendar work-item mutations', () => {
     }))
   })
 
+  it('allows an intentional single-task unassignment', async () => {
+    const response = await PATCH(request('/api/calendar/tasks/activity:task-1', 'PATCH', {
+      assignedTo: null,
+    }), context)
+
+    expect(response.status).toBe(200)
+    expect(mocks.transitionWorkItem).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'edit',
+      patch: { assignedTo: null },
+    }))
+  })
+
   it('cancels instead of hard-deleting the durable source row', async () => {
     const response = await DELETE(request('/api/calendar/tasks/activity:task-1', 'DELETE'), context)
 
@@ -75,6 +87,27 @@ describe('calendar work-item mutations', () => {
     }))
   })
 
+  it('uses the canonical cancel transition for bulk cancellation', async () => {
+    const response = await BULK_POST(request('/api/calendar/tasks/bulk', 'POST', {
+      ids: ['activity:task-1', 'activity:task-2'], action: 'cancel',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.transitionWorkItemsBulk).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'cancel',
+      actor: 'Casey',
+    }))
+  })
+
+  it('rejects the retired delete alias', async () => {
+    const response = await BULK_POST(request('/api/calendar/tasks/bulk', 'POST', {
+      ids: ['activity:task-1'], action: 'delete',
+    }))
+
+    expect(response.status).toBe(400)
+    expect(mocks.transitionWorkItemsBulk).not.toHaveBeenCalled()
+  })
+
   it('rejects spoofed bulk assignees before mutation', async () => {
     const response = await BULK_POST(request('/api/calendar/tasks/bulk', 'POST', {
       ids: ['activity:task-1'], action: 'assign', assignedTo: 'Spoofed Agent',
@@ -82,5 +115,17 @@ describe('calendar work-item mutations', () => {
 
     expect(response.status).toBe(403)
     expect(mocks.transitionWorkItemsBulk).not.toHaveBeenCalled()
+  })
+
+  it('allows an intentional bulk unassignment', async () => {
+    const response = await BULK_POST(request('/api/calendar/tasks/bulk', 'POST', {
+      ids: ['activity:task-1'], action: 'assign', assignedTo: null,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.transitionWorkItemsBulk).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'edit',
+      patch: { assignedTo: null },
+    }))
   })
 })
