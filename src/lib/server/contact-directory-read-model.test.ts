@@ -38,7 +38,7 @@ describe('contact directory read model', () => {
         smart_list_counts: { new: 6, all: 17 },
         owners: ['Ernest'],
         sources: ['website_form'],
-        tags: ['probate'],
+        tags: [],
       }],
       error: null,
     })
@@ -51,7 +51,7 @@ describe('contact directory read model', () => {
 
     const page = await readContactDirectoryPage(query, { rpc })
 
-    expect(rpc).toHaveBeenCalledWith('contact_workspace_page_v2', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('contact_workspace_page_v3', expect.objectContaining({
       target_smart_list: 'new',
       target_limit: 10,
       page_cursor: null,
@@ -61,7 +61,7 @@ describe('contact directory read model', () => {
       hasMore: true,
       scopeCounts: { active: 17, prospects: 4, not_leads: 2 },
       smartListCounts: { new: 6, all: 17 },
-      facets: { owners: ['Ernest'], sources: ['website_form'], tags: ['probate'] },
+      facets: { owners: ['Ernest'], sources: ['website_form'], tags: [] },
     })
     expect(decodeContactDirectoryCursor(page.nextCursor)).toMatchObject({ score: 82 })
   })

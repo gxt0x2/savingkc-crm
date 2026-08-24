@@ -34,13 +34,6 @@ export interface ContactRow {
   owner: string | null
   score: number
   isFavorite: boolean
-  nextActivity: {
-    when: string | null
-    label: string
-    kind: 'appointment' | 'recommended' | null
-  } | null
-  tags: string[]
-  lastContactAt: string | null
   createdAt: string | null
   firstOutboundAt: string | null
   contactSignal: ContactSignal | null
@@ -54,67 +47,11 @@ export interface ContactRow {
   entityAuthority: 'canonical_entities' | 'lead_compatibility'
 }
 
-interface ManifestPayload {
-  pipeline?: {
-    appointment?: {
-      status?: string
-      scheduledAt?: string | null
-    }
-  }
-  ariIntelligence?: {
-    recommendedActions?: Array<{ action?: string; dateTime?: string; reason?: string }>
-  }
-  flags?: {
-    opportunityFlags?: string[]
-    redFlags?: string[]
-  }
-  situation?: {
-    type?: string[]
-    timeline?: {
-      lifeEventType?: string
-    }
-  }
-  communications?: {
-    lastSellerContactDate?: string
-    lastInboundDate?: string
-  }
-}
-
 const CONTACT_SMART_LISTS = new Set([
   'new', 'hot', 'contacted', 'qualified', 'appointment_set', 'offer_made',
   'in_closing', 'all', 'needs_reply', 'overdue', 'unassigned', 'prospects', 'not_leads',
 ])
 const CONTACT_SORTS = new Set(['priority', 'recent', 'name'])
-
-function pickNextActivity(m: ManifestPayload): ContactRow['nextActivity'] {
-  const appt = m.pipeline?.appointment
-  if (appt && appt.status && ['scheduled', 'confirmed', 'reconfirmed'].includes(appt.status.toLowerCase())) {
-    const rawAt = typeof appt.scheduledAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(appt.scheduledAt)
-      ? appt.scheduledAt
-      : null
-    if (rawAt) {
-      return { kind: 'appointment', when: rawAt, label: 'Appointment' }
-    }
-  }
-  const rec = m.ariIntelligence?.recommendedActions?.[0]
-  if (rec?.action) {
-    return { kind: 'recommended', when: rec.dateTime ?? null, label: rec.action }
-  }
-  return null
-}
-
-function pickTags(m: ManifestPayload): string[] {
-  const tags = new Set<string>()
-  for (const f of m.flags?.opportunityFlags ?? []) {
-    if (typeof f === 'string' && f.trim()) tags.add(f.trim())
-  }
-  for (const t of m.situation?.type ?? []) {
-    if (typeof t === 'string' && t.trim()) tags.add(t.trim())
-  }
-  const life = m.situation?.timeline?.lifeEventType
-  if (life && life !== 'other') tags.add(life)
-  return [...tags].slice(0, 6)
-}
 
 export async function GET(request: NextRequest) {
   const unauthorized = await requireAuthenticatedUser()
@@ -156,7 +93,9 @@ export async function GET(request: NextRequest) {
         stage: params.get('stage') ?? '',
         minimumStage: params.get('min_stage') ?? '',
         source: params.get('source') ?? '',
-        tag: params.get('tag') ?? '',
+        // Legacy Manifest tags are intentionally retired from Pipeline. Source-backed
+        // county segments remain available in Prospecting saved views.
+        tag: '',
         activity: params.get('activity') ?? '',
         attention: params.get('attention') ?? '',
         outreach: params.get('outreach') ?? '',
@@ -165,7 +104,6 @@ export async function GET(request: NextRequest) {
       }, db)
 
       const items: ContactRow[] = page.items.map((item) => {
-        const manifest = item.manifest as ManifestPayload
         const communication: ConversationHubActivity | null = item.last_communication_id && item.last_communication_type && item.last_communication_at ? {
           id: item.last_communication_id,
           lead_id: item.id,
@@ -190,9 +128,6 @@ export async function GET(request: NextRequest) {
           owner: item.owner,
           score: item.score,
           isFavorite: item.is_favorite,
-          nextActivity: pickNextActivity(manifest),
-          tags: pickTags(manifest),
-          lastContactAt: manifest.communications?.lastSellerContactDate ?? manifest.communications?.lastInboundDate ?? null,
           createdAt: item.created_at,
           firstOutboundAt: item.first_outbound_at,
           contactSignal: communication ? getContactSignal(communication) : null,

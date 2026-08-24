@@ -50,7 +50,6 @@ export interface ContactDirectoryItem {
   primary_next_action_owner: string | null
   first_outbound_at: string | null
   outreach_status: 'unattempted' | 'attempted_no_response' | 'connected_unclassified'
-  manifest: Record<string, unknown>
   entity_authority: 'canonical_entities' | 'lead_compatibility'
 }
 
@@ -129,7 +128,7 @@ export async function readContactDirectoryPage(
   query: ContactDirectoryQuery,
   db: ContactDirectoryDatabase = supabaseAdmin(),
 ): Promise<ContactDirectoryPage> {
-  const { data, error } = await db.rpc('contact_workspace_page_v2', {
+  const { data, error } = await db.rpc('contact_workspace_page_v3', {
     target_smart_list: query.smartList,
     target_scope: query.scope,
     target_limit: query.limit,
