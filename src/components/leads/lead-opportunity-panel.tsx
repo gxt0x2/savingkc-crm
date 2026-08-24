@@ -3,6 +3,7 @@
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import { GovernedNextAction, type LeadNextActionTask } from '@/components/leads/governed-next-action'
+import { LeadQualificationPanel } from '@/components/leads/lead-qualification-panel'
 
 export const LEAD_WORKSPACE_STAGES = [
   { keys: ['new'], label: 'New' },
@@ -85,6 +86,8 @@ export function LeadOpportunityPanel({
             )
           })}
         </div>
+
+        <LeadQualificationPanel leadId={leadId} />
 
         <dl className="mt-7 space-y-4 border-t border-[var(--crm-border)] pt-5 text-sm">
           <DataRow label="Motivation score" value={`${score ?? motivationScore ?? '—'}${score != null || motivationScore != null ? ' / 100' : ''}`} accent />
