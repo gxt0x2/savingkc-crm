@@ -11,7 +11,6 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:acceptance": "tsx scripts/migration/99_acceptance.mts",
     "test:smoke:theme": "playwright test tests/smoke/theme-and-nav.spec.ts",
     "test:performance": "playwright test tests/e2e/navigation-performance.spec.ts",
     "mojo:sync": "node scripts/mojo-cron-runner.mjs sync",
