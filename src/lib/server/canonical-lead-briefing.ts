@@ -22,6 +22,7 @@ import {
   startAssistantArtifactGeneration,
   type AssistantUsage,
 } from '@/lib/ai/generation-store'
+import { generateGroqLeadBriefing } from '@/lib/ai/groq-lead-briefing'
 import { readLeadEntityContext } from '@/lib/server/crm-entity-foundation'
 import { listWorkItems } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -89,6 +90,29 @@ function usage(result: Awaited<ReturnType<typeof generateText>>): AssistantUsage
     outputTokens: result.usage.outputTokens ?? null,
     totalTokens: result.usage.totalTokens ?? null,
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? null,
+  }
+}
+
+async function generateBriefingModel(evidence: ReturnType<typeof buildLeadBriefingEvidence>) {
+  const system = LEAD_BRIEFING_SYSTEM_PROMPT
+  const prompt = leadBriefingPrompt(evidence)
+  if (process.env.GROQ_API_KEY?.trim()) {
+    return generateGroqLeadBriefing({ system, prompt })
+  }
+
+  const result = await generateText({
+    model: LEAD_BRIEFING_MODEL,
+    system,
+    prompt,
+    output: Output.object({ schema: leadBriefingSchema }),
+  })
+  const modelInfo = providerModel(result)
+  return {
+    output: result.output,
+    provider: modelInfo.provider,
+    model: modelInfo.model,
+    finishReason: result.finishReason,
+    usage: usage(result),
   }
 }
 
@@ -271,23 +295,17 @@ export async function generateCanonicalLeadBriefing(input: {
       if (existing.status !== 'complete' || !existing.reply) throw new Error(`briefing_generation_${existing.status}`)
       briefing = normalizeLeadBriefing(JSON.parse(existing.reply), evidence)
     } else {
-      const result = await generateText({
-        model: LEAD_BRIEFING_MODEL,
-        system: LEAD_BRIEFING_SYSTEM_PROMPT,
-        prompt: leadBriefingPrompt(evidence),
-        output: Output.object({ schema: leadBriefingSchema }),
-      })
+      const result = await generateBriefingModel(evidence)
       briefing = normalizeLeadBriefing(result.output, evidence)
       const sources = leadBriefingSources(briefing, evidence)
-      const modelInfo = providerModel(result)
       await completeAssistantGeneration({
         generationId,
         actorEmail: actor.email,
         content: JSON.stringify(briefing),
-        provider: modelInfo.provider,
-        model: modelInfo.model,
+        provider: result.provider,
+        model: result.model,
         finishReason: result.finishReason,
-        usage: usage(result),
+        usage: result.usage,
         toolTrace: [{
           toolCallId: `canonical-lead-evidence:${leadId}`,
           toolName: 'getCanonicalLeadBriefingEvidence',
@@ -304,6 +322,7 @@ export async function generateCanonicalLeadBriefing(input: {
           inputFingerprint: fingerprint,
           evidence: evidence.filter((item) => briefing.evidenceIds.includes(item.id)),
           confidence: briefing.confidence,
+          providerPolicy: process.env.GROQ_API_KEY?.trim() ? 'configured_groq' : 'ai_gateway',
         },
       })
     }
