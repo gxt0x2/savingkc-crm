@@ -6,17 +6,36 @@ import { requireUserOrSecret } from '@/lib/api/admin-auth'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+interface ZillowRequestBody {
+  leadId?: string
+  address?: string
+  city?: string
+  state?: string
+  zip?: string
+}
+
+interface ZillowLeadContext {
+  id?: string
+  property_address?: string | null
+  address?: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+  full_name?: string | null
+  year_built?: number | null
+}
+
 // POST /api/enrich-zillow — Supplement county data with Zillow
 export async function POST(req: NextRequest) {
   const unauthorized = await requireUserOrSecret(req)
   if (unauthorized) return unauthorized
 
   try {
-    const body = await req.json()
+    const body = await req.json() as ZillowRequestBody
     const { leadId, address, city, state, zip } = body
 
     // Allow either leadId OR direct address data
-    let lead: any
+    let lead: ZillowLeadContext
     let shouldUpdateDb = false
 
     if (leadId) {
@@ -83,7 +102,7 @@ export async function POST(req: NextRequest) {
 
     // Update lead with Zillow data (only if we have a leadId and should update)
     if (shouldUpdateDb && leadId) {
-      const updates: any = {
+      const updates: Record<string, unknown> = {
         data_source: 'zillow_supplement', // Mark as supplemented
         data_enriched_at: result.fetchedAt,
       }
@@ -107,20 +126,24 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // Also update manifest if it exists
-      try {
-        const { data: manifestRow } = await supabase
-          .from('manifests')
-          .select('id')
-          .eq('lead_id', leadId)
-          .single()
-
-        if (manifestRow) {
-          await updateManifestWithZillow(manifestRow.id, result)
-        }
-      } catch (manifestErr) {
-        console.log('[Zillow Enrich] No manifest to update or update failed:', manifestErr)
-        // Non-fatal, continue
+      const { error: canonicalError } = await supabase.rpc('update_crm_property_enrichment_v1', {
+        p_lead_id: leadId,
+        p_zestimate: result.zestimate ?? null,
+        p_lot_size: result.lotSizeSqft ?? null,
+        p_last_sale_date: result.lastSaleDate ?? null,
+        p_last_sale_price: result.lastSalePrice ?? null,
+        p_tax_assessment: result.taxAssessment ?? null,
+        p_year_built: result.yearBuilt ?? null,
+        p_source: 'zillow',
+        p_fetched_at: result.fetchedAt ?? new Date().toISOString(),
+      })
+      if (canonicalError) {
+        console.error('[Zillow Enrich] Canonical property update failed:', canonicalError.message)
+        return NextResponse.json({
+          success: false,
+          error: 'Zillow data was retrieved but could not be saved to the canonical property.',
+          retryable: true,
+        }, { status: 503 })
       }
     }
 
@@ -132,69 +155,14 @@ export async function POST(req: NextRequest) {
       leadId: lead.id || null,
     })
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Zillow Enrich] API error:', err)
     return NextResponse.json(
       {
         success: false,
-        error: err.message || 'Internal server error',
+        error: err instanceof Error ? err.message : 'Internal server error',
       },
       { status: 500 }
     )
   }
-}
-
-/**
- * Update manifest with Zillow supplemental data
- */
-async function updateManifestWithZillow(manifestId: string, zillow: any) {
-  const { data: row } = await supabase
-    .from('manifests')
-    .select('lead_id')
-    .eq('id', manifestId)
-    .single()
-
-  if (!row?.lead_id) throw new Error('Manifest not found')
-
-  const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-
-  await updateManifestAndCascade(row.lead_id, (manifest: any) => {
-    // Update property details
-    if (zillow.lotSizeSqft) {
-      if (!manifest.property.lot) manifest.property.lot = {}
-      manifest.property.lot.sizeSqft = zillow.lotSizeSqft
-      manifest.property.lot.sizeAcres = zillow.lotSizeAcres || zillow.lotSizeSqft / 43560
-    }
-
-    if (zillow.lastSaleDate || zillow.lastSalePrice) {
-      if (!manifest.property.sales) manifest.property.sales = {}
-      manifest.property.sales.lastSaleDate = zillow.lastSaleDate
-      manifest.property.sales.lastSalePrice = zillow.lastSalePrice
-    }
-
-    if (zillow.taxAssessment) {
-      if (!manifest.property.assessment) manifest.property.assessment = {}
-      manifest.property.assessment.totalValue = zillow.taxAssessment
-    }
-
-    if (zillow.zestimate) {
-      if (!manifest.financials) manifest.financials = {}
-      manifest.financials.zillow_zestimate = zillow.zestimate
-    }
-
-    // Add audit trail
-    manifest.auditTrail.push({
-      timestamp: new Date().toISOString(),
-      agent: 'system:zillow_enrichment',
-      action: 'zillow_supplement_complete',
-      details: {
-        fieldsAdded: Object.keys(zillow).filter(k => zillow[k] !== undefined && zillow[k] !== null),
-        source: 'zillow'
-      },
-    })
-
-    // Mark briefing as stale so it regenerates with new data
-    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-    manifest.ariIntelligence.briefingStale = true
-  }, 'api:enrich-zillow')
 }

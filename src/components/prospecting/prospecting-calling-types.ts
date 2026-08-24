@@ -1,5 +1,3 @@
-import type { DialerManifest } from '@/lib/dialer-lead-activity'
-
 export interface ProspectingCallingLead {
   id: string
   full_name: string | null
@@ -31,6 +29,7 @@ export interface ProspectingCallingProspect {
   mailing_zip: string | null
   county: string | null
   is_deceased: boolean | null
+  occupancy_status: string | null
 }
 
 export interface ProspectingRecentCall {
@@ -61,7 +60,6 @@ export interface ProspectingSmsTarget {
 export interface ProspectingCallingContext {
   lead: ProspectingCallingLead | null
   prospect: ProspectingCallingProspect | null
-  manifest: DialerManifest | null
   ownerName: string
   situsAddress: string
 }

@@ -57,4 +57,17 @@ describe('legacy CRM surface retirement', () => {
     expect(launcher).toContain("useAssistantThread('giraffe')")
     expect(assistantThread).toContain('loadLatestAssistantThread()')
   })
+
+  it('removes Manifest-backed lead intelligence cards from the operational workspace', () => {
+    const leadWorkspace = readFileSync('src/app/(app)/leads/[id]/page.tsx', 'utf8')
+
+    expect(existsSync('src/hooks/use-lead-manifest-intelligence.ts')).toBe(false)
+    expect(existsSync('src/components/leads/ari-briefing.tsx')).toBe(false)
+    expect(existsSync('src/components/leads/pain-points.tsx')).toBe(false)
+    expect(existsSync('src/components/leads/favorite-or-fool.tsx')).toBe(false)
+    expect(existsSync('src/components/leads/discovery-questions.tsx')).toBe(false)
+    expect(leadWorkspace).toContain('Suggestions are not CRM facts')
+    expect(leadWorkspace).not.toContain('<AriBriefing')
+    expect(leadWorkspace).not.toContain('<FavoriteOrFool')
+  })
 })

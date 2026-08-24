@@ -27,17 +27,13 @@ describe('Manifest browser containment', () => {
     expect(existsSync(resolve(root, 'src/components/pipeline/kanban-board.tsx'))).toBe(false)
   })
 
-  it('labels Manifest data as compatibility intelligence behind the authenticated lead workspace', () => {
+  it('keeps the lead workspace and Prospecting calling floor off Manifest compatibility data', () => {
     const route = readFileSync(resolve(root, 'src/app/api/leads/[id]/route.ts'), 'utf8')
-    const hook = readFileSync(resolve(root, 'src/hooks/use-lead-manifest-intelligence.ts'), 'utf8')
     const dialer = readFileSync(resolve(root, 'src/lib/dialer-lead-activity.ts'), 'utf8')
 
-    expect(route).toContain("manifestIntelligenceSource: manifest ? 'manifest_compatibility' : null")
-    expect(route).toContain(".select('id, manifest, updated_at')")
-    expect(hook).toContain("fetch(`/api/leads/${encodeURIComponent(leadId)}`")
-    expect(hook).toContain("queryKey: ['lead-manifest-intelligence', leadId]")
-    expect(hook).not.toContain("from('manifests')")
-    expect(dialer).toContain("fetch(`/api/leads/${encodeURIComponent(leadId)}`")
+    expect(route).toContain('Manifest is historical and is not read')
+    expect(route).not.toContain(".from('manifests')")
+    expect(existsSync(resolve(root, 'src/hooks/use-lead-manifest-intelligence.ts'))).toBe(false)
     expect(dialer).toContain("/activities?limit=50")
     expect(dialer).not.toContain("@/lib/supabase/client")
     expect(dialer).not.toContain("from('manifests')")

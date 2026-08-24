@@ -7,7 +7,7 @@ import { Icon } from '@/components/ui/icon'
 import { toProperCase } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
-import { loadDialerActivities, loadDialerLeadContext, type DialerActivity as Activity, type DialerManifest as ManifestShape } from '@/lib/dialer-lead-activity'
+import { loadDialerActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
 import { DialerSessionCommand } from '@/components/dialer/dialer-session-command'
 import { ProspectingCallingContextRail } from '@/components/prospecting/prospecting-calling-context-rail'
 import { ProspectingMarkDeadDialog } from '@/components/prospecting/prospecting-mark-dead-dialog'
@@ -54,7 +54,7 @@ export function ProspectingCallingFloor() {
   const [leadIds, setLeadIds] = useState<string[]>([])
   const [leads, setLeads] = useState<Record<string, LeadSummary>>({})
   const [prospects, setProspects] = useState<Record<string, ProspectSummary | null>>({})
-  const [manifests, setManifests] = useState<Record<string, ManifestShape | null>>({})
+  const [coOwners, setCoOwners] = useState<Record<string, string[]>>({})
   const [currentIndex, setCurrentIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [resolveError, setResolveError] = useState<string | null>(null)
@@ -87,7 +87,6 @@ export function ProspectingCallingFloor() {
   const currentLeadId: string | null = leadIds[currentIndex] ?? null
   const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? null : null
   const currentProspect: ProspectSummary | null = currentLeadId ? prospects[currentLeadId] ?? null : null
-  const currentManifest: ManifestShape | null = currentLeadId ? manifests[currentLeadId] ?? null : null
   const durableSessionId = params.get('session_id')?.trim() || ''
   const requestedCallerId = params.get('caller_id')?.trim() || ''
   const sessionCallerId = durableSession?.callerId || requestedCallerId
@@ -200,6 +199,7 @@ export function ProspectingCallingFloor() {
       }
       const leadRows = payload.leads as LeadSummary[] | null
       const prospectRows = payload.prospects as (ProspectSummary & { lead_id: string })[] | null
+      const coOwnerRows = payload.coOwners as Array<{ lead_id: string; name: string }> | null
       const leadMap: Record<string, LeadSummary> = {}
       ;(leadRows as LeadSummary[] | null)?.forEach((l) => { leadMap[l.id] = l })
       setLeads(leadMap)
@@ -210,19 +210,28 @@ export function ProspectingCallingFloor() {
         prospectMap[p.lead_id] = p
       })
       setProspects(prospectMap)
+
+      const coOwnerMap: Record<string, string[]> = {}
+      ;(coOwnerRows ?? []).forEach((row) => {
+        const name = row.name.trim()
+        if (!name) return
+        const names = coOwnerMap[row.lead_id] ?? []
+        if (!names.includes(name)) names.push(name)
+        coOwnerMap[row.lead_id] = names
+      })
+      setCoOwners(coOwnerMap)
     }
     load()
   }, [leadIds])
 
-  // Load manifest + activities for the current lead only (small fetch, refreshed on advance)
+  // Load the bounded communication history for the current lead only.
   useEffect(() => {
     if (!currentLeadId) return
     const requestedLeadId = currentLeadId
     let cancelled = false
-    void loadDialerLeadContext(requestedLeadId)
-      .then(({ manifest, activities: nextActivities }) => {
+    void loadDialerActivities(requestedLeadId)
+      .then((nextActivities) => {
         if (cancelled || currentLeadIdRef.current !== requestedLeadId) return
-        setManifests((prev) => ({ ...prev, [requestedLeadId]: manifest }))
         setActivities(nextActivities)
       })
       .catch((error) => console.error('[Dialer] Could not load lead activity', error))
@@ -456,11 +465,13 @@ export function ProspectingCallingFloor() {
     currentProspect?.situs_state || currentLead?.state,
     currentProspect?.situs_zip || currentLead?.zip,
   ])
-  // Occupancy status — prefer the manifest's vacant flag, then the mailing vs
-  // situs comparison (absentee when tax bill goes somewhere other than the
-  // property). Default is owner-occupied when we can tell, null otherwise.
+  // Occupancy is a source-backed prospect fact. Mailing-vs-situs remains a
+  // deterministic fallback for older county rows that predate the column.
   const occupancy: ProspectingOccupancy | null = (() => {
-    if (currentManifest?.property?.vacant === true) return { label: 'Vacant', tone: 'warn' }
+    const sourceStatus = currentProspect?.occupancy_status?.trim().toLowerCase()
+    if (sourceStatus === 'vacant') return { label: 'Vacant', tone: 'warn' }
+    if (sourceStatus === 'absentee' || sourceStatus === 'non_owner_occupied') return { label: 'Absentee', tone: 'amber' }
+    if (sourceStatus === 'owner_occupied' || sourceStatus === 'occupied') return { label: 'Owner occupied', tone: 'neutral' }
     const mailing = joinAddress([
       currentProspect?.mailing_street,
       currentProspect?.mailing_city,
@@ -472,7 +483,7 @@ export function ProspectingCallingFloor() {
     return { label: 'Owner occupied', tone: 'neutral' }
   })()
 
-  const coOwners: string[] = (currentManifest?.owner?.coOwners ?? []).filter(Boolean)
+  const currentCoOwners = currentLeadId ? coOwners[currentLeadId] ?? [] : []
 
   const delinquentYears = currentProspect?.delinquent_years_category === '3yr_plus'
     ? '3+ yr'
@@ -559,7 +570,7 @@ export function ProspectingCallingFloor() {
           prospect={currentProspect}
           ownerName={ownerName}
           situsAddress={situsAddress}
-          coOwners={coOwners}
+          coOwners={currentCoOwners}
           occupancy={occupancy}
           delinquentYears={delinquentYears}
           durableSessionId={durableSessionId}

@@ -6,16 +6,34 @@ import { requireUserOrSecret } from '@/lib/api/admin-auth'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-// POST /api/enrich-redfin — Add Redfin estimate to the manifest financials.
+interface RedfinRequestBody {
+  leadId?: string
+  address?: string
+  city?: string
+  state?: string
+  zip?: string
+}
+
+interface RedfinLeadContext {
+  id?: string
+  property_address?: string | null
+  address?: string | null
+  city?: string | null
+  state?: string | null
+  zip?: string | null
+  full_name?: string | null
+}
+
+// POST /api/enrich-redfin — Add a Redfin estimate to the canonical property.
 export async function POST(req: NextRequest) {
   const unauthorized = await requireUserOrSecret(req)
   if (unauthorized) return unauthorized
 
   try {
-    const body = await req.json()
+    const body = await req.json() as RedfinRequestBody
     const { leadId, address, city, state, zip } = body
 
-    let lead: any
+    let lead: RedfinLeadContext
     if (leadId) {
       const { data, error } = await supabase
         .from('leads')
@@ -55,44 +73,29 @@ export async function POST(req: NextRequest) {
 
     const result = await enrichFromRedfin(input)
 
-    // Update manifest if we have one and got an estimate
+    // Persist provider output to the canonical property before reporting success.
     if (leadId && result.success && result.redfinEstimate) {
-      try {
-        const { updateManifestV2_1 } = await import('@/lib/manifest-sync')
-        await updateManifestV2_1({
-          leadId,
-          compute: (current: any) => ({
-            financials: {
-              ...(current.financials ?? {}),
-              redfin_estimate: result.redfinEstimate,
-            },
-            auditTrail: [
-              ...(current.auditTrail ?? []),
-              {
-                timestamp: new Date().toISOString(),
-                agent: 'system:redfin_enrichment',
-                action: 'redfin_supplement_complete',
-                details: { estimate: result.redfinEstimate, url: result.url, source: 'redfin' },
-              },
-            ],
-            ariIntelligence: {
-              ...(current.ariIntelligence ?? {}),
-              briefingStale: true,
-            },
-          }),
-          actor: 'system',
-          reason: 'api:enrich-redfin',
-        })
-      } catch (err) {
-        console.log('[Redfin Enrich] Manifest update failed:', err)
+      const { error: canonicalError } = await supabase.rpc('update_crm_property_enrichment_v1', {
+        p_lead_id: leadId,
+        p_redfin_estimate: result.redfinEstimate,
+        p_source: 'redfin',
+        p_fetched_at: result.fetchedAt ?? new Date().toISOString(),
+      })
+      if (canonicalError) {
+        console.error('[Redfin Enrich] Canonical property update failed:', canonicalError.message)
+        return NextResponse.json({
+          success: false,
+          error: 'Redfin data was retrieved but could not be saved to the canonical property.',
+          retryable: true,
+        }, { status: 503 })
       }
     }
 
     return NextResponse.json(result)
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Redfin Enrich] Unexpected error:', err)
     return NextResponse.json(
-      { success: false, error: err?.message || 'Unexpected error', source: 'redfin' },
+      { success: false, error: err instanceof Error ? err.message : 'Unexpected error', source: 'redfin' },
       { status: 500 }
     )
   }

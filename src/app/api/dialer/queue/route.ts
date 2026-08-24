@@ -14,7 +14,7 @@ const NO_STORE_HEADERS: HeadersInit = {
   Expires: '0',
 }
 
-const EXPANDED_PROSPECT_SELECT = 'id, lead_id, owner_1, cumulative_due, earliest_delinquent_year, delinquent_years_category, total_market_value, zestimate, situs_street, situs_city, situs_state, situs_zip, mailing_street, mailing_city, mailing_state, mailing_zip, county, is_deceased'
+const EXPANDED_PROSPECT_SELECT = 'id, lead_id, owner_1, cumulative_due, earliest_delinquent_year, delinquent_years_category, total_market_value, zestimate, situs_street, situs_city, situs_state, situs_zip, mailing_street, mailing_city, mailing_state, mailing_zip, county, is_deceased, occupancy_status'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 interface DialerQueueLeadRow {
@@ -139,14 +139,26 @@ export async function GET(req: NextRequest) {
         })
       }
 
-      const { data: prospects, error: prospectError } = await supabase
-        .from('prospects')
-        .select(EXPANDED_PROSPECT_SELECT)
-        .in('lead_id', leadIds)
-        .limit(Math.min(Math.max(leadIds.length * 5, 100), 1000))
+      const [prospectResult, coOwnerResult] = await Promise.all([
+        supabase
+          .from('prospects')
+          .select(EXPANDED_PROSPECT_SELECT)
+          .in('lead_id', leadIds)
+          .limit(Math.min(Math.max(leadIds.length * 5, 100), 1000)),
+        supabase
+          .from('lead_co_owners')
+          .select('lead_id, name')
+          .in('lead_id', leadIds)
+          .order('created_at', { ascending: true })
+          .limit(Math.min(Math.max(leadIds.length * 10, 100), 1000)),
+      ])
 
-      if (prospectError) {
-        return NextResponse.json({ success: false, error: prospectError.message }, { status: 500, headers: NO_STORE_HEADERS })
+      if (prospectResult.error || coOwnerResult.error) {
+        console.error('[dialer/queue] Context lookup failed', {
+          prospects: prospectResult.error?.message,
+          coOwners: coOwnerResult.error?.message,
+        })
+        return NextResponse.json({ success: false, error: 'Dialer context is unavailable' }, { status: 500, headers: NO_STORE_HEADERS })
       }
 
       return NextResponse.json({
@@ -154,13 +166,14 @@ export async function GET(req: NextRequest) {
         leads: page.leads,
         queueContext: [],
         queueMetrics: page.queueMetrics,
-        prospects: prospects || [],
+        prospects: prospectResult.data || [],
+        coOwners: coOwnerResult.data || [],
         queuePolicy: { callingWindowOpen: isWithinDialerCallingHours() },
       }, {
         headers: successHeaders(requestStartedAt, projectionDuration, {
           leads: page.leads.length,
           context: 0,
-          prospects: prospects?.length ?? 0,
+          prospects: prospectResult.data?.length ?? 0,
           eligible: page.totalCount,
         }),
       })
