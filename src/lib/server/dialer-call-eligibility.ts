@@ -6,7 +6,6 @@ import {
   type DialerActivityPolicyFact,
   type DialerCallBlockReason,
   type DialerCallDecision,
-  type DialerManifestPolicyFact,
 } from '@/lib/dialer-call-policy'
 import { normalizeDisposition } from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -64,7 +63,6 @@ type ProspectPhoneRow = {
   prospects?: { lead_id?: string | null } | Array<{ lead_id?: string | null }> | null
 }
 
-type ManifestRow = { lead_id: string | null; manifest: unknown }
 type ActivityRow = { lead_id: string | null; activity_type: string; metadata: unknown; created_at: string }
 type SuppressionRow = { phone: string | null; reason: string | null }
 
@@ -136,28 +134,6 @@ function policyUnavailable(input: OutboundDialerCallInput, checkedAt: string): O
   })
 }
 
-function manifestFact(row: ManifestRow, targetIsPrimaryPhone: boolean): DialerManifestPolicyFact | null {
-  if (!isRecord(row.manifest)) return null
-  const scoring = isRecord(row.manifest.scoring) ? row.manifest.scoring : {}
-  const communications = isRecord(row.manifest.communications) ? row.manifest.communications : {}
-  const flags = isRecord(row.manifest.flags) ? row.manifest.flags : {}
-  const rawFlags = Array.isArray(flags.redFlags)
-    ? flags.redFlags.filter((flag): flag is string => typeof flag === 'string')
-    : []
-  const lastDisposition = stringValue(communications.lastDisposition)
-  const normalizedLastDisposition = normalizeDisposition(lastDisposition)
-  const leadWideDisposition = normalizedLastDisposition === 'dnc' ? lastDisposition : null
-
-  return {
-    classification: stringValue(scoring.classification),
-    currentStation: stringValue(row.manifest.currentStation),
-    lastDisposition: targetIsPrimaryPhone ? lastDisposition : leadWideDisposition,
-    redFlags: targetIsPrimaryPhone
-      ? rawFlags
-      : rawFlags.filter((flag) => ['do_not_contact', 'dnc'].includes(flag.toLowerCase())),
-  }
-}
-
 function activityFact(row: ActivityRow, target: string, prospectPhoneId: string | null): DialerActivityPolicyFact | null {
   if (!isRecord(row.metadata)) return null
   const metadataProspectPhoneId = stringValue(row.metadata.prospect_phone_id)
@@ -198,7 +174,6 @@ function exactReasonSource(input: {
   leads: LeadRow[]
   prospectPhones: ProspectPhoneRow[]
   activities: DialerActivityPolicyFact[]
-  manifests: DialerManifestPolicyFact[]
 }): string | undefined {
   if (input.result.allowed) return undefined
   const reason = input.result.reason
@@ -233,21 +208,6 @@ function exactReasonSource(input: {
     if (activity.phone_status) return 'lead_activities.metadata.phone_status'
     if (activity.outcome) return 'lead_activities.metadata.outcome'
     return 'lead_activities.metadata.disposition'
-  }
-
-  const manifest = input.manifests.find((fact) => (
-    (reason === 'dead_lead' && (
-      fact.classification?.toLowerCase() === 'dead'
-      || ['dead', 'closed_lost'].includes(fact.currentStation?.toLowerCase() ?? '')
-    ))
-    || dispositionReason(fact.lastDisposition) === reason
-    || (fact.redFlags?.length ?? 0) > 0
-  ))
-  if (manifest) {
-    if (manifest.currentStation) return 'manifests.manifest.currentStation'
-    if (manifest.classification) return 'manifests.manifest.scoring.classification'
-    if (manifest.redFlags?.length) return 'manifests.manifest.flags.redFlags'
-    return 'manifests.manifest.communications.lastDisposition'
   }
 
   return 'contact_policy_records'
@@ -363,29 +323,17 @@ async function evaluateOutboundDialerCallUnchecked(
       input.leadId ?? null,
     ].filter((value): value is string => Boolean(value))))
 
-    let manifestRows: ManifestRow[] = []
     let activityRows: ActivityRow[] = []
     if (resolvedLeadIds.length > 0) {
-      const [manifestResult, activityResult] = await Promise.all([
-        db.from('manifests').select('lead_id, manifest').in('lead_id', resolvedLeadIds).limit(1000),
-        db.from('lead_activities')
-          .select('lead_id, activity_type, metadata, created_at')
-          .in('lead_id', resolvedLeadIds)
-          .order('created_at', { ascending: false })
-          .limit(100),
-      ])
-      if (manifestResult.error || activityResult.error) throw new Error('dialer policy history lookup failed')
-      manifestRows = (manifestResult.data ?? []) as unknown as ManifestRow[]
+      const activityResult = await db.from('lead_activities')
+        .select('lead_id, activity_type, metadata, created_at')
+        .in('lead_id', resolvedLeadIds)
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (activityResult.error) throw new Error('dialer policy history lookup failed')
       activityRows = (activityResult.data ?? []) as unknown as ActivityRow[]
-      if (manifestRows.some((row) => !isRecord(row.manifest))) throw new Error('dialer policy manifest is malformed')
     }
 
-    const primaryPhoneLeadIds = new Set(leads
-      .filter((lead) => normalizePhoneToE164(lead.phone) === normalizedPhone)
-      .map((lead) => lead.id))
-    const manifestFacts = manifestRows
-      .map((row) => manifestFact(row, Boolean(row.lead_id && primaryPhoneLeadIds.has(row.lead_id))))
-      .filter((fact): fact is DialerManifestPolicyFact => Boolean(fact))
     const activityFacts = activityRows
       .map((row) => activityFact(row, normalizedPhone, input.prospectPhoneId ?? null))
       .filter((fact): fact is DialerActivityPolicyFact => Boolean(fact))
@@ -397,7 +345,6 @@ async function evaluateOutboundDialerCallUnchecked(
       suppressionReasons: suppressions.map((row) => row.reason),
       prospectPhones,
       activities: activityFacts,
-      manifests: manifestFacts,
       internalNumbers: [
         ...TWILIO_NUMBERS.map((number) => number.value),
         process.env.ERNEST_PHONE || '+18162262552',
@@ -417,7 +364,6 @@ async function evaluateOutboundDialerCallUnchecked(
         leads,
         prospectPhones,
         activities: activityFacts,
-        manifests: manifestFacts,
       }),
     })
   } catch (error) {
