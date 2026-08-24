@@ -1,98 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { CountyEnrichmentService, EnrichmentInput } from '@/lib/county-enrichment'
-import type { ManifestV2 } from '@/lib/manifest-builder'
-import { supabase } from '@/lib/supabase-lazy'
-import { requireUserOrSecret } from '@/lib/api/admin-auth'
 
-// POST /api/enrich — Enrich property from county assessor
+import { requireUserOrSecret } from '@/lib/api/admin-auth'
+import { countyEnrichmentFacts } from '@/lib/auto-enrich'
+import { CountyEnrichmentService, type EnrichmentInput } from '@/lib/county-enrichment'
+import { recordCanonicalPropertyEnrichment } from '@/lib/server/crm-property-enrichment'
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+type CanonicalEnrichmentInput = EnrichmentInput & {
+  lead_id?: unknown
+  manifest_id?: unknown
+}
+
+// POST /api/enrich — enrich the canonical property linked to a lead.
 export async function POST(req: NextRequest) {
   const unauthorized = await requireUserOrSecret(req)
   if (unauthorized) return unauthorized
 
   try {
-    const body: EnrichmentInput = await req.json()
-
-    // Validate required fields
+    const body = await req.json() as CanonicalEnrichmentInput
     if (!body.address || !body.state || !body.county) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields: address, state, county' },
-        { status: 400 }
-      )
+      return NextResponse.json({
+        success: false,
+        error: 'Missing required fields: address, state, county',
+      }, { status: 400 })
+    }
+    if (typeof body.lead_id !== 'string' || !UUID_PATTERN.test(body.lead_id)) {
+      return NextResponse.json({
+        success: false,
+        error: body.manifest_id
+          ? 'Manifest enrichment is retired. Provide the canonical lead_id.'
+          : 'A valid lead_id is required.',
+        replacement: 'lead_id',
+      }, { status: body.manifest_id ? 410 : 400 })
     }
 
-    // Run enrichment
     const service = new CountyEnrichmentService()
     const result = await service.enrich(body)
+    if (!result.success) return NextResponse.json(result)
 
-    // If successful and manifest_id provided, update the manifest
-    if (result.success && body.manifest_id) {
-      try {
-        await updateManifest(body.manifest_id, result)
-      } catch (manifestErr: any) {
-        console.error('Manifest update failed:', manifestErr)
-        // Don't fail the whole request if manifest update fails
-        return NextResponse.json({
-          ...result,
-          manifestUpdateError: manifestErr.message,
-        })
-      }
-    }
-
-    return NextResponse.json(result)
-  } catch (err: any) {
-    console.error('Enrichment API error:', err)
-    return NextResponse.json(
-      {
+    try {
+      const canonical = await recordCanonicalPropertyEnrichment({
+        leadId: body.lead_id,
+        source: 'county_assessor',
+        sourceReference: result.source || `${body.county}:${body.state}`,
+        facts: countyEnrichmentFacts(result, body),
+        observedAt: result.fetchedAt,
+      })
+      return NextResponse.json({ ...result, canonical })
+    } catch (error) {
+      console.error('[enrich] Canonical property save failed:', error)
+      return NextResponse.json({
         success: false,
-        error: err.message || 'Internal server error',
-      },
-      { status: 500 }
-    )
+        error: 'County data was retrieved but could not be saved to the canonical property.',
+      }, { status: 503 })
+    }
+  } catch (error) {
+    console.error('[enrich] Request failed:', error)
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
-}
-
-/**
- * Update manifest with enrichment data
- */
-async function updateManifest(manifestId: string, enrichment: any) {
-  const { data: row } = await supabase
-    .from('manifests').select('lead_id').eq('id', manifestId).single()
-  if (!row?.lead_id) throw new Error('Manifest not found or has no lead_id')
-
-  const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-  const cascaded = await updateManifestAndCascade(row.lead_id, (manifest: any) => {
-    if (enrichment.appraisedValue || enrichment.assessedValue || enrichment.landValue || enrichment.improvementValue) {
-      manifest.property.assessment = {
-        ...manifest.property.assessment,
-        totalValue: enrichment.appraisedValue || manifest.property.assessment?.totalValue,
-        landValue: enrichment.landValue || manifest.property.assessment?.landValue,
-        improvementValue: enrichment.improvementValue || manifest.property.assessment?.improvementValue,
-      }
-    }
-    if (enrichment.sqft || enrichment.bedrooms || enrichment.bathrooms || enrichment.yearBuilt) {
-      manifest.property.dwelling = {
-        ...manifest.property.dwelling,
-        sqft: enrichment.sqft || manifest.property.dwelling?.sqft,
-        bedrooms: enrichment.bedrooms || manifest.property.dwelling?.bedrooms,
-        bathrooms: enrichment.bathrooms || manifest.property.dwelling?.bathrooms,
-        yearBuilt: enrichment.yearBuilt || manifest.property.dwelling?.yearBuilt,
-        style: enrichment.propertyType || manifest.property.dwelling?.style,
-      }
-    }
-    if (enrichment.parcelId) manifest.property.parcel = enrichment.parcelId
-    if (enrichment.taxOwed !== undefined) {
-      manifest.property.taxCollector = {
-        ...manifest.property.taxCollector, delinquentAmount: enrichment.taxOwed,
-      }
-    }
-    manifest.auditTrail.push({
-      timestamp: new Date().toISOString(), agent: 'system:enrichment',
-      action: 'county_enrichment_complete',
-      details: { county: enrichment.county, source: enrichment.source, result: 'success' },
-    })
-    if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-    manifest.ariIntelligence.briefingStale = true
-  }, 'api:enrich')
-
-  if (!cascaded) throw new Error('Manifest cascade failed')
 }
