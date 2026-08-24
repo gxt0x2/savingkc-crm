@@ -51,7 +51,7 @@ describe('contact directory read model', () => {
 
     const page = await readContactDirectoryPage(query, { rpc })
 
-    expect(rpc).toHaveBeenCalledWith('contact_workspace_page_v3', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('contact_workspace_page_v4', expect.objectContaining({
       target_smart_list: 'new',
       target_limit: 10,
       page_cursor: null,
