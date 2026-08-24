@@ -39,9 +39,6 @@ interface ContactRow {
   owner: string | null
   score: number
   isFavorite: boolean
-  nextActivity: { when: string | null; label: string; kind: 'appointment' | 'recommended' | null } | null
-  tags: string[]
-  lastContactAt: string | null
   createdAt: string | null
   firstOutboundAt: string | null
   contactSignal: ContactSignal | null
@@ -69,7 +66,6 @@ interface SavedView {
   owner: string
   stage: string
   source: string
-  tag: string
   attention: string
   outreach: string
 }
@@ -227,7 +223,6 @@ export default function ContactsPage() {
   const [stageFilter, setStageFilter] = useState('')
   const [minimumStageFilter, setMinimumStageFilter] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
-  const [tagFilter, setTagFilter] = useState('')
   const [activityFilter, setActivityFilter] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
   const [outreachFilter, setOutreachFilter] = useState('')
@@ -255,8 +250,8 @@ export default function ContactsPage() {
   const sortableSmartListTabsPromise = useRef<Promise<ComponentType<SortableSmartListTabsProps>> | null>(null)
   const deferredSearch = useDeferredValue(search)
   const audienceQuery = useMemo(() => ({ smartList, sort: sortBy, search: deferredSearch, owner: ownerFilter, stage: stageFilter, minimumStage: minimumStageFilter,
-    source: sourceFilter, tag: tagFilter, activity: activityFilter, attention: attentionFilter, outreach: outreachFilter, dataGap: dataGapFilter,
-  } satisfies ProspectingAudienceQuery), [activityFilter, attentionFilter, dataGapFilter, deferredSearch, minimumStageFilter, outreachFilter, ownerFilter, smartList, sortBy, sourceFilter, stageFilter, tagFilter])
+    source: sourceFilter, tag: '', activity: activityFilter, attention: attentionFilter, outreach: outreachFilter, dataGap: dataGapFilter,
+  } satisfies ProspectingAudienceQuery), [activityFilter, attentionFilter, dataGapFilter, deferredSearch, minimumStageFilter, outreachFilter, ownerFilter, smartList, sortBy, sourceFilter, stageFilter])
   const currentQuery = useContactWorkspace({
     ...audienceQuery,
     cursor: cursorHistory[pageIndex] ?? null,
@@ -334,7 +329,6 @@ export default function ContactsPage() {
 
   const owners = currentQuery.data?.facets.owners ?? []
   const sources = currentQuery.data?.facets.sources ?? []
-  const tags = currentQuery.data?.facets.tags ?? []
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -490,7 +484,6 @@ export default function ContactsPage() {
     setStageFilter('')
     setMinimumStageFilter('')
     setSourceFilter('')
-    setTagFilter('')
     setActivityFilter('')
     setAttentionFilter('')
     setOutreachFilter('')
@@ -595,7 +588,7 @@ export default function ContactsPage() {
     event.preventDefault()
     const label = viewName.trim()
     if (!label) return
-    const next = [...savedViews, { id: crypto.randomUUID(), label, owner: ownerFilter, stage: stageFilter, source: sourceFilter, tag: tagFilter, attention: attentionFilter, outreach: outreachFilter }]
+    const next = [...savedViews, { id: crypto.randomUUID(), label, owner: ownerFilter, stage: stageFilter, source: sourceFilter, attention: attentionFilter, outreach: outreachFilter }]
     setSavedViews(next)
     window.localStorage.setItem('savingkc-contact-views', JSON.stringify(next))
     setViewName('')
@@ -608,14 +601,13 @@ export default function ContactsPage() {
     setOwnerFilter(view.owner)
     setStageFilter(view.stage)
     setSourceFilter(view.source)
-    setTagFilter(view.tag)
     setAttentionFilter(view.attention)
     setOutreachFilter(view.outreach ?? '')
   }
 
-  const hasFilters = Boolean(ownerFilter || stageFilter || minimumStageFilter || sourceFilter || tagFilter || activityFilter || attentionFilter || outreachFilter || dataGapFilter)
+  const hasFilters = Boolean(ownerFilter || stageFilter || minimumStageFilter || sourceFilter || activityFilter || attentionFilter || outreachFilter || dataGapFilter)
     || ['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList)
-  const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, tagFilter, activityFilter, attentionFilter, outreachFilter, dataGapFilter].filter(Boolean).length
+  const activeFilterCount = [ownerFilter, stageFilter, minimumStageFilter, sourceFilter, activityFilter, attentionFilter, outreachFilter, dataGapFilter].filter(Boolean).length
     + (['needs_reply', 'overdue', 'unassigned', 'not_leads'].includes(smartList) ? 1 : 0)
   const smartListCopy = CONTACT_SMART_LIST_COPY[smartList]
   const hasCustomSmartListOrder = smartListOrder.some((id, index) => id !== DEFAULT_CONTACT_SMART_LIST_ORDER[index])
@@ -683,7 +675,6 @@ export default function ContactsPage() {
                     <PipelineFilterSelect label="Stage" value={stageFilter} onChange={(value) => { setStageFilter(value); resetPagination() }} options={Object.entries(STAGE_LABELS)} />
                     <PipelineFilterSelect label="Minimum stage" value={minimumStageFilter} onChange={(value) => { setMinimumStageFilter(value); resetPagination() }} options={Object.entries(STAGE_LABELS).filter(([value]) => STAGE_RANK[value as DealStage] >= 0)} />
                     <PipelineFilterSelect label="Source" value={sourceFilter} onChange={(value) => { setSourceFilter(value); resetPagination() }} options={sources.map((value) => [value, formatLeadSource(value)])} />
-                    <PipelineFilterSelect label="Tags" value={tagFilter} onChange={(value) => { setTagFilter(value); resetPagination() }} options={tags.map((value) => [value, value])} />
                     <PipelineFilterSelect label="Last activity" value={activityFilter} onChange={(value) => { setActivityFilter(value); resetPagination() }} options={[["day", "Past 24 hours"], ["week", "Past 7 days"], ["stale", "More than 7 days"], ["none", "No activity"]]} />
                     <PipelineFilterSelect label="Data quality" value={dataGapFilter} onChange={(value) => { setDataGapFilter(value as DataGap); resetPagination() }} options={[["missing_phone", "Missing phone"], ["missing_email", "Missing email"], ["missing_next_action", "Missing next action"]]} />
                     <PipelineFilterSelect label="Conversation state" value={attentionFilter} onChange={(value) => { setAttentionFilter(value); resetPagination() }} options={[["needs_reply", "Needs reply"], ["waiting_on_contact", "Waiting on contact"], ["resolved", "Resolved"]]} />
@@ -758,7 +749,7 @@ export default function ContactsPage() {
                 const property = row.address || 'No property linked'
                 const nextAction = dataGapFilter === 'missing_next_action'
                   ? 'Primary action required'
-                  : row.primaryNextAction?.title || row.nextActivity?.label || (row.hubEnriched ? 'Define next action' : 'Loading next action…')
+                  : row.primaryNextAction?.title || (row.hubEnriched ? 'Define next action' : 'Loading next action…')
                 const selectedRow = detailsOpen && selected?.id === row.id
                 const notLead = isNotLeadOutcome(row.classification, row.station)
                 const pipelineStatus = contactPipelineStatusLabel(row)
@@ -828,7 +819,7 @@ export default function ContactsPage() {
               />
             </div>
             <div className="crm-panel mt-6 rounded-xl p-4"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="trending_up" className="text-[18px] text-[var(--crm-success)]" />Opportunity</h3><dl className="mt-4 space-y-3 text-xs"><div className="flex justify-between"><dt>Stage</dt><dd className={`rounded-md border px-2 py-1 font-semibold ${STAGE_TONES[selected.station]}`}>{STAGE_LABELS[selected.station]}</dd></div><div className="flex justify-between"><dt>Motivation</dt><dd className="rounded-full bg-[var(--crm-violet-soft)] px-2 py-0.5 font-black text-[var(--crm-violet)]">{selected.score} / 100</dd></div></dl></div>
-            <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{dataGapFilter === 'missing_next_action' ? 'Primary action required' : selected.primaryNextAction?.title || selected.nextActivity?.label || (selected.hubEnriched ? 'Define next action' : 'Loading next action…')}</p>{dataGapFilter === 'missing_next_action' ? <button type="button" onClick={() => setPrimaryReviewContact(selected)} className="crm-primary-button mt-3 h-9 w-full rounded-lg text-xs font-black">Review and resolve</button> : null}</div>
+            <div className="mt-5 rounded-xl border border-[var(--crm-action-border)] border-l-4 border-l-[var(--crm-action)] bg-[var(--crm-action-soft)] p-4"><h3 className="flex items-center gap-2 text-sm font-bold text-[var(--crm-action)]"><Icon name="bolt" className="text-[18px]" />Next action</h3><p className="mt-3 flex items-start gap-2 text-xs font-semibold leading-5 text-[var(--crm-ink)]"><Icon name="schedule" className="mt-0.5 text-[var(--crm-action)]" />{dataGapFilter === 'missing_next_action' ? 'Primary action required' : selected.primaryNextAction?.title || (selected.hubEnriched ? 'Define next action' : 'Loading next action…')}</p>{dataGapFilter === 'missing_next_action' ? <button type="button" onClick={() => setPrimaryReviewContact(selected)} className="crm-primary-button mt-3 h-9 w-full rounded-lg text-xs font-black">Review and resolve</button> : null}</div>
             <div className="mt-5 border-t border-[var(--crm-border)] pt-5"><h3 className="flex items-center gap-2 text-sm font-bold"><Icon name="forum" className="text-[18px] text-[var(--crm-info)]" />Recent conversation</h3><p className="mt-3 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-info-soft)] p-3 text-xs leading-5 text-[var(--crm-text)]">{selected.lastMessage || 'No recent message'}</p></div>
             <div className="mt-6 border-t border-[var(--crm-border)] pt-5">
               <h3 className="text-sm font-bold">Contact details</h3>
@@ -855,7 +846,7 @@ export default function ContactsPage() {
           {dialogError ? <p className="text-sm font-semibold text-[var(--ck-accent)]">{dialogError}</p> : null}
           <div className="flex gap-3"><button type="button" disabled={saving} onClick={() => setDialog(null)} className="h-10 flex-1 rounded-lg border border-[var(--ck-border-strong)] text-sm font-bold">Cancel</button><button type="button" disabled={saving || !csvRows.length} onClick={() => void submitImport()} className="h-10 flex-1 rounded-lg bg-[var(--ck-accent)] text-sm font-bold text-white disabled:opacity-50">{saving ? 'Importing…' : requestedCampaignId ? 'Import to campaign' : 'Import contacts'}</button></div>
         </div> : null}
-        {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, tag, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><PipelineModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
+        {dialog === 'view' ? <form onSubmit={saveView} className="space-y-4"><p className="text-sm leading-6 text-[var(--ck-text-muted)]">Save the current owner, stage, source, activity, and attention filters as a reusable view.</p><label><span className="mb-1 block text-xs font-bold text-[var(--ck-text-muted)]">View name</span><input autoFocus value={viewName} onChange={(event) => setViewName(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 text-sm text-[var(--ck-text)] outline-none focus:border-[var(--ck-accent)]" /></label><PipelineModalActions saving={false} submitLabel="Save view" onCancel={() => setDialog(null)} /></form> : null}
       </PipelineModal> : null}
       {primaryReviewContact ? <PrimaryNextActionReviewDialog leadId={primaryReviewContact.id} contactName={getDisplayLeadName(primaryReviewContact.fullName, primaryReviewContact.phone)} onClose={() => setPrimaryReviewContact(null)} onResolved={handlePrimaryActionResolved} /> : null}
     </>

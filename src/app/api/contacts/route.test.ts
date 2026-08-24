@@ -61,6 +61,8 @@ describe('contacts GET', () => {
     expect(source).not.toContain('readContactWorkspaceActivitySummaries')
     expect(source).not.toContain('hot_opportunities_cache')
     expect(source).not.toContain("from('manifests')")
+    expect(source).not.toContain('item.manifest')
+    expect(source).not.toContain('recommendedActions')
   })
 
   it('returns the cursor-bounded directory contract without loading legacy rows', async () => {
@@ -78,7 +80,7 @@ describe('contacts GET', () => {
         last_communication_at: null, last_activity_at: '2026-08-21T12:00:00.000Z',
         primary_next_action_id: null, primary_next_action_title: null,
         primary_next_action_due_at: null, primary_next_action_owner: null,
-        first_outbound_at: null, outreach_status: 'unattempted', manifest: {},
+        first_outbound_at: null, outreach_status: 'unattempted',
         entity_authority: 'canonical_entities',
       }],
       totalCount: 1,
@@ -89,7 +91,7 @@ describe('contacts GET', () => {
       facets: { owners: ['Ernest'], sources: ['website_form'], tags: [] },
     })
 
-    const response = await GET(new NextRequest('https://crm.savingkc.com/api/contacts?mode=page&list=new&limit=10'))
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/contacts?mode=page&list=new&limit=10&tag=probate'))
     const payload = await response.json()
 
     expect(response.status).toBe(200)
@@ -104,6 +106,13 @@ describe('contacts GET', () => {
       pageInfo: { limit: 10, total: 1, hasMore: false, nextCursor: null },
     })
     expect(mocks.from).not.toHaveBeenCalled()
+    expect(payload.items[0]).not.toHaveProperty('nextActivity')
+    expect(payload.items[0]).not.toHaveProperty('tags')
+    expect(payload.items[0]).not.toHaveProperty('lastContactAt')
+    expect(mocks.readDirectoryPage).toHaveBeenCalledWith(
+      expect.objectContaining({ tag: '' }),
+      expect.anything(),
+    )
   })
 
   it('rejects malformed page cursors before any database work', async () => {

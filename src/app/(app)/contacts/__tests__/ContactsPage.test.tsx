@@ -32,9 +32,6 @@ const baseContact = {
   deadReason: null,
   score: 20,
   isFavorite: false,
-  nextActivity: null,
-  tags: [],
-  lastContactAt: null,
   createdAt: '2026-08-01T12:00:00Z',
   firstOutboundAt: null,
   contactSignal: null,
@@ -241,6 +238,8 @@ describe('ContactsPage smart-list workspace', () => {
     searchParamsMock.mockReturnValue(new URLSearchParams('list=all&gap=missing_next_action'))
     useQueryMock.mockReturnValue({
       data: {
+        // A stale client/cache may still carry the retired field. The UI must
+        // ignore it instead of promoting the suggestion back into work.
         items: [{ ...contacts[1], nextActivity: { when: null, label: 'AI says send an offer', kind: 'recommended' } }],
         scopeCounts: { active: 1, prospects: 0, not_leads: 0 },
         counts: contactSmartListCounts([contacts[1]]),
