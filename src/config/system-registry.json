@@ -214,7 +214,7 @@
       "status": "active",
       "routes": ["/prospecting", "/dialer"],
       "apiRoutes": ["/api/dialer/queue", "/api/dialer/call-intents", "/api/dialer/sessions", "/api/dialer/sessions/[id]", "/api/dialer/sessions/[id]/pre-call-brief", "/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/heirs", "/api/heirs/attempt", "/api/heirs/sync", "/api/heirs/verify", "/api/mobile/v1/twilio/call-intents", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
-      "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "dialer_queue_state", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "manifests", "prospects", "prospect_phones", "sms_opt_outs", "conversation_thread_state", "work_items", "appointments", "briefings", "lead_co_owners"],
+      "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "dialer_queue_state", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "manifests", "prospects", "prospect_phones", "sms_opt_outs", "conversation_thread_state", "work_items", "appointments", "briefings", "crm_briefing_jobs", "assistant_generations", "lead_co_owners"],
       "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "SKIPTRACE_SERVICE_URL", "ERNEST_PHONE", "CASEY_PHONE"]
     },
     {
@@ -292,9 +292,9 @@
       "routes": ["/ari"],
       "apiRoutes": ["/api/ari/chat"],
       "tables": ["ari_briefings", "ari_briefing_events", "ari_audit_events", "roles"],
-      "environment": ["GROQ_API_KEY", "OPENROUTER_API_KEY"],
+      "environment": [],
       "retirement": {
-        "reason": "The /ari dashboard is replaced by the canonical Dashboard plus the unified persistent AI assistant. Lead-level ARI APIs remain temporarily available while their embedded lead-detail consumers are reconciled.",
+        "reason": "The /ari dashboard and lead-level chat are replaced by the canonical Dashboard plus the unified persistent AI assistant. The old chat route is a signed-in compatibility tombstone.",
         "targetDate": "2026-11-30"
       }
     },
@@ -304,8 +304,8 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/ai"],
-      "apiRoutes": ["/api/ai/command", "/api/ai/next-action-proposal", "/api/ai/threads", "/api/ai/threads/[id]"],
-      "tables": ["assistant_threads", "assistant_messages", "assistant_generations", "assistant_confirmations", "agent_profiles"],
+      "apiRoutes": ["/api/ai/command", "/api/ai/next-action-proposal", "/api/ai/threads", "/api/ai/threads/[id]", "/api/ari/generate-briefing"],
+      "tables": ["assistant_threads", "assistant_messages", "assistant_generations", "assistant_confirmations", "briefings", "crm_briefing_jobs", "agent_profiles"],
       "environment": ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "GROQ_API_KEY", "OPENROUTER_API_KEY"]
     },
     {
@@ -425,15 +425,19 @@
     },
     {
       "id": "briefings",
-      "name": "Briefing lifecycle",
+      "name": "Canonical AI briefing lifecycle",
       "owner": "Operations",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/cron/sweep-briefings", "/api/hot-opportunities/cron"],
-      "tables": ["ari_briefings", "ari_briefing_events", "hot_score_audit_trail"],
-      "environment": [],
+      "apiRoutes": ["/api/cron/sweep-briefings", "/api/ari/generate-briefing", "/api/hot-opportunities/cron"],
+      "tables": ["briefings", "crm_briefing_jobs", "assistant_generations", "hot_score_audit_trail"],
+      "environment": ["CRON_SECRET", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"],
       "crons": [
-        { "path": "/api/cron/sweep-briefings", "schedule": "0 13 * * *" },
+        {
+          "path": "/api/cron/sweep-briefings",
+          "schedule": "*/5 * * * *",
+          "highFrequencyReason": "Claim at most three coalesced, revision-safe briefing refreshes so seller evidence stays current without blocking CRM writes."
+        },
         { "path": "/api/hot-opportunities/cron", "schedule": "0 14 * * *" }
       ]
     },

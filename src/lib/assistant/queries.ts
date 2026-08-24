@@ -139,7 +139,7 @@ export async function readAssistantLead360(db: Db, actor: AssistantActor, leadId
   const generatedAt = new Date().toISOString()
   const { data: lead, error } = await db
     .from('leads')
-    .select('id, full_name, phone, email, property_address, city, state, zip, county, source, station, priority, notes, assigned_agent, classification, opportunity_score, motivation_score, seller_situation, arv, repair_estimate, offer_amount, assignment_fee, form_status, created_at, updated_at')
+    .select('id, full_name, phone, email, property_address, city, state, zip, county, source, station, priority, notes, assigned_agent, classification, opportunity_score, motivation_score, seller_situation, property_condition, asking_price, arv, repair_estimate, offer_amount, assignment_fee, form_status, created_at, updated_at')
     .eq('id', leadId)
     .maybeSingle()
   if (error) throw new Error(`Lead lookup failed: ${error.message}`)
