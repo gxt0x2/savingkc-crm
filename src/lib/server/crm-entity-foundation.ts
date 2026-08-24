@@ -28,6 +28,33 @@ export interface CrmEntityContext {
     state: string | null
     zip: string | null
     parcelId: string | null
+    propertyType?: string | null
+    bedrooms?: number | null
+    bathrooms?: number | null
+    bathroomsFull?: number | null
+    bathroomsHalf?: number | null
+    sqft?: number | null
+    lotSize?: number | null
+    yearBuilt?: number | null
+    basementType?: string | null
+    stories?: number | null
+    garageSpaces?: number | null
+    roofType?: string | null
+    heating?: string | null
+    cooling?: string | null
+    zoning?: string | null
+    hoaAmount?: number | null
+    taxAssessment?: number | null
+    taxOwed?: number | null
+    firstDelinquentYear?: number | null
+    lastSaleDate?: string | null
+    lastSalePrice?: number | null
+    zestimate?: number | null
+    redfinEstimate?: number | null
+    totalMarketValue?: number | null
+    occupancyStatus?: string | null
+    dataSource?: string | null
+    dataEnrichedAt?: string | null
   } | null
   opportunity: {
     id: string
@@ -158,7 +185,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       .order('is_primary', { ascending: false }),
     linkData.property_id
       ? db.from('crm_properties')
-        .select('id, address, city, state, zip, parcel_id')
+        .select('id, address, city, state, zip, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, tax_owed, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, data_source, data_enriched_at')
         .eq('id', linkData.property_id)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -208,6 +235,33 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       state: property.state,
       zip: property.zip,
       parcelId: property.parcel_id,
+      propertyType: property.property_type,
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
+      bathroomsFull: property.bathrooms_full,
+      bathroomsHalf: property.bathrooms_half,
+      sqft: property.sqft,
+      lotSize: property.lot_size,
+      yearBuilt: property.year_built,
+      basementType: property.basement_type,
+      stories: property.stories,
+      garageSpaces: property.garage_spaces,
+      roofType: property.roof_type,
+      heating: property.heating,
+      cooling: property.cooling,
+      zoning: property.zoning,
+      hoaAmount: property.hoa_amount,
+      taxAssessment: property.tax_assessment,
+      taxOwed: property.tax_owed,
+      firstDelinquentYear: property.first_delinquent_year,
+      lastSaleDate: property.last_sale_date,
+      lastSalePrice: property.last_sale_price,
+      zestimate: property.zestimate,
+      redfinEstimate: property.redfin_estimate,
+      totalMarketValue: property.total_market_value,
+      occupancyStatus: property.occupancy_status,
+      dataSource: property.data_source,
+      dataEnrichedAt: property.data_enriched_at,
     } : null,
     opportunity: opportunity ? {
       id: opportunity.id,

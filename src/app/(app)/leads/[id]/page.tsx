@@ -12,9 +12,6 @@ import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
 
-const AriBriefing = dynamic(() => import('@/components/leads/ari-briefing').then((module) => module.AriBriefing))
-const PainPoints = dynamic(() => import('@/components/leads/pain-points').then((module) => module.PainPoints))
-const FavoriteOrFool = dynamic(() => import('@/components/leads/favorite-or-fool').then((module) => module.FavoriteOrFool))
 const PropertyHero = dynamic(() => import('@/components/leads/property-hero').then((module) => module.PropertyHero))
 const ActivityFeed = dynamic(() => import('@/components/leads/activity-feed').then((module) => module.ActivityFeed))
 const DocumentManager = dynamic(() => import('@/components/documents/document-manager').then((module) => module.DocumentManager))
@@ -26,7 +23,6 @@ const ContractModal = dynamic(() => import('@/components/leads/contract-modal').
 const AppointmentModal = dynamic(() => import('@/components/leads/appointment-modal').then((module) => module.AppointmentModal))
 const AppointmentOutcomeModal = dynamic(() => import('@/components/leads/appointment-outcome-modal').then((module) => module.AppointmentOutcomeModal))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
-const DiscoveryQuestions = dynamic(() => import('@/components/leads/discovery-questions').then((module) => module.DiscoveryQuestions))
 const MailTracker = dynamic(() => import('@/components/leads/mail-tracker').then((module) => module.MailTracker))
 const EmailThread = dynamic(() => import('@/components/leads/email-thread').then((module) => module.EmailThread))
 const CockpitModal = dynamic(() => import('@/components/ui/cockpit-modal').then((module) => module.CockpitModal))
@@ -86,10 +82,6 @@ interface Lead {
   dead_at?: string | null
   dead_by?: string | null
   entityContext?: CrmEntityContext | null
-  manifest?: ManifestPanelData | null
-  manifestId?: string | null
-  manifestUpdatedAt?: string | null
-  manifestIntelligenceSource?: 'manifest_compatibility' | null
 }
 
 interface ActivityRow {
@@ -112,69 +104,11 @@ interface AppointmentState {
   source?: string | null
 }
 
-interface ManifestTaxCollector {
-  totalOwed?: number | null
-  delinquentAmount?: number | null
-  firstDelinquentYear?: number | string | null
-  firstYearDelinquent?: number | string | null
-  delinquentSince?: number | string | null
-  oldestDelinquentYear?: number | string | null
-  yearsDelinquent?: number | null
-}
-
-interface ManifestAssessment {
-  totalValue?: number | null
-  source?: string | null
-  fetchedAt?: string | null
-}
-
-interface ManifestProperty {
-  beds?: number | null
-  baths_full?: number | null
-  bathsFull?: number | null
-  baths_half?: number | null
-  bathsHalf?: number | null
-  sqft?: number | null
-  squareFeet?: number | null
-  lot_size?: number | null
-  lotSize?: number | null
-  year_built?: number | null
-  yearBuilt?: number | null
-  basement_type?: string | null
-  basement?: string | null
-  stories?: number | null
-  garage_spaces?: number | null
-  garage?: number | null
-  roof_type?: string | null
-  roof?: string | null
-  heating?: string | null
-  cooling?: string | null
-  property_type?: string | null
-  propertyType?: string | null
-  zoning?: string | null
-  hoa_amount?: number | null
-  tax_assessment?: number | null
-  assessment?: ManifestAssessment | null
-  taxCollector?: ManifestTaxCollector | null
-  last_sale_date?: string | null
-  lastSaleDate?: string | null
-  last_sale_price?: number | null
-  lastSalePrice?: number | null
-  data_source?: string | null
-  data_enriched_at?: string | null
-}
-
 function activityTypeToFeedType(type: string): 'sms' | 'call' | 'email' | 'status_change' {
   if (type === 'sms') return 'sms'
   if (type === 'call') return 'call'
   if (type === 'email') return 'email'
   return 'status_change'
-}
-
-function readObject(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null
 }
 
 const CALLER_ID_BY_AGENT: Record<string, string> = {
@@ -323,43 +257,6 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
   )
 }
 
-interface ManifestPanelData {
-  manifestId?: string
-  version?: number | string
-  currentStation?: string
-  priority?: string
-  tier?: string
-  qualificationScore?: number
-  owner?: {
-    fullName?: string
-    coOwners?: unknown
-    deceased?: boolean
-    outOfState?: boolean
-  }
-  situation?: {
-    type?: unknown
-    motivation?: { signals?: unknown }
-  }
-  property?: {
-    vacant?: boolean
-    parcel?: string
-    legalDescription?: string
-    legal_description?: string
-    taxCollector?: {
-      totalOwed?: number | null
-      delinquentAmount?: number | null
-    }
-  }
-  financials?: Record<string, unknown>
-  pipeline?: Record<string, unknown>
-  communications?: Record<string, unknown>
-  flags?: {
-    redFlags?: unknown
-    opportunityFlags?: unknown
-  }
-  [key: string]: unknown
-}
-
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -367,8 +264,6 @@ export default function LeadDetailPage() {
   const [loading, setLoading] = useState(true)
   const loadedLeadIdRef = useRef<string | null>(null)
   const [activities, setActivities] = useState<ActivityRow[]>([])
-  const [manifestRowId, setManifestRowId] = useState<string | null>(null)
-  const [manifestProperty, setManifestProperty] = useState<ManifestProperty | null>(null)
   const [zestimate, setZestimate] = useState<number | null>(null)
   const [assessedValue, setAssessedValue] = useState<number | null>(null)
   const [redfinEstimate, setRedfinEstimate] = useState<number | null>(null)
@@ -381,10 +276,7 @@ export default function LeadDetailPage() {
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [showNewTask, setShowNewTask] = useState(false)
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false)
-  const [manifestAppointment, setManifestAppointment] = useState<AppointmentState | null>(null)
   const [nextAppointment, setNextAppointment] = useState<AppointmentState | null>(null)
-  const [manifestScore, setManifestScore] = useState<number | null>(null)
-  const [manifestTranscripts, setManifestTranscripts] = useState<Array<{ date: string; recordingUrl?: string }>>([])
   const [notesModalOpen, setNotesModalOpen] = useState(false)
   const notesDialogRef = useDialogAccessibility<HTMLDivElement>(
     notesModalOpen,
@@ -397,7 +289,7 @@ export default function LeadDetailPage() {
   const [editTaskId, setEditTaskId] = useState<string | null>(null)
   const [editTaskTitle, setEditTaskTitle] = useState('')
   const [editTaskMetadata, setEditTaskMetadata] = useState<Record<string, unknown>>({})
-  const activeAppointment = nextAppointment ?? manifestAppointment
+  const activeAppointment = nextAppointment
 
   // ── Data fetching (runs on mount + after user actions) ──
   const [refreshTick, setRefreshTick] = useState(0)
@@ -405,8 +297,7 @@ export default function LeadDetailPage() {
   // Call this after any user action that changes data (note, call, edit, email, etc.)
   const refreshAll = useCallback(() => {
     setRefreshTick(t => t + 1)
-    // Fan out to active intelligence cards so they can refresh their server-owned context.
-    // so they all re-read manifest/activities in one go.
+    // Fan out to active lead panels so they refresh their server-owned context.
     window.dispatchEvent(new CustomEvent('crm:lead-refresh', { detail: { leadId: id } }))
   }, [id])
 
@@ -434,68 +325,18 @@ export default function LeadDetailPage() {
         setLead(data)
         setNextAppointment(data.nextAppointment ?? null)
 
-        const manifest = readObject(data.manifest)
-        const financials = readObject(manifest?.financials)
-        const property = readObject(manifest?.property)
-        const assessment = readObject(property?.assessment)
-        const pipeline = readObject(manifest?.pipeline)
-        const rawAppointment = readObject(pipeline?.appointment)
-        const communications = readObject(manifest?.communications)
-
-        setManifestRowId(data.manifestId ?? null)
-        setManifestProperty(property as ManifestProperty | null)
-        setZestimate(typeof financials?.zillow_zestimate === 'number' && financials.zillow_zestimate > 0
-          ? financials.zillow_zestimate
-          : null)
-        const appraised = typeof assessment?.appraisedTotal === 'number' && assessment.appraisedTotal > 0
-          ? assessment.appraisedTotal
-          : typeof assessment?.totalValue === 'number' && assessment.totalValue > 0
-            ? assessment.totalValue
-            : null
-        setAssessedValue(appraised)
-        setRedfinEstimate(typeof financials?.redfin_estimate === 'number' && financials.redfin_estimate > 0
-          ? financials.redfin_estimate
-          : null)
-
-        const scheduledAt = typeof rawAppointment?.scheduledAt === 'string'
-          && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(rawAppointment.scheduledAt)
-          ? rawAppointment.scheduledAt
-          : null
-        const parsedAt = scheduledAt ? new Date(scheduledAt) : null
-        setManifestAppointment(rawAppointment && scheduledAt && parsedAt && Number.isFinite(parsedAt.getTime())
-          ? {
-              appointmentId: typeof rawAppointment.appointmentId === 'string' ? rawAppointment.appointmentId : null,
-              type: typeof rawAppointment.type === 'string' ? rawAppointment.type : null,
-              scheduledAt,
-              status: typeof rawAppointment.status === 'string' ? rawAppointment.status : 'scheduled',
-              assignedTo: typeof rawAppointment.assignedTo === 'string' ? rawAppointment.assignedTo : null,
-              address: typeof rawAppointment.address === 'string' ? rawAppointment.address : null,
-              notes: typeof rawAppointment.notes === 'string' ? rawAppointment.notes : null,
-              source: typeof rawAppointment.source === 'string' ? rawAppointment.source : null,
-            }
-          : null)
-        setManifestScore(typeof manifest?.qualificationScore === 'number' ? manifest.qualificationScore : null)
-        const transcripts = communications?.transcripts
-        setManifestTranscripts(Array.isArray(transcripts)
-          ? transcripts.filter((item): item is { date: string; recordingUrl?: string } => {
-              const row = readObject(item)
-              return typeof row?.date === 'string'
-                && (row.recordingUrl === undefined || typeof row.recordingUrl === 'string')
-            })
-          : [])
+        const propertyFacts = data.entityContext?.property
+        setZestimate(propertyFacts?.zestimate ?? null)
+        setAssessedValue(propertyFacts?.taxAssessment ?? null)
+        setRedfinEstimate(propertyFacts?.redfinEstimate ?? null)
         loadedLeadIdRef.current = id
       } catch (err) {
         console.error('[lead-detail] Failed to fetch lead:', err)
         setLead(null)
         setNextAppointment(null)
-        setManifestRowId(null)
-        setManifestProperty(null)
         setZestimate(null)
         setAssessedValue(null)
         setRedfinEstimate(null)
-        setManifestAppointment(null)
-        setManifestScore(null)
-        setManifestTranscripts([])
       } finally {
         setLoading(false)
       }
@@ -503,10 +344,9 @@ export default function LeadDetailPage() {
     if (id) fetchLead()
   }, [id, refreshTick])
 
-  // On-demand Zillow enrichment: if manifest loaded but has no zestimate yet,
-  // fire the enrichment endpoint once and bump refreshTick when it returns.
+  // On-demand Zillow enrichment writes back to the canonical property.
   useEffect(() => {
-    if (!lead || !manifestRowId) return
+    if (!lead) return
     if (zestimate != null) return
     if (zillowEnriching) return
     if (!lead.property_address) return
@@ -527,10 +367,10 @@ export default function LeadDetailPage() {
       })
       .catch(() => { /* silent — enrichment is best-effort */ })
       .finally(() => setZillowEnriching(false))
-  }, [lead, manifestRowId, refreshAll, zestimate, zillowEnriching])
+  }, [lead, refreshAll, zestimate, zillowEnriching])
 
   const refreshRedfinEstimate = useCallback(async () => {
-    if (!lead || !manifestRowId || redfinEnriching || !lead.property_address) return
+    if (!lead || redfinEnriching || !lead.property_address) return
 
     setRedfinEnriching(true)
     setRedfinError(null)
@@ -552,7 +392,7 @@ export default function LeadDetailPage() {
     } finally {
       setRedfinEnriching(false)
     }
-  }, [lead, manifestRowId, redfinEnriching, refreshAll])
+  }, [lead, redfinEnriching, refreshAll])
 
   useEffect(() => {
     async function fetchActivities() {
@@ -607,6 +447,7 @@ export default function LeadDetailPage() {
   }
 
   const formattedName = toProperCase(lead.full_name)
+  const canonicalProperty = lead.entityContext?.property ?? null
   function openLeadDialer() {
     const dialLead = lead
     if (!dialLead?.phone) return
@@ -691,7 +532,7 @@ export default function LeadDetailPage() {
   // both the overview conversation and the full activity feed. Previously the
   // feed received this normalized metadata while LeadWorkspace received raw
   // rows, which made live recordings appear to be missing on the overview.
-  const workspaceActivities = normalizeLeadRecordingActivities(mergedActivities, manifestTranscripts)
+  const workspaceActivities = normalizeLeadRecordingActivities(mergedActivities, [])
 
   // Build feed activities - include notes, appointments, call recordings
   const feedActivities = workspaceActivities
@@ -711,8 +552,7 @@ export default function LeadDetailPage() {
         }
       }
 
-      // workspaceActivities already canonicalizes legacy metadata and manifest
-      // transcript fallbacks into these two fields.
+      // workspaceActivities canonicalizes protected recording metadata.
       if ((a.activity_type === 'call' || a.activity_type === 'voicemail') && a.metadata) {
         recordingUrl = typeof a.metadata.recordingUrl === 'string' ? a.metadata.recordingUrl : undefined
         const durationValue = Number(a.metadata.recordingDuration || a.metadata.duration)
@@ -877,48 +717,32 @@ export default function LeadDetailPage() {
     })
 
   const workspacePropertyDetails = (() => {
-    const mp = manifestProperty || {}
     const pick = <T,>(a: T | null | undefined, b: T | null | undefined): T | null =>
       (a !== null && a !== undefined ? a : (b !== null && b !== undefined ? b : null))
-    const taxCollector = mp.taxCollector || {}
-    const explicitDelinquentYear =
-      taxCollector.firstDelinquentYear ??
-      taxCollector.firstYearDelinquent ??
-      taxCollector.delinquentSince ??
-      taxCollector.oldestDelinquentYear
-    let firstDelinquentYear: number | null = null
-    if (typeof explicitDelinquentYear === 'number' && explicitDelinquentYear > 1900) {
-      firstDelinquentYear = explicitDelinquentYear
-    } else if (typeof explicitDelinquentYear === 'string') {
-      const parsed = parseInt(explicitDelinquentYear.slice(0, 4), 10)
-      if (parsed > 1900) firstDelinquentYear = parsed
-    } else if (typeof taxCollector.yearsDelinquent === 'number' && taxCollector.yearsDelinquent > 0) {
-      firstDelinquentYear = new Date().getFullYear() - taxCollector.yearsDelinquent
-    }
 
     return {
-      beds: pick(lead.beds, mp.beds),
-      baths_full: pick(lead.baths_full, mp.baths_full ?? mp.bathsFull),
-      baths_half: pick(lead.baths_half, mp.baths_half ?? mp.bathsHalf),
-      sqft: pick(lead.sqft, mp.sqft ?? mp.squareFeet),
-      lot_size: pick(lead.lot_size, mp.lot_size ?? mp.lotSize),
-      year_built: pick(lead.year_built, mp.year_built ?? mp.yearBuilt),
-      basement_type: pick(lead.basement_type, mp.basement_type ?? mp.basement),
-      stories: pick(lead.stories, mp.stories),
-      garage_spaces: pick(lead.garage_spaces, mp.garage_spaces ?? mp.garage),
-      roof_type: pick(lead.roof_type, mp.roof_type ?? mp.roof),
-      heating: pick(lead.heating, mp.heating),
-      cooling: pick(lead.cooling, mp.cooling),
-      property_type: pick(lead.property_type, mp.property_type ?? mp.propertyType),
-      zoning: pick(lead.zoning, mp.zoning),
-      hoa_amount: pick(lead.hoa_amount, mp.hoa_amount),
-      tax_assessment: pick(lead.tax_assessment, mp.assessment?.totalValue ?? mp.tax_assessment),
-      tax_owed: taxCollector.totalOwed ?? taxCollector.delinquentAmount ?? null,
-      first_delinquent_year: firstDelinquentYear,
-      last_sale_date: pick(lead.last_sale_date, mp.last_sale_date ?? mp.lastSaleDate),
-      last_sale_price: pick(lead.last_sale_price, mp.last_sale_price ?? mp.lastSalePrice),
-      data_source: pick(lead.data_source, mp.assessment?.source ?? mp.data_source),
-      data_enriched_at: pick(lead.data_enriched_at, mp.assessment?.fetchedAt ?? mp.data_enriched_at),
+      beds: pick(canonicalProperty?.bedrooms, lead.beds),
+      baths_full: pick(canonicalProperty?.bathroomsFull, lead.baths_full),
+      baths_half: pick(canonicalProperty?.bathroomsHalf, lead.baths_half),
+      sqft: pick(canonicalProperty?.sqft, lead.sqft),
+      lot_size: pick(canonicalProperty?.lotSize, lead.lot_size),
+      year_built: pick(canonicalProperty?.yearBuilt, lead.year_built),
+      basement_type: pick(canonicalProperty?.basementType, lead.basement_type),
+      stories: pick(canonicalProperty?.stories, lead.stories),
+      garage_spaces: pick(canonicalProperty?.garageSpaces, lead.garage_spaces),
+      roof_type: pick(canonicalProperty?.roofType, lead.roof_type),
+      heating: pick(canonicalProperty?.heating, lead.heating),
+      cooling: pick(canonicalProperty?.cooling, lead.cooling),
+      property_type: pick(canonicalProperty?.propertyType, lead.property_type),
+      zoning: pick(canonicalProperty?.zoning, lead.zoning),
+      hoa_amount: pick(canonicalProperty?.hoaAmount, lead.hoa_amount),
+      tax_assessment: pick(canonicalProperty?.taxAssessment, lead.tax_assessment),
+      tax_owed: canonicalProperty?.taxOwed ?? null,
+      first_delinquent_year: canonicalProperty?.firstDelinquentYear ?? null,
+      last_sale_date: pick(canonicalProperty?.lastSaleDate, lead.last_sale_date),
+      last_sale_price: pick(canonicalProperty?.lastSalePrice, lead.last_sale_price),
+      data_source: pick(canonicalProperty?.dataSource, lead.data_source),
+      data_enriched_at: pick(canonicalProperty?.dataEnrichedAt, lead.data_enriched_at),
     }
   })()
 
@@ -932,7 +756,7 @@ export default function LeadDetailPage() {
           address: activeAppointment.address,
           type: activeAppointment.type,
         } : null}
-        score={manifestScore ?? lead.motivation_score}
+        score={lead.motivation_score}
         assessedValue={assessedValue ?? lead.tax_assessment}
         onCall={openLeadDialer}
         onEdit={() => setEditPanelOpen(true)}
@@ -975,11 +799,7 @@ export default function LeadDetailPage() {
                   zestimate={zestimate}
                   redfinEstimate={redfinEstimate}
                   assessedValue={assessedValue ?? lead.tax_assessment ?? null}
-                  taxOwed={
-                    manifestProperty?.taxCollector?.totalOwed ??
-                    manifestProperty?.taxCollector?.delinquentAmount ??
-                    null
-                  }
+                  taxOwed={canonicalProperty?.taxOwed ?? null}
                   estimateLoading={zillowEnriching && zestimate == null}
                   redfinLoading={redfinEnriching}
                   redfinError={redfinError}
@@ -1005,50 +825,13 @@ export default function LeadDetailPage() {
             />
           ),
           ai: (
-            <div className="grid gap-5 lg:grid-cols-2">
+            <div className="grid gap-5">
               <LeadAiChangeReview leadId={lead.id} onApplied={refreshAll} />
-              <AriBriefing
-                leadId={lead.id}
-                manifestId={manifestRowId ?? undefined}
-                personalityType={null}
-                tacticalApproach={lead.notes || null}
-                notes={lead.notes}
-                sellerSituation={lead.seller_situation}
-                motivationScore={lead.motivation_score}
-                activities={activities}
-              />
-              <PainPoints
-                leadId={lead.id}
-                notes={lead.notes}
-                sellerSituation={lead.seller_situation}
-                motivationScore={lead.motivation_score}
-                activities={activities}
-              />
-              <FavoriteOrFool
-                leadId={lead.id}
-                manifestId={manifestRowId ?? undefined}
-                motivationScore={lead.motivation_score}
-                arv={lead.arv}
-                offerAmount={lead.offer_amount}
-                repairEstimate={lead.repair_estimate}
-                station={lead.station}
-                notes={lead.notes}
-                sellerSituation={lead.seller_situation}
-                classification={lead.classification}
-                priority={lead.priority}
-                isFavorite={lead.is_favorite}
-                opportunityScore={lead.opportunity_score}
-                activities={activities}
-              />
-              <DiscoveryQuestions
-                leadId={lead.id}
-                notes={lead.notes}
-                sellerSituation={lead.seller_situation}
-                offerAmount={lead.offer_amount}
-                sqft={lead.sqft}
-                yearBuilt={lead.year_built}
-                activities={activities}
-              />
+              <section className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-5">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--crm-brand)]">AI governance</p>
+                <h3 className="mt-2 text-base font-black text-[var(--crm-ink)]">Suggestions are not CRM facts</h3>
+                <p className="mt-1 text-sm leading-6 text-[var(--crm-text-muted)]">AI can propose a change with evidence. A person must review it before it changes the contact, opportunity, owner, lifecycle, or next action.</p>
+              </section>
             </div>
           ),
           marketing: (
@@ -1134,7 +917,7 @@ export default function LeadDetailPage() {
       )}
       {smsModalOpen && (lead.phone || lead.email) && (
         <SmsComposeModal
-          lead={lead}
+          lead={{ ...lead, parcelId: lead.entityContext?.property?.parcelId ?? null }}
           onClose={() => setSmsModalOpen(false)}
           onSent={() => { refreshAll() }}
           initialTab={composeTab}
@@ -1247,53 +1030,33 @@ export default function LeadDetailPage() {
         size="lg"
       >
         {(() => {
-          const mp = manifestProperty || {}
           const pick = <T,>(a: T | null | undefined, b: T | null | undefined): T | null =>
             (a !== null && a !== undefined ? a : (b !== null && b !== undefined ? b : null))
           return (
             <PropertyDetailsCard
               details={{
-                beds: pick(lead.beds, mp.beds),
-                baths_full: pick(lead.baths_full, mp.baths_full ?? mp.bathsFull),
-                baths_half: pick(lead.baths_half, mp.baths_half ?? mp.bathsHalf),
-                sqft: pick(lead.sqft, mp.sqft ?? mp.squareFeet),
-                lot_size: pick(lead.lot_size, mp.lot_size ?? mp.lotSize),
-                year_built: pick(lead.year_built, mp.year_built ?? mp.yearBuilt),
-                basement_type: pick(lead.basement_type, mp.basement_type ?? mp.basement),
-                stories: pick(lead.stories, mp.stories),
-                garage_spaces: pick(lead.garage_spaces, mp.garage_spaces ?? mp.garage),
-                roof_type: pick(lead.roof_type, mp.roof_type ?? mp.roof),
-                heating: pick(lead.heating, mp.heating),
-                cooling: pick(lead.cooling, mp.cooling),
-                property_type: pick(lead.property_type, mp.property_type ?? mp.propertyType),
-                zoning: pick(lead.zoning, mp.zoning),
-                hoa_amount: pick(lead.hoa_amount, mp.hoa_amount),
-                tax_assessment: pick(lead.tax_assessment, mp.assessment?.totalValue ?? mp.tax_assessment),
-                tax_owed: mp.taxCollector?.totalOwed ?? mp.taxCollector?.delinquentAmount ?? null,
-                first_delinquent_year: (() => {
-                  const tc = mp.taxCollector || {}
-                  // Prefer an explicit year field
-                  const explicit =
-                    tc.firstDelinquentYear ??
-                    tc.firstYearDelinquent ??
-                    tc.delinquentSince ??
-                    tc.oldestDelinquentYear
-                  if (typeof explicit === 'number' && explicit > 1900) return explicit
-                  if (typeof explicit === 'string') {
-                    const parsed = parseInt(explicit.slice(0, 4), 10)
-                    if (parsed > 1900) return parsed
-                  }
-                  // Fall back to computing from yearsDelinquent
-                  const yrs = tc.yearsDelinquent
-                  if (typeof yrs === 'number' && yrs > 0) {
-                    return new Date().getFullYear() - yrs
-                  }
-                  return null
-                })(),
-                last_sale_date: pick(lead.last_sale_date, mp.last_sale_date ?? mp.lastSaleDate),
-                last_sale_price: pick(lead.last_sale_price, mp.last_sale_price ?? mp.lastSalePrice),
-                data_source: pick(lead.data_source, mp.assessment?.source ?? mp.data_source),
-                data_enriched_at: pick(lead.data_enriched_at, mp.assessment?.fetchedAt ?? mp.data_enriched_at),
+                beds: pick(canonicalProperty?.bedrooms, lead.beds),
+                baths_full: pick(canonicalProperty?.bathroomsFull, lead.baths_full),
+                baths_half: pick(canonicalProperty?.bathroomsHalf, lead.baths_half),
+                sqft: pick(canonicalProperty?.sqft, lead.sqft),
+                lot_size: pick(canonicalProperty?.lotSize, lead.lot_size),
+                year_built: pick(canonicalProperty?.yearBuilt, lead.year_built),
+                basement_type: pick(canonicalProperty?.basementType, lead.basement_type),
+                stories: pick(canonicalProperty?.stories, lead.stories),
+                garage_spaces: pick(canonicalProperty?.garageSpaces, lead.garage_spaces),
+                roof_type: pick(canonicalProperty?.roofType, lead.roof_type),
+                heating: pick(canonicalProperty?.heating, lead.heating),
+                cooling: pick(canonicalProperty?.cooling, lead.cooling),
+                property_type: pick(canonicalProperty?.propertyType, lead.property_type),
+                zoning: pick(canonicalProperty?.zoning, lead.zoning),
+                hoa_amount: pick(canonicalProperty?.hoaAmount, lead.hoa_amount),
+                tax_assessment: pick(canonicalProperty?.taxAssessment, lead.tax_assessment),
+                tax_owed: canonicalProperty?.taxOwed ?? null,
+                first_delinquent_year: canonicalProperty?.firstDelinquentYear ?? null,
+                last_sale_date: pick(canonicalProperty?.lastSaleDate, lead.last_sale_date),
+                last_sale_price: pick(canonicalProperty?.lastSalePrice, lead.last_sale_price),
+                data_source: pick(canonicalProperty?.dataSource, lead.data_source),
+                data_enriched_at: pick(canonicalProperty?.dataEnrichedAt, lead.data_enriched_at),
               }}
               address={lead.property_address || undefined}
               city={lead.city || undefined}

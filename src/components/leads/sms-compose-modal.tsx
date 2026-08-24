@@ -6,7 +6,6 @@ import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numb
 import { toProperCase, formatPhone } from '@/lib/format'
 import { useAuth } from '@/hooks/use-auth'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
-import { useLeadManifestIntelligence } from '@/hooks/use-lead-manifest-intelligence'
 
 // ── Agent → default Twilio number mapping ──
 const AGENT_DEFAULT_NUMBERS: Record<string, string> = {
@@ -36,6 +35,8 @@ interface Lead {
   city?: string | null
   state?: string | null
   zip?: string | null
+  parcelId?: string | null
+  legalDescription?: string | null
 }
 
 interface PropertyMeta {
@@ -51,14 +52,6 @@ interface Activity {
   metadata: Record<string, unknown> | null
   created_at: string
 }
-
-type ManifestPropertySnapshot = {
-  property?: {
-    parcel?: string | null
-    legalDescription?: string | null
-    legal_description?: string | null
-  }
-} | null
 
 interface SmsTemplate {
   id: string
@@ -125,7 +118,6 @@ export function SmsComposeModal({
   defaultFromPhone = null,
 }: ComposeModalProps) {
   const { user } = useAuth()
-  const { manifest: intelligence } = useLeadManifestIntelligence(lead.id)
   const agentName = getAgentFromEmail(user?.email)
   const titleId = useId()
   const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
@@ -149,7 +141,10 @@ export function SmsComposeModal({
   const [sent, setSent] = useState(false)
   const [templates, setTemplates] = useState<SmsTemplate[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
-  const [propertyMeta, setPropertyMeta] = useState<PropertyMeta>({})
+  const propertyMeta: PropertyMeta = {
+    parcelId: lead.parcelId || undefined,
+    legalDescription: lead.legalDescription || undefined,
+  }
   const fromPhoneOptions = useMemo(() => {
     const options: Array<{ label: string; value: string }> = TWILIO_NUMBERS.map((number) => ({ label: number.label, value: number.value }))
     if (fromPhone && !options.some((option) => option.value === fromPhone)) {
@@ -200,15 +195,6 @@ export function SmsComposeModal({
       .then(data => setTemplates(data.templates || []))
       .catch(() => {})
   }, [])
-
-  useEffect(() => {
-    const m = intelligence as ManifestPropertySnapshot
-    if (!m?.property) return
-    setPropertyMeta({
-      parcelId: m.property.parcel || undefined,
-      legalDescription: m.property.legalDescription || m.property.legal_description || undefined,
-    })
-  }, [intelligence])
 
   // The parent workspace owns the one lead-activity subscription. Reuse its
   // refresh event so opening this modal does not create another database client.

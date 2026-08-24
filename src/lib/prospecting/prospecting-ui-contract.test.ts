@@ -73,4 +73,11 @@ describe('prospecting workspace UI contract', () => {
     expect(callingFloor).toContain('export function ProspectingCallingFloor()')
     expect(callingFloor).not.toContain('function DialerHome')
   })
+
+  it('keeps the calling floor on relational facts instead of Manifest compatibility data', () => {
+    expect(callingFloor).toContain('currentProspect?.occupancy_status')
+    expect(callingFloor).toContain('payload.coOwners')
+    expect(callingFloor).not.toContain('loadDialerLeadContext')
+    expect(callingFloor).not.toContain('currentManifest')
+  })
 })

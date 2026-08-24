@@ -78,45 +78,6 @@ function normalizeAppointment(row: {
   }
 }
 
-function parseBookingFallback(manifest: JsonRecord | null | undefined) {
-  const pipeline = readRecord(manifest?.pipeline)
-  const appointment = normalizeAppointment(readRecord(pipeline?.appointment))
-  if (appointment) return appointment
-
-  const booking = readRecord(manifest?.booking)
-  const scheduledAt = normalizeDateValue(booking?.scheduledAt)
-  if (scheduledAt) {
-    return normalizeAppointment({
-      id: typeof booking?.bookingId === 'string' ? booking.bookingId : null,
-      scheduledAt,
-      type: 'phone_call',
-      status: 'scheduled',
-      assignedTo: 'casey',
-      notes: 'PPC booking',
-      source: 'manifest_booking',
-    })
-  }
-
-  const scheduledDate = typeof booking?.scheduledDate === 'string' ? booking.scheduledDate : null
-  const scheduledTime = typeof booking?.scheduledTime === 'string' ? booking.scheduledTime : null
-  if (scheduledDate) {
-    const parsed = new Date(`${scheduledDate}T${(scheduledTime || '09:00').slice(0, 5)}:00-05:00`)
-    if (Number.isFinite(parsed.getTime())) {
-      return normalizeAppointment({
-        id: typeof booking?.bookingId === 'string' ? booking.bookingId : null,
-        scheduledAt: parsed.toISOString(),
-        type: 'phone_call',
-        status: 'scheduled',
-        assignedTo: 'casey',
-        notes: 'PPC booking',
-        source: 'manifest_booking',
-      })
-    }
-  }
-
-  return null
-}
-
 function appointmentFromActivities(rows: ActivityTaskRow[] | null | undefined) {
   const candidates: Array<{ row: ActivityTaskRow; dueDate: string; dueMs: number; sourceRank: number }> = []
   for (const row of rows ?? []) {
@@ -179,18 +140,13 @@ export async function GET(
 
   const nowIso = new Date().toISOString()
 
-  // Fetch lead + manifest + canonical next appointment in parallel
-  const [leadRes, manifestRes, appointmentRes, appointmentTaskRes, entityContext] = await Promise.all([
+  // Fetch the compatibility aggregate, canonical appointment, and canonical
+  // entity projection in parallel. Manifest is historical and is not read.
+  const [leadRes, appointmentRes, appointmentTaskRes, entityContext] = await Promise.all([
     db.from('leads')
       .select('*')
       .eq('id', id)
       .single(),
-    db.from('manifests')
-      .select('id, manifest, updated_at')
-      .eq('lead_id', id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
     db.from('appointments')
       .select('id, scheduled_at, type, status, address, notes, source, assigned_to')
       .eq('lead_id', id)
@@ -213,10 +169,6 @@ export async function GET(
   }
 
   const lead = applyCrmEntityAuthority(leadRes.data as LeadPayload, entityContext)
-  const manifestRow = readRecord(manifestRes.data)
-  const manifestContainer = manifestRow?.manifest
-  const manifestRecord = readRecord(manifestContainer)
-  const manifest = readRecord(manifestRecord?.manifest) ?? manifestRecord
   const nextAppointment = normalizeAppointment((appointmentRes.data as AppointmentDbRow | null) ?? null)
     ?? normalizeAppointment({
       id: null,
@@ -229,14 +181,9 @@ export async function GET(
       source: 'lead_cache',
     })
     ?? appointmentFromActivities((appointmentTaskRes.data as ActivityTaskRow[] | null) ?? null)
-    ?? parseBookingFallback(manifest)
 
   return NextResponse.json({
     ...lead,
-    manifest,
-    manifestId: typeof manifestRow?.id === 'string' ? manifestRow.id : null,
-    manifestUpdatedAt: typeof manifestRow?.updated_at === 'string' ? manifestRow.updated_at : null,
-    manifestIntelligenceSource: manifest ? 'manifest_compatibility' : null,
     nextAppointment,
     entityContext,
   })

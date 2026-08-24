@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadDialerLeadContext } from '@/lib/dialer-lead-activity'
+import { loadDialerActivities } from '@/lib/dialer-lead-activity'
 
 describe('dialer lead context', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('loads bounded activity and compatibility intelligence through authenticated APIs', async () => {
+  it('loads bounded activity through the authenticated activity API', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/activities?limit=50')) {
@@ -17,18 +17,13 @@ describe('dialer lead context', () => {
           created_at: '2026-08-23T12:00:00.000Z',
         }] }), { status: 200 })
       }
-      return new Response(JSON.stringify({
-        manifest: { owner: { coOwners: ['Casey'] }, property: { vacant: true } },
-        manifestIntelligenceSource: 'manifest_compatibility',
-      }), { status: 200 })
+      return new Response(null, { status: 404 })
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await loadDialerLeadContext('lead/unsafe')
+    const result = await loadDialerActivities('lead/unsafe')
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/leads/lead%2Funsafe', { cache: 'no-store' })
     expect(fetchMock).toHaveBeenCalledWith('/api/leads/lead%2Funsafe/activities?limit=50', { cache: 'no-store' })
-    expect(result.manifest?.property?.vacant).toBe(true)
-    expect(result.activities).toHaveLength(1)
+    expect(result).toHaveLength(1)
   })
 })
