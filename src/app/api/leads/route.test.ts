@@ -37,7 +37,7 @@ describe('/api/leads route-local containment', () => {
 
   it.each([
     ['GET', () => GET(jsonRequest('GET'))],
-    ['PATCH', () => PATCH(jsonRequest('PATCH', { id: 'lead-1', station: 'contacted' }))],
+    ['PATCH', () => PATCH()],
     ['DELETE', () => DELETE(jsonRequest('DELETE', { ids: ['lead-1'] }))],
   ])('rejects anonymous %s before database access', async (_method, invoke) => {
     const response = await invoke()
@@ -81,9 +81,7 @@ describe('/api/leads route-local containment', () => {
   it('retires broad authenticated lead PATCH access before database access', async () => {
     mocks.requireAuthenticatedUser.mockResolvedValue(null)
 
-    const response = await PATCH(jsonRequest('PATCH', {
-      id: 'lead-1', station: 'closed_won', is_admin: true, actor: 'Spoofed',
-    }))
+    const response = await PATCH()
 
     expect(response.status).toBe(410)
     await expect(response.json()).resolves.toMatchObject({ code: 'legacy_leads_patch_retired' })

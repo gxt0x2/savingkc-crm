@@ -29,9 +29,11 @@ describe('canonical appointment cutover contract', () => {
   })
 
   it('does not fabricate an appointment from a disposition', () => {
-    const leads = source('src/app/api/leads/route.ts')
-    expect(leads).toContain("code: 'appointment_details_required'")
-    expect(leads).not.toContain("scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000)")
+    const dispositionRoute = source('src/app/api/leads/[id]/disposition/route.ts')
+    const dispositionCommand = source('src/lib/server/lead-disposition-command.ts')
+    expect(dispositionRoute).toContain('buildLeadDispositionCommand')
+    expect(dispositionCommand).toContain("code: 'appointment_details_required'")
+    expect(dispositionCommand).not.toContain("scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000)")
   })
 
   it('archives the unscheduled heuristic ghost automation and removes its executable files', () => {

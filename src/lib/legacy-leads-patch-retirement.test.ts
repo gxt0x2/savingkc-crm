@@ -19,8 +19,16 @@ describe('legacy broad lead PATCH retirement', () => {
   it('keeps the compatibility writer unconditionally retired', () => {
     const route = readFileSync('src/app/api/leads/route.ts', 'utf8')
     const retirement = readFileSync('src/lib/server/legacy-leads-patch-retirement.ts', 'utf8')
-    expect(route).toContain('retiredLegacyLeadsPatchResponse()')
+    expect(route).toContain('return retiredLegacyLeadsPatchResponse()')
     expect(retirement).toContain('legacy_leads_patch_retired')
     expect(retirement).not.toContain('process.env')
+  })
+
+  it('removes the unreachable Manifest mutation body below the retirement response', () => {
+    const route = readFileSync('src/app/api/leads/route.ts', 'utf8')
+    expect(route).not.toContain('Manifest-owned fields must cascade')
+    expect(route).not.toContain("from('manifests')")
+    expect(route).not.toContain('queuePpcQualifiedLeadConversion')
+    expect(route).not.toContain('checkAutoAdvance')
   })
 })
