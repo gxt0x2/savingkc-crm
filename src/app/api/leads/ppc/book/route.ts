@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
@@ -51,6 +52,13 @@ function requestWebhookSecret(req: NextRequest): string | null {
   )
 }
 
+function secretsMatch(provided: string | null, expected: string): boolean {
+  if (!provided) return false
+  const providedBytes = Buffer.from(provided)
+  const expectedBytes = Buffer.from(expected)
+  return providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes)
+}
+
 function normalizeBookingDateTime(input: {
   scheduledAt?: string
   scheduledTime?: string
@@ -76,7 +84,7 @@ function unauthorizedWebhook(req: NextRequest): NextResponse | null {
     return NextResponse.json({ ok: false, error: 'Webhook secret is not configured' }, { status: 503 })
   }
 
-  if (requestWebhookSecret(req) === expected) return null
+  if (secretsMatch(requestWebhookSecret(req), expected)) return null
   return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 }
 
@@ -92,25 +100,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 })
   }
 
-  const manifestId = parsed.manifestId ?? parsed.metadata?.manifestId
-  const leadIdFromBody = parsed.leadId ?? parsed.metadata?.leadId
-
-  let leadId = leadIdFromBody ?? null
-  if (!leadId && manifestId) {
-    console.warn(JSON.stringify({
-      event: 'legacy_ppc_booking_manifest_identifier_used',
-      replacement: 'leadId',
-    }))
-    const { data } = await supabase
-      .from('manifests')
-      .select('lead_id')
-      .eq('id', manifestId)
-      .maybeSingle()
-    leadId = data?.lead_id ?? null
-  }
-
+  const legacyManifestId = parsed.manifestId ?? parsed.metadata?.manifestId
+  const leadId = parsed.leadId ?? parsed.metadata?.leadId ?? null
   if (!leadId) {
-    return NextResponse.json({ ok: false, error: 'No manifest or lead identifier' }, { status: 400 })
+    return NextResponse.json({
+      ok: false,
+      error: legacyManifestId
+        ? 'Manifest identifiers are retired. Include the canonical leadId.'
+        : 'leadId required',
+    }, { status: 400 })
   }
 
   const scheduledIso = normalizeBookingDateTime({
@@ -202,7 +200,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     leadId,
-    manifestId: null,
     appointmentId,
     scheduledAt: scheduledIso,
     lifecycleAdvanced: lifecycle.advanced,
