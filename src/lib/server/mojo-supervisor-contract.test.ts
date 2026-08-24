@@ -12,6 +12,7 @@ const legacyPropertyBackfill = fs.readFileSync('scripts/backfill-mojo-leads.mjs'
 const sessionHealth = fs.readFileSync('scripts/mojo-session-health.mjs', 'utf8')
 const sync = fs.readFileSync('scripts/mojo-sync.mjs', 'utf8')
 const mojoHealth = fs.readFileSync('src/lib/marketing/mojo-health.ts', 'utf8')
+const identityResolver = fs.readFileSync('supabase/migrations/20261012120000_mojo_reconciliation_candidates_v1.sql', 'utf8')
 
 describe('Mojo supervised recovery contract', () => {
   it('runs one overlap-locked business-hours sync and persists freshness', () => {
@@ -38,7 +39,12 @@ describe('Mojo supervised recovery contract', () => {
     expect(reconcile).toContain("const DEFAULT_START = '2026-06-10'")
     expect(reconcile).toContain("if (process.argv.includes('--apply'))")
     expect(reconcile).not.toMatch(/\.from\([^)]*\)[\s\S]{0,120}\.(?:insert|update|upsert)\(/)
-    expect(reconcile).not.toContain('.rpc(')
+    expect(reconcile).toContain("db.rpc('resolve_mojo_reconciliation_candidates_v1'")
+    expect(reconcile).not.toContain("db.rpc('ingest_crm_mojo_call_v1'")
+    expect(identityResolver).toContain('normalize_conversation_phone')
+    expect(identityResolver).toContain('cardinality(p_phones) > 5000')
+    expect(identityResolver).toContain('FROM PUBLIC, anon, authenticated')
+    expect(identityResolver).toContain('TO service_role')
     expect(reconcile).toContain('datasetDigest')
     expect(reconciliation).toContain('protectedWrites: 0')
     expect(reconciliation).toContain('governedCommandCandidates')
