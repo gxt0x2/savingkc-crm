@@ -38,25 +38,6 @@ const baseInput: PpcReportInput = {
       opportunity_score: null,
     },
   ],
-  manifests: [
-    {
-      lead_id: 'lead-form',
-      created_at: '2026-05-20T14:00:00.000Z',
-      manifest: {
-        acquisition: {
-          attribution: {
-            gclid: 'click-form',
-            utm_source: 'google',
-            utm_medium: 'cpc',
-            utm_campaign: 'Search 2026',
-            utm_term: 'sell house fast kc',
-            gad_campaignid: 'campaign-1',
-            gad_adgroupid: 'adgroup-1',
-          },
-        },
-      },
-    },
-  ],
   activities: [
     {
       id: 'activity-stage3',
@@ -255,8 +236,16 @@ const baseInput: PpcReportInput = {
       sms_consent: true,
       is_test: false,
       gclid: 'click-form',
+      traffic_source: 'google_ads',
+      campaign: 'Search 2026',
+      utm_source: 'google',
+      utm_medium: 'cpc',
+      utm_campaign: 'Search 2026',
+      utm_term: 'sell house fast kc',
+      gad_campaignid: 'campaign-1',
+      gad_adgroupid: 'adgroup-1',
       attribution: { gclid: 'click-form' },
-      payload: {},
+      payload: { attribution: { channel: 'google-ads' } },
       created_at: '2026-05-20T14:06:00.000Z',
     },
   ],
@@ -373,12 +362,11 @@ describe('ppc report', () => {
   it('maps keyword from Google Ads ValueTrack keyword fields when utm_term is absent', () => {
     const report = buildPpcReport({
       ...baseInput,
-      manifests: [
-        {
-          lead_id: 'lead-form',
-          created_at: '2026-05-20T14:00:00.000Z',
-          manifest: {
-            acquisition: {
+      trackingEvents: baseInput.trackingEvents.map((row) => row.id === 'event-submit'
+        ? {
+            ...row,
+            utm_term: null,
+            payload: {
               attribution: {
                 gclid: 'click-form',
                 utm_source: 'google',
@@ -389,9 +377,8 @@ describe('ppc report', () => {
                 adgroupid: 'adgroup-1',
               },
             },
-          },
-        },
-      ],
+          }
+        : row),
     })
 
     expect(report.attributionRows.some((row) => row.keyword === 'cash home buyer kc')).toBe(true)
@@ -416,24 +403,6 @@ describe('ppc report', () => {
           updated_at: '2026-05-22T16:03:00.000Z',
           classification: null,
           opportunity_score: null,
-        },
-      ],
-      manifests: [
-        ...baseInput.manifests,
-        {
-          lead_id: 'lead-openai',
-          created_at: '2026-05-22T16:00:00.000Z',
-          manifest: {
-            acquisition: {
-              attribution: {
-                oppref: 'oppref_openai_123',
-                utm_source: 'openai_ads',
-                utm_medium: 'cpc',
-                utm_campaign: 'OpenAI Seller Funnel',
-                landingUrl: 'https://savingkc.com/ppc?oppref=oppref_openai_123',
-              },
-            },
-          },
         },
       ],
       outbox: [

@@ -79,12 +79,6 @@ export type PpcRevenueRow = {
   source: string | null
 }
 
-export type PpcManifestRow = {
-  lead_id: string | null
-  manifest: Record<string, unknown> | null
-  created_at: string | null
-}
-
 export type PpcTrackingEventRow = {
   id: string
   event_id: string | null
@@ -139,7 +133,6 @@ export type PpcReportInput = {
   trackingEvents: PpcTrackingEventRow[]
   appointments: PpcAppointmentRow[]
   revenue: PpcRevenueRow[]
-  manifests: PpcManifestRow[]
   missedCallTasks?: PpcMissedCallTaskRow[]
   exportConfig?: PpcConversionExportConfigHealth
   now?: string | Date
@@ -559,25 +552,6 @@ function compactDate(iso: string | null): string | null {
   return date.toISOString().slice(0, 10)
 }
 
-function getNested(input: Record<string, unknown>, path: string[]): unknown {
-  let current: unknown = input
-  for (const part of path) {
-    if (!isRecord(current)) return undefined
-    current = current[part]
-  }
-  return current
-}
-
-function extractAttributionFromManifest(manifest: Record<string, unknown>): Record<string, unknown> {
-  const acquisitionAttribution = record(getNested(manifest, ['acquisition', 'attribution']))
-  const acquisition = record(manifest.acquisition)
-  return cleanAttribution({
-    ...acquisitionAttribution,
-    source: acquisition.source,
-    channel: acquisition.channel,
-  })
-}
-
 function extractAttributionFromOutbox(row: PpcOutboxRow): Record<string, unknown> {
   return cleanAttribution({
     ...record(row.attribution),
@@ -599,8 +573,8 @@ function extractAttributionFromTracking(row: PpcTrackingEventRow): Record<string
     utm_campaign: row.utm_campaign,
     utm_term: row.utm_term,
     utm_content: row.utm_content,
-    keyword: payload.keyword,
-    matchtype: payload.matchtype,
+    keyword: payload.keyword ?? payloadAttribution.keyword,
+    matchtype: payload.matchtype ?? payloadAttribution.matchtype,
     gclid: row.gclid,
     gbraid: row.gbraid,
     wbraid: row.wbraid,
@@ -1128,11 +1102,11 @@ export function buildPpcReport(input: PpcReportInput): PpcReport {
     ensureBucket(buckets, compactDate(lead.created_at)).leads += 1
   }
 
-  for (const row of input.manifests) {
-    if (!row.lead_id || !row.manifest) continue
+  for (const row of input.trackingEvents) {
+    if (!row.lead_id || isTestTrackingEvent(row)) continue
     const state = leadStates.get(row.lead_id)
     if (!state) continue
-    state.attribution = mergeAttribution(state.attribution, extractAttributionFromManifest(row.manifest))
+    state.attribution = mergeAttribution(state.attribution, extractAttributionFromTracking(row))
   }
 
   const exportableOutbox = input.outbox.filter((row) => isGoogleAdsExportablePpcEvent(text(row.event_name)))
