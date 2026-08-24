@@ -1,6 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { updateManifestV2_1 } from '@/lib/manifest-sync'
-import type { ManifestV2 } from '@/lib/manifest-builder'
 import { activeDispositionTasks, calculateDispositionTaskDueAt } from '@/lib/dispo/operating-lifecycle'
 import type { DispoStage } from '@/types/dispo'
 
@@ -225,48 +223,6 @@ export async function ensureTcFileForDeal(
   return created.id as string
 }
 
-export async function syncTcStatusToManifest(db: DbClient, tcFileId: string) {
-  const { data: file } = await db
-    .from('tc_files')
-    .select(
-      '*, title_company:title_company_id(name), title_contact:title_contact_id(name, role, email, phone)'
-    )
-    .eq('id', tcFileId)
-    .maybeSingle()
-
-  if (!file?.lead_id) return
-
-  await updateManifestV2_1({
-    leadId: file.lead_id,
-    compute: (current: ManifestV2) => ({
-      closing: {
-        ...((current.closing ?? {}) as Record<string, unknown>),
-        tc_file_id: file.id,
-        title_company: file.title_company?.name ?? null,
-        title_contact: file.title_contact
-          ? {
-              name: file.title_contact.name ?? null,
-              role: file.title_contact.role ?? null,
-              email: file.title_contact.email ?? null,
-              phone: file.title_contact.phone ?? null,
-            }
-          : null,
-        file_number: file.file_number ?? null,
-        status: file.status,
-        risk_level: file.risk_level,
-        closing_scheduled_at: file.closing_scheduled_at ?? null,
-        emd_confirmed_at: file.emd_confirmed_at ?? null,
-        hud_received_at: file.hud_received_at ?? null,
-        next_action: file.next_action ?? null,
-      },
-    }),
-    actor: 'system',
-    reason: 'tc:sync-status',
-  }).catch((err) => {
-    console.error('[tc] manifest sync failed:', err)
-  })
-}
-
 async function findDispoDeal(db: DbClient, leadId: string, offerId: string | null) {
   if (offerId) {
     const { data } = await db
@@ -325,7 +281,6 @@ export async function ensureTcFileForOffer(
       await logTcEvent(db, file.id, options.eventType ?? 'tc_file_updated', updates, options.actor)
     }
     if (options.seedTasks) await seedStandardTcTasks(db, file.id)
-    await syncTcStatusToManifest(db, file.id)
     return file as TcFileSummary
   }
 
@@ -370,7 +325,6 @@ export async function ensureTcFileForOffer(
   }, options.actor)
 
   if (options.seedTasks) await seedStandardTcTasks(db, file.id)
-  await syncTcStatusToManifest(db, file.id)
   return file as TcFileSummary
 }
 
