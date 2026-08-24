@@ -9,6 +9,7 @@ The AI-native operating system reads canonical evidence. AI does not make an old
 - Canonical systems win every conflict.
 - No new product feature may depend on Manifest for operational or compliance authority.
 - The application has no active Manifest reader, writer, builder, enrichment, or sync runtime.
+- Database-side auto-create, cascade, and update RPC writers are removed; service runtime roles cannot insert or update the historical table.
 - The retired Manifest and bootstrap APIs return permanent 410 responses.
 - County audience segmentation and direct ownership assignment do not read or write Manifest.
 - Historical operations scripts still name the table. They are quarantined retirement debt, not application authority.
@@ -20,6 +21,8 @@ The AI-native operating system reads canonical evidence. AI does not make an old
 3. **Project enrichment.** Move parcel, county, dwelling, assessment, tax, and seller-situation evidence into typed canonical property/intelligence records with provenance. Complete for application runtime.
 4. **Move AI context.** Generate cited AI briefs from canonical evidence and durable generations; keep human approval for writes and outreach. Complete for the current briefing and proposal surfaces.
 5. **Retire compatibility.** Legacy writers and runtime readers are disabled. Reconcile schema history, export and checksum historical JSON, then archive the table in a separately reviewed migration.
+
+The writer shutdown preserves all 367 historical Manifest rows and 10,668 history rows observed in the production preflight. It does not delete, rewrite, or detach them from retained PPC history.
 
 ## Do not delete yet
 

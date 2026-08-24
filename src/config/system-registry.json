@@ -193,7 +193,7 @@
       "status": "active",
       "routes": ["/contacts", "/leads/[id]", "/opportunities"],
       "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
-      "tables": ["leads", "lead_activities", "lead_tasks", "manifests", "manifest_history", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
+      "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
       "environment": ["CRON_SECRET"],
       "crons": [
         {
@@ -220,7 +220,7 @@
       "status": "active",
       "routes": ["/prospecting", "/dialer"],
       "apiRoutes": ["/api/dialer/queue", "/api/dialer/call-intents", "/api/dialer/sessions", "/api/dialer/sessions/[id]", "/api/dialer/sessions/[id]/pre-call-brief", "/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/heirs", "/api/heirs/attempt", "/api/heirs/sync", "/api/heirs/verify", "/api/mobile/v1/twilio/call-intents", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
-      "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "dialer_queue_state", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "manifests", "prospects", "prospect_phones", "sms_opt_outs", "conversation_thread_state", "work_items", "appointments", "briefings", "crm_briefing_jobs", "assistant_generations", "lead_co_owners"],
+      "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "dialer_queue_state", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "prospects", "prospect_phones", "sms_opt_outs", "conversation_thread_state", "work_items", "appointments", "briefings", "crm_briefing_jobs", "assistant_generations", "lead_co_owners"],
       "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "SKIPTRACE_SERVICE_URL", "ERNEST_PHONE", "CASEY_PHONE"]
     },
     {
@@ -321,7 +321,7 @@
       "status": "active",
       "routes": ["/dialer", "/leads/[id]"],
       "apiRoutes": ["/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/leads/[id]/ai-change-proposals", "/api/twilio-recording-callback"],
-      "tables": ["ai_change_proposals", "dialer_session_attempts", "leads", "lead_activities", "manifests"],
+      "tables": ["ai_change_proposals", "dialer_session_attempts", "leads", "lead_activities"],
       "environment": ["GROQ_API_KEY"]
     },
     {
@@ -453,7 +453,7 @@
       "status": "active",
       "routes": ["/settings/system-health"],
       "apiRoutes": ["/api/system-hygiene", "/api/cron/data-retention"],
-      "tables": ["data_retention_policies", "data_retention_runs", "system_workers", "manifest_history", "hot_score_audit_trail", "google_ads_reporting_sync_runs", "openai_ads_reporting_sync_runs", "sms_delivery_log"],
+      "tables": ["data_retention_policies", "data_retention_runs", "system_workers", "manifests", "manifest_history", "hot_score_audit_trail", "google_ads_reporting_sync_runs", "openai_ads_reporting_sync_runs", "sms_delivery_log"],
       "environment": ["DATA_RETENTION_MUTATIONS_ENABLED", "CRON_SECRET", "ADMIN_API_SECRET", "HYGIENE_BASE_REF", "GITHUB_BASE_REF", "WORKTREE_AUDIT_MAIN_REF"],
       "crons": [
         { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
