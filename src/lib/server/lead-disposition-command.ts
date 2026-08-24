@@ -1,9 +1,6 @@
-import { randomUUID } from 'node:crypto'
-
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { EAGER_REGEN_EVENTS, regenerateBriefing } from '@/lib/briefing-regen'
 import { normalizeDisposition, type DispositionId } from '@/lib/dialer-dispositions'
-import { ensureManifestExists, updateManifestAndCascade } from '@/lib/manifest-sync'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { supabase } from '@/lib/supabase-lazy'
@@ -64,7 +61,7 @@ export function buildLeadDispositionCommand(input: unknown, now = Date.now()): L
 export interface RecordedLeadDisposition {
   activityId: string | null
   appointmentId: string | null
-  projectionSynced: boolean
+  warning: string | null
 }
 
 interface DispositionActivityRow {
@@ -98,7 +95,6 @@ export async function recordLeadDisposition(
   command: LeadDispositionCommand,
 ): Promise<RecordedLeadDisposition> {
   const { disposition, notes, phone, appointmentAt, clientAttemptId } = command
-  const actorId = actorName.toLowerCase().includes('ernest') ? 'ernest' : 'casey'
   let appointmentId: string | null = null
   let appointmentActivityId: string | null = null
   let activity = await findAttemptActivity(leadId, 'call', 'telephony_bar', clientAttemptId)
@@ -200,82 +196,11 @@ export async function recordLeadDisposition(
   const { error: leadError } = await supabase.from('leads').update(leadPatch).eq('id', leadId)
   if (leadError) throw new Error('Contact outcome snapshot could not be saved')
 
-  let projectionSynced = false
-  try {
-    await ensureManifestExists(leadId)
-    projectionSynced = await updateManifestAndCascade(leadId, (manifest) => {
-    const alreadyProjected = Boolean(clientAttemptId && manifest.auditTrail?.some((entry) => {
-      const details = entry.details as Record<string, unknown> | undefined
-      return details?.clientAttemptId === clientAttemptId
-    }))
-    if (notes && !alreadyProjected) {
-      manifest.agentNotes = manifest.agentNotes ?? []
-      manifest.agentNotes.push({
-        timestamp: new Date().toISOString(),
-        author: actorName,
-        source: 'disposition',
-        content: notes,
-        callRecordId: phone || undefined,
-      })
-    }
-    manifest.communications = manifest.communications ?? { transcripts: [] }
-    manifest.communications.lastDisposition = disposition
-    manifest.communications.lastDispositionDate = new Date().toISOString()
-
-    if (disposition === 'appointment_set' && appointmentAt) {
-      manifest.pipeline.appointment = {
-        appointmentId: appointmentId || randomUUID(),
-        type: 'phone_call',
-        scheduledAt: appointmentAt,
-        createdAt: new Date().toISOString(),
-        status: 'scheduled',
-        confirmationCount: 0,
-        lastSellerResponse: null,
-        ghostRiskScore: 0,
-        ghostProtocolActive: false,
-        reminderAutomationEnabled: true,
-        reminderAutomationEnabledAt: new Date().toISOString(),
-        reminderAutomationSource: 'call_disposition',
-        automationLog: [],
-        assignedTo: actorId,
-        address: null,
-        notes,
-      }
-    } else if (disposition === 'callback_requested' && !alreadyProjected) {
-      manifest.ariIntelligence = manifest.ariIntelligence ?? {}
-      manifest.ariIntelligence.recommendedActions = manifest.ariIntelligence.recommendedActions ?? []
-      manifest.ariIntelligence.recommendedActions.push({
-        action: `Callback requested${notes ? `: ${notes}` : ''}`,
-        reason: 'seller_requested',
-      })
-    } else if (disposition === 'deal_potential' || disposition === 'offer_made') {
-      manifest.priority = 'hot'
-    } else if (disposition === 'dnc' || disposition === 'wrong_number' || disposition === 'disconnected') {
-      manifest.flags = manifest.flags ?? {}
-      manifest.flags.redFlags = manifest.flags.redFlags ?? []
-      const flag = disposition === 'dnc' ? 'do_not_contact' : 'bad_phone'
-      if (!manifest.flags.redFlags.includes(flag)) manifest.flags.redFlags.push(flag)
-    }
-
-    manifest.ariIntelligence = manifest.ariIntelligence ?? {}
-    manifest.ariIntelligence.briefingStale = true
-    manifest.auditTrail = manifest.auditTrail ?? []
-    if (!alreadyProjected) {
-      manifest.auditTrail.push({
-        timestamp: new Date().toISOString(),
-        agent: actorName,
-        action: 'call_disposition',
-        details: { disposition, phone, activityId: activity?.id ?? null, appointmentId, clientAttemptId },
-      })
-    }
-    }, `disposition:${disposition}`)
-  } catch (error) {
-    console.error('[lead disposition] compatibility projection failed:', error)
-  }
-
+  let lifecycleWarning: string | null = null
   if (disposition === 'appointment_set' && appointmentAt) {
     await checkAutoAdvance(leadId, 'appointment_set').catch((error) => {
       console.error('[lead disposition] appointment lifecycle advance failed:', error)
+      lifecycleWarning = 'Appointment saved; lifecycle stage refresh is pending. Do not save the outcome again.'
     })
     await queuePpcAppointmentBookedConversion({
       leadId,
@@ -287,7 +212,7 @@ export async function recordLeadDisposition(
       source: 'call_disposition',
     }).catch((error) => console.error('[lead disposition] appointment conversion queue failed:', error))
   }
-  if (EAGER_REGEN_EVENTS.has(disposition)) regenerateBriefing(leadId, disposition).catch(() => {})
 
-  return { activityId: activity?.id ?? null, appointmentId, projectionSynced }
+  if (EAGER_REGEN_EVENTS.has(disposition)) regenerateBriefing(leadId, disposition).catch(() => {})
+  return { activityId: activity?.id ?? null, appointmentId, warning: lifecycleWarning }
 }

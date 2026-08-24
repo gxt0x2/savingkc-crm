@@ -24,7 +24,7 @@ describe('lead disposition route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com', name: 'Ernest Dodson' })
-    mocks.record.mockResolvedValue({ activityId: 'activity-1', appointmentId: null, projectionSynced: true })
+    mocks.record.mockResolvedValue({ activityId: 'activity-1', appointmentId: null, warning: null })
   })
 
   it('rejects anonymous requests before parsing', async () => {
@@ -57,5 +57,23 @@ describe('lead disposition route', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ code: 'appointment_details_required' })
     expect(mocks.record).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a saved-outcome lifecycle warning without treating the call as failed', async () => {
+    mocks.record.mockResolvedValue({
+      activityId: 'activity-1',
+      appointmentId: 'appointment-1',
+      warning: 'Appointment saved; lifecycle stage refresh is pending. Do not save the outcome again.',
+    })
+    const response = await POST(request({
+      disposition: 'appointment_set',
+      appointmentAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    }), params)
+
+    expect(response.status).toBe(201)
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      warning: expect.stringContaining('Do not save the outcome again'),
+    })
   })
 })
