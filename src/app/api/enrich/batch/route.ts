@@ -4,17 +4,18 @@ import { supabase } from '@/lib/supabase-lazy'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 const BATCH_SIZE = 3 // concurrent leads per batch (county scrapers are slow)
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 /**
  * POST /api/enrich/batch — Force re-enrich all leads
  *
  * Auth: Bearer $CRON_SECRET
  *
  * Runs prospect lookup + county assessor on every lead with an address or phone,
- * OVERWRITING existing data. Updates manifests, re-scores, marks ARI stale,
- * and cascades housing details to leads table.
+ * OVERWRITING the typed facts returned by those providers. Every successful
+ * source is persisted to the canonical property with durable provenance.
  *
  * Body options:
- *   { "all": true }            — re-enrich ALL leads with manifests
+ *   { "all": true }            — re-enrich all eligible leads (capped at 5,000)
  *   { "leadIds": ["id1",...] } — re-enrich specific leads
  *   { "dry_run": true }        — just return count of leads that would be processed
  */
@@ -29,25 +30,27 @@ export async function POST(req: NextRequest) {
     let leadIds: string[] = []
 
     if (body.leadIds && Array.isArray(body.leadIds)) {
-      leadIds = body.leadIds
-    } else if (body.all) {
-      // Get all leads that have a manifest AND have an address or phone
-      const { data: manifests } = await supabase
-        .from('manifests')
-        .select('lead_id')
-
-      if (!manifests || manifests.length === 0) {
-        return NextResponse.json({ ok: true, message: 'No manifests found', total: 0 })
+      if (body.leadIds.length > 5_000) {
+        return NextResponse.json({ error: 'Explicit leadIds exceed the 5,000-record safety cap.' }, { status: 409 })
       }
-
-      const manifestLeadIds = manifests.map(m => m.lead_id).filter(Boolean)
-
-      // Fetch those leads that have address or phone
-      const { data: leads } = await supabase
+      leadIds = body.leadIds.filter((id: unknown): id is string => typeof id === 'string' && UUID_PATTERN.test(id))
+      if (leadIds.length !== body.leadIds.length) {
+        return NextResponse.json({ error: 'Every leadId must be a valid UUID.' }, { status: 400 })
+      }
+      leadIds = Array.from(new Set(leadIds))
+    } else if (body.all) {
+      const { data: leads, error } = await supabase
         .from('leads')
         .select('id, phone, property_address')
-        .in('id', manifestLeadIds)
-        .or('phone.neq.,property_address.neq.')
+        .or('phone.not.is.null,property_address.not.is.null')
+        .limit(5_001)
+
+      if (error) return NextResponse.json({ error: 'Eligible leads could not be loaded.' }, { status: 503 })
+      if ((leads || []).length > 5_000) {
+        return NextResponse.json({
+          error: 'The all-leads enrichment scope exceeds the 5,000-record safety cap. Provide explicit leadIds.',
+        }, { status: 409 })
+      }
 
       leadIds = (leads || [])
         .filter(l => l.phone || l.property_address)
@@ -106,10 +109,10 @@ export async function POST(req: NextRequest) {
       failedCount: failed.length,
       failures: failed.slice(0, 20), // Cap failure details at 20
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[enrich/batch] Error:', err)
     return NextResponse.json(
-      { error: err.message || 'Internal server error' },
+      { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 },
     )
   }
