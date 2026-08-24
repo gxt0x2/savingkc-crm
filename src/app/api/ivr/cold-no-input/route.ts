@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase-lazy'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
-import { updateManifestV2_1 } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
@@ -54,20 +53,8 @@ export async function POST(req: Request) {
   if (leadId) {
     const currentPriority = existingLead?.priority
     if (!currentPriority || currentPriority === 'normal' || currentPriority === 'low') {
-      try {
-        const cascaded = await updateManifestV2_1({
-          leadId,
-          subtrees: { priority: 'warm' },
-          actor: 'system',
-          reason: 'cold_callback',
-        })
-        if (!cascaded) {
-          await supabase.from('leads').update({ priority: 'warm' }).eq('id', leadId)
-        }
-      } catch (err) {
-        console.error('[IVR] Manifest update failed, using direct fallback:', err)
-        await supabase.from('leads').update({ priority: 'warm' }).eq('id', leadId)
-      }
+      const { error: priorityError } = await supabase.from('leads').update({ priority: 'warm' }).eq('id', leadId)
+      if (priorityError) throw priorityError
     }
   }
 
