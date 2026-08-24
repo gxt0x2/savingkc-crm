@@ -6,6 +6,10 @@ import type { WorkflowDefinition } from '@/lib/operating-model/types'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { WorkItemError } from '@/lib/server/work-items'
 import {
+  executeSellerIntakeWorkflow,
+  SellerIntakeWorkflowError,
+} from '@/lib/server/seller-intake-workflow-action'
+import {
   APPROVED_FOLLOW_UP_WORKFLOW_ID,
   executeApprovedFollowUpTask,
   prepareApprovedFollowUpInput,
@@ -15,6 +19,11 @@ import {
 export const SUPPORTED_WORKFLOW_EXECUTORS = [
   'workflow-registry-health',
   APPROVED_FOLLOW_UP_WORKFLOW_ID,
+] as const
+
+export const WORKER_EXECUTABLE_WORKFLOW_IDS = [
+  ...SUPPORTED_WORKFLOW_EXECUTORS,
+  'seller-form-intake',
 ] as const
 
 type WorkflowRunStatus =
@@ -80,6 +89,9 @@ function safeError(error: unknown): { code: string; message: string; retryable: 
   if (error instanceof WorkflowInputError) {
     return { code: error.code, message: raw.slice(0, 800), retryable: false }
   }
+  if (error instanceof SellerIntakeWorkflowError) {
+    return { code: error.code, message: raw.slice(0, 800), retryable: false }
+  }
   if (error instanceof WorkItemError) {
     return {
       code: `work_item_${error.code}`,
@@ -120,13 +132,17 @@ export async function startWorkflowRun(input: {
   definition: WorkflowDefinition
   actor: string
   idempotencyKey: string
+  verifiedServerEvent?: 'seller_intake'
   triggerKind?: string
   triggerKey?: string | null
   payload?: Record<string, unknown>
   maxAttempts?: number
 }, db: Db = supabaseAdmin()): Promise<WorkflowRun> {
   const definitionHash = workflowHash(input.definition)
-  const { data, error } = await db.rpc('workflow_start_run_v1', {
+  const starterRpc = input.verifiedServerEvent === 'seller_intake'
+    ? 'workflow_start_verified_seller_intake_v1'
+    : 'workflow_start_run_v1'
+  const { data, error } = await db.rpc(starterRpc, {
     p_workflow_id: input.definition.id,
     p_workflow_version: input.definition.version,
     p_definition_hash: definitionHash,
@@ -193,13 +209,13 @@ async function nextSupportedRunId(db: Db): Promise<string | null> {
   const now = new Date().toISOString()
   const [ready, stale] = await Promise.all([
     db.from('workflow_runs').select('id, available_at')
-      .in('workflow_id', [...SUPPORTED_WORKFLOW_EXECUTORS])
+      .in('workflow_id', [...WORKER_EXECUTABLE_WORKFLOW_IDS])
       .in('status', ['queued', 'retry_scheduled'])
       .lte('available_at', now)
       .order('available_at', { ascending: true }).order('created_at', { ascending: true })
       .limit(1).maybeSingle(),
     db.from('workflow_runs').select('id, lease_expires_at')
-      .in('workflow_id', [...SUPPORTED_WORKFLOW_EXECUTORS])
+      .in('workflow_id', [...WORKER_EXECUTABLE_WORKFLOW_IDS])
       .eq('status', 'running').lte('lease_expires_at', now)
       .order('lease_expires_at', { ascending: true }).order('created_at', { ascending: true })
       .limit(1).maybeSingle(),
@@ -292,7 +308,9 @@ async function registryHealth(db: Db): Promise<Record<string, unknown>> {
 type WorkflowExecutionResult = { stepKey: string; output: Record<string, unknown> }
 
 function stepKeyForWorkflow(workflowId: string): string {
-  return workflowId === APPROVED_FOLLOW_UP_WORKFLOW_ID ? 'create_follow_up_task' : 'validate_registry'
+  if (workflowId === APPROVED_FOLLOW_UP_WORKFLOW_ID) return 'create_follow_up_task'
+  if (workflowId === 'seller-form-intake') return 'establish_seller_intake'
+  return 'validate_registry'
 }
 
 async function executeDefinition(run: WorkflowRun, db: Db): Promise<WorkflowExecutionResult> {
@@ -318,6 +336,19 @@ async function executeDefinition(run: WorkflowRun, db: Db): Promise<WorkflowExec
         assignedTo: result.workItem.assignedTo,
         dueAt: result.workItem.dueAt,
       },
+    }
+  }
+  if (run.workflow_id === 'seller-form-intake') {
+    return {
+      stepKey: 'establish_seller_intake',
+      output: await executeSellerIntakeWorkflow({
+        runId: run.id,
+        workflowVersion: run.workflow_version,
+        definitionHash: run.definition_hash,
+        triggerKind: run.trigger_kind,
+        requestedBy: run.requested_by,
+        payload: run.input,
+      }, db),
     }
   }
   throw new Error(`executor_unavailable:${run.workflow_id}`)

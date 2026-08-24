@@ -139,4 +139,16 @@ describe('task provenance census', () => {
     expect(readFileSync('src/app/api/twilio-sms-webhook/route.ts', 'utf8')).toContain("activity_type: 'sms'")
     expect(readFileSync('src/app/api/twilio/fallback/sms/route.ts', 'utf8')).toContain("activity_type: 'sms'")
   })
+
+  it('routes seller-intake next actions through the governed work-item executor', () => {
+    const intake = readFileSync('src/lib/operating-model/seller-intake.ts', 'utf8')
+    const action = readFileSync('src/lib/server/seller-intake-workflow-action.ts', 'utf8')
+
+    expect(intake).not.toMatch(/activity_type\s*:\s*['"]task['"]/)
+    expect(intake).not.toContain(".from('lead_activities')")
+    expect(action).toContain('createWorkItem({')
+    expect(action).toContain("activity_type: 'status_change'")
+    expect(action).not.toMatch(/activity_type\s*:\s*['"]task['"]/)
+    expect(action).toContain("event_type: 'lead_form_submitted'")
+  })
 })
