@@ -30,7 +30,6 @@ export async function queuePpcAppointmentBookedConversion(input: {
     eventName: 'appointment_booked',
     eventCategory: 'appointment',
     leadId: input.leadId,
-    manifestId: context.manifestId,
     activityId: input.activityId ?? null,
     dedupeKey: `lead:${input.leadId}:appointment_booked`,
     optimizationRole: 'secondary',

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase-lazy'
 import { isKnownPpcCampaignName } from '@/lib/ppc/campaigns'
 import { buildUserIdentifiers, readUserIdentifiers, type GoogleAdsUserIdentifier } from '@/lib/ppc/enhanced-conversions'
+import { attributionFromTrackingRows, type PpcTrackingAttributionRow } from '@/lib/ppc/tracking-attribution'
 
 const PPC_LEAD_SOURCES = new Set(['ppc-landing', 'google_ads', 'google-ads', 'google_ads_phone', 'google_ads_tax_phone', 'paid-search'])
 
@@ -10,11 +11,6 @@ type LeadRow = {
   station: string | null
   phone: string | null
   email: string | null
-}
-
-type ManifestRow = {
-  id: string | null
-  manifest: Record<string, unknown> | null
 }
 
 type OutboxAttributionRow = {
@@ -28,7 +24,6 @@ export type PpcLeadConversionContext =
   | {
     ok: true
     lead: LeadRow
-    manifestId: string | null
     attribution: Record<string, unknown>
     userIdentifiers: GoogleAdsUserIdentifier[]
   }
@@ -38,33 +33,20 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
 export function cleanRecord(input: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined && value !== null && value !== ''),
   )
 }
 
-function attributionFromManifest(manifest: Record<string, unknown> | null | undefined): Record<string, unknown> {
-  const acquisition = record(manifest?.acquisition)
-  return cleanRecord({
-    ...record(acquisition.attribution),
-    source: acquisition.source,
-    channel: acquisition.channel,
-  })
-}
-
 function attributionFromOutbox(row: OutboxAttributionRow | null | undefined): Record<string, unknown> {
   if (!row) return {}
-  const attribution = record(row.attribution)
+  const attribution = row.attribution ?? {}
   const clickIdType = text(row.click_id_type)
   const clickId = text(row.click_id)
   return cleanRecord({
     ...attribution,
-    ...record(row.payload),
+    ...(row.payload ?? {}),
     click_id: clickId,
     click_id_type: clickIdType,
     ...(clickIdType && clickId ? { [clickIdType]: clickId } : {}),
@@ -89,19 +71,22 @@ function isPpcLead(lead: LeadRow, attribution: Record<string, unknown>): boolean
 }
 
 export async function loadPpcLeadConversionContext(leadId: string): Promise<PpcLeadConversionContext> {
-  const [{ data: lead, error: leadError }, { data: manifest }, { data: outboxRows }] = await Promise.all([
+  const [
+    { data: lead, error: leadError },
+    { data: trackingRows, error: trackingError },
+    { data: outboxRows, error: outboxError },
+  ] = await Promise.all([
     supabase
       .from('leads')
       .select('id, source, station, phone, email')
       .eq('id', leadId)
       .maybeSingle(),
     supabase
-      .from('manifests')
-      .select('id, manifest')
+      .from('ppc_tracking_events')
+      .select('traffic_source, campaign, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, gbraid, wbraid, gad_source, gad_campaignid, gad_adgroupid, page_path, page_location, page_referrer, payload, event_time')
       .eq('lead_id', leadId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order('event_time', { ascending: false })
+      .limit(10),
     supabase
       .from('ppc_conversion_outbox')
       .select('click_id, click_id_type, attribution, payload')
@@ -111,9 +96,11 @@ export async function loadPpcLeadConversionContext(leadId: string): Promise<PpcL
   ])
 
   if (leadError) return { ok: false, reason: leadError.message }
+  if (trackingError) return { ok: false, reason: trackingError.message }
+  if (outboxError) return { ok: false, reason: outboxError.message }
   if (!lead) return { ok: false, reason: 'lead_not_found' }
 
-  const manifestAttribution = attributionFromManifest((manifest as ManifestRow | null)?.manifest)
+  const trackingAttribution = attributionFromTrackingRows(trackingRows as PpcTrackingAttributionRow[] | null | undefined)
   const priorOutboxRows = outboxRows as OutboxAttributionRow[] | null | undefined
   const outboxAttribution = attributionFromOutbox(priorOutboxRows?.[0])
   const priorUserIdentifiers = priorOutboxRows
@@ -127,12 +114,12 @@ export async function loadPpcLeadConversionContext(leadId: string): Promise<PpcL
     })
   const attribution = cleanRecord({
     ...outboxAttribution,
-    ...manifestAttribution,
-    gclid: manifestAttribution.gclid || outboxAttribution.gclid,
-    gbraid: manifestAttribution.gbraid || outboxAttribution.gbraid,
-    wbraid: manifestAttribution.wbraid || outboxAttribution.wbraid,
-    click_id: manifestAttribution.click_id || outboxAttribution.click_id,
-    click_id_type: manifestAttribution.click_id_type || outboxAttribution.click_id_type,
+    ...trackingAttribution,
+    gclid: trackingAttribution.gclid || outboxAttribution.gclid,
+    gbraid: trackingAttribution.gbraid || outboxAttribution.gbraid,
+    wbraid: trackingAttribution.wbraid || outboxAttribution.wbraid,
+    click_id: trackingAttribution.click_id || outboxAttribution.click_id,
+    click_id_type: trackingAttribution.click_id_type || outboxAttribution.click_id_type,
   })
 
   if (!isPpcLead(lead as LeadRow, attribution)) {
@@ -142,7 +129,6 @@ export async function loadPpcLeadConversionContext(leadId: string): Promise<PpcL
   return {
     ok: true,
     lead: lead as LeadRow,
-    manifestId: (manifest as ManifestRow | null)?.id ?? null,
     attribution,
     userIdentifiers: leadUserIdentifiers,
   }
