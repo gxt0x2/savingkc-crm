@@ -55,7 +55,6 @@ const TRUSTED_BEARER_API_PREFIXES = [
   '/api/ari/',
   '/api/enrich/',
   '/api/cron/',
-  '/api/hot-opportunities/cron',
 ]
 
 const TRUSTED_BEARER_API_EXACT = new Set([
