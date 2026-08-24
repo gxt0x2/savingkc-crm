@@ -11,6 +11,9 @@ const legacyBackfill = fs.readFileSync('scripts/mojo-backfill.mjs', 'utf8')
 const legacyPropertyBackfill = fs.readFileSync('scripts/backfill-mojo-leads.mjs', 'utf8')
 const sessionHealth = fs.readFileSync('scripts/mojo-session-health.mjs', 'utf8')
 const sync = fs.readFileSync('scripts/mojo-sync.mjs', 'utf8')
+const performanceAdapter = fs.readFileSync('scripts/mojo-kpi-snapshot.mjs', 'utf8')
+const performanceReconcile = fs.readFileSync('scripts/mojo-performance-reconcile.mts', 'utf8')
+const performanceApply = fs.readFileSync('scripts/mojo-performance-apply-reviewed.mts', 'utf8')
 const mojoHealth = fs.readFileSync('src/lib/marketing/mojo-health.ts', 'utf8')
 const identityResolver = fs.readFileSync('supabase/migrations/20261012120000_mojo_reconciliation_candidates_v1.sql', 'utf8')
 
@@ -27,6 +30,29 @@ describe('Mojo supervised recovery contract', () => {
     expect(sync).toContain('Fetching contact details for provider contact ${contactId}')
     expect(sync).not.toContain('Fetching contact details for ${entry.contactName}')
     expect(mojoHealth).toContain("configValue('mojo_sync_last_ok_at')")
+  })
+
+  it('captures provider daily totals independently from filtered contact evidence', () => {
+    expect(performanceAdapter).toContain('/kpi/get_historical_data/')
+    expect(performanceAdapter).toContain("start_date: exactDate")
+    expect(performanceAdapter).toContain("end_date: exactDate")
+    expect(performanceAdapter).toContain("source: MOJO_PERFORMANCE_SOURCE")
+    expect(sync).toContain('syncMojoPerformanceSnapshot')
+    expect(performanceAdapter).toContain('fetchMojoPerformanceSnapshot(options)')
+    expect(performanceAdapter).toContain('storeMojoPerformanceSnapshot(snapshot, options)')
+    expect(sync).toContain('/api/admin/mojo-performance')
+    expect(sync).not.toContain('contacts=${snapshot.contacts}, names=')
+  })
+
+  it('keeps daily-performance reconciliation dry-run and digest-gates the reviewed apply', () => {
+    expect(performanceReconcile).toContain("if (process.argv.includes('--apply'))")
+    expect(performanceReconcile).toContain('const MAX_DAYS = 120')
+    expect(performanceReconcile).toContain('mojoPerformanceDatasetDigest(provider)')
+    expect(performanceApply).toContain("process.argv.includes('--apply')")
+    expect(performanceApply).toContain("cliValue('--confirm-digest')")
+    expect(performanceApply).toContain('JSON.stringify(reportDates) !== JSON.stringify(expectedDates)')
+    expect(performanceApply).toContain('currentDigest !== report.datasetDigest')
+    expect(performanceApply).toContain("db.rpc('upsert_mojo_agent_daily_performance_v1'")
   })
 
   it('removes only tagged legacy Mojo schedules and keeps a recoverable backup', () => {

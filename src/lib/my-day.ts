@@ -14,6 +14,17 @@ export interface MyDayAgentStat {
   metadata: Record<string, unknown> | null
 }
 
+export interface MyDayPerformanceRow {
+  metric_date: string
+  dialing_seconds: number | null
+  in_progress_seconds: number | null
+  calls: number | null
+  contacts: number | null
+  leads: number | null
+  appointments: number | null
+  source_fetched_at: string
+}
+
 export interface MyDayLead {
   id: string
   full_name: string | null
@@ -57,7 +68,7 @@ export interface MyDayGoalSet {
 }
 
 export interface MyDayMetric {
-  key: 'calls' | 'conversations' | 'leads' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
+  key: 'calls' | 'contacts' | 'leads' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
   label: string
   value: number | null
   conversion: number | null
@@ -66,7 +77,7 @@ export interface MyDayMetric {
 }
 
 export interface MyDayWeeklyRow {
-  key: 'calls' | 'conversations' | 'leads' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
+  key: 'calls' | 'contacts' | 'leads' | 'opportunities' | 'appointments' | 'offers' | 'contracts'
   label: string
   icon: string
   tone: MyDayMetric['tone']
@@ -119,6 +130,12 @@ export interface MyDayData {
   monthLabel: string
   generatedAt: string
   agent: { name: 'Casey'; initials: 'C' }
+  performance: {
+    source: 'mojo'
+    status: 'available' | 'partial' | 'unavailable'
+    dialingSeconds: number | null
+    sourceFetchedAt: string | null
+  }
   funnel: MyDayMetric[]
   week: {
     start: string
@@ -132,6 +149,7 @@ export interface MyDayData {
   callReviews: MyDayCallReview[]
   goals: MyDayGoalSet
   availability: {
+    mojoPerformance: boolean
     agentStats: boolean
     appointments: boolean
     habits: boolean
@@ -142,6 +160,7 @@ export interface BuildMyDayInput {
   month: string
   now: Date
   stats: MyDayAgentStat[]
+  performance: MyDayPerformanceRow[]
   leads: MyDayLead[]
   activities: MyDayActivity[]
   tasks: MyDayActivity[]
@@ -269,6 +288,22 @@ function weekDateKeys(input: BuildMyDayInput): string[] {
   })
 }
 
+function requiredPerformanceDates(month: string, now: Date): string[] {
+  const today = dateKey(now)
+  if (!today) return []
+  const currentMonth = today.slice(0, 7)
+  if (month > currentMonth) return []
+  const end = month === currentMonth ? today : endOfMonthKey(month)
+  const cursor = new Date(`${startOfMonthKey(month)}T12:00:00Z`)
+  const final = new Date(`${end}T12:00:00Z`)
+  const dates: string[] = []
+  while (cursor <= final) {
+    dates.push(cursor.toISOString().slice(0, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  return dates
+}
+
 function valuesByDay(entries: Iterable<string>, days: string[]): number[] {
   const counts = new Map(days.map((day) => [day, 0]))
   for (const value of entries) {
@@ -363,15 +398,22 @@ function callReviewReason(activity: MyDayActivity): string {
 
 export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const stats = input.stats.filter((row) => row.date.startsWith(input.month))
-  // Historical Mojo totals remain in agent_daily_stats. New provider calls and
-  // native dialer outcomes are immutable activities, so add only those
-  // canonical events; the retired file-based Mojo worker cannot overwrite them.
+  const performanceRows = input.performance.filter((row) => row.metric_date.startsWith(input.month))
+  const performanceByDate = new Map(performanceRows.map((row) => [row.metric_date, row]))
+  const requiredDates = requiredPerformanceDates(input.month, input.now)
+  const performanceStatus: MyDayData['performance']['status'] = !input.availability.mojoPerformance
+    ? 'unavailable'
+    : requiredDates.length > 0 && requiredDates.every((day) => performanceByDate.has(day))
+      ? 'available'
+      : performanceRows.length > 0 ? 'partial' : 'unavailable'
+  // Mojo daily totals come only from the provider KPI snapshot. Canonical Mojo
+  // events remain contact evidence and must not be counted again here.
   const nativeDialerActivities = input.activities.filter((activity) => {
     if (activity.activity_type.toLowerCase() !== 'call') return false
     const source = text(activity.metadata?.source).toLowerCase()
     const disposition = text(activity.metadata?.disposition)
-    const isCanonicalMojo = source === 'mojo_call_event'
-    if (!isCanonicalMojo && !(activity.agent || '').toLowerCase().includes('casey')) return false
+    if (source === 'mojo_call_event') return false
+    if (!(activity.agent || '').toLowerCase().includes('casey')) return false
     return Boolean(disposition) && isWithinMonth(activity.created_at, input.month)
   })
   const isMeaningfulActivity = (activity: MyDayActivity) => {
@@ -379,10 +421,12 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     return ['callback_scheduled', 'meaningful_conversation', 'appointment_set', 'not_interested', 'already_sold', 'listed'].includes(outcome)
       || isReachedDisposition(text(activity.metadata?.disposition))
   }
-  const hasCallData = input.availability.agentStats || nativeDialerActivities.length > 0
-  const calls = hasCallData ? stats.reduce((sum, row) => sum + number(row.calls_made), 0) + nativeDialerActivities.length : null
-  const conversations = hasCallData
-    ? stats.reduce((sum, row) => sum + number(row.meaningful_conversations), 0) + nativeDialerActivities.filter(isMeaningfulActivity).length
+  const hasProviderPerformance = performanceStatus === 'available'
+  const calls = hasProviderPerformance
+    ? performanceRows.reduce((sum, row) => sum + number(row.calls), 0) + nativeDialerActivities.length
+    : null
+  const contacts = hasProviderPerformance
+    ? performanceRows.reduce((sum, row) => sum + number(row.contacts), 0) + nativeDialerActivities.filter(isMeaningfulActivity).length
     : null
   const leadEntries = new Map(input.leads
     .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinMonth(lead.created_at, input.month))
@@ -399,8 +443,8 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
 
   const rawFunnel: Array<Omit<MyDayMetric, 'conversion'> & { denominator: number | null }> = [
     { key: 'calls', label: 'Calls', value: calls, denominator: null, icon: 'call', tone: 'blue' },
-    { key: 'conversations', label: 'Meaningful Conversations', value: conversations, denominator: calls, icon: 'forum', tone: 'violet' },
-    { key: 'leads', label: 'Leads', value: leadCount, denominator: conversations, icon: 'person_add', tone: 'coral' },
+    { key: 'contacts', label: 'Contacts', value: contacts, denominator: calls, icon: 'forum', tone: 'violet' },
+    { key: 'leads', label: 'Leads', value: leadCount, denominator: contacts, icon: 'person_add', tone: 'coral' },
     { key: 'opportunities', label: 'Opportunities', value: opportunityCount, denominator: leadCount, icon: 'person_search', tone: 'coral' },
     { key: 'appointments', label: 'Appointments Set', value: appointmentCount, denominator: opportunityCount, icon: 'event', tone: 'sky' },
     { key: 'offers', label: 'Offers Made', value: offerCount, denominator: appointmentCount, icon: 'sell', tone: 'green' },
@@ -412,17 +456,22 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   }))
 
   const days = weekDateKeys(input)
-  const statsByDate = new Map(stats.map((row) => [row.date, row]))
+  const today = dateKey(input.now)
   const nativeCallsByDay = valuesByDay(nativeDialerActivities.map((activity) => activity.created_at), days)
   const nativeConversationsByDay = valuesByDay(nativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
+  const providerDayValue = (day: string, field: 'calls' | 'contacts', nativeValue: number): number | null => {
+    if (!input.availability.mojoPerformance || !today || day > today) return null
+    const row = performanceByDate.get(day)
+    return row ? number(row[field]) + nativeValue : null
+  }
   const weeklyRowValues: MyDayWeeklyRow[] = [
     {
       key: 'calls', label: 'Calls', icon: 'call', tone: 'blue',
-      days: days.map((day, index) => hasCallData ? number(statsByDate.get(day)?.calls_made) + nativeCallsByDay[index] : null), total: null,
+      days: days.map((day, index) => providerDayValue(day, 'calls', nativeCallsByDay[index])), total: null,
     },
     {
-      key: 'conversations', label: 'Meaningful Conversations', icon: 'forum', tone: 'violet',
-      days: days.map((day, index) => hasCallData ? number(statsByDate.get(day)?.meaningful_conversations) + nativeConversationsByDay[index] : null), total: null,
+      key: 'contacts', label: 'Contacts', icon: 'forum', tone: 'violet',
+      days: days.map((day, index) => providerDayValue(day, 'contacts', nativeConversationsByDay[index])), total: null,
     },
     { key: 'leads', label: 'Leads', icon: 'person_add', tone: 'coral', days: valuesByDay(leadEntries.values(), days), total: null },
     { key: 'opportunities', label: 'Opportunities', icon: 'person_search', tone: 'coral', days: valuesByDay(opportunityEntries.values(), days), total: null },
@@ -528,11 +577,25 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     .sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime())
     .slice(0, 4)
 
+  const sourceFetchedAt = performanceRows
+    .map((row) => row.source_fetched_at)
+    .filter((value) => Number.isFinite(new Date(value).getTime()))
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null
+  const dialingSeconds = hasProviderPerformance
+    ? performanceRows.reduce((sum, row) => sum + number(row.dialing_seconds), 0)
+    : null
+
   return {
     month: input.month,
     monthLabel: monthLabel(input.month),
     generatedAt: input.now.toISOString(),
     agent: { name: 'Casey', initials: 'C' },
+    performance: {
+      source: 'mojo',
+      status: performanceStatus,
+      dialingSeconds,
+      sourceFetchedAt,
+    },
     funnel,
     week: {
       start: days[0],

@@ -27,6 +27,7 @@ import {
   mojoSessionFile,
   recordMojoSessionIssue,
 } from './mojo-session-health.mjs'
+import { syncMojoPerformanceSnapshot } from './mojo-kpi-snapshot.mjs'
 
 loadMojoEnv()
 
@@ -35,6 +36,7 @@ const CRM_BASE_URL = (process.env.CRM_BASE_URL || process.env.NEXT_PUBLIC_APP_UR
 const CRM_API_URL = process.env.CRM_API_URL || `${CRM_BASE_URL}/api/mojo/sync`
 const CRM_CONFIG_URL = process.env.CRM_CONFIG_URL || `${CRM_BASE_URL}/api/admin/system-config`
 const CRM_QUEUE_URL = process.env.CRM_QUEUE_URL || `${CRM_BASE_URL}/api/cron/process-mojo-queue`
+const CRM_PERFORMANCE_URL = process.env.CRM_PERFORMANCE_URL || `${CRM_BASE_URL}/api/admin/mojo-performance`
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = mojoSessionFile()
 const STATE_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-sync-state.json'
@@ -595,6 +597,16 @@ async function sync() {
     log('Using validated Mojo session')
     await pushSessionToCRM(session.sessionId)
 
+    let performanceError = null
+    try {
+      const stored = await syncMojoPerformanceSnapshot({ sessionId: session.sessionId,
+        endpoint: CRM_PERFORMANCE_URL, headers: adminHeaders({ accept: 'application/json' }) })
+      log(`Mojo performance snapshot: date=${stored.snapshot.metricDate}, calls=${stored.snapshot.calls}, contacts=${stored.snapshot.contacts}, applied=${Boolean(stored.result.applied)}`)
+    } catch (error) {
+      performanceError = error instanceof Error ? error : new Error(String(error))
+      logError('Mojo performance snapshot failed; contact-event sync will continue', performanceError)
+    }
+
     const state = readState()
     log(`Last processed activity ID: ${state.lastActivityId}`)
 
@@ -639,6 +651,7 @@ async function sync() {
       }
       await processMojoQueue('no_new_calls')
       log(`No new calls since ${lastSyncTimestamp}`)
+      if (performanceError) throw performanceError
       await clearMojoSessionIssue('mojo-sync')
       await clearMojoSyncIssue('mojo-sync')
       return { ok: true, processed: 0 }
@@ -672,6 +685,7 @@ async function sync() {
     // Update delta timestamp in Supabase
     const newTimestamp = maxCallTimestamp || new Date().toISOString()
     await writeLastSyncTimestamp(newTimestamp)
+    if (performanceError) throw performanceError
     await clearMojoSessionIssue('mojo-sync')
     await clearMojoSyncIssue('mojo-sync')
 

@@ -40,6 +40,13 @@ function input(overrides: Partial<BuildMyDayInput> = {}): BuildMyDayInput {
       { date: '2026-08-03', calls_made: 10, meaningful_conversations: 4, followups_completed: 3, followups_missed: 1, metadata: { daily_habits: { reviewVision: true, objectionsHandling: 80 } } },
       { date: '2026-08-04', calls_made: 20, meaningful_conversations: 5, followups_completed: 1, followups_missed: 0, metadata: { daily_habits: { reviewVision: true, objectionsHandling: 100 } } },
     ],
+    performance: [
+      { metric_date: '2026-08-01', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-08-01T22:00:00.000Z' },
+      { metric_date: '2026-08-02', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-08-02T22:00:00.000Z' },
+      { metric_date: '2026-08-03', dialing_seconds: 3600, in_progress_seconds: 0, calls: 10, contacts: 4, leads: 0, appointments: 0, source_fetched_at: '2026-08-03T22:00:00.000Z' },
+      { metric_date: '2026-08-04', dialing_seconds: 7200, in_progress_seconds: 0, calls: 20, contacts: 5, leads: 0, appointments: 0, source_fetched_at: '2026-08-04T22:00:00.000Z' },
+      { metric_date: '2026-08-05', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-08-05T22:00:00.000Z' },
+    ],
     leads: [lead()],
     activities: [
       activity(),
@@ -55,7 +62,7 @@ function input(overrides: Partial<BuildMyDayInput> = {}): BuildMyDayInput {
     })],
     appointments: [{ id: 'appt-1', lead_id: 'lead-1', type: 'in_person', status: 'scheduled', scheduled_at: '2026-08-06T20:00:00.000Z', assigned_to: 'casey', address: '1 Main St', notes: null, created_at: '2026-08-05T17:00:00.000Z' }],
     goals: { dailyCalls: 5, weeklyOpportunities: 5, weeklyAppointments: 2 },
-    availability: { agentStats: true, appointments: true, habits: true },
+    availability: { mojoPerformance: true, agentStats: true, appointments: true, habits: true },
     ...overrides,
   }
 }
@@ -65,7 +72,7 @@ describe('Casey My Day model', () => {
     const report = buildMyDay(input())
     expect(report.funnel.map((metric) => [metric.label, metric.value])).toEqual([
       ['Calls', 30],
-      ['Meaningful Conversations', 9],
+      ['Contacts', 9],
       ['Leads', 1],
       ['Opportunities', 1],
       ['Appointments Set', 1],
@@ -79,7 +86,7 @@ describe('Casey My Day model', () => {
   it('keeps the weekly snapshot aligned Monday through Friday and calculates habits', () => {
     const report = buildMyDay(input())
     expect(report.week.dayLabels).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
-    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, 0, 0, 0])
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, 0, null, null])
     expect(report.week.rows.find((row) => row.key === 'leads')?.days).toEqual([1, 0, 0, 0, 0])
     expect(report.habits.find((habit) => habit.key === 'vision')?.value).toBe(100)
     expect(report.habits.find((habit) => habit.key === 'objections')?.value).toBe(90)
@@ -105,11 +112,11 @@ describe('Casey My Day model', () => {
 
     expect(report.funnel[0].value).toBe(31)
     expect(report.funnel[1].value).toBe(10)
-    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([11, 20, 0, 0, 0])
-    expect(report.week.rows.find((row) => row.key === 'conversations')?.days).toEqual([5, 5, 0, 0, 0])
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([11, 20, 0, null, null])
+    expect(report.week.rows.find((row) => row.key === 'contacts')?.days).toEqual([5, 5, 0, null, null])
   })
 
-  it('counts canonical Mojo call facts without relying on the retired file-based worker', () => {
+  it('does not count canonical Mojo contact evidence on top of the provider snapshot', () => {
     const mojoCall = activity({
       id: 'mojo-call-event',
       activity_type: 'call',
@@ -123,9 +130,16 @@ describe('Casey My Day model', () => {
     })
     const report = buildMyDay(input({ activities: [...input().activities, mojoCall] }))
 
-    expect(report.funnel[0].value).toBe(31)
-    expect(report.funnel[1].value).toBe(10)
-    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 21, 0, 0, 0])
+    expect(report.funnel[0].value).toBe(30)
+    expect(report.funnel[1].value).toBe(9)
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, 0, null, null])
+  })
+
+  it('withholds aggregate totals when even one required provider day is missing', () => {
+    const report = buildMyDay(input({ performance: input().performance.filter((row) => row.metric_date !== '2026-08-02') }))
+    expect(report.performance.status).toBe('partial')
+    expect(report.funnel[0].value).toBeNull()
+    expect(report.funnel[1].value).toBeNull()
   })
 
   it('turns Casey-assigned work into real commitments and call-list candidates', () => {
@@ -168,7 +182,10 @@ describe('Casey My Day model', () => {
   })
 
   it('shows unavailable stats as not recorded instead of silently fabricating zeros', () => {
-    const report = buildMyDay(input({ stats: [], availability: { agentStats: false, appointments: true, habits: false } }))
+    const report = buildMyDay(input({
+      performance: [],
+      availability: { mojoPerformance: false, agentStats: true, appointments: true, habits: false },
+    }))
     expect(report.funnel[0].value).toBeNull()
     expect(report.funnel[1].value).toBeNull()
     expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([null, null, null, null, null])
