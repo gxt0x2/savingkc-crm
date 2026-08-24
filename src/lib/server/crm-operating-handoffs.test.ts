@@ -16,7 +16,7 @@ describe('seller-to-close operating handoffs', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('records assignment evidence against the existing buyer offer and TC file', async () => {
-    mocks.rpc.mockResolvedValue({ data: { handoffId: 'handoff-1', status: 'accepted', replayed: false }, error: null })
+    mocks.rpc.mockResolvedValue({ data: { handoffId: 'handoff-1', status: 'pending', replayed: false }, error: null })
     await recordAssignmentToTcHandoff({
       commandId: '11111111-1111-4111-8111-111111111111',
       leadId: 'lead-1', buyerOfferId: 'offer-1', tcFileId: 'file-1',

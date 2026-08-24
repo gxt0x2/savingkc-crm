@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DepartmentHandoffQueue } from './department-handoff-queue'
+import { TcHandoffStrip } from './tc-handoff-strip'
 import { FalloutDialog } from './fallout-dialog'
 import type { DispoDeal } from '@/types/dispo'
 
@@ -31,6 +32,20 @@ describe('seller-to-close operator handoffs', () => {
     const request = fetchMock.mock.calls[1]
     expect(request[0]).toBe('/api/department-handoffs')
     expect(JSON.parse(request[1].body)).toEqual({ handoffId: 'handoff-1', action: 'accept' })
+  })
+
+  it('requires Closing Coordination to accept a signed assignment', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ handoffs: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<TcHandoffStrip items={[]} />)
+
+    expect(screen.getByRole('heading', { name: 'Executed assignments awaiting TC acceptance' })).toBeTruthy()
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/department-handoffs?department=transaction_coordination&status=pending',
+      { cache: 'no-store' },
+    ))
   })
 
   it('requires a reason, evidence, facts, and explicit confirmation before verified fallout', async () => {
