@@ -77,6 +77,15 @@ const LUNA_PRICING = {
   inputCacheRead: 0.00000002,
   variesByProvider: true,
 }
+const GROQ_MODEL = 'groq/openai/gpt-oss-120b'
+const GROQ_PRICING = {
+  source: 'groq-model-catalog',
+  capturedAt: '2026-08-24',
+  currency: 'USD',
+  unit: 'per_token',
+  input: 0.00000015,
+  output: 0.0000006,
+}
 
 function text(value: unknown, max = 500): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
@@ -107,6 +116,9 @@ function databaseError(error: { message?: string; code?: string } | null | undef
 }
 
 export function assistantPricingSnapshot(model: string): Record<string, unknown> {
+  if (model === GROQ_MODEL || model.endsWith('/openai/gpt-oss-120b')) {
+    return { model: GROQ_MODEL, ...GROQ_PRICING }
+  }
   if (model === LUNA_MODEL || model.endsWith('/gpt-5.6-luna') || model === 'gpt-5.6-luna') {
     return { model: LUNA_MODEL, ...LUNA_PRICING }
   }
@@ -119,6 +131,9 @@ export function estimateAssistantCostMicros(model: string, usage: AssistantUsage
   const input = usage.inputTokens ?? 0
   const output = usage.outputTokens ?? 0
   const cacheRead = usage.cacheReadTokens ?? 0
+  if (model === GROQ_MODEL || model.endsWith('/openai/gpt-oss-120b')) {
+    return Math.max(0, Math.round(input * 0.15 + output * 0.6))
+  }
   if (model === LUNA_MODEL || model.endsWith('/gpt-5.6-luna') || model === 'gpt-5.6-luna') {
     return Math.max(0, Math.round(input * 0.2 + output * 1.2 + cacheRead * 0.02))
   }

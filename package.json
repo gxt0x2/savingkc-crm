@@ -43,6 +43,7 @@
     "manifest:archive:verify": "node scripts/archive/verify-manifest-history.mjs"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.35",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
