@@ -7,8 +7,7 @@ const mocks = vi.hoisted(() => ({
   downloadRecording: vi.fn(),
   transcribeAudio: vi.fn(),
   analyzeCallTranscript: vi.fn(),
-  ensureManifestExists: vi.fn(),
-  updateManifestV2_1: vi.fn(),
+  createCallAnalysisLeadProposal: vi.fn(),
   resolveGoogleAdsLeadContext: vi.fn(),
   notifyGoogleAdsTeam: vi.fn(),
   safeSendSMS: vi.fn(),
@@ -47,9 +46,8 @@ vi.mock('@/lib/mojo-call-analyzer', () => ({
   analyzeCallTranscript: mocks.analyzeCallTranscript,
 }))
 
-vi.mock('@/lib/manifest-sync', () => ({
-  ensureManifestExists: mocks.ensureManifestExists,
-  updateManifestV2_1: mocks.updateManifestV2_1,
+vi.mock('@/lib/server/ai-change-proposals', () => ({
+  createCallAnalysisLeadProposal: mocks.createCallAnalysisLeadProposal,
 }))
 
 vi.mock('@/lib/google-ads-phone', () => ({
@@ -133,8 +131,7 @@ function expectNoDownstreamWork() {
   expect(mocks.downloadRecording).not.toHaveBeenCalled()
   expect(mocks.transcribeAudio).not.toHaveBeenCalled()
   expect(mocks.analyzeCallTranscript).not.toHaveBeenCalled()
-  expect(mocks.ensureManifestExists).not.toHaveBeenCalled()
-  expect(mocks.updateManifestV2_1).not.toHaveBeenCalled()
+  expect(mocks.createCallAnalysisLeadProposal).not.toHaveBeenCalled()
   expect(mocks.resolveGoogleAdsLeadContext).not.toHaveBeenCalled()
   expect(mocks.notifyGoogleAdsTeam).not.toHaveBeenCalled()
   expect(mocks.safeSendSMS).not.toHaveBeenCalled()

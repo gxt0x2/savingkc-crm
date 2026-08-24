@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
-import { ensureManifestExists } from '@/lib/manifest-sync'
 import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
@@ -49,20 +48,8 @@ export async function POST(req: Request) {
 
       if (existingLead?.id) {
         leadId = existingLead.id
-        // Bump to hot via manifest cascade (with fallback if manifest ops fail)
-        try {
-          const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-          const cascaded = await updateManifestAndCascade(leadId, (m) => {
-            m.priority = 'hot'
-          }, 'system:ivr_press_1')
-          if (!cascaded) {
-            // No manifest yet - fallback to direct update
-            await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
-          }
-        } catch (err) {
-          console.error('[IVR] Manifest update failed, using direct fallback:', err)
-          await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
-        }
+        const { error: priorityError } = await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
+        if (priorityError) throw priorityError
       } else {
         // Check prospects before creating bare lead
         const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
@@ -102,8 +89,6 @@ export async function POST(req: Request) {
         metadata: { direction: 'inbound', from, callSid, source: isColdCall ? 'cold_callback_press_1' : 'ivr_press_1' }
       })
 
-      // Ensure manifest exists (fire-and-forget)
-      if (leadId) ensureManifestExists(leadId).catch(err => console.error('[MANIFEST] Failed:', err))
     }
 
     // Sim-ring both agents — first to answer gets connected

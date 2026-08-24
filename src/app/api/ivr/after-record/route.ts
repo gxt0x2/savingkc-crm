@@ -2,11 +2,10 @@ import { NextResponse } from 'next/server'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
 import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
-import { ensureManifestExists } from '@/lib/manifest-sync'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
-import type { ManifestV2 } from '@/lib/manifest-builder'
+import { createCallAnalysisLeadProposal } from '@/lib/server/ai-change-proposals'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
@@ -28,6 +27,7 @@ export async function POST(req: Request) {
     const body = await req.formData()
     const recordingUrl = body.get('RecordingUrl') as string
     const recordingSid = body.get('RecordingSid') as string
+    const recordingDuration = Number.parseInt(String(body.get('RecordingDuration') || '0'), 10) || 0
 
   // Find or create lead (dedup by phone)
   let leadId = ''
@@ -41,20 +41,8 @@ export async function POST(req: Request) {
 
     if (existingLead?.id) {
       leadId = existingLead.id
-      // Bump to hot via manifest cascade (with fallback if manifest ops fail)
-      try {
-        const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-        const cascaded = await updateManifestAndCascade(leadId, (m) => {
-          m.priority = 'hot'
-        }, 'system:ivr_voicemail')
-        if (!cascaded) {
-          // No manifest yet - fallback to direct update
-          await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
-        }
-      } catch (err) {
-        console.error('[IVR] Manifest update failed, using direct fallback:', err)
-        await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
-      }
+      const { error: priorityError } = await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
+      if (priorityError) throw priorityError
     } else {
       const { data: newLead } = await supabase.from('leads').insert({
         full_name: 'Inbound Seller',
@@ -67,9 +55,6 @@ export async function POST(req: Request) {
       leadId = newLead?.id || ''
     }
   }
-
-  // Ensure manifest exists (fire-and-forget)
-  if (leadId) ensureManifestExists(leadId).catch(err => console.error('[MANIFEST] Failed:', err))
 
   // Log the voicemail recording
   if (leadId) {
@@ -124,7 +109,7 @@ export async function POST(req: Request) {
 
   // Async transcript analysis (fire-and-forget)
   if (recordingUrl && leadId) {
-    transcribeAndAnalyze(recordingUrl, recordingSid, leadId).catch(err =>
+    transcribeAndAnalyze(recordingUrl, recordingSid, leadId, recordingDuration).catch(err =>
       console.error('Voicemail transcript analysis failed:', err)
     )
   }
@@ -141,75 +126,46 @@ export async function POST(req: Request) {
   }
 }
 
-async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string) {
+async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string, duration: number) {
   const filePath = await downloadRecording(recordingUrl, recordingSid)
   const transcript = await transcribeAudio(filePath)
 
   if (!transcript || transcript.length < 10) return
 
   // Save transcript to lead activity
-  await supabase.from('lead_activities').insert({
+  const { error: transcriptError } = await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'note',
     description: `Voicemail transcript: ${transcript}`,
     agent: 'AI',
-    metadata: { source: 'whisper_transcription', recordingSid }
+    metadata: { source: 'whisper_transcription', recordingSid, recordingUrl, duration }
   })
+  if (transcriptError) throw transcriptError
 
   // Analyze transcript
   const analysis = await analyzeCallTranscript(transcript)
 
-  // Update lead with extracted fields
-  const leadUpdates: Record<string, unknown> = {}
-  if (analysis.motivationScore) leadUpdates.motivation_score = analysis.motivationScore
-  if (analysis.urgency) leadUpdates.urgency = analysis.urgency
-  if (analysis.conditionOverall) leadUpdates.property_condition = analysis.conditionOverall
-  if (analysis.sellerAsking) leadUpdates.asking_price = analysis.sellerAsking
-
-  if (Object.keys(leadUpdates).length > 0) {
-    try { await supabase.from('leads').update(leadUpdates).eq('id', leadId) } catch {}
-  }
+  const { error: leadEvidenceError } = await supabase.from('leads').update({
+    transcript,
+    call_duration_seconds: duration,
+    updated_at: new Date().toISOString(),
+  }).eq('id', leadId)
+  if (leadEvidenceError) throw leadEvidenceError
 
   // Save analysis to lead activity
-  await supabase.from('lead_activities').insert({
+  const { error: analysisError } = await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'note',
     description: `AI Analysis: ${analysis.aiSummary || analysis.summary || 'Analysis complete'}`,
     agent: 'AI',
-    metadata: { source: 'call_analysis', analysis }
+    metadata: { source: 'call_analysis', recordingSid, recordingUrl, duration, analysis }
   })
+  if (analysisError) throw analysisError
 
-  // Update manifest with analysis if it exists
-  const { data: manifest } = await supabase
-    .from('manifests')
-    .select('id')
-    .eq('lead_id', leadId)
-    .single()
-
-  if (manifest?.id) {
-    try {
-      const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-      const motivationScore = typeof analysis?.motivation_score === 'number' ? analysis.motivation_score : undefined
-      await updateManifestAndCascade(leadId, (manifest: ManifestV2) => {
-        if (!manifest.communications) manifest.communications = { transcripts: [] }
-        manifest.communications.transcripts.push({
-          id: `call-${Date.now()}`,
-          date: new Date().toISOString(),
-          duration: 0,
-          agent: 'System',
-          recordingUrl: null,
-          fullTranscript: transcript,
-          aiSummary: analysis?.summary || analysis?.aiSummary || null,
-          extractedData: analysis ? {
-            ...(motivationScore != null ? { motivationScore } : {}),
-            sentiment: analysis.sentiment,
-          } : null,
-        })
-        if (!manifest.ariIntelligence) manifest.ariIntelligence = {}
-        manifest.ariIntelligence.briefingStale = true
-      }, 'ivr:call_analysis')
-    } catch (err) {
-      console.error('[ivr/after-record] Manifest cascade failed:', err)
-    }
-  }
+  await createCallAnalysisLeadProposal({
+    leadId,
+    clientAttemptId: null,
+    recordingSid,
+    analysis,
+  }).catch((error) => console.error('[ivr/after-record] AI proposal persistence failed:', error))
 }

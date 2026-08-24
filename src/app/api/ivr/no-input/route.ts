@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
-import { ensureManifestExists } from '@/lib/manifest-sync'
 import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
@@ -100,9 +99,6 @@ export async function POST(req: Request) {
       }).select('id').single()
       noInputLeadId = newLead?.id || null
     }
-
-    // Ensure manifest exists (fire-and-forget)
-    if (noInputLeadId) ensureManifestExists(noInputLeadId).catch(err => console.error('[MANIFEST] Failed:', err))
 
     // Log call (feeds spam counter for future calls)
     await supabase.from('lead_activities').insert({
