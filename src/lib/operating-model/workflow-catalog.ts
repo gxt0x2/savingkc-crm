@@ -177,7 +177,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     category: 'communication', status: 'active', health: 'healthy', owner: SYSTEM_OWNER,
     trigger: { type: 'inbound_sms', phoneScope: 'all_owned_numbers' },
     actions: [{ type: 'normalize_identity' }, { type: 'find_or_create_contact' }, { type: 'branch', condition: 'STOP, START, team number, Google Ads, or seller reply' }, { type: 'execute', label: 'Write activity and update conversation state' }],
-    implementation: implementation(['/api/twilio-sms-webhook', 'src/lib/sms-opt-out.ts', 'src/lib/manifest-sync.ts']),
+    implementation: implementation(['/api/twilio-sms-webhook', 'src/lib/sms-opt-out.ts', 'src/lib/sms-consent-audit.ts']),
     version: 1, lastRunAt: null,
   },
   {

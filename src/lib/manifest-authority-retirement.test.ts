@@ -9,8 +9,9 @@ function source(path: string) {
 describe('Manifest operational-authority retirement', () => {
   it('records canonical authority and a staged, non-destructive retirement', () => {
     const plan = source('docs/manifest-retirement-plan.md')
-    expect(plan).toContain('Manifest is being retired as an operational source of truth')
+    expect(plan).toContain('Manifest is retired as an operational source of truth')
     expect(plan).toContain('Canonical systems win every conflict')
+    expect(plan).toContain('no active Manifest reader, writer, builder, enrichment, or sync runtime')
     expect(plan).toContain('Do not delete yet')
   })
 
