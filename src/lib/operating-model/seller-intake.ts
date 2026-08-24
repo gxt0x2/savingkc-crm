@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto'
-import { supabase } from '@/lib/supabase-lazy'
 import type { ConversationAttentionState, RecordOwner } from './types'
 
 export const SELLER_INTAKE_WORKFLOW_ID = 'seller-form-intake'
-export const SELLER_INTAKE_WORKFLOW_VERSION = 1
+export const SELLER_INTAKE_WORKFLOW_VERSION = 2
 
 const ACQUISITIONS_OWNER: RecordOwner = {
   kind: 'team',
@@ -25,7 +24,7 @@ export interface SellerIntakeInput {
 export interface SellerIntakePlan {
   workflowId: typeof SELLER_INTAKE_WORKFLOW_ID
   workflowVersion: typeof SELLER_INTAKE_WORKFLOW_VERSION
-  workflowRunId: string
+  workflowTriggerKey: string
   leadId: string
   identityKeys: string[]
   owner: RecordOwner
@@ -67,7 +66,7 @@ function identityKeys(input: SellerIntakeInput): string[] {
   ].filter((value): value is string => Boolean(value))
 }
 
-function workflowRunId(input: SellerIntakeInput, keys: string[]): string {
+function workflowTriggerKey(input: SellerIntakeInput, keys: string[]): string {
   const stableSubmissionKey = clean(input.submissionKey) || keys.join('|') || input.leadId
   const digest = createHash('sha256')
     .update(`${SELLER_INTAKE_WORKFLOW_ID}|${input.formSource}|${input.leadId}|${stableSubmissionKey}`)
@@ -85,7 +84,7 @@ export function buildSellerIntakePlan(input: SellerIntakeInput): SellerIntakePla
   return {
     workflowId: SELLER_INTAKE_WORKFLOW_ID,
     workflowVersion: SELLER_INTAKE_WORKFLOW_VERSION,
-    workflowRunId: workflowRunId(input, keys),
+    workflowTriggerKey: workflowTriggerKey(input, keys),
     leadId: input.leadId,
     identityKeys: keys,
     owner: ACQUISITIONS_OWNER,
@@ -109,74 +108,49 @@ export function buildSellerIntakePlan(input: SellerIntakeInput): SellerIntakePla
 
 export async function recordSellerIntakeOperatingState(
   input: SellerIntakeInput,
-): Promise<{ created: boolean; plan: SellerIntakePlan }> {
+): Promise<{
+  created: boolean
+  queued: boolean
+  workflowRunId: string
+  plan: SellerIntakePlan
+}> {
   const plan = buildSellerIntakePlan(input)
-
-  const { data: existing, error: lookupError } = await supabase
-    .from('lead_activities')
-    .select('id')
-    .eq('lead_id', plan.leadId)
-    .eq('activity_type', 'status_change')
-    .contains('metadata', { workflow_run_id: plan.workflowRunId })
-    .maybeSingle()
-
-  if (lookupError) {
-    throw new Error(`Seller intake workflow lookup failed: ${lookupError.message}`)
-  }
-  if (existing?.id) return { created: false, plan }
-
-  const commonMetadata = {
-    source: 'operating_model',
-    workflow_id: plan.workflowId,
-    workflow_version: plan.workflowVersion,
-    workflow_run_id: plan.workflowRunId,
-    form_source: input.formSource,
+  const workflow = await import('@/lib/server/workflow-runs')
+  const definition = workflow.findActiveWorkflowDefinition(plan.workflowId)
+  if (!definition || definition.version !== plan.workflowVersion) {
+    throw new Error('Seller intake workflow definition is unavailable.')
   }
 
-  const { error: insertError } = await supabase.from('lead_activities').insert([
-    {
-      lead_id: plan.leadId,
-      activity_type: 'status_change',
-      description: 'Seller intake workflow established ownership and conversation state.',
-      agent: 'System',
-      metadata: {
-        ...commonMetadata,
-        record_kind: 'opportunity',
-        opportunity_stage: plan.opportunityStage,
-        owner_kind: plan.owner.kind,
-        owner_id: plan.owner.id,
-        owner_name: plan.owner.displayName,
-        identity_keys: plan.identityKeys,
-        conversation_attention: plan.conversationAttention,
-        acknowledgement_channel: plan.acknowledgement.channel,
-        acknowledgement_allowed: plan.acknowledgement.allowed,
-        acknowledgement_reason: plan.acknowledgement.reason,
-        acknowledgement_handler: 'existing_form_route',
-      },
+  const run = await workflow.startWorkflowRun({
+    definition,
+    actor: 'SavingKC Operations',
+    idempotencyKey: plan.workflowTriggerKey,
+    verifiedServerEvent: 'seller_intake',
+    triggerKind: 'lead_form_submitted',
+    triggerKey: plan.workflowTriggerKey,
+    payload: {
+      leadId: plan.leadId,
+      formSource: input.formSource,
+      workflowTriggerKey: plan.workflowTriggerKey,
+      identityKeys: plan.identityKeys,
+      dueAt: plan.nextAction.dueAt,
+      acknowledgementAllowed: plan.acknowledgement.allowed,
+      acknowledgementReason: plan.acknowledgement.reason,
     },
-    {
-      lead_id: plan.leadId,
-      activity_type: 'task',
-      description: plan.nextAction.title,
-      agent: plan.nextAction.owner.displayName,
-      metadata: {
-        ...commonMetadata,
-        record_kind: 'task',
-        task_type: plan.nextAction.type,
-        due_date: plan.nextAction.dueAt,
-        assigned_to: plan.nextAction.owner.displayName,
-        owner_kind: plan.nextAction.owner.kind,
-        owner_id: plan.nextAction.owner.id,
-        status: 'pending',
-        priority: 'urgent',
-        primary_next_action: true,
-      },
-    },
-  ])
+  })
 
-  if (insertError) {
-    throw new Error(`Seller intake workflow insert failed: ${insertError.message}`)
+  const finished = run.status === 'queued' || run.status === 'retry_scheduled'
+    ? await workflow.executeWorkflowRun(run.id)
+    : run
+  const current = finished ?? run
+  if (current.status === 'failed' || current.status === 'rejected' || current.status === 'cancelled') {
+    throw new Error(`Seller intake workflow ended in ${current.status}.`)
   }
 
-  return { created: true, plan }
+  return {
+    created: current.status === 'succeeded' && current.output?.created === true,
+    queued: current.status !== 'succeeded',
+    workflowRunId: current.id,
+    plan,
+  }
 }

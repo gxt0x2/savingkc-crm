@@ -868,9 +868,9 @@ export async function POST(req: NextRequest) {
         smsConsent,
       })
     } catch (err) {
-      // Keep PPC capture available if the additive operating-model projection
-      // fails, while surfacing the failure for repair/replay.
-      console.error('[ppc/lead] operating state projection failed', err)
+      // Keep PPC capture available if the governed seller-intake workflow fails,
+      // while surfacing the failure for repair or deterministic replay.
+      console.error('[ppc/lead] seller intake workflow failed', err)
     }
 
     if (!isTestLead && !externalSideEffectsDisabled()) {

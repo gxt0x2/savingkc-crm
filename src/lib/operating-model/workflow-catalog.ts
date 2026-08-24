@@ -193,12 +193,19 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
     id: 'seller-form-intake',
     name: 'Website Seller Form',
-    description: 'Resolves identity, creates the opportunity, assigns ownership, and establishes the first next action.',
+    description: 'Records the seller-submission event in a durable governed run and creates one canonical first-contact work item exactly once.',
     category: 'lead_intake', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
     trigger: { type: 'lead_form_submitted', formKey: 'seller-intake' },
     actions: [{ type: 'normalize_identity' }, { type: 'find_or_create_contact' }, { type: 'find_or_create_property' }, { type: 'create_opportunity', stage: 'new' }, { type: 'assign_owner', strategy: 'source_based' }, { type: 'create_next_action', actionType: 'call', title: 'Make first contact', dueOffsetMinutes: 5 }],
-    implementation: implementation(['/api/leads', 'src/lib/operating-model/seller-intake.ts']),
-    version: 1, lastRunAt: null,
+    implementation: implementation([
+      '/api/leads',
+      '/api/leads/ppc',
+      '/api/workers/workflow-runs',
+      'src/lib/operating-model/seller-intake.ts',
+      'src/lib/server/seller-intake-workflow-action.ts',
+      'src/lib/server/workflow-runs.ts',
+    ], { execution: 'worker' }),
+    version: 2, lastRunAt: null,
   },
   {
     id: 'ppc-lead-intake',
