@@ -192,7 +192,7 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/contacts", "/leads/[id]", "/opportunities"],
-      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
+      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/mobile/v1/leads", "/api/mobile/v1/leads/[id]", "/api/mobile/v1/leads/[id]/owner", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
       "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
       "environment": ["CRON_SECRET"],
       "crons": [
@@ -246,7 +246,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/calendar", "/tasks"],
-      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk"],
+      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete"],
       "tables": ["appointments", "leads", "lead_activities", "lead_tasks", "tc_tasks", "work_items", "work_item_events"],
       "environment": []
     },
@@ -266,7 +266,7 @@
       "owner": "Dispositions and TC",
       "status": "active",
       "routes": ["/dispo/pipeline", "/dispo/tc", "/dispo/offers", "/dispo/buyers", "/dispo/vendors"],
-      "apiRoutes": ["/api/dispo-deals", "/api/dispo-deals/[id]/closeout", "/api/department-handoffs", "/api/reports/lifecycle-reconciliation", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
+      "apiRoutes": ["/api/dispo-deals", "/api/dispo-deals/[id]/closeout", "/api/department-handoffs", "/api/mobile/v1/handoffs/[id]/accept", "/api/reports/lifecycle-reconciliation", "/api/tc/files", "/api/offers", "/api/offers/[id]/assignment", "/api/offers/[id]/assignment/send", "/api/docuseal/status", "/api/docuseal/webhook", "/api/buyers"],
       "tables": ["dispo_deals", "tc_files", "tc_tasks", "tc_drafts", "offers", "buyer_offers", "buyers", "vendors", "crm_lifecycle_events", "crm_department_handoffs", "crm_marketing_outcomes"],
       "environment": ["DOCUSEAL_ENABLED", "DOCUSEAL_URL", "DOCUSEAL_TOKEN", "DOCUSEAL_ASSIGNMENT_TEMPLATE_ID", "DOCUSEAL_WEBHOOK_SECRET", "VERCEL_ENV"]
     },
