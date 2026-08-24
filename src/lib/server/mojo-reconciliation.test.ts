@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reconcileMojoCalls } from './mojo-reconciliation'
+import { mojoCentralDate, reconcileMojoCalls } from './mojo-reconciliation'
 
 const baseCall = {
   record_id: 'record-1', contact_name: 'Seller', phone_number: '816-555-0123',
@@ -17,6 +17,12 @@ const lead = {
 }
 
 describe('Mojo dry-run reconciliation', () => {
+  it('enforces the requested backfill range in Central time', () => {
+    expect(mojoCentralDate('2026-06-10T04:59:59.000Z')).toBe('2026-06-09')
+    expect(mojoCentralDate('2026-06-10T05:00:00.000Z')).toBe('2026-06-10')
+    expect(mojoCentralDate('not-a-date')).toBeNull()
+  })
+
   it('reports approved diffs while blocking property and source changes', () => {
     const result = reconcileMojoCalls({ calls: [baseCall], leads: [lead], prospectPhones: [], existingEvents: [] })
     expect(result.summary).toMatchObject({

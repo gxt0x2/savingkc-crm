@@ -10,6 +10,7 @@ import { normalizePhoneToE164 } from '../src/lib/phone-normalize'
 import { MOJO_FIELD_OWNERSHIP } from '../src/lib/server/mojo-field-ownership'
 import {
   reconcileMojoCalls,
+  mojoCentralDate,
   type MojoExistingEvent,
   type MojoReconciliationLead,
   type MojoReconciliationProspectPhone,
@@ -105,6 +106,9 @@ export async function fetchRecordings(sessionId: string, start: string, end: str
     const rows = Array.isArray(body.recordings) ? body.recordings as Recording[] : []
     for (const row of rows) {
       const id = String(row.record_id || '').trim()
+      const callDay = mojoCentralDate(String(row.date || ''))
+      if (!callDay) throw new Error(`Mojo recording ${id || 'without an ID'} has an invalid call date`)
+      if (callDay < start || callDay > end) continue
       if (id) byId.set(id, row)
       if (byId.size > maxRecords) throw new Error(`Mojo history exceeds the ${maxRecords}-record safety cap`)
     }
@@ -211,39 +215,48 @@ async function pagedRows<T>(queryFactory: (from: number, to: number) => PromiseL
   throw new Error(`CRM reconciliation exceeds the ${MAX_DB_ROWS}-row safety cap`)
 }
 
-function relevantPhoneVariants(calls: MojoCallRecord[]): string[] {
-  const variants = new Set<string>()
-  for (const call of calls) {
-    const raw = call.phone_number.trim()
-    const normalized = normalizePhoneToE164(raw)
-    const digits = (normalized || raw).replace(/\D/g, '').slice(-10)
-    if (raw) variants.add(raw)
-    if (digits.length !== 10) continue
-    const area = digits.slice(0, 3)
-    const exchange = digits.slice(3, 6)
-    const subscriber = digits.slice(6)
-    for (const value of [
-      digits, `1${digits}`, `+1${digits}`, `${area}-${exchange}-${subscriber}`,
-      `(${area}) ${exchange}-${subscriber}`, `${area} ${exchange} ${subscriber}`,
-      `${area}.${exchange}.${subscriber}`,
-    ]) variants.add(value)
-  }
-  return [...variants]
-}
-
-async function relevantRows<T extends { id: string }>(
+async function rowsByIds<T extends { id: string }>(
   db: ReturnType<typeof createClient>,
   table: string,
   selection: string,
-  phoneVariants: string[],
+  ids: string[],
 ): Promise<T[]> {
   const rows = new Map<string, T>()
-  for (let offset = 0; offset < phoneVariants.length; offset += 100) {
-    const { data, error } = await db.from(table).select(selection).in('phone', phoneVariants.slice(offset, offset + 100)).limit(5_000)
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const { data, error } = await db.from(table).select(selection).in('id', ids.slice(offset, offset + 100)).limit(5_000)
     if (error) throw new Error(`${table} reconciliation failed: ${error.message}`)
     for (const row of (data ?? []) as unknown as T[]) rows.set(row.id, row)
   }
   return [...rows.values()]
+}
+
+async function normalizedCandidates(
+  db: ReturnType<typeof createClient>,
+  calls: MojoCallRecord[],
+): Promise<{ leads: MojoReconciliationLead[]; prospectPhones: MojoReconciliationProspectPhone[] }> {
+  const phones = [...new Set(calls.map((call) => normalizePhoneToE164(call.phone_number)).filter((phone): phone is string => Boolean(phone)))]
+  const candidates = new Map<string, Set<string>>()
+  for (let offset = 0; offset < phones.length; offset += 250) {
+    const { data, error } = await db.rpc('resolve_mojo_reconciliation_candidates_v1', {
+      p_phones: phones.slice(offset, offset + 250),
+    })
+    if (error) throw new Error(`Normalized Mojo identity reconciliation failed: ${error.message}`)
+    for (const row of (data ?? []) as Array<{ normalized_phone?: unknown; lead_id?: unknown }>) {
+      if (typeof row.normalized_phone !== 'string' || typeof row.lead_id !== 'string') continue
+      const ids = candidates.get(row.normalized_phone) ?? new Set<string>()
+      ids.add(row.lead_id)
+      candidates.set(row.normalized_phone, ids)
+    }
+  }
+  const leadIds = [...new Set([...candidates.values()].flatMap((ids) => [...ids]))]
+  const leads = await rowsByIds<MojoReconciliationLead>(
+    db,
+    'leads',
+    'id,full_name,phone,email,property_address,city,state,zip,source,mojo_record_id,call_result,call_duration_seconds,station,assigned_agent',
+    leadIds,
+  )
+  const prospectPhones = [...candidates.entries()].flatMap(([phone, ids]) => [...ids].map((leadId) => ({ phone, leadId })))
+  return { leads, prospectPhones }
 }
 
 async function main() {
@@ -260,23 +273,7 @@ async function main() {
   const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !supabaseKey) throw new Error('Supabase admin configuration is unavailable')
   const db = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } })
-  const phoneVariants = relevantPhoneVariants(calls)
-  const leads = await relevantRows<MojoReconciliationLead>(
-    db,
-    'leads',
-    'id,full_name,phone,email,property_address,city,state,zip,source,mojo_record_id,call_result,call_duration_seconds,station,assigned_agent',
-    phoneVariants,
-  )
-  const rawProspectPhones = await relevantRows<Record<string, unknown> & { id: string }>(
-    db,
-    'prospect_phones',
-    'id,phone,prospects(lead_id)',
-    phoneVariants,
-  )
-  const prospectPhones: MojoReconciliationProspectPhone[] = rawProspectPhones.map((row) => {
-    const prospect = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects
-    return { phone: typeof row.phone === 'string' ? row.phone : null, leadId: prospect && typeof prospect === 'object' && typeof (prospect as Record<string, unknown>).lead_id === 'string' ? (prospect as Record<string, unknown>).lead_id as string : null }
-  })
+  const { leads, prospectPhones } = await normalizedCandidates(db, calls)
   const existingEvents = await pagedRows<Record<string, unknown>>((from, to) => db.from('crm_mojo_call_events')
     .select('record_id,lead_id,call_at').gte('call_at', `${start}T00:00:00Z`).range(from, to))
   const normalizedEvents: MojoExistingEvent[] = existingEvents.map((row) => ({

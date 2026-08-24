@@ -33,6 +33,17 @@ export type MojoExistingEvent = {
 const CREATES_IDENTITY = new Set(['callback_scheduled', 'meaningful_conversation', 'appointment_set'])
 const TERMINAL_STATIONS = new Set(['offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'])
 
+export function mojoCentralDate(value: string): string | null {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date)
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || ''
+  const result = `${part('year')}-${part('month')}-${part('day')}`
+  return /^\d{4}-\d{2}-\d{2}$/.test(result) ? result : null
+}
+
 function increment(counts: Record<string, number>, key: string): void {
   counts[key] = (counts[key] ?? 0) + 1
 }
