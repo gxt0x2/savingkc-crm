@@ -308,13 +308,13 @@ async function saveSession(sessionId) {
   ensureParentDir(SESSION_FILE)
   fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2))
   console.log(`Session saved to ${SESSION_FILE}`)
-  console.log(`Session ID: ${session.sessionId.substring(0, 20)}...`)
 
   const pushed = await pushSessionToCrm(sessionId)
-  if (pushed) {
-    console.log('Session stored in CRM system_config (key: mojo_session_id)')
+  if (!pushed) {
+    throw new Error('Valid Mojo session captured locally, but CRM session storage failed')
   }
 
+  console.log('Session stored in CRM system_config (key: mojo_session_id)')
   await clearMojoSessionIssue('mojo-extract-session')
 }
 

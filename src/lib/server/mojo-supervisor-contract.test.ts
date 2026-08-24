@@ -1,0 +1,68 @@
+import fs from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+const runner = fs.readFileSync('scripts/mojo-supervised-runner.mjs', 'utf8')
+const installer = fs.readFileSync('scripts/install-mojo-supervisor.sh', 'utf8')
+const plist = fs.readFileSync('ops/launchd/com.savingkc.mojo-supervised-sync.plist', 'utf8')
+const reconcile = fs.readFileSync('scripts/mojo-reconcile-backfill.mts', 'utf8')
+const reconciliation = fs.readFileSync('src/lib/server/mojo-reconciliation.ts', 'utf8')
+const applyReviewed = fs.readFileSync('scripts/mojo-apply-reviewed-backfill.mts', 'utf8')
+const legacyBackfill = fs.readFileSync('scripts/mojo-backfill.mjs', 'utf8')
+const legacyPropertyBackfill = fs.readFileSync('scripts/backfill-mojo-leads.mjs', 'utf8')
+const sessionHealth = fs.readFileSync('scripts/mojo-session-health.mjs', 'utf8')
+const sync = fs.readFileSync('scripts/mojo-sync.mjs', 'utf8')
+const mojoHealth = fs.readFileSync('src/lib/marketing/mojo-health.ts', 'utf8')
+
+describe('Mojo supervised recovery contract', () => {
+  it('runs one overlap-locked business-hours sync and persists freshness', () => {
+    expect(runner).toContain("fs.openSync(lockFile, 'wx'")
+    expect(runner).toContain("['Sat', 'Sun']")
+    expect(runner).toContain("['scripts/mojo-cron-runner.mjs', 'sync']")
+    expect(runner).toContain('/api/admin/mojo-health')
+    expect(runner).toContain('mojo-supervised-sync-heartbeat.json')
+    expect(plist).toContain('<integer>900</integer>')
+    expect(sessionHealth).toContain('export async function clearMojoSyncIssue')
+    expect(sync).toContain("await clearMojoSyncIssue('mojo-sync')")
+    expect(mojoHealth).toContain("configValue('mojo_sync_last_ok_at')")
+  })
+
+  it('removes only tagged legacy Mojo schedules and keeps a recoverable backup', () => {
+    expect(installer).toContain('crontab-before-mojo-supervisor-')
+    expect(installer).toContain('/# mojo-crm-sync$/')
+    expect(installer).toContain('/# mojo-eod-sweep$/')
+    expect(installer).toContain('/# mojo-session-refresh$/')
+    expect(installer).toContain('launchctl bootstrap')
+  })
+
+  it('keeps the June 10 reconciliation unable to write production data', () => {
+    expect(reconcile).toContain("const DEFAULT_START = '2026-06-10'")
+    expect(reconcile).toContain("if (process.argv.includes('--apply'))")
+    expect(reconcile).not.toMatch(/\.from\([^)]*\)[\s\S]{0,120}\.(?:insert|update|upsert)\(/)
+    expect(reconcile).not.toContain('.rpc(')
+    expect(reconcile).toContain('datasetDigest')
+    expect(reconciliation).toContain('protectedWrites: 0')
+    expect(reconciliation).toContain('governedCommandCandidates')
+    expect(reconciliation).toContain('eligibleOutcomeCounts')
+  })
+
+  it('requires the exact fresh report, dataset digest, and deployed ownership marker before apply', () => {
+    expect(applyReviewed).toContain("process.argv.includes('--apply-reviewed')")
+    expect(applyReviewed).toContain('age > 24 * 60 * 60 * 1000')
+    expect(applyReviewed).toContain('mojo_field_ownership_version')
+    expect(applyReviewed).toContain('mojoDatasetDigest(calls) !== report.datasetDigest')
+    expect(applyReviewed).toContain('report.summary.protectedWrites !== 0')
+    expect(applyReviewed).toContain('report.summary.ambiguous !== 0')
+    expect(applyReviewed).toContain("mode: 'evidence_only'")
+    expect(applyReviewed).toContain("db.rpc('ingest_crm_mojo_call_v1'")
+    expect(applyReviewed).toContain('governedCommandsSuppressed')
+    expect(applyReviewed).not.toContain('/api/mojo/sync')
+    expect(applyReviewed).not.toContain('/api/cron/process-mojo-queue')
+  })
+
+  it('retires the two legacy backfills that bypassed the ownership review', () => {
+    expect(legacyBackfill).toContain('Legacy Mojo backfill is retired')
+    expect(legacyBackfill).not.toContain('/api/mojo/sync')
+    expect(legacyPropertyBackfill).toContain('Direct Mojo property backfill is retired')
+    expect(legacyPropertyBackfill).not.toContain(".from('leads')")
+  })
+})

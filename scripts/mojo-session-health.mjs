@@ -180,7 +180,7 @@ function writeAlertState(reason) {
   fs.writeFileSync(filePath, JSON.stringify({ lastSentAt: new Date().toISOString(), reason }, null, 2))
 }
 
-export async function sendMojoSessionSmsAlert(reason) {
+async function sendMojoSmsAlert({ reason, message }) {
   const auth = twilioAuth()
   const to = cleanEnv('MOJO_SESSION_ALERT_TO') || cleanEnv('ERNEST_PHONE')
   const from = cleanEnv('TWILIO_PHONE_NUMBER')
@@ -196,12 +196,7 @@ export async function sendMojoSessionSmsAlert(reason) {
     return false
   }
 
-  const body = [
-    'Mojo session expired - manual refresh required.',
-    'Casey Mojo calls are not syncing to the CRM until refreshed.',
-    `Reason: ${reason}.`,
-    'Run: cd "/Users/ernestdodson/Documents/New project/savingkc-crm-fix" && npm run mojo:session:manual',
-  ].join(' ')
+  const body = `${message} Reason: ${reason}. Open CRM System Health, then run npm run mojo:session:manual from the active CRM checkout if authentication is required.`
 
   const params = new URLSearchParams({
     To: to,
@@ -238,7 +233,18 @@ export async function sendMojoSessionSmsAlert(reason) {
   }
 }
 
-export async function insertBriefingEvent({ title, description, reason, source }) {
+export async function sendMojoSessionSmsAlert(reason) {
+  return sendMojoSmsAlert({
+    reason,
+    message: 'Mojo session expired - manual refresh required. Casey Mojo calls are not syncing to the CRM until refreshed.',
+  })
+}
+
+export async function sendMojoFreshnessSmsAlert(reason, message) {
+  return sendMojoSmsAlert({ reason, message })
+}
+
+export async function insertBriefingEvent({ title, description, reason, source, system = 'mojo_session' }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = cleanEnv('SUPABASE_SERVICE_ROLE_KEY')
   if (!supabaseUrl || !supabaseKey) {
@@ -257,7 +263,7 @@ export async function insertBriefingEvent({ title, description, reason, source }
       .from('ari_briefing_events')
       .select('id')
       .eq('event_type', 'system_failure')
-      .contains('metadata', { system: 'mojo_session' })
+      .contains('metadata', { system })
       .gte('created_at', since)
       .limit(1)
 
@@ -269,7 +275,7 @@ export async function insertBriefingEvent({ title, description, reason, source }
       title,
       description,
       metadata: {
-        system: 'mojo_session',
+        system,
         reason,
         source,
         manual_refresh_command: 'npm run mojo:session:manual',
@@ -288,6 +294,23 @@ export async function insertBriefingEvent({ title, description, reason, source }
     console.log(`[mojo-session] Briefing event insert failed: ${err instanceof Error ? err.message : String(err)}`)
     return false
   }
+}
+
+export async function recordMojoFreshnessIssue({ source, reason, message }) {
+  const now = new Date().toISOString()
+  const clearMessage = message || 'Mojo sync freshness is outside the supervised limit'
+  console.error(`[mojo-freshness] ${clearMessage}`)
+  await writeSystemConfig('mojo_sync_health', 'down')
+  await writeSystemConfig('mojo_sync_last_error', clearMessage)
+  await writeSystemConfig('mojo_sync_last_error_at', now)
+  await insertBriefingEvent({
+    title: 'System failure: Mojo sync freshness',
+    description: clearMessage,
+    reason,
+    source,
+    system: 'mojo_sync',
+  })
+  await sendMojoFreshnessSmsAlert(reason, clearMessage)
 }
 
 export async function recordMojoSessionIssue({ source, reason, message }) {
@@ -310,10 +333,10 @@ export async function recordMojoSessionIssue({ source, reason, message }) {
 }
 
 export async function clearMojoSessionIssue(source = 'mojo-session') {
+  const now = new Date().toISOString()
   await writeSystemConfig('mojo_session_status', 'healthy')
-  await writeSystemConfig('mojo_session_last_ok_at', new Date().toISOString())
+  await writeSystemConfig('mojo_session_last_ok_at', now)
   await writeSystemConfig('mojo_session_last_error', '')
-  await writeSystemConfig('mojo_sync_health', 'healthy')
   const stateFile = mojoAlertStateFile()
   if (fs.existsSync(stateFile)) {
     try {
@@ -321,6 +344,14 @@ export async function clearMojoSessionIssue(source = 'mojo-session') {
     } catch {}
   }
   console.log(`[mojo-session] Session health cleared by ${source}`)
+}
+
+export async function clearMojoSyncIssue(source = 'mojo-sync') {
+  const now = new Date().toISOString()
+  await writeSystemConfig('mojo_sync_health', 'healthy')
+  await writeSystemConfig('mojo_sync_last_ok_at', now)
+  await writeSystemConfig('mojo_sync_last_error', '')
+  console.log(`[mojo-freshness] Sync health cleared by ${source}`)
 }
 
 export function isMojoSessionError(error) {

@@ -14,11 +14,11 @@ import {
   readConversationThreads,
 } from '@/lib/server/conversation-read-model'
 
-function requestUrl(request?: Request): URL {
-  return request ? new URL(request.url) : new URL('https://crm.savingkc.com/api/conversations/hub')
+function requestUrl(request: Request): URL {
+  return new URL(request.url)
 }
 
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   const startedAt = performance.now()
   try {
     const unauthorized = await requireAuthenticatedUser()

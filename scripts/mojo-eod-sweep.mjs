@@ -20,6 +20,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   clearMojoSessionIssue,
+  clearMojoSyncIssue,
   isMojoSessionError,
   loadMojoEnv,
   markLocalSessionExpired,
@@ -123,21 +124,14 @@ function markSessionExpired() {
 // --- CRM config ---
 
 async function writeLastSyncTimestamp(timestamp) {
-  try {
-    const res = await fetch(CRM_CONFIG_URL, {
-      method: 'POST',
-      headers: adminHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) {
-      log(`Config write failed (${res.status})`)
-    } else {
-      log(`Updated last_mojo_sync_timestamp to ${timestamp}`)
-    }
-  } catch (err) {
-    logError('Failed to write last_mojo_sync_timestamp to CRM', err)
-  }
+  const res = await fetch(CRM_CONFIG_URL, {
+    method: 'POST',
+    headers: adminHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ key: 'last_mojo_sync_timestamp', value: timestamp }),
+    signal: AbortSignal.timeout(8000),
+  })
+  if (!res.ok) throw new Error(`Config write failed (${res.status})`)
+  log(`Updated last_mojo_sync_timestamp to ${timestamp}`)
 }
 
 async function processMojoQueue(reason = 'eod_sweep') {
@@ -501,7 +495,7 @@ async function eodSweep() {
       return { ok: false, error: 'no_session' }
     }
 
-    log(`Using session: ${session.sessionId.substring(0, 20)}...`)
+    log('Using validated Mojo session')
 
     // Fetch activity stream — pull up to 5 pages to ensure full day coverage
     log('Fetching activity stream (up to 5 pages)...')
@@ -544,15 +538,14 @@ async function eodSweep() {
         await writeLastSyncTimestamp(new Date().toISOString())
         await processMojoQueue('no_eod_calls')
         await clearMojoSessionIssue('mojo-eod-sweep')
+        await clearMojoSyncIssue('mojo-eod-sweep')
       } else {
         log('Skipped last_mojo_sync_timestamp update for historical/dry run sweep')
       }
       return { ok: true, processed: 0 }
     }
 
-    for (const c of calls) {
-      log(`  -> ${c.contact_name} (${c.phone_number || 'no phone'}) -- ${c.disposition}`)
-    }
+    for (const c of calls) log(`  -> ${c.record_id} -- ${c.disposition}`)
 
     if (DRY_RUN) {
       log(`Dry run complete — would post ${calls.length} calls to CRM`)
@@ -585,6 +578,7 @@ async function eodSweep() {
     }
 
     await clearMojoSessionIssue('mojo-eod-sweep')
+    if (!IS_HISTORICAL_SWEEP) await clearMojoSyncIssue('mojo-eod-sweep')
     return { ok: true, ...crmResult }
   } catch (err) {
     logError('EOD sweep failed', err)

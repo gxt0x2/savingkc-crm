@@ -1,33 +1,25 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { filterDialerQueueLeads, parseLeadIds } from './route'
+import { parseDialerQueueLeadIds } from '@/lib/server/dialer-queue-route'
 
 const routeSource = readFileSync('src/app/api/dialer/queue/route.ts', 'utf8')
 const pageSource = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
-
-function lead(id: string, phone: string | null, station = 'new', classification = 'lead') {
-  return { id, phone, station, classification }
-}
+const projectionSource = readFileSync('supabase/migrations/20260905120000_dialer_queue_read_model.sql', 'utf8')
 
 describe('dialer queue safety filtering', () => {
   it('keeps only unique UUIDs from an explicit session request', () => {
-    expect(parseLeadIds('not-an-id,00000000-0000-4000-8000-000000000001,00000000-0000-4000-8000-000000000001')).toEqual([
+    expect(parseDialerQueueLeadIds('not-an-id,00000000-0000-4000-8000-000000000001,00000000-0000-4000-8000-000000000001')).toEqual([
       '00000000-0000-4000-8000-000000000001',
     ])
-    expect(parseLeadIds('not-an-id')).toEqual([])
+    expect(parseDialerQueueLeadIds('not-an-id')).toEqual([])
   })
 
-  it('removes dead, closed-lost, classification-dead, invalid, and globally suppressed records', () => {
-    const result = filterDialerQueueLeads([
-      lead('safe', '(913) 555-0123'),
-      lead('dead-station', '+19135550124', 'dead'),
-      lead('closed-lost', '+19135550125', 'closed_lost'),
-      lead('dead-classification', '+19135550126', 'new', 'dead'),
-      lead('suppressed-format', '913.555.0127'),
-      lead('invalid', '123'),
-    ], new Set(['+19135550127']))
-
-    expect(result.map((row) => row.id)).toEqual(['safe'])
+  it('enforces terminal, invalid-phone, and global suppression rules in the queue projection', () => {
+    expect(projectionSource).toContain("NOT IN ('dead', 'closed_lost')")
+    expect(projectionSource).toContain("<> 'dead'")
+    expect(projectionSource).toContain('normalize_conversation_phone(lead.phone) IS NOT NULL')
+    expect(projectionSource).toContain('FROM public.sms_opt_outs AS opt_out')
+    expect(projectionSource).toContain('opt_out.is_opted_out = TRUE')
   })
 
   it('uses the bounded projection and returns a compact queue contract', () => {

@@ -1,3 +1,5 @@
+import type { supabaseAdmin } from '@/lib/supabase/admin'
+
 export type MojoHealthStatus = 'clean' | 'watch' | 'attention'
 
 export type MojoHealth = {
@@ -36,9 +38,7 @@ export type MojoHealth = {
   }
 }
 
-type SupabaseLike = {
-  from: (table: string) => any
-}
+type SupabaseLike = Pick<ReturnType<typeof supabaseAdmin>, 'from'>
 
 type SystemConfigRow = {
   key: string
@@ -65,6 +65,9 @@ const SYSTEM_CONFIG_KEYS = [
   'mojo_session_last_error_at',
   'mojo_session_last_ok_at',
   'mojo_session_status',
+  'mojo_sync_last_error',
+  'mojo_sync_last_error_at',
+  'mojo_sync_last_ok_at',
   'mojo_sync_health',
 ]
 
@@ -226,10 +229,21 @@ export async function getMojoHealth(
 
     const sessionStatus = configValue('mojo_session_status') || 'unknown'
     const syncHealth = configValue('mojo_sync_health') || 'unknown'
-    const lastSyncAt = isoOrNull(configValue('last_mojo_sync_timestamp')) || configUpdatedAt('last_mojo_sync_timestamp')
+    const lastSyncAt = isoOrNull(configValue('mojo_sync_last_ok_at'))
+      || configUpdatedAt('mojo_sync_last_ok_at')
+      || isoOrNull(configValue('last_mojo_sync_timestamp'))
+      || configUpdatedAt('last_mojo_sync_timestamp')
     const lastSessionOkAt = isoOrNull(configValue('mojo_session_last_ok_at')) || configUpdatedAt('mojo_session_last_ok_at')
-    const lastError = configValue('mojo_session_last_error') || null
-    const lastErrorAt = isoOrNull(configValue('mojo_session_last_error_at')) || configUpdatedAt('mojo_session_last_error_at')
+    const sessionError = configValue('mojo_session_last_error') || null
+    const sessionErrorAt = isoOrNull(configValue('mojo_session_last_error_at')) || configUpdatedAt('mojo_session_last_error_at')
+    const syncError = configValue('mojo_sync_last_error') || null
+    const syncErrorAt = isoOrNull(configValue('mojo_sync_last_error_at')) || configUpdatedAt('mojo_sync_last_error_at')
+    const lastError = sessionStatus.toLowerCase() === 'expired'
+      ? sessionError
+      : syncHealth.toLowerCase() === 'down' ? syncError : sessionError || syncError
+    const lastErrorAt = sessionStatus.toLowerCase() === 'expired'
+      ? sessionErrorAt
+      : syncHealth.toLowerCase() === 'down' ? syncErrorAt : sessionErrorAt || syncErrorAt
 
     const queue = (queueRows ?? []) as MojoQueueRow[]
     const leads = (periodLeadRows ?? []) as MojoLeadRow[]
@@ -259,9 +273,12 @@ export async function getMojoHealth(
 
     let status: MojoHealthStatus = 'clean'
     let message = 'Mojo sync is healthy'
-    if (sessionStatus.toLowerCase() === 'expired' || syncHealth.toLowerCase() === 'down') {
+    if (sessionStatus.toLowerCase() === 'expired') {
       status = 'attention'
       message = lastError || 'Mojo session expired - manual refresh required'
+    } else if (syncHealth.toLowerCase() === 'down') {
+      status = 'attention'
+      message = lastError || 'Mojo sync freshness is outside the supervised limit'
     } else if (deadLetterRows.length > 0 || failed24hRows.length > 0) {
       status = 'attention'
       message = `Mojo queue has ${deadLetterRows.length + failed24hRows.length} failed item${deadLetterRows.length + failed24hRows.length === 1 ? '' : 's'}`
