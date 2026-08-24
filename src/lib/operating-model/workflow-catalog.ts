@@ -368,8 +368,8 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     category: 'data_sync', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
     trigger: { type: 'scheduled', schedule: 'Every 15 minutes' },
     actions: [{ type: 'execute', label: 'Claim queued Mojo records' }, { type: 'normalize_identity' }, { type: 'execute', label: 'Persist call outcome and lead state' }],
-    implementation: implementation(['/api/cron/process-mojo-queue', '/api/mojo/sync', 'src/lib/lead-pipeline.ts'], { execution: 'worker', schedule: '*/15 * * * *' }),
-    version: 1, lastRunAt: null,
+    implementation: implementation(['/api/cron/process-mojo-queue', '/api/mojo/sync', 'src/lib/server/mojo-call-import.ts'], { execution: 'worker', schedule: '*/15 * * * *' }),
+    version: 2, lastRunAt: null,
   },
   {
     id: 'gmail-communication-sync',
