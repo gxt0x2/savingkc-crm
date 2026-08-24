@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
-import { onCommunicationEvent } from '@/lib/manifest-sync'
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabase } from '@/lib/supabase-lazy'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
@@ -132,7 +131,6 @@ export async function POST(req: Request) {
 
       if (leadId) {
         checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
-        onCommunicationEvent(leadId, { type: 'email', content: body.trim() }).catch(err => console.error('[MANIFEST-SYNC] Failed:', err))
       }
 
       if (activityPersistenceError) {

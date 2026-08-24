@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
-import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { formatPhone } from '@/lib/format'
@@ -118,10 +117,6 @@ export async function POST(req: Request) {
         action_url: `/leads/${leadId}`
       })
 
-      // Sync to manifest (stale briefing + motivation signal)
-      const eventType: 'missed_call' | 'inbound_call' =
-        (callStatus === 'no-answer' || callStatus === 'busy') ? 'missed_call' : 'inbound_call'
-      onCommunicationEvent(leadId, { type: eventType }).catch(err => console.error('[MANIFEST] Failed:', err))
     }
 
     // Missed call specific handling (no-answer or busy)
@@ -239,10 +234,6 @@ export async function POST(req: Request) {
             .eq('metadata->>callSid', callSid)
             .is('lead_id', null)
 
-          // Auto-create manifest + sync missed call signal
-          ensureManifestExists(newLeadId).then(() => {
-            onCommunicationEvent(newLeadId, { type: 'missed_call' }).catch(err => console.error('[MANIFEST] Failed:', err))
-          }).catch(err => console.error('[MANIFEST] Failed:', err))
         }
 
         // Get intelligent auto-text for unknown caller

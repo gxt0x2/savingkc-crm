@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   resendSend: vi.fn(),
   checkAutoAdvance: vi.fn(),
-  onCommunicationEvent: vi.fn(),
   getClaims: vi.fn(),
   profileMaybeSingle: vi.fn(),
 }))
@@ -30,10 +29,6 @@ vi.mock('@/lib/supabase-lazy', () => ({
 
 vi.mock('@/lib/pipeline-auto-advance', () => ({
   checkAutoAdvance: mocks.checkAutoAdvance,
-}))
-
-vi.mock('@/lib/manifest-sync', () => ({
-  onCommunicationEvent: mocks.onCommunicationEvent,
 }))
 
 vi.mock('resend', () => ({
@@ -73,7 +68,6 @@ describe('conversation sends', () => {
     })
     mocks.insert.mockResolvedValue({ error: null })
     mocks.checkAutoAdvance.mockResolvedValue(undefined)
-    mocks.onCommunicationEvent.mockResolvedValue(undefined)
     mocks.sendLeadSms.mockResolvedValue({
       status: 'sent',
       sid: 'SM123',

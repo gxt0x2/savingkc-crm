@@ -10,7 +10,6 @@ import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
-import { ensureManifestExists, onCommunicationEvent } from '@/lib/manifest-sync'
 import {
   buildDirectInboundLeadSeed,
 } from '@/lib/operating-model/direct-inbound-intake'
@@ -154,10 +153,6 @@ async function ensureUnknownDirectInboundContact(input: {
   }
 
   if (!leadId) return { id: null, name: leadName }
-
-  await ensureManifestExists(leadId).catch((error) => {
-    console.error('[DIAL-RESULT] Direct caller manifest creation failed:', error)
-  })
 
   await supabase.from('ari_briefing_events').insert({
     event_type: 'inbound_call',
@@ -379,9 +374,6 @@ export async function POST(req: Request) {
 
       // Preserve legacy pending callback history without creating new provider-derived tasks.
       if (resolvedLeadId) {
-        onCommunicationEvent(resolvedLeadId, { type: 'inbound_call' }).catch((error) => {
-          console.error('[DIAL-RESULT] Manifest communication update failed:', error)
-        })
         const { data: pendingTasks } = await supabase
           .from('lead_activities')
           .select('id, metadata')

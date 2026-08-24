@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp } from '@/middleware/rate-limit'
-import { onCommunicationEvent, ensureManifestExists } from '@/lib/manifest-sync'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { sendPushToAgents } from '@/lib/push-notifications'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
@@ -153,11 +152,6 @@ export async function POST(req: Request) {
       },
     })
 
-    // Sync to manifest (fire-and-forget)
-    if (leadId) {
-      onCommunicationEvent(leadId, { type: 'inbound_sms', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
-    }
-
     if (isHardBlockedReason(suppressionReason)) {
       return emptyTwimlResponse()
     }
@@ -218,7 +212,6 @@ export async function POST(req: Request) {
           .eq('metadata->>message_sid', messageSid)
           .is('lead_id', null)
 
-        onCommunicationEvent(googleAdsLeadId, { type: 'inbound_sms', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
       }
 
       await notifyGoogleAdsTeam(
@@ -287,17 +280,10 @@ export async function POST(req: Request) {
           yesLeadId = newLead?.id
         }
       } else {
-        // Bump existing lead to hot — manifest is source of truth, cascade handles leads
-        const { updateManifestAndCascade } = await import('@/lib/manifest-sync')
-        const cascaded = await updateManifestAndCascade(yesLeadId, (m) => {
-          m.priority = 'hot'
-        }, 'system:sms_yes_reply')
-        if (!cascaded) {
-          // No manifest yet — fall back to direct update
-          await supabase.from('leads')
-            .update({ priority: 'hot' })
-            .eq('id', yesLeadId)
-        }
+        const { error: priorityError } = await supabase.from('leads')
+          .update({ priority: 'hot' })
+          .eq('id', yesLeadId)
+        if (priorityError) throw priorityError
       }
 
       // Alert BOTH agents — primary based on office hours
@@ -341,9 +327,6 @@ export async function POST(req: Request) {
           lead_id: yesLeadId,
           action_url: `/leads/${yesLeadId}`,
         })
-
-        // Sync YES reply to manifest (high-intent signal)
-        onCommunicationEvent(yesLeadId, { type: 'yes_reply', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
 
         // Eager briefing regen — YES reply is the highest-value signal
         regenerateBriefing(yesLeadId, 'yes_reply').catch(() => {})
@@ -443,11 +426,6 @@ export async function POST(req: Request) {
         }).select('id').single()
         newLeadId = newLead?.id || null
 
-        if (newLeadId) {
-          ensureManifestExists(newLeadId).then(() => {
-            onCommunicationEvent(newLeadId!, { type: 'inbound_sms', content: messageBody }).catch(err => console.error('[MANIFEST] Failed:', err))
-          }).catch(err => console.error('[MANIFEST] Failed:', err))
-        }
       }
 
       if (newLeadId) {

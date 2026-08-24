@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
-import { ensureManifestExists, onCommunicationEvent } from '@/lib/manifest-sync'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { processInboundSmsConsent } from '@/lib/sms-consent-audit'
@@ -88,11 +87,6 @@ export async function POST(request: Request) {
         assigned_to: routing.primary.name,
       },
     })
-
-    if (leadId) {
-      ensureManifestExists(leadId).catch((error) => console.error('[carrier-sms-fallback] manifest create failed', error))
-      onCommunicationEvent(leadId, { type: 'inbound_sms', content: message }).catch((error) => console.error('[carrier-sms-fallback] manifest update failed', error))
-    }
 
     await sendTeamLeadAlert({
       leadId,
