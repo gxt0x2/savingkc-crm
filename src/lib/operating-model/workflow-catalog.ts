@@ -332,6 +332,16 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     version: 1, lastRunAt: null,
   },
   {
+    id: 'canonical-property-enrichment',
+    name: 'Canonical Property Enrichment',
+    description: 'Claims durable lead-intake jobs and records county and prospect evidence on the canonical property without blocking intake.',
+    category: 'data_sync', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
+    trigger: { type: 'scheduled', schedule: 'Every 5 minutes' },
+    actions: [{ type: 'execute', label: 'Claim eligible lead changes' }, { type: 'execute', label: 'Fetch bounded provider evidence' }, { type: 'execute', label: 'Persist typed canonical property facts' }],
+    implementation: implementation(['/api/workers/property-enrichment', 'src/lib/server/crm-property-enrichment-jobs.ts', 'src/lib/auto-enrich.ts'], { execution: 'worker', schedule: '*/5 * * * *', approvalPolicy: 'admin_only' }),
+    version: 1, lastRunAt: null,
+  },
+  {
     id: 'google-ads-reporting-sync',
     name: 'Google Ads Reporting Sync',
     description: 'Refreshes campaign reporting data used by Marketing and CEO dashboards.',

@@ -16,7 +16,6 @@ import { createClient } from '@supabase/supabase-js'
 import type { ManifestV2 } from './manifest-builder'
 import { buildManifest } from './manifest-builder'
 import { classifyManifestChange, processHotEngineEvent } from './hot-engine/event-bus'
-import { autoEnrichLead } from './auto-enrich'
 import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
 import { normalizeDealStage } from '../types/pipeline'
 
@@ -29,7 +28,7 @@ function getSupabase() {
 }
 
 /** Deep merge that preserves sibling keys in nested objects */
-export function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+export function deepMerge<T extends object>(target: T, source: Partial<T>): T {
   const result = { ...target }
   for (const key of Object.keys(source) as (keyof T)[]) {
     const sourceVal = source[key]
@@ -44,9 +43,9 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: Part
       typeof targetVal === 'object' &&
       !Array.isArray(targetVal)
     ) {
-      result[key] = deepMerge(targetVal, sourceVal as any)
+      result[key] = deepMerge(targetVal, sourceVal) as T[keyof T]
     } else if (sourceVal !== undefined) {
-      result[key] = sourceVal as any
+      result[key] = sourceVal as T[keyof T]
     }
   }
   return result
@@ -92,14 +91,17 @@ async function saveManifest(
   _leadId?: string,
   _previousManifest?: ManifestV2 | null,
 ) {
+  void _leadId
+  void _previousManifest
   const subtrees: Record<string, unknown> = {}
+  const manifestRecord = manifest as unknown as Record<string, unknown>
   for (const key of Object.keys(manifest)) {
-    subtrees[key] = (manifest as any)[key]
+    subtrees[key] = manifestRecord[key]
   }
   await updateManifestV2_1({
     manifestId: rowId,
     subtrees,
-    actor: ((manifest as any).lastUpdatedBy as ManifestActor) || 'system',
+    actor: (manifestRecord.lastUpdatedBy as ManifestActor) || 'system',
     reason: 'legacy:saveManifest',
   })
 }
@@ -352,11 +354,6 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     .limit(1)
 
   if (existing && existing.length > 0) {
-    // Manifest exists - trigger auto-enrich in case it hasn't run yet
-    console.log('[ensureManifestExists] Manifest exists, triggering autoEnrichLead for lead', leadId)
-    autoEnrichLead(leadId).catch(err =>
-      console.error('[auto-enrich] Background enrichment failed for lead', leadId, err)
-    )
     processHotEngineEvent({
       type: 'manifest_created',
       leadId,
@@ -416,11 +413,6 @@ export async function ensureManifestExists(leadId: string): Promise<string | nul
     return null
   }
 
-  // Fire-and-forget: auto-enrich from prospect lookup + county assessor
-  console.log('[ensureManifestExists] Triggering autoEnrichLead for lead', leadId)
-  autoEnrichLead(leadId).catch(err =>
-    console.error('[auto-enrich] Background enrichment failed for lead', leadId, err)
-  )
   processHotEngineEvent({
     type: 'manifest_created',
     leadId,
@@ -471,15 +463,16 @@ export async function updateManifestAndCascade(
       // reference (used for the hot-engine diff inside updateManifestV2_1).
       const clone = JSON.parse(JSON.stringify(current)) as ManifestV2
       updater(clone)
+      const cloneRecord = clone as unknown as Record<string, unknown>
       // Preserve the legacy metadata stamps so callers that assert on
       // lastUpdated / lastUpdatedBy continue to see them.
-      ;(clone as any).lastUpdated = new Date().toISOString()
-      if (source) (clone as any).lastUpdatedBy = source
+      cloneRecord.lastUpdated = new Date().toISOString()
+      if (source) cloneRecord.lastUpdatedBy = source
       // Return every top-level key as a subtree. The RPC shallow-replaces
       // each one — no self-nesting, even if the mutator did a deep merge.
       const subtrees: Record<string, unknown> = {}
       for (const key of Object.keys(clone)) {
-        subtrees[key] = (clone as any)[key]
+        subtrees[key] = cloneRecord[key]
       }
       return subtrees
     },
@@ -705,8 +698,9 @@ export async function updateManifestV2_1(
       .limit(1)
       .single()
     if (!data) return null
-    leadId = (data as any).lead_id
-    previousManifest = (data as any).manifest as ManifestV2
+    const row = data as { lead_id: string; manifest: ManifestV2 }
+    leadId = row.lead_id
+    previousManifest = row.manifest
   } else {
     const { data } = await supabase
       .from('manifests')
@@ -715,8 +709,9 @@ export async function updateManifestV2_1(
       .limit(1)
       .single()
     if (!data) return null
-    manifestId = (data as any).id
-    previousManifest = (data as any).manifest as ManifestV2
+    const row = data as { id: string; manifest: ManifestV2 }
+    manifestId = row.id
+    previousManifest = row.manifest
   }
 
   // Resolve subtrees (either static or computed from the current manifest).
