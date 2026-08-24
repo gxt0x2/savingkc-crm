@@ -83,7 +83,7 @@ export function SmsThreadPanel({
   propertyAddress,
   activities,
   defaultFromPhone,
-  agent = 'Ernest',
+  agent = 'Team',
   onRefresh,
 }: SmsThreadPanelProps) {
   const [message, setMessage] = useState('')

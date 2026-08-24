@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
       {
         source: '/dialer',
         has: [{ type: 'query', key: 'section', value: 'settings' }],
-        destination: '/dialer?section=queue',
+        destination: '/prospecting',
         permanent: false,
       },
     ];

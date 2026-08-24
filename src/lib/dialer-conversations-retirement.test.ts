@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const dialerPage = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
-const dialerSessionHistory = readFileSync('src/components/dialer/dialer-session-history.tsx', 'utf8')
+const callingFloor = readFileSync('src/components/prospecting/prospecting-calling-floor.tsx', 'utf8')
 const redirects = readFileSync('next.config.ts', 'utf8')
 const operatingReports = readFileSync('src/components/reports/operating-reports-workspace.tsx', 'utf8')
 
@@ -31,11 +31,11 @@ describe('Dialer workspace consolidation', () => {
     expect(redirects).toContain("key: 'section', value: 'analytics'")
     expect(redirects).toContain("destination: '/reports/call-sms'")
     expect(redirects).toContain("key: 'section', value: 'settings'")
-    expect(redirects).toContain("destination: '/dialer?section=queue'")
+    expect(redirects).toContain("destination: '/prospecting'")
   })
 
   it('routes call reporting directly to the canonical report', () => {
-    expect(dialerSessionHistory).toContain('href="/reports/call-sms"')
-    expect(`${dialerPage}\n${dialerSessionHistory}\n${operatingReports}`).not.toContain('/dialer?section=analytics')
+    expect(existsSync('src/components/dialer/dialer-session-history.tsx')).toBe(false)
+    expect(`${dialerPage}\n${callingFloor}\n${operatingReports}`).not.toContain('/dialer?section=analytics')
   })
 })

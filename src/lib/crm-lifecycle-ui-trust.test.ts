@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 const files = [
   'src/app/(app)/contacts/page.tsx',
   'src/app/(app)/leads/[id]/page.tsx',
-  'src/app/(app)/dialer/page.tsx',
+  'src/components/prospecting/prospecting-calling-floor.tsx',
   'src/components/leads/lead-status-control.tsx',
   'src/components/leads/stage-selector.tsx',
   'src/components/leads/contract-modal.tsx',

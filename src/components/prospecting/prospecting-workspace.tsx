@@ -269,7 +269,13 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setError(null)
     try {
       const result = await jsonRequest<{ session: { id: string } }>(`/api/prospecting/campaigns/${detail.id}/launch`, { method: 'POST' })
-      router.push(`/dialer?session_id=${result.session.id}`)
+      const query = new URLSearchParams({
+        session_id: result.session.id,
+        campaign: detail.id,
+        queue_label: detail.name,
+        return_to: `/prospecting?campaign=${encodeURIComponent(detail.id)}`,
+      })
+      router.push(`/prospecting?${query.toString()}`)
     } catch (launchError) {
       setError(launchError instanceof Error ? launchError.message : 'Dialer session could not start')
       setActionPending(false)

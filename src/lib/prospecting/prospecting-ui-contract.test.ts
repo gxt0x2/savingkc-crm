@@ -12,7 +12,8 @@ const appShell = readFileSync(join(process.cwd(), 'src/components/layout/app-she
 const workspaceNavigation = readFileSync(join(process.cwd(), 'src/components/conversations/workspace-nav.tsx'), 'utf8')
 const contextNavigation = readFileSync(join(process.cwd(), 'src/components/conversations/workspace-context-nav.tsx'), 'utf8')
 const dialerPage = readFileSync(join(process.cwd(), 'src/app/(app)/dialer/page.tsx'), 'utf8')
-const dialerRouteGate = readFileSync(join(process.cwd(), 'src/components/dialer/dialer-route-gate.tsx'), 'utf8')
+const prospectingPage = readFileSync(join(process.cwd(), 'src/app/(app)/prospecting/page.tsx'), 'utf8')
+const callingFloor = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-floor.tsx'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
@@ -66,7 +67,10 @@ describe('prospecting workspace UI contract', () => {
     expect(workspaceNavigation).not.toContain("{ label: 'Dialer', icon: 'dialpad'")
     expect(contextNavigation).not.toContain("pathPrefix: '/prospecting'")
     expect(contextNavigation).not.toContain("pathPrefix: '/dialer'")
-    expect(dialerPage).toContain('<DialerRouteGate><DialerPageInner /></DialerRouteGate>')
-    expect(dialerRouteGate).toContain("if (!hasExecutionContext) router.replace('/prospecting')")
+    expect(workspace).toContain('router.push(`/prospecting?${query.toString()}`)')
+    expect(prospectingPage).toContain('if (executionKey) return <ProspectingCallingFloor')
+    expect(dialerPage).toContain("redirect(query ? `/prospecting?${query}` : '/prospecting')")
+    expect(callingFloor).toContain('export function ProspectingCallingFloor()')
+    expect(callingFloor).not.toContain('function DialerHome')
   })
 })
