@@ -22,6 +22,19 @@ The AI-native operating system reads canonical evidence. AI does not make an old
 4. **Move AI context.** Generate cited AI briefs from canonical evidence and durable generations; keep human approval for writes and outreach. Complete for the current briefing and proposal surfaces.
 5. **Retire compatibility.** Legacy writers and runtime readers are disabled. Reconcile schema history, export and checksum historical JSON, then archive the table in a separately reviewed migration.
 
+## Archive artifact contract
+
+The physical cutover cannot run from an unverified database count or a repository-local data dump. Create the historical artifact in an existing approved encrypted location outside the Git checkout:
+
+```bash
+npm run manifest:archive:export -- --output-dir /approved/encrypted/location
+npm run manifest:archive:verify -- --archive-dir /approved/encrypted/location/savingkc-manifest-archive-<timestamp>
+```
+
+The exporter is read-only. It orders rows by primary key, serializes every row as canonical JSONL, writes files with owner-only permissions, records the exact row counts and SHA-256 checksum for both `manifests` and `manifest_history`, and deletes the partial directory if the source counts change during export. It refuses to place production data inside this repository. Verification reparses every line and recomputes the receipt before any archive migration may be approved.
+
+The separately reviewed physical migration must match the verified receipt to the current source counts, preserve retained PPC foreign keys, revoke runtime access, and rehearse rollback. A receipt never authorizes deletion.
+
 The writer shutdown preserves all 367 historical Manifest rows and 10,668 history rows observed in the production preflight. It does not delete, rewrite, or detach them from retained PPC history.
 
 ## Do not delete yet
