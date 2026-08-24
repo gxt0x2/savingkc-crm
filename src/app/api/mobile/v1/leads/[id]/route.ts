@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { operatingDepartmentForStage } from '@/lib/operating-model/department-responsibility'
+import { listWorkItems } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -26,9 +28,15 @@ const LEAD_SELECT = [
   'motivation_score',
   'seller_situation',
   'appointment_date',
+  'assigned_agent',
   'updated_at',
   'created_at',
 ].join(', ')
+
+type MobileLeadRow = Record<string, unknown> & {
+  station: string | null
+  assigned_agent: string | null
+}
 
 export async function GET(
   req: NextRequest,
@@ -42,12 +50,22 @@ export async function GET(
     }
 
     const db = supabaseAdmin()
-    const [leadRes, activityRes] = await Promise.all([
+    const [leadRes, activityRes, workItemsState, handoffsRes] = await Promise.all([
       db.from('leads').select(LEAD_SELECT).eq('id', id).maybeSingle(),
       db
         .from('lead_activities')
         .select('id, activity_type, description, agent, metadata, created_at')
         .eq('lead_id', id)
+        .order('created_at', { ascending: false })
+        .limit(10),
+      listWorkItems({ leadId: id, statuses: ['pending', 'blocked'], limit: 20 })
+        .then((data) => ({ data, error: null }))
+        .catch((error: unknown) => ({ data: [], error })),
+      db
+        .from('crm_department_handoffs')
+        .select('id,from_department,to_department,status,assigned_to,reason,evidence_type,created_at')
+        .eq('lead_id', id)
+        .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(10),
     ])
@@ -70,8 +88,26 @@ export async function GET(
       )
     }
 
+    const lead = leadRes.data as unknown as MobileLeadRow
+    if (workItemsState.error) console.error('[mobile/leads/:id] work-item read failed', workItemsState.error)
+    if (handoffsRes.error) console.error('[mobile/leads/:id] handoff read failed', handoffsRes.error.message)
+    const primaryNextAction = workItemsState.data.find((item) => item.primaryNextAction)
+      ?? workItemsState.data[0]
+      ?? null
+
     return NextResponse.json(
-      { lead: leadRes.data, activities: activityRes.data || [] },
+      {
+        lead,
+        activities: activityRes.data || [],
+        operations: {
+          department: operatingDepartmentForStage(lead.station),
+          owner: lead.assigned_agent ?? null,
+          primaryNextAction,
+          tasksAvailable: !workItemsState.error,
+          pendingHandoffs: handoffsRes.error ? [] : handoffsRes.data ?? [],
+          handoffsAvailable: !handoffsRes.error,
+        },
+      },
       { headers: mobileNoStoreHeaders() },
     )
   } catch (error) {

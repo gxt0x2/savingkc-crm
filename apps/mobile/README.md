@@ -11,6 +11,8 @@ Native mobile companion app for the SavingKC CRM.
 - Native Twilio Voice registration for inbound and outbound business calls.
 - The signed-in user's assigned SavingKC caller ID is authoritative for calls and SMS.
 - Open contact detail and save call outcomes back through `/api/mobile/v1/calls/events`.
+- Review Mine or Unassigned event-backed work by department, complete versioned tasks, and accept explicit responsibility handoffs.
+- View and change the canonical contact owner from contact detail; mobile never writes ownership or task state directly to Supabase.
 - Queue failed call events locally and retry them from the lead list.
 
 ## Distribution
