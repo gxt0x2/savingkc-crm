@@ -121,7 +121,6 @@ export async function GET(req: NextRequest) {
 
   const [
     { data: activities, error: activityError },
-    { data: manifests, error: manifestError },
     { data: appointments, error: appointmentError },
     { data: revenue, error: revenueError },
   ] = leadIds.length > 0
@@ -133,11 +132,6 @@ export async function GET(req: NextRequest) {
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: true })
         .limit(5000),
-      db
-        .from('manifests')
-        .select('lead_id, manifest, created_at')
-        .in('lead_id', leadIds)
-        .order('created_at', { ascending: false }),
       db
         .from('appointments')
         .select('id, lead_id, scheduled_at, status, source, created_at')
@@ -155,10 +149,9 @@ export async function GET(req: NextRequest) {
       { data: [], error: null },
       { data: [], error: null },
       { data: [], error: null },
-      { data: [], error: null },
     ]
 
-  const firstError = activityError || manifestError || appointmentError || revenueError
+  const firstError = activityError || appointmentError || revenueError
   if (firstError) {
     return NextResponse.json({ error: firstError.message }, { status: 500, headers: NO_STORE_HEADERS })
   }
@@ -173,7 +166,6 @@ export async function GET(req: NextRequest) {
     trackingEvents: trackingRows,
     appointments: appointments ?? [],
     revenue: revenue ?? [],
-    manifests: manifests ?? [],
     missedCallTasks: missedCallTaskRows,
     exportConfig: getPpcConversionExportConfigHealth(process.env),
   })
