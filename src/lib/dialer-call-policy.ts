@@ -46,13 +46,6 @@ export interface DialerActivityPolicyFact {
   phone_status?: string | null
 }
 
-export interface DialerManifestPolicyFact {
-  classification?: string | null
-  currentStation?: string | null
-  lastDisposition?: string | null
-  redFlags?: string[] | null
-}
-
 export interface DialerCallPolicyInput {
   phone: string | number | null | undefined
   now?: Date
@@ -60,7 +53,6 @@ export interface DialerCallPolicyInput {
   suppressionReasons: readonly (string | null | undefined)[]
   prospectPhones: readonly DialerProspectPhonePolicyFact[]
   activities: readonly DialerActivityPolicyFact[]
-  manifests: readonly DialerManifestPolicyFact[]
   internalNumbers: readonly string[]
   callingHoursExempt?: boolean
 }
@@ -182,17 +174,6 @@ export function evaluateDialerCallPolicy(input: DialerCallPolicyInput): DialerCa
       ?? stopReason(activity.outcome)
       ?? (activity.outcome === 'bad_number' ? 'disconnected' : null)
       ?? suppressionReasonFromStatus(activity.phone_status)
-    if (blocked) return dialerCallBlock(blocked, normalizedPhone)
-  }
-
-  for (const manifest of input.manifests) {
-    if (manifest.classification?.toLowerCase() === 'dead' || ['dead', 'closed_lost'].includes(manifest.currentStation?.toLowerCase() ?? '')) {
-      return dialerCallBlock('dead_lead', normalizedPhone)
-    }
-    const flags = new Set((manifest.redFlags ?? []).map((flag) => flag.toLowerCase()))
-    if (flags.has('do_not_contact') || flags.has('dnc')) return dialerCallBlock('do_not_call', normalizedPhone)
-    if (flags.has('bad_phone') || flags.has('wrong_number')) return dialerCallBlock('wrong_number', normalizedPhone)
-    const blocked = stopReason(manifest.lastDisposition)
     if (blocked) return dialerCallBlock(blocked, normalizedPhone)
   }
 

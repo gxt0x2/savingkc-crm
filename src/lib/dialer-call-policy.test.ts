@@ -15,7 +15,6 @@ function policyInput(overrides: Partial<Parameters<typeof evaluateDialerCallPoli
     suppressionReasons: [],
     prospectPhones: [],
     activities: [],
-    manifests: [],
     internalNumbers: [],
     ...overrides,
   }

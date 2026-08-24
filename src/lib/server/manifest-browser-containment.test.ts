@@ -38,4 +38,18 @@ describe('Manifest browser containment', () => {
     expect(dialer).not.toContain("@/lib/supabase/client")
     expect(dialer).not.toContain("from('manifests')")
   })
+
+  it('keeps mobile Conversations and the authoritative call gate on durable records', () => {
+    const mobileConversations = readFileSync(resolve(root, 'src/app/api/mobile/v1/conversations/route.ts'), 'utf8')
+    const callEligibility = readFileSync(resolve(root, 'src/lib/server/dialer-call-eligibility.ts'), 'utf8')
+    const callPolicy = readFileSync(resolve(root, 'src/lib/dialer-call-policy.ts'), 'utf8')
+
+    expect(mobileConversations).not.toContain("from('manifests')")
+    expect(mobileConversations).not.toContain('buildConversationDecisionTags')
+    expect(callEligibility).toContain("from('sms_opt_outs')")
+    expect(callEligibility).toContain("from('prospect_phones')")
+    expect(callEligibility).toContain("from('lead_activities')")
+    expect(callEligibility).not.toContain("from('manifests')")
+    expect(callPolicy).not.toContain('DialerManifestPolicyFact')
+  })
 })

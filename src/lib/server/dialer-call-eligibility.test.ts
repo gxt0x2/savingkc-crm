@@ -100,6 +100,7 @@ describe('server dialer call eligibility', () => {
     const result = await evaluateOutboundDialerCall(baseInput, { db: db.client })
 
     expect(result).toMatchObject({ allowed: true, normalizedPhone: '+19135550123', leadId: 'lead-1' })
+    expect(db.client.from).not.toHaveBeenCalledWith('manifests')
   })
 
   it('fails closed when any policy query is unavailable', async () => {
@@ -183,7 +184,7 @@ describe('server dialer call eligibility', () => {
     })
   })
 
-  it('does not apply a primary-phone bad-phone flag to a clean heir, but keeps DNC lead-wide', async () => {
+  it('uses durable suppression for an heir without consulting Manifest', async () => {
     const heirInput = {
       ...baseInput,
       phone: '+19135550777',
@@ -200,20 +201,17 @@ describe('server dialer call eligibility', () => {
         last_disposition: null,
         prospects: { lead_id: 'lead-1' },
       }],
-      manifests: [{
-        lead_id: 'lead-1',
-        manifest: { flags: { redFlags: ['bad_phone'] }, communications: { lastDisposition: 'wrong_number' } },
-      }],
     })
 
     expect(await evaluateOutboundDialerCall(heirInput, { db: db.client })).toMatchObject({ allowed: true })
 
-    db.state.rows.manifests[0].manifest = { flags: { redFlags: ['do_not_contact'] } }
+    db.state.rows.sms_opt_outs = [{ phone: '+19135550777', reason: 'STOP', is_opted_out: true }]
     expect(await evaluateOutboundDialerCall(heirInput, { db: db.client })).toMatchObject({
       allowed: false,
       reason: 'do_not_call',
-      reasonSource: 'manifests.manifest.flags.redFlags',
+      reasonSource: 'sms_opt_outs.reason',
     })
+    expect(db.client.from).not.toHaveBeenCalledWith('manifests')
   })
 
   it('writes a deterministic blocked audit using the client attempt before the provider SID', async () => {
