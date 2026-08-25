@@ -388,7 +388,9 @@ export function HeirsSection({
       {!loading && totalHeirs > 0 && (
         <div className="mt-5 pt-4 border-t border-[var(--ck-border)] flex items-center justify-between">
           <p className="text-[10px] text-[var(--ck-text-dim)]">
-            {unattemptedPhones === 0
+            {readOnlyPreview
+              ? `${queuedPhones} ready number${queuedPhones === 1 ? '' : 's'} shown · no call attempt will be recorded.`
+              : unattemptedPhones === 0
               ? verifiedHeirs > 0
                 ? `${verifiedHeirs} of ${totalHeirs} heir${totalHeirs === 1 ? '' : 's'} verified. Re-sync if new data is expected.`
                 : 'All heir phones attempted. Re-sync if new data is expected.'

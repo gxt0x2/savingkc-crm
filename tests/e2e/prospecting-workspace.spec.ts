@@ -132,6 +132,7 @@ test('a read-only deployment opens the real calling workflow without exposing mu
   await expect(page.getByRole('heading', { name: /Callable people/ })).toBeVisible()
   await expect(page.getByText('(816) 555-0123', { exact: true })).toBeVisible()
   await expect(page.getByText('(816) 555-0124', { exact: true })).toBeVisible()
+  await expect(page.getByText(/2 ready numbers shown · no call attempt will be recorded/i)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Calling unavailable in read-only preview' })).toHaveCount(2)
   await expect(page.getByRole('button', { name: 'Call controls' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Dead' })).toHaveCount(0)
