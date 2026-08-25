@@ -43,6 +43,7 @@ export interface DurableDialerAttempt {
   campaign_member_id: string | null
   lead_id: string | null
   prospect_id: string | null
+  prospect_phone_id: string | null
   phone: string
   caller_id: string
   status: 'authorized' | 'dialing' | 'connected' | 'awaiting_disposition' | 'dispositioned' | 'failed' | 'cancelled'
