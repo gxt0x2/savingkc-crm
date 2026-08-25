@@ -108,6 +108,27 @@ describe('call log trust boundary', () => {
     }))
   })
 
+  it('stores manual wrap-up as a final disposition event instead of deduping it against call end', async () => {
+    mocks.context.mockResolvedValue({ leadId: null, leadName: '+18165550100', heir: null })
+    const response = await POST(request({
+      to_number: '8165550100',
+      event: 'dispositioned',
+      status: 'completed',
+      disposition: 'no_answer',
+      clientAttemptId: 'attempt-manual-final',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.evidence).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: null,
+      event: 'call_disposition',
+      clientAttemptId: 'attempt-manual-final',
+      payload: expect.objectContaining({
+        metadata: expect.objectContaining({ action: 'call_disposition', disposition: 'no_answer' }),
+      }),
+    }))
+  })
+
   it('returns a context conflict without writing evidence', async () => {
     mocks.context.mockRejectedValue(new mocks.CallLogContextError('Call context mismatch'))
 

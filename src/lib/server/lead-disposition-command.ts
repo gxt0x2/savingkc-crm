@@ -74,6 +74,7 @@ async function findAttemptActivity(
   activityType: 'appointment' | 'call',
   source: 'call_disposition' | 'telephony_bar',
   clientAttemptId: string | null,
+  action?: 'call_disposition',
 ): Promise<DispositionActivityRow | null> {
   if (!clientAttemptId) return null
   const { data, error } = await supabase
@@ -81,7 +82,11 @@ async function findAttemptActivity(
     .select('id,metadata')
     .eq('lead_id', leadId)
     .eq('activity_type', activityType)
-    .contains('metadata', { source, client_attempt_id: clientAttemptId })
+    .contains('metadata', {
+      source,
+      client_attempt_id: clientAttemptId,
+      ...(action ? { action } : {}),
+    })
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -97,7 +102,16 @@ export async function recordLeadDisposition(
   const { disposition, notes, phone, appointmentAt, clientAttemptId } = command
   let appointmentId: string | null = null
   let appointmentActivityId: string | null = null
-  let activity = await findAttemptActivity(leadId, 'call', 'telephony_bar', clientAttemptId)
+  // Call-end telemetry is provisional (`needs_disposition`, missed, etc.). A
+  // human wrap-up is a separate final event. Only a prior call_disposition row
+  // is idempotent evidence for this mutation.
+  let activity = await findAttemptActivity(
+    leadId,
+    'call',
+    'telephony_bar',
+    clientAttemptId,
+    'call_disposition',
+  )
   if (activity && (
     activity.metadata?.disposition !== disposition
     || (activity.metadata?.scheduled_at ?? null) !== appointmentAt
@@ -170,6 +184,7 @@ export async function recordLeadDisposition(
         phone,
         notes,
         source: 'telephony_bar',
+        action: 'call_disposition',
         appointment_id: appointmentId,
         scheduled_at: appointmentAt,
         client_attempt_id: clientAttemptId,

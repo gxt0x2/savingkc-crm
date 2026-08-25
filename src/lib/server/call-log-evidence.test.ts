@@ -66,11 +66,21 @@ describe('call log evidence idempotency', () => {
         metadata: { source: 'telephony_bar', action: 'call_ended', client_attempt_id: 'attempt-1' },
       },
     }
+    const dispositioned = {
+      ...base,
+      event: 'call_disposition' as const,
+      payload: {
+        lead_id: 'lead-1', activity_type: 'call',
+        metadata: { source: 'telephony_bar', action: 'call_disposition', client_attempt_id: 'attempt-1' },
+      },
+    }
 
     expect(await insertCallLogEvidenceOnce(started)).toEqual({ id: 'activity-1', created: true })
     expect(await insertCallLogEvidenceOnce(started)).toEqual({ id: 'activity-1', created: false })
     expect(await insertCallLogEvidenceOnce(ended)).toEqual({ id: 'activity-2', created: true })
     expect(await insertCallLogEvidenceOnce(ended)).toEqual({ id: 'activity-2', created: false })
-    expect(mocks.rows).toHaveLength(2)
+    expect(await insertCallLogEvidenceOnce(dispositioned)).toEqual({ id: 'activity-3', created: true })
+    expect(await insertCallLogEvidenceOnce(dispositioned)).toEqual({ id: 'activity-3', created: false })
+    expect(mocks.rows).toHaveLength(3)
   })
 })

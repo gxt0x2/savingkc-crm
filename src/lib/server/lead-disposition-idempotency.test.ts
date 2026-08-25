@@ -132,4 +132,34 @@ describe('lead disposition evidence idempotency', () => {
     })).rejects.toThrow('already saved with a different outcome')
     expect(mocks.activities).toHaveLength(1)
   })
+
+  it('finalizes an attempt even when provisional call-ended telemetry already exists', async () => {
+    mocks.activities.push({
+      id: 'activity-ended',
+      lead_id: 'lead-1',
+      activity_type: 'call',
+      metadata: {
+        source: 'telephony_bar',
+        action: 'call_ended',
+        client_attempt_id: 'attempt-provisional',
+        disposition: 'needs_disposition',
+      },
+    })
+
+    const result = await recordLeadDisposition('lead-1', 'Casey', {
+      disposition: 'no_answer',
+      notes: null,
+      phone: '+18165550100',
+      appointmentAt: null,
+      clientAttemptId: 'attempt-provisional',
+    })
+
+    expect(result.activityId).toBe('activity-2')
+    expect(mocks.activities).toHaveLength(2)
+    expect(mocks.activities[1].metadata).toMatchObject({
+      source: 'telephony_bar',
+      action: 'call_disposition',
+      disposition: 'no_answer',
+    })
+  })
 })

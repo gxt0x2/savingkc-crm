@@ -32,6 +32,24 @@ describe('call log commands', () => {
     })
   })
 
+  it('keeps a human disposition distinct from provisional call-ended telemetry', () => {
+    expect(buildCallLogCommand({
+      to_number: '8165550100',
+      event: 'dispositioned',
+      status: 'completed',
+      disposition: 'no_answer',
+      clientAttemptId: 'attempt-final',
+    })).toMatchObject({
+      ok: true,
+      command: {
+        event: 'dispositioned',
+        phone: '+18165550100',
+        disposition: 'no_answer',
+        clientAttemptId: 'attempt-final',
+      },
+    })
+  })
+
   it('rejects invalid phones and invented event names', () => {
     expect(buildCallLogCommand({ phone: 'not a phone', event: 'started' })).toMatchObject({ ok: false })
     expect(buildCallLogCommand({ phone: '8165550100', event: 'rewound' })).toMatchObject({ ok: false })

@@ -7,7 +7,12 @@ import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers
 import { DispositionModal, DispositionType } from './disposition-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
-import { DIALER_DISPOSITIONS, isDeadDisposition, isReachedDisposition } from '@/lib/dialer-dispositions'
+import {
+  MAIN_DIALER_DISPOSITIONS,
+  PROSPECTING_DIALER_DISPOSITIONS,
+  isDeadDisposition,
+  isReachedDisposition,
+} from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
@@ -20,6 +25,7 @@ import {
   requestDialerCallIntent,
   type DialerCallIntentKind,
 } from '@/lib/telephony/dialer-client-preflight'
+import { saveManualCallDisposition } from '@/lib/telephony/manual-call-disposition'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -899,27 +905,23 @@ export function DialerPanel({
     }
     const activeItem = activeQueueItemRef.current
     if (!selectedLead && !activeItem) {
-      // Manual dial without a lead — log to call_log so the disposition is
-      // not lost. The handler returns true so the modal closes cleanly.
-      await fetch('/api/call-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Manual calls still need durable final evidence. This is a distinct
+      // event from the provisional call-ended row, and failures keep the
+      // wrap-up open instead of pretending the outcome saved.
+      try {
+        await saveManualCallDisposition({
           phone: lastCallPhoneRef.current,
-          event: 'ended',
-          status: 'completed',
-          outcome: disposition,
           disposition,
-          to_number: lastCallPhoneRef.current,
-          from_number: activeCallerId || null,
-          agent: activeAgentName,
-          duration_seconds: lastCallDurationSecondsRef.current || null,
+          callerId: activeCallerId || null,
+          durationSeconds: lastCallDurationSecondsRef.current,
           clientAttemptId: durableAttemptId,
-          notes: notes || null,
-          dead_reason: options?.deadReason ?? null,
-        }),
-      }).catch(() => {})
-      return true
+          notes,
+        })
+        return true
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not save call outcome.')
+        return false
+      }
     }
     try {
       if (activeItem?.prospect_phone_id) {
@@ -1689,17 +1691,18 @@ export function DialerPanel({
         phoneNumber={lastCallPhoneRef.current}
         leadName={selectedLead?.full_name}
         callDuration={lastCallDuration || undefined}
-        dispositions={dispositionQueueItem && !dispositionQueueItem.leadId
-          ? DIALER_DISPOSITIONS.filter((item) => item.id !== 'appointment_set')
-          : undefined}
+        dispositions={dispositionQueueItem
+          ? PROSPECTING_DIALER_DISPOSITIONS.filter((item) => dispositionQueueItem.leadId || item.id !== 'appointment_set')
+          : MAIN_DIALER_DISPOSITIONS}
         aiSummary={postCallReview?.summary}
         aiSummaryStatus={postCallReview?.status}
         markAsLeadAvailable={Boolean(dispositionQueueItem?.leadId && dispositionQueueItem.prospect_phone_id)}
         markAsLeadLabel={dispositionQueueItem?.leadId && dispositionQueueItem.prospect_phone_id ? `Mark ${dispositionQueueItem.heirName} as lead` : undefined}
         showVerifyToggle={Boolean(dispositionQueueItem?.prospect_phone_id)}
         verifyLabel={dispositionQueueItem?.prospect_phone_id ? `Verified — this is ${dispositionQueueItem.heirName}` : undefined}
-        variant={dispositionQueueItem ? 'heirQueue' : 'standard'}
-        primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save & Next Lead'}
+        variant={dispositionQueueItem ? 'prospecting' : 'standard'}
+        primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save Call'}
+        showSecondaryAction={Boolean(dispositionQueueItem)}
         nextActions={selectedLead && (!dispositionQueueItem || dispositionQueueItem.leadId) ? [
           { id: 'set_next_activity', label: 'Set Next Activity', icon: 'event_note' },
         ] : []}
@@ -1715,6 +1718,8 @@ export function DialerPanel({
         <NewTaskModal
           leadId={showNewTaskFor.id}
           leadName={showNewTaskFor.full_name || undefined}
+          initialTitle={`Follow up with ${showNewTaskFor.full_name || 'seller'}`}
+          primaryNextAction
           onClose={() => setShowNewTaskFor(null)}
           onCreated={() => {
             setShowNewTaskFor(null)

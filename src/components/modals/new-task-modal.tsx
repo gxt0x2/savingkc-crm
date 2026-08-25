@@ -19,6 +19,9 @@ interface NewTaskModalProps {
   leadName?: string
   showLeadSelector?: boolean
   department?: AppMode
+  initialTitle?: string
+  initialTaskType?: string
+  primaryNextAction?: boolean
 }
 
 export function NewTaskModal({
@@ -28,11 +31,14 @@ export function NewTaskModal({
   leadName,
   showLeadSelector = false,
   department = 'acquisitions',
+  initialTitle = '',
+  initialTaskType = 'follow_up',
+  primaryNextAction = false,
 }: NewTaskModalProps) {
   const { user, loading: authLoading } = useAuth()
   const authenticatedActor = user ? resolveAgentTelephonyProfile(user.email).displayName : ''
-  const [title, setTitle] = useState('')
-  const [taskType, setTaskType] = useState('follow_up')
+  const [title, setTitle] = useState(initialTitle.trim())
+  const [taskType, setTaskType] = useState(initialTaskType)
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date()
     d.setHours(d.getHours() + 1, 0, 0, 0)
@@ -107,6 +113,7 @@ export function NewTaskModal({
           notes,
           leadId,
           department,
+          primaryNextAction,
         }),
       })
       const data = await res.json()
@@ -136,7 +143,7 @@ export function NewTaskModal({
       >
         <div className="flex items-start border-b border-[var(--crm-border)] px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-6">
           <div className="min-w-0 flex-1"><div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-[var(--crm-border-strong)] sm:hidden" /><p className="crm-eyebrow">Task workspace</p>
-          <h2 id={titleId} className="mt-0.5 text-xl font-black text-[var(--crm-ink)]">Add task</h2></div>
+          <h2 id={titleId} className="mt-0.5 text-xl font-black text-[var(--crm-ink)]">{primaryNextAction ? 'Set next action' : 'Add task'}</h2></div>
           <button type="button" onClick={onClose} className="crm-icon-button mt-4 grid h-11 w-11 place-items-center rounded-xl sm:mt-0" aria-label="Close task form">×</button>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
@@ -148,7 +155,7 @@ export function NewTaskModal({
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Follow up with seller, Run comps..."
+              placeholder="Describe the action"
               className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base outline-none"
             />
           </div>
@@ -272,7 +279,7 @@ export function NewTaskModal({
             disabled={saving || authLoading || !selectedAssignee || !title.trim()}
             className="crm-primary-button min-h-11 flex-[1.35] rounded-xl px-6 py-2 text-sm font-bold disabled:opacity-40 sm:flex-none"
           >
-            {saving ? 'Creating...' : 'Create Task'}
+            {saving ? 'Saving...' : primaryNextAction ? 'Save Next Action' : 'Create Task'}
           </button>
         </div>
       </form>
