@@ -8,6 +8,7 @@ import {
   DialerSessionError,
   getDialerSessionHistory,
   parseDialerSession,
+  requestPauseDialerSession,
   startDialerSession,
 } from './dialer-session-engine'
 
@@ -90,6 +91,27 @@ describe('durable dialer session engine', () => {
       queueKey: 'custom',
       callerId: '+18167277667',
     })).rejects.toMatchObject({ code: 'session_engine_unavailable', status: 503 })
+  })
+
+  it('requests a durable pause without losing an unfinished outcome', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { session: session({ status: 'paused', pausedAt: '2026-08-25T23:00:00.000Z' }), requiresDisposition: true },
+      error: null,
+    })
+
+    const result = await requestPauseDialerSession({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId,
+      reason: 'Agent paused the calling session',
+    })
+
+    expect(result.session.status).toBe('paused')
+    expect(result.requiresDisposition).toBe(true)
+    expect(mocks.rpc).toHaveBeenCalledWith('request_pause_dialer_session_v1', {
+      p_session_id: sessionId,
+      p_actor_email: 'casey@savingkc.com',
+      p_reason: 'Agent paused the calling session',
+    })
   })
 
   it('rejects malformed database payloads instead of inventing client state', () => {

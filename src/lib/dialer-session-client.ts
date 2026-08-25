@@ -36,6 +36,11 @@ export interface DurableDialerSession {
   updatedAt: string
 }
 
+export interface DialerPauseRequest {
+  session: DurableDialerSession
+  requiresDisposition: boolean
+}
+
 export interface DurableDialerAttempt {
   id: string
   client_attempt_id: string
@@ -203,6 +208,24 @@ export async function transitionDurableDialerSession(
   const body = await payload(response, 'Could not update the dialer session.')
   if (!body.session) throw new Error('Could not update the dialer session.')
   return body.session as DurableDialerSession
+}
+
+export async function requestPauseDurableDialerSession(
+  sessionId: string,
+  reason?: string,
+): Promise<DialerPauseRequest> {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'request_pause', reason }),
+  })
+  const body = await payload(response, 'Could not pause the dialer session.')
+  if (!body.session) throw new Error('Could not pause the dialer session.')
+  return {
+    session: body.session as DurableDialerSession,
+    requiresDisposition: body.requiresDisposition === true,
+  }
 }
 
 export async function transitionDurableDialerAttempt(input: {

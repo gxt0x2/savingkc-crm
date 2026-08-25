@@ -4,6 +4,7 @@ import {
   DialerSessionError,
   getDialerAttemptHistory,
   getDialerSession,
+  requestPauseDialerSession,
   transitionDialerSession,
 } from '@/lib/server/dialer-session-engine'
 
@@ -46,11 +47,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400, headers: NO_STORE })
   }
   const action = typeof body.action === 'string' ? body.action : ''
-  if (!['pause', 'resume', 'request_stop', 'stop', 'skip'].includes(action)) {
+  if (!['pause', 'request_pause', 'resume', 'request_stop', 'stop', 'skip'].includes(action)) {
     return NextResponse.json({ error: 'Invalid session action' }, { status: 400, headers: NO_STORE })
   }
   try {
     const { id } = await context.params
+    if (action === 'request_pause') {
+      return NextResponse.json(await requestPauseDialerSession({
+        actor,
+        sessionId: id,
+        reason: typeof body.reason === 'string' ? body.reason : null,
+      }), { headers: NO_STORE })
+    }
     const session = await transitionDialerSession({
       actor,
       sessionId: id,

@@ -67,5 +67,6 @@ export interface ProspectingCallingQueueState {
   queueIndex: number
   queueLength: number
   callDuration?: string | null
+  outcomeRequired?: boolean
   status: 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 }

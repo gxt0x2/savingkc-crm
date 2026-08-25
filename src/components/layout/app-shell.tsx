@@ -353,8 +353,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [effectiveWorkspaceEmail, signedInEmail, user])
 
-  const dialerPanel = dialerMounted ? <DialerPanel
-    open={showDialer}
+  const shouldRenderDialer = dialerMounted || Boolean(isProspectingCallingFloor)
+  const dialerPanel = shouldRenderDialer ? <DialerPanel
+    open={isProspectingCallingFloor ? true : showDialer}
     onClose={() => {
       if (isProspectingCallingFloor) return
       setShowDialer(false)
@@ -390,7 +391,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           canReviewCalls={canReviewCalls}
           focusedCalling={Boolean(isProspectingCallingFloor)}
           hideHeader={Boolean(isProspectingCallingFloor)}
-          rightRail={isProspectingCallingFloor && showDialer ? dialerPanel : null}
+          rightRail={isProspectingCallingFloor ? dialerPanel : null}
         >
           {shouldRedirectCaseyDashboard ? (
             <div role="status" className="grid min-h-full place-items-center text-sm font-semibold text-[var(--crm-text-muted)]">

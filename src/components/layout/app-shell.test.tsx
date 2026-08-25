@@ -70,14 +70,14 @@ describe('AppShell first-load work', () => {
     navigation.search = 'session_id=session-1'
     render(<AppShell><main>Calling floor</main></AppShell>)
 
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+
     act(() => window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: {
       queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],
       sessionId: 'session-1',
     } })))
-
-    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
-    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
-    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close phone' }))
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
