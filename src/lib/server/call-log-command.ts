@@ -1,7 +1,7 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 export interface CallLogCommand {
-  event: 'started' | 'ended'
+  event: 'started' | 'ended' | 'dispositioned'
   phone: string
   leadId: string | null
   prospectPhoneId: string | null
@@ -11,6 +11,7 @@ export interface CallLogCommand {
   outcome: string | null
   disposition: string | null
   fromNumber: string | null
+  notes: string | null
 }
 
 export type CallLogCommandResult =
@@ -33,8 +34,8 @@ export function buildCallLogCommand(input: unknown): CallLogCommandResult {
 
   const rawEvent = text(body.event)
   const hasFinalOutcome = Boolean(text(body.status) || text(body.outcome) || text(body.disposition))
-  let event: 'started' | 'ended' | null = null
-  if (rawEvent === 'started' || rawEvent === 'ended') event = rawEvent
+  let event: 'started' | 'ended' | 'dispositioned' | null = null
+  if (rawEvent === 'started' || rawEvent === 'ended' || rawEvent === 'dispositioned') event = rawEvent
   else if (rawEvent) return { ok: false, error: 'Valid call event required' }
   else if (hasFinalOutcome) event = 'ended'
   if (!event) return { ok: false, error: 'Valid call event required' }
@@ -56,6 +57,7 @@ export function buildCallLogCommand(input: unknown): CallLogCommandResult {
       outcome: text(body.outcome),
       disposition: text(body.disposition),
       fromNumber: normalizePhoneToE164(text(body.from_number) || ''),
+      notes: text(body.notes, 5_000),
     },
   }
 }

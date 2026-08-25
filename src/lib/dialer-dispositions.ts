@@ -16,8 +16,9 @@
 // !verified) greyed out forever after the first call — regardless of which
 // outcome the agent picked. The lead PATCH route (src/app/api/leads/route.ts)
 // already speaks the second vocabulary, so THAT is the canonical one. This
-// module is the single source of truth; the modal, the heir panel, and the
-// telephony bar all import from here.
+// module is the single source of truth for the stored vocabulary. The global
+// phone and Prospecting intentionally expose different views of that
+// vocabulary: a utility call must not masquerade as seller qualification.
 
 export type DispositionGroup = 'reached' | 'no_contact' | 'stop'
 
@@ -86,6 +87,52 @@ export const DIALER_DISPOSITIONS: DispositionDef[] = [
   { id: 'dnc', label: 'Do Not Call', group: 'stop', tone: 'critical', icon: 'block', reached: false, stopsNumber: true, dnc: true },
   { id: 'dead', label: 'Dead Lead', group: 'stop', tone: 'critical', icon: 'cancel', reached: false, dead: true, requiresReason: true, hint: 'Why? (required)' },
 ]
+
+function dispositionView(
+  ids: readonly DispositionId[],
+  labels: Partial<Record<DispositionId, string>> = {},
+): DispositionDef[] {
+  const allowed = new Set<DispositionId>(ids)
+  return DIALER_DISPOSITIONS
+    .filter((item) => allowed.has(item.id))
+    .map((item) => labels[item.id] ? { ...item, label: labels[item.id]! } : item)
+}
+
+/** The app-wide phone records call results, not seller lifecycle decisions. */
+export const MAIN_DIALER_DISPOSITIONS = dispositionView([
+  'spoke_with_owner',
+  'callback_requested',
+  'appointment_set',
+  'no_answer',
+  'left_voicemail',
+  'busy',
+  'wrong_number',
+  'disconnected',
+  'dnc',
+], {
+  spoke_with_owner: 'Connected',
+})
+
+/**
+ * Prospecting is the seller-qualification workflow. Offer Made is excluded:
+ * offers belong to an acquired opportunity, not a cold source-prospect call.
+ */
+export const PROSPECTING_DIALER_DISPOSITIONS = dispositionView([
+  'spoke_with_owner',
+  'callback_requested',
+  'appointment_set',
+  'deal_potential',
+  'not_interested',
+  'no_answer',
+  'left_voicemail',
+  'busy',
+  'wrong_number',
+  'disconnected',
+  'dnc',
+  'dead',
+], {
+  spoke_with_owner: 'Reached Person',
+})
 
 const BY_ID = new Map<string, DispositionDef>(DIALER_DISPOSITIONS.map((d) => [d.id, d]))
 

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase-lazy'
 export async function insertCallLogEvidenceOnce(input: {
   leadId: string | null
   source: 'heir_dialer' | 'telephony_bar'
-  event: 'call_started' | 'call_ended'
+  event: 'call_started' | 'call_ended' | 'call_disposition'
   clientAttemptId: string | null
   payload: Record<string, unknown>
 }) {

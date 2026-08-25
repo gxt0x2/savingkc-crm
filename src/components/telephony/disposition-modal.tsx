@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import {
-  DIALER_DISPOSITIONS,
+  MAIN_DIALER_DISPOSITIONS,
   DEAD_REASONS,
   dispositionRequiresReason,
   isReachedDisposition,
@@ -67,7 +67,7 @@ interface DispositionModalProps {
   onDispositionChange?: (disposition: DispositionType) => void
 
   nextActions?: NextActionOption[]
-  onNextActionPick?: (actionId: string) => void
+  onNextActionPick?: (actionId: string) => void | Promise<void>
 
   notes?: string
   onNotesChange?: (notes: string) => void
@@ -79,14 +79,15 @@ interface DispositionModalProps {
   onSaveAndNext?: () => void
   isSaving?: boolean
   contact?: ContactSummary
-  variant?: 'standard' | 'heirQueue' | 'compact'
+  variant?: 'standard' | 'prospecting' | 'compact'
   primaryActionLabel?: string
   secondaryActionLabel?: string
+  showSecondaryAction?: boolean
 }
 
 // Built from the single source of truth so the outcome grid always matches the
 // taxonomy the rest of the dialer reads.
-const DEFAULT_DISPOSITIONS: DispositionOption[] = DIALER_DISPOSITIONS.map((d) => ({
+const DEFAULT_DISPOSITIONS: DispositionOption[] = MAIN_DIALER_DISPOSITIONS.map((d) => ({
   id: d.id,
   label: d.label,
   tone: d.tone,
@@ -183,6 +184,7 @@ export function DispositionModal({
   variant = 'standard',
   primaryActionLabel = 'Save & Next Lead',
   secondaryActionLabel = 'Save & Close',
+  showSecondaryAction = true,
 }: DispositionModalProps) {
   const [internalDisposition, setInternalDisposition] = useState<DispositionType | null>(null)
   const [internalNotes, setInternalNotes] = useState('')
@@ -202,7 +204,7 @@ export function DispositionModal({
 
   const isControlledDisposition = selectedDisposition !== undefined
   const isControlledNotes = notes !== undefined
-  const autoSubmitVariant = variant === 'heirQueue'
+  const autoSubmitVariant = variant === 'prospecting'
 
   useEffect(() => {
     if (!open) return
@@ -222,9 +224,7 @@ export function DispositionModal({
   const activeDisposition = isControlledDisposition ? (selectedDisposition ?? null) : internalDisposition
   const activeNotes = isControlledNotes ? (notes ?? '') : internalNotes
   const autoSubmitOnOutcome = autoSubmitVariant && activeDisposition !== 'appointment_set'
-  const visibleDispositions = useMemo(() => dispositions.map((item) => item.id === 'spoke_with_owner'
-    ? { ...item, label: variant === 'heirQueue' ? 'Reached Heir' : 'Reached Seller' }
-    : item), [dispositions, variant])
+  const visibleDispositions = useMemo(() => dispositions, [dispositions])
   const needsReason = dispositionRequiresReason(activeDisposition)
   const reasonSatisfied = !needsReason || (
     deadReason.trim().length > 0 && (deadReason !== 'other' || activeNotes.trim().length > 0)
@@ -284,20 +284,20 @@ export function DispositionModal({
     disposition?: DispositionType | null
     deadReason?: string
   }) {
-    if (!disposition || isSaving || localSaving || savingRef.current) return
+    if (!disposition || isSaving || localSaving || savingRef.current) return false
     const dispositionNeedsReason = dispositionRequiresReason(disposition)
     const resolvedDeadReason = deadReasonOverride ?? deadReason
     if (dispositionNeedsReason && !resolvedDeadReason.trim()) {
       setSaveError('Choose a reason before marking this lead dead.')
-      return
+      return false
     }
     if (dispositionNeedsReason && resolvedDeadReason === 'other' && !activeNotes.trim()) {
       setSaveError('Add a note when Other is selected.')
-      return
+      return false
     }
     if (disposition === 'appointment_set' && !appointmentAt) {
       setSaveError('Choose the appointment date and time before saving.')
-      return
+      return false
     }
     savingRef.current = true
     setSaveError(null)
@@ -315,7 +315,7 @@ export function DispositionModal({
       })
       if (result === false) {
         setSaveError('Disposition was not saved. Try again before moving on.')
-        return
+        return false
       }
 
       if (advance) onSaveAndNext?.()
@@ -323,12 +323,25 @@ export function DispositionModal({
 
       setSaveNotice('Saved')
       if (closeAfter) onClose()
+      return true
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Disposition was not saved. Try again.')
+      return false
     } finally {
       savingRef.current = false
       setLocalSaving(false)
     }
+  }
+
+  async function pickNextAction(actionId: string) {
+    if (!activeDisposition) {
+      setSaveError('Choose and save the call outcome before setting the next action.')
+      return
+    }
+    const saved = await submit({ closeAfter: false, advance: false })
+    if (!saved) return
+    onClose()
+    await onNextActionPick?.(actionId)
   }
 
   function pickDeadReason(reasonId: string) {
@@ -547,7 +560,7 @@ export function DispositionModal({
                         key={a.id}
                         className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
                         style={{ borderBottom: isLast ? 'none' : '0.5px solid var(--skc-separator)' }}
-                        onClick={() => onNextActionPick?.(a.id)}
+                        onClick={() => { void pickNextAction(a.id) }}
                       >
                         <span className="w-[17px] h-[17px] inline-flex items-center justify-center">
                           <Icon name={a.icon} size="text-[16px]" className="text-[var(--skc-text-secondary)]" />
@@ -594,14 +607,14 @@ export function DispositionModal({
                   onClick={() => submit({ closeAfter: true, advance: true })}
                   disabled={!canSave}
                 >
-                  {isSaving || localSaving ? 'Saving...' : 'Save & Next Lead'}
+                  {isSaving || localSaving ? 'Saving...' : primaryActionLabel}
                 </button>
                 <button
                   className="w-full py-3 mt-1.5 rounded-[var(--skc-radius-card)] bg-transparent text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => submit({ closeAfter: true, advance: false })}
                   disabled={!canSave}
                 >
-                  Save & Close
+                  {secondaryActionLabel}
                 </button>
               </>
             )}
@@ -831,7 +844,7 @@ export function DispositionModal({
                           key={a.id}
                           className="w-full flex items-center gap-3 px-4 py-3 text-left"
                           style={{ borderBottom: isLast ? 'none' : '0.5px solid var(--skc-separator)' }}
-                          onClick={() => onNextActionPick?.(a.id)}
+                          onClick={() => { void pickNextAction(a.id) }}
                         >
                           <span className="w-[17px] h-[17px] inline-flex items-center justify-center">
                             <Icon name={a.icon} size="text-[16px]" className="text-[var(--skc-text-secondary)]" />
@@ -868,7 +881,7 @@ export function DispositionModal({
                   </div>
                 )}
                 {saveError && (
-                  <div className="mt-2.5 flex items-start gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#FF453A1F] border border-[#FF453A66]">
+                  <div role="alert" className="mt-2.5 flex items-start gap-2 px-3 py-2 rounded-[var(--skc-radius-control)] bg-[#FF453A1F] border border-[#FF453A66]">
                     <Icon name="error" size="text-[14px]" className="text-[#FF453A] mt-0.5" />
                     <span className="flex-1 text-[13px] tracking-[-0.01em] text-[#FFB4B4]">
                       {saveError}
@@ -880,7 +893,7 @@ export function DispositionModal({
           </div>
 
           {!autoSubmitOnOutcome && (
-            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
+            <div className={`mt-4 grid gap-2 ${showSecondaryAction ? 'sm:grid-cols-[minmax(0,1fr)_180px]' : ''}`}>
               <button
                 className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-brand)] text-white text-[16px] font-semibold tracking-[-0.01em] disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => submit({ closeAfter: true, advance: true })}
@@ -888,13 +901,15 @@ export function DispositionModal({
               >
                 {isSaving || localSaving ? 'Saving...' : primaryActionLabel}
               </button>
-              <button
-                className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-surface-2)] border border-[#2F2F38] text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={() => submit({ closeAfter: true, advance: false })}
-                disabled={!canSave}
-              >
-                {secondaryActionLabel}
-              </button>
+              {showSecondaryAction && (
+                <button
+                  className="w-full py-3.5 rounded-[var(--skc-radius-card)] bg-[var(--skc-surface-2)] border border-[#2F2F38] text-[15px] font-medium tracking-[-0.01em] text-[var(--skc-text-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => submit({ closeAfter: true, advance: false })}
+                  disabled={!canSave}
+                >
+                  {secondaryActionLabel}
+                </button>
+              )}
             </div>
           )}
         </div>

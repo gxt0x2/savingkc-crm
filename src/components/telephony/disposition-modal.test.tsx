@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { DispositionModal } from './disposition-modal'
+import { PROSPECTING_DIALER_DISPOSITIONS } from '@/lib/dialer-dispositions'
 
 function renderModal(props: Partial<React.ComponentProps<typeof DispositionModal>> = {}) {
   return renderToStaticMarkup(
@@ -20,20 +21,25 @@ function renderModal(props: Partial<React.ComponentProps<typeof DispositionModal
 }
 
 describe('DispositionModal', () => {
-  it('defaults normal dialer calls to the canonical outcome grid', () => {
+  it('keeps the main phone focused on call results rather than seller qualification', () => {
     const html = renderModal()
 
     expect(html).toContain('grid grid-cols-2 xl:grid-cols-3')
-    expect(html).toContain('Reached Seller')
+    expect(html).toContain('Connected')
+    expect(html).toContain('Callback')
+    expect(html).toContain('Appointment Set')
     expect(html).toContain('No Answer')
     expect(html).toContain('Left Voicemail')
-    expect(html).toContain('Dead Lead')
+    expect(html).not.toContain('Interested')
+    expect(html).not.toContain('Offer Made')
+    expect(html).not.toContain('Dead Lead')
     expect(html).toContain('Save &amp; Next Lead')
   })
 
-  it('keeps heir queue controls scoped to heir queue dispositions', () => {
+  it('uses the distinct seller-qualification outcomes in Prospecting', () => {
     const html = renderModal({
-      variant: 'heirQueue',
+      variant: 'prospecting',
+      dispositions: PROSPECTING_DIALER_DISPOSITIONS,
       markAsLeadAvailable: true,
       markAsLeadLabel: 'Mark Angela Taylor as lead',
       showVerifyToggle: true,
@@ -44,10 +50,44 @@ describe('DispositionModal', () => {
     expect(html).toContain('grid grid-cols-2 xl:grid-cols-3')
     expect(html).toContain('Mark Angela Taylor as lead')
     expect(html).toContain('Verified — this is Angela Taylor')
-    expect(html).toContain('Reached Heir')
-    expect(html).not.toContain('Reached Seller')
+    expect(html).toContain('Reached Person')
+    expect(html).toContain('Interested')
+    expect(html).toContain('Dead Lead')
+    expect(html).not.toContain('Offer Made')
     expect(html).not.toContain('Save &amp; Next Number')
     expect(html).not.toContain('Save &amp; Close')
+  })
+
+  it('saves the outcome before opening a next action', async () => {
+    const onDisposition = vi.fn().mockResolvedValue(true)
+    const onNextActionPick = vi.fn()
+    const onClose = vi.fn()
+
+    render(
+      <DispositionModal
+        open
+        onClose={onClose}
+        onDisposition={onDisposition}
+        leadName="Jill Woods"
+        nextActions={[{ id: 'set_next_activity', label: 'Set Next Activity', icon: 'event_note' }]}
+        onNextActionPick={onNextActionPick}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set Next Activity' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose and save the call outcome')
+    expect(onNextActionPick).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /No Answer/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Set Next Activity' }))
+
+    await waitFor(() => expect(onDisposition).toHaveBeenCalledWith(
+      'no_answer',
+      undefined,
+      expect.objectContaining({ autoDialNext: false }),
+    ))
+    await waitFor(() => expect(onNextActionPick).toHaveBeenCalledWith('set_next_activity'))
+    expect(onClose).toHaveBeenCalled()
   })
 
   it('auto-saves and advances heir queue dispositions when an outcome is picked', async () => {
@@ -61,7 +101,8 @@ describe('DispositionModal', () => {
         onDisposition={onDisposition}
         leadName="Angela Taylor"
         phoneNumber="+18169169564"
-        variant="heirQueue"
+        variant="prospecting"
+        dispositions={PROSPECTING_DIALER_DISPOSITIONS}
         showVerifyToggle
       />,
     )
@@ -85,7 +126,8 @@ describe('DispositionModal', () => {
         onClose={() => {}}
         onDisposition={() => true}
         leadName="Angela Taylor"
-        variant="heirQueue"
+        variant="prospecting"
+        dispositions={PROSPECTING_DIALER_DISPOSITIONS}
       />,
     )
 
@@ -104,7 +146,8 @@ describe('DispositionModal', () => {
         onDisposition={onDisposition}
         leadName="Angela Taylor"
         phoneNumber="+18169169564"
-        variant="heirQueue"
+        variant="prospecting"
+        dispositions={PROSPECTING_DIALER_DISPOSITIONS}
       />,
     )
 

@@ -57,7 +57,9 @@ export async function POST(req: Request) {
     const isHeirCall = Boolean(context.heir)
     const heirLabel = context.heir ? `${context.heir.name || 'heir'} (${context.heir.relationship || 'relative'})` : null
     const source = isHeirCall ? 'heir_dialer' : 'telephony_bar'
-    const action = command.event === 'started' ? 'call_started' : 'call_ended'
+    const action = command.event === 'started'
+      ? 'call_started'
+      : command.event === 'dispositioned' ? 'call_disposition' : 'call_ended'
     if (command.event === 'started') {
       await insertCallLogEvidenceOnce({
         leadId: context.leadId,
@@ -109,6 +111,7 @@ export async function POST(req: Request) {
             status: finalStatus,
             outcome: finalOutcome,
             disposition: finalDisposition,
+            notes: command.notes,
             duration: finalDuration,
             source,
             action,
