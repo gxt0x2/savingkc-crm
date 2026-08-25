@@ -1,7 +1,18 @@
 import 'server-only'
 
 import { isCurrentUserAdmin } from '@/lib/auth/admin'
-import { buildMyDay, normalizeMyDayMonth, type MyDayActivity, type MyDayAgentStat, type MyDayAppointment, type MyDayData, type MyDayGoalSet, type MyDayLead, type MyDayPerformanceRow } from '@/lib/my-day'
+import {
+  buildMyDay,
+  resolveMyDayDateRange,
+  type MyDayActivity,
+  type MyDayAgentStat,
+  type MyDayAppointment,
+  type MyDayData,
+  type MyDayGoalSet,
+  type MyDayLead,
+  type MyDayPerformanceRow,
+  type MyDayRangeRequest,
+} from '@/lib/my-day'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 
@@ -27,15 +38,23 @@ function dedupeActivities(rows: MyDayActivity[]) {
   return [...new Map(rows.map((row) => [row.id, row])).values()]
 }
 
-export async function loadCaseyMyDay(monthValue?: string | null, now = new Date()): Promise<MyDayData> {
-  const month = normalizeMyDayMonth(monthValue, now)
+function shiftDateKey(value: string, days: number): string {
+  const date = new Date(`${value}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now = new Date()): Promise<MyDayData> {
+  const range = resolveMyDayDateRange(rangeRequest, now)
+  const month = range.to.slice(0, 7)
   const db = supabaseAdmin()
-  const monthStart = `${month}-01`
-  const [year, monthNumber] = month.split('-').map(Number)
-  const monthEnd = new Date(Date.UTC(year, monthNumber, 0, 23, 59, 59, 999)).toISOString()
-  const activityStart = new Date(`${monthStart}T00:00:00Z`)
+  // Include a one-week collar so the daily workweek breakdown remains complete
+  // even when the selected range is a single day or crosses a month boundary.
+  const queryStart = shiftDateKey(range.from, -7)
+  const queryEnd = shiftDateKey(range.to, 7)
+  const activityStart = new Date(`${queryStart}T00:00:00Z`)
   activityStart.setUTCDate(activityStart.getUTCDate() - 1)
-  const activityEnd = new Date(monthEnd)
+  const activityEnd = new Date(`${queryEnd}T23:59:59.999Z`)
   activityEnd.setUTCDate(activityEnd.getUTCDate() + 1)
   const commitmentEnd = new Date(now.getTime() + 14 * 86_400_000).toISOString()
 
@@ -44,15 +63,15 @@ export async function loadCaseyMyDay(monthValue?: string | null, now = new Date(
       .from('agent_daily_stats')
       .select('date, calls_made, meaningful_conversations, followups_completed, followups_missed, metadata')
       .eq('agent_id', 'casey')
-      .gte('date', monthStart)
-      .lte('date', monthEnd.slice(0, 10))
+      .gte('date', queryStart)
+      .lte('date', queryEnd)
       .order('date', { ascending: true }),
     db
       .from('mojo_agent_daily_performance')
       .select('metric_date, dialing_seconds, in_progress_seconds, calls, contacts, leads, appointments, source_fetched_at')
       .eq('agent_key', 'casey')
-      .gte('metric_date', monthStart)
-      .lte('metric_date', monthEnd.slice(0, 10))
+      .gte('metric_date', queryStart)
+      .lte('metric_date', queryEnd)
       .order('metric_date', { ascending: true }),
     db
       .from('leads')
@@ -99,7 +118,7 @@ export async function loadCaseyMyDay(monthValue?: string | null, now = new Date(
       .from('appointments')
       .select('id, lead_id, type, status, scheduled_at, assigned_to, address, notes, created_at')
       .ilike('assigned_to', '%casey%')
-      .gte('scheduled_at', activityStart.toISOString())
+      .gte('scheduled_at', now.toISOString())
       .lte('scheduled_at', commitmentEnd)
       .order('scheduled_at', { ascending: true })
       .limit(1000),
@@ -118,6 +137,7 @@ export async function loadCaseyMyDay(monthValue?: string | null, now = new Date(
 
   return buildMyDay({
     month,
+    range,
     now,
     stats: statsResult.error ? [] : (statsResult.data ?? []) as MyDayAgentStat[],
     performance: performanceResult.error ? [] : (performanceResult.data ?? []) as MyDayPerformanceRow[],

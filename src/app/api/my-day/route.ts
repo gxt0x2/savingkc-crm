@@ -14,7 +14,13 @@ export async function GET(request: NextRequest) {
   if (!await canAccessCaseyMyDay(email)) return NextResponse.json({ error: 'Not found' }, { status: 404, headers: NO_STORE_HEADERS })
 
   try {
-    const data = await loadCaseyMyDay(request.nextUrl.searchParams.get('month'))
+    const search = request.nextUrl.searchParams
+    const data = await loadCaseyMyDay({
+      preset: search.get('range'),
+      from: search.get('from'),
+      to: search.get('to'),
+      month: search.get('month'),
+    })
     return NextResponse.json(data, { headers: NO_STORE_HEADERS })
   } catch (error) {
     console.error('[my-day] load failed:', error)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildMyDay, normalizeMyDayMonth, type BuildMyDayInput, type MyDayActivity, type MyDayLead } from './my-day'
+import { buildMyDay, normalizeMyDayMonth, resolveMyDayDateRange, type BuildMyDayInput, type MyDayActivity, type MyDayLead } from './my-day'
 
 function lead(overrides: Partial<MyDayLead> = {}): MyDayLead {
   return {
@@ -35,6 +35,7 @@ function activity(overrides: Partial<MyDayActivity> = {}): MyDayActivity {
 function input(overrides: Partial<BuildMyDayInput> = {}): BuildMyDayInput {
   return {
     month: '2026-08',
+    range: { preset: 'custom', from: '2026-08-01', to: '2026-08-05', label: 'Aug 1 – 5, 2026' },
     now: new Date('2026-08-05T18:00:00.000Z'),
     stats: [
       { date: '2026-08-03', calls_made: 10, meaningful_conversations: 4, followups_completed: 3, followups_missed: 1, metadata: { daily_habits: { reviewVision: true, objectionsHandling: 80 } } },
@@ -91,6 +92,17 @@ describe('Casey My Day model', () => {
     expect(report.habits.find((habit) => habit.key === 'vision')?.value).toBe(100)
     expect(report.habits.find((habit) => habit.key === 'objections')?.value).toBe(90)
     expect(report.habits.find((habit) => habit.key === 'followup')?.value).toBe(80)
+  })
+
+  it('defaults My Day to today while retaining the containing workweek breakdown', () => {
+    const now = new Date('2026-08-05T18:00:00.000Z')
+    const range = resolveMyDayDateRange({}, now)
+    const report = buildMyDay(input({ now, range }))
+
+    expect(range).toEqual({ preset: 'today', from: '2026-08-05', to: '2026-08-05', label: 'Today' })
+    expect(report.funnel.find((metric) => metric.key === 'calls')?.value).toBe(0)
+    expect(report.funnel.find((metric) => metric.key === 'contacts')?.value).toBe(0)
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, 0, null, null])
   })
 
   it('adds Casey native and Heir Dialer dispositions without changing Mojo aggregates', () => {
@@ -194,5 +206,16 @@ describe('Casey My Day model', () => {
   it('normalizes invalid month input to the current Central month', () => {
     expect(normalizeMyDayMonth('2026-03')).toBe('2026-03')
     expect(normalizeMyDayMonth('not-a-month', new Date('2026-08-12T18:00:00.000Z'))).toBe('2026-08')
+  })
+
+  it('resolves useful bounded presets and clamps custom ranges to 90 days', () => {
+    const now = new Date('2026-08-24T23:00:00.000Z')
+    expect(resolveMyDayDateRange({ preset: 'this_week' }, now)).toMatchObject({ from: '2026-08-24', to: '2026-08-24' })
+    expect(resolveMyDayDateRange({ preset: 'last_week' }, now)).toMatchObject({ from: '2026-08-17', to: '2026-08-23' })
+    expect(resolveMyDayDateRange({ preset: 'previous_month' }, now)).toMatchObject({ from: '2026-07-01', to: '2026-07-31' })
+    expect(resolveMyDayDateRange({ preset: 'custom', from: '2026-01-01', to: '2026-08-24' }, now)).toMatchObject({
+      from: '2026-05-27',
+      to: '2026-08-24',
+    })
   })
 })
