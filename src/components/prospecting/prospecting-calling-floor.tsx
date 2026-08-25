@@ -24,7 +24,6 @@ import type {
   ProspectingCallingQueueState as QueueState,
   ProspectingCallingTab,
   ProspectingOccupancy,
-  ProspectingRecentCall as RecentCall,
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
@@ -54,7 +53,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
   // Activity feed for current lead
   const [activities, setActivities] = useState<Activity[]>([])
-  const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
   const [leftTab, setLeftTab] = useState<ProspectingCallingTab>('texts')
   const currentLeadIdRef = useRef<string | null>(null)
 
@@ -291,18 +289,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       window.removeEventListener('crm:disposition-logged', onAttempt)
     }
   }, [currentLeadId, refreshActivities])
-
-  useEffect(() => {
-    if (subjects.length === 0 || leftTab !== 'recent_calls') return
-    async function loadRecentCalls() {
-      try {
-        const res = await fetch('/api/call-log?limit=50')
-        const data = await res.json()
-        if (res.ok) setRecentCalls((data.calls as RecentCall[]) || [])
-      } catch {}
-    }
-    loadRecentCalls()
-  }, [leftTab, subjects.length])
 
   // Listen to queue-state events from the telephony bar
   useEffect(() => {
@@ -596,36 +582,14 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         readOnlyPreview={readOnlyPreview}
         onClose={() => { void closeSession() }}
         onResume={() => { void transitionCurrentSession('resume') }}
-        onStop={() => { void stopSession() }}
+        onEndSession={() => { void stopSession() }}
         onMarkDead={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}
         onPrevious={back}
         onSkip={() => { void skipCurrentLead() }}
       />
 
-      {/* Calling floor: the callable people lead; property context supports the call. */}
+      {/* Calling floor: people and phone actions are primary; context remains bounded at the side. */}
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
-        {/* Supporting rail — property context, AI evidence, and communications. */}
-        <ProspectingCallingContextRail
-          fullWidth={callRailOpen}
-          leadId={currentLeadId}
-          lead={currentLead}
-          prospect={currentProspect}
-          ownerName={ownerName}
-          situsAddress={situsAddress}
-          coOwners={currentCoOwners}
-          occupancy={occupancy}
-          delinquentYears={delinquentYears}
-          durableSessionId={durableSessionId}
-          activities={activities}
-          recentCalls={recentCalls}
-          activeTab={leftTab}
-          callerId={sessionCallerId}
-          currentIndex={currentIndex}
-          queueSize={subjects.length}
-          onTabChange={setLeftTab}
-          onRefreshActivities={() => { void refreshActivities() }}
-        />
-
         {/* Primary workspace — the actual people and callable numbers. */}
         <main className={`order-1 col-span-12 ${callRailOpen ? 'lg:col-span-12' : 'lg:col-span-8'}`}>
           {currentSubject && (
@@ -652,6 +616,25 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
             />
           )}
         </main>
+
+        {/* Supporting rail — sticky, internally bounded, and limited to this seller. */}
+        <ProspectingCallingContextRail
+          fullWidth={callRailOpen}
+          leadId={currentLeadId}
+          lead={currentLead}
+          prospect={currentProspect}
+          ownerName={ownerName}
+          situsAddress={situsAddress}
+          coOwners={currentCoOwners}
+          occupancy={occupancy}
+          delinquentYears={delinquentYears}
+          durableSessionId={durableSessionId}
+          activities={activities}
+          activeTab={leftTab}
+          callerId={sessionCallerId}
+          onTabChange={setLeftTab}
+          onRefreshActivities={() => { void refreshActivities() }}
+        />
       </div>
 
       {/* SMS composer — pinned to the property lead so the SMS logs there. */}

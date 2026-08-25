@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { DialerSessionCommand } from './dialer-session-command'
 
@@ -26,7 +26,7 @@ function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSess
     error: null,
     onClose: vi.fn(),
     onResume: vi.fn(),
-    onStop: vi.fn(),
+    onEndSession: vi.fn(),
     onMarkDead: vi.fn(),
     onPrevious: vi.fn(),
     onSkip: vi.fn(),
@@ -50,8 +50,8 @@ describe('DialerSessionCommand', () => {
     expect(screen.getByText('(816) 555-0123', { exact: true })).toBeVisible()
     expect(screen.getByText('Session calls')).toBeVisible()
     expect(screen.getByText('Sellers worked')).toBeVisible()
-    expect(screen.getByText('Session contacts')).toBeVisible()
-    expect(screen.getByText('Current seller')).toBeVisible()
+    expect(screen.getByText('Contacts')).toBeVisible()
+    expect(screen.getByText('Seller')).toBeVisible()
     expect(screen.queryByText('Helen Seller')).not.toBeInTheDocument()
     expect(screen.queryByText('(816) 555-0199')).not.toBeInTheDocument()
     expect(screen.getByText('Session progress 20%')).toBeInTheDocument()
@@ -62,14 +62,24 @@ describe('DialerSessionCommand', () => {
     expect(screen.getByText('Rotating 3 approved lines every 50 calls')).toBeVisible()
   })
 
-  it('keeps durable pause, stop, skip, and exit actions wired', () => {
+  it('makes ending a durable session explicit and requires confirmation', () => {
     const props = renderCommand()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
-    fireEvent.click(screen.getByRole('button', { name: /Skip contact/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Pause and exit session' }))
+    fireEvent.click(screen.getByRole('button', { name: 'End session' }))
+    const dialog = screen.getByRole('dialog', { name: 'Stop this session?' })
+    expect(dialog).toBeVisible()
+    expect(props.onEndSession).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'End session' }))
 
-    expect(props.onStop).toHaveBeenCalledOnce()
+    expect(props.onEndSession).toHaveBeenCalledOnce()
+  })
+
+  it('keeps skip and pause-and-leave actions distinct from ending the session', () => {
+    const props = renderCommand()
+
+    fireEvent.click(screen.getByRole('button', { name: /Skip seller/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pause & leave' }))
+
     expect(props.onSkip).toHaveBeenCalledOnce()
     expect(props.onClose).toHaveBeenCalledOnce()
   })
@@ -90,7 +100,7 @@ describe('DialerSessionCommand', () => {
   })
 
   it('shows live connected state without adding predictive or parallel-line claims', () => {
-    renderCommand({
+    const props = renderCommand({
       queueState: {
         queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
         queueIndex: 1,
@@ -104,6 +114,18 @@ describe('DialerSessionCommand', () => {
     expect(screen.getAllByText('03:12').length).toBeGreaterThan(0)
     expect(screen.queryByText(/predictive/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/3 lines/i)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'End session' }))
+    expect(screen.getByText(/A call is still in progress/)).toBeVisible()
+    expect(props.onEndSession).not.toHaveBeenCalled()
+  })
+
+  it('uses theme-owned surfaces instead of a permanently dark command banner', () => {
+    renderCommand()
+    const command = screen.getByRole('region', { name: 'Calling floor command center' })
+    expect(command).toHaveClass('bg-[var(--ck-surface)]')
+    expect(command).toHaveClass('text-[var(--ck-text)]')
+    expect(command).not.toHaveClass('bg-[#101827]')
   })
 
   it('makes a workflow preview navigable without exposing calling or record mutations', () => {

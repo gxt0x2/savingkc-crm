@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 const compatibilityPage = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
 const prospectingPage = readFileSync('src/app/(app)/prospecting/page.tsx', 'utf8')
 const callingFloor = readFileSync('src/components/prospecting/prospecting-calling-floor.tsx', 'utf8')
+const sessionCommand = readFileSync('src/components/dialer/dialer-session-command.tsx', 'utf8')
+const contextRail = readFileSync('src/components/prospecting/prospecting-calling-context-rail.tsx', 'utf8')
 
 describe('Prospecting calling-floor truth contract', () => {
   it('keeps the old Dialer URL as redirect-only compatibility', () => {
@@ -38,5 +40,18 @@ describe('Prospecting calling-floor truth contract', () => {
       'Start single-line session',
       'saved-list-meta',
     ]) expect(callingFloor).not.toContain(obsolete)
+  })
+
+  it('keeps session controls explicit and the seller history bounded', () => {
+    expect(sessionCommand).toContain('End session')
+    expect(sessionCommand).toContain('Pause & leave')
+    expect(sessionCommand).toContain('Stop this session?')
+    expect(sessionCommand).toContain('bg-[var(--ck-surface)]')
+    expect(sessionCommand).not.toContain('bg-[#101827]')
+    expect(contextRail).toContain('max-h-[360px]')
+    expect(contextRail).toContain('overflow-y-auto')
+    expect(contextRail).toContain('Open full conversation')
+    expect(contextRail).not.toContain('Recent Calls')
+    expect(callingFloor).not.toContain('/api/call-log?limit=50')
   })
 })
