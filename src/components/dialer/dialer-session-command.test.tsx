@@ -110,8 +110,8 @@ describe('DialerSessionCommand', () => {
     const props = renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
 
     expect(screen.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
-    expect(screen.getByText(/use Open live calling to start a real session in production/i)).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Open live calling' })).toHaveAttribute('href', 'https://crm.savingkc.com/prospecting')
+    expect(screen.getByText(/select Start calling session, then Call all numbers/i)).toBeVisible()
+    expect(screen.queryByRole('link', { name: 'Open live calling' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Call controls' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))

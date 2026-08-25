@@ -594,7 +594,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         currentLeadId={currentLeadId}
         error={sessionError}
         readOnlyPreview={readOnlyPreview}
-        liveCallingHref={previewCampaignId ? `https://crm.savingkc.com/prospecting?campaign=${encodeURIComponent(previewCampaignId)}` : undefined}
         onClose={() => { void closeSession() }}
         onResume={() => { void transitionCurrentSession('resume') }}
         onStop={() => { void stopSession() }}

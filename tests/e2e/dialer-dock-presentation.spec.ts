@@ -259,9 +259,9 @@ test.describe('dialer dock presentation synthetic checks', () => {
     await expect(page.getByText('1/1', { exact: true })).toBeVisible()
     await expect(page.getByText('3+ Year Deceased Tax')).toBeVisible()
 
-    await expect(page.getByText('(816) 608-8588', { exact: true })).toBeVisible()
-    await expect(page.getByText('(816) 727-7667', { exact: true })).toBeVisible()
-    await page.getByRole('button', { name: /Start phone run \(2\)/ }).click()
+    await expect(page.getByRole('main').getByText('(816) 608-8588', { exact: true })).toBeVisible()
+    await expect(page.getByRole('main').getByText('(816) 727-7667', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Call all 2 numbers' }).click()
 
     await expect(page.getByText('Heir queue · 1 of 2')).toBeVisible()
     await expect(page.getByTitle('Waiting for Twilio')).toBeVisible()
@@ -278,7 +278,7 @@ test.describe('dialer dock presentation synthetic checks', () => {
     )
 
     await expect(page.getByText('(816) 727-7667', { exact: true })).toBeVisible()
-    await page.getByRole('button', { name: /Start phone run \(2\)/ }).click()
+    await page.getByRole('button', { name: 'Call all 2 numbers' }).click()
     await expect(page.getByRole('heading', { name: 'Call controls' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Hide call controls' }).click()

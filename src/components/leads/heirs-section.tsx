@@ -296,14 +296,15 @@ export function HeirsSection({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {!readOnlyPreview && totalHeirs > 0 && queuedPhones > 0 && (
+          {totalHeirs > 0 && queuedPhones > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); queueAll() }}
-              className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
-              title="Cycle through every callable listed associated phone on this property"
+              disabled={readOnlyPreview}
+              className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap disabled:cursor-not-allowed disabled:bg-[var(--ck-surface-hi)] disabled:text-[var(--ck-text-dim)]"
+              title={readOnlyPreview ? 'Available after this calling workflow is released to production' : 'Call every eligible associated phone on this property in sequence'}
             >
               <Icon name="call" size="text-sm" />
-              Start phone run ({queuedPhones})
+              Call all {queuedPhones} {queuedPhones === 1 ? 'number' : 'numbers'}
             </button>
           )}
           {collapsible && (

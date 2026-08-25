@@ -29,7 +29,6 @@ interface DialerSessionCommandProps {
   currentLeadId: string | null
   error: string | null
   readOnlyPreview?: boolean
-  liveCallingHref?: string
   onClose: () => void
   onResume: () => void
   onStop: () => void
@@ -80,12 +79,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
             className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white/70 hover:bg-white/10 hover:text-white"
           >
             <Icon name="phone_in_talk" size="text-sm" /> Call controls
-          </button> : <a
-            href={props.liveCallingHref || 'https://crm.savingkc.com/prospecting'}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#E32E2E] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-[#C42626]"
-          >
-            <Icon name="open_in_new" size="text-sm" /> Open live calling
-          </a>}
+          </button> : null}
           {isPaused ? <button type="button" onClick={props.onResume} disabled={props.actionPending} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-emerald-600 disabled:opacity-50"><Icon name="play_arrow" size="text-sm" />Resume</button> : null}
           {isDurable && props.durableStatus && ['active', 'paused'].includes(props.durableStatus) ? <button type="button" onClick={props.onStop} disabled={props.actionPending || isCalling} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40"><Icon name="stop_circle" size="text-sm" />Stop</button> : null}
           {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-300/20 bg-red-400/10 px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-red-200 hover:bg-red-400/15 disabled:opacity-30" title="Mark this lead dead (records why)"><Icon name="cancel" size="text-sm" />Dead</button> : null}
@@ -95,7 +89,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
         </div>
         </div>
 
-        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs font-bold text-amber-100">Preview only — use Open live calling to start a real session in production. This page cannot place calls or save changes.</div> : null}
+        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs font-bold text-amber-100">Preview only — calling controls are shown but disabled. In production, select Start calling session, then Call all numbers for the current seller.</div> : null}
 
         <section aria-label="Live session status" className="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-[#05070a]">
           <div className="flex min-w-[820px] items-stretch">
