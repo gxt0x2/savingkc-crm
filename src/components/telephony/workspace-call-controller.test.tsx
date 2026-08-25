@@ -45,7 +45,7 @@ describe('WorkspaceCallController', () => {
         dialReady={false}
         effectiveCallerId="+18163078735"
         onCall={vi.fn()}
-        queueItem={null}
+        queueItem={queueItem}
         statusLabel="Connecting"
       />,
     )
@@ -53,5 +53,24 @@ describe('WorkspaceCallController', () => {
     expect(screen.getByText('Automatic rotation · 2 approved lines · changes every 25 calls')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Connecting' })).toBeDisabled()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('does not mislabel the agent default line as the campaign line before seller selection', () => {
+    render(
+      <WorkspaceCallController
+        callerPlan={{ mode: 'static', staticCallerId: '+18166088588', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
+        dialDisplay=""
+        dialReady={false}
+        effectiveCallerId="+18166088588"
+        onCall={vi.fn()}
+        queueItem={null}
+        statusLabel="Ready"
+      />,
+    )
+
+    expect(screen.getByText('Select a seller number')).toBeVisible()
+    expect(screen.getByText('The reviewed campaign caller ID loads before the call can start.')).toBeVisible()
+    expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
+    expect(screen.queryByText('Assigned campaign line · rechecked before every call')).not.toBeInTheDocument()
   })
 })

@@ -50,10 +50,16 @@ export function WorkspaceCallController({
       <div className="mt-4 border-t border-[var(--skc-separator)] pt-4 text-left">
         <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">Caller ID policy</p>
         <p className="mt-1 text-sm font-semibold text-[var(--skc-text-primary)]">
-          {effectiveCallerId ? formatPhone(effectiveCallerId) : 'No approved line available'}
+          {queueItem
+            ? effectiveCallerId
+              ? formatPhone(effectiveCallerId)
+              : 'No approved line available'
+            : 'Select a seller number'}
         </p>
         <p className="mt-1 text-[11px] leading-5 text-[var(--skc-text-tertiary)]">
-          {callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1
+          {!queueItem
+            ? 'The reviewed campaign caller ID loads before the call can start.'
+            : callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1
             ? `Automatic rotation · ${callerPlan.rotationCallerIds.length} approved lines · changes every ${callerPlan.rotateEveryCalls} calls`
             : 'Assigned campaign line · rechecked before every call'}
         </p>
