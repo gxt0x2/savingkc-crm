@@ -141,6 +141,30 @@ describe('HeirsSection dial queue', () => {
     expect(screen.getAllByText('Verified').length).toBeGreaterThan(0)
   })
 
+  it('keeps every associated phone visible at once on the agent calling floor', async () => {
+    mockHeirsFetch()
+    renderHeirsSection({ collapsible: false, showAllPhones: true })
+
+    expect(await screen.findByText('(816) 000-0001')).toBeVisible()
+    expect(screen.getByText('(816) 000-0002')).toBeVisible()
+    expect(screen.getByText('(816) 000-0003')).toBeVisible()
+    expect(screen.getByText('(816) 000-0004')).toBeVisible()
+    expect(screen.getByText('(816) 000-0005')).toBeVisible()
+    expect(screen.getByText('(816) 000-0006')).toBeVisible()
+    expect(screen.getByText('(816) 000-0007')).toBeVisible()
+  })
+
+  it('shows where the full phone run starts in preview without enabling calling', async () => {
+    mockHeirsFetch()
+    renderHeirsSection({ collapsible: false, showAllPhones: true, readOnlyPreview: true })
+
+    expect(await screen.findByRole('button', { name: 'Call all 4 numbers' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Call all 4 numbers' })).toHaveAttribute(
+      'title',
+      'Available after this calling workflow is released to production',
+    )
+  })
+
   it('queues every callable listed heir phone, including attempted and verified numbers', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
@@ -149,7 +173,7 @@ describe('HeirsSection dial queue', () => {
 
     renderHeirsSection()
 
-    const callButton = await screen.findByRole('button', { name: /Call all \(4\)/i })
+    const callButton = await screen.findByRole('button', { name: 'Call all 4 numbers' })
     fireEvent.click(callButton)
 
     await waitFor(() => expect(queueEvents).toHaveLength(1))
@@ -175,12 +199,14 @@ describe('HeirsSection dial queue', () => {
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
     window.addEventListener('open-dialer-queue', onQueue)
 
-    renderHeirsSection({ leadId: null, prospectId: 'prospect-1', campaignMemberId: 'member-1' })
+    renderHeirsSection({ leadId: null, prospectId: 'prospect-1', campaignMemberId: 'member-1', showAllPhones: true })
 
-    fireEvent.click(await screen.findByRole('button', { name: /Call all \(4\)/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Call all 4 numbers' }))
     await waitFor(() => expect(queueEvents).toHaveLength(1))
 
     expect(fetch).toHaveBeenCalledWith('/api/heirs?prospect_id=prospect-1&campaign_member_id=member-1')
+    expect(screen.getByText('(816) 000-0001')).toBeVisible()
+    expect(screen.getByText('(816) 000-0005')).toBeVisible()
     expect(queueEvents[0].detail.queue).toEqual(expect.arrayContaining([
       expect.objectContaining({
         leadId: null,
@@ -223,7 +249,7 @@ describe('HeirsSection dial queue', () => {
     window.addEventListener('open-dialer-queue', onQueue)
 
     renderHeirsSection({ campaignMemberId: 'member-lead-1' })
-    fireEvent.click(await screen.findByRole('button', { name: /Call all \(1\)/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Call all 1 number' }))
     await waitFor(() => expect(queueEvents).toHaveLength(1))
 
     expect(queueEvents[0].detail.queue[0]).toMatchObject({

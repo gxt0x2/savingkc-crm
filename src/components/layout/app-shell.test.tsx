@@ -1,22 +1,22 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from './app-shell'
 
-const navigation = vi.hoisted(() => ({ pathname: '/dashboard', replace: vi.fn() }))
+const navigation = vi.hoisted(() => ({ pathname: '/dashboard', search: '', replace: vi.fn() }))
 
 vi.mock('next/navigation', () => ({
   usePathname: () => navigation.pathname,
   useRouter: () => ({ push: vi.fn(), replace: navigation.replace }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }))
 
 vi.mock('next/dynamic', () => ({
-  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void }) {
+  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; presentation?: string }) {
     if (typeof props.open !== 'boolean') return null
-    return <div data-testid="lazy-dialer" data-open={String(props.open)}><button type="button" onClick={props.onClose}>Close phone</button></div>
+    return <div data-testid="lazy-dialer" data-open={String(props.open)} data-presentation={props.presentation}><button type="button" onClick={props.onClose}>Close phone</button></div>
   },
 }))
 
@@ -33,12 +33,13 @@ vi.mock('@/hooks/use-theme-preference', () => ({
 }))
 
 vi.mock('@/components/conversations/workspace-frame', () => ({
-  WorkspaceFrame: ({ children, userEmail, profilePhotoUrl }: { children: React.ReactNode; userEmail?: string | null; profilePhotoUrl?: string | null }) => <div data-testid="workspace-frame" data-user-email={userEmail} data-profile-photo={profilePhotoUrl ?? ''}>{children}</div>,
+  WorkspaceFrame: ({ children, userEmail, profilePhotoUrl, focusedCalling, rightRail }: { children: React.ReactNode; userEmail?: string | null; profilePhotoUrl?: string | null; focusedCalling?: boolean; rightRail?: React.ReactNode }) => <div data-testid="workspace-frame" data-user-email={userEmail} data-profile-photo={profilePhotoUrl ?? ''} data-focused-calling={String(Boolean(focusedCalling))}>{children}{rightRail}</div>,
 }))
 
 describe('AppShell first-load work', () => {
   beforeEach(() => {
     navigation.pathname = '/dashboard'
+    navigation.search = ''
     navigation.replace.mockReset()
     window.sessionStorage.clear()
     window.localStorage.clear()
@@ -61,6 +62,28 @@ describe('AppShell first-load work', () => {
 
     act(() => window.dispatchEvent(new Event('open-global-dialer')))
 
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+  })
+
+  it('embeds one softphone in Prospecting and can hide or reopen it without restarting the queue', () => {
+    navigation.pathname = '/prospecting'
+    navigation.search = 'session_id=session-1'
+    render(<AppShell><main>Calling floor</main></AppShell>)
+
+    act(() => window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: {
+      queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],
+      sessionId: 'session-1',
+    } })))
+
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close phone' }))
+    expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
+
+    act(() => window.dispatchEvent(new Event('show-dialer-controls')))
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
   })
 

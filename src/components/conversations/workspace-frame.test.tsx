@@ -89,6 +89,18 @@ describe('WorkspaceFrame route persistence', () => {
     expect(screen.getByRole('button', { name: 'Open phone' })).toBeInTheDocument()
   })
 
+  it('replaces the global phone launcher with one dedicated Prospecting call rail', () => {
+    render(
+      <WorkspaceFrame focusedCalling rightRail={<div>Embedded call controls</div>}>
+        <main>Prospecting session</main>
+      </WorkspaceFrame>,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Open phone' })).not.toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Prospecting call controls' })).toHaveTextContent('Embedded call controls')
+    expect(screen.queryByRole('button', { name: 'Open AI Assistant' })).not.toBeInTheDocument()
+  })
+
   it('does not render a false zero badge while the global conversation count is unknown', () => {
     render(
       <WorkspaceFrame>

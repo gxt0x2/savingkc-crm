@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { CampaignActivityFeed } from '@/components/prospecting/campaign-activity-feed'
 import { CampaignAudienceWorkbench } from '@/components/prospecting/campaign-audience-workbench'
 import { CampaignDeliveryPulse } from '@/components/prospecting/campaign-delivery-pulse'
@@ -8,20 +8,8 @@ import { CampaignLaunchReadiness } from '@/components/prospecting/campaign-launc
 import { Icon } from '@/components/ui/icon'
 import type { ProspectingCampaignDetail, ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 
-function statusTone(status: ProspectingCampaignSummary['status']) {
-  if (status === 'active') return 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
-  if (status === 'paused') return 'bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
-  if (status === 'archived') return 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'
-  return 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]'
-}
-
 function percent(part: number, total: number) {
   return total > 0 ? Math.round((part / total) * 100) : 0
-}
-
-function dateLabel(value: string | null) {
-  if (!value) return 'Not started'
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
 }
 
 function timeLabel(value: string | null) {
@@ -54,6 +42,7 @@ type CampaignDashboardProps = {
   loading: boolean
   detailLoading: boolean
   actionPending: boolean
+  writesEnabled?: boolean
   lastRefreshedAt?: string | null
   liveRefreshDelayed?: boolean
   onSelect: (id: string) => void
@@ -72,6 +61,7 @@ export function CampaignDashboard({
   loading,
   detailLoading,
   actionPending,
+  writesEnabled = true,
   lastRefreshedAt = null,
   liveRefreshDelayed = false,
   onSelect,
@@ -82,16 +72,7 @@ export function CampaignDashboard({
   onLaunchDialer,
   onAudienceChanged,
 }: CampaignDashboardProps) {
-  const [query, setQuery] = useState('')
-  const [campaignFilter, setCampaignFilter] = useState<'all' | 'active' | 'draft'>('all')
-
-  const filteredCampaigns = useMemo(() => campaigns.filter((campaign) => {
-    const matchesQuery = campaign.name.toLowerCase().includes(query.trim().toLowerCase())
-    const matchesStatus = campaignFilter === 'all'
-      || (campaignFilter === 'active' && ['active', 'paused'].includes(campaign.status))
-      || (campaignFilter === 'draft' && campaign.status === 'draft')
-    return matchesQuery && matchesStatus
-  }), [campaignFilter, campaigns, query])
+  const [managementOpen, setManagementOpen] = useState(false)
 
   const campaignMetrics = detail?.kind === 'dialer'
     ? [
@@ -110,49 +91,96 @@ export function CampaignDashboard({
       : []
   const canEditAudience = Boolean(detail && ['draft', 'paused'].includes(detail.status))
 
+  function selectCampaign(id: string) {
+    setManagementOpen(false)
+    onSelect(id)
+  }
+
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--crm-canvas)] p-3 sm:p-5 lg:p-7">
-      <div className="mx-auto grid max-w-[1540px] gap-4 xl:grid-cols-[19rem_minmax(0,1fr)] 2xl:grid-cols-[19rem_minmax(0,1fr)_18rem]">
-        <aside className="crm-panel h-fit overflow-hidden rounded-2xl xl:sticky xl:top-0">
-          <div className="border-b border-[var(--crm-border)] p-4">
-            <div className="flex items-center justify-between"><div><p className="crm-eyebrow">Your work</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Campaigns</h2></div><span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--crm-brand-soft)] text-sm font-black text-[var(--crm-brand)]">{campaigns.length}</span></div>
-            <label className="relative mt-4 block"><Icon name="search" className="pointer-events-none absolute left-3 top-2.5 text-lg text-[var(--crm-text-dim)]" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a campaign" aria-label="Find a campaign" className="crm-field h-10 w-full rounded-xl pl-10 pr-3 text-xs" /></label>
-            <div className="mt-3 grid grid-cols-3 rounded-lg bg-[var(--crm-surface-subtle)] p-1" aria-label="Campaign filters">{(['all', 'active', 'draft'] as const).map((filter) => <button key={filter} type="button" onClick={() => setCampaignFilter(filter)} className={`rounded-md px-2 py-1.5 text-[10px] font-black capitalize ${campaignFilter === filter ? 'bg-[var(--crm-surface)] text-[var(--crm-brand)] shadow-sm' : 'text-[var(--crm-text-muted)]'}`}>{filter === 'active' ? 'Live' : filter}</button>)}</div>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <section className="crm-panel rounded-2xl p-4 sm:p-5" aria-labelledby="campaign-picker-label">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p id="campaign-picker-label" className="crm-eyebrow">Choose campaign</p>
+              <p className="mt-1 text-sm text-[var(--crm-text-muted)]">Pick the prospecting work you want to continue. Your place is saved automatically.</p>
+            </div>
+            <select
+              aria-label="Choose campaign"
+              className="crm-field h-11 min-w-0 rounded-xl px-3 text-sm font-black sm:min-w-80"
+              disabled={loading || campaigns.length === 0}
+              value={selectedId ?? ''}
+              onChange={(event) => selectCampaign(event.target.value)}
+            >
+              {campaigns.length === 0 ? <option value="">No campaigns available</option> : null}
+              {campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.status}</option>)}
+            </select>
           </div>
-          <div className="max-h-[calc(100dvh-23rem)] overflow-y-auto p-2">
-            {loading ? <div className="space-y-2 p-2">{[1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse rounded-xl bg-[var(--crm-surface-subtle)]" />)}</div> : filteredCampaigns.length === 0 ? <div className="p-6 text-center"><Icon name="campaign" className="text-4xl text-[var(--crm-text-dim)]" /><p className="mt-2 text-sm font-black text-[var(--crm-ink)]">No campaigns here</p><p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Change the filter or build a clean campaign.</p></div> : filteredCampaigns.map((campaign) => <button key={campaign.id} type="button" onClick={() => onSelect(campaign.id)} className={`mb-1 w-full rounded-xl p-3 text-left transition ${selectedId === campaign.id ? 'bg-[var(--crm-brand-soft)] ring-1 ring-[var(--crm-brand)]/20' : 'hover:bg-[var(--crm-surface-subtle)]'}`}><div className="flex items-start gap-3"><span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${campaign.kind === 'sms' ? 'bg-[var(--crm-info-soft)] text-[var(--crm-info)]' : 'bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'}`}><Icon name={campaign.kind === 'sms' ? 'sms' : 'phone_in_talk'} className="text-lg" /></span><span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-2"><span className="truncate text-sm font-black text-[var(--crm-ink)]">{campaign.name}</span><span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase ${statusTone(campaign.status)}`}>{campaign.status}</span></span><span className="mt-1 block text-[10px] text-[var(--crm-text-muted)]">Updated {dateLabel(campaign.updatedAt)}</span></span></div></button>)}
-          </div>
-          <div className="border-t border-[var(--crm-border)] p-3"><button type="button" onClick={onCreate} className="crm-primary-button flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-black"><Icon name="add" className="text-base" />Build campaign</button></div>
-        </aside>
-
-        <section className="min-w-0">
-          {!detail || detailLoading ? <div className="crm-panel grid min-h-[36rem] place-items-center rounded-2xl"><div className="text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[var(--crm-surface-subtle)]"><Icon name={detailLoading ? 'progress_activity' : 'campaign'} className={`text-3xl text-[var(--crm-text-dim)] ${detailLoading ? 'animate-spin' : ''}`} /></span><p className="mt-4 text-sm font-black text-[var(--crm-ink)]">{detailLoading ? 'Loading campaign' : 'Choose a campaign'}</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{detailLoading ? 'Bringing its audience and activity into view.' : 'Or build a new calling or SMS workflow.'}</p></div></div> : <div className="space-y-4">
-            <article className="crm-panel overflow-hidden rounded-2xl">
-              <div className="relative overflow-hidden bg-[linear-gradient(130deg,#17221a_0%,#344e30_58%,#607957_100%)] px-5 py-6 text-white sm:px-7 sm:py-7">
-                <div className="absolute -right-14 -top-24 h-64 w-64 rounded-full border border-white/10" />
-                <div className="absolute -right-2 -top-10 h-44 w-44 rounded-full border border-white/10" />
-                <div className="relative flex flex-wrap items-start justify-between gap-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase ${detail.status === 'active' ? 'bg-[#bde2b1] text-[#17221a]' : 'bg-white/12 text-white'}`}>{detail.status}</span><span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">{detail.kind === 'dialer' ? 'Power dialer' : 'SMS cadence'}</span>{detail.status === 'active' ? <span role="status" className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${liveRefreshDelayed ? 'bg-amber-300/20 text-amber-100' : 'bg-white/10 text-white/70'}`}>{liveRefreshDelayed ? 'Updates delayed' : `Live · ${timeLabel(lastRefreshedAt)}`}</span> : null}</div><h1 className="mt-4 max-w-2xl text-2xl font-black tracking-tight sm:text-3xl">{detail.name}</h1><p className="mt-2 text-sm font-medium text-white/65">Owned by {detail.ownerName} · {detail.defaultTimezone.replace('_', ' ')} · Updated {dateLabel(detail.updatedAt)}</p>{detail.kind === 'sms' ? <p className="mt-1 text-xs font-bold text-white/55">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p> : null}</div><div className="relative flex flex-wrap gap-2">{detail.status === 'draft' && onEdit ? <button type="button" onClick={() => onEdit(detail)} disabled={actionPending} className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#17221a]"><Icon name="edit" className="mr-1 align-middle text-base" />Edit setup</button> : null}<button type="button" onClick={() => onDuplicate(detail)} disabled={actionPending} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-black text-white"><Icon name="content_copy" className="mr-1 align-middle text-base" />Duplicate setup</button>{detail.status === 'active' ? <button type="button" onClick={() => onTransition('paused')} disabled={actionPending} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-black text-white">Pause</button> : null}{detail.kind === 'dialer' && detail.status === 'active' ? <button type="button" onClick={onLaunchDialer} disabled={actionPending} className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#17221a]"><Icon name="phone_in_talk" className="text-base" />Open calling floor</button> : null}</div></div>
-              </div>
-              <div className="grid grid-cols-2 divide-x divide-y divide-[var(--crm-border)] sm:grid-cols-4 sm:divide-y-0">
-                {campaignMetrics.map(([icon, value, label]) => <div key={String(label)} className="p-4 sm:p-5"><div className="flex items-center justify-between"><span className="text-2xl font-black text-[var(--crm-ink)]">{value}</span><Icon name={String(icon)} className="text-xl text-[var(--crm-text-dim)]" /></div><p className="mt-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</p></div>)}
-              </div>
-            </article>
-
-            {detail.status === 'draft' || detail.status === 'paused' ? <CampaignLaunchReadiness key={`launch:${detail.id}`} campaign={detail} actionPending={actionPending} onActivate={() => onTransition('active')} /> : null}
-
-            {detail.kind === 'sms' ? <article className="crm-panel rounded-2xl p-5 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="crm-eyebrow">Sequence journey</p><h2 className="mt-1 text-xl font-black text-[var(--crm-ink)]">The conversation sellers receive</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Stops immediately when a seller replies or opts out.</p></div><div className="rounded-xl bg-[var(--crm-surface-subtle)] px-3 py-2 text-right"><p className="text-xs font-black text-[var(--crm-ink)]">{detail.perHour}/hour · {detail.perDay}/day</p><p className="text-[9px] font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Pacing ceiling</p></div></div><div className="relative mt-6 space-y-4 before:absolute before:bottom-4 before:left-[1.15rem] before:top-4 before:w-px before:bg-[var(--crm-border)]">{detail.steps.map((step) => <div key={step.id} className="relative flex gap-4"><span className="z-[1] grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--crm-brand)] text-xs font-black text-white ring-4 ring-[var(--crm-surface)]">{step.position}</span><div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4"><p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)]">{delayLabel(step.delayMinutes)}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--crm-ink)]">{step.bodyTemplate}</p></div></div>)}</div></article> : <article className="crm-panel rounded-2xl p-5 sm:p-6"><p className="crm-eyebrow">Calling floor</p><div className="mt-2 flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-xl font-black text-[var(--crm-ink)]">One focused seller at a time</h2><p className="mt-1 max-w-xl text-sm leading-6 text-[var(--crm-text-muted)]">The server loads the next focused batch of up to 100 ready contacts, preserves progress, and releases unfinished contacts if you stop. Each call still requires a saved outcome before advancing.</p></div>{detail.status === 'active' ? <button type="button" onClick={onLaunchDialer} disabled={actionPending} className="crm-primary-button inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black"><Icon name="phone_in_talk" />{detail.stats.completed > 0 ? 'Start next batch' : 'Start calling'}</button> : null}</div><div className="mt-6 grid gap-2 sm:grid-cols-4">{[['verified_user','Check'],['auto_awesome','Brief'],['phone_in_talk','Call'],['fact_check','Outcome']].map(([icon,label], index) => <div key={label} className="relative rounded-xl bg-[var(--crm-surface-subtle)] p-4"><p className="text-[9px] font-black text-[var(--crm-text-dim)]">0{index + 1}</p><Icon name={icon} className="mt-4 text-2xl text-[var(--crm-brand)]" /><p className="mt-2 text-sm font-black text-[var(--crm-ink)]">{label}</p>{index < 3 ? <Icon name="arrow_forward" className="absolute -right-2 top-1/2 hidden -translate-y-1/2 text-[var(--crm-text-dim)] sm:block" /> : null}</div>)}</div></article>}
-
-            {detail.kind === 'sms' && detail.status !== 'draft' ? <CampaignDeliveryPulse campaign={detail} /> : null}
-
-            <CampaignActivityFeed key={detail.id} campaignId={detail.id} />
-
-            <CampaignAudienceWorkbench key={`audience:${detail.id}`} campaignId={detail.id} campaignName={detail.name} campaignKind={detail.kind} total={detail.stats.total} canEditAudience={canEditAudience} onAudienceChanged={onAudienceChanged} />
-          </div>}
         </section>
 
-        <aside className="hidden space-y-4 2xl:block">
-          {detail ? <><div className="crm-panel rounded-2xl p-5"><p className="crm-eyebrow">Audience health</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">{percent(detail.stats.active, detail.stats.total)}% ready</h2><div className="mt-4 flex h-2 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]"><span className="bg-[var(--crm-success)]" style={{ width: `${percent(detail.stats.active, detail.stats.total)}%` }} /><span className="bg-[var(--crm-warning)]" style={{ width: `${percent(detail.stats.needsReview + detail.stats.suppressed, detail.stats.total)}%` }} /><span className="bg-[var(--crm-info)]" style={{ width: `${percent(detail.stats.replied + detail.stats.completed, detail.stats.total)}%` }} /></div><dl className="mt-5 space-y-3">{[['Ready',detail.stats.active,'var(--crm-success)'],['Needs review',detail.stats.needsReview,'var(--crm-warning)'],['Suppressed',detail.stats.suppressed,'var(--crm-danger)'],['Replied',detail.stats.replied,'var(--crm-info)'],['Completed',detail.stats.completed,'var(--crm-brand)']].map(([label,value,color]) => <div key={String(label)} className="flex items-center justify-between"><dt className="flex items-center gap-2 text-xs font-bold text-[var(--crm-text-muted)]"><span className="h-2 w-2 rounded-full" style={{ background: String(color) }} />{label}</dt><dd className="text-sm font-black text-[var(--crm-ink)]">{value}</dd></div>)}</dl></div><div className="rounded-2xl bg-[#17221a] p-5 text-white"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Safety rail</p><h2 className="mt-2 text-lg font-black">Protected at every action</h2><div className="mt-5 space-y-4">{[['block','DNC and STOP'],['schedule','Local-time windows'],['badge','Approved sender'],['reply','Reply cancellation']].map(([icon,label]) => <div key={label} className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white/8"><Icon name={icon} className="text-base text-[#bde2b1]" /></span><span className="text-xs font-bold text-white/75">{label}</span></div>)}</div><p className="mt-5 border-t border-white/10 pt-4 text-[10px] leading-4 text-white/45">These controls run on the server and cannot be bypassed by the campaign screen.</p></div></> : null}
-        </aside>
+        {!detail || detailLoading ? <div className="crm-panel grid min-h-[24rem] place-items-center rounded-2xl"><div className="text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[var(--crm-surface-subtle)]"><Icon name={detailLoading ? 'progress_activity' : 'campaign'} className={`text-3xl text-[var(--crm-text-dim)] ${detailLoading ? 'animate-spin' : ''}`} /></span><p className="mt-4 text-sm font-black text-[var(--crm-ink)]">{detailLoading ? 'Loading your campaign' : 'No campaign selected'}</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{detailLoading ? 'Checking its ready contacts and saved progress.' : 'Open campaign details to build your first campaign.'}</p>{!detailLoading ? <button type="button" onClick={onCreate} className="crm-primary-button mt-5 inline-flex h-11 items-center gap-2 rounded-xl px-5 text-sm font-black"><Icon name="add" />Build a campaign</button> : null}</div></div> : <>
+          <article className="overflow-hidden rounded-3xl bg-[linear-gradient(135deg,#121a26_0%,#16243a_58%,#3a202b_100%)] text-white shadow-[0_24px_70px_rgba(5,13,25,0.24)]">
+            <div className="relative px-5 py-7 sm:px-8 sm:py-9">
+              <div className="absolute -right-16 -top-28 h-72 w-72 rounded-full border border-white/8" />
+              <div className="absolute -right-4 -top-10 h-48 w-48 rounded-full border border-white/8" />
+              <div className="relative">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase ${detail.status === 'active' ? 'bg-[#bde2b1] text-[#17221a]' : 'bg-white/12 text-white'}`}>{detail.status}</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">{detail.kind === 'dialer' ? 'Calling campaign' : 'SMS campaign'}</span>
+                  {detail.status === 'active' ? <span role="status" className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${liveRefreshDelayed ? 'bg-amber-300/20 text-amber-100' : 'bg-white/10 text-white/70'}`}>{liveRefreshDelayed ? 'Updates delayed' : `Live · ${timeLabel(lastRefreshedAt)}`}</span> : null}
+                </div>
+                <h1 className="mt-4 max-w-3xl text-3xl font-black tracking-tight sm:text-4xl">{detail.name}</h1>
+
+                {detail.kind === 'dialer' ? <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                  <div>
+                    <p className="text-5xl font-black tracking-tight sm:text-6xl">{detail.stats.active}</p>
+                    <p className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white/60">ready to call</p>
+                    <p className="mt-5 max-w-2xl text-sm leading-6 text-white/70">Review one seller, see every associated person and phone number, place a call, then save the outcome before moving to the next seller. Your progress is preserved if you stop.</p>
+                  </div>
+                  {detail.status === 'active' ? <div className="text-center lg:text-right"><button type="button" onClick={onLaunchDialer} disabled={actionPending || detail.stats.active === 0} className="crm-primary-button inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl px-7 text-base font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={writesEnabled ? 'phone_in_talk' : 'preview'} className="text-xl" />{writesEnabled ? 'Start calling session' : 'Preview calling workflow'}</button>{!writesEnabled ? <p className="mt-2 max-w-xs text-xs font-bold text-white/55">Read-only: review sellers and numbers without calling or saving changes.</p> : null}</div> : null}
+                </div> : <div className="mt-7"><p className="text-sm font-bold text-white/70">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p><p className="mt-2 text-xs text-white/50">Replies and opt-outs stop the sequence automatically.</p></div>}
+
+                <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 border-t border-white/10 pt-5 text-xs font-bold text-white/65">
+                  <span className="inline-flex items-center gap-2"><Icon name="verified_user" className="text-[#bde2b1]" />Safety checked before every call</span>
+                  {detail.kind === 'dialer' ? <span className="inline-flex items-center gap-2"><Icon name="groups" className="text-white/60" />All associated contacts stay visible</span> : null}
+                  <span className="inline-flex items-center gap-2"><Icon name="block" className="text-white/60" />{detail.stats.suppressed} suppressed</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          {detail.status === 'draft' || detail.status === 'paused' ? <CampaignLaunchReadiness key={`launch:${detail.id}`} campaign={detail} actionPending={actionPending} onActivate={() => onTransition('active')} /> : null}
+
+          <section className="crm-panel overflow-hidden rounded-2xl">
+            <button type="button" aria-expanded={managementOpen} onClick={() => setManagementOpen((open) => !open)} className="flex w-full items-center justify-between gap-4 p-5 text-left sm:px-6">
+              <span><span className="block text-sm font-black text-[var(--crm-ink)]">Campaign details</span><span className="mt-1 block text-xs text-[var(--crm-text-muted)]">Setup, audience, safeguards, and activity history</span></span>
+              <Icon name={managementOpen ? 'expand_less' : 'expand_more'} className="text-2xl text-[var(--crm-text-muted)]" />
+            </button>
+
+            {managementOpen ? <div className="space-y-5 border-t border-[var(--crm-border)] p-5 sm:p-6">
+              <div className="flex flex-wrap gap-2">
+                {detail.status === 'draft' && onEdit ? <button type="button" onClick={() => onEdit(detail)} disabled={actionPending} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="edit" />Edit setup</button> : null}
+                <button type="button" onClick={() => onDuplicate(detail)} disabled={actionPending} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="content_copy" />Duplicate setup</button>
+                {detail.status === 'active' ? <button type="button" onClick={() => onTransition('paused')} disabled={actionPending} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="pause" />Pause campaign</button> : null}
+                <button type="button" onClick={onCreate} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="add" />Build another campaign</button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {campaignMetrics.map(([icon, value, label]) => <div key={String(label)} className="rounded-xl bg-[var(--crm-surface-subtle)] p-4"><div className="flex items-center justify-between"><span className="text-2xl font-black text-[var(--crm-ink)]">{value}</span><Icon name={String(icon)} className="text-xl text-[var(--crm-text-dim)]" /></div><p className="mt-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</p></div>)}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-[var(--crm-border)] p-5"><p className="crm-eyebrow">Audience health</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">{percent(detail.stats.active, detail.stats.total)}% ready</h2><dl className="mt-4 grid grid-cols-2 gap-3 text-xs">{[['Ready',detail.stats.active],['Needs review',detail.stats.needsReview],['Suppressed',detail.stats.suppressed],['Completed',detail.stats.completed]].map(([label,value]) => <div key={String(label)} className="rounded-xl bg-[var(--crm-surface-subtle)] p-3"><dt className="font-bold text-[var(--crm-text-muted)]">{label}</dt><dd className="mt-1 text-lg font-black text-[var(--crm-ink)]">{value}</dd></div>)}</dl></div>
+                <div className="rounded-2xl bg-[#17221a] p-5 text-white"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Server safeguards</p><h2 className="mt-1 text-lg font-black">Protected at every action</h2><div className="mt-4 grid grid-cols-2 gap-3">{[['block','DNC and STOP'],['schedule','Local-time windows'],['badge','Approved sender'],['reply','Reply cancellation']].map(([icon,label]) => <div key={label} className="flex items-center gap-2 text-xs font-bold text-white/70"><Icon name={icon} className="text-[#bde2b1]" />{label}</div>)}</div></div>
+              </div>
+
+              {detail.kind === 'sms' ? <article className="rounded-2xl border border-[var(--crm-border)] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="crm-eyebrow">Sequence</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Messages sellers receive</h2></div><p className="text-xs font-black text-[var(--crm-ink)]">{detail.perHour}/hour · {detail.perDay}/day</p></div><div className="mt-4 space-y-3">{detail.steps.map((step) => <div key={step.id} className="rounded-xl bg-[var(--crm-surface-subtle)] p-4"><p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)]">{delayLabel(step.delayMinutes)}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--crm-ink)]">{step.bodyTemplate}</p></div>)}</div></article> : null}
+              {detail.kind === 'sms' && detail.status !== 'draft' ? <CampaignDeliveryPulse campaign={detail} /> : null}
+              <CampaignActivityFeed key={detail.id} campaignId={detail.id} />
+              <CampaignAudienceWorkbench key={`audience:${detail.id}`} campaignId={detail.id} campaignName={detail.name} campaignKind={detail.kind} total={detail.stats.total} canEditAudience={canEditAudience} onAudienceChanged={onAudienceChanged} />
+            </div> : null}
+          </section>
+        </>}
       </div>
     </main>
   )

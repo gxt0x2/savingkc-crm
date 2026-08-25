@@ -9,16 +9,32 @@ vi.mock('@/lib/server/prospecting-campaigns', () => ({
   updateProspectingCampaignDraft: mocks.update,
 }))
 
-import { PATCH } from './route'
+import { GET, PATCH } from './route'
 
 const params = { params: Promise.resolve({ id: '11111111-1111-4111-8111-111111111111' }) }
 
 describe('prospecting campaign transition route', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs()
     vi.clearAllMocks()
     mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com', name: 'Ernest' })
     mocks.transition.mockResolvedValue({ id: 'campaign-1', status: 'active' })
     mocks.update.mockResolvedValue({ id: 'campaign-1', status: 'draft' })
+  })
+
+  it('tells the client when a preview may only open the read-only calling workflow', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    mocks.get.mockResolvedValue({ id: 'campaign-1', status: 'active' })
+    const response = await GET(new Request('https://preview.vercel.app/api/prospecting/campaigns/x'), params)
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ capabilities: { writesEnabled: false } })
+  })
+
+  it('keeps real session launches available outside read-only previews', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    mocks.get.mockResolvedValue({ id: 'campaign-1', status: 'active' })
+    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x'), params)
+    await expect(response.json()).resolves.toMatchObject({ capabilities: { writesEnabled: true } })
   })
 
   it('rejects anonymous transitions before parsing the body', async () => {

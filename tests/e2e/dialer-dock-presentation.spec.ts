@@ -177,16 +177,20 @@ async function installSyntheticRoutes(page: Page) {
   })
 }
 
-async function expectDialerDocked(page: Page) {
-  await expect(page.getByRole('heading', { name: 'Dialer' })).toBeVisible()
+async function expectCallControlsEmbedded(page: Page) {
+  await expect(page.getByRole('heading', { name: 'Call controls' })).toBeVisible()
 
   const state = await page.evaluate(() => {
     const heading = Array.from(document.querySelectorAll('h2')).find(
-      (el) => el.textContent?.trim() === 'Dialer',
+      (el) => el.textContent?.trim() === 'Call controls',
     )
-    const fixedShell = heading?.closest('div[class*="fixed"]') as HTMLElement | null
-    const box = fixedShell?.getBoundingClientRect()
-    const className = String(fixedShell?.className ?? '')
+    const rail = heading?.closest('aside') as HTMLElement | null
+    const box = rail?.getBoundingClientRect()
+    const peopleHeading = Array.from(document.querySelectorAll('h2')).find(
+      (element) => element.textContent?.includes('Callable people'),
+    )
+    const peopleSection = peopleHeading?.closest('section') as HTMLElement | null
+    const peopleBox = peopleSection?.getBoundingClientRect()
     const allDivs = Array.from(document.querySelectorAll('div'))
 
     const backdropCount = allDivs.filter((el) => {
@@ -209,25 +213,20 @@ async function expectDialerDocked(page: Page) {
     }).length
 
     return {
-      className,
       backdropCount,
       centeredModalShellCount,
       box: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
+      peopleBox: peopleBox ? { x: peopleBox.x, y: peopleBox.y, width: peopleBox.width, height: peopleBox.height } : null,
       viewport: { width: window.innerWidth, height: window.innerHeight },
     }
   })
 
-  expect(state.className, 'Dialer shell should use the docked right/bottom placement').toContain('right-')
-  expect(state.className, 'Dialer shell should use the docked right/bottom placement').toContain('bottom-')
-  expect(state.className, 'Dialer shell must not use full-screen modal inset placement').not.toContain('inset-0')
-  expect(state.backdropCount, 'Dialer must not create a full-screen backdrop').toBe(0)
-  expect(state.centeredModalShellCount, 'Dialer must not create a centered modal shell').toBe(0)
-  expect(state.box, 'Dialer shell should have a measurable bounding box').not.toBeNull()
-  expect(state.box!.x, 'Dialer should be docked on the right half of the viewport').toBeGreaterThan(state.viewport.width / 2)
-  expect(
-    state.box!.y + state.box!.height,
-    'Dialer should be anchored to the lower edge of the viewport',
-  ).toBeGreaterThan(state.viewport.height - 48)
+  expect(state.backdropCount, 'Call controls must not create a full-screen backdrop').toBe(0)
+  expect(state.centeredModalShellCount, 'Call controls must not create a centered modal shell').toBe(0)
+  expect(state.box, 'Call-control rail should have a measurable bounding box').not.toBeNull()
+  expect(state.peopleBox, 'Associated people should remain measurable and visible').not.toBeNull()
+  expect(state.box!.x, 'Call controls should occupy the right rail').toBeGreaterThan(state.viewport.width / 2)
+  expect(state.peopleBox!.x + state.peopleBox!.width, 'The seller workspace must end before the call rail begins').toBeLessThanOrEqual(state.box!.x + 1)
 }
 
 test.describe('dialer dock presentation synthetic checks', () => {
@@ -250,7 +249,7 @@ test.describe('dialer dock presentation synthetic checks', () => {
     expect(modalState).toContain('items-center')
   })
 
-  test('heir queue launch calls every heir phone and opens docked without a backdrop', async ({ page }) => {
+  test('agent sees every associated number and opens one embedded call controller', async ({ page }) => {
     await page.goto(
       '/dialer?lead_ids=lead-1&queue_label=3%2B%20Year%20Deceased%20Tax&caller_id=%2B18166088588&call_hammer=0',
       { waitUntil: 'domcontentloaded' },
@@ -260,9 +259,33 @@ test.describe('dialer dock presentation synthetic checks', () => {
     await expect(page.getByText('1/1', { exact: true })).toBeVisible()
     await expect(page.getByText('3+ Year Deceased Tax')).toBeVisible()
 
-    await page.getByRole('button', { name: /Call heirs \(2\)/ }).click()
+    await expect(page.getByRole('main').getByText('(816) 608-8588', { exact: true })).toBeVisible()
+    await expect(page.getByRole('main').getByText('(816) 727-7667', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Call all 2 numbers' }).click()
 
     await expect(page.getByText('Heir queue · 1 of 2')).toBeVisible()
-    await expectDialerDocked(page)
+    await expect(page.getByTitle('Waiting for Twilio')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Hide call controls' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Dialer' })).toHaveCount(0)
+    await expectCallControlsEmbedded(page)
+  })
+
+  test('phone-sized agents can hide and reopen call controls without losing the seller queue', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(
+      '/prospecting?lead_ids=lead-1&queue_label=3%2B%20Year%20Deceased%20Tax&caller_id=%2B18166088588',
+      { waitUntil: 'domcontentloaded' },
+    )
+
+    await expect(page.getByText('(816) 727-7667', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Call all 2 numbers' }).click()
+    await expect(page.getByRole('heading', { name: 'Call controls' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Hide call controls' }).click()
+    await expect(page.getByRole('heading', { name: 'Call controls' })).toHaveCount(0)
+    await expect(page.getByText('(816) 727-7667', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Call controls' }).click()
+    await expect(page.getByRole('heading', { name: 'Call controls' })).toBeVisible()
   })
 })

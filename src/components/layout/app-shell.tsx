@@ -116,7 +116,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
     searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort'),
   )
-  const dialerPresentation = pathname?.startsWith('/dialer') || isProspectingCallingFloor ? 'dock' : 'modal'
+  const dialerPresentation = pathname?.startsWith('/dialer')
+    ? 'dock'
+    : isProspectingCallingFloor
+      ? 'workspace'
+      : 'modal'
   const effectiveWorkspaceEmail = pathname?.startsWith('/my-day') || pathname?.startsWith('/scorecard')
     ? 'casey@savingkc.com'
     : viewedAgentEmail || user?.email
@@ -239,6 +243,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setDialerMounted(true)
       setShowDialer(true)
     }
+    function handleShowDialerControls() {
+      setDialerMounted(true)
+      setShowDialer(true)
+    }
     function handleOpenDialerQueue(e: Event) {
       const detail = (e as CustomEvent).detail
       if (Array.isArray(detail?.queue) && detail.queue.length > 0) {
@@ -256,10 +264,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     window.addEventListener('open-dialer', handleOpenDialer)
     window.addEventListener('open-global-dialer', handleOpenGlobalDialer)
+    window.addEventListener('show-dialer-controls', handleShowDialerControls)
     window.addEventListener('open-dialer-queue', handleOpenDialerQueue)
     return () => {
       window.removeEventListener('open-dialer', handleOpenDialer)
       window.removeEventListener('open-global-dialer', handleOpenGlobalDialer)
+      window.removeEventListener('show-dialer-controls', handleShowDialerControls)
       window.removeEventListener('open-dialer-queue', handleOpenDialerQueue)
     }
   }, [])
@@ -343,42 +353,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [effectiveWorkspaceEmail, signedInEmail, user])
 
+  const dialerPanel = dialerMounted ? <DialerPanel
+    open={showDialer}
+    onClose={() => {
+      setShowDialer(false)
+      if (isProspectingCallingFloor) return
+      setPendingDialLead(null)
+      setPendingQueue(null)
+      setPendingQueueCallerId(null)
+      setPendingQueueCallerPlan(null)
+      setPendingQueueAutoDial(false)
+      setPendingQueueRingCount(null)
+      setPendingSessionId(null)
+    }}
+    onStatusChange={handleDialerStatusChange}
+    pendingDial={pendingDialLead}
+    pendingQueue={pendingQueue}
+    pendingQueueCallerId={pendingQueueCallerId}
+    pendingQueueCallerPlan={pendingQueueCallerPlan}
+    pendingQueueAutoDial={pendingQueueAutoDial}
+    pendingQueueRingCount={pendingQueueRingCount}
+    pendingSessionId={pendingSessionId}
+    presentation={dialerPresentation}
+    signedInEmail={user?.email}
+  /> : null
+
   if (isConversationWorkspace) {
     return (
       <div
         className="min-h-screen bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
         data-theme={userTheme}
       >
-        <WorkspaceFrame userEmail={effectiveWorkspaceEmail} profilePhotoUrl={profilePhotoUrl} canReviewCalls={canReviewCalls}>
+        <WorkspaceFrame
+          userEmail={effectiveWorkspaceEmail}
+          profilePhotoUrl={profilePhotoUrl}
+          canReviewCalls={canReviewCalls}
+          focusedCalling={Boolean(isProspectingCallingFloor)}
+          rightRail={isProspectingCallingFloor && showDialer ? dialerPanel : null}
+        >
           {shouldRedirectCaseyDashboard ? (
             <div role="status" className="grid min-h-full place-items-center text-sm font-semibold text-[var(--crm-text-muted)]">
               Opening Casey’s My Day…
             </div>
           ) : children}
         </WorkspaceFrame>
-        {dialerMounted ? <DialerPanel
-          open={showDialer}
-          onClose={() => {
-            setShowDialer(false)
-            setPendingDialLead(null)
-            setPendingQueue(null)
-            setPendingQueueCallerId(null)
-            setPendingQueueCallerPlan(null)
-            setPendingQueueAutoDial(false)
-            setPendingQueueRingCount(null)
-            setPendingSessionId(null)
-          }}
-          onStatusChange={handleDialerStatusChange}
-          pendingDial={pendingDialLead}
-          pendingQueue={pendingQueue}
-          pendingQueueCallerId={pendingQueueCallerId}
-          pendingQueueCallerPlan={pendingQueueCallerPlan}
-          pendingQueueAutoDial={pendingQueueAutoDial}
-          pendingQueueRingCount={pendingQueueRingCount}
-          pendingSessionId={pendingSessionId}
-          presentation={dialerPresentation}
-          signedInEmail={user?.email}
-        /> : null}
+        {isProspectingCallingFloor ? null : dialerPanel}
       </div>
     )
   }
@@ -610,20 +629,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Dialer Panel — Twilio softphone */}
-      {dialerMounted ? <DialerPanel
-        open={showDialer}
-        onClose={() => { setShowDialer(false); setPendingDialLead(null); setPendingQueue(null); setPendingQueueCallerId(null); setPendingQueueCallerPlan(null); setPendingQueueAutoDial(false); setPendingQueueRingCount(null); setPendingSessionId(null) }}
-        onStatusChange={handleDialerStatusChange}
-        pendingDial={pendingDialLead}
-        pendingQueue={pendingQueue}
-        pendingQueueCallerId={pendingQueueCallerId}
-        pendingQueueCallerPlan={pendingQueueCallerPlan}
-        pendingQueueAutoDial={pendingQueueAutoDial}
-        pendingQueueRingCount={pendingQueueRingCount}
-        pendingSessionId={pendingSessionId}
-        presentation={dialerPresentation}
-        signedInEmail={user?.email}
-      /> : null}
+      {dialerPanel}
 
       {/* ⌘K Command Palette — global search */}
       {paletteOpen ? <CommandPalette open onClose={() => setPaletteOpen(false)} /> : null}

@@ -13,6 +13,7 @@ import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/teleph
 import { transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
 import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
+import { WorkspaceCallController } from './workspace-call-controller'
 import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
 import {
   createClientAttemptId,
@@ -80,7 +81,7 @@ interface DialerPanelProps {
   pendingSessionId?: string | null
   /** How many rings to allow before giving up; maps to the Twilio Dial timeout. */
   pendingQueueRingCount?: number | null
-  presentation?: 'modal' | 'dock'
+  presentation?: 'modal' | 'dock' | 'workspace'
   signedInEmail?: string | null
 }
 
@@ -1118,6 +1119,7 @@ export function DialerPanel({
 
   const isOnCall = status === 'on_call' || status === 'calling'
   const isDocked = presentation === 'dock'
+  const isWorkspace = presentation === 'workspace'
   const effectiveCallerId = callerPlan.mode === 'rotation' && !callerIdLockedByUser
     ? rotatedCallerId
     : (activeCallerId || callerIdOptions[0]?.value || '')
@@ -1126,7 +1128,7 @@ export function DialerPanel({
   return (
     <>
       {/* Backdrop */}
-      {open && !isDocked && (
+      {open && !isDocked && !isWorkspace && (
         <div
           className="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[6px] transition-opacity"
           onClick={onClose}
@@ -1136,7 +1138,11 @@ export function DialerPanel({
       {/* Panel */}
       <div
         className={
-          isDocked
+          isWorkspace
+            ? `relative h-full min-h-0 w-full transition-opacity duration-300 ${
+                open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              }`
+            : isDocked
             ? `fixed right-3 bottom-3 sm:right-5 sm:bottom-5 z-[70] transition-opacity duration-300 ${
                 open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
               }`
@@ -1146,11 +1152,13 @@ export function DialerPanel({
         }
       >
         <div
-          className={`w-[388px] max-w-[calc(100vw-1rem)] ${
-            isDocked
+          className={`${isWorkspace ? 'w-full max-w-none' : 'w-[388px] max-w-[calc(100vw-1rem)]'} ${
+            isWorkspace
+              ? 'h-full min-h-0'
+              : isDocked
               ? 'h-[min(82vh,760px)]'
               : 'max-h-[calc(100dvh-2rem)] h-auto'
-          } bg-[var(--skc-surface-1)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)] transform transition-all duration-300 ease-out flex flex-col ${
+          } bg-[var(--skc-surface-1)] ${isWorkspace ? 'border-0 rounded-none shadow-none' : 'border border-[var(--skc-separator)] rounded-[var(--skc-radius-modal)] shadow-[0_24px_70px_rgba(0,0,0,0.62)]'} transform transition-all duration-300 ease-out flex flex-col ${
             open ? 'scale-100 translate-y-0' : 'scale-95 translate-y-2'
           } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
@@ -1158,7 +1166,7 @@ export function DialerPanel({
         <div className="grid grid-cols-[60px_1fr_60px] items-center px-4 pt-3.5 pb-2.5">
           <div />
           <div className="text-center">
-            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[var(--skc-text-primary)]">Dialer</h2>
+            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[var(--skc-text-primary)]">{isWorkspace ? 'Call controls' : 'Dialer'}</h2>
             <button
               onClick={() => { deviceInitialized.current = false; initDevice() }}
               className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] transition-colors"
@@ -1171,6 +1179,8 @@ export function DialerPanel({
           <button
             onClick={onClose}
             className="justify-self-end w-[30px] h-[30px] rounded-full bg-[var(--skc-surface-3)] text-[var(--skc-text-tertiary)] hover:text-white hover:bg-[var(--skc-surface-2)] transition-colors flex items-center justify-center"
+            aria-label={isWorkspace ? 'Hide call controls' : 'Close dialer'}
+            title={isWorkspace ? 'Hide call controls' : 'Close dialer'}
           >
             <Icon name="close" size="text-[16px]" />
           </button>
@@ -1194,13 +1204,13 @@ export function DialerPanel({
                   <p className="text-[11px] text-white/50 truncate">{queueItem.propertyAddress}</p>
                 )}
               </div>
-              <button
+              {isWorkspace ? null : <button
                 onClick={endQueue}
                 className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider text-white/50 hover:text-white border border-[#31313A] hover:border-white/40 rounded-[8px] px-2 py-1 transition-colors"
                 title="End heir queue — back to normal dialer"
               >
                 End
-              </button>
+              </button>}
             </div>
             <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-2">
               <div className="min-w-0 flex-1">
@@ -1245,7 +1255,7 @@ export function DialerPanel({
             </div>
           )}
 
-          {!isOnCall && status !== 'incoming' && (
+          {!isWorkspace && !isOnCall && status !== 'incoming' && (
             <div className="grid grid-cols-2 rounded-[var(--skc-radius-pill)] bg-[var(--skc-surface-3)] p-0.5 gap-0.5 mx-4 mb-1">
               <button
                 onClick={() => setViewTab('dial')}
@@ -1267,7 +1277,7 @@ export function DialerPanel({
           )}
 
           {/* Search */}
-          {!isOnCall && status !== 'incoming' && viewTab === 'dial' && (
+          {!isWorkspace && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
             <div className="relative mx-4">
               <div className="relative">
                 <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
@@ -1324,7 +1334,7 @@ export function DialerPanel({
           )}
 
           {/* Selected Lead Context Card */}
-          {selectedLead && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
+          {!isWorkspace && selectedLead && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
             <div className="mx-4 bg-[var(--skc-surface-soft)] border border-[var(--skc-separator)] rounded-[var(--skc-radius-card)] p-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
@@ -1435,8 +1445,20 @@ export function DialerPanel({
             </div>
           )}
 
+          {isWorkspace && !isOnCall && status !== 'incoming' && (
+            <WorkspaceCallController
+              callerPlan={callerPlan}
+              dialDisplay={dialNumber ? formatDialDisplay(dialNumber) : ''}
+              dialReady={Boolean(dialNumber.trim()) && status === 'ready'}
+              effectiveCallerId={effectiveCallerId}
+              onCall={makeCall}
+              queueItem={queueItem}
+              statusLabel={statusLabel[status]}
+            />
+          )}
+
           {/* Dial Section (when not on call and not incoming) */}
-          {!isOnCall && status !== 'incoming' && viewTab === 'dial' && (
+          {!isWorkspace && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
             <div>
               <div className="px-4 pb-2 text-center">
                 <input
@@ -1541,7 +1563,7 @@ export function DialerPanel({
           )}
 
           {/* Recent Calls (when idle) */}
-          {!isOnCall && status !== 'incoming' && viewTab === 'recent' && recentCalls.length > 0 && (
+          {!isWorkspace && !isOnCall && status !== 'incoming' && viewTab === 'recent' && recentCalls.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-[10px] font-black text-white/30 uppercase tracking-widest">Recent Calls</h3>
@@ -1630,7 +1652,7 @@ export function DialerPanel({
             </div>
           )}
 
-          {!isOnCall && status !== 'incoming' && viewTab === 'recent' && recentCalls.length === 0 && (
+          {!isWorkspace && !isOnCall && status !== 'incoming' && viewTab === 'recent' && recentCalls.length === 0 && (
             <div className="rounded-[6px] border border-[#2F2F38] bg-[#17171D] px-4 py-5 text-center">
               <p className="text-sm font-semibold text-white/80">No recent calls yet</p>
               <p className="text-xs text-white/40 mt-1">Calls will appear here after your first dial.</p>

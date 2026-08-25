@@ -4,7 +4,8 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
-import { toProperCase } from '@/lib/format'
+import { useWorkspaceCallRailOpen } from '@/components/conversations/workspace-frame'
+import { formatPhone, toProperCase } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { loadDialerActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
@@ -20,38 +21,27 @@ import {
 import type {
   ProspectingCallingLead as LeadSummary,
   ProspectingCallingProspect as ProspectSummary,
+  ProspectingCallingQueueState as QueueState,
   ProspectingCallingTab,
   ProspectingOccupancy,
   ProspectingRecentCall as RecentCall,
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
+import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
+import { joinProspectingAddress as joinAddress } from '@/components/prospecting/prospecting-calling-utils'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
-interface QueueState {
-  queueItem: {
-    phone: string
-    heirName: string
-    relation: string
-    prospect_phone_id: string
-    leadId: string | null
-    prospectId: string
-    campaignMemberId: string | null
-  } | null
-  queueIndex: number
-  queueLength: number
-  callDuration?: string | null
-  status: 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
-}
-
 const DEFAULT_DIALER_CALLER_ID = TWILIO_NUMBERS[0]?.value ?? ''
 const DEFAULT_ROTATION_EVERY_CALLS = 50
 
-function joinAddress(parts: Array<string | null | undefined>): string {
-  return parts.filter(Boolean).join(', ')
+interface ProspectingCallingFloorProps {
+  readOnlyPreview?: boolean
+  previewCampaignId?: string | null
 }
 
-export function ProspectingCallingFloor() {
+export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampaignId = null }: ProspectingCallingFloorProps) {
+  const callRailOpen = useWorkspaceCallRailOpen()
   const router = useRouter()
   const params = useSearchParams()
   const [subjects, setSubjects] = useState<DurableDialerQueueSubject[]>([])
@@ -74,6 +64,7 @@ export function ProspectingCallingFloor() {
   const [durableSession, setDurableSession] = useState<DurableDialerSession | null>(null)
   const [sessionActionPending, setSessionActionPending] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const campaignPreview = useCampaignPreviewQueue(readOnlyPreview ? previewCampaignId : null)
 
   // SMS compose state
   const [smsTarget, setSmsTarget] = useState<ProspectingSmsTarget | null>(null)
@@ -95,7 +86,7 @@ export function ProspectingCallingFloor() {
   const currentProspect: ProspectSummary | null = currentSubjectKey ? prospects[currentSubjectKey] ?? null : null
   const durableSessionId = params.get('session_id')?.trim() || ''
   const requestedCallerId = params.get('caller_id')?.trim() || ''
-  const sessionCallerId = durableSession?.callerId || requestedCallerId
+  const sessionCallerId = durableSession?.callerId || campaignPreview.callerId || requestedCallerId
   const sessionCallerModeParam = params.get('caller_mode')
   const sessionRotateEveryParam = params.get('rotation_every')
   const sessionRotationNumbersParam = params.get('rotation_numbers')
@@ -121,6 +112,11 @@ export function ProspectingCallingFloor() {
     }, sessionCallerId || DEFAULT_DIALER_CALLER_ID)
     return plan
   }, [sessionCallerId, sessionCallerModeParam, sessionRotateEveryParam, sessionRotationNumbersParam, sessionRedialCallerId])
+  const sessionCallerPolicyLabel = sessionCallerPlan.mode === 'rotation' && sessionCallerPlan.rotationCallerIds.length > 1
+    ? `Rotating ${sessionCallerPlan.rotationCallerIds.length} approved lines every ${sessionCallerPlan.rotateEveryCalls} calls`
+    : sessionCallerId
+      ? `Assigned line ${formatPhone(sessionCallerId)}`
+      : 'Caller ID unavailable'
   const startIndexParam = params.get('start_index')
 
   useEffect(() => {
@@ -134,6 +130,16 @@ export function ProspectingCallingFloor() {
     async function resolveIds() {
       setLoading(true)
       setResolveError(null)
+      if (readOnlyPreview) {
+        setDurableSession(null)
+        setSubjects(campaignPreview.subjects)
+        setCurrentIndex(0)
+        setSessionDials(0)
+        setSessionContacts(0)
+        setResolveError(campaignPreview.error)
+        setLoading(campaignPreview.loading)
+        return
+      }
       if (durableSessionId) {
         try {
           const session = await loadDurableDialerSession(durableSessionId)
@@ -181,7 +187,7 @@ export function ProspectingCallingFloor() {
       setLoading(false)
     }
     resolveIds()
-  }, [durableSessionId, params])
+  }, [campaignPreview.error, campaignPreview.loading, campaignPreview.subjects, durableSessionId, params, readOnlyPreview])
 
   useEffect(() => {
     if (durableSessionId) return
@@ -359,12 +365,16 @@ export function ProspectingCallingFloor() {
   }, [applyDurableSession, durableSessionId])
 
   const skipCurrentLead = useCallback(async () => {
+    if (readOnlyPreview) {
+      advance(false)
+      return
+    }
     if (!durableSessionId) {
       advance(true)
       return
     }
     await transitionCurrentSession('skip', 'Agent skipped this contact')
-  }, [advance, durableSessionId, transitionCurrentSession])
+  }, [advance, durableSessionId, readOnlyPreview, transitionCurrentSession])
 
   const handleAutoStartEmpty = useCallback(() => {
     // A record with no callable heirs (never skip-traced, or already fully
@@ -520,7 +530,7 @@ export function ProspectingCallingFloor() {
     ? '2 yr'
     : null
 
-  const inferredQueueLabel = sessionQueueLabelParam ||
+  const inferredQueueLabel = sessionQueueLabelParam || campaignPreview.name ||
     (params.get('cohort') === 'deceased-2-3yr'
       ? '3+ Year Deceased Tax'
       : delinquentYears
@@ -574,6 +584,7 @@ export function ProspectingCallingFloor() {
         currentIndex={currentIndex}
         queueSize={subjects.length}
         callerId={sessionCallerId}
+        callerPolicyLabel={sessionCallerPolicyLabel}
         durableSessionId={durableSessionId}
         durableStatus={durableSession?.status}
         dials={sessionDials}
@@ -582,6 +593,7 @@ export function ProspectingCallingFloor() {
         actionPending={sessionActionPending}
         currentLeadId={currentLeadId}
         error={sessionError}
+        readOnlyPreview={readOnlyPreview}
         onClose={() => { void closeSession() }}
         onResume={() => { void transitionCurrentSession('resume') }}
         onStop={() => { void stopSession() }}
@@ -594,6 +606,7 @@ export function ProspectingCallingFloor() {
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
         {/* Supporting rail — property context, AI evidence, and communications. */}
         <ProspectingCallingContextRail
+          fullWidth={callRailOpen}
           leadId={currentLeadId}
           lead={currentLead}
           prospect={currentProspect}
@@ -614,17 +627,7 @@ export function ProspectingCallingFloor() {
         />
 
         {/* Primary workspace — the actual people and callable numbers. */}
-        <main className="order-1 col-span-12 lg:col-span-8">
-          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Current seller group</p>
-              <h2 className="mt-1 text-xl font-black tracking-[-0.02em] text-[var(--crm-ink)]">Reach the right person</h2>
-              <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Verified contacts rise to the top. Blocked outcomes remain visible but cannot enter the call queue.</p>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">
-              <Icon name="shield" size="text-sm" className="text-emerald-500" /> Safety checked before every dial
-            </div>
-          </div>
+        <main className={`order-1 col-span-12 ${callRailOpen ? 'lg:col-span-12' : 'lg:col-span-8'}`}>
           {currentSubject && (
             <HeirsSection
               key={currentSubjectKey}
@@ -638,12 +641,14 @@ export function ProspectingCallingFloor() {
               callHammerEnabled={sessionUseCallHammer}
               ringCount={sessionRingCount}
               dialerSessionId={durableSessionId || null}
+              readOnlyPreview={readOnlyPreview}
               autoStart={autoQueueSubjectKey === currentSubjectKey}
               onAutoStartHandled={() => setAutoQueueSubjectKey(null)}
               onAutoStartEmpty={handleAutoStartEmpty}
               defaultExpanded
               collapsible={false}
-              onSmsPhone={currentLeadId ? setSmsTarget : undefined}
+              showAllPhones
+              onSmsPhone={!readOnlyPreview && currentLeadId ? setSmsTarget : undefined}
             />
           )}
         </main>

@@ -63,3 +63,19 @@ export interface ProspectingCallingContext {
   ownerName: string
   situsAddress: string
 }
+
+export interface ProspectingCallingQueueState {
+  queueItem: {
+    phone: string
+    heirName: string
+    relation: string
+    prospect_phone_id: string
+    leadId: string | null
+    prospectId: string
+    campaignMemberId: string | null
+  } | null
+  queueIndex: number
+  queueLength: number
+  callDuration?: string | null
+  status: 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
+}
