@@ -3,10 +3,7 @@ import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
-  update: vi.fn(),
-  eq: vi.fn(),
-  select: vi.fn(),
-  maybeSingle: vi.fn(),
+  rpc: vi.fn(),
   entityContext: vi.fn(),
 }))
 
@@ -18,7 +15,7 @@ vi.mock('@/lib/server/crm-entity-foundation', async (importOriginal) => {
 })
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: () => ({
-    from: () => ({ update: mocks.update }),
+    rpc: mocks.rpc,
   }),
 }))
 
@@ -49,10 +46,7 @@ describe('typed lead profile updates', () => {
       opportunity: null,
       openIdentityConflicts: 0,
     })
-    mocks.maybeSingle.mockResolvedValue({ data: { id: 'lead-1', full_name: 'Seller Name' }, error: null })
-    mocks.select.mockReturnValue({ maybeSingle: mocks.maybeSingle })
-    mocks.eq.mockReturnValue({ select: mocks.select })
-    mocks.update.mockReturnValue({ eq: mocks.eq })
+    mocks.rpc.mockResolvedValue({ data: { lead: { id: 'lead-1', full_name: 'Seller Name' } }, error: null })
   })
 
   it('rejects anonymous updates before parsing or touching the database', async () => {
@@ -64,7 +58,7 @@ describe('typed lead profile updates', () => {
 
     expect(response.status).toBe(401)
     expect(parse).not.toHaveBeenCalled()
-    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it('updates only allowlisted profile fields and drops client lifecycle fields', async () => {
@@ -75,8 +69,13 @@ describe('typed lead profile updates', () => {
     }), params)
 
     expect(response.status).toBe(200)
-    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ full_name: 'Seller Name' }))
-    const patch = mocks.update.mock.calls[0][0]
+    expect(mocks.rpc).toHaveBeenCalledWith('crm_update_lead_profile_v1', expect.objectContaining({
+      target_lead_id: 'lead-1',
+      target_actor_email: 'ernest@savingkc.com',
+      target_actor_name: 'Ernest Dodson',
+      target_patch: expect.objectContaining({ full_name: 'Seller Name' }),
+    }))
+    const patch = mocks.rpc.mock.calls[0][1].target_patch
     expect(patch).not.toHaveProperty('station')
     expect(patch).not.toHaveProperty('is_admin')
     expect(patch).not.toHaveProperty('actor')
@@ -85,7 +84,36 @@ describe('typed lead profile updates', () => {
   it('rejects unsupported update commands before writing', async () => {
     const response = await PATCH(request({ kind: 'lifecycle', station: 'closed_won' }), params)
     expect(response.status).toBe(400)
-    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('preserves the existing typed offer amount update path', async () => {
+    const response = await PATCH(request({ kind: 'offer_amount', offerAmount: 125_000 }), params)
+
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith('crm_update_lead_profile_v1', expect.objectContaining({
+      target_lead_id: 'lead-1',
+      target_patch: { offer_amount: 125_000 },
+    }))
+  })
+
+  it('returns a conflict instead of reporting a canonical mismatch as saved', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'canonical_profile_conflict:email' } })
+
+    const response = await PATCH(request({ kind: 'profile', profile: { email: 'seller@example.com' } }), params)
+    const body = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(body).toMatchObject({ success: false, code: 'canonical_profile_conflict' })
+  })
+
+  it('returns a validation response for a database-enforced profile rule', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'invalid_profile_field:full_name' } })
+
+    const response = await PATCH(request({ kind: 'profile', profile: { full_name: null } }), params)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ success: false })
   })
 
   it('returns canonical entity values after the compatibility write-through refreshes', async () => {

@@ -137,4 +137,55 @@ describe('LeadStatusControl', () => {
     })))
     expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ classification: null, station: 'new' }))
   })
+
+  it('promotes one verified lead to Opportunity through the governed qualified transition', async () => {
+    const onChanged = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        result: { classification: 'opportunity', stage: 'qualified', priority: 'hot', deadReason: null },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<LeadStatusControl leadId="lead-1" classification="lead" station="contacted" onChanged={onChanged} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: Lead' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Opportunity' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Opportunity' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/leads/lead-1/lifecycle', expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('"stage":"qualified"'),
+    })))
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({
+      classification: 'opportunity',
+      station: 'qualified',
+      priority: 'hot',
+    }))
+  })
+
+  it('keeps the dialog open and explains which qualification pillars are missing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        success: false,
+        error: 'Seller qualification requires human verification for: Timeline, Condition, Motivation, Price',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<LeadStatusControl leadId="lead-1" classification="lead" station="contacted" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change pipeline status. Current: Lead' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Opportunity' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Opportunity' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Seller qualification requires human verification for: Timeline, Condition, Motivation, Price',
+    )
+    expect(screen.getByRole('dialog', { name: 'Pipeline status' })).toBeVisible()
+  })
 })

@@ -27,6 +27,7 @@ export interface CrmEntityContext {
     city: string | null
     state: string | null
     zip: string | null
+    county?: string | null
     parcelId: string | null
     propertyType?: string | null
     bedrooms?: number | null
@@ -70,6 +71,7 @@ export interface CrmEntityContext {
     classification: string | null
     priority: string | null
     ownerName: string | null
+    source?: string | null
     lifecycleStatus: string
   } | null
   openIdentityConflicts: number
@@ -99,6 +101,8 @@ type CompatibilityLeadProfile = Record<string, unknown> & {
   city?: string | null
   state?: string | null
   zip?: string | null
+  county?: string | null
+  source?: string | null
   station?: string | null
   classification?: string | null
   priority?: string | null
@@ -132,6 +136,8 @@ export function applyCrmEntityAuthority<T extends CompatibilityLeadProfile>(
     city: context.property?.city ?? lead.city ?? null,
     state: context.property?.state ?? lead.state ?? null,
     zip: context.property?.zip ?? lead.zip ?? null,
+    county: context.property?.county ?? lead.county ?? null,
+    source: context.opportunity.source ?? lead.source ?? null,
     station: context.opportunity.stage,
     classification: context.opportunity.classification,
     priority: context.opportunity.priority,
@@ -193,12 +199,12 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       .order('is_primary', { ascending: false }),
     linkData.property_id
       ? db.from('crm_properties')
-        .select('id, address, city, state, zip, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, assessed_value, land_value, improvement_value, tax_owed, tax_status, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, property_owner_name, owner_mailing_address, owner_is_deceased, owner_is_out_of_state, data_source, data_enriched_at')
+        .select('id, address, city, state, zip, county, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, assessed_value, land_value, improvement_value, tax_owed, tax_status, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, property_owner_name, owner_mailing_address, owner_is_deceased, owner_is_out_of_state, data_source, data_enriched_at')
         .eq('id', linkData.property_id)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     db.from('crm_opportunities')
-      .select('id, stage, classification, priority, owner_name, lifecycle_status')
+      .select('id, stage, classification, priority, owner_name, source, lifecycle_status')
       .eq('id', linkData.opportunity_id)
       .maybeSingle(),
     db.from('crm_identity_conflicts')
@@ -242,6 +248,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       city: property.city,
       state: property.state,
       zip: property.zip,
+      county: property.county,
       parcelId: property.parcel_id,
       propertyType: property.property_type,
       bedrooms: property.bedrooms,
@@ -285,6 +292,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       classification: opportunity.classification,
       priority: opportunity.priority,
       ownerName: opportunity.owner_name,
+      source: opportunity.source,
       lifecycleStatus: opportunity.lifecycle_status,
     } : null,
     openIdentityConflicts: conflictResult.count ?? 0,

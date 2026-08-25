@@ -51,7 +51,14 @@ export function LeadStatusControl({
         : 'New intake'
   const canonicalReason = canonicalDeadReason(deadReason)
   const [open, setOpen] = useState(false)
-  const [selectedStatus, setSelectedStatus] = useState<'new_intake' | 'lead' | 'not_a_lead'>(currentlyNotLead ? 'not_a_lead' : currentlyUnclassified ? 'new_intake' : 'lead')
+  const currentSelection: 'new_intake' | 'lead' | 'opportunity' | 'not_a_lead' = currentlyNotLead
+    ? 'not_a_lead'
+    : currentlyUnclassified
+      ? 'new_intake'
+      : classification === 'opportunity'
+        ? 'opportunity'
+        : 'lead'
+  const [selectedStatus, setSelectedStatus] = useState<'new_intake' | 'lead' | 'opportunity' | 'not_a_lead'>(currentSelection)
   const [selectedReason, setSelectedReason] = useState(canonicalReason ?? '')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -63,7 +70,7 @@ export function LeadStatusControl({
     if (saving) return
     setOpen(false)
     setError(null)
-    setSelectedStatus(currentlyNotLead ? 'not_a_lead' : currentlyUnclassified ? 'new_intake' : 'lead')
+    setSelectedStatus(currentSelection)
     setSelectedReason(canonicalReason ?? '')
     setNotes('')
   }
@@ -75,17 +82,14 @@ export function LeadStatusControl({
     if (saving) return
     const markingNotLead = selectedStatus === 'not_a_lead'
     const returningToNew = selectedStatus === 'new_intake'
+    const promotingToOpportunity = selectedStatus === 'opportunity'
     if (markingNotLead && !selectedReason) return
     if (markingNotLead && selectedReason === 'other' && !notes.trim()) {
       setError('Add a note when Other is selected.')
       return
     }
 
-    if (!markingNotLead && !returningToNew && !currentlyNotLead && classification) {
-      closeDialog()
-      return
-    }
-    if (returningToNew && currentlyUnclassified) {
+    if (selectedStatus === currentSelection) {
       closeDialog()
       return
     }
@@ -97,9 +101,9 @@ export function LeadStatusControl({
         ? 'dead'
         : returningToNew
           ? 'new'
-        : currentlyNotLead || currentlyUnclassified
-          ? 'contacted'
-          : station || 'contacted'
+          : promotingToOpportunity
+            ? 'qualified'
+            : 'contacted'
       const response = await fetch(`/api/leads/${leadId}/lifecycle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -129,9 +133,9 @@ export function LeadStatusControl({
       if (!response.ok || !payload.success) throw new Error(payload.error || 'Lead status could not be saved')
 
       onChanged?.({
-        classification: payload.result?.classification ?? (markingNotLead ? 'dead' : returningToNew ? null : 'lead'),
+        classification: payload.result?.classification ?? (markingNotLead ? 'dead' : returningToNew ? null : promotingToOpportunity ? 'opportunity' : 'lead'),
         station: payload.result?.stage ?? nextStation,
-        priority: payload.result?.priority ?? (markingNotLead ? 'cold' : 'warm'),
+        priority: payload.result?.priority ?? (markingNotLead ? 'cold' : promotingToOpportunity ? 'hot' : 'warm'),
         dead_reason: payload.result?.deadReason ?? (markingNotLead ? selectedReason : null),
       })
       setOpen(false)
@@ -146,7 +150,7 @@ export function LeadStatusControl({
     <button
       type="button"
       onClick={() => {
-        setSelectedStatus(currentlyNotLead ? 'not_a_lead' : currentlyUnclassified ? 'new_intake' : 'lead')
+        setSelectedStatus(currentSelection)
         setSelectedReason(canonicalReason ?? '')
         setOpen(true)
       }}
@@ -185,7 +189,7 @@ export function LeadStatusControl({
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="fact_check" /></span>
             <div>
               <h2 id={titleId} className="text-lg font-black text-[var(--crm-ink)]">Pipeline status</h2>
-              <p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Add new intake to Leads, or record why it should leave active work.</p>
+              <p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Move a record through New, Lead, and Opportunity, or record why it should leave active work.</p>
             </div>
           </div>
           <button type="button" onClick={closeDialog} aria-label="Close lead status dialog" className="crm-icon-button flex h-9 w-9 items-center justify-center rounded-lg"><Icon name="close" /></button>
@@ -225,6 +229,21 @@ export function LeadStatusControl({
             >
               <span className="flex items-center justify-between gap-2 font-black text-[var(--crm-success)]"><span className="flex items-center gap-2"><Icon name="verified" />Lead</span>{selectedStatus === 'lead' ? <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--crm-success)] text-white"><Icon name="check" className="text-[16px]" /></span> : null}</span>
               <span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">Confirm this is a seller lead and move it from New into Leads.</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Opportunity"
+              onClick={() => setSelectedStatus('opportunity')}
+              aria-pressed={selectedStatus === 'opportunity'}
+              className={cn(
+                'rounded-xl border-2 p-4 text-left transition-colors',
+                selectedStatus === 'opportunity'
+                  ? 'border-[var(--crm-violet)] bg-[var(--crm-violet-soft)]'
+                  : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] hover:border-[var(--crm-violet)]/50',
+              )}
+            >
+              <span className="flex items-center justify-between gap-2 font-black text-[var(--crm-violet)]"><span className="flex items-center gap-2"><Icon name="trending_up" />Opportunity</span>{selectedStatus === 'opportunity' ? <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--crm-violet)] text-white"><Icon name="check" className="text-[16px]" /></span> : null}</span>
+              <span className="mt-1 block text-xs leading-5 text-[var(--crm-text-muted)]">Promote a verified seller lead after all four qualification pillars are confirmed.</span>
             </button>
             <button
               type="button"
@@ -285,7 +304,7 @@ export function LeadStatusControl({
           <button type="button" onClick={closeDialog} disabled={saving} className="crm-secondary-button rounded-lg px-4 py-2 text-sm font-bold">Cancel</button>
           <button
             type="button"
-            aria-label={saving ? 'Saving pipeline status' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : selectedStatus === 'new_intake' ? canReturnToNew ? 'Return to New' : 'Keep in New' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
+            aria-label={saving ? 'Saving pipeline status' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : selectedStatus === 'new_intake' ? canReturnToNew ? 'Return to New' : 'Keep in New' : selectedStatus === 'opportunity' ? classification === 'opportunity' ? 'Keep as Opportunity' : 'Move to Opportunity' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : classification === 'opportunity' ? 'Move back to Leads' : 'Confirm lead'}
             onClick={() => void saveLeadStatus()}
             disabled={saving || (selectedStatus === 'not_a_lead' && (!selectedReason || (selectedReason === 'other' && !notes.trim())))}
             className={cn(
@@ -293,8 +312,8 @@ export function LeadStatusControl({
               selectedStatus === 'not_a_lead' ? 'bg-[var(--crm-brand)]' : selectedStatus === 'new_intake' ? 'bg-[var(--crm-info)]' : 'bg-[var(--crm-success)]',
             )}
           >
-            <Icon name={saving ? 'progress_activity' : selectedStatus === 'not_a_lead' ? 'person_off' : selectedStatus === 'new_intake' ? 'person_search' : 'verified'} className={saving ? 'animate-spin' : ''} />
-            {saving ? 'Saving…' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : selectedStatus === 'new_intake' ? canReturnToNew ? 'Return to New' : 'Keep in New' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : 'Confirm lead'}
+            <Icon name={saving ? 'progress_activity' : selectedStatus === 'not_a_lead' ? 'person_off' : selectedStatus === 'new_intake' ? 'person_search' : selectedStatus === 'opportunity' ? 'trending_up' : 'verified'} className={saving ? 'animate-spin' : ''} />
+            {saving ? 'Saving…' : selectedStatus === 'not_a_lead' ? 'Mark not a lead' : selectedStatus === 'new_intake' ? canReturnToNew ? 'Return to New' : 'Keep in New' : selectedStatus === 'opportunity' ? classification === 'opportunity' ? 'Keep as Opportunity' : 'Move to Opportunity' : currentlyNotLead ? 'Restore as lead' : currentlyUnclassified ? 'Add to Leads' : classification === 'opportunity' ? 'Move back to Leads' : 'Confirm lead'}
           </button>
         </div>
       </div>
