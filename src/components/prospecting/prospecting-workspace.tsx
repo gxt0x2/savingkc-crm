@@ -284,8 +284,8 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
 
   const commandBar = (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <div className="min-w-0"><p className="crm-eyebrow">Prospecting</p><h1 className="truncate text-xl font-black text-[var(--crm-ink)]">{audienceReviewOpen ? 'Audience review' : studioOpen ? 'Campaign studio' : 'Campaign command center'}</h1></div>
-      {studioOpen || audienceReviewOpen ? <button type="button" onClick={closeBuilder} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="close" />Exit {audienceReviewOpen ? 'review' : 'studio'}</button> : <button type="button" onClick={openStudio} className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="add" />Build campaign</button>}
+      <h1 className="min-w-0 truncate text-xl font-black text-[var(--crm-ink)]">{audienceReviewOpen ? 'Audience review' : studioOpen ? 'Campaign studio' : detail?.kind === 'sms' ? 'Seller outreach' : 'Seller calling'}</h1>
+      {studioOpen || audienceReviewOpen ? <button type="button" onClick={closeBuilder} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-black"><Icon name="close" />Exit {audienceReviewOpen ? 'review' : 'studio'}</button> : null}
     </div>
   )
 

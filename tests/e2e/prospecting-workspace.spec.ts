@@ -28,6 +28,17 @@ const campaign = {
   stats: { total: 10, active: 7, suppressed: 1, replied: 2, completed: 1, sent: 8, failed: 0 },
 }
 
+const dialerCampaign = {
+  ...campaign,
+  id: '22222222-2222-4222-8222-222222222222',
+  name: 'County Tax Delinquent 2-Year — Pilot',
+  kind: 'dialer',
+  callerId: '+18163077835',
+  fromPhone: null,
+  steps: [],
+  stats: { total: 85, active: 84, needsReview: 0, suppressed: 1, replied: 0, completed: 0, sent: 0, delivered: 0, failed: 0 },
+}
+
 function fulfill(route: Route, body: unknown) {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -35,21 +46,30 @@ function fulfill(route: Route, body: unknown) {
 async function mockCampaigns(page: Page) {
   await page.route('**/api/prospecting/campaigns**', (route) => {
     const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith('/activity')) return fulfill(route, { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    if (pathname.endsWith('/members')) return fulfill(route, { items: dialerCampaign.members, pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    if (pathname.endsWith(dialerCampaign.id)) return fulfill(route, { campaign: dialerCampaign })
     if (pathname.endsWith(campaign.id)) return fulfill(route, { campaign })
-    return fulfill(route, { items: [campaign], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    return fulfill(route, { items: [dialerCampaign, campaign], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
   })
 }
 
-test('Prospecting renders a real campaign operating dashboard and guided studio', async ({ page }) => {
+test('Prospecting makes the agent calling workflow obvious and keeps management secondary', async ({ page }) => {
   await mockCampaigns(page)
-  await page.goto('/prospecting', { waitUntil: 'domcontentloaded' })
+  await page.goto(`/prospecting?campaign=${dialerCampaign.id}`, { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByRole('heading', { name: campaign.name })).toBeVisible()
-  await expect(page.getByText('25% reply rate')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'The conversation sellers receive' })).toBeVisible()
-  await expect(page.getByText('Stops immediately when a seller replies or opts out.')).toBeVisible()
-
-  await page.getByRole('button', { name: 'Build campaign' }).first().click()
+  await expect(page.getByRole('heading', { name: dialerCampaign.name })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Choose campaign' })).toBeVisible()
+  await expect(page.getByText('84', { exact: true })).toBeVisible()
+  await expect(page.getByText('ready to call')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start calling session' })).toBeVisible()
+  await expect(page.getByText('All associated contacts stay visible')).toBeVisible()
+  await expect(page.getByText('Audience health')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Campaign details/ })).toHaveAttribute('aria-expanded', 'false')
+  await page.getByRole('button', { name: /Campaign details/ }).click()
+  await expect(page.getByText('Audience health')).toBeVisible()
+  await expect(page.getByText('Protected at every action')).toBeVisible()
+  await page.getByRole('button', { name: 'Build another campaign' }).click()
   await expect(page.getByRole('heading', { name: 'What are we launching?' })).toBeVisible()
   await page.getByRole('textbox', { name: /Campaign name/ }).fill('October owner outreach')
   await page.getByRole('button', { name: /SMS cadence/ }).click()
@@ -58,6 +78,18 @@ test('Prospecting renders a real campaign operating dashboard and guided studio'
   await expect(page.getByRole('heading', { name: 'Build the conversation.' })).toBeVisible()
   await expect(page.getByText('Draft preview · not sent')).toBeVisible()
   await expect(page.getByRole('button', { name: /Add message/ })).toBeVisible()
+})
+
+test('Prospecting keeps campaign choice and session start clear on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockCampaigns(page)
+  await page.goto(`/prospecting?campaign=${dialerCampaign.id}`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('combobox', { name: 'Choose campaign' })).toBeVisible()
+  await expect(page.getByText('84', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start calling session' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Campaign details/ })).toBeVisible()
+  await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll')
 })
 
 test('Prospecting studio remains usable on a phone-sized viewport', async ({ page }) => {
