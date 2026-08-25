@@ -1,13 +1,20 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 import { CaseyAndonQueue } from '@/components/my-day/casey-andon-queue'
 import { MyDayCallReview } from '@/components/my-day/my-day-call-review'
-import { MY_DAY_TIME_ZONE, type MyDayData, type MyDayMetric, type MyDayQueueItem } from '@/lib/my-day'
+import {
+  MY_DAY_TIME_ZONE,
+  type MyDayData,
+  type MyDayDateRange,
+  type MyDayMetric,
+  type MyDayQueueItem,
+  type MyDayRangePreset,
+  type MyDayRangeRequest,
+} from '@/lib/my-day'
 import { cn } from '@/lib/utils'
 
 const TONE_STYLES: Record<MyDayMetric['tone'], { icon: string; text: string; dot: string; soft: string }> = {
@@ -47,15 +54,164 @@ function greeting(generatedAt: string) {
   return 'Good evening'
 }
 
-function monthOptions(currentMonth: string) {
-  const anchor = new Date(`${currentMonth}-15T12:00:00Z`)
-  return Array.from({ length: 18 }, (_, index) => {
-    const date = new Date(anchor)
-    date.setUTCMonth(anchor.getUTCMonth() - index)
-    const value = date.toISOString().slice(0, 7)
-    const label = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date)
-    return { value, label }
-  })
+function centralDateKey(value: string) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: MY_DAY_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
+}
+
+const RANGE_CHOICES: Array<{ preset: Exclude<MyDayRangePreset, 'custom'>; label: string; description: string }> = [
+  { preset: 'today', label: 'Today', description: 'Current day' },
+  { preset: 'yesterday', label: 'Yesterday', description: 'Previous day' },
+  { preset: 'this_week', label: 'This week', description: 'Monday through today' },
+  { preset: 'last_week', label: 'Last week', description: 'Previous calendar week' },
+  { preset: 'last_7_days', label: 'Last 7 days', description: 'Rolling seven-day window' },
+  { preset: 'month_to_date', label: 'Month to date', description: 'First of month through today' },
+  { preset: 'previous_month', label: 'Previous month', description: 'Full prior calendar month' },
+  { preset: 'last_30_days', label: 'Last 30 days', description: 'Rolling thirty-day window' },
+]
+
+function compactRangeDates(range: MyDayDateRange) {
+  const start = new Date(`${range.from}T12:00:00Z`)
+  const end = new Date(`${range.to}T12:00:00Z`)
+  if (range.from === range.to) {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+    }).format(start)
+  }
+  const left = new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', timeZone: 'UTC',
+  }).format(start)
+  const right = new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  }).format(end)
+  return `${left} – ${right}`
+}
+
+function rangeRequest(range: MyDayDateRange): MyDayRangeRequest {
+  return range.preset === 'custom'
+    ? { preset: 'custom', from: range.from, to: range.to }
+    : { preset: range.preset }
+}
+
+export function MyDayDateRangeSelector({
+  range,
+  today,
+  loading,
+  onChange,
+}: {
+  range: MyDayDateRange
+  today: string
+  loading: boolean
+  onChange: (request: MyDayRangeRequest) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [customFrom, setCustomFrom] = useState(range.from)
+  const [customTo, setCustomTo] = useState(range.to)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
+  const customInvalid = !customFrom || !customTo || customFrom > customTo || customTo > today
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Date range: ${range.label}`}
+        disabled={loading}
+        onClick={() => setOpen((current) => {
+          if (!current) {
+            setCustomFrom(range.from)
+            setCustomTo(range.to)
+          }
+          return !current
+        })}
+        className="crm-field flex h-12 min-w-[210px] items-center gap-3 rounded-xl px-3 text-left outline-none transition hover:border-[var(--crm-brand)] disabled:opacity-60"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]">
+          <Icon name="date_range" className="text-[19px]" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <strong className="block truncate text-[12px] font-black text-[var(--crm-text)]">{range.label}</strong>
+          <span className="block truncate text-[10px] font-semibold text-[var(--crm-text-muted)]">{compactRangeDates(range)}</span>
+        </span>
+        <Icon name={open ? 'expand_less' : 'expand_more'} className="text-[18px] text-[var(--crm-text-muted)]" />
+      </button>
+
+      {open ? (
+        <div role="dialog" aria-label="Choose reporting date range" className="absolute right-0 z-50 mt-2 grid w-[min(640px,calc(100vw-2rem))] gap-4 rounded-2xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-4 shadow-2xl sm:grid-cols-[1.1fr_0.9fr]">
+          <section aria-labelledby="quick-ranges-title">
+            <h2 id="quick-ranges-title" className="px-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">Quick ranges</h2>
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              {RANGE_CHOICES.map((choice) => {
+                const active = range.preset === choice.preset
+                return (
+                  <button
+                    key={choice.preset}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => {
+                      setOpen(false)
+                      onChange({ preset: choice.preset })
+                    }}
+                    className={cn(
+                      'rounded-xl border px-3 py-2.5 text-left transition',
+                      active
+                        ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]'
+                        : 'border-transparent hover:border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)]',
+                    )}
+                  >
+                    <span className="flex items-center justify-between gap-2 text-[12px] font-black">{choice.label}{active ? <Icon name="check" className="text-[16px]" /> : null}</span>
+                    <span className="mt-0.5 block text-[9px] font-semibold text-[var(--crm-text-muted)]">{choice.description}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          <section aria-labelledby="custom-range-title" className="rounded-xl bg-[var(--crm-surface-subtle)] p-3">
+            <h2 id="custom-range-title" className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">Custom range</h2>
+            <p className="mt-1 text-[10px] leading-relaxed text-[var(--crm-text-muted)]">Choose up to 90 days. Future dates are unavailable.</p>
+            <div className="mt-3 grid gap-3">
+              <label className="grid gap-1 text-[10px] font-black text-[var(--crm-text-muted)]">From<input aria-label="Custom range start" type="date" value={customFrom} max={today} onChange={(event) => setCustomFrom(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-xs font-bold text-[var(--crm-text)]" /></label>
+              <label className="grid gap-1 text-[10px] font-black text-[var(--crm-text-muted)]">To<input aria-label="Custom range end" type="date" value={customTo} min={customFrom || undefined} max={today} onChange={(event) => setCustomTo(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-xs font-bold text-[var(--crm-text)]" /></label>
+            </div>
+            <button
+              type="button"
+              disabled={customInvalid}
+              onClick={() => {
+                setOpen(false)
+                onChange({ preset: 'custom', from: customFrom, to: customTo })
+              }}
+              className="crm-primary-button mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Icon name="check" className="text-[16px]" />Apply custom range
+            </button>
+          </section>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function formatDateTime(value: string | null, mode: 'time' | 'due', referenceAt: string) {
@@ -116,7 +272,7 @@ function ordinalDay(day: number) {
 function formatWeekRange(endValue: string) {
   const end = new Date(`${endValue}T12:00:00Z`)
   const start = new Date(end)
-  start.setUTCDate(end.getUTCDate() - 6)
+  start.setUTCDate(end.getUTCDate() - 4)
   const month = (date: Date) => new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(date)
   return `${month(start)} ${ordinalDay(start.getUTCDate())} – ${month(end)} ${ordinalDay(end.getUTCDate())}`
 }
@@ -168,7 +324,7 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
   return (
     <section aria-labelledby="weekly-snapshot-title" className="crm-panel overflow-hidden rounded-xl">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 id="weekly-snapshot-title" className="px-5 pt-4 text-[22px] font-black tracking-[-0.02em]">Weekly Snapshot</h2>
+        <h2 id="weekly-snapshot-title" className="px-5 pt-4 text-[22px] font-black tracking-[-0.02em]">Workweek Snapshot</h2>
         <p className="px-5 pt-4 text-sm font-bold text-[var(--crm-text-muted)]">{formatWeekRange(data.week.end)}</p>
       </div>
       <div className="mt-3 overflow-x-auto px-5">
@@ -281,20 +437,42 @@ export function QueueCard({ data, selected, onToggle, onAction, onCreateCallingL
 }
 
 export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initialData: MyDayData; canReviewCalls?: boolean }) {
-  const router = useRouter()
   const [data, setData] = useState(initialData)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scorecardActive, setScorecardActive] = useState(false)
-  const months = useMemo(() => monthOptions(initialData.month), [initialData.month])
+  const rangeRef = useRef(initialData.range)
 
   useEffect(() => {
-    void Promise.resolve().then(() => setData(initialData))
+    void Promise.resolve().then(() => {
+      rangeRef.current = initialData.range
+      setData(initialData)
+    })
   }, [initialData])
+
+  const loadRange = useCallback(async (request: MyDayRangeRequest, foreground = true) => {
+    if (foreground) setLoading(true)
+    setError(null)
+    const search = new URLSearchParams({ range: request.preset || 'today' })
+    if (request.from) search.set('from', request.from)
+    if (request.to) search.set('to', request.to)
+    try {
+      const response = await fetch(`/api/my-day?${search.toString()}`, { cache: 'no-store' })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload?.error || 'The date range could not load.')
+      const next = payload as MyDayData
+      rangeRef.current = next.range
+      setData(next)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The date range could not load.')
+    } finally {
+      if (foreground) setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     const refresh = () => {
-      if (!scorecardActive) router.refresh()
+      if (!scorecardActive) void loadRange(rangeRequest(rangeRef.current), false)
     }
     const interval = window.setInterval(refresh, 60_000)
     window.addEventListener('focus', refresh)
@@ -302,23 +480,7 @@ export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initia
       window.clearInterval(interval)
       window.removeEventListener('focus', refresh)
     }
-  }, [router, scorecardActive])
-
-  async function changeMonth(month: string, force = false) {
-    if (!force && month === data.month) return
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/my-day?month=${encodeURIComponent(month)}`, { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload?.error || 'The month could not load.')
-      setData(payload as MyDayData)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The month could not load.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [loadRange, scorecardActive])
 
   return (
     <main className="relative mx-auto flex w-full max-w-[1440px] flex-col gap-3 px-4 py-5 sm:px-6 lg:py-6">
@@ -329,30 +491,23 @@ export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initia
           <p className="mt-0.5 text-xs font-semibold text-[var(--crm-text-muted)]">{greeting(data.generatedAt)}, Casey</p>
         </div>
         <div className="flex items-center gap-3">
-          <label className="relative">
-            <span className="sr-only">Month</span>
-            <Icon name="calendar_month" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[17px] text-[var(--crm-text-muted)]" />
-            <select value={data.month} onChange={(event) => void changeMonth(event.target.value)} disabled={loading} className="crm-field h-10 min-w-[168px] appearance-none rounded-lg pl-10 pr-9 text-[11px] font-black outline-none disabled:opacity-60">
-              {months.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
-            </select>
-            <Icon name="expand_more" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[17px] text-[var(--crm-text-muted)]" />
-          </label>
+          <MyDayDateRangeSelector range={data.range} today={centralDateKey(data.generatedAt)} loading={loading} onChange={(request) => void loadRange(request)} />
           <label className="relative">
             <span className="sr-only">Agent</span>
             <span className="pointer-events-none absolute left-3 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--crm-brand)] text-[10px] font-black text-white">C</span>
-            <select aria-label="Agent" value="casey" disabled className="crm-field h-10 min-w-[130px] appearance-none rounded-lg pl-11 pr-9 text-[11px] font-black outline-none disabled:cursor-default disabled:opacity-100">
+            <select aria-label="Agent" value="casey" disabled className="crm-field h-12 min-w-[130px] appearance-none rounded-xl pl-11 pr-9 text-[11px] font-black outline-none disabled:cursor-default disabled:opacity-100">
               <option value="casey">Casey</option>
             </select>
             <Icon name="expand_more" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[17px] text-[var(--crm-text-muted)]" />
           </label>
         </div>
       </header>
-      {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void changeMonth(data.month, true)} className="underline">Retry</button></div> : null}
+      {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void loadRange(rangeRequest(data.range))} className="underline">Retry</button></div> : null}
       <FunnelCard data={data} />
       <WeeklySnapshot data={data} />
       {canReviewCalls ? <MyDayCallReview onReviewActiveChange={setScorecardActive} /> : null}
       <CaseyAndonQueue />
-      {loading ? <div role="status" aria-live="polite" className="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-[var(--crm-canvas)]/70 backdrop-blur-[1px]"><span className="rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2 text-xs font-black shadow-lg">Loading Casey’s month…</span></div> : null}
+      {loading ? <div role="status" aria-live="polite" className="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-[var(--crm-canvas)]/70 backdrop-blur-[1px]"><span className="rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2 text-xs font-black shadow-lg">Loading {data.range.label.toLowerCase()}…</span></div> : null}
     </main>
   )
 }

@@ -2,8 +2,19 @@ import { formatLeadSource } from '@/lib/contact-display'
 import { isReachedDisposition } from '@/lib/dialer-dispositions'
 import { playableRecordingUrl, readCallReviewWorkflow, readRecordingReview } from '@/lib/marketing/call-recordings'
 import { stageLabel } from '@/lib/utils'
+import {
+  MY_DAY_TIME_ZONE,
+  startOfMyDayWeek,
+  type MyDayDateRange,
+} from '@/lib/my-day-range'
 
-export const MY_DAY_TIME_ZONE = 'America/Chicago'
+export {
+  MY_DAY_TIME_ZONE,
+  resolveMyDayDateRange,
+  type MyDayDateRange,
+  type MyDayRangePreset,
+  type MyDayRangeRequest,
+} from '@/lib/my-day-range'
 
 export interface MyDayAgentStat {
   date: string
@@ -128,6 +139,7 @@ export interface MyDayCallReview {
 export interface MyDayData {
   month: string
   monthLabel: string
+  range: MyDayDateRange
   generatedAt: string
   agent: { name: 'Casey'; initials: 'C' }
   performance: {
@@ -158,6 +170,7 @@ export interface MyDayData {
 
 export interface BuildMyDayInput {
   month: string
+  range: MyDayDateRange
   now: Date
   stats: MyDayAgentStat[]
   performance: MyDayPerformanceRow[]
@@ -211,18 +224,9 @@ function dateKey(value: string | Date): string | null {
   return DATE_KEY.format(parsed)
 }
 
-function startOfMonthKey(month: string) {
-  return `${month}-01`
-}
-
-function endOfMonthKey(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  return new Date(Date.UTC(year, monthNumber, 0, 12)).toISOString().slice(0, 10)
-}
-
-function isWithinMonth(value: string | null | undefined, month: string): boolean {
+function isWithinRange(value: string | null | undefined, range: Pick<MyDayDateRange, 'from' | 'to'>): boolean {
   const key = value ? dateKey(value) : null
-  return Boolean(key && key >= startOfMonthKey(month) && key <= endOfMonthKey(month))
+  return Boolean(key && key >= range.from && key <= range.to)
 }
 
 function monthLabel(month: string) {
@@ -246,10 +250,14 @@ function activityAssignedToCasey(activity: MyDayActivity): boolean {
   return owner.toLowerCase().includes('casey')
 }
 
-function stageEntries(input: BuildMyDayInput, threshold: number): Map<string, string> {
+function stageEntries(
+  input: BuildMyDayInput,
+  threshold: number,
+  range: Pick<MyDayDateRange, 'from' | 'to'> = input.range,
+): Map<string, string> {
   const entries = new Map<string, string>()
   for (const activity of input.activities) {
-    if (!activity.lead_id || !isWithinMonth(activity.created_at, input.month)) continue
+    if (!activity.lead_id || !isWithinRange(activity.created_at, range)) continue
     const activityType = activity.activity_type.toLowerCase()
     const stage = stageFromActivity(activity)
     const rank = STAGE_RANK[stage] ?? -1
@@ -266,7 +274,7 @@ function stageEntries(input: BuildMyDayInput, threshold: number): Map<string, st
   for (const lead of input.leads) {
     const rank = STAGE_RANK[(lead.station || '').toLowerCase()] ?? -1
     const recordedAt = lead.updated_at || lead.created_at
-    if (rank >= threshold && isWithinMonth(recordedAt, input.month) && !entries.has(lead.id)) {
+    if (rank >= threshold && isWithinRange(recordedAt, range) && !entries.has(lead.id)) {
       entries.set(lead.id, recordedAt)
     }
   }
@@ -274,13 +282,7 @@ function stageEntries(input: BuildMyDayInput, threshold: number): Map<string, st
 }
 
 function weekDateKeys(input: BuildMyDayInput): string[] {
-  const currentMonth = dateKey(input.now)?.slice(0, 7)
-  const anchorKey = currentMonth === input.month ? dateKey(input.now)! : endOfMonthKey(input.month)
-  const anchor = new Date(`${anchorKey}T12:00:00Z`)
-  const day = anchor.getUTCDay()
-  const mondayOffset = day === 0 ? -6 : 1 - day
-  const monday = new Date(anchor)
-  monday.setUTCDate(anchor.getUTCDate() + mondayOffset)
+  const monday = new Date(`${startOfMyDayWeek(input.range.to)}T12:00:00Z`)
   return Array.from({ length: 5 }, (_, index) => {
     const date = new Date(monday)
     date.setUTCDate(monday.getUTCDate() + index)
@@ -288,13 +290,12 @@ function weekDateKeys(input: BuildMyDayInput): string[] {
   })
 }
 
-function requiredPerformanceDates(month: string, now: Date): string[] {
+function requiredPerformanceDates(range: MyDayDateRange, now: Date): string[] {
   const today = dateKey(now)
   if (!today) return []
-  const currentMonth = today.slice(0, 7)
-  if (month > currentMonth) return []
-  const end = month === currentMonth ? today : endOfMonthKey(month)
-  const cursor = new Date(`${startOfMonthKey(month)}T12:00:00Z`)
+  if (range.from > today) return []
+  const end = range.to > today ? today : range.to
+  const cursor = new Date(`${range.from}T12:00:00Z`)
   const final = new Date(`${end}T12:00:00Z`)
   const dates: string[] = []
   while (cursor <= final) {
@@ -335,12 +336,14 @@ function average(values: Array<number | null>): number | null {
   return Math.round(present.reduce((sum, value) => sum + value, 0) / present.length)
 }
 
-function workdaysInMonth(month: string): number {
-  const lastDay = Number(endOfMonthKey(month).slice(-2))
+function workdaysInRange(range: Pick<MyDayDateRange, 'from' | 'to'>): number {
   let count = 0
-  for (let day = 1; day <= lastDay; day += 1) {
-    const weekday = new Date(`${month}-${String(day).padStart(2, '0')}T12:00:00Z`).getUTCDay()
+  const cursor = new Date(`${range.from}T12:00:00Z`)
+  const end = new Date(`${range.to}T12:00:00Z`)
+  while (cursor <= end) {
+    const weekday = cursor.getUTCDay()
     if (weekday >= 1 && weekday <= 5) count += 1
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
   return count
 }
@@ -397,10 +400,10 @@ function callReviewReason(activity: MyDayActivity): string {
 }
 
 export function buildMyDay(input: BuildMyDayInput): MyDayData {
-  const stats = input.stats.filter((row) => row.date.startsWith(input.month))
-  const performanceRows = input.performance.filter((row) => row.metric_date.startsWith(input.month))
-  const performanceByDate = new Map(performanceRows.map((row) => [row.metric_date, row]))
-  const requiredDates = requiredPerformanceDates(input.month, input.now)
+  const stats = input.stats.filter((row) => row.date >= input.range.from && row.date <= input.range.to)
+  const performanceRows = input.performance.filter((row) => row.metric_date >= input.range.from && row.metric_date <= input.range.to)
+  const performanceByDate = new Map(input.performance.map((row) => [row.metric_date, row]))
+  const requiredDates = requiredPerformanceDates(input.range, input.now)
   const performanceStatus: MyDayData['performance']['status'] = !input.availability.mojoPerformance
     ? 'unavailable'
     : requiredDates.length > 0 && requiredDates.every((day) => performanceByDate.has(day))
@@ -408,14 +411,15 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
       : performanceRows.length > 0 ? 'partial' : 'unavailable'
   // Mojo daily totals come only from the provider KPI snapshot. Canonical Mojo
   // events remain contact evidence and must not be counted again here.
-  const nativeDialerActivities = input.activities.filter((activity) => {
+  const allNativeDialerActivities = input.activities.filter((activity) => {
     if (activity.activity_type.toLowerCase() !== 'call') return false
     const source = text(activity.metadata?.source).toLowerCase()
     const disposition = text(activity.metadata?.disposition)
     if (source === 'mojo_call_event') return false
     if (!(activity.agent || '').toLowerCase().includes('casey')) return false
-    return Boolean(disposition) && isWithinMonth(activity.created_at, input.month)
+    return Boolean(disposition)
   })
+  const nativeDialerActivities = allNativeDialerActivities.filter((activity) => isWithinRange(activity.created_at, input.range))
   const isMeaningfulActivity = (activity: MyDayActivity) => {
     const outcome = text(activity.metadata?.outcome).toLowerCase()
     return ['callback_scheduled', 'meaningful_conversation', 'appointment_set', 'not_interested', 'already_sold', 'listed'].includes(outcome)
@@ -429,7 +433,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     ? performanceRows.reduce((sum, row) => sum + number(row.contacts), 0) + nativeDialerActivities.filter(isMeaningfulActivity).length
     : null
   const leadEntries = new Map(input.leads
-    .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinMonth(lead.created_at, input.month))
+    .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinRange(lead.created_at, input.range))
     .map((lead) => [lead.id, lead.created_at]))
   const opportunityEntries = stageEntries(input, 2)
   const appointmentEntries = stageEntries(input, 3)
@@ -456,9 +460,18 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   }))
 
   const days = weekDateKeys(input)
+  const weekRange = { from: days[0], to: days.at(-1)! }
   const today = dateKey(input.now)
-  const nativeCallsByDay = valuesByDay(nativeDialerActivities.map((activity) => activity.created_at), days)
-  const nativeConversationsByDay = valuesByDay(nativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
+  const weeklyNativeDialerActivities = allNativeDialerActivities.filter((activity) => isWithinRange(activity.created_at, weekRange))
+  const nativeCallsByDay = valuesByDay(weeklyNativeDialerActivities.map((activity) => activity.created_at), days)
+  const nativeConversationsByDay = valuesByDay(weeklyNativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
+  const weeklyLeadEntries = new Map(input.leads
+    .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinRange(lead.created_at, weekRange))
+    .map((lead) => [lead.id, lead.created_at]))
+  const weeklyOpportunityEntries = stageEntries(input, 2, weekRange)
+  const weeklyAppointmentEntries = stageEntries(input, 3, weekRange)
+  const weeklyOfferEntries = stageEntries(input, 4, weekRange)
+  const weeklyContractEntries = stageEntries(input, 5, weekRange)
   const providerDayValue = (day: string, field: 'calls' | 'contacts', nativeValue: number): number | null => {
     if (!input.availability.mojoPerformance || !today || day > today) return null
     const row = performanceByDate.get(day)
@@ -473,17 +486,17 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
       key: 'contacts', label: 'Contacts', icon: 'forum', tone: 'violet',
       days: days.map((day, index) => providerDayValue(day, 'contacts', nativeConversationsByDay[index])), total: null,
     },
-    { key: 'leads', label: 'Leads', icon: 'person_add', tone: 'coral', days: valuesByDay(leadEntries.values(), days), total: null },
-    { key: 'opportunities', label: 'Opportunities', icon: 'person_search', tone: 'coral', days: valuesByDay(opportunityEntries.values(), days), total: null },
-    { key: 'appointments', label: 'Appointments Set', icon: 'event', tone: 'sky', days: valuesByDay(appointmentEntries.values(), days), total: null },
-    { key: 'offers', label: 'Offers Made', icon: 'sell', tone: 'green', days: valuesByDay(offerEntries.values(), days), total: null },
-    { key: 'contracts', label: 'Under Contract', icon: 'description', tone: 'indigo', days: valuesByDay(contractEntries.values(), days), total: null },
+    { key: 'leads', label: 'Leads', icon: 'person_add', tone: 'coral', days: valuesByDay(weeklyLeadEntries.values(), days), total: null },
+    { key: 'opportunities', label: 'Opportunities', icon: 'person_search', tone: 'coral', days: valuesByDay(weeklyOpportunityEntries.values(), days), total: null },
+    { key: 'appointments', label: 'Appointments Set', icon: 'event', tone: 'sky', days: valuesByDay(weeklyAppointmentEntries.values(), days), total: null },
+    { key: 'offers', label: 'Offers Made', icon: 'sell', tone: 'green', days: valuesByDay(weeklyOfferEntries.values(), days), total: null },
+    { key: 'contracts', label: 'Under Contract', icon: 'description', tone: 'indigo', days: valuesByDay(weeklyContractEntries.values(), days), total: null },
   ]
   const weeklyRows = weeklyRowValues.map((row) => ({ ...row, total: total(row.days) }))
 
   const followupsCompleted = stats.reduce((sum, row) => sum + number(row.followups_completed), 0)
   const followupsMissed = stats.reduce((sum, row) => sum + number(row.followups_missed), 0)
-  const callingTarget = input.goals.dailyCalls ? input.goals.dailyCalls * workdaysInMonth(input.month) : null
+  const callingTarget = input.goals.dailyCalls ? input.goals.dailyCalls * workdaysInRange(input.range) : null
   const habits: MyDayHabit[] = [
     { key: 'vision', label: 'Review Vision', value: average(stats.map((row) => readHabit(row.metadata, ['review_vision', 'reviewVision']))) },
     { key: 'objections', label: 'Objection Practice', value: average(stats.map((row) => readHabit(row.metadata, ['objection_practice', 'objections_handling', 'objectionsHandling']))) },
@@ -588,6 +601,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   return {
     month: input.month,
     monthLabel: monthLabel(input.month),
+    range: input.range,
     generatedAt: input.now.toISOString(),
     agent: { name: 'Casey', initials: 'C' },
     performance: {

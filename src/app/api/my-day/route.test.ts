@@ -18,8 +18,8 @@ vi.mock('@/lib/my-day-server', () => ({
 
 import { GET } from './route'
 
-function request(month = '2026-08') {
-  return new NextRequest(`https://crm.savingkc.com/api/my-day?month=${month}`)
+function request(query = 'range=today') {
+  return new NextRequest(`https://crm.savingkc.com/api/my-day?${query}`)
 }
 
 describe('Casey My Day API', () => {
@@ -37,7 +37,7 @@ describe('Casey My Day API', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toContain('no-store')
-    expect(mocks.loadCaseyMyDay).toHaveBeenCalledWith('2026-08')
+    expect(mocks.loadCaseyMyDay).toHaveBeenCalledWith({ preset: 'today', from: null, to: null, month: null })
     await expect(response.json()).resolves.toMatchObject({ month: '2026-08' })
   })
 
@@ -49,7 +49,7 @@ describe('Casey My Day API', () => {
 
     expect(response.status).toBe(200)
     expect(mocks.canAccessCaseyMyDay).toHaveBeenCalledWith('ernest@savingkc.com')
-    expect(mocks.loadCaseyMyDay).toHaveBeenCalledWith('2026-08')
+    expect(mocks.loadCaseyMyDay).toHaveBeenCalledWith({ preset: 'today', from: null, to: null, month: null })
   })
 
   it('conceals the workspace from every other signed-in user', async () => {
@@ -69,5 +69,20 @@ describe('Casey My Day API', () => {
 
     expect(response.status).toBe(401)
     expect(mocks.loadCaseyMyDay).not.toHaveBeenCalled()
+  })
+
+  it('passes a bounded custom range through to the server model', async () => {
+    mocks.getCurrentUserEmail.mockResolvedValue('casey@savingkc.com')
+    mocks.canAccessCaseyMyDay.mockResolvedValue(true)
+
+    const response = await GET(request('range=custom&from=2026-08-01&to=2026-08-24'))
+
+    expect(response.status).toBe(200)
+    expect(mocks.loadCaseyMyDay).toHaveBeenCalledWith({
+      preset: 'custom',
+      from: '2026-08-01',
+      to: '2026-08-24',
+      month: null,
+    })
   })
 })
