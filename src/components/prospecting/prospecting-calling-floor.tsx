@@ -4,7 +4,8 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
-import { toProperCase } from '@/lib/format'
+import { useWorkspaceCallRailOpen } from '@/components/conversations/workspace-frame'
+import { formatPhone, toProperCase } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { loadDialerActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
@@ -52,6 +53,7 @@ function joinAddress(parts: Array<string | null | undefined>): string {
 }
 
 export function ProspectingCallingFloor() {
+  const callRailOpen = useWorkspaceCallRailOpen()
   const router = useRouter()
   const params = useSearchParams()
   const [subjects, setSubjects] = useState<DurableDialerQueueSubject[]>([])
@@ -121,6 +123,11 @@ export function ProspectingCallingFloor() {
     }, sessionCallerId || DEFAULT_DIALER_CALLER_ID)
     return plan
   }, [sessionCallerId, sessionCallerModeParam, sessionRotateEveryParam, sessionRotationNumbersParam, sessionRedialCallerId])
+  const sessionCallerPolicyLabel = sessionCallerPlan.mode === 'rotation' && sessionCallerPlan.rotationCallerIds.length > 1
+    ? `Rotating ${sessionCallerPlan.rotationCallerIds.length} approved lines every ${sessionCallerPlan.rotateEveryCalls} calls`
+    : sessionCallerId
+      ? `Assigned line ${formatPhone(sessionCallerId)}`
+      : 'Caller ID unavailable'
   const startIndexParam = params.get('start_index')
 
   useEffect(() => {
@@ -574,6 +581,7 @@ export function ProspectingCallingFloor() {
         currentIndex={currentIndex}
         queueSize={subjects.length}
         callerId={sessionCallerId}
+        callerPolicyLabel={sessionCallerPolicyLabel}
         durableSessionId={durableSessionId}
         durableStatus={durableSession?.status}
         dials={sessionDials}
@@ -594,6 +602,7 @@ export function ProspectingCallingFloor() {
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
         {/* Supporting rail — property context, AI evidence, and communications. */}
         <ProspectingCallingContextRail
+          fullWidth={callRailOpen}
           leadId={currentLeadId}
           lead={currentLead}
           prospect={currentProspect}
@@ -614,7 +623,7 @@ export function ProspectingCallingFloor() {
         />
 
         {/* Primary workspace — the actual people and callable numbers. */}
-        <main className="order-1 col-span-12 lg:col-span-8">
+        <main className={`order-1 col-span-12 ${callRailOpen ? 'lg:col-span-12' : 'lg:col-span-8'}`}>
           <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Current seller group</p>
@@ -643,6 +652,7 @@ export function ProspectingCallingFloor() {
               onAutoStartEmpty={handleAutoStartEmpty}
               defaultExpanded
               collapsible={false}
+              showAllPhones
               onSmsPhone={currentLeadId ? setSmsTarget : undefined}
             />
           )}

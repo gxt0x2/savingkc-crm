@@ -38,16 +38,21 @@ function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSess
 }
 
 describe('DialerSessionCommand', () => {
-  it('makes the single-line operator rhythm and current seller dominant', () => {
+  it('keeps session status compact without duplicating the seller or phone workspace', () => {
     renderCommand()
 
     expect(screen.getByRole('region', { name: 'Calling floor command center' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Stay in rhythm. One seller at a time.' })).toBeVisible()
-    expect(screen.getByText('Helen Seller')).toBeVisible()
-    expect(screen.getByText('(816) 555-0199')).toBeVisible()
-    expect(screen.getByText('Calling from (816) 555-0123')).toBeVisible()
-    expect(screen.getByText('Required before advancing')).toBeVisible()
-    expect(screen.getByText('20%')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Calling session' })).toBeVisible()
+    expect(screen.getByText('August absentee owners')).toBeVisible()
+    expect(screen.getByText('Assigned line (816) 555-0123')).toBeVisible()
+    expect(screen.queryByText('Helen Seller')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 555-0199')).not.toBeInTheDocument()
+    expect(screen.getByText('Session progress 20%')).toBeInTheDocument()
+  })
+
+  it('shows caller rotation as a read-only session policy', () => {
+    renderCommand({ callerPolicyLabel: 'Rotating 3 approved lines every 50 calls' })
+    expect(screen.getByText('Rotating 3 approved lines every 50 calls')).toBeVisible()
   })
 
   it('keeps durable pause, stop, skip, and exit actions wired', () => {
@@ -60,6 +65,15 @@ describe('DialerSessionCommand', () => {
     expect(props.onStop).toHaveBeenCalledOnce()
     expect(props.onSkip).toHaveBeenCalledOnce()
     expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('lets an agent reopen hidden call controls without restarting the session', () => {
+    const dispatchEvent = vi.spyOn(window, 'dispatchEvent')
+    renderCommand()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Call controls' }))
+
+    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'show-dialer-controls' }))
   })
 
   it('offers an explicit resume action for paused durable sessions', () => {

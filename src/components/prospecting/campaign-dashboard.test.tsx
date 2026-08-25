@@ -98,6 +98,8 @@ describe('CampaignDashboard', () => {
 
     expect(screen.getByText('Ready to call')).toBeVisible()
     expect(screen.getByText('Calls worked')).toBeVisible()
+    expect(screen.getAllByRole('button', { name: /Start (calling|next batch)/ })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Open calling floor' })).not.toBeInTheDocument()
     expect(screen.queryByText('Messages sent')).not.toBeInTheDocument()
   })
 

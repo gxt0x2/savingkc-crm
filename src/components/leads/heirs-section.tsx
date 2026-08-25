@@ -27,6 +27,8 @@ interface HeirsSectionProps {
   propertyAddress: string
   defaultExpanded?: boolean
   collapsible?: boolean
+  /** Calling-floor mode keeps every associated phone visible without opening rows one at a time. */
+  showAllPhones?: boolean
   dialerCallerId?: string | null
   dialerCallerPlan?: Partial<DialerCallerPlan> | null
   callHammerEnabled?: boolean
@@ -67,6 +69,7 @@ export function HeirsSection({
   propertyAddress,
   defaultExpanded = false,
   collapsible = true,
+  showAllPhones = false,
   dialerCallerId = null,
   dialerCallerPlan = null,
   autoStart = false,
@@ -296,7 +299,7 @@ export function HeirsSection({
               title="Cycle through every callable listed associated phone on this property"
             >
               <Icon name="call" size="text-sm" />
-              Call all ({queuedPhones})
+              Start phone run ({queuedPhones})
             </button>
           )}
           {collapsible && (
@@ -352,7 +355,7 @@ export function HeirsSection({
       )}
 
       {/* Populated — alternating rows */}
-      {!loading && totalHeirs > 0 && leadId && (
+      {!loading && totalHeirs > 0 && (
         <div className="space-y-2">
           {heirs.map((heir, idx) => (
             <HeirRow
@@ -360,6 +363,7 @@ export function HeirsSection({
               heir={heir}
               alt={idx % 2 === 1}
               isActive={Boolean(activePhoneId && heir.phones.some((p) => p.id === activePhoneId))}
+              showAllPhones={showAllPhones}
               onCallPhone={(phone) => queueOne(heir, phone)}
               onCallHeir={() => queueHeir(heir)}
               onToggleVerify={toggleVerify}
@@ -405,6 +409,7 @@ function HeirRow({
   heir,
   alt,
   isActive,
+  showAllPhones,
   onCallPhone,
   onCallHeir,
   onToggleVerify,
@@ -413,6 +418,7 @@ function HeirRow({
   heir: Heir
   alt: boolean
   isActive: boolean
+  showAllPhones: boolean
   onCallPhone: (phone: HeirPhone) => void
   onCallHeir: () => void
   onToggleVerify: (phone: HeirPhone, nextVerified: boolean) => void
@@ -438,7 +444,7 @@ function HeirRow({
     const id = requestAnimationFrame(() => setUserToggled(false))
     return () => cancelAnimationFrame(id)
   }, [isActive])
-  const expanded = isActive ? !userToggled : userToggled
+  const expanded = showAllPhones || (isActive ? !userToggled : userToggled)
 
   const statusDotColor = isActive
     ? 'bg-emerald-400 animate-pulse'
@@ -465,7 +471,7 @@ function HeirRow({
       {/* Name row — clickable to expand/collapse, per-heir Call in the corner */}
       <div
         className={`flex items-center justify-between gap-3 ${expanded ? 'mb-2' : ''} cursor-pointer select-none`}
-        onClick={() => setUserToggled((v) => !v)}
+        onClick={showAllPhones ? undefined : () => setUserToggled((v) => !v)}
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotColor}`} aria-hidden />
@@ -503,10 +509,10 @@ function HeirRow({
               {freshCallableCount > 0 ? `Call (${callablePhones.length})` : 'Call again'}
             </button>
           )}
-          <Icon
+          {showAllPhones ? null : <Icon
             name={expanded ? 'expand_less' : 'expand_more'}
             className="!text-lg text-[var(--ck-text-dim)]"
-          />
+          />}
         </div>
       </div>
 

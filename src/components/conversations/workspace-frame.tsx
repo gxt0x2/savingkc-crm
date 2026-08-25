@@ -14,6 +14,7 @@ import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { GiraffeAssistantLauncher } from '@/components/ai/giraffe-assistant-launcher'
 
 type WorkspaceChromeContextValue = {
+  callRailOpen: boolean
   commandBarHost: HTMLDivElement | null
   userEmail: string | null
   setCommandBarActive: (active: boolean) => void
@@ -56,11 +57,17 @@ export function useWorkspaceUserEmail() {
   return useContext(WorkspaceChromeContext)?.userEmail ?? null
 }
 
+export function useWorkspaceCallRailOpen() {
+  return useContext(WorkspaceChromeContext)?.callRailOpen ?? false
+}
+
 export function WorkspaceFrame({
   children,
   needsReply,
   commandBar,
   hideHeader = false,
+  focusedCalling = false,
+  rightRail,
   userEmail,
   profilePhotoUrl,
   canReviewCalls = false,
@@ -69,6 +76,8 @@ export function WorkspaceFrame({
   needsReply?: number
   commandBar?: ReactNode
   hideHeader?: boolean
+  focusedCalling?: boolean
+  rightRail?: ReactNode
   userEmail?: string | null
   profilePhotoUrl?: string | null
   canReviewCalls?: boolean
@@ -99,12 +108,13 @@ export function WorkspaceFrame({
   const resolvedHideHeader = pageHeaderHidden || hideHeader
   const resolvedCommandBarActive = Boolean(commandBar) || pageCommandBarActive
   const chromeContextValue = useMemo<WorkspaceChromeContextValue>(() => ({
+    callRailOpen: Boolean(rightRail),
     commandBarHost,
     userEmail: userEmail ?? null,
     setCommandBarActive: setPageCommandBarActive,
     setHeaderHidden: setPageHeaderHidden,
     setNeedsReplyOverride: setPageNeedsReply,
-  }), [commandBarHost, userEmail])
+  }), [commandBarHost, rightRail, userEmail])
 
   function submitSearch(event: FormEvent) {
     event.preventDefault()
@@ -141,7 +151,7 @@ export function WorkspaceFrame({
                 <span className="truncate text-base font-black text-[var(--crm-ink)]">{workspaceLabelForPath(pathname)}</span>
               </Link>
               <div className="hidden items-center gap-5 md:flex">
-              <GlobalDialerButton />
+              {focusedCalling ? null : <GlobalDialerButton />}
             <button
               type="button"
               onClick={toggleTheme}
@@ -178,10 +188,18 @@ export function WorkspaceFrame({
             <WorkspaceContextNav />
           </Suspense>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
-          <GiraffeAssistantLauncher />
+          {focusedCalling ? null : <GiraffeAssistantLauncher />}
           <WorkspaceMobileNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />
         </WorkspaceChromeContext.Provider>
       </div>
+      {rightRail ? (
+        <aside
+          aria-label="Prospecting call controls"
+          className="fixed inset-x-2 bottom-2 top-[max(5rem,env(safe-area-inset-top))] z-[70] min-h-0 overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-[var(--crm-shadow-lg)] xl:static xl:inset-auto xl:z-auto xl:w-[390px] xl:shrink-0 xl:rounded-none xl:border-y-0 xl:border-r-0 xl:shadow-none"
+        >
+          {rightRail}
+        </aside>
+      ) : null}
     </div>
   )
 }

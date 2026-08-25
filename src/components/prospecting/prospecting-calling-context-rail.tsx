@@ -21,6 +21,7 @@ const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assis
 const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
 
 interface ProspectingCallingContextRailProps {
+  fullWidth?: boolean
   leadId: string | null
   lead: ProspectingCallingLead | null
   prospect: ProspectingCallingProspect | null
@@ -122,7 +123,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
   const commsEvents = useMemo(() => buildCommsTimeline(props.activities), [props.activities])
   const commsSummary = useMemo(() => summarizeComms(commsEvents), [commsEvents])
 
-  return <aside className="order-2 col-span-12 space-y-4 lg:col-span-4">
+  return <aside className={`order-2 col-span-12 space-y-4 ${props.fullWidth ? 'lg:col-span-12' : 'lg:col-span-4'}`}>
     <section className="ck-card p-6">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -167,10 +168,5 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
           : <RecentCalls calls={props.recentCalls} />}
     </section>
 
-    <section className="ck-card p-4">
-      <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Progress</p><p className="text-[10px] font-bold tabular-nums text-[var(--ck-text-muted)]">{props.currentIndex + 1} / {props.queueSize}</p></div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ck-surface-hi)]"><div className="h-full bg-[#E32E2E] transition-all" style={{ width: `${Math.round(((props.currentIndex + 1) / props.queueSize) * 100)}%` }} /></div>
-      <p className="mt-3 text-[10px] text-[var(--ck-text-dim)]"><kbd className="rounded border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-1 font-mono text-[9px]">J</kbd> next · <kbd className="ml-1 rounded border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-1 font-mono text-[9px]">K</kbd> prev</p>
-    </section>
   </aside>
 }
