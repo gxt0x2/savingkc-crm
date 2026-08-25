@@ -29,6 +29,7 @@ interface DialerSessionCommandProps {
   currentLeadId: string | null
   error: string | null
   readOnlyPreview?: boolean
+  liveCallingHref?: string
   onClose: () => void
   onResume: () => void
   onStop: () => void
@@ -37,10 +38,10 @@ interface DialerSessionCommandProps {
   onSkip: () => void
 }
 
-function HudStat({ icon, label, value, tone = 'neutral' }: { icon: string; label: string; value: number | string; tone?: 'neutral' | 'emerald' }) {
-  return <div className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-black/15 px-3 py-2.5">
-    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone === 'emerald' ? 'bg-emerald-400/15 text-emerald-300' : 'bg-white/10 text-white/70'}`}><Icon name={icon} size="text-sm" /></span>
-    <div className="min-w-0 leading-none"><p className={`truncate text-base font-black tabular-nums ${tone === 'emerald' ? 'text-emerald-300' : 'text-white'}`}>{value}</p><p className="mt-1 text-[8px] font-black uppercase tracking-[0.14em] text-white/45">{label}</p></div>
+function SessionMetric({ icon, label, value, tone = 'neutral' }: { icon: string; label: string; value: number | string; tone?: 'neutral' | 'emerald' }) {
+  return <div className="flex min-w-[132px] flex-1 items-center gap-2 border-r border-white/10 px-3 py-2 last:border-r-0">
+    <Icon name={icon} size="text-sm" className={tone === 'emerald' ? 'text-emerald-300' : 'text-white/55'} />
+    <p className="min-w-0 truncate text-[10px] font-bold text-white/50"><span className="mr-1.5 whitespace-nowrap">{label}</span><strong className={`whitespace-nowrap text-xs font-black tabular-nums ${tone === 'emerald' ? 'text-emerald-300' : 'text-white'}`}>{value}</strong></p>
   </div>
 }
 
@@ -52,6 +53,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
   const isDurable = Boolean(props.durableSessionId)
   const isPaused = props.durableStatus === 'paused'
   const progress = Math.round(((props.currentIndex + 1) / Math.max(props.queueSize, 1)) * 100)
+  const sellersWorked = Math.min(props.currentIndex, props.queueSize)
   const statusLabel = props.readOnlyPreview
     ? 'Read-only'
     : props.queueState?.status === 'on_call'
@@ -78,7 +80,12 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
             className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white/70 hover:bg-white/10 hover:text-white"
           >
             <Icon name="phone_in_talk" size="text-sm" /> Call controls
-          </button> : null}
+          </button> : <a
+            href={props.liveCallingHref || 'https://crm.savingkc.com/prospecting'}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#E32E2E] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-[#C42626]"
+          >
+            <Icon name="open_in_new" size="text-sm" /> Open live calling
+          </a>}
           {isPaused ? <button type="button" onClick={props.onResume} disabled={props.actionPending} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-emerald-600 disabled:opacity-50"><Icon name="play_arrow" size="text-sm" />Resume</button> : null}
           {isDurable && props.durableStatus && ['active', 'paused'].includes(props.durableStatus) ? <button type="button" onClick={props.onStop} disabled={props.actionPending || isCalling} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40"><Icon name="stop_circle" size="text-sm" />Stop</button> : null}
           {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-300/20 bg-red-400/10 px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-red-200 hover:bg-red-400/15 disabled:opacity-30" title="Mark this lead dead (records why)"><Icon name="cancel" size="text-sm" />Dead</button> : null}
@@ -88,14 +95,18 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
         </div>
         </div>
 
-        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs font-bold text-amber-100">Review sellers and every associated number. Calls, messages, verification changes, outcomes, and lifecycle changes are disabled.</div> : null}
+        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs font-bold text-amber-100">Preview only — use Open live calling to start a real session in production. This page cannot place calls or save changes.</div> : null}
 
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <HudStat icon="format_list_numbered" label="Position" value={`${props.currentIndex + 1}/${props.queueSize}`} />
-          <HudStat icon="call" label="Dials" value={props.dials} />
-          <HudStat icon="phone_in_talk" label="Contacts" value={props.contacts} tone="emerald" />
-          <HudStat icon="schedule" label="Talk time" value={dialTime} tone={props.queueState?.status === 'on_call' ? 'emerald' : 'neutral'} />
-        </div>
+        <section aria-label="Live session status" className="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-[#05070a]">
+          <div className="flex min-w-[820px] items-stretch">
+            <SessionMetric icon="dialpad" label="Caller ID" value={props.callerId ? formatPhone(props.callerId) : 'Unavailable'} />
+            <SessionMetric icon="schedule" label="Current call" value={dialTime} tone={props.queueState?.status === 'on_call' ? 'emerald' : 'neutral'} />
+            <SessionMetric icon="call" label="Session calls" value={props.dials} />
+            <SessionMetric icon="groups" label="Sellers worked" value={sellersWorked} />
+            <SessionMetric icon="phone_in_talk" label="Session contacts" value={props.contacts} tone="emerald" />
+            <SessionMetric icon="format_list_numbered" label="Current seller" value={`${props.currentIndex + 1}/${props.queueSize}`} />
+          </div>
+        </section>
       </div>
       <div className="relative h-1.5 bg-white/10"><div className="h-full bg-gradient-to-r from-[#E32E2E] to-[#ff8a76] transition-all" style={{ width: `${progress}%` }} /><span className="sr-only">Session progress {progress}%</span></div>
     </section>

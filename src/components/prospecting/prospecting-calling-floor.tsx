@@ -594,6 +594,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         currentLeadId={currentLeadId}
         error={sessionError}
         readOnlyPreview={readOnlyPreview}
+        liveCallingHref={previewCampaignId ? `https://crm.savingkc.com/prospecting?campaign=${encodeURIComponent(previewCampaignId)}` : undefined}
         onClose={() => { void closeSession() }}
         onResume={() => { void transitionCurrentSession('resume') }}
         onStop={() => { void stopSession() }}
@@ -628,16 +629,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
         {/* Primary workspace — the actual people and callable numbers. */}
         <main className={`order-1 col-span-12 ${callRailOpen ? 'lg:col-span-12' : 'lg:col-span-8'}`}>
-          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">Current seller group</p>
-              <h2 className="mt-1 text-xl font-black tracking-[-0.02em] text-[var(--crm-ink)]">Reach the right person</h2>
-              <p className="mt-1 text-xs leading-5 text-[var(--crm-text-muted)]">Verified contacts rise to the top. Blocked outcomes remain visible but cannot enter the call queue.</p>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">
-              <Icon name="shield" size="text-sm" className="text-emerald-500" /> Safety checked before every dial
-            </div>
-          </div>
           {currentSubject && (
             <HeirsSection
               key={currentSubjectKey}
