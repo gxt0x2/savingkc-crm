@@ -75,4 +75,28 @@ describe('WorkspaceCallController', () => {
     expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
     expect(screen.queryByText('Campaign-assigned line · verified by the server before every call')).not.toBeInTheDocument()
   })
+
+  it('shows a visible first-call countdown with a one-click durable pause action', () => {
+    const onPauseAutoStart = vi.fn()
+    render(
+      <WorkspaceCallController
+        autoStartCountdownSeconds={15}
+        callerPlan={{ mode: 'static', staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
+        dialDisplay="(816) 555-0123"
+        dialReady={false}
+        effectiveCallerId="+18163078735"
+        onCall={vi.fn()}
+        onPauseAutoStart={onPauseAutoStart}
+        queueItem={queueItem}
+        statusLabel="Ready"
+      />,
+    )
+
+    expect(screen.getByRole('region', { name: 'First call countdown' })).toBeVisible()
+    expect(screen.getByText('First call starts in')).toBeVisible()
+    expect(screen.getByText('15')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Call selected number' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Pause before first call' }))
+    expect(onPauseAutoStart).toHaveBeenCalledOnce()
+  })
 })

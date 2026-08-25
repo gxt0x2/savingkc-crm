@@ -1,6 +1,24 @@
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { formatPhone } from '@/lib/format'
 
+export const DIALER_STATUS_DOT_COLOR = {
+  offline: 'bg-slate-500',
+  connecting: 'bg-[var(--skc-warning)]',
+  ready: 'bg-[var(--skc-success)]',
+  calling: 'bg-[#E32E2E]',
+  on_call: 'bg-[#E32E2E]',
+  incoming: 'bg-[#E32E2E]',
+} as const
+
+export const DIALER_STATUS_LABEL = {
+  offline: 'Offline',
+  connecting: 'Connecting...',
+  ready: 'Ready',
+  calling: 'Dialing...',
+  on_call: 'On Call',
+  incoming: 'Incoming',
+} as const
+
 export interface SearchResult {
   id: string
   full_name: string

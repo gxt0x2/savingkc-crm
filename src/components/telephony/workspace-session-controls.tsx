@@ -2,7 +2,7 @@
 
 import { Icon } from '@/components/ui/icon'
 
-export type WorkspaceSessionAction = 'pause' | 'resume' | 'skip' | 'dead' | 'end'
+export type WorkspaceSessionAction = 'hangup' | 'pause' | 'resume' | 'skip' | 'dead' | 'end'
 
 type WorkspaceSessionControlsProps = {
   status: 'active' | 'paused' | 'completed' | 'stopped' | null
@@ -22,6 +22,14 @@ export function WorkspaceSessionControls({
 
   return (
     <section aria-label="Calling session controls" className="mx-1 space-y-2 border-t border-[var(--skc-separator)] pt-4">
+      <button
+        type="button"
+        onClick={() => onAction('hangup')}
+        disabled={!callBusy}
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#E32E2E] px-4 text-sm font-black text-white hover:bg-[#C42626] disabled:cursor-not-allowed disabled:bg-[var(--skc-surface-3)] disabled:text-[var(--skc-text-tertiary)]"
+      >
+        <Icon name="call_end" size="text-lg" /> Hang up current call
+      </button>
       <button
         type="button"
         onClick={() => onAction(paused ? 'resume' : 'pause')}

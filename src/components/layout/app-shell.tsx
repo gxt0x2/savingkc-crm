@@ -374,7 +374,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pendingQueueCallerPlan={pendingQueueCallerPlan}
     pendingQueueAutoDial={pendingQueueAutoDial}
     pendingQueueRingCount={pendingQueueRingCount}
-    pendingSessionId={pendingSessionId}
+    pendingSessionId={pendingSessionId || (isProspectingCallingFloor ? searchParams.get('session_id') : null)}
     presentation={dialerPresentation}
     signedInEmail={user?.email}
   /> : null
