@@ -22,6 +22,7 @@ import { WorkspaceCallController } from './workspace-call-controller'
 import { WorkspaceSessionControls } from './workspace-session-controls'
 import { DialerQueueHeader } from './dialer-queue-header'
 import { DialerPanelHeader } from './dialer-panel-header'
+import { useDialerStartCountdown } from './use-dialer-start-countdown'
 import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
 import {
   createClientAttemptId,
@@ -33,6 +34,8 @@ import { findRecoverableDialerAttempt, type RecoverableDialerAttempt } from '@/l
 import { dialerPauseIsPending, dialerStopIsPending, postDispositionCommand } from '@/lib/telephony/dialer-lifecycle'
 import {
   DIALER_KEYPAD,
+  DIALER_STATUS_DOT_COLOR,
+  DIALER_STATUS_LABEL,
   classifyDirection,
   extractTwilioErrorMessage,
   formatCallLeg,
@@ -183,9 +186,18 @@ export function DialerPanel({
   const [workspaceSessionStatus, setWorkspaceSessionStatus] = useState<'active' | 'paused' | 'completed' | 'stopped' | null>(null)
   const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
+  const { arm: armAutoStart, cancel: cancelAutoStart, finish: finishAutoStart, remainingSeconds: autoStartCountdownSeconds } = useDialerStartCountdown(pendingAutoDialRef)
   const callIntentPendingRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
   const postCallReview = useDialerPostCallReview({ open: showDisposition, sessionId: reviewContext?.sessionId || null, clientAttemptId: reviewContext?.clientAttemptId || null })
+  const endQueue = useCallback(() => {
+    cancelAutoStart()
+    campaignCallerIdRef.current = null
+    setQueue(null)
+    setQueueIndex(0)
+    setSelectedLead(null)
+    setDialNumber('')
+  }, [cancelAutoStart])
 
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
@@ -266,11 +278,12 @@ export function DialerPanel({
         updated_at: new Date().toISOString(),
       })
       setDialNumber(first.phone)
-      if (pendingQueueAutoDial) pendingAutoDialRef.current = true
+      if (pendingQueueAutoDial) armAutoStart(pendingSessionId)
+      else cancelAutoStart()
       setSearchQuery('')
       setSearchResults([])
     }
-  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount, pendingSessionId])
+  }, [armAutoStart, cancelAutoStart, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount, pendingSessionId])
 
   useEffect(() => {
     if (!open || !pendingSessionId || !pendingQueue?.length) return
@@ -281,7 +294,7 @@ export function DialerPanel({
         stopRequestedSessionIdRef.current = session.stopRequestedAt ? session.id : null
         pausedSessionIdRef.current = session.status === 'paused' ? session.id : null
         setWorkspaceSessionStatus(session.status)
-        if (session.stopRequestedAt || session.status === 'paused') pendingAutoDialRef.current = false
+        if (session.stopRequestedAt || session.status === 'paused') cancelAutoStart()
         const recovery = findRecoverableDialerAttempt(session, attempts.items, pendingQueue)
         if (!recovery) {
           if (session.stopRequestedAt && session.status !== 'stopped') {
@@ -293,7 +306,7 @@ export function DialerPanel({
         }
 
         const { attempt, queueIndex: recoveredIndex, queueItem: recoveredItem } = recovery
-        pendingAutoDialRef.current = false
+        cancelAutoStart()
         setRecoveryPending(recovery)
         setQueue(pendingQueue)
         setQueueIndex(recoveredIndex)
@@ -327,7 +340,7 @@ export function DialerPanel({
         if (!cancelled) setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.')
       })
     return () => { cancelled = true }
-  }, [open, pendingQueue, pendingSessionId])
+  }, [cancelAutoStart, open, pendingQueue, pendingSessionId])
 
   useEffect(() => {
     function onSessionState(event: Event) {
@@ -336,11 +349,20 @@ export function DialerPanel({
       setWorkspaceSessionStatus(session.status)
       stopRequestedSessionIdRef.current = session.stopRequestedAt ? pendingSessionId : null
       pausedSessionIdRef.current = session.status === 'paused' ? pendingSessionId : null
-      if (session.status !== 'active' || session.stopRequestedAt) pendingAutoDialRef.current = false
+      if (session.status !== 'active' || session.stopRequestedAt) cancelAutoStart()
     }
     window.addEventListener('dialer-session-state', onSessionState)
     return () => window.removeEventListener('dialer-session-state', onSessionState)
-  }, [pendingSessionId])
+  }, [cancelAutoStart, pendingSessionId])
+
+  useEffect(() => {
+    function onWorkspaceCallCommand(event: Event) {
+      const action = ((event as CustomEvent).detail as { action?: string } | null)?.action
+      if (action === 'hangup' && callRef.current) callRef.current.disconnect()
+    }
+    window.addEventListener('prospecting-session-command', onWorkspaceCallCommand)
+    return () => window.removeEventListener('prospecting-session-command', onWorkspaceCallCommand)
+  }, [])
 
   useEffect(() => {
     function onPauseRequested(event: Event) {
@@ -348,7 +370,7 @@ export function DialerPanel({
       if (!pendingSessionId || detail?.session?.id !== pendingSessionId) return
       pausedSessionIdRef.current = pendingSessionId
       setWorkspaceSessionStatus('paused')
-      pendingAutoDialRef.current = false
+      cancelAutoStart()
       setError(null)
       if (!detail.requiresDisposition) return
       if (callRef.current) {
@@ -359,14 +381,14 @@ export function DialerPanel({
     }
     window.addEventListener('dialer-session-pause-requested', onPauseRequested)
     return () => window.removeEventListener('dialer-session-pause-requested', onPauseRequested)
-  }, [pendingSessionId])
+  }, [cancelAutoStart, pendingSessionId])
 
   useEffect(() => {
     function onStopRequested(event: Event) {
       const session = (event as CustomEvent).detail as { id?: string; status?: string; stopRequestedAt?: string | null } | null
       if (!pendingSessionId || session?.id !== pendingSessionId || !session.stopRequestedAt) return
       stopRequestedSessionIdRef.current = pendingSessionId
-      pendingAutoDialRef.current = false
+      cancelAutoStart()
       setError(null)
       if (session.status === 'stopped') {
         endQueue()
@@ -382,7 +404,7 @@ export function DialerPanel({
     }
     window.addEventListener('dialer-session-stop-requested', onStopRequested)
     return () => window.removeEventListener('dialer-session-stop-requested', onStopRequested)
-  }, [pendingSessionId])
+  }, [cancelAutoStart, endQueue, pendingSessionId])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -760,6 +782,7 @@ export function DialerPanel({
   useEffect(() => {
     if (
       !pendingAutoDialRef.current ||
+      (autoStartCountdownSeconds !== null && autoStartCountdownSeconds > 0) ||
       showDisposition ||
       status !== 'ready' ||
       !queueMode ||
@@ -779,12 +802,12 @@ export function DialerPanel({
       ) {
         return
       }
-      pendingAutoDialRef.current = false
+      finishAutoStart()
       void makeCallRef.current()
     }, 350)
 
     return () => window.clearTimeout(timeout)
-  }, [dialNumber, queueItem, queueMode, showDisposition, status])
+  }, [autoStartCountdownSeconds, dialNumber, finishAutoStart, queueItem, queueMode, showDisposition, status])
 
   // Auto-focus the dial input when the dialer opens (idle / dial tab only),
   // so the user can immediately type a number on their keyboard without
@@ -1143,38 +1166,12 @@ export function DialerPanel({
     setDialNumber(item.phone)
   }
 
-  function endQueue() {
-    campaignCallerIdRef.current = null
-    setQueue(null)
-    setQueueIndex(0)
-    setSelectedLead(null)
-    setDialNumber('')
-  }
-
   function handleRedial(call: RecentCall) {
     if (call.phone) {
       clearUnverifiedDialContext()
       setViewTab('dial')
       setDialNumber(call.phone)
     }
-  }
-
-  const statusDotColor: Record<CallStatus, string> = {
-    offline: 'bg-slate-500',
-    connecting: 'bg-[var(--skc-warning)]',
-    ready: 'bg-[var(--skc-success)]',
-    calling: 'bg-[#E32E2E]',
-    on_call: 'bg-[#E32E2E]',
-    incoming: 'bg-[#E32E2E]',
-  }
-
-  const statusLabel: Record<CallStatus, string> = {
-    offline: 'Offline',
-    connecting: 'Connecting...',
-    ready: 'Ready',
-    calling: 'Dialing...',
-    on_call: 'On Call',
-    incoming: 'Incoming',
   }
 
   const isOnCall = status === 'on_call' || status === 'calling'
@@ -1222,7 +1219,7 @@ export function DialerPanel({
             open ? 'scale-100 translate-y-0' : 'scale-95 translate-y-2'
           } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
-        <DialerPanelHeader workspace={isWorkspace} status={statusLabel[status]} statusDotClass={statusDotColor[status]}
+        <DialerPanelHeader workspace={isWorkspace} status={DIALER_STATUS_LABEL[status]} statusDotClass={DIALER_STATUS_DOT_COLOR[status]}
           reconnecting={status === 'connecting'} onReconnect={() => { deviceInitialized.current = false; void initDevice() }} onClose={onClose} />
 
         {queueMode && queueItem ? <DialerQueueHeader
@@ -1446,13 +1443,15 @@ export function DialerPanel({
 
           {isWorkspace && !isOnCall && status !== 'incoming' && (
             <WorkspaceCallController
+              autoStartCountdownSeconds={autoStartCountdownSeconds}
               callerPlan={callerPlan}
               dialDisplay={dialNumber ? formatDialDisplay(dialNumber) : ''}
               dialReady={Boolean(dialNumber.trim()) && status === 'ready' && workspaceSessionStatus !== 'paused'}
               effectiveCallerId={effectiveCallerId}
               onCall={makeCall}
+              onPauseAutoStart={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))}
               queueItem={queueItem}
-              statusLabel={statusLabel[status]}
+              statusLabel={DIALER_STATUS_LABEL[status]}
             />
           )}
 

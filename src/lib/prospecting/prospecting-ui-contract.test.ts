@@ -38,6 +38,7 @@ describe('prospecting workspace UI contract', () => {
     expect(dashboard).toContain('First unworked seller')
     expect(workspace).toContain('savingkc:dialer-autostart:${result.session.id}')
     expect(callingFloor).toContain('window.sessionStorage.removeItem(autoStartKey)')
+    expect(callingFloor).toContain("session.status === 'active' && !session.stopRequestedAt")
     expect(callingFloor).toContain('setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)')
     expect(dashboard).toContain('All associated contacts stay visible')
     expect(dashboard).toContain('managementOpen ?')

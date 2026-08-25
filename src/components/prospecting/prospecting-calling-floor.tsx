@@ -152,7 +152,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           const autoStartKey = `savingkc:dialer-autostart:${session.id}`
           const autoStartRequested = window.sessionStorage.getItem(autoStartKey) === '1'
           if (autoStartRequested) window.sessionStorage.removeItem(autoStartKey)
-          if (autoStartRequested && session.status === 'active' && !session.stopRequestedAt) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
+          if (session.status === 'active' && !session.stopRequestedAt) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
           setLoading(false)
           return
         } catch (sessionError) {
@@ -412,6 +412,11 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     window.dispatchEvent(new CustomEvent('dialer-session-stop-requested', { detail: session }))
   }, [durableSessionId, navigateAwayFromSession, transitionCurrentSession])
 
+  const pauseSession = useCallback(async () => {
+    if (!durableSessionId) return
+    await transitionCurrentSession('pause')
+  }, [durableSessionId, transitionCurrentSession])
+
   useEffect(() => {
     if (durableSession?.status === 'stopped' && durableSession.stopRequestedAt) {
       navigateAwayFromSession()
@@ -602,6 +607,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         error={sessionError}
         readOnlyPreview={readOnlyPreview}
         onClose={() => { void closeSession() }}
+        onPause={() => { void pauseSession() }}
         onResume={() => { void transitionCurrentSession('resume') }}
         onEndSession={() => { void stopSession() }}
         onMarkDead={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}

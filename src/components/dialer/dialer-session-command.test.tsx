@@ -25,6 +25,7 @@ function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSess
     currentLeadId: 'lead-1',
     error: null,
     onClose: vi.fn(),
+    onPause: vi.fn(),
     onResume: vi.fn(),
     onEndSession: vi.fn(),
     onMarkDead: vi.fn(),
@@ -74,25 +75,27 @@ describe('DialerSessionCommand', () => {
     expect(props.onEndSession).toHaveBeenCalledOnce()
   })
 
-  it('keeps skip and pause-and-leave actions distinct from ending the session', () => {
+  it('keeps skip, pause, and exit actions distinct from ending the session', () => {
     const props = renderCommand()
 
     fireEvent.click(screen.getByRole('button', { name: /Skip seller/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Pause & leave' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pause session' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to campaigns' }))
 
     expect(props.onSkip).toHaveBeenCalledOnce()
+    expect(props.onPause).toHaveBeenCalledOnce()
     expect(props.onClose).toHaveBeenCalledOnce()
   })
 
-  it('moves session actions out of the top banner when the persistent call rail is docked', () => {
+  it('keeps stop and pause visible at the top when the persistent call rail is docked', () => {
     const props = renderCommand({ controlsDocked: true })
 
     expect(screen.queryByRole('button', { name: 'Call controls' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Pause & leave' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'End session' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'End session' })).toBeVisible()
 
     window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))
-    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(props.onPause).toHaveBeenCalledOnce()
   })
 
   it('shows a truthful outcome-required state instead of reporting an idle call', () => {
@@ -119,7 +122,7 @@ describe('DialerSessionCommand', () => {
 
   it('offers an explicit resume action for paused durable sessions', () => {
     const props = renderCommand({ durableStatus: 'paused' })
-    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Resume session' }))
     expect(props.onResume).toHaveBeenCalledOnce()
   })
 
@@ -138,6 +141,7 @@ describe('DialerSessionCommand', () => {
     expect(screen.getAllByText('03:12').length).toBeGreaterThan(0)
     expect(screen.queryByText(/predictive/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/3 lines/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hang up' })).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: 'End session' }))
     const dialog = screen.getByRole('dialog', { name: 'Stop this session?' })
@@ -152,7 +156,8 @@ describe('DialerSessionCommand', () => {
     expect(screen.getByText('Ending after outcome')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'End session' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Skip seller/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Pause & leave' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Back to campaigns' })).toBeDisabled()
   })
 
   it('uses theme-owned surfaces instead of a permanently dark command banner', () => {

@@ -44,7 +44,9 @@ describe('Prospecting calling-floor truth contract', () => {
 
   it('keeps session controls explicit and the seller history bounded', () => {
     expect(sessionCommand).toContain('End session')
-    expect(sessionCommand).toContain('Pause & leave')
+    expect(sessionCommand).toContain('Pause session')
+    expect(sessionCommand).toContain('Back to campaigns')
+    expect(sessionCommand).toContain('Hang up')
     expect(sessionCommand).toContain('Stop this session?')
     expect(sessionCommand).toContain('bg-[var(--ck-surface)]')
     expect(sessionCommand).not.toContain('bg-[#101827]')

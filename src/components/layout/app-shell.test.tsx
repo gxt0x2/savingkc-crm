@@ -14,9 +14,9 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('next/dynamic', () => ({
-  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; presentation?: string }) {
+  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; pendingSessionId?: string | null; presentation?: string }) {
     if (typeof props.open !== 'boolean') return null
-    return <div data-testid="lazy-dialer" data-open={String(props.open)} data-presentation={props.presentation}><button type="button" onClick={props.onClose}>Close phone</button></div>
+    return <div data-testid="lazy-dialer" data-open={String(props.open)} data-presentation={props.presentation} data-session-id={props.pendingSessionId ?? ''}><button type="button" onClick={props.onClose}>Close phone</button></div>
   },
 }))
 
@@ -73,6 +73,7 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-session-id', 'session-1')
 
     act(() => window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: {
       queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],

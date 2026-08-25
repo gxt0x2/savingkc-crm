@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const callingFloor = readFileSync('src/components/prospecting/prospecting-calling-floor.tsx', 'utf8')
 const callController = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf8')
+const countdown = readFileSync('src/components/telephony/use-dialer-start-countdown.ts', 'utf8')
 
 describe('dialer stop lifecycle integration', () => {
   it('persists the operator command before asking the call controller to disconnect', () => {
@@ -11,9 +12,16 @@ describe('dialer stop lifecycle integration', () => {
   })
 
   it('suppresses automatic dialing and number advancement while a stop is pending', () => {
-    expect(callController).toContain('pendingAutoDialRef.current = false')
+    expect(callController).toContain('cancelAutoStart()')
     expect(callController).toContain("postDisposition === 'stop_session'")
     expect(callController).toContain("transitionDurableDialerSession(durableSessionId, 'stop')")
+  })
+
+  it('holds the first automatic dial for fifteen seconds and lets pause cancel it first', () => {
+    expect(countdown).toContain('FIRST_DIAL_COUNTDOWN_SECONDS = 15')
+    expect(callController).toContain('autoStartCountdownSeconds !== null && autoStartCountdownSeconds > 0')
+    expect(callController).toContain("detail: { action: 'pause' }")
+    expect(callController).toContain('finishAutoStart()')
   })
 
   it('recovers a persisted stop request after a refresh', () => {
