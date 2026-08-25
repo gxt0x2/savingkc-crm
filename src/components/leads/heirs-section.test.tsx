@@ -163,6 +163,42 @@ describe('HeirsSection dial queue', () => {
       'title',
       'Available after this calling workflow is released to production',
     )
+    expect(screen.getByRole('button', { name: 'Call 2 numbers for Angela Taylor' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Call 2 numbers for Ben Taylor' })).toBeDisabled()
+    expect(screen.getAllByText('Call 2 numbers')).toHaveLength(2)
+  })
+
+  it('labels each person-level phone run with its exact eligible number count', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        heirs: [
+          {
+            key: 'Lillie::owner',
+            contact_name: 'Lillie Williams',
+            relationship: 'owner',
+            address: null,
+            unattempted_count: 2,
+            phones: heirsPayload.heirs[0].phones.slice(0, 2),
+          },
+          {
+            key: 'Quentin::unknown',
+            contact_name: 'Quentin Williams',
+            relationship: 'unknown',
+            address: null,
+            unattempted_count: 1,
+            phones: [heirsPayload.heirs[1].phones[1]],
+          },
+        ],
+      }),
+    }))
+
+    renderHeirsSection({ collapsible: false, showAllPhones: true, readOnlyPreview: true })
+
+    expect(await screen.findByRole('button', { name: 'Call 2 numbers for Lillie Williams' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Call 1 number for Quentin Williams' })).toBeDisabled()
+    expect(screen.getByText('Call 2 numbers')).toBeVisible()
+    expect(screen.getByText('Call 1 number')).toBeVisible()
   })
 
   it('queues every callable listed heir phone, including attempted and verified numbers', async () => {

@@ -438,6 +438,11 @@ function HeirRow({
   const allAttempted = heir.unattempted_count === 0 && heir.phones.length > 0
   const callablePhones = heir.phones.filter(isAutoCallablePhone)
   const freshCallableCount = callablePhones.filter((phone) => !phone.attempted).length
+  const displayName = toProperCase(heir.contact_name)
+  const callablePhoneLabel = `${callablePhones.length} ${callablePhones.length === 1 ? 'number' : 'numbers'}`
+  const callPersonLabel = freshCallableCount > 0
+    ? `Call ${callablePhoneLabel}`
+    : `Call ${callablePhoneLabel} again`
 
   // Show every number — recall is never hidden. The verified line (if any)
   // floats to the top and is styled green; the rest stay callable underneath.
@@ -486,7 +491,7 @@ function HeirRow({
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotColor}`} aria-hidden />
           <span className="text-sm font-bold text-[var(--ck-text)] truncate">
-            {toProperCase(heir.contact_name)}
+            {displayName}
           </span>
           <span className="text-[11px] text-[var(--ck-text-muted)] capitalize whitespace-nowrap">
             · {heir.relationship}
@@ -501,22 +506,26 @@ function HeirRow({
               <Icon name="verified" size="text-sm" filled /> Verified
             </span>
           )}
-          {!readOnlyPreview && callablePhones.length > 0 && (
+          {callablePhones.length > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); onCallHeir() }}
+              disabled={readOnlyPreview}
+              aria-label={`${callPersonLabel} for ${displayName}`}
               className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors text-white ${
                 freshCallableCount > 0
                   ? 'bg-[#E32E2E] hover:bg-[#C42626]'
                   : 'bg-[var(--ck-surface-hi)] hover:bg-[var(--ck-border-strong)] text-[var(--ck-text)]'
-              }`}
+              } disabled:cursor-not-allowed disabled:bg-[var(--ck-surface-hi)] disabled:text-[var(--ck-text-dim)]`}
               title={
-                freshCallableCount > 0
+                readOnlyPreview
+                  ? `Start a live calling session to call ${callablePhoneLabel} for ${displayName}`
+                  : freshCallableCount > 0
                   ? `Queue ${callablePhones.length} callable ${callablePhones.length === 1 ? 'phone' : 'phones'} for this heir`
                   : 'Call this heir again using callable numbers'
               }
             >
               <Icon name={freshCallableCount > 0 ? 'call' : 'restart_alt'} size="text-xs" />
-              {freshCallableCount > 0 ? `Call (${callablePhones.length})` : 'Call again'}
+              {callPersonLabel}
             </button>
           )}
           {showAllPhones ? null : <Icon
