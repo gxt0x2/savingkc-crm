@@ -73,7 +73,9 @@ describe('prospecting workspace UI contract', () => {
     expect(workspace).toContain('router.push(`/prospecting?${query.toString()}`)')
     expect(prospectingPage).toContain('if (executionKey) return <ProspectingCallingFloor')
     expect(dialerPage).toContain("redirect(query ? `/prospecting?${query}` : '/prospecting')")
-    expect(callingFloor).toContain('export function ProspectingCallingFloor()')
+    expect(callingFloor).toContain('export function ProspectingCallingFloor({')
+    expect(prospectingPage).toContain('readOnlyPreview={Boolean(previewCampaignId)}')
+    expect(callingFloor).toContain('readOnlyPreview={readOnlyPreview}')
     expect(callingFloor).not.toContain('function DialerHome')
   })
 

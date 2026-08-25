@@ -122,6 +122,19 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText(/Your progress is preserved if you stop/i)).toBeVisible()
   })
 
+  it('offers an honest read-only workflow review when session writes are unavailable', () => {
+    const launch = vi.fn()
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} writesEnabled={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={launch} />)
+
+    const preview = screen.getByRole('button', { name: 'Preview calling workflow' })
+    expect(preview).toBeVisible()
+    expect(screen.getByText(/without calling or saving changes/i)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Start calling session' })).not.toBeInTheDocument()
+    fireEvent.click(preview)
+    expect(launch).toHaveBeenCalledOnce()
+  })
+
   it('loads audience and activity tools only after campaign details open', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
       const url = String(input)

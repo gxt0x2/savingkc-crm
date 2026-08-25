@@ -18,7 +18,7 @@ describe('Prospecting calling-floor truth contract', () => {
     expect(prospectingPage).toContain('ProspectingCallingFloor')
     expect(callingFloor).toContain('loadDurableDialerSession')
     expect(callingFloor).toContain('transitionDurableDialerSession')
-    expect(callingFloor).toContain('durableSession?.callerId || requestedCallerId')
+    expect(callingFloor).toContain('durableSession?.callerId || campaignPreview.callerId || requestedCallerId')
     expect(callingFloor).toContain('<DialerSessionCommand')
     expect(callingFloor).toContain('<HeirsSection')
     expect(callingFloor).toContain('Safety checked before every dial')

@@ -22,7 +22,7 @@ const campaign = {
     { id: 'step-2', position: 2, delayMinutes: 1440, bodyTemplate: 'Just following up about {{property_address}}. Is selling something you would consider this year?' },
   ],
   members: [{
-    id: 'member-1', leadId: 'lead-1', phone: '+18165550123', timezone: 'America/Chicago', status: 'active', suppressionReason: null, currentStepPosition: 1, nextActionAt: '2026-08-22T14:00:00.000Z', enrolledAt: '2026-08-21T10:30:00.000Z',
+    id: '44444444-4444-4444-8444-444444444444', subjectKind: 'lead', leadId: '33333333-3333-4333-8333-333333333333', prospectId: null, enrollmentSource: 'crm_lead', phone: '+18165550123', timezone: 'America/Chicago', status: 'active', suppressionReason: null, currentStepPosition: 1, nextActionAt: '2026-08-22T14:00:00.000Z', enrolledAt: '2026-08-21T10:30:00.000Z', readyContactCount: 2, suppressedContactCount: 0,
     lead: { fullName: 'Helen Seller', propertyAddress: '123 Main Street', station: 'prospect', classification: 'warm' },
   }],
   stats: { total: 10, active: 7, suppressed: 1, replied: 2, completed: 1, sent: 8, failed: 0 },
@@ -43,15 +43,34 @@ function fulfill(route: Route, body: unknown) {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 }
 
-async function mockCampaigns(page: Page) {
+async function mockCampaigns(page: Page, writesEnabled = true) {
   await page.route('**/api/prospecting/campaigns**', (route) => {
     const pathname = new URL(route.request().url()).pathname
     if (pathname.endsWith('/activity')) return fulfill(route, { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
     if (pathname.endsWith('/members')) return fulfill(route, { items: dialerCampaign.members, pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
-    if (pathname.endsWith(dialerCampaign.id)) return fulfill(route, { campaign: dialerCampaign })
-    if (pathname.endsWith(campaign.id)) return fulfill(route, { campaign })
+    if (pathname.endsWith(dialerCampaign.id)) return fulfill(route, { campaign: dialerCampaign, capabilities: { writesEnabled } })
+    if (pathname.endsWith(campaign.id)) return fulfill(route, { campaign, capabilities: { writesEnabled } })
     return fulfill(route, { items: [dialerCampaign, campaign], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
   })
+}
+
+async function mockCallingPreview(page: Page) {
+  await page.route('**/api/dialer/queue?**', (route) => fulfill(route, {
+    leads: [{ id: dialerCampaign.members[0].leadId, full_name: 'Helen Seller', phone: '+18165550123', email: null, property_address: '123 Main Street', city: 'Kansas City', state: 'MO', zip: '64108', county: 'Jackson', is_favorite: false }],
+    prospects: [],
+    coOwners: [],
+  }))
+  await page.route('**/api/heirs?**', (route) => fulfill(route, {
+    last_skip_traced_at: '2026-08-24T12:00:00.000Z',
+    heirs: [{
+      key: 'heir-1', contact_name: 'Helen Seller', relationship: 'owner', address: null, unattempted_count: 2,
+      phones: [
+        { id: 'phone-1', number: '+18165550123', type: 'mobile', connected: null, attempted: false, last_disposition: null, last_attempt_at: null },
+        { id: 'phone-2', number: '+18165550124', type: 'mobile', connected: null, attempted: false, last_disposition: null, last_attempt_at: null },
+      ],
+    }],
+  }))
+  await page.route('**/api/leads/*/activities?**', (route) => fulfill(route, { activities: [] }))
 }
 
 test('Prospecting makes the agent calling workflow obvious and keeps management secondary', async ({ page }) => {
@@ -90,6 +109,33 @@ test('Prospecting keeps campaign choice and session start clear on a phone', asy
   await expect(page.getByRole('button', { name: 'Start calling session' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Campaign details/ })).toBeVisible()
   await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll')
+})
+
+test('a read-only deployment opens the real calling workflow without exposing mutations', async ({ page }) => {
+  const mutationRequests: string[] = []
+  page.on('request', (request) => {
+    if (
+      request.url().includes('/api/')
+      && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())
+    ) {
+      mutationRequests.push(`${request.method()} ${new URL(request.url()).pathname}`)
+    }
+  })
+  await mockCampaigns(page, false)
+  await mockCallingPreview(page)
+  await page.goto(`/prospecting?campaign=${dialerCampaign.id}`, { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('button', { name: 'Preview calling workflow' }).click()
+  await expect(page).toHaveURL(new RegExp(`preview_campaign=${dialerCampaign.id}`))
+  await expect(page.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
+  await expect(page.getByText(/Calls, messages, verification changes, outcomes, and lifecycle changes are disabled/i)).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Callable people/ })).toBeVisible()
+  await expect(page.getByText('(816) 555-0123', { exact: true })).toBeVisible()
+  await expect(page.getByText('(816) 555-0124', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Calling unavailable in read-only preview' })).toHaveCount(2)
+  await expect(page.getByRole('button', { name: 'Call controls' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Dead' })).toHaveCount(0)
+  expect(mutationRequests).toEqual([])
 })
 
 test('Prospecting studio remains usable on a phone-sized viewport', async ({ page }) => {

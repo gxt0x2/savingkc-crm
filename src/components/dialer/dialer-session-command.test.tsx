@@ -98,4 +98,15 @@ describe('DialerSessionCommand', () => {
     expect(screen.queryByText(/predictive/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/3 lines/i)).not.toBeInTheDocument()
   })
+
+  it('makes a workflow preview navigable without exposing calling or record mutations', () => {
+    const props = renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
+
+    expect(screen.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
+    expect(screen.getByText(/Calls, messages, verification changes, outcomes, and lifecycle changes are disabled/i)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Call controls' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+    expect(props.onSkip).toHaveBeenCalledOnce()
+  })
 })

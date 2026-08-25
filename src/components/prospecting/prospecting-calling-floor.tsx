@@ -21,30 +21,16 @@ import {
 import type {
   ProspectingCallingLead as LeadSummary,
   ProspectingCallingProspect as ProspectSummary,
+  ProspectingCallingQueueState as QueueState,
   ProspectingCallingTab,
   ProspectingOccupancy,
   ProspectingRecentCall as RecentCall,
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
+import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
-interface QueueState {
-  queueItem: {
-    phone: string
-    heirName: string
-    relation: string
-    prospect_phone_id: string
-    leadId: string | null
-    prospectId: string
-    campaignMemberId: string | null
-  } | null
-  queueIndex: number
-  queueLength: number
-  callDuration?: string | null
-  status: 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
-}
-
 const DEFAULT_DIALER_CALLER_ID = TWILIO_NUMBERS[0]?.value ?? ''
 const DEFAULT_ROTATION_EVERY_CALLS = 50
 
@@ -52,7 +38,13 @@ function joinAddress(parts: Array<string | null | undefined>): string {
   return parts.filter(Boolean).join(', ')
 }
 
-export function ProspectingCallingFloor() {
+export function ProspectingCallingFloor({
+  readOnlyPreview = false,
+  previewCampaignId = null,
+}: {
+  readOnlyPreview?: boolean
+  previewCampaignId?: string | null
+}) {
   const callRailOpen = useWorkspaceCallRailOpen()
   const router = useRouter()
   const params = useSearchParams()
@@ -76,6 +68,7 @@ export function ProspectingCallingFloor() {
   const [durableSession, setDurableSession] = useState<DurableDialerSession | null>(null)
   const [sessionActionPending, setSessionActionPending] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const campaignPreview = useCampaignPreviewQueue(readOnlyPreview ? previewCampaignId : null)
 
   // SMS compose state
   const [smsTarget, setSmsTarget] = useState<ProspectingSmsTarget | null>(null)
@@ -97,7 +90,7 @@ export function ProspectingCallingFloor() {
   const currentProspect: ProspectSummary | null = currentSubjectKey ? prospects[currentSubjectKey] ?? null : null
   const durableSessionId = params.get('session_id')?.trim() || ''
   const requestedCallerId = params.get('caller_id')?.trim() || ''
-  const sessionCallerId = durableSession?.callerId || requestedCallerId
+  const sessionCallerId = durableSession?.callerId || campaignPreview.callerId || requestedCallerId
   const sessionCallerModeParam = params.get('caller_mode')
   const sessionRotateEveryParam = params.get('rotation_every')
   const sessionRotationNumbersParam = params.get('rotation_numbers')
@@ -141,6 +134,16 @@ export function ProspectingCallingFloor() {
     async function resolveIds() {
       setLoading(true)
       setResolveError(null)
+      if (readOnlyPreview) {
+        setDurableSession(null)
+        setSubjects(campaignPreview.subjects)
+        setCurrentIndex(0)
+        setSessionDials(0)
+        setSessionContacts(0)
+        setResolveError(campaignPreview.error)
+        setLoading(campaignPreview.loading)
+        return
+      }
       if (durableSessionId) {
         try {
           const session = await loadDurableDialerSession(durableSessionId)
@@ -188,7 +191,7 @@ export function ProspectingCallingFloor() {
       setLoading(false)
     }
     resolveIds()
-  }, [durableSessionId, params])
+  }, [campaignPreview.error, campaignPreview.loading, campaignPreview.subjects, durableSessionId, params, readOnlyPreview])
 
   useEffect(() => {
     if (durableSessionId) return
@@ -366,12 +369,16 @@ export function ProspectingCallingFloor() {
   }, [applyDurableSession, durableSessionId])
 
   const skipCurrentLead = useCallback(async () => {
+    if (readOnlyPreview) {
+      advance(false)
+      return
+    }
     if (!durableSessionId) {
       advance(true)
       return
     }
     await transitionCurrentSession('skip', 'Agent skipped this contact')
-  }, [advance, durableSessionId, transitionCurrentSession])
+  }, [advance, durableSessionId, readOnlyPreview, transitionCurrentSession])
 
   const handleAutoStartEmpty = useCallback(() => {
     // A record with no callable heirs (never skip-traced, or already fully
@@ -527,7 +534,7 @@ export function ProspectingCallingFloor() {
     ? '2 yr'
     : null
 
-  const inferredQueueLabel = sessionQueueLabelParam ||
+  const inferredQueueLabel = sessionQueueLabelParam || campaignPreview.name ||
     (params.get('cohort') === 'deceased-2-3yr'
       ? '3+ Year Deceased Tax'
       : delinquentYears
@@ -590,6 +597,7 @@ export function ProspectingCallingFloor() {
         actionPending={sessionActionPending}
         currentLeadId={currentLeadId}
         error={sessionError}
+        readOnlyPreview={readOnlyPreview}
         onClose={() => { void closeSession() }}
         onResume={() => { void transitionCurrentSession('resume') }}
         onStop={() => { void stopSession() }}
@@ -647,13 +655,14 @@ export function ProspectingCallingFloor() {
               callHammerEnabled={sessionUseCallHammer}
               ringCount={sessionRingCount}
               dialerSessionId={durableSessionId || null}
+              readOnlyPreview={readOnlyPreview}
               autoStart={autoQueueSubjectKey === currentSubjectKey}
               onAutoStartHandled={() => setAutoQueueSubjectKey(null)}
               onAutoStartEmpty={handleAutoStartEmpty}
               defaultExpanded
               collapsible={false}
               showAllPhones
-              onSmsPhone={currentLeadId ? setSmsTarget : undefined}
+              onSmsPhone={!readOnlyPreview && currentLeadId ? setSmsTarget : undefined}
             />
           )}
         </main>

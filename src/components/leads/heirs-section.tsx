@@ -40,6 +40,8 @@ interface HeirsSectionProps {
   /** Rings to allow before giving up; flows to the Twilio Dial timeout. */
   ringCount?: number | null
   dialerSessionId?: string | null
+  /** Read-only campaign review: show every associated number without exposing mutations or telephony actions. */
+  readOnlyPreview?: boolean
 }
 
 function phoneIcon(type: string | null): string {
@@ -78,6 +80,7 @@ export function HeirsSection({
   onSmsPhone,
   ringCount = null,
   dialerSessionId = null,
+  readOnlyPreview = false,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
   const [loading, setLoading] = useState(true)
@@ -250,6 +253,7 @@ export function HeirsSection({
   }
 
   useEffect(() => {
+    if (readOnlyPreview) return
     if (!autoStart || loading) return
     // If the heirs failed to load, hold on this record — surface the error and
     // let the agent retry rather than silently auto-advancing to the next
@@ -266,7 +270,7 @@ export function HeirsSection({
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, ringCount, subjectKey])
+  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount, subjectKey])
 
   return (
     <section className={`ck-card overflow-hidden ${expanded ? (collapsible ? 'p-6' : 'p-0') : 'px-6 py-4'}`}>
@@ -292,7 +296,7 @@ export function HeirsSection({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {totalHeirs > 0 && queuedPhones > 0 && (
+          {!readOnlyPreview && totalHeirs > 0 && queuedPhones > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); queueAll() }}
               className="bg-[#E32E2E] hover:bg-[#C42626] text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
@@ -341,7 +345,7 @@ export function HeirsSection({
           <p className="text-xs text-[var(--ck-text-muted)] mb-5 max-w-sm mx-auto leading-relaxed">
             Run skip trace to find owners, relatives, and their reviewed phone numbers.
           </p>
-          {leadId ? <button
+          {leadId && !readOnlyPreview ? <button
             onClick={runSync}
             disabled={isSyncing}
             className="bg-[#E32E2E] hover:bg-[#C42626] disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-black uppercase tracking-wide inline-flex items-center gap-2 shadow-sm transition-colors"
@@ -367,6 +371,7 @@ export function HeirsSection({
               onCallPhone={(phone) => queueOne(heir, phone)}
               onCallHeir={() => queueHeir(heir)}
               onToggleVerify={toggleVerify}
+              readOnlyPreview={readOnlyPreview}
               onSmsPhone={onSmsPhone ? (phone) => onSmsPhone({
                 heirName: toProperCase(heir.contact_name),
                 relation: heir.relationship,
@@ -389,14 +394,14 @@ export function HeirsSection({
                 : 'All heir phones attempted. Re-sync if new data is expected.'
               : `${unattemptedPhones} unattempted · auto-advances through queue.`}
           </p>
-          <button
+          {!readOnlyPreview ? <button
             onClick={runSync}
             disabled={isSyncing}
             className="text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] inline-flex items-center gap-1.5 disabled:opacity-50 transition-colors"
           >
             <Icon name={isSyncing ? 'progress_activity' : 'refresh'} size="text-xs" className={isSyncing ? 'animate-spin' : ''} />
             {isSyncing ? 'Re-syncing…' : 'Re-sync'}
-          </button>
+          </button> : <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]"><Icon name="lock" size="text-xs" />Read-only preview</span>}
         </div>
       )}
       {/* --- expanded body ends --- */}
@@ -414,6 +419,7 @@ function HeirRow({
   onCallHeir,
   onToggleVerify,
   onSmsPhone,
+  readOnlyPreview,
 }: {
   heir: Heir
   alt: boolean
@@ -423,6 +429,7 @@ function HeirRow({
   onCallHeir: () => void
   onToggleVerify: (phone: HeirPhone, nextVerified: boolean) => void
   onSmsPhone?: (phone: HeirPhone) => void
+  readOnlyPreview: boolean
 }) {
   const verified = verifiedPhoneOf(heir)
   const allAttempted = heir.unattempted_count === 0 && heir.phones.length > 0
@@ -491,7 +498,7 @@ function HeirRow({
               <Icon name="verified" size="text-sm" filled /> Verified
             </span>
           )}
-          {callablePhones.length > 0 && (
+          {!readOnlyPreview && callablePhones.length > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); onCallHeir() }}
               className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm transition-colors text-white ${
@@ -539,6 +546,7 @@ function HeirRow({
             onCall={() => onCallPhone(phone)}
             onToggleVerify={(next) => onToggleVerify(phone, next)}
             onSms={onSmsPhone ? () => onSmsPhone(phone) : undefined}
+            readOnlyPreview={readOnlyPreview}
           />
         ))}
       </div>
@@ -553,12 +561,14 @@ function PhonePill({
   onCall,
   onToggleVerify,
   onSms,
+  readOnlyPreview,
 }: {
   phone: HeirPhone
   verified: boolean
   onCall: () => void
   onToggleVerify: (nextVerified: boolean) => void
   onSms?: () => void
+  readOnlyPreview: boolean
 }) {
   const icon = phoneIcon(phone.type)
   const typeLabel = (phone.type ?? 'phone').toLowerCase()
@@ -614,7 +624,7 @@ function PhonePill({
       {/* Verify / unverify is available only when the snapshot still points to
           the canonical source phone row. Lead-primary snapshots remain callable
           through Lead policy without inventing source-phone provenance. */}
-      {sourceProspectPhoneId(phone) ? <button
+      {!readOnlyPreview && sourceProspectPhoneId(phone) ? <button
         onClick={() => onToggleVerify(!verified)}
         className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors border ${
           verified
@@ -640,16 +650,20 @@ function PhonePill({
       )}
       <button
         onClick={onCall}
-        disabled={!callable}
+        disabled={!callable || readOnlyPreview}
         className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-white disabled:cursor-not-allowed disabled:bg-[var(--ck-surface-hi)] disabled:text-[var(--ck-text-dim)] ${
-          !callable
+          readOnlyPreview
+            ? ''
+            : !callable
             ? ''
             : verified
             ? 'bg-emerald-500 hover:bg-emerald-600'
             : 'bg-[#E32E2E] hover:bg-[#C42626]'
         }`}
         title={
-          !callable
+          readOnlyPreview
+            ? 'Calling is disabled in this read-only preview'
+            : !callable
             ? 'Calling blocked by saved disposition'
             : verified
             ? 'Redial the verified number'
@@ -657,7 +671,7 @@ function PhonePill({
             ? 'Call this number again'
             : 'Call this number'
         }
-        aria-label={callable ? 'Call this number' : 'Calling blocked for this number'}
+        aria-label={readOnlyPreview ? 'Calling unavailable in read-only preview' : callable ? 'Call this number' : 'Calling blocked for this number'}
       >
         <Icon name={phone.attempted ? 'restart_alt' : 'call'} size="text-sm" />
       </button>

@@ -1,6 +1,7 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingError, prospectingJson } from '@/lib/api/prospecting-response'
 import { parseCreateProspectingCampaignInput } from '@/lib/prospecting/campaign-contract'
+import { previewWriteBlocked } from '@/lib/preview-safety'
 import { getProspectingCampaign, setProspectingCampaignStatus, updateProspectingCampaignDraft } from '@/lib/server/prospecting-campaigns'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +11,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const actor = await resolveAuthenticatedActor()
   if (!actor) return prospectingJson({ error: 'Unauthorized' }, { status: 401 })
   try {
-    return prospectingJson({ campaign: await getProspectingCampaign(actor, (await params).id) })
+    const campaignId = (await params).id
+    return prospectingJson({
+      campaign: await getProspectingCampaign(actor, campaignId),
+      capabilities: {
+        writesEnabled: !previewWriteBlocked('POST', `/api/prospecting/campaigns/${campaignId}/launch`),
+      },
+    })
   } catch (error) {
     return prospectingError(error)
   }

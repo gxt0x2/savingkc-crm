@@ -42,6 +42,7 @@ type CampaignDashboardProps = {
   loading: boolean
   detailLoading: boolean
   actionPending: boolean
+  writesEnabled?: boolean
   lastRefreshedAt?: string | null
   liveRefreshDelayed?: boolean
   onSelect: (id: string) => void
@@ -60,6 +61,7 @@ export function CampaignDashboard({
   loading,
   detailLoading,
   actionPending,
+  writesEnabled = true,
   lastRefreshedAt = null,
   liveRefreshDelayed = false,
   onSelect,
@@ -135,7 +137,7 @@ export function CampaignDashboard({
                     <p className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white/60">ready to call</p>
                     <p className="mt-5 max-w-2xl text-sm leading-6 text-white/70">Review one seller, see every associated person and phone number, place a call, then save the outcome before moving to the next seller. Your progress is preserved if you stop.</p>
                   </div>
-                  {detail.status === 'active' ? <button type="button" onClick={onLaunchDialer} disabled={actionPending || detail.stats.active === 0} className="crm-primary-button inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl px-7 text-base font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name="phone_in_talk" className="text-xl" />Start calling session</button> : null}
+                  {detail.status === 'active' ? <div className="text-center lg:text-right"><button type="button" onClick={onLaunchDialer} disabled={actionPending || detail.stats.active === 0} className="crm-primary-button inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl px-7 text-base font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={writesEnabled ? 'phone_in_talk' : 'preview'} className="text-xl" />{writesEnabled ? 'Start calling session' : 'Preview calling workflow'}</button>{!writesEnabled ? <p className="mt-2 max-w-xs text-xs font-bold text-white/55">Read-only: review sellers and numbers without calling or saving changes.</p> : null}</div> : null}
                 </div> : <div className="mt-7"><p className="text-sm font-bold text-white/70">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p><p className="mt-2 text-xs text-white/50">Replies and opt-outs stop the sequence automatically.</p></div>}
 
                 <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 border-t border-white/10 pt-5 text-xs font-bold text-white/65">

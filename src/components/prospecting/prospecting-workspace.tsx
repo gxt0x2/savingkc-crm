@@ -43,6 +43,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const [notice, setNotice] = useState<string | null>(null)
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [liveRefreshDelayed, setLiveRefreshDelayed] = useState(false)
+  const [writesEnabled, setWritesEnabled] = useState(true)
   const selectedIdRef = useRef<string | null>(null)
 
   const loadCampaigns = useCallback(async () => {
@@ -54,9 +55,10 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const loadDetail = useCallback(async (id: string, background = false) => {
     if (!background) setDetailLoading(true)
     try {
-      const payload = await jsonRequest<{ campaign: ProspectingCampaignDetail }>(`/api/prospecting/campaigns/${id}`)
+      const payload = await jsonRequest<{ campaign: ProspectingCampaignDetail; capabilities?: { writesEnabled?: boolean } }>(`/api/prospecting/campaigns/${id}`)
       if (selectedIdRef.current !== id) return null
       setDetail(payload.campaign)
+      setWritesEnabled(payload.capabilities?.writesEnabled !== false)
       setCampaigns((current) => current.map((campaign) => campaign.id === id ? payload.campaign : campaign))
       setLastRefreshedAt(new Date().toISOString())
       setLiveRefreshDelayed(false)
@@ -85,6 +87,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     selectedIdRef.current = selectedId
     if (!selectedId) {
       setDetail(null)
+      setWritesEnabled(true)
       setLastRefreshedAt(null)
       setLiveRefreshDelayed(false)
       return
@@ -265,6 +268,16 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
 
   async function launchDialer() {
     if (!detail || actionPending) return
+    if (!writesEnabled) {
+      const query = new URLSearchParams({
+        preview_campaign: detail.id,
+        campaign: detail.id,
+        queue_label: detail.name,
+        return_to: `/prospecting?campaign=${encodeURIComponent(detail.id)}`,
+      })
+      router.push(`/prospecting?${query.toString()}`)
+      return
+    }
     setActionPending(true)
     setError(null)
     try {
@@ -314,6 +327,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       actionPending={actionPending}
       lastRefreshedAt={lastRefreshedAt}
       liveRefreshDelayed={liveRefreshDelayed}
+      writesEnabled={writesEnabled}
       onSelect={setSelectedId}
       onCreate={openStudio}
       onDuplicate={duplicateCampaign}
