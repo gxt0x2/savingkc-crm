@@ -15,7 +15,7 @@ import {
 } from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
+import { loadDialerAttemptHistory, transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
 import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
 import { WorkspaceCallController } from './workspace-call-controller'
@@ -26,6 +26,25 @@ import {
   type DialerCallIntentKind,
 } from '@/lib/telephony/dialer-client-preflight'
 import { saveManualCallDisposition } from '@/lib/telephony/manual-call-disposition'
+import { findRecoverableDialerAttempt, type RecoverableDialerAttempt } from '@/lib/telephony/dialer-session-recovery'
+import {
+  DIALER_KEYPAD,
+  classifyDirection,
+  extractTwilioErrorMessage,
+  formatCallLeg,
+  formatDialDisplay,
+  formatDuration,
+  formatTimeAgo,
+  isNoAnswer,
+  isNonFatalAudioWarning,
+  normalizeDispositionLabel,
+  priorityColors,
+  type RecentCall,
+  resolveCallerIdForAttempt,
+  type SearchResult,
+  stationColors,
+  stripDialFormatting,
+} from './telephony-bar-support'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,37 +56,6 @@ type TwilioErrorLike = {
   name?: string
   causes?: unknown[]
   originalError?: unknown
-}
-
-interface SearchResult {
-  id: string
-  full_name: string
-  phone: string | null
-  property_address: string | null
-  city: string | null
-  station: string | null
-  priority: string | null
-  updated_at: string
-}
-
-interface RecentCall {
-  id: string
-  lead_id: string | null
-  lead_name: string | null
-  phone: string | null
-  agent?: string | null
-  created_at: string
-  metadata: {
-    duration?: number
-    direction?: string
-    disposition?: string
-    outcome?: string
-    status?: string
-    from?: string
-    to?: string
-    callStatus?: string
-    dialStatus?: string
-  } | null
 }
 
 // A single entry in the heir-dialer queue. The property stays pinned (leadId +
@@ -91,150 +79,20 @@ interface DialerPanelProps {
   signedInEmail?: string | null
 }
 
-function resolveCallerIdForAttempt(
-  plan: DialerCallerPlan,
-  fallbackCallerId: string,
-  attemptsPlaced: number,
-): string {
-  if (plan.mode !== 'rotation' || plan.rotationCallerIds.length === 0) {
-    return plan.staticCallerId || fallbackCallerId
-  }
-  const safeEvery = Math.max(1, Math.floor(plan.rotateEveryCalls || 1))
-  const index = Math.floor(Math.max(0, attemptsPlaced) / safeEvery) % plan.rotationCallerIds.length
-  return plan.rotationCallerIds[index] || plan.staticCallerId || fallbackCallerId
-}
-
 function useCallTimer(active: boolean) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
     const reset = window.setTimeout(() => setSeconds(0), 0)
     if (!active) return () => window.clearTimeout(reset)
-    const id = window.setInterval(() => setSeconds((s) => s + 1), 1000)
+    const id = window.setInterval(() => setSeconds((value) => value + 1), 1000)
     return () => {
       window.clearTimeout(reset)
       window.clearInterval(id)
     }
   }, [active])
-  const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
-  const ss = String(seconds % 60).padStart(2, '0')
-  return `${mm}:${ss}`
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function formatTimeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
-}
-
-function formatDuration(secs: number) {
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
-function extractTwilioErrorMessage(err: unknown): string {
-  if (!err) return 'Dialer failed to initialize. Please retry.'
-  if (err instanceof Error) return err.message || 'Dialer failed to initialize. Please retry.'
-  if (typeof err === 'string') return err
-  if (typeof err === 'object') {
-    const obj = err as TwilioErrorLike
-    if (typeof obj.explanation === 'string' && obj.explanation.trim()) return obj.explanation.trim()
-    if (typeof obj.message === 'string' && obj.message.trim()) return obj.message.trim()
-    if (typeof obj.name === 'string' && obj.name.trim()) return obj.name.trim()
-  }
-  return 'Dialer failed to initialize. Please retry.'
-}
-
-function isNonFatalAudioWarning(err: unknown): boolean {
-  const msg = extractTwilioErrorMessage(err).toLowerCase()
-  return (
-    msg.includes('audio output') ||
-    msg.includes('setsinkid') ||
-    msg.includes('audio device') ||
-    msg.includes('devices not found')
-  )
-}
-
-function normalizeDispositionLabel(disposition: string) {
-  return disposition.replace(/_/g, ' ')
-}
-
-function classifyDirection(metadata: RecentCall['metadata']): 'inbound' | 'outbound' | 'unknown' {
-  if (metadata?.direction === 'inbound') return 'inbound'
-  if (metadata?.direction === 'outbound') return 'outbound'
-  return 'unknown'
-}
-
-function isNoAnswer(metadata: RecentCall['metadata']): boolean {
-  if (!metadata) return false
-  if (metadata.disposition === 'no_answer') return true
-  if (metadata.outcome === 'missed') return true
-  if (metadata.callStatus === 'no-answer' || metadata.callStatus === 'busy') return true
-  if (metadata.dialStatus === 'no-answer' || metadata.dialStatus === 'busy') return true
-  return false
-}
-
-function formatCallLeg(call: RecentCall): string {
-  const metadata = call.metadata
-  const direction = classifyDirection(metadata)
-  const from = metadata?.from || null
-  const to = metadata?.to || call.phone || null
-
-  if (direction === 'outbound' && to) return `To ${formatPhone(to)}`
-  if (direction === 'inbound' && from && to) return `From ${formatPhone(from)} → To ${formatPhone(to)}`
-  if (direction === 'inbound' && from) return `From ${formatPhone(from)}`
-  if (to) return formatPhone(to)
-  return 'Unknown number'
-}
-
-const stationColors: Record<string, string> = {
-  intake: 'bg-blue-500/20 text-blue-300',
-  qualifying: 'bg-amber-500/20 text-amber-300',
-  appt_set: 'bg-purple-500/20 text-purple-300',
-  negotiations: 'bg-orange-500/20 text-orange-300',
-  contract_signed: 'bg-emerald-500/20 text-emerald-300',
-  closed: 'bg-green-500/20 text-green-300',
-  dead: 'bg-slate-500/20 text-slate-400',
-}
-
-const priorityColors: Record<string, string> = {
-  hot: 'bg-red-500/20 text-red-300',
-  warm: 'bg-amber-500/20 text-amber-300',
-  normal: 'bg-slate-500/20 text-slate-400',
-  cold: 'bg-cyan-500/20 text-cyan-300',
-}
-
-const DIALER_KEYPAD: Array<{ value: string; letters?: string }> = [
-  { value: '1' },
-  { value: '2', letters: 'ABC' },
-  { value: '3', letters: 'DEF' },
-  { value: '4', letters: 'GHI' },
-  { value: '5', letters: 'JKL' },
-  { value: '6', letters: 'MNO' },
-  { value: '7', letters: 'PQRS' },
-  { value: '8', letters: 'TUV' },
-  { value: '9', letters: 'WXYZ' },
-  { value: '*' },
-  { value: '0', letters: '+' },
-  { value: '#' },
-]
-
-function stripDialFormatting(input: string): string {
-  return input.replace(/[()\s-]/g, '')
-}
-
-function formatDialDisplay(input: string): string {
-  const raw = stripDialFormatting(input).trim()
-  if (!raw) return ''
-  if (raw.includes('*') || raw.includes('#')) return raw
-  if (/^\+?\d+$/.test(raw)) return formatPhone(raw)
-  return raw
-}
 
 export function DialerPanel({
   open,
@@ -281,6 +139,7 @@ export function DialerPanel({
 
   const [showDisposition, setShowDisposition] = useState(false)
   const [reviewContext, setReviewContext] = useState<{ sessionId: string; clientAttemptId: string } | null>(null)
+  const [recoveryPending, setRecoveryPending] = useState<RecoverableDialerAttempt | null>(null)
   const [showNewTaskFor, setShowNewTaskFor] = useState<SearchResult | null>(null)
   const lastCallPhoneRef = useRef<string>('')
   const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
@@ -315,6 +174,7 @@ export function DialerPanel({
   const activeQueueItemRef = useRef<HeirQueueItem | null>(null)
   const activeSessionIdRef = useRef<string | null>(null)
   const activeAttemptIdRef = useRef<string | null>(null)
+  const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
   const callIntentPendingRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
@@ -323,6 +183,7 @@ export function DialerPanel({
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
     if (open && pendingDial?.phone) {
+      campaignCallerIdRef.current = null
       setViewTab('dial')
       setSelectedLead({
         id: pendingDial.leadId,
@@ -380,6 +241,7 @@ export function DialerPanel({
       setCallerPlan(planFromEvent)
       setAttemptsPlaced(0)
       const initialCallerId = resolveCallerIdForAttempt(planFromEvent, planFromEvent.staticCallerId, 0)
+      campaignCallerIdRef.current = pendingSessionId && initialCallerId ? initialCallerId : null
       if (initialCallerId) {
         setSelectedCallerId(initialCallerId)
         setCallerIdLockedByUser(false)
@@ -400,7 +262,53 @@ export function DialerPanel({
       setSearchQuery('')
       setSearchResults([])
     }
-  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount])
+  }, [open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount, pendingSessionId])
+
+  useEffect(() => {
+    if (!open || !pendingSessionId || !pendingQueue?.length) return
+    let cancelled = false
+    void loadDialerAttemptHistory(pendingSessionId)
+      .then(({ session, attempts }) => {
+        if (cancelled) return
+        const recovery = findRecoverableDialerAttempt(session, attempts.items, pendingQueue)
+        if (!recovery) return
+
+        const { attempt, queueIndex: recoveredIndex, queueItem: recoveredItem } = recovery
+        pendingAutoDialRef.current = false
+        setRecoveryPending(recovery)
+        setQueue(pendingQueue)
+        setQueueIndex(recoveredIndex)
+        activeQueueItemRef.current = recoveredItem
+        activeSessionIdRef.current = pendingSessionId
+        activeAttemptIdRef.current = attempt.client_attempt_id
+        lastCallPhoneRef.current = attempt.phone
+        lastCallDurationSecondsRef.current = attempt.duration_seconds ?? 0
+        setLastCallDuration(attempt.duration_seconds == null ? null : formatDuration(attempt.duration_seconds))
+        setReviewContext({ sessionId: pendingSessionId, clientAttemptId: attempt.client_attempt_id })
+        setSelectedLead({
+          id: recoveredItem.leadId ?? `prospect:${recoveredItem.prospectId}`,
+          full_name: recoveredItem.heirName,
+          phone: recoveredItem.phone,
+          property_address: recoveredItem.propertyAddress,
+          city: null,
+          station: null,
+          priority: null,
+          updated_at: attempt.updated_at,
+        })
+        setDialNumber(recoveredItem.phone)
+
+        if (recovery.needsEndTransition) {
+          setError('A previous call was interrupted. Finish its outcome before starting another call.')
+          return
+        }
+        setError(null)
+        setShowDisposition(true)
+      })
+      .catch((restoreError) => {
+        if (!cancelled) setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.')
+      })
+    return () => { cancelled = true }
+  }, [open, pendingQueue, pendingSessionId])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -427,6 +335,7 @@ export function DialerPanel({
       if (cid) {
         setCallerIdDisplay(cid)
         setSelectedCallerId((prev) => {
+          if (campaignCallerIdRef.current) return campaignCallerIdRef.current
           if (callerIdLockedByUser && prev) return prev
           return cid
         })
@@ -449,6 +358,7 @@ export function DialerPanel({
             if (refreshData.callerId) {
               setCallerIdDisplay(refreshData.callerId)
               setSelectedCallerId((prev) => {
+                if (campaignCallerIdRef.current) return campaignCallerIdRef.current
                 if (callerIdLockedByUser && prev) return prev
                 return refreshData.callerId
               })
@@ -813,6 +723,33 @@ export function DialerPanel({
     setMuted(false)
   }
 
+  async function finishRecoveredAttempt() {
+    if (!recoveryPending || !pendingSessionId) return
+    setError(null)
+    try {
+      if (recoveryPending.needsEndTransition) {
+        await transitionDurableDialerAttempt({
+          sessionId: pendingSessionId,
+          clientAttemptId: recoveryPending.attempt.client_attempt_id,
+          action: 'ended',
+          durationSeconds: recoveryPending.attempt.duration_seconds ?? 0,
+        })
+        setRecoveryPending({ ...recoveryPending, needsEndTransition: false })
+      }
+      setShowDisposition(true)
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : 'Could not finish the interrupted call.')
+    }
+  }
+
+  function closeDisposition() {
+    if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+      setError('Choose and save a call outcome before closing the call summary.')
+      return
+    }
+    setShowDisposition(false)
+  }
+
   function acceptIncoming() {
     callRef.current?.accept()
     setStatusLogged('on_call')
@@ -860,6 +797,7 @@ export function DialerPanel({
     setQueueIndex(0)
     pendingAutoDialRef.current = false
     activeQueueItemRef.current = null
+    campaignCallerIdRef.current = null
     ringCountRef.current = null
     setCallerPlan(normalizeDialerCallerPlan(null, selectedCallerId || callerIdDisplay))
     setAttemptsPlaced(0)
@@ -1022,6 +960,7 @@ export function DialerPanel({
     }
     activeQueueItemRef.current = null
     activeAttemptIdRef.current = null
+    setRecoveryPending(null)
     if (completesLead) activeSessionIdRef.current = null
     return true
   }
@@ -1087,6 +1026,7 @@ export function DialerPanel({
   }
 
   function endQueue() {
+    campaignCallerIdRef.current = null
     setQueue(null)
     setQueueIndex(0)
     setSelectedLead(null)
@@ -1124,7 +1064,7 @@ export function DialerPanel({
   const isWorkspace = presentation === 'workspace'
   const effectiveCallerId = callerPlan.mode === 'rotation' && !callerIdLockedByUser
     ? rotatedCallerId
-    : (activeCallerId || callerIdOptions[0]?.value || '')
+    : (callerPlan.staticCallerId || activeCallerId || callerIdOptions[0]?.value || '')
   const dispositionQueueItem = activeQueueItemRef.current
 
   return (
@@ -1251,8 +1191,11 @@ export function DialerPanel({
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
               <Icon name="error" className="text-red-400" size="text-sm" />
               <span className="text-xs text-red-300 flex-1">{error}</span>
-              <button onClick={() => { setError(null); initDevice() }} className="text-[10px] font-bold text-red-300 hover:text-white uppercase">
-                Retry
+              <button
+                onClick={() => recoveryPending ? void finishRecoveredAttempt() : (setError(null), void initDevice())}
+                className="text-[10px] font-bold text-red-300 hover:text-white uppercase"
+              >
+                {recoveryPending ? 'Finish outcome' : 'Retry'}
               </button>
             </div>
           )}
@@ -1686,7 +1629,7 @@ export function DialerPanel({
       {/* Disposition Modal */}
       <DispositionModal
         open={showDisposition}
-        onClose={() => setShowDisposition(false)}
+        onClose={closeDisposition}
         onDisposition={handleDisposition}
         phoneNumber={lastCallPhoneRef.current}
         leadName={selectedLead?.full_name}

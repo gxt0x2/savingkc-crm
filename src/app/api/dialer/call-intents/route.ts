@@ -81,7 +81,23 @@ export async function POST(request: Request) {
 
   const profile = resolveAgentTelephonyProfile(actor.email)
   const requestedCallerId = text(body.callerId)
-  const callerId = requestedCallerId ?? profile.defaultCallerId
+  let session = null
+  if (sessionId) {
+    try {
+      session = await getDialerSession(actor, sessionId)
+    } catch (error) {
+      if (error instanceof DialerSessionError) {
+        return json({ allowed: false, error: error.message, reason: error.code }, error.status)
+      }
+      console.error('[dialer/call-intents] Session lookup unavailable', error)
+      return json({ allowed: false, error: 'Calling is paused because session authorization is unavailable', reason: 'session_engine_unavailable' }, 503)
+    }
+  }
+  const sessionCallerId = session ? text(session.callerId) : null
+  if (session && !sessionCallerId) {
+    return json({ allowed: false, error: 'The active campaign has no approved caller ID', reason: 'invalid_caller_id' }, 409)
+  }
+  const callerId = sessionCallerId ?? requestedCallerId ?? profile.defaultCallerId
   if (!isAllowedDialerCallerId(callerId)) {
     return json({ allowed: false, error: 'Select an approved prospecting caller ID', reason: 'invalid_caller_id' }, 409)
   }
@@ -103,6 +119,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (session && (
+      session.currentSubjectKind !== kind && !(session.currentSubjectKind === 'lead' && kind === 'heir')
+      || session.currentSubjectId !== (policy.leadId || policy.prospectId)
+      || session.currentCampaignMemberId !== campaignMemberId
+    )) {
+      return json({ allowed: false, error: 'Call context does not match the active session', reason: 'session_context_mismatch' }, 409)
+    }
     const issued = createDialerCallIntent({
       identity: profile.identity,
       to: policy.normalizedPhone,
@@ -115,19 +138,13 @@ export async function POST(request: Request) {
       campaignMemberId,
       clientAttemptId,
     })
-    if (sessionId) {
+    if (session) {
       if (!clientAttemptId) {
         return json({ allowed: false, error: 'Dialer session context is incomplete', reason: 'session_context_mismatch' }, 409)
       }
-      const session = await getDialerSession(actor, sessionId)
-      if (session.currentSubjectKind !== issued.claims.kind && !(session.currentSubjectKind === 'lead' && issued.claims.kind === 'heir')
-        || session.currentSubjectId !== (issued.claims.leadId || issued.claims.prospectId)
-        || session.currentCampaignMemberId !== issued.claims.campaignMemberId) {
-        return json({ allowed: false, error: 'Call context does not match the active session', reason: 'session_context_mismatch' }, 409)
-      }
       await authorizeDialerSessionAttempt({
         actor,
-        sessionId,
+        sessionId: session.id,
         clientAttemptId,
         subjectKind: session.currentSubjectKind,
         subjectId: session.currentSubjectId,

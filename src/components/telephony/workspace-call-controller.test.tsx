@@ -33,6 +33,8 @@ describe('WorkspaceCallController', () => {
 
     expect(screen.getByText(/Helen Seller/)).toBeVisible()
     expect(screen.getByText('(816) 555-0123')).toBeVisible()
+    expect(screen.getByText('Calling from')).toBeVisible()
+    expect(screen.getByText('Campaign-assigned line · verified by the server before every call')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Call selected number' }))
     expect(onCall).toHaveBeenCalledOnce()
   })
@@ -71,6 +73,6 @@ describe('WorkspaceCallController', () => {
     expect(screen.getByText('Select a seller number')).toBeVisible()
     expect(screen.getByText('The reviewed campaign caller ID loads before the call can start.')).toBeVisible()
     expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
-    expect(screen.queryByText('Assigned campaign line · rechecked before every call')).not.toBeInTheDocument()
+    expect(screen.queryByText('Campaign-assigned line · verified by the server before every call')).not.toBeInTheDocument()
   })
 })

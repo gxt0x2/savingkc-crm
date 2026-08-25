@@ -41,6 +41,9 @@ describe('outbound dialer client preflight', () => {
     expect(webDialerSource).toContain('prospectId: kind === \'prospect\' ? prospectIdAtStart : null')
     expect(webDialerSource).toContain('campaignMemberId: queueItemAtStart?.campaignMemberId ?? null')
     expect(webDialerSource).toContain('const dispositionLeadId = activeItem?.leadId ?? selectedLead?.id ?? null')
+    expect(webDialerSource).toContain('if (campaignCallerIdRef.current) return campaignCallerIdRef.current')
+    expect(webDialerSource).toContain("setError('Choose and save a call outcome before closing the call summary.')")
+    expect(webDialerSource).toContain('loadDialerAttemptHistory(pendingSessionId)')
 
     const mobilePreflight = mobileVoiceSource.indexOf('const authorized = await requestMobileCallIntent({')
     const mobileConnecting = mobileVoiceSource.indexOf("input.onState('connecting')", mobilePreflight)

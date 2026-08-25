@@ -48,7 +48,7 @@ export function WorkspaceCallController({
         {dialReady ? 'Call selected number' : statusLabel}
       </button>
       <div className="mt-4 border-t border-[var(--skc-separator)] pt-4 text-left">
-        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">Caller ID policy</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">Calling from</p>
         <p className="mt-1 text-sm font-semibold text-[var(--skc-text-primary)]">
           {queueItem
             ? effectiveCallerId
@@ -61,7 +61,7 @@ export function WorkspaceCallController({
             ? 'The reviewed campaign caller ID loads before the call can start.'
             : callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1
             ? `Automatic rotation · ${callerPlan.rotationCallerIds.length} approved lines · changes every ${callerPlan.rotateEveryCalls} calls`
-            : 'Assigned campaign line · rechecked before every call'}
+            : 'Campaign-assigned line · verified by the server before every call'}
         </p>
       </div>
     </div>
