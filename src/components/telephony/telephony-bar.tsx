@@ -19,6 +19,9 @@ import { loadDialerAttemptHistory, transitionDurableDialerAttempt, transitionDur
 import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
 import { WorkspaceCallController } from './workspace-call-controller'
+import { WorkspaceSessionControls } from './workspace-session-controls'
+import { DialerQueueHeader } from './dialer-queue-header'
+import { DialerPanelHeader } from './dialer-panel-header'
 import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
 import {
   createClientAttemptId,
@@ -27,7 +30,7 @@ import {
 } from '@/lib/telephony/dialer-client-preflight'
 import { saveManualCallDisposition } from '@/lib/telephony/manual-call-disposition'
 import { findRecoverableDialerAttempt, type RecoverableDialerAttempt } from '@/lib/telephony/dialer-session-recovery'
-import { dialerStopIsPending, postDispositionCommand } from '@/lib/telephony/dialer-lifecycle'
+import { dialerPauseIsPending, dialerStopIsPending, postDispositionCommand } from '@/lib/telephony/dialer-lifecycle'
 import {
   DIALER_KEYPAD,
   classifyDirection,
@@ -176,6 +179,8 @@ export function DialerPanel({
   const activeSessionIdRef = useRef<string | null>(null)
   const activeAttemptIdRef = useRef<string | null>(null)
   const stopRequestedSessionIdRef = useRef<string | null>(null)
+  const pausedSessionIdRef = useRef<string | null>(null)
+  const [workspaceSessionStatus, setWorkspaceSessionStatus] = useState<'active' | 'paused' | 'completed' | 'stopped' | null>(null)
   const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
   const callIntentPendingRef = useRef(false)
@@ -224,10 +229,11 @@ export function DialerPanel({
         queueLength: queue?.length ?? 0,
         status,
         sessionId: pendingSessionId,
+        outcomeRequired: showDisposition || Boolean(recoveryPending),
         callDuration: status === 'on_call' ? callTimer : status === 'calling' ? '00:00' : null,
       },
     }))
-  }, [callTimer, pendingSessionId, queueItem, queueIndex, queue, status])
+  }, [callTimer, pendingSessionId, queueItem, queueIndex, queue, recoveryPending, showDisposition, status])
 
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
@@ -273,7 +279,9 @@ export function DialerPanel({
       .then(({ session, attempts }) => {
         if (cancelled) return
         stopRequestedSessionIdRef.current = session.stopRequestedAt ? session.id : null
-        if (session.stopRequestedAt) pendingAutoDialRef.current = false
+        pausedSessionIdRef.current = session.status === 'paused' ? session.id : null
+        setWorkspaceSessionStatus(session.status)
+        if (session.stopRequestedAt || session.status === 'paused') pendingAutoDialRef.current = false
         const recovery = findRecoverableDialerAttempt(session, attempts.items, pendingQueue)
         if (!recovery) {
           if (session.stopRequestedAt && session.status !== 'stopped') {
@@ -320,6 +328,38 @@ export function DialerPanel({
       })
     return () => { cancelled = true }
   }, [open, pendingQueue, pendingSessionId])
+
+  useEffect(() => {
+    function onSessionState(event: Event) {
+      const session = (event as CustomEvent).detail as { id?: string; status?: 'active' | 'paused' | 'completed' | 'stopped'; stopRequestedAt?: string | null } | null
+      if (!pendingSessionId || session?.id !== pendingSessionId || !session.status) return
+      setWorkspaceSessionStatus(session.status)
+      stopRequestedSessionIdRef.current = session.stopRequestedAt ? pendingSessionId : null
+      pausedSessionIdRef.current = session.status === 'paused' ? pendingSessionId : null
+      if (session.status !== 'active' || session.stopRequestedAt) pendingAutoDialRef.current = false
+    }
+    window.addEventListener('dialer-session-state', onSessionState)
+    return () => window.removeEventListener('dialer-session-state', onSessionState)
+  }, [pendingSessionId])
+
+  useEffect(() => {
+    function onPauseRequested(event: Event) {
+      const detail = (event as CustomEvent).detail as { session?: { id?: string; status?: 'paused' }; requiresDisposition?: boolean } | null
+      if (!pendingSessionId || detail?.session?.id !== pendingSessionId) return
+      pausedSessionIdRef.current = pendingSessionId
+      setWorkspaceSessionStatus('paused')
+      pendingAutoDialRef.current = false
+      setError(null)
+      if (!detail.requiresDisposition) return
+      if (callRef.current) {
+        callRef.current.disconnect()
+        return
+      }
+      if (activeSessionIdRef.current === pendingSessionId && activeAttemptIdRef.current) setShowDisposition(true)
+    }
+    window.addEventListener('dialer-session-pause-requested', onPauseRequested)
+    return () => window.removeEventListener('dialer-session-pause-requested', onPauseRequested)
+  }, [pendingSessionId])
 
   useEffect(() => {
     function onStopRequested(event: Event) {
@@ -506,6 +546,10 @@ export function DialerPanel({
     if (!number || callIntentPendingRef.current) return
     if (dialerStopIsPending(pendingSessionId, stopRequestedSessionIdRef.current)) {
       setError('This calling session is ending. Save the current outcome before leaving.')
+      return
+    }
+    if (dialerPauseIsPending(pendingSessionId, pausedSessionIdRef.current)) {
+      setError('This calling session is paused. Resume it before starting another call.')
       return
     }
     if (!deviceRef.current || status !== 'ready') {
@@ -869,6 +913,7 @@ export function DialerPanel({
     const durableAttemptId = activeAttemptIdRef.current
     const postDisposition = postDispositionCommand(
       dialerStopIsPending(durableSessionId, stopRequestedSessionIdRef.current),
+      dialerPauseIsPending(durableSessionId, pausedSessionIdRef.current),
     )
     if (durableSessionId && durableAttemptId) {
       try {
@@ -992,6 +1037,18 @@ export function DialerPanel({
       activeSessionIdRef.current = null
       activeAttemptIdRef.current = null
       setRecoveryPending(null)
+      return true
+    }
+
+    if (durableSessionId && durableAttemptId && postDisposition === 'pause_session') {
+      pendingAutoDialRef.current = false
+      pausedSessionIdRef.current = null
+      endQueue()
+      activeQueueItemRef.current = null
+      activeSessionIdRef.current = null
+      activeAttemptIdRef.current = null
+      setRecoveryPending(null)
+      window.dispatchEvent(new CustomEvent('dialer-session-pause-completed', { detail: { sessionId: durableSessionId } }))
       return true
     }
 
@@ -1165,83 +1222,19 @@ export function DialerPanel({
             open ? 'scale-100 translate-y-0' : 'scale-95 translate-y-2'
           } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
-        {/* Header */}
-        <div className="grid grid-cols-[60px_1fr_60px] items-center px-4 pt-3.5 pb-2.5">
-          <div />
-          <div className="text-center">
-            <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[var(--skc-text-primary)]">{isWorkspace ? 'Call controls' : 'Dialer'}</h2>
-            <button
-              onClick={() => { deviceInitialized.current = false; initDevice() }}
-              className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] hover:bg-[var(--skc-surface-2)] transition-colors"
-              title="Click to reconnect"
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${statusDotColor[status]} ${status === 'connecting' ? 'animate-pulse' : ''}`} />
-              <span className="text-[10px] font-medium text-[var(--skc-text-tertiary)] tracking-[-0.01em]">{statusLabel[status]}</span>
-            </button>
-          </div>
-          {isWorkspace ? <div aria-hidden="true" /> : <button
-            onClick={onClose}
-            className="justify-self-end w-[30px] h-[30px] rounded-full bg-[var(--skc-surface-3)] text-[var(--skc-text-tertiary)] hover:text-white hover:bg-[var(--skc-surface-2)] transition-colors flex items-center justify-center"
-            aria-label={isWorkspace ? 'Hide call controls' : 'Close dialer'}
-            title={isWorkspace ? 'Hide call controls' : 'Close dialer'}
-          >
-            <Icon name="close" size="text-[16px]" />
-          </button>}
-        </div>
+        <DialerPanelHeader workspace={isWorkspace} status={statusLabel[status]} statusDotClass={statusDotColor[status]}
+          reconnecting={status === 'connecting'} onReconnect={() => { deviceInitialized.current = false; void initDevice() }} onClose={onClose} />
 
-        {/* Pinned property header — visible across the whole queue */}
-        {queueMode && queueItem && (
-          <div
-            className="px-5 py-3 bg-[#17171D] border-b border-[#2B2B31]"
-            style={{ borderLeft: '3px solid #E32E2E' }}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#E32E2E] mb-0.5">
-                  Heir queue · {queueIndex + 1} of {queue!.length}
-                </p>
-                <p className="text-sm font-bold text-white truncate">
-                  {queueItem.deceasedOwnerName} <span className="text-white/40 font-normal">(deceased)</span>
-                </p>
-                {queueItem.propertyAddress && (
-                  <p className="text-[11px] text-white/50 truncate">{queueItem.propertyAddress}</p>
-                )}
-              </div>
-              {isWorkspace ? null : <button
-                onClick={endQueue}
-                className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider text-white/50 hover:text-white border border-[#31313A] hover:border-white/40 rounded-[8px] px-2 py-1 transition-colors"
-                title="End heir queue — back to normal dialer"
-              >
-                End
-              </button>}
-            </div>
-            <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-white truncate">
-                  {queueItem.heirName}
-                  <span className="text-white/40 font-normal capitalize"> · {queueItem.relation}</span>
-                </p>
-                <p className="text-[10px] font-mono text-white/50">{formatPhone(queueItem.phone)}</p>
-              </div>
-              <button
-                onClick={prevQueueItem}
-                disabled={queueIndex === 0 || isOnCall}
-                className="flex-shrink-0 w-7 h-7 rounded-[8px] bg-[#1E1E25] hover:bg-[#26262F] border border-[#31313A] disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
-                title="Previous heir"
-              >
-                <Icon name="skip_previous" size="text-sm" />
-              </button>
-              <button
-                onClick={skipQueueItem}
-                disabled={isOnCall}
-                className="flex-shrink-0 w-7 h-7 rounded-[8px] bg-[#1E1E25] hover:bg-[#26262F] border border-[#31313A] disabled:opacity-30 disabled:cursor-not-allowed text-white/70 flex items-center justify-center transition-colors"
-                title="Skip without logging"
-              >
-                <Icon name="skip_next" size="text-sm" />
-              </button>
-            </div>
-          </div>
-        )}
+        {queueMode && queueItem ? <DialerQueueHeader
+          item={queueItem}
+          index={queueIndex}
+          length={queue?.length ?? 0}
+          callBusy={isOnCall}
+          workspace={isWorkspace}
+          onEnd={endQueue}
+          onPrevious={prevQueueItem}
+          onSkip={skipQueueItem}
+        /> : null}
 
         {/* Scrollable body — min-h-0 is required so flex-1 actually shrinks
             below content size and the panel respects max-h cap. Without it
@@ -1455,7 +1448,7 @@ export function DialerPanel({
             <WorkspaceCallController
               callerPlan={callerPlan}
               dialDisplay={dialNumber ? formatDialDisplay(dialNumber) : ''}
-              dialReady={Boolean(dialNumber.trim()) && status === 'ready'}
+              dialReady={Boolean(dialNumber.trim()) && status === 'ready' && workspaceSessionStatus !== 'paused'}
               effectiveCallerId={effectiveCallerId}
               onCall={makeCall}
               queueItem={queueItem}
@@ -1676,6 +1669,10 @@ export function DialerPanel({
             </button>
           )}
         </div>
+        {isWorkspace && pendingSessionId ? <div className="shrink-0 bg-[var(--skc-surface-1)] px-5 pb-4">
+          <WorkspaceSessionControls status={workspaceSessionStatus} callBusy={isOnCall}
+            outcomeRequired={showDisposition || Boolean(recoveryPending)} onAction={(action) => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action } }))} />
+        </div> : null}
         </div>
       </div>
 

@@ -531,6 +531,25 @@ export async function transitionDialerSession(input: {
   return parseDialerSession(data)
 }
 
+export async function requestPauseDialerSession(input: {
+  actor: AuthenticatedActor
+  sessionId: string
+  reason?: string | null
+}): Promise<{ session: DialerSessionState; requiresDisposition: boolean }> {
+  if (!isUuid(input.sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')
+  const { data, error } = await supabase.rpc('request_pause_dialer_session_v1', {
+    p_session_id: input.sessionId,
+    p_actor_email: input.actor.email,
+    p_reason: input.reason?.trim() || null,
+  })
+  if (error) throw mapDatabaseError(error)
+  const result = data as { session?: unknown; requiresDisposition?: unknown } | null
+  return {
+    session: parseDialerSession(result?.session),
+    requiresDisposition: result?.requiresDisposition === true,
+  }
+}
+
 export async function authorizeDialerSessionAttempt(input: {
   actor: AuthenticatedActor
   sessionId: string

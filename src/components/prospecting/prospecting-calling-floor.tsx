@@ -28,6 +28,7 @@ import type {
 } from '@/components/prospecting/prospecting-calling-types'
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
 import { joinProspectingAddress as joinAddress } from '@/components/prospecting/prospecting-calling-utils'
+import { useDialerPauseAndLeave } from '@/components/prospecting/use-dialer-pause-and-leave'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
@@ -346,6 +347,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     try {
       const session = await transitionDurableDialerSession(durableSessionId, action, reason)
       applyDurableSession(session)
+      window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: session }))
       return session
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : 'Could not update the dialer session.')
@@ -387,13 +389,14 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     router.push('/prospecting')
   }, [params, router])
 
-  const closeSession = useCallback(async () => {
-    if (durableSessionId && durableSession?.status === 'active') {
-      const session = await transitionCurrentSession('pause')
-      if (!session) return
-    }
-    navigateAwayFromSession()
-  }, [durableSession, durableSessionId, navigateAwayFromSession, transitionCurrentSession])
+  const closeSession = useDialerPauseAndLeave({
+    session: durableSession,
+    sessionId: durableSessionId,
+    applySession: applyDurableSession,
+    navigateAway: navigateAwayFromSession,
+    setPending: setSessionActionPending,
+    setError: setSessionError,
+  })
 
   const stopSession = useCallback(async () => {
     if (!durableSessionId) {

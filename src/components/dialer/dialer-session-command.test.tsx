@@ -84,6 +84,30 @@ describe('DialerSessionCommand', () => {
     expect(props.onClose).toHaveBeenCalledOnce()
   })
 
+  it('moves session actions out of the top banner when the persistent call rail is docked', () => {
+    const props = renderCommand({ controlsDocked: true })
+
+    expect(screen.queryByRole('button', { name: 'Call controls' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pause & leave' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'End session' })).not.toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('shows a truthful outcome-required state instead of reporting an idle call', () => {
+    renderCommand({ queueState: {
+      queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
+      queueIndex: 0,
+      queueLength: 3,
+      status: 'ready',
+      outcomeRequired: true,
+    } })
+
+    expect(screen.getByText('Outcome required')).toBeVisible()
+    expect(screen.getByText('Outcome', { exact: true })).toBeVisible()
+  })
+
   it('lets an agent reopen hidden call controls without restarting the session', () => {
     const dispatchEvent = vi.spyOn(window, 'dispatchEvent')
     renderCommand()

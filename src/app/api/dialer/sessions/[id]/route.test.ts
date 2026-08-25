@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
   getDialerAttemptHistory: vi.fn(),
   getDialerSession: vi.fn(),
+  requestPauseDialerSession: vi.fn(),
   transitionDialerSession: vi.fn(),
 }))
 
@@ -14,6 +15,7 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   },
   getDialerAttemptHistory: mocks.getDialerAttemptHistory,
   getDialerSession: mocks.getDialerSession,
+  requestPauseDialerSession: mocks.requestPauseDialerSession,
   transitionDialerSession: mocks.transitionDialerSession,
 }))
 
@@ -74,6 +76,28 @@ describe('dialer session detail route', () => {
       reason: 'Agent ended the session',
     })
     expect(response.headers.get('cache-control')).toBe('private, no-store')
+  })
+
+  it('pauses immediately and reports whether the current call still needs an outcome', async () => {
+    mocks.requestPauseDialerSession.mockResolvedValue({
+      session: { id: '00000000-0000-4000-8000-000000000010', status: 'paused' },
+      requiresDisposition: true,
+    })
+
+    const response = await PATCH(new Request('https://crm.savingkc.com/api/dialer/sessions/id', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'request_pause', reason: 'Agent paused the calling session' }),
+    }), context)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ requiresDisposition: true, session: { status: 'paused' } })
+    expect(mocks.requestPauseDialerSession).toHaveBeenCalledWith({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId: '00000000-0000-4000-8000-000000000010',
+      reason: 'Agent paused the calling session',
+    })
+    expect(mocks.transitionDialerSession).not.toHaveBeenCalled()
   })
 
   it('rejects an unauthenticated stop request before database work', async () => {
