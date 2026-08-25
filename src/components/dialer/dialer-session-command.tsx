@@ -25,6 +25,7 @@ interface DialerSessionCommandProps {
   callerPolicyLabel?: string
   durableSessionId: string
   durableStatus?: SessionStatus
+  stopRequested?: boolean
   dials: number
   contacts: number
   queueState: SessionQueueState | null
@@ -60,16 +61,17 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
     : props.queueState?.status === 'calling' ? 'Dialing' : 'Idle'
   const isDurable = Boolean(props.durableSessionId)
   const isPaused = props.durableStatus === 'paused'
-  const canEndSession = isDurable && Boolean(props.durableStatus && ['active', 'paused'].includes(props.durableStatus))
+  const canEndSession = isDurable && !props.stopRequested && Boolean(props.durableStatus && ['active', 'paused'].includes(props.durableStatus))
   const progress = Math.round(((props.currentIndex + 1) / Math.max(props.queueSize, 1)) * 100)
   const sellersWorked = Math.min(props.currentIndex, props.queueSize)
   const statusLabel = props.readOnlyPreview
     ? 'Read-only'
     : props.queueState?.status === 'on_call'
     ? 'Connected now'
-    : props.queueState?.status === 'calling'
+      : props.queueState?.status === 'calling'
       ? 'Dialing now'
-      : isPaused ? 'Session paused' : 'Ready'
+      : props.stopRequested ? 'Ending after outcome'
+        : isPaused ? 'Session paused' : 'Ready'
 
   return <>
     <section aria-label="Calling floor command center" className="relative mb-4 overflow-hidden rounded-2xl border border-[var(--ck-border-strong)] bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-[var(--crm-shadow-sm)]">
@@ -87,11 +89,11 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
               <Icon name="phone_in_talk" size="text-sm" /> {isCalling ? 'Current call' : 'Call controls'}
             </button> : null}
             {isPaused ? <button type="button" onClick={props.onResume} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-success)] px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50"><Icon name="play_arrow" size="text-sm" />Resume</button> : null}
-            {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 text-xs font-bold text-[var(--crm-danger)] hover:border-[var(--crm-danger)] disabled:opacity-30" title="Mark this lead dead and record why"><Icon name="cancel" size="text-sm" />Dead</button> : null}
+            {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId || props.stopRequested} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 text-xs font-bold text-[var(--crm-danger)] hover:border-[var(--crm-danger)] disabled:opacity-30" title="Mark this lead dead and record why"><Icon name="cancel" size="text-sm" />Dead</button> : null}
             <button type="button" onClick={props.onPrevious} disabled={isDurable || props.currentIndex === 0} className="crm-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-30" title="Previous seller" aria-label="Previous seller"><Icon name="chevron_left" size="text-base" /></button>
-            <button type="button" onClick={props.onSkip} disabled={props.actionPending || isCalling || isPaused || (!isDurable && props.currentIndex >= props.queueSize - 1)} className="crm-primary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-30" title={isDurable ? 'Skip this seller with an audited outcome' : 'Next seller'}>{isDurable ? 'Skip seller' : 'Next'}<Icon name="chevron_right" size="text-sm" /></button>
+            <button type="button" onClick={props.onSkip} disabled={props.actionPending || props.stopRequested || isCalling || isPaused || (!isDurable && props.currentIndex >= props.queueSize - 1)} className="crm-primary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-30" title={isDurable ? 'Skip this seller with an audited outcome' : 'Next seller'}>{isDurable ? 'Skip seller' : 'Next'}<Icon name="chevron_right" size="text-sm" /></button>
             {canEndSession ? <button type="button" onClick={() => setConfirmEndOpen(true)} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--ck-surface)] px-3 text-xs font-black text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)] disabled:opacity-40"><Icon name="stop_circle" size="text-sm" />End session</button> : null}
-            <button type="button" onClick={props.onClose} disabled={props.actionPending} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:opacity-40" title={props.durableStatus === 'active' ? 'Pause this session and return to campaigns' : 'Return to campaigns'}><Icon name={props.durableStatus === 'active' ? 'pause' : 'arrow_back'} size="text-sm" />{props.durableStatus === 'active' ? 'Pause & leave' : 'Leave'}</button>
+            <button type="button" onClick={props.onClose} disabled={props.actionPending || props.stopRequested} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:opacity-40" title={props.durableStatus === 'active' ? 'Pause this session and return to campaigns' : 'Return to campaigns'}><Icon name={props.durableStatus === 'active' ? 'pause' : 'arrow_back'} size="text-sm" />{props.durableStatus === 'active' ? 'Pause & leave' : 'Leave'}</button>
           </div>
         </div>
 
@@ -117,12 +119,11 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
         <span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]"><Icon name="stop_circle" className="text-2xl" /></span>
         <p className="mt-4 text-[10px] font-black uppercase tracking-widest text-[var(--crm-danger)]">End calling session</p>
         <h2 id="end-session-title" className="mt-1 text-xl font-black">Stop this session?</h2>
-        {isCalling ? <p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">A call is still in progress. Hang up and save its outcome first so the call history stays accurate. Then return here to end the session.</p>
+        {isCalling ? <p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">The current call will hang up now. Save its outcome once, and the session will close without dialing the next number.</p>
           : <p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">Saved calls and outcomes are preserved. This session closes now; remaining sellers stay available for a future session.</p>}
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" onClick={() => setConfirmEndOpen(false)} disabled={props.actionPending} className="crm-secondary-button h-10 rounded-lg px-4 text-xs font-black">Keep calling</button>
-          {isCalling ? <button type="button" onClick={() => { setConfirmEndOpen(false); openCallControls() }} className="crm-primary-button h-10 rounded-lg px-4 text-xs font-black">Open call controls</button>
-            : <button type="button" onClick={() => { setConfirmEndOpen(false); props.onEndSession() }} disabled={props.actionPending} className="h-10 rounded-lg bg-[var(--crm-danger)] px-4 text-xs font-black text-white hover:opacity-90 disabled:opacity-50">{props.actionPending ? 'Ending…' : 'End session'}</button>}
+          <button type="button" onClick={() => { setConfirmEndOpen(false); props.onEndSession() }} disabled={props.actionPending} className="h-10 rounded-lg bg-[var(--crm-danger)] px-4 text-xs font-black text-white hover:opacity-90 disabled:opacity-50">{props.actionPending ? 'Ending…' : isCalling ? 'End call & session' : 'End session'}</button>
         </div>
       </section>
     </div> : null}

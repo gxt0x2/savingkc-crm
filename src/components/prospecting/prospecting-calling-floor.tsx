@@ -307,7 +307,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     setCurrentIndex(session.currentIndex)
     setSessionDials(session.dialsCompleted)
     setSessionContacts(session.contacts)
-    if (session.status === 'active') setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
+    if (session.status === 'active' && !session.stopRequestedAt) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
+    if (session.stopRequestedAt) setAutoQueueSubjectKey(null)
     if (session.status === 'completed' || session.status === 'stopped') setAutoQueueSubjectKey(null)
   }, [])
 
@@ -332,7 +333,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   }, [])
 
   const transitionCurrentSession = useCallback(async (
-    action: 'pause' | 'resume' | 'stop' | 'skip',
+    action: 'pause' | 'resume' | 'request_stop' | 'stop' | 'skip',
     reason?: string,
   ) => {
     if (!durableSessionId) return null
@@ -395,9 +396,20 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       navigateAwayFromSession()
       return
     }
-    const session = await transitionCurrentSession('stop')
-    if (session) navigateAwayFromSession()
+    const session = await transitionCurrentSession('request_stop')
+    if (!session) return
+    if (session.status === 'stopped') {
+      navigateAwayFromSession()
+      return
+    }
+    window.dispatchEvent(new CustomEvent('dialer-session-stop-requested', { detail: session }))
   }, [durableSessionId, navigateAwayFromSession, transitionCurrentSession])
+
+  useEffect(() => {
+    if (durableSession?.status === 'stopped' && durableSession.stopRequestedAt) {
+      navigateAwayFromSession()
+    }
+  }, [durableSession?.status, durableSession?.stopRequestedAt, navigateAwayFromSession])
 
   useEffect(() => {
     function onQueueComplete(e: Event) {
@@ -573,6 +585,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         callerPolicyLabel={sessionCallerPolicyLabel}
         durableSessionId={durableSessionId}
         durableStatus={durableSession?.status}
+        stopRequested={Boolean(durableSession?.stopRequestedAt)}
         dials={sessionDials}
         contacts={sessionContacts}
         queueState={queueState}

@@ -42,6 +42,7 @@ export interface DialerSessionState {
   outcomes: Record<string, number>
   startedAt: string
   pausedAt: string | null
+  stopRequestedAt: string | null
   endedAt: string | null
   updatedAt: string
   stateVersion: number
@@ -209,6 +210,7 @@ export function parseDialerSession(value: unknown): DialerSessionState {
     outcomes: numberRecord(row.outcomes),
     startedAt,
     pausedAt: textValue(row.pausedAt),
+    stopRequestedAt: textValue(row.stopRequestedAt),
     endedAt: textValue(row.endedAt),
     updatedAt,
     stateVersion: numberValue(row.stateVersion, 1),
@@ -219,6 +221,7 @@ function mapDatabaseError(error: { message?: string; code?: string } | null | un
   const raw = `${error?.message || ''} ${error?.code || ''}`.toLowerCase()
   if (raw.includes('session_not_found')) return new DialerSessionError('session_not_found', 404, 'Dialer session not found')
   if (raw.includes('call_in_progress') || raw.includes('attempt_in_progress')) return new DialerSessionError('call_in_progress', 409, 'Finish or disposition the current call first')
+  if (raw.includes('session_stop_requested')) return new DialerSessionError('session_stop_requested', 409, 'This calling session is ending; finish the current call outcome')
   if (raw.includes('session_not_active')) return new DialerSessionError('session_not_active', 409, 'Resume the dialer session before calling')
   if (raw.includes('session_lead_mismatch') || raw.includes('session_subject_mismatch') || raw.includes('attempt_context_mismatch')) return new DialerSessionError('session_context_mismatch', 409, 'The selected contact no longer matches the active dialer session')
   if (raw.includes('disposition_required')) return new DialerSessionError('disposition_required', 409, 'Save a call outcome before advancing')
@@ -284,6 +287,7 @@ type DialerSessionRow = {
   outcomes: unknown
   started_at: string
   paused_at: string | null
+  stop_requested_at: string | null
   ended_at: string | null
   updated_at: string
   state_version: number
@@ -313,13 +317,14 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
     outcomes: row.outcomes,
     startedAt: row.started_at,
     pausedAt: row.paused_at,
+    stopRequestedAt: row.stop_requested_at,
     endedAt: row.ended_at,
     updatedAt: row.updated_at,
     stateVersion: row.state_version,
   })
 }
 
-const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,current_prospect_id,current_subject_kind,current_subject_id,current_campaign_member_id,caller_id,dials_completed,contacts,skips,outcomes,started_at,paused_at,ended_at,updated_at,state_version'
+const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,current_prospect_id,current_subject_kind,current_subject_id,current_campaign_member_id,caller_id,dials_completed,contacts,skips,outcomes,started_at,paused_at,stop_requested_at,ended_at,updated_at,state_version'
 
 type HistoryCursor = { timestamp: string; id: string }
 
@@ -512,7 +517,7 @@ export async function getOpenDialerSession(actor: AuthenticatedActor): Promise<D
 export async function transitionDialerSession(input: {
   actor: AuthenticatedActor
   sessionId: string
-  action: 'pause' | 'resume' | 'stop' | 'skip'
+  action: 'pause' | 'resume' | 'request_stop' | 'stop' | 'skip'
   reason?: string | null
 }): Promise<DialerSessionState> {
   if (!isUuid(input.sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')

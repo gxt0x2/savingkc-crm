@@ -46,7 +46,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400, headers: NO_STORE })
   }
   const action = typeof body.action === 'string' ? body.action : ''
-  if (!['pause', 'resume', 'stop', 'skip'].includes(action)) {
+  if (!['pause', 'resume', 'request_stop', 'stop', 'skip'].includes(action)) {
     return NextResponse.json({ error: 'Invalid session action' }, { status: 400, headers: NO_STORE })
   }
   try {
@@ -54,7 +54,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const session = await transitionDialerSession({
       actor,
       sessionId: id,
-      action: action as 'pause' | 'resume' | 'stop' | 'skip',
+      action: action as 'pause' | 'resume' | 'request_stop' | 'stop' | 'skip',
       reason: typeof body.reason === 'string' ? body.reason : null,
     })
     return NextResponse.json({ session }, { headers: NO_STORE })
