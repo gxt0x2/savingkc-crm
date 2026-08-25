@@ -31,6 +31,7 @@ export interface DurableDialerSession {
   outcomes: Record<string, number>
   startedAt: string
   pausedAt: string | null
+  stopRequestedAt: string | null
   endedAt: string | null
   updatedAt: string
 }
@@ -190,7 +191,7 @@ export async function createDurableDialerSession(input: {
 
 export async function transitionDurableDialerSession(
   sessionId: string,
-  action: 'pause' | 'resume' | 'stop' | 'skip',
+  action: 'pause' | 'resume' | 'request_stop' | 'stop' | 'skip',
   reason?: string,
 ): Promise<DurableDialerSession> {
   const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}`, {

@@ -116,8 +116,19 @@ describe('DialerSessionCommand', () => {
     expect(screen.queryByText(/3 lines/i)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'End session' }))
-    expect(screen.getByText(/A call is still in progress/)).toBeVisible()
-    expect(props.onEndSession).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog', { name: 'Stop this session?' })
+    expect(within(dialog).getByText(/current call will hang up now/i)).toBeVisible()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'End call & session' }))
+    expect(props.onEndSession).toHaveBeenCalledOnce()
+  })
+
+  it('shows a durable pending-stop state and disables queue-changing actions', () => {
+    renderCommand({ stopRequested: true })
+
+    expect(screen.getByText('Ending after outcome')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'End session' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Skip seller/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause & leave' })).toBeDisabled()
   })
 
   it('uses theme-owned surfaces instead of a permanently dark command banner', () => {

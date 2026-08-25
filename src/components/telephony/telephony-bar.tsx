@@ -15,7 +15,7 @@ import {
 } from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { loadDialerAttemptHistory, transitionDurableDialerAttempt } from '@/lib/dialer-session-client'
+import { loadDialerAttemptHistory, transitionDurableDialerAttempt, transitionDurableDialerSession } from '@/lib/dialer-session-client'
 import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
 import { WorkspaceCallController } from './workspace-call-controller'
@@ -27,6 +27,7 @@ import {
 } from '@/lib/telephony/dialer-client-preflight'
 import { saveManualCallDisposition } from '@/lib/telephony/manual-call-disposition'
 import { findRecoverableDialerAttempt, type RecoverableDialerAttempt } from '@/lib/telephony/dialer-session-recovery'
+import { dialerStopIsPending, postDispositionCommand } from '@/lib/telephony/dialer-lifecycle'
 import {
   DIALER_KEYPAD,
   classifyDirection,
@@ -174,6 +175,7 @@ export function DialerPanel({
   const activeQueueItemRef = useRef<HeirQueueItem | null>(null)
   const activeSessionIdRef = useRef<string | null>(null)
   const activeAttemptIdRef = useRef<string | null>(null)
+  const stopRequestedSessionIdRef = useRef<string | null>(null)
   const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
   const callIntentPendingRef = useRef(false)
@@ -270,8 +272,17 @@ export function DialerPanel({
     void loadDialerAttemptHistory(pendingSessionId)
       .then(({ session, attempts }) => {
         if (cancelled) return
+        stopRequestedSessionIdRef.current = session.stopRequestedAt ? session.id : null
+        if (session.stopRequestedAt) pendingAutoDialRef.current = false
         const recovery = findRecoverableDialerAttempt(session, attempts.items, pendingQueue)
-        if (!recovery) return
+        if (!recovery) {
+          if (session.stopRequestedAt && session.status !== 'stopped') {
+            void transitionDurableDialerSession(session.id, 'stop')
+              .then((stoppedSession) => window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: stoppedSession })))
+              .catch((stopError) => setError(stopError instanceof Error ? stopError.message : 'Could not finish ending the calling session.'))
+          }
+          return
+        }
 
         const { attempt, queueIndex: recoveredIndex, queueItem: recoveredItem } = recovery
         pendingAutoDialRef.current = false
@@ -309,6 +320,29 @@ export function DialerPanel({
       })
     return () => { cancelled = true }
   }, [open, pendingQueue, pendingSessionId])
+
+  useEffect(() => {
+    function onStopRequested(event: Event) {
+      const session = (event as CustomEvent).detail as { id?: string; status?: string; stopRequestedAt?: string | null } | null
+      if (!pendingSessionId || session?.id !== pendingSessionId || !session.stopRequestedAt) return
+      stopRequestedSessionIdRef.current = pendingSessionId
+      pendingAutoDialRef.current = false
+      setError(null)
+      if (session.status === 'stopped') {
+        endQueue()
+        return
+      }
+      if (callRef.current) {
+        callRef.current.disconnect()
+        return
+      }
+      if (activeSessionIdRef.current === pendingSessionId && activeAttemptIdRef.current) {
+        setShowDisposition(true)
+      }
+    }
+    window.addEventListener('dialer-session-stop-requested', onStopRequested)
+    return () => window.removeEventListener('dialer-session-stop-requested', onStopRequested)
+  }, [pendingSessionId])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -470,7 +504,10 @@ export function DialerPanel({
   async function makeCall() {
     const number = dialNumber.trim()
     if (!number || callIntentPendingRef.current) return
-
+    if (dialerStopIsPending(pendingSessionId, stopRequestedSessionIdRef.current)) {
+      setError('This calling session is ending. Save the current outcome before leaving.')
+      return
+    }
     if (!deviceRef.current || status !== 'ready') {
       setError(status === 'offline'
         ? 'Twilio is offline. Click Connect Twilio and wait for Ready before calling.'
@@ -652,6 +689,9 @@ export function DialerPanel({
         }
         setShowDisposition(true)
       })
+      if (dialerStopIsPending(activeSessionIdRef.current, stopRequestedSessionIdRef.current)) {
+        call.disconnect()
+      }
     } catch (err) {
       const msg = extractTwilioErrorMessage(err)
       log(`makeCall error: ${msg}`)
@@ -827,6 +867,9 @@ export function DialerPanel({
     const markedDead = isDeadDisposition(disposition)
     const durableSessionId = activeSessionIdRef.current
     const durableAttemptId = activeAttemptIdRef.current
+    const postDisposition = postDispositionCommand(
+      dialerStopIsPending(durableSessionId, stopRequestedSessionIdRef.current),
+    )
     if (durableSessionId && durableAttemptId) {
       try {
         await transitionDurableDialerAttempt({
@@ -932,6 +975,24 @@ export function DialerPanel({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save disposition.')
       return false
+    }
+
+    if (durableSessionId && durableAttemptId && postDisposition === 'stop_session') {
+      try {
+        const session = await transitionDurableDialerSession(durableSessionId, 'stop')
+        window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: session }))
+      } catch (transitionError) {
+        setError(extractTwilioErrorMessage(transitionError))
+        return false
+      }
+      pendingAutoDialRef.current = false
+      stopRequestedSessionIdRef.current = null
+      endQueue()
+      activeQueueItemRef.current = null
+      activeSessionIdRef.current = null
+      activeAttemptIdRef.current = null
+      setRecoveryPending(null)
+      return true
     }
 
     // Advance the server-owned lead queue only after both the durable outcome
