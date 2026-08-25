@@ -28,23 +28,19 @@ import type {
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
+import { joinProspectingAddress as joinAddress } from '@/components/prospecting/prospecting-calling-utils'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
 const DEFAULT_DIALER_CALLER_ID = TWILIO_NUMBERS[0]?.value ?? ''
 const DEFAULT_ROTATION_EVERY_CALLS = 50
 
-function joinAddress(parts: Array<string | null | undefined>): string {
-  return parts.filter(Boolean).join(', ')
-}
-
-export function ProspectingCallingFloor({
-  readOnlyPreview = false,
-  previewCampaignId = null,
-}: {
+interface ProspectingCallingFloorProps {
   readOnlyPreview?: boolean
   previewCampaignId?: string | null
-}) {
+}
+
+export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampaignId = null }: ProspectingCallingFloorProps) {
   const callRailOpen = useWorkspaceCallRailOpen()
   const router = useRouter()
   const params = useSearchParams()
