@@ -32,17 +32,7 @@ export interface ProspectingCallingProspect {
   occupancy_status: string | null
 }
 
-export interface ProspectingRecentCall {
-  id: string
-  lead_id: string | null
-  lead_name: string | null
-  phone: string | null
-  created_at: string
-  agent: string | null
-  metadata: Record<string, unknown> | null
-}
-
-export type ProspectingCallingTab = 'texts' | 'activity' | 'recent_calls'
+export type ProspectingCallingTab = 'texts' | 'activity'
 
 export interface ProspectingOccupancy {
   label: 'Vacant' | 'Absentee' | 'Owner occupied'

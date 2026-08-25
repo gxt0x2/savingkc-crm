@@ -1,6 +1,9 @@
 'use client'
 
+import { useState } from 'react'
+
 import { Icon } from '@/components/ui/icon'
+import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { formatPhone } from '@/lib/format'
 
 type SessionStatus = 'active' | 'paused' | 'completed' | 'stopped'
@@ -31,26 +34,33 @@ interface DialerSessionCommandProps {
   readOnlyPreview?: boolean
   onClose: () => void
   onResume: () => void
-  onStop: () => void
+  onEndSession: () => void
   onMarkDead: () => void
   onPrevious: () => void
   onSkip: () => void
 }
 
+function openCallControls() {
+  window.dispatchEvent(new Event('show-dialer-controls'))
+}
+
 function SessionMetric({ icon, label, value, tone = 'neutral' }: { icon: string; label: string; value: number | string; tone?: 'neutral' | 'emerald' }) {
-  return <div className="flex min-w-[132px] flex-1 items-center gap-2 border-r border-white/10 px-3 py-2 last:border-r-0">
-    <Icon name={icon} size="text-sm" className={tone === 'emerald' ? 'text-emerald-300' : 'text-white/55'} />
-    <p className="min-w-0 truncate text-[10px] font-bold text-white/50"><span className="mr-1.5 whitespace-nowrap">{label}</span><strong className={`whitespace-nowrap text-xs font-black tabular-nums ${tone === 'emerald' ? 'text-emerald-300' : 'text-white'}`}>{value}</strong></p>
+  return <div className="flex min-w-[132px] flex-1 items-center gap-2 border-r border-[var(--ck-border)] px-3 py-2 last:border-r-0">
+    <Icon name={icon} size="text-sm" className={tone === 'emerald' ? 'text-[var(--crm-success)]' : 'text-[var(--ck-text-dim)]'} />
+    <p className="min-w-0 truncate text-[10px] font-bold text-[var(--ck-text-muted)]"><span className="mr-1.5 whitespace-nowrap">{label}</span><strong className={`whitespace-nowrap text-xs font-black tabular-nums ${tone === 'emerald' ? 'text-[var(--crm-success)]' : 'text-[var(--ck-text)]'}`}>{value}</strong></p>
   </div>
 }
 
 export function DialerSessionCommand(props: DialerSessionCommandProps) {
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false)
+  const endSessionDialogRef = useDialogAccessibility<HTMLElement>(confirmEndOpen, () => setConfirmEndOpen(false))
   const isCalling = Boolean(props.queueState?.queueItem && ['calling', 'on_call'].includes(props.queueState.status))
   const dialTime = props.queueState?.status === 'on_call'
     ? props.queueState.callDuration || '00:00'
     : props.queueState?.status === 'calling' ? 'Dialing' : 'Idle'
   const isDurable = Boolean(props.durableSessionId)
   const isPaused = props.durableStatus === 'paused'
+  const canEndSession = isDurable && Boolean(props.durableStatus && ['active', 'paused'].includes(props.durableStatus))
   const progress = Math.round(((props.currentIndex + 1) / Math.max(props.queueSize, 1)) * 100)
   const sellersWorked = Math.min(props.currentIndex, props.queueSize)
   const statusLabel = props.readOnlyPreview
@@ -62,48 +72,59 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       : isPaused ? 'Session paused' : 'Ready'
 
   return <>
-    <section aria-label="Calling floor command center" className="relative mb-4 overflow-hidden rounded-2xl border border-slate-700/70 bg-[#101827] text-white shadow-[0_14px_40px_rgba(2,8,23,0.18)]">
-      <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[#E32E2E]/20 blur-3xl" />
+    <section aria-label="Calling floor command center" className="relative mb-4 overflow-hidden rounded-2xl border border-[var(--ck-border-strong)] bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-[var(--crm-shadow-sm)]">
+      <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[var(--crm-brand-soft)] blur-3xl" />
       <div className="relative px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 lg:max-w-[360px]">
-          <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${isCalling ? 'animate-pulse bg-emerald-300' : isPaused ? 'bg-amber-300' : 'bg-emerald-400/70'}`} /><p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-[#ff8d8d]">{props.queueLabel}</p></div>
-          <div className="mt-1 flex items-baseline gap-2"><h1 className="truncate text-xl font-black tracking-[-0.03em]">{props.readOnlyPreview ? 'Calling workflow preview' : 'Calling session'}</h1><span className="text-[10px] font-black uppercase tracking-wider text-white/45">{statusLabel}</span></div>
-          <p className="mt-1 truncate text-xs text-white/50">{props.callerPolicyLabel || (props.callerId ? `Assigned line ${formatPhone(props.callerId)}` : 'Caller ID unavailable')}</p>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 xl:max-w-[390px]">
+            <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${isCalling ? 'animate-pulse bg-[var(--crm-success)]' : isPaused ? 'bg-[var(--crm-warning)]' : 'bg-[var(--crm-success)]'}`} /><p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">{props.queueLabel}</p></div>
+            <div className="mt-1 flex items-baseline gap-2"><h1 className="truncate text-xl font-black tracking-[-0.03em]">{props.readOnlyPreview ? 'Calling workflow preview' : 'Calling session'}</h1><span className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{statusLabel}</span></div>
+            <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{props.callerPolicyLabel || (props.callerId ? `Assigned line ${formatPhone(props.callerId)}` : 'Caller ID unavailable')}</p>
+          </div>
+
+          <div aria-label="Session actions" className="flex flex-wrap items-center gap-2 xl:max-w-[720px] xl:justify-end">
+            {!props.readOnlyPreview ? <button type="button" onClick={openCallControls} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black">
+              <Icon name="phone_in_talk" size="text-sm" /> {isCalling ? 'Current call' : 'Call controls'}
+            </button> : null}
+            {isPaused ? <button type="button" onClick={props.onResume} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-success)] px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50"><Icon name="play_arrow" size="text-sm" />Resume</button> : null}
+            {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 text-xs font-bold text-[var(--crm-danger)] hover:border-[var(--crm-danger)] disabled:opacity-30" title="Mark this lead dead and record why"><Icon name="cancel" size="text-sm" />Dead</button> : null}
+            <button type="button" onClick={props.onPrevious} disabled={isDurable || props.currentIndex === 0} className="crm-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-30" title="Previous seller" aria-label="Previous seller"><Icon name="chevron_left" size="text-base" /></button>
+            <button type="button" onClick={props.onSkip} disabled={props.actionPending || isCalling || isPaused || (!isDurable && props.currentIndex >= props.queueSize - 1)} className="crm-primary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-30" title={isDurable ? 'Skip this seller with an audited outcome' : 'Next seller'}>{isDurable ? 'Skip seller' : 'Next'}<Icon name="chevron_right" size="text-sm" /></button>
+            {canEndSession ? <button type="button" onClick={() => setConfirmEndOpen(true)} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--ck-surface)] px-3 text-xs font-black text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)] disabled:opacity-40"><Icon name="stop_circle" size="text-sm" />End session</button> : null}
+            <button type="button" onClick={props.onClose} disabled={props.actionPending} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:opacity-40" title={props.durableStatus === 'active' ? 'Pause this session and return to campaigns' : 'Return to campaigns'}><Icon name={props.durableStatus === 'active' ? 'pause' : 'arrow_back'} size="text-sm" />{props.durableStatus === 'active' ? 'Pause & leave' : 'Leave'}</button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 lg:max-w-[560px] lg:justify-end">
-          {!props.readOnlyPreview ? <button
-            type="button"
-            onClick={() => window.dispatchEvent(new Event('show-dialer-controls'))}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white/70 hover:bg-white/10 hover:text-white"
-          >
-            <Icon name="phone_in_talk" size="text-sm" /> Call controls
-          </button> : null}
-          {isPaused ? <button type="button" onClick={props.onResume} disabled={props.actionPending} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-emerald-600 disabled:opacity-50"><Icon name="play_arrow" size="text-sm" />Resume</button> : null}
-          {isDurable && props.durableStatus && ['active', 'paused'].includes(props.durableStatus) ? <button type="button" onClick={props.onStop} disabled={props.actionPending || isCalling} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40"><Icon name="stop_circle" size="text-sm" />Stop</button> : null}
-          {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-300/20 bg-red-400/10 px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-red-200 hover:bg-red-400/15 disabled:opacity-30" title="Mark this lead dead (records why)"><Icon name="cancel" size="text-sm" />Dead</button> : null}
-          <button type="button" onClick={props.onPrevious} disabled={isDurable || props.currentIndex === 0} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30" title="Previous lead" aria-label="Previous lead"><Icon name="chevron_left" size="text-base" /></button>
-          <button type="button" onClick={props.onSkip} disabled={props.actionPending || isCalling || isPaused || (!isDurable && props.currentIndex >= props.queueSize - 1)} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#E32E2E] px-3 py-2.5 text-xs font-black uppercase tracking-wider text-white hover:bg-[#C42626] disabled:cursor-not-allowed disabled:opacity-30" title={isDurable ? 'Skip this contact with an audited outcome' : 'Next seller'}>{isDurable ? 'Skip contact' : 'Next'}<Icon name="chevron_right" size="text-sm" /></button>
-          <button type="button" onClick={props.onClose} disabled={props.actionPending} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40" title={props.durableStatus === 'active' ? 'Pause and exit session' : 'Exit session'} aria-label={props.durableStatus === 'active' ? 'Pause and exit session' : 'Exit session'}><Icon name="close" size="text-base" /></button>
-        </div>
-        </div>
+        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Preview only — calling controls are shown but disabled. In production, select Start calling session, then Call all numbers for the current seller.</div> : null}
 
-        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-amber-200/20 bg-amber-200/10 px-3 py-2 text-xs font-bold text-amber-100">Preview only — calling controls are shown but disabled. In production, select Start calling session, then Call all numbers for the current seller.</div> : null}
-
-        <section aria-label="Live session status" className="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-[#05070a]">
+        <section aria-label="Live session status" className="mt-3 overflow-x-auto rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
           <div className="flex min-w-[820px] items-stretch">
             <SessionMetric icon="dialpad" label="Caller ID" value={props.callerId ? formatPhone(props.callerId) : 'Unavailable'} />
             <SessionMetric icon="schedule" label="Current call" value={dialTime} tone={props.queueState?.status === 'on_call' ? 'emerald' : 'neutral'} />
             <SessionMetric icon="call" label="Session calls" value={props.dials} />
             <SessionMetric icon="groups" label="Sellers worked" value={sellersWorked} />
-            <SessionMetric icon="phone_in_talk" label="Session contacts" value={props.contacts} tone="emerald" />
-            <SessionMetric icon="format_list_numbered" label="Current seller" value={`${props.currentIndex + 1}/${props.queueSize}`} />
+            <SessionMetric icon="phone_in_talk" label="Contacts" value={props.contacts} tone="emerald" />
+            <SessionMetric icon="format_list_numbered" label="Seller" value={`${props.currentIndex + 1}/${props.queueSize}`} />
           </div>
         </section>
       </div>
-      <div className="relative h-1.5 bg-white/10"><div className="h-full bg-gradient-to-r from-[#E32E2E] to-[#ff8a76] transition-all" style={{ width: `${progress}%` }} /><span className="sr-only">Session progress {progress}%</span></div>
+      <div className="relative h-1.5 bg-[var(--ck-surface-hi)]"><div className="h-full bg-[var(--crm-brand)] transition-all" style={{ width: `${progress}%` }} /><span className="sr-only">Session progress {progress}%</span></div>
     </section>
-    {props.error ? <div role="alert" className="mb-4 rounded-xl border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]">{props.error}</div> : null}
+    {props.error ? <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]"><span>{props.error}</span>{props.error.toLowerCase().includes('current call') ? <button type="button" onClick={openCallControls} className="shrink-0 rounded-lg bg-[var(--crm-danger)] px-3 py-2 text-xs font-black text-white">Open call controls</button> : null}</div> : null}
+
+    {confirmEndOpen ? <div className="crm-modal-surface fixed inset-0 z-[100] grid place-items-center bg-black/45 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !props.actionPending) setConfirmEndOpen(false) }}>
+      <section ref={endSessionDialogRef} role="dialog" aria-modal="true" aria-labelledby="end-session-title" tabIndex={-1} className="w-full max-w-md rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-6 text-[var(--crm-ink)] shadow-2xl">
+        <span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]"><Icon name="stop_circle" className="text-2xl" /></span>
+        <p className="mt-4 text-[10px] font-black uppercase tracking-widest text-[var(--crm-danger)]">End calling session</p>
+        <h2 id="end-session-title" className="mt-1 text-xl font-black">Stop this session?</h2>
+        {isCalling ? <p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">A call is still in progress. Hang up and save its outcome first so the call history stays accurate. Then return here to end the session.</p>
+          : <p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">Saved calls and outcomes are preserved. This session closes now; remaining sellers stay available for a future session.</p>}
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirmEndOpen(false)} disabled={props.actionPending} className="crm-secondary-button h-10 rounded-lg px-4 text-xs font-black">Keep calling</button>
+          {isCalling ? <button type="button" onClick={() => { setConfirmEndOpen(false); openCallControls() }} className="crm-primary-button h-10 rounded-lg px-4 text-xs font-black">Open call controls</button>
+            : <button type="button" onClick={() => { setConfirmEndOpen(false); props.onEndSession() }} disabled={props.actionPending} className="h-10 rounded-lg bg-[var(--crm-danger)] px-4 text-xs font-black text-white hover:opacity-90 disabled:opacity-50">{props.actionPending ? 'Ending…' : 'End session'}</button>}
+        </div>
+      </section>
+    </div> : null}
   </>
 }

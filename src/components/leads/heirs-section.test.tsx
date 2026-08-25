@@ -130,14 +130,16 @@ afterEach(() => {
 })
 
 describe('HeirsSection dial queue', () => {
-  it('shows calling-floor readiness when embedded as the primary workspace', async () => {
+  it('keeps calling-floor readiness compact beside the primary phone action', async () => {
     mockHeirsFetch()
     renderHeirsSection({ collapsible: false })
 
-    expect(await screen.findByRole('heading', { name: /Callable people/i })).toBeVisible()
-    expect(await screen.findByLabelText('Calling queue readiness')).toBeVisible()
-    expect(screen.getByText('People found')).toBeVisible()
-    expect(screen.getByText('Ready numbers')).toBeVisible()
+    const heading = await screen.findByRole('heading', { name: /Callable people/i })
+    expect(heading).toBeVisible()
+    expect(heading).toHaveTextContent(/2 people · 4 ready · 1 verified/i)
+    expect(screen.queryByLabelText('Calling queue readiness')).not.toBeInTheDocument()
+    expect(screen.queryByText('People found')).not.toBeInTheDocument()
+    expect(screen.queryByText('Ready numbers')).not.toBeInTheDocument()
     expect(screen.getAllByText('Verified').length).toBeGreaterThan(0)
   })
 

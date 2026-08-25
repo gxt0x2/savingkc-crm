@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone, toProperCase } from '@/lib/format'
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
-import { CallingQueueReadiness } from '@/components/dialer/calling-queue-readiness'
 import {
   dispositionLabel as canonicalDispositionLabel,
 } from '@/lib/dialer-dispositions'
@@ -171,7 +170,6 @@ export function HeirsSection({
   }, [])
 
   const totalHeirs = heirs.length
-  const totalPhones = heirs.reduce((n, h) => n + h.phones.length, 0)
   const unattemptedPhones = heirs.reduce(
     (n, h) => n + h.phones.filter((phone) => isAutoCallablePhone(phone) && !phone.attempted).length,
     0,
@@ -285,7 +283,7 @@ export function HeirsSection({
             {collapsible ? 'Associated people' : 'Callable people'}
             {totalHeirs > 0 && (
               <span className="ml-2 text-[var(--ck-text-dim)] font-bold">
-                ({totalHeirs} · {totalPhones} {totalPhones === 1 ? 'phone' : 'phones'})
+                ({totalHeirs} {totalHeirs === 1 ? 'person' : 'people'} · {queuedPhones} ready · {verifiedHeirs} verified)
               </span>
             )}
           </h2>
@@ -319,10 +317,6 @@ export function HeirsSection({
       {!expanded && null}
       {expanded && <div className={`heirs-body-wrap ${collapsible ? '' : 'p-5 sm:p-6'}`}>
       {/* --- expanded body starts --- */}
-
-      {!collapsible && !loading && totalHeirs > 0 ? (
-        <CallingQueueReadiness people={totalHeirs} ready={queuedPhones} verified={verifiedHeirs} />
-      ) : null}
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-[#E32E2E]/10 border border-[#E32E2E]/30 text-xs text-[#E32E2E]">

@@ -39,6 +39,37 @@ const dialerCampaign = {
   stats: { total: 85, active: 84, needsReview: 0, suppressed: 1, replied: 0, completed: 0, sent: 0, delivered: 0, failed: 0 },
 }
 
+const durableSessionId = '55555555-5555-4555-8555-555555555555'
+
+function activeDialerSession(status: 'active' | 'paused' | 'stopped' = 'active') {
+  return {
+    id: durableSessionId,
+    status,
+    actorEmail: 'ernest@savingkc.com',
+    agentName: 'Ernest',
+    queueKey: dialerCampaign.name,
+    savedQueueId: null,
+    leadIds: [dialerCampaign.members[0].leadId],
+    queueItems: [{ kind: 'lead', id: dialerCampaign.members[0].leadId, leadId: dialerCampaign.members[0].leadId, prospectId: null, campaignMemberId: dialerCampaign.members[0].id }],
+    queueSize: 1,
+    currentIndex: 0,
+    currentLeadId: dialerCampaign.members[0].leadId,
+    currentProspectId: null,
+    currentSubjectKind: 'lead',
+    currentSubjectId: dialerCampaign.members[0].leadId,
+    currentCampaignMemberId: dialerCampaign.members[0].id,
+    callerId: dialerCampaign.callerId,
+    dialsCompleted: 0,
+    contacts: 0,
+    skips: 0,
+    outcomes: {},
+    startedAt: '2026-08-25T12:00:00.000Z',
+    pausedAt: status === 'paused' ? '2026-08-25T12:20:00.000Z' : null,
+    endedAt: status === 'stopped' ? '2026-08-25T12:30:00.000Z' : null,
+    updatedAt: '2026-08-25T12:00:00.000Z',
+  }
+}
+
 function fulfill(route: Route, body: unknown) {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -135,8 +166,8 @@ test('a read-only deployment opens the real calling workflow without exposing mu
   await expect(page.getByText('Current call')).toBeVisible()
   await expect(page.getByText('Session calls')).toBeVisible()
   await expect(page.getByText('Sellers worked')).toBeVisible()
-  await expect(page.getByText('Session contacts')).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Live session status' }).getByText('Current seller', { exact: true })).toBeVisible()
+  await expect(page.getByText('Contacts', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Live session status' }).getByText('Seller', { exact: true })).toBeVisible()
   await expect(page.getByText('Reach the right person')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: /Callable people/ })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Call all 2 numbers' })).toBeDisabled()
@@ -151,6 +182,51 @@ test('a read-only deployment opens the real calling workflow without exposing mu
   await expect(page.getByRole('button', { name: 'Call controls' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Dead' })).toHaveCount(0)
   expect(mutationRequests).toEqual([])
+})
+
+test('the live calling floor has an explicit end-session flow and a bounded theme-aware context rail', async ({ page }) => {
+  let transitionBody: unknown = null
+  await mockCampaigns(page)
+  await mockCallingPreview(page)
+  await page.route(`**/api/dialer/sessions/${durableSessionId}`, async (route) => {
+    if (route.request().method() === 'PATCH') {
+      transitionBody = route.request().postDataJSON()
+      return fulfill(route, { session: activeDialerSession('stopped') })
+    }
+    return fulfill(route, { session: activeDialerSession('paused') })
+  })
+  await page.route(`**/api/dialer/sessions/${durableSessionId}/pre-call-brief`, (route) => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'Brief unavailable in browser fixture' }),
+  }))
+
+  await page.goto(`/prospecting?session_id=${durableSessionId}&return_to=%2Fprospecting`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Calling session' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'End session' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Leave' })).toBeVisible()
+  await expect(page.getByText('Recent Calls', { exact: true })).toHaveCount(0)
+
+  const lightThemeButton = page.getByRole('button', { name: 'Switch to light theme' })
+  if (await lightThemeButton.isVisible().catch(() => false)) await lightThemeButton.click()
+  const commandBackground = await page.getByRole('region', { name: 'Calling floor command center' }).evaluate((element) => getComputedStyle(element).backgroundColor)
+  expect(commandBackground).toBe('rgb(255, 255, 255)')
+
+  const contextRail = page.getByRole('complementary', { name: 'Seller context' })
+  const railStyle = await contextRail.evaluate((element) => ({
+    maxHeight: getComputedStyle(element).maxHeight,
+    overflowY: getComputedStyle(element).overflowY,
+  }))
+  expect(railStyle.maxHeight).not.toBe('none')
+  expect(['auto', 'scroll']).toContain(railStyle.overflowY)
+
+  await page.getByRole('button', { name: 'End session' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Stop this session?' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'End session' }).click()
+  await expect(page).toHaveURL(/\/prospecting$/)
+  expect(transitionBody).toEqual({ action: 'stop' })
 })
 
 test('Prospecting studio remains usable on a phone-sized viewport', async ({ page }) => {
