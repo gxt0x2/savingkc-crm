@@ -143,7 +143,7 @@ describe('DialerSessionCommand', () => {
     const props = renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
 
     expect(screen.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
-    expect(screen.getByText(/select Start calling session, then Call all numbers/i)).toBeVisible()
+    expect(screen.getByText(/Resume calling restores the saved seller/i)).toBeVisible()
     expect(screen.queryByRole('link', { name: 'Open live calling' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Call controls' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()

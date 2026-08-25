@@ -48,7 +48,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
   const commsEvents = useMemo(() => buildCommsTimeline(props.activities), [props.activities])
   const commsSummary = useMemo(() => summarizeComms(commsEvents), [commsEvents])
 
-  return <aside aria-label="Seller context" className={`order-2 col-span-12 space-y-3 lg:self-start ${props.fullWidth ? 'lg:col-span-12' : 'lg:sticky lg:top-4 lg:col-span-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1'}`}>
+  return <aside aria-label="Seller context" className={`order-2 col-span-12 space-y-3 lg:self-start ${props.fullWidth ? 'lg:col-span-12' : 'lg:sticky lg:top-[168px] lg:col-span-4 lg:max-h-[calc(100vh-184px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1'}`}>
     <section className="ck-card p-4">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">

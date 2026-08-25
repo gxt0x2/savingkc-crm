@@ -65,7 +65,7 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
   })
 
-  it('embeds one softphone in Prospecting and can hide or reopen it without restarting the queue', () => {
+  it('keeps one softphone persistently embedded during a Prospecting session', () => {
     navigation.pathname = '/prospecting'
     navigation.search = 'session_id=session-1'
     render(<AppShell><main>Calling floor</main></AppShell>)
@@ -80,7 +80,7 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close phone' }))
-    expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
 
     act(() => window.dispatchEvent(new Event('show-dialer-controls')))
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')

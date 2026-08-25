@@ -356,8 +356,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const dialerPanel = dialerMounted ? <DialerPanel
     open={showDialer}
     onClose={() => {
-      setShowDialer(false)
       if (isProspectingCallingFloor) return
+      setShowDialer(false)
       setPendingDialLead(null)
       setPendingQueue(null)
       setPendingQueueCallerId(null)
@@ -389,6 +389,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           profilePhotoUrl={profilePhotoUrl}
           canReviewCalls={canReviewCalls}
           focusedCalling={Boolean(isProspectingCallingFloor)}
+          hideHeader={Boolean(isProspectingCallingFloor)}
           rightRail={isProspectingCallingFloor && showDialer ? dialerPanel : null}
         >
           {shouldRedirectCaseyDashboard ? (

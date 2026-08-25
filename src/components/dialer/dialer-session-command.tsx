@@ -29,6 +29,7 @@ interface DialerSessionCommandProps {
   dials: number
   contacts: number
   queueState: SessionQueueState | null
+  controlsDocked?: boolean
   actionPending: boolean
   currentLeadId: string | null
   error: string | null
@@ -74,7 +75,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
         : isPaused ? 'Session paused' : 'Ready'
 
   return <>
-    <section aria-label="Calling floor command center" className="relative mb-4 overflow-hidden rounded-2xl border border-[var(--ck-border-strong)] bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-[var(--crm-shadow-sm)]">
+    <section aria-label="Calling floor command center" className="sticky top-0 z-50 mb-4 overflow-hidden rounded-2xl border border-[var(--ck-border-strong)] bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-[var(--crm-shadow-sm)]">
       <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[var(--crm-brand-soft)] blur-3xl" />
       <div className="relative px-4 py-4 sm:px-5">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -85,7 +86,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
           </div>
 
           <div aria-label="Session actions" className="flex flex-wrap items-center gap-2 xl:max-w-[720px] xl:justify-end">
-            {!props.readOnlyPreview ? <button type="button" onClick={openCallControls} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black">
+            {!props.readOnlyPreview && !props.controlsDocked ? <button type="button" onClick={openCallControls} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black">
               <Icon name="phone_in_talk" size="text-sm" /> {isCalling ? 'Current call' : 'Call controls'}
             </button> : null}
             {isPaused ? <button type="button" onClick={props.onResume} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-success)] px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50"><Icon name="play_arrow" size="text-sm" />Resume</button> : null}
@@ -97,7 +98,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
           </div>
         </div>
 
-        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Preview only — calling controls are shown but disabled. In production, select Start calling session, then Call all numbers for the current seller.</div> : null}
+        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Preview only — calling controls are shown but disabled. In production, Resume calling restores the saved seller and loads every ready number.</div> : null}
 
         <section aria-label="Live session status" className="mt-3 overflow-x-auto rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
           <div className="flex min-w-[820px] items-stretch">

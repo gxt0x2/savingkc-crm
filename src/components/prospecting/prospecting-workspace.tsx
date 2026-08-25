@@ -8,7 +8,7 @@ import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
 import { Icon } from '@/components/ui/icon'
 import { parseStoredProspectingAudienceSelection, PROSPECTING_AUDIENCE_STORAGE_KEY, type ProspectingAudienceSelection } from '@/lib/prospecting/audience-handoff'
-import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
+import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerStartBehavior } from '@/lib/prospecting/campaign-contract'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
 const CAMPAIGN_LIVE_REFRESH_MS = 15000
@@ -266,7 +266,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     }
   }
 
-  async function launchDialer() {
+  async function launchDialer(startBehavior: ProspectingDialerStartBehavior) {
     if (!detail || actionPending) return
     if (!writesEnabled) {
       const query = new URLSearchParams({
@@ -281,13 +281,18 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setActionPending(true)
     setError(null)
     try {
-      const result = await jsonRequest<{ session: { id: string } }>(`/api/prospecting/campaigns/${detail.id}/launch`, { method: 'POST' })
+      const result = await jsonRequest<{ session: { id: string } }>(`/api/prospecting/campaigns/${detail.id}/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startBehavior }),
+      })
       const query = new URLSearchParams({
         session_id: result.session.id,
         campaign: detail.id,
         queue_label: detail.name,
         return_to: `/prospecting?campaign=${encodeURIComponent(detail.id)}`,
       })
+      window.sessionStorage.setItem(`savingkc:dialer-autostart:${result.session.id}`, '1')
       router.push(`/prospecting?${query.toString()}`)
     } catch (launchError) {
       setError(launchError instanceof Error ? launchError.message : 'Dialer session could not start')
@@ -333,7 +338,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       onDuplicate={duplicateCampaign}
       onEdit={editCampaign}
       onTransition={(status) => void transition(status)}
-      onLaunchDialer={() => void launchDialer()}
+      onLaunchDialer={(startBehavior) => void launchDialer(startBehavior)}
       onAudienceChanged={detail ? async () => { await loadDetail(detail.id) } : undefined}
     />}
   </>

@@ -148,6 +148,10 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           setCurrentIndex(session.currentIndex)
           setSessionDials(session.dialsCompleted)
           setSessionContacts(session.contacts)
+          const autoStartKey = `savingkc:dialer-autostart:${session.id}`
+          const autoStartRequested = window.sessionStorage.getItem(autoStartKey) === '1'
+          if (autoStartRequested) window.sessionStorage.removeItem(autoStartKey)
+          if (autoStartRequested && session.status === 'active' && !session.stopRequestedAt) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
           setLoading(false)
           return
         } catch (sessionError) {
@@ -576,7 +580,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 pb-24 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1700px] px-3 pb-24 pt-3 sm:px-5 lg:px-6">
       <DialerSessionCommand
         queueLabel={inferredQueueLabel}
         currentIndex={currentIndex}
@@ -589,6 +593,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         dials={sessionDials}
         contacts={sessionContacts}
         queueState={queueState}
+        controlsDocked={callRailOpen}
         actionPending={sessionActionPending}
         currentLeadId={currentLeadId}
         error={sessionError}
@@ -604,7 +609,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       {/* Calling floor: people and phone actions are primary; context remains bounded at the side. */}
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
         {/* Primary workspace — the actual people and callable numbers. */}
-        <main className={`order-1 col-span-12 ${callRailOpen ? 'lg:col-span-12' : 'lg:col-span-8'}`}>
+        <main className="order-1 col-span-12 lg:col-span-8">
           {currentSubject && (
             <HeirsSection
               key={currentSubjectKey}
@@ -632,7 +637,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
         {/* Supporting rail — sticky, internally bounded, and limited to this seller. */}
         <ProspectingCallingContextRail
-          fullWidth={callRailOpen}
+          fullWidth={false}
           leadId={currentLeadId}
           lead={currentLead}
           prospect={currentProspect}

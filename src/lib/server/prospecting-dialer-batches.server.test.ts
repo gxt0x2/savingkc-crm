@@ -51,13 +51,25 @@ describe('launchProspectingDialerCampaign', () => {
       : Promise.resolve({ data: { created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 }, error: null }))
     const result = await launchProspectingDialerCampaign(actor, campaignId)
 
-    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v2', {
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v3', {
       p_campaign_id: campaignId,
       p_actor_email: actor.email,
       p_actor_name: actor.name,
       p_caller_id: campaignRow.caller_id,
+      p_start_behavior: 'resume',
     })
     expect(result).toEqual({ created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 })
+  })
+
+  it('passes the explicit first-unworked choice into the atomic session start', async () => {
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: { created: true, session: { id: 'session-1' }, batchSize: 80, remaining: 0 }, error: null }))
+    await launchProspectingDialerCampaign(actor, campaignId, 'first_unworked')
+
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v3', expect.objectContaining({
+      p_start_behavior: 'first_unworked',
+    }))
   })
 
   it('returns an actionable message after every ready contact is worked', async () => {
