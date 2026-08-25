@@ -30,8 +30,8 @@ const canonicalContext: CrmEntityContext = {
     { id: 'email-1', type: 'email', value: 'seller@example.com', normalizedValue: 'seller@example.com', isPrimary: true, deliverabilityStatus: 'unknown', smsConsentStatus: 'not_applicable' },
     { id: 'phone-1', type: 'phone', value: '+18165550123', normalizedValue: '+18165550123', isPrimary: true, deliverabilityStatus: 'unknown', smsConsentStatus: 'unknown' },
   ],
-  property: { id: 'property-1', address: '123 Main St', city: 'Kansas City', state: 'MO', zip: '64111', parcelId: null },
-  opportunity: { id: 'opportunity-1', stage: 'qualified', classification: 'opportunity', priority: 'hot', ownerName: null, lifecycleStatus: 'open' },
+  property: { id: 'property-1', address: '123 Main St', city: 'Kansas City', state: 'MO', zip: '64111', county: 'Jackson', parcelId: null },
+  opportunity: { id: 'opportunity-1', stage: 'qualified', classification: 'opportunity', priority: 'hot', ownerName: null, source: 'Website', lifecycleStatus: 'open' },
   openIdentityConflicts: 0,
 }
 
@@ -75,6 +75,8 @@ describe('CRM entity foundation server reads', () => {
       city: 'Old city',
       state: 'KS',
       zip: '66000',
+      county: 'Johnson',
+      source: 'Referral',
       station: 'new',
       classification: 'lead',
       priority: 'warm',
@@ -88,6 +90,8 @@ describe('CRM entity foundation server reads', () => {
       city: 'Kansas City',
       state: 'MO',
       zip: '64111',
+      county: 'Jackson',
+      source: 'Website',
       station: 'qualified',
       classification: 'opportunity',
       priority: 'hot',

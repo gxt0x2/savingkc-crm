@@ -211,23 +211,41 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: command.error }, { status: 400 })
   }
 
-  const { data, error } = await supabaseAdmin()
-    .from('leads')
-    .update({ ...command.patch, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select('*')
-    .maybeSingle()
+  const { data, error } = await supabaseAdmin().rpc('crm_update_lead_profile_v1', {
+    target_lead_id: id,
+    target_patch: command.patch,
+    target_actor_email: actor.email,
+    target_actor_name: actor.name,
+  })
 
   if (error) {
     console.error('[leads/:id] profile update failed:', error.message)
+    if (error.message.includes('lead_not_found')) {
+      return NextResponse.json({ success: false, error: 'Contact not found' }, { status: 404 })
+    }
+    if (error.message.includes('canonical_profile_conflict')) {
+      return NextResponse.json({
+        success: false,
+        error: 'This change conflicts with the canonical contact record. Review the contact identity before saving again.',
+        code: 'canonical_profile_conflict',
+      }, { status: 409 })
+    }
+    if (error.message.includes('invalid_profile_field')) {
+      return NextResponse.json({ success: false, error: 'One or more contact fields are invalid' }, { status: 400 })
+    }
     return NextResponse.json({ success: false, error: 'Contact could not be saved' }, { status: 500 })
   }
-  if (!data) return NextResponse.json({ success: false, error: 'Contact not found' }, { status: 404 })
+  const result = readRecord(data)
+  const updatedLead = readRecord(result?.lead)
+  if (!updatedLead) {
+    console.error('[leads/:id] profile update returned an invalid result')
+    return NextResponse.json({ success: false, error: 'Contact could not be saved' }, { status: 500 })
+  }
 
   const entityContext = await safeReadLeadEntityContext(id)
   return NextResponse.json({
     success: true,
-    lead: applyCrmEntityAuthority(data as LeadPayload, entityContext),
+    lead: applyCrmEntityAuthority(updatedLead as LeadPayload, entityContext),
     entityContext,
   })
 }

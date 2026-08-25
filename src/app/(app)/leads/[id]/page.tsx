@@ -132,7 +132,7 @@ interface EditLeadPanelProps {
 }
 
 function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
-  const [form, setForm] = useState({
+  const initialForm = {
     full_name: lead.full_name ?? '',
     phone: lead.phone ?? '',
     email: lead.email ?? '',
@@ -143,19 +143,29 @@ function EditLeadPanel({ lead, onClose, onSaved }: EditLeadPanelProps) {
     county: lead.county ?? '',
     source: lead.source ?? '',
     notes: lead.notes ?? '',
-  })
+  }
+  const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
 
   async function handleSave() {
+    const changedProfile = (Object.keys(form) as Array<keyof typeof form>).reduce<Partial<typeof form>>((patch, field) => {
+      if (form[field].trim() !== initialForm[field].trim()) patch[field] = form[field]
+      return patch
+    }, {})
+    if (Object.keys(changedProfile).length === 0) {
+      onClose()
+      return
+    }
+
     setSaving(true)
     setSaveError(null)
     try {
       const res = await fetch(`/api/leads/${lead.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'profile', profile: form }),
+        body: JSON.stringify({ kind: 'profile', profile: changedProfile }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
