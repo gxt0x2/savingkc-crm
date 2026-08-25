@@ -116,6 +116,15 @@ export function WorkspaceFrame({
     setNeedsReplyOverride: setPageNeedsReply,
   }), [commandBarHost, rightRail, userEmail])
 
+  const callRail = rightRail ? (
+    <aside
+      aria-label="Prospecting call controls"
+      className={`fixed inset-x-2 bottom-2 top-[max(5rem,env(safe-area-inset-top))] z-[70] min-h-0 overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-[var(--crm-shadow-lg)] xl:static xl:inset-auto xl:z-auto xl:shrink-0 xl:rounded-none xl:border-y-0 xl:shadow-none ${focusedCalling ? 'xl:order-first xl:w-[300px] xl:border-l-0 xl:border-r' : 'xl:w-[390px] xl:border-r-0 xl:border-l'}`}
+    >
+      {rightRail}
+    </aside>
+  ) : null
+
   function submitSearch(event: FormEvent) {
     event.preventDefault()
     const query = search.trim()
@@ -127,7 +136,8 @@ export function WorkspaceFrame({
       className="crm-workspace-shell flex h-[100dvh] overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
       data-theme={theme}
     >
-      <WorkspaceNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />
+      {focusedCalling ? null : <WorkspaceNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />}
+      {focusedCalling ? callRail : null}
       <div className="flex min-w-0 flex-1 flex-col">
         <WorkspaceChromeContext.Provider value={chromeContextValue}>
           {resolvedHideHeader ? null : <header className={`crm-shell-header relative z-[60] flex shrink-0 flex-col overflow-visible border-b px-3 pb-2 pt-[max(.5rem,env(safe-area-inset-top))] backdrop-blur md:flex-row md:items-center md:gap-5 md:px-6 md:py-2 ${resolvedCommandBarActive ? 'md:min-h-[76px]' : 'md:h-[62px]'}`}>
@@ -189,17 +199,10 @@ export function WorkspaceFrame({
           </Suspense>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
           {focusedCalling ? null : <GiraffeAssistantLauncher />}
-          <WorkspaceMobileNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />
+          {focusedCalling ? null : <WorkspaceMobileNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />}
         </WorkspaceChromeContext.Provider>
       </div>
-      {rightRail ? (
-        <aside
-          aria-label="Prospecting call controls"
-          className="fixed inset-x-2 bottom-2 top-[max(5rem,env(safe-area-inset-top))] z-[70] min-h-0 overflow-hidden rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-[var(--crm-shadow-lg)] xl:static xl:inset-auto xl:z-auto xl:w-[390px] xl:shrink-0 xl:rounded-none xl:border-y-0 xl:border-r-0 xl:shadow-none"
-        >
-          {rightRail}
-        </aside>
-      ) : null}
+      {focusedCalling ? null : callRail}
     </div>
   )
 }

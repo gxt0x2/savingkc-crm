@@ -97,7 +97,10 @@ describe('WorkspaceFrame route persistence', () => {
     )
 
     expect(screen.queryByRole('button', { name: 'Open phone' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-nav')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-mobile-nav')).not.toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: 'Prospecting call controls' })).toHaveTextContent('Embedded call controls')
+    expect(screen.getByRole('complementary', { name: 'Prospecting call controls' })).toHaveClass('xl:order-first', 'xl:w-[300px]', 'xl:border-r')
     expect(screen.queryByRole('button', { name: 'Open AI Assistant' })).not.toBeInTheDocument()
   })
 

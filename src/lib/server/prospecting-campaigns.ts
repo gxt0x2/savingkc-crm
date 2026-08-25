@@ -7,6 +7,7 @@ import {
   type ProspectingCampaignStatus,
   type ProspectingCampaignSummary,
   type ProspectingCampaignStep,
+  type ProspectingDialerStartBehavior,
 } from '@/lib/prospecting/campaign-contract'
 import { parseDialerSession } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
@@ -73,6 +74,9 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('campaign_has_no_eligible_members')) return new ProspectingCampaignError('campaign_empty', 409, 'Add at least one eligible contact before activating')
   if (detail.includes('campaign_has_no_steps')) return new ProspectingCampaignError('campaign_steps_required', 409, 'Add at least one message step before activating')
   if (detail.includes('campaign_dialer_complete')) return new ProspectingCampaignError('campaign_dialer_complete', 409, 'Every ready contact has been worked. Review skipped or suppressed contacts before starting another batch')
+  if (detail.includes('another_dialer_session_open')) return new ProspectingCampaignError('another_dialer_session_open', 409, 'Finish or pause the other open calling session before switching campaigns')
+  if (detail.includes('call_in_progress')) return new ProspectingCampaignError('call_in_progress', 409, 'Finish and save the current call before changing where the session begins')
+  if (detail.includes('session_stop_requested')) return new ProspectingCampaignError('session_stop_requested', 409, 'This calling session is already ending; finish the current call outcome')
   if (detail.includes('campaign_setup_locked')) return new ProspectingCampaignError('campaign_setup_locked', 409, 'Only a campaign that has never run can be edited')
   if (detail.includes('campaign_member_in_active_dialer_batch')) return new ProspectingCampaignError('campaign_member_in_active_dialer_batch', 409, 'Stop the open calling session before removing this contact')
   if (detail.includes('county_audience_changed')) return new ProspectingCampaignError('county_audience_changed', 409, 'The county Saved View changed after review. Refresh it and confirm the current audience')
@@ -374,17 +378,22 @@ export async function setProspectingCampaignStatus(
   return { id: campaignId, status }
 }
 
-export async function launchProspectingDialerCampaign(actor: AuthenticatedActor, campaignId: string) {
+export async function launchProspectingDialerCampaign(
+  actor: AuthenticatedActor,
+  campaignId: string,
+  startBehavior: ProspectingDialerStartBehavior = 'resume',
+) {
   const campaign = await getProspectingCampaign(actor, campaignId)
   if (campaign.kind !== 'dialer') throw new ProspectingCampaignError('invalid_campaign_kind', 409, 'Only dialer campaigns can start a calling session')
   if (campaign.status !== 'active') throw new ProspectingCampaignError('invalid_campaign_state', 409, 'Activate the campaign before starting calls')
   const callerId = normalizePhoneToE164(campaign.callerId || '')
   if (!callerId) throw new ProspectingCampaignError('caller_id_required', 409, 'Choose a calling number before starting')
-  const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v2', {
+  const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v3', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_actor_name: actor.name,
     p_caller_id: callerId,
+    p_start_behavior: startBehavior,
   })
   if (error) throw databaseError(error)
   const payload = data as { created?: unknown; session?: unknown; batchSize?: unknown; remaining?: unknown } | null

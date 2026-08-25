@@ -1179,14 +1179,14 @@ export function DialerPanel({
               <span className="text-[10px] font-medium text-[var(--skc-text-tertiary)] tracking-[-0.01em]">{statusLabel[status]}</span>
             </button>
           </div>
-          <button
+          {isWorkspace ? <div aria-hidden="true" /> : <button
             onClick={onClose}
             className="justify-self-end w-[30px] h-[30px] rounded-full bg-[var(--skc-surface-3)] text-[var(--skc-text-tertiary)] hover:text-white hover:bg-[var(--skc-surface-2)] transition-colors flex items-center justify-center"
             aria-label={isWorkspace ? 'Hide call controls' : 'Close dialer'}
             title={isWorkspace ? 'Hide call controls' : 'Close dialer'}
           >
             <Icon name="close" size="text-[16px]" />
-          </button>
+          </button>}
         </div>
 
         {/* Pinned property header — visible across the whole queue */}

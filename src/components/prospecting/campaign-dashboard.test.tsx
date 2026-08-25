@@ -99,10 +99,11 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText('1', { selector: 'p' })).toBeVisible()
     expect(screen.getByText('ready to call')).toBeVisible()
     expect(screen.getByText('All associated contacts stay visible')).toBeVisible()
-    const start = screen.getByRole('button', { name: 'Start calling session' })
+    expect(screen.getByRole('radio', { name: /Resume where I stopped/ })).toBeChecked()
+    const start = screen.getByRole('button', { name: 'Resume calling' })
     expect(start).toBeVisible()
     fireEvent.click(start)
-    expect(launch).toHaveBeenCalledOnce()
+    expect(launch).toHaveBeenCalledWith('resume')
     expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
     expect(screen.queryByText('Audience health')).not.toBeInTheDocument()
   })
@@ -118,8 +119,18 @@ describe('CampaignDashboard', () => {
     }
     render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
-    expect(screen.getByRole('button', { name: 'Start calling session' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Resume calling' })).toBeVisible()
     expect(screen.getByText(/Your progress is preserved if you stop/i)).toBeVisible()
+  })
+
+  it('lets the agent deliberately restart from the first remaining unworked seller', () => {
+    const launch = vi.fn()
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={launch} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: /First unworked seller/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start with first unworked' }))
+    expect(launch).toHaveBeenCalledWith('first_unworked')
   })
 
   it('offers an honest read-only workflow review when session writes are unavailable', () => {
@@ -130,7 +141,7 @@ describe('CampaignDashboard', () => {
     const preview = screen.getByRole('button', { name: 'Preview calling workflow' })
     expect(preview).toBeVisible()
     expect(screen.getByText(/without calling or saving changes/i)).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Start calling session' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Resume calling' })).not.toBeInTheDocument()
     fireEvent.click(preview)
     expect(launch).toHaveBeenCalledOnce()
   })

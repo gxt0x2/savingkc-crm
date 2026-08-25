@@ -8,6 +8,7 @@ export const PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS = ['all', 'replies', 'failure
 export type ProspectingCampaignKind = typeof PROSPECTING_CAMPAIGN_KINDS[number]
 export type ProspectingCampaignStatus = typeof PROSPECTING_CAMPAIGN_STATUSES[number]
 export type ProspectingCampaignActivityFilter = typeof PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS[number]
+export type ProspectingDialerStartBehavior = 'resume' | 'first_unworked'
 
 export interface ProspectingCampaignStepInput {
   delayMinutes: number
