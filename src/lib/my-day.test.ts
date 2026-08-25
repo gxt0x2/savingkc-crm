@@ -217,5 +217,7 @@ describe('Casey My Day model', () => {
       from: '2026-05-27',
       to: '2026-08-24',
     })
+    expect(resolveMyDayDateRange({ preset: 'custom', from: '2026-08-01', to: '2026-08-24' }, now).label)
+      .toBe('Aug 1 – Aug 24, 2026')
   })
 })

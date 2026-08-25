@@ -77,12 +77,11 @@ function customRangeLabel(from: string, to: string): string {
     }).format(start)
   }
   const sameYear = start.getUTCFullYear() === end.getUTCFullYear()
-  const sameMonth = sameYear && start.getUTCMonth() === end.getUTCMonth()
   const startLabel = new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric', timeZone: 'UTC',
   }).format(start)
   const endLabel = new Intl.DateTimeFormat('en-US', {
-    month: sameMonth ? undefined : 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+    month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
   }).format(end)
   return `${startLabel} – ${endLabel}`
 }
