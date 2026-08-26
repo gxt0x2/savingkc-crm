@@ -35,6 +35,29 @@ The exporter is read-only. It requires the configured Supabase URL to match the 
 
 The separately reviewed physical migration must match the verified receipt to the current source counts, preserve retained PPC foreign keys, revoke runtime access, and rehearse rollback. A receipt never authorizes deletion.
 
+## Verified archive prepared on 2026-08-26
+
+The reviewed production export is stored in the approved encrypted Google Drive
+archive folder as `savingkc-manifest-archive-2026-08-26T203409329Z`. Independent
+verification reproduced both receipt checksums and counts:
+
+- `manifests`: 367 rows, SHA-256
+  `2b22f25ce0307e1be09c03256a632729fc696233e65e4013b2c73f50a029cc7b`;
+- `manifest_history`: 10,668 rows, SHA-256
+  `0bc2c67336d3ae1304e4957efb32176f5974ee2cc52c161e1b74e0c42bcb0dac`.
+
+The production schema preflight also found one stale database-only read surface:
+`contact_workspace_page_v1` still reads Manifest and V2 delegates to V1. The
+application uses the canonical V4 RPC. The prepared physical migration therefore
+revokes V1/V2 runtime access, moves both retained tables into a private
+`manifest_archive` schema, and records the verified receipt. PostgreSQL keeps the
+seven PPC conversion-outbox and eight PPC tracking-event foreign-key references
+attached to the moved table. No row or table is deleted.
+
+`npm run manifest:archive:rehearse` proves the move and its emergency
+data-location rollback against an isolated PostgreSQL cluster. The migration and
+rollback are preparation only until a separate production approval is given.
+
 The writer shutdown preserves all 367 historical Manifest rows and 10,668 history rows observed in the production preflight. It does not delete, rewrite, or detach them from retained PPC history.
 
 ## Do not delete yet
