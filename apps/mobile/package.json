@@ -29,12 +29,14 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "healthcheck": "node ../../scripts/ci/check-mobile-audit.mjs && expo-doctor && npm run typecheck",
+    "healthcheck": "node ../../scripts/ci/check-mobile-audit.mjs && npm run security:verify-image-parser && expo-doctor && npm run typecheck",
+    "security:verify-image-parser": "node scripts/check-image-size-hardening.mjs",
     "distribution:check": "node scripts/check-distribution.mjs",
     "release:ios": "npm run healthcheck && npm run distribution:check && npx eas-cli build --platform ios --profile production",
     "submit:ios": "npx eas-cli submit --platform ios --profile production --latest"
   },
   "overrides": {
+    "image-size": "https://codeload.github.com/keyboard-dev/image-size/tar.gz/a42c2e5be4fc729f622f9a6879a643a1f3ff8ca1",
     "xcode": {
       "uuid": "11.1.1"
     }
