@@ -2,6 +2,7 @@ import { formatLeadSource } from '@/lib/contact-display'
 import { isReachedDisposition } from '@/lib/dialer-dispositions'
 import { playableRecordingUrl, readCallReviewWorkflow, readRecordingReview } from '@/lib/marketing/call-recordings'
 import { stageLabel } from '@/lib/utils'
+import type { MyDayAttentionItem } from '@/lib/my-day-attention'
 import {
   MY_DAY_TIME_ZONE,
   startOfMyDayWeek,
@@ -166,6 +167,10 @@ export interface MyDayData {
   commitments: MyDayCommitment[]
   queue: MyDayQueueItem[]
   callReviews: MyDayCallReview[]
+  attention: {
+    status: 'available' | 'unavailable'
+    items: MyDayAttentionItem[]
+  }
   goals: MyDayGoalSet
   availability: {
     mojoPerformance: boolean
@@ -187,6 +192,8 @@ export interface BuildMyDayInput {
   activities: MyDayActivity[]
   tasks: MyDayActivity[]
   appointments: MyDayAppointment[]
+  attentionItems: MyDayAttentionItem[]
+  attentionAvailable: boolean
   goals: MyDayGoalSet
   availability: MyDayData['availability']
 }
@@ -448,15 +455,14 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const contacts = hasProviderPerformance || hasNativePerformance
     ? (hasProviderPerformance ? performanceRows.reduce((sum, row) => sum + number(row.contacts), 0) : 0) + nativeContacts
     : null
-  const leadEntries = new Map(input.leads
-    .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinRange(lead.created_at, input.range))
-    .map((lead) => [lead.id, lead.created_at]))
   const opportunityEntries = stageEntries(input, 2)
   const appointmentEntries = stageEntries(input, 3)
   const offerEntries = stageEntries(input, 4)
   const contractEntries = stageEntries(input, 5)
   const opportunityCount = opportunityEntries.size
-  const leadCount = leadEntries.size
+  const leadCount = hasProviderPerformance
+    ? performanceRows.reduce((sum, row) => sum + number(row.leads), 0)
+    : null
   const appointmentCount = appointmentEntries.size
   const offerCount = offerEntries.size
   const contractCount = contractEntries.size
@@ -483,18 +489,15 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const legacyNativeConversationsByDay = valuesByDay(weeklyNativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
   const nativeCallsByDay = days.map((day, index) => number(nativePerformanceByDate.get(day)?.calls) + (input.dialerPerformance === undefined ? legacyNativeCallsByDay[index] : 0))
   const nativeConversationsByDay = days.map((day, index) => number(nativePerformanceByDate.get(day)?.contacts) + (input.dialerPerformance === undefined ? legacyNativeConversationsByDay[index] : 0))
-  const weeklyLeadEntries = new Map(input.leads
-    .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinRange(lead.created_at, weekRange))
-    .map((lead) => [lead.id, lead.created_at]))
   const weeklyOpportunityEntries = stageEntries(input, 2, weekRange)
   const weeklyAppointmentEntries = stageEntries(input, 3, weekRange)
   const weeklyOfferEntries = stageEntries(input, 4, weekRange)
   const weeklyContractEntries = stageEntries(input, 5, weekRange)
-  const providerDayValue = (day: string, field: 'calls' | 'contacts', nativeValue: number): number | null => {
+  const providerDayValue = (day: string, field: 'calls' | 'contacts' | 'leads', nativeValue = 0): number | null => {
     if (!today || day > today) return null
     const row = performanceByDate.get(day)
     if (row) return number(row[field]) + nativeValue
-    return hasNativePerformance ? nativeValue : null
+    return field !== 'leads' && hasNativePerformance ? nativeValue : null
   }
   const weeklyRowValues: MyDayWeeklyRow[] = [
     {
@@ -505,7 +508,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
       key: 'contacts', label: 'Contacts', icon: 'forum', tone: 'violet',
       days: days.map((day, index) => providerDayValue(day, 'contacts', nativeConversationsByDay[index])), total: null,
     },
-    { key: 'leads', label: 'Leads', icon: 'person_add', tone: 'coral', days: valuesByDay(weeklyLeadEntries.values(), days), total: null },
+    { key: 'leads', label: 'Leads', icon: 'person_add', tone: 'coral', days: days.map((day) => providerDayValue(day, 'leads')), total: null },
     { key: 'opportunities', label: 'Opportunities', icon: 'person_search', tone: 'coral', days: valuesByDay(weeklyOpportunityEntries.values(), days), total: null },
     { key: 'appointments', label: 'Appointments Set', icon: 'event', tone: 'sky', days: valuesByDay(weeklyAppointmentEntries.values(), days), total: null },
     { key: 'offers', label: 'Offers Made', icon: 'sell', tone: 'green', days: valuesByDay(weeklyOfferEntries.values(), days), total: null },
@@ -647,6 +650,12 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     commitments,
     queue,
     callReviews,
+    attention: {
+      status: input.attentionAvailable ? 'available' : 'unavailable',
+      items: input.attentionAvailable
+        ? input.attentionItems.filter((item) => isWithinRange(item.happenedAt, input.range))
+        : [],
+    },
     goals: input.goals,
     availability: { ...input.availability, habits: habits.some((habit) => habit.value !== null) },
   }

@@ -323,6 +323,71 @@ function FunnelCard({ data }: { data: MyDayData }) {
   )
 }
 
+export function ReconciliationAttention({ data, onReviewed }: { data: MyDayData; onReviewed: (id: string) => void }) {
+  const [reviewingId, setReviewingId] = useState<string | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+
+  const markReviewed = async (item: MyDayData['attention']['items'][number]) => {
+    setReviewingId(item.id)
+    setReviewError(null)
+    try {
+      const response = await fetch('/api/my-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: item.recordId }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload?.error || 'The review could not be saved.')
+      onReviewed(item.id)
+    } catch (reason) {
+      setReviewError(reason instanceof Error ? reason.message : 'The review could not be saved.')
+    } finally {
+      setReviewingId(null)
+    }
+  }
+
+  if (data.attention.status === 'available' && data.attention.items.length === 0) return null
+  if (data.attention.status === 'unavailable') {
+    return (
+      <section aria-label="CRM reconciliation status" className="rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-4 py-3 text-xs font-bold text-[var(--crm-warning)]">
+        Mojo-to-CRM conflict checks are unavailable. Lead totals remain visible, but terminal-record activity needs manual verification.
+      </section>
+    )
+  }
+
+  return (
+    <section aria-labelledby="reconciliation-attention-title" className="overflow-hidden rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)]">
+      <header className="flex items-center gap-3 border-b border-[var(--crm-warning-border)] px-4 py-3">
+        <Icon name="warning_amber" className="text-[22px] text-[var(--crm-warning)]" />
+        <div>
+          <h2 id="reconciliation-attention-title" className="text-sm font-black">Mojo activity needs CRM review</h2>
+          <p className="mt-0.5 text-[11px] font-semibold text-[var(--crm-text-muted)]">Open the CRM record to inspect it, then mark the notice reviewed when it has been handled.</p>
+        </div>
+      </header>
+      {reviewError ? <p role="alert" className="border-b border-[var(--crm-warning-border)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]">{reviewError}</p> : null}
+      <div className="divide-y divide-[var(--crm-warning-border)]">
+        {data.attention.items.map((item) => (
+          <div key={item.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black">{item.leadName} · {item.property}</p>
+              <p className="mt-1 text-xs text-[var(--crm-text-muted)]">{item.disposition} · {new Date(item.happenedAt).toLocaleString()}</p>
+              {item.missingFollowUpAt ? <p className="mt-1 text-[11px] font-black text-[var(--crm-danger)]">No callback time was supplied by Mojo.</p> : null}
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Link href={item.href} prefetch={false} className="crm-secondary-button inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-black">
+                Open record <Icon name="open_in_new" className="text-[16px]" />
+              </Link>
+              <button type="button" onClick={() => void markReviewed(item)} disabled={reviewingId === item.id} className="crm-primary-button inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-black disabled:cursor-wait disabled:opacity-60">
+                {reviewingId === item.id ? 'Saving…' : 'Mark reviewed'} <Icon name="check" className="text-[16px]" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function WeeklySnapshot({ data }: { data: MyDayData }) {
   return (
     <section aria-labelledby="weekly-snapshot-title" className="crm-panel overflow-hidden rounded-xl">
@@ -446,6 +511,16 @@ export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initia
   const [scorecardActive, setScorecardActive] = useState(false)
   const rangeRef = useRef(initialData.range)
 
+  const removeReviewedAttention = useCallback((id: string) => {
+    setData((current) => ({
+      ...current,
+      attention: {
+        ...current.attention,
+        items: current.attention.items.filter((item) => item.id !== id),
+      },
+    }))
+  }, [])
+
   useEffect(() => {
     void Promise.resolve().then(() => {
       rangeRef.current = initialData.range
@@ -507,6 +582,7 @@ export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initia
       </header>
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void loadRange(rangeRequest(data.range))} className="underline">Retry</button></div> : null}
       <FunnelCard data={data} />
+      <ReconciliationAttention data={data} onReviewed={removeReviewedAttention} />
       <WeeklySnapshot data={data} />
       {canReviewCalls ? <MyDayCallReview onReviewActiveChange={setScorecardActive} /> : null}
       <CaseyAndonQueue />
