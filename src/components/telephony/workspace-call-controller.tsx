@@ -40,9 +40,11 @@ export function WorkspaceCallController({
         <p className="mt-1 font-mono text-6xl font-black tabular-nums tracking-[-0.06em] text-[var(--skc-text-primary)]">
           {autoStartCountdownSeconds > 0 ? autoStartCountdownSeconds : waitingForPhone ? '—' : '0'}
         </p>
-        <p className="mt-2 text-xs leading-5 text-[var(--skc-text-tertiary)]">
-          {waitingForPhone ? `Waiting for phone connection · ${statusLabel}` : queueItem ? `${queueItem.heirName} · ${dialDisplay}` : 'Loading the first reviewed seller number'}
-        </p>
+        {queueItem ? <div className="mt-3">
+          <p className="truncate text-lg font-black text-[var(--skc-text-primary)]">{queueItem.heirName}</p>
+          <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-[var(--skc-text-secondary)]">{dialDisplay}</p>
+        </div> : <p className="mt-2 text-xs leading-5 text-[var(--skc-text-tertiary)]">Loading the first reviewed seller number</p>}
+        {waitingForPhone ? <p className="mt-2 text-xs font-semibold text-[var(--skc-text-tertiary)]">Waiting for phone connection · {statusLabel}</p> : null}
         <div role="progressbar" aria-label="Time until first call" aria-valuemin={0} aria-valuemax={FIRST_DIAL_COUNTDOWN_SECONDS} aria-valuenow={FIRST_DIAL_COUNTDOWN_SECONDS - autoStartCountdownSeconds} className="mt-5 h-1.5 overflow-hidden rounded-full bg-[var(--skc-surface-3)]">
           <div className="h-full rounded-full bg-[#E32E2E] transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, ((FIRST_DIAL_COUNTDOWN_SECONDS - autoStartCountdownSeconds) / FIRST_DIAL_COUNTDOWN_SECONDS) * 100)}%` }} />
         </div>
@@ -56,16 +58,15 @@ export function WorkspaceCallController({
   return (
     <div className="mx-1 rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-5 text-center">
       <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--skc-text-tertiary)]">
-        {queueItem ? 'Next ready number' : 'Choose a number from the seller list'}
-      </p>
-      <p className="mt-3 font-mono text-[28px] font-semibold tabular-nums tracking-[-0.03em] text-[var(--skc-text-primary)]">
-        {dialDisplay || '—'}
+        {queueItem ? 'Next contact' : 'Choose a number from the seller list'}
       </p>
       {queueItem ? (
-        <p className="mt-1 text-sm font-semibold text-[var(--skc-text-secondary)]">
-          {queueItem.heirName} · <span className="capitalize">{queueItem.relation}</span>
-        </p>
-      ) : null}
+        <div className="mt-3">
+          <h2 className="truncate text-2xl font-black tracking-[-0.03em] text-[var(--skc-text-primary)]">{queueItem.heirName}</h2>
+          <p className="mt-1 text-xs font-bold capitalize text-[var(--skc-text-tertiary)]">{queueItem.relation}</p>
+          <p className="mt-3 font-mono text-lg font-semibold tabular-nums text-[var(--skc-text-secondary)]">{dialDisplay}</p>
+        </div>
+      ) : <p className="mt-3 font-mono text-[28px] font-semibold tabular-nums tracking-[-0.03em] text-[var(--skc-text-primary)]">—</p>}
       <button
         type="button"
         onClick={onCall}
@@ -77,21 +78,18 @@ export function WorkspaceCallController({
         {dialReady ? 'Call selected number' : statusLabel}
       </button>
       <div className="mt-4 border-t border-[var(--skc-separator)] pt-4 text-left">
-        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">Calling from</p>
-        <p className="mt-1 text-sm font-semibold text-[var(--skc-text-primary)]">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">Calling from</p>
+          {queueItem ? <span className="rounded-full bg-[var(--skc-surface-3)] px-2 py-1 text-[9px] font-black uppercase tracking-wider text-[var(--skc-text-tertiary)]">{callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1 ? 'Rotation' : 'Campaign line'}</span> : null}
+        </div>
+        <p className="mt-1.5 text-sm font-semibold text-[var(--skc-text-primary)]">
           {queueItem
             ? effectiveCallerId
               ? formatPhone(effectiveCallerId)
               : 'No approved line available'
             : 'Select a seller number'}
         </p>
-        <p className="mt-1 text-[11px] leading-5 text-[var(--skc-text-tertiary)]">
-          {!queueItem
-            ? 'The reviewed campaign caller ID loads before the call can start.'
-            : callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1
-            ? `Automatic rotation · ${callerPlan.rotationCallerIds.length} approved lines · changes every ${callerPlan.rotateEveryCalls} calls`
-            : 'Campaign-assigned line · verified by the server before every call'}
-        </p>
+        {queueItem && callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1 ? <p className="mt-1 text-[10px] font-semibold text-[var(--skc-text-tertiary)]">{callerPlan.rotationCallerIds.length} approved lines · rotates every {callerPlan.rotateEveryCalls} calls</p> : null}
       </div>
     </div>
   )

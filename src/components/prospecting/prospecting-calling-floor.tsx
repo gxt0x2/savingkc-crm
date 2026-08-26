@@ -640,6 +640,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
               collapsible={false}
               showAllPhones
               onSmsPhone={!readOnlyPreview && currentLeadId ? setSmsTarget : undefined}
+              onContactNoteSaved={() => { void refreshActivities() }}
             />
           )}
         </main>

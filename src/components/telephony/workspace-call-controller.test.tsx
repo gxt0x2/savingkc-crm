@@ -31,10 +31,11 @@ describe('WorkspaceCallController', () => {
       />,
     )
 
-    expect(screen.getByText(/Helen Seller/)).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Helen Seller' })).toBeVisible()
     expect(screen.getByText('(816) 555-0123')).toBeVisible()
     expect(screen.getByText('Calling from')).toBeVisible()
-    expect(screen.getByText('Campaign-assigned line · verified by the server before every call')).toBeVisible()
+    expect(screen.getByText('Campaign line')).toBeVisible()
+    expect(screen.queryByText(/verified by the server before every call/i)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Call selected number' }))
     expect(onCall).toHaveBeenCalledOnce()
   })
@@ -52,7 +53,8 @@ describe('WorkspaceCallController', () => {
       />,
     )
 
-    expect(screen.getByText('Automatic rotation · 2 approved lines · changes every 25 calls')).toBeVisible()
+    expect(screen.getByText('Rotation')).toBeVisible()
+    expect(screen.getByText('2 approved lines · rotates every 25 calls')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Connecting' })).toBeDisabled()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
@@ -71,7 +73,7 @@ describe('WorkspaceCallController', () => {
     )
 
     expect(screen.getByText('Select a seller number')).toBeVisible()
-    expect(screen.getByText('The reviewed campaign caller ID loads before the call can start.')).toBeVisible()
+    expect(screen.queryByText(/reviewed campaign caller ID loads/i)).not.toBeInTheDocument()
     expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
     expect(screen.queryByText('Campaign-assigned line · verified by the server before every call')).not.toBeInTheDocument()
   })
@@ -95,6 +97,8 @@ describe('WorkspaceCallController', () => {
     expect(screen.getByRole('region', { name: 'First call countdown' })).toBeVisible()
     expect(screen.getByText('First call starts in')).toBeVisible()
     expect(screen.getByText('15')).toBeVisible()
+    expect(screen.getByText('Helen Seller')).toBeVisible()
+    expect(screen.getByText('(816) 555-0123')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Call selected number' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Pause before first call' }))
     expect(onPauseAutoStart).toHaveBeenCalledOnce()

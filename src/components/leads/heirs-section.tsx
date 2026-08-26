@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { ContactNoteComposer } from '@/components/leads/contact-note-composer'
 import { formatPhone, toProperCase } from '@/lib/format'
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
 import {
@@ -41,6 +42,8 @@ interface HeirsSectionProps {
   dialerSessionId?: string | null
   /** Read-only campaign review: show every associated number without exposing mutations or telephony actions. */
   readOnlyPreview?: boolean
+  /** Refreshes any surrounding activity timeline after a per-contact note is persisted. */
+  onContactNoteSaved?: () => void
 }
 
 function phoneIcon(type: string | null): string {
@@ -80,6 +83,7 @@ export function HeirsSection({
   ringCount = null,
   dialerSessionId = null,
   readOnlyPreview = false,
+  onContactNoteSaved,
 }: HeirsSectionProps) {
   const [heirs, setHeirs] = useState<Heir[]>([])
   const [loading, setLoading] = useState(true)
@@ -170,10 +174,6 @@ export function HeirsSection({
   }, [])
 
   const totalHeirs = heirs.length
-  const unattemptedPhones = heirs.reduce(
-    (n, h) => n + h.phones.filter((phone) => isAutoCallablePhone(phone) && !phone.attempted).length,
-    0,
-  )
   const queuedPhones = heirs.reduce((count, heir) => count + callablePhonesForHeir(heir).length, 0)
   const verifiedHeirs = heirs.filter((h) => verifiedPhoneOf(h)).length
 
@@ -249,6 +249,26 @@ export function HeirsSection({
       .filter((item) => item.prospect_phone_id !== phone.id)
     dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId)
   }
+
+  const saveContactNote = useCallback(async (heir: Heir, description: string) => {
+    const response = await fetch('/api/prospecting/contact-notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId,
+        prospectId,
+        campaignMemberId,
+        dialerSessionId,
+        contactKey: heir.key,
+        contactName: toProperCase(heir.contact_name),
+        relation: heir.relationship,
+        description,
+      }),
+    })
+    const data = await response.json().catch(() => null) as { error?: string } | null
+    if (!response.ok) throw new Error(data?.error || 'Could not save contact note')
+    onContactNoteSaved?.()
+  }, [campaignMemberId, dialerSessionId, leadId, onContactNoteSaved, prospectId])
 
   useEffect(() => {
     if (readOnlyPreview) return
@@ -366,6 +386,7 @@ export function HeirsSection({
               onCallPhone={(phone) => queueOne(heir, phone)}
               onCallHeir={() => queueHeir(heir)}
               onToggleVerify={toggleVerify}
+              onSaveNote={(description) => saveContactNote(heir, description)}
               readOnlyPreview={readOnlyPreview}
               onSmsPhone={onSmsPhone ? (phone) => onSmsPhone({
                 heirName: toProperCase(heir.contact_name),
@@ -379,18 +400,9 @@ export function HeirsSection({
         </div>
       )}
 
-      {/* Re-sync footer when heirs exist (muted, secondary action) */}
+      {/* One secondary maintenance action; phone-attempt state is already shown on each row. */}
       {!loading && totalHeirs > 0 && (
-        <div className="mt-5 pt-4 border-t border-[var(--ck-border)] flex items-center justify-between">
-          <p className="text-[10px] text-[var(--ck-text-dim)]">
-            {readOnlyPreview
-              ? `${queuedPhones} ready number${queuedPhones === 1 ? '' : 's'} shown · no call attempt will be recorded.`
-              : unattemptedPhones === 0
-              ? verifiedHeirs > 0
-                ? `${verifiedHeirs} of ${totalHeirs} heir${totalHeirs === 1 ? '' : 's'} verified. Re-sync if new data is expected.`
-                : 'All heir phones attempted. Re-sync if new data is expected.'
-              : `${unattemptedPhones} unattempted · auto-advances through queue.`}
-          </p>
+        <div className="mt-4 flex items-center justify-end border-t border-[var(--ck-border)] pt-3">
           {!readOnlyPreview ? <button
             onClick={runSync}
             disabled={isSyncing}
@@ -415,6 +427,7 @@ function HeirRow({
   onCallPhone,
   onCallHeir,
   onToggleVerify,
+  onSaveNote,
   onSmsPhone,
   readOnlyPreview,
 }: {
@@ -425,6 +438,7 @@ function HeirRow({
   onCallPhone: (phone: HeirPhone) => void
   onCallHeir: () => void
   onToggleVerify: (phone: HeirPhone, nextVerified: boolean) => void
+  onSaveNote: (description: string) => Promise<void>
   onSmsPhone?: (phone: HeirPhone) => void
   readOnlyPreview: boolean
 }) {
@@ -437,7 +451,6 @@ function HeirRow({
   const callPersonLabel = freshCallableCount > 0
     ? `Call ${callablePhoneLabel}`
     : `Call ${callablePhoneLabel} again`
-
   // Show every number — recall is never hidden. The verified line (if any)
   // floats to the top and is styled green; the rest stay callable underneath.
   const visiblePhones = verified
@@ -556,6 +569,7 @@ function HeirRow({
           />
         ))}
       </div>
+      {!readOnlyPreview ? <ContactNoteComposer contactName={displayName} onSave={onSaveNote} /> : null}
       </>}
     </div>
   )
