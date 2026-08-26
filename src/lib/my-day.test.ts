@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildMyDay, normalizeMyDayMonth, resolveMyDayDateRange, type BuildMyDayInput, type MyDayActivity, type MyDayLead } from './my-day'
+import {
+  buildMojoAttentionItems,
+  buildMyDay,
+  normalizeMyDayMonth,
+  resolveMyDayDateRange,
+  type BuildMyDayInput,
+  type MyDayActivity,
+  type MyDayLead,
+} from './my-day'
 
 function lead(overrides: Partial<MyDayLead> = {}): MyDayLead {
   return {
@@ -44,7 +52,7 @@ function input(overrides: Partial<BuildMyDayInput> = {}): BuildMyDayInput {
     performance: [
       { metric_date: '2026-08-01', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-08-01T22:00:00.000Z' },
       { metric_date: '2026-08-02', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-08-02T22:00:00.000Z' },
-      { metric_date: '2026-08-03', dialing_seconds: 3600, in_progress_seconds: 0, calls: 10, contacts: 4, leads: 0, appointments: 0, source_fetched_at: '2026-08-03T22:00:00.000Z' },
+      { metric_date: '2026-08-03', dialing_seconds: 3600, in_progress_seconds: 0, calls: 10, contacts: 4, leads: 1, appointments: 0, source_fetched_at: '2026-08-03T22:00:00.000Z' },
       { metric_date: '2026-08-04', dialing_seconds: 7200, in_progress_seconds: 0, calls: 20, contacts: 5, leads: 0, appointments: 0, source_fetched_at: '2026-08-04T22:00:00.000Z' },
       { metric_date: '2026-08-05', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-08-05T22:00:00.000Z' },
     ],
@@ -62,6 +70,8 @@ function input(overrides: Partial<BuildMyDayInput> = {}): BuildMyDayInput {
       created_at: '2026-08-05T17:00:00.000Z',
     })],
     appointments: [{ id: 'appt-1', lead_id: 'lead-1', type: 'in_person', status: 'scheduled', scheduled_at: '2026-08-06T20:00:00.000Z', assigned_to: 'casey', address: '1 Main St', notes: null, created_at: '2026-08-05T17:00:00.000Z' }],
+    attentionItems: [],
+    attentionAvailable: true,
     goals: { dailyCalls: 5, weeklyOpportunities: 5, weeklyAppointments: 2 },
     availability: { mojoPerformance: true, agentStats: true, appointments: true, habits: true },
     ...overrides,
@@ -84,11 +94,32 @@ describe('Casey My Day model', () => {
     expect(report.funnel[4].conversion).toBe(100)
   })
 
+  it('uses the authoritative Mojo lead total even when no new CRM lead row was created', () => {
+    const report = buildMyDay(input({ leads: [] }))
+
+    expect(report.funnel.find((metric) => metric.key === 'leads')?.value).toBe(1)
+    expect(report.week.rows.find((row) => row.key === 'leads')?.days).toEqual([1, 0, 0, null, null])
+  })
+
+  it('credits a Casey qualification event even when the opportunity owner is blank', () => {
+    const report = buildMyDay(input({
+      leads: [],
+      activities: [activity({
+        id: 'unassigned-qualification',
+        lead_id: 'unassigned-lead',
+        agent: 'Casey Davis',
+        metadata: { to_stage: 'qualified', source: 'crm_lifecycle_command_v1' },
+      })],
+    }))
+
+    expect(report.funnel.find((metric) => metric.key === 'opportunities')?.value).toBe(1)
+  })
+
   it('keeps the weekly snapshot aligned Monday through Friday and calculates habits', () => {
     const report = buildMyDay(input())
     expect(report.week.dayLabels).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
     expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, 0, null, null])
-    expect(report.week.rows.find((row) => row.key === 'leads')?.days).toEqual([1, 0, 0, 0, 0])
+    expect(report.week.rows.find((row) => row.key === 'leads')?.days).toEqual([1, 0, 0, null, null])
     expect(report.habits.find((habit) => habit.key === 'vision')?.value).toBe(100)
     expect(report.habits.find((habit) => habit.key === 'objections')?.value).toBe(90)
     expect(report.habits.find((habit) => habit.key === 'followup')?.value).toBe(80)
@@ -221,7 +252,55 @@ describe('Casey My Day model', () => {
     }))
     expect(report.funnel[0].value).toBeNull()
     expect(report.funnel[1].value).toBeNull()
+    expect(report.funnel[2].value).toBeNull()
     expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([null, null, null, null, null])
+  })
+
+  it('surfaces a meaningful Mojo callback on a dead record for human review', () => {
+    const items = buildMojoAttentionItems({
+      events: [{
+        record_id: 'mojo-activity-1583-17451357',
+        lead_id: 'dead-lead',
+        contact_name: 'Seller One',
+        property_address: '1 Main St',
+        call_at: '2026-08-05T15:13:00.000Z',
+        disposition_raw: 'Callback Requested',
+        outcome: 'callback_scheduled',
+        follow_up_at: null,
+      }],
+      leads: [{ id: 'dead-lead', full_name: 'Seller One', property_address: '1 Main St', station: 'dead', classification: 'dead' }],
+      terminalEvents: [{ lead_id: 'dead-lead', to_stage: 'dead', occurred_at: '2026-08-05T15:08:00.000Z' }],
+      range: input().range,
+    })
+
+    expect(items).toEqual([expect.objectContaining({
+      id: 'mojo:mojo-activity-1583-17451357',
+      leadId: 'dead-lead',
+      leadName: 'Seller One',
+      kind: 'terminal_record_activity',
+      href: '/leads/dead-lead',
+      missingFollowUpAt: true,
+    })])
+  })
+
+  it('does not mislabel provider activity that happened before a record was closed', () => {
+    const items = buildMojoAttentionItems({
+      events: [{
+        record_id: 'activity-before-death',
+        lead_id: 'dead-lead',
+        contact_name: 'Seller One',
+        property_address: '1 Main St',
+        call_at: '2026-08-05T15:13:00.000Z',
+        disposition_raw: 'Callback Requested',
+        outcome: 'callback_scheduled',
+        follow_up_at: null,
+      }],
+      leads: [{ id: 'dead-lead', full_name: 'Seller One', property_address: '1 Main St', station: 'dead', classification: 'dead' }],
+      terminalEvents: [{ lead_id: 'dead-lead', to_stage: 'dead', occurred_at: '2026-08-05T16:00:00.000Z' }],
+      range: input().range,
+    })
+
+    expect(items).toEqual([])
   })
 
   it('normalizes invalid month input to the current Central month', () => {

@@ -323,6 +323,43 @@ function FunnelCard({ data }: { data: MyDayData }) {
   )
 }
 
+function ReconciliationAttention({ data }: { data: MyDayData }) {
+  if (data.attention.status === 'available' && data.attention.items.length === 0) return null
+  if (data.attention.status === 'unavailable') {
+    return (
+      <section aria-label="CRM reconciliation status" className="rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-4 py-3 text-xs font-bold text-[var(--crm-warning)]">
+        Mojo-to-CRM conflict checks are unavailable. Lead totals remain visible, but terminal-record activity needs manual verification.
+      </section>
+    )
+  }
+
+  return (
+    <section aria-labelledby="reconciliation-attention-title" className="overflow-hidden rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)]">
+      <header className="flex items-center gap-3 border-b border-[var(--crm-warning-border)] px-4 py-3">
+        <Icon name="warning_amber" className="text-[22px] text-[var(--crm-warning)]" />
+        <div>
+          <h2 id="reconciliation-attention-title" className="text-sm font-black">Mojo activity needs CRM review</h2>
+          <p className="mt-0.5 text-[11px] font-semibold text-[var(--crm-text-muted)]">A meaningful provider outcome landed on a terminal CRM record. It was recorded without silently reopening the record.</p>
+        </div>
+      </header>
+      <div className="divide-y divide-[var(--crm-warning-border)]">
+        {data.attention.items.map((item) => (
+          <div key={item.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black">{item.leadName} · {item.property}</p>
+              <p className="mt-1 text-xs text-[var(--crm-text-muted)]">{item.disposition} · {new Date(item.happenedAt).toLocaleString()}</p>
+              {item.missingFollowUpAt ? <p className="mt-1 text-[11px] font-black text-[var(--crm-danger)]">No callback time was supplied by Mojo.</p> : null}
+            </div>
+            <Link href={item.href} className="crm-secondary-button inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-black">
+              Review record <Icon name="arrow_forward" className="text-[16px]" />
+            </Link>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function WeeklySnapshot({ data }: { data: MyDayData }) {
   return (
     <section aria-labelledby="weekly-snapshot-title" className="crm-panel overflow-hidden rounded-xl">
@@ -507,6 +544,7 @@ export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initia
       </header>
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void loadRange(rangeRequest(data.range))} className="underline">Retry</button></div> : null}
       <FunnelCard data={data} />
+      <ReconciliationAttention data={data} />
       <WeeklySnapshot data={data} />
       {canReviewCalls ? <MyDayCallReview onReviewActiveChange={setScorecardActive} /> : null}
       <CaseyAndonQueue />

@@ -2,17 +2,21 @@ import 'server-only'
 
 import { isCurrentUserAdmin } from '@/lib/auth/admin'
 import {
+  buildMojoAttentionItems,
   buildMyDay,
   resolveMyDayDateRange,
   type MyDayActivity,
   type MyDayAgentStat,
+  type MyDayAttentionLead,
   type MyDayAppointment,
   type MyDayData,
   type MyDayGoalSet,
   type MyDayLead,
   type MyDayNativeDialerPerformanceRow,
+  type MyDayMojoEvent,
   type MyDayPerformanceRow,
   type MyDayRangeRequest,
+  type MyDayTerminalEvent,
 } from '@/lib/my-day'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
@@ -20,6 +24,7 @@ import { CASEY_CRM_EMAIL } from '@/lib/telephony/agent-identity'
 import { loadDialerDailyPerformance } from '@/lib/server/dialer-daily-performance'
 
 const TASK_ACTIVITY_TYPES = ['task', 'appointment', 'follow_up', 'callback', 'send_offer'] as const
+const FUNNEL_ACTIVITY_TYPES = ['status_change', 'outcome', 'appointment', 'offer'] as const
 
 /**
  * Casey is the only agent who receives My Day in navigation. SavingKC admins
@@ -61,7 +66,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
   activityEnd.setUTCDate(activityEnd.getUTCDate() + 1)
   const commitmentEnd = new Date(now.getTime() + 14 * 86_400_000).toISOString()
 
-  const [statsResult, performanceResult, leadsResult, rolesResult, dialerPerformanceResult] = await Promise.all([
+  const [statsResult, performanceResult, leadsResult, rolesResult, dialerPerformanceResult, mojoEventsResult] = await Promise.all([
     db
       .from('agent_daily_stats')
       .select('date, calls_made, meaningful_conversations, followups_completed, followups_missed, metadata')
@@ -95,11 +100,21 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       data: null,
       error: error instanceof Error ? error : new Error('Native dialer performance unavailable'),
     })),
+    db
+      .from('crm_mojo_call_events')
+      .select('record_id, lead_id, contact_name, property_address, call_at, disposition_raw, outcome, follow_up_at')
+      .eq('agent_key', 'casey')
+      .gte('call_at', activityStart.toISOString())
+      .lte('call_at', activityEnd.toISOString())
+      .order('call_at', { ascending: true })
+      .limit(1000),
   ])
 
   if (leadsResult.error) throw new Error(`Casey's pipeline could not load: ${leadsResult.error.message}`)
   const leads = (leadsResult.data ?? []) as MyDayLead[]
   const leadIds = leads.map((lead) => lead.id)
+  const mojoEvents = mojoEventsResult.error ? [] : (mojoEventsResult.data ?? []) as MyDayMojoEvent[]
+  const attentionLeadIds = [...new Set(mojoEvents.map((event) => event.lead_id).filter((id): id is string => Boolean(id)))]
 
   const activityQuery = leadIds.length > 0
     ? db
@@ -112,8 +127,35 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .limit(10000)
     : Promise.resolve({ data: [], error: null })
 
-  const [activityResult, agentTasksResult, assignedTasksResult, appointmentsResult] = await Promise.all([
+  const attentionLeadsQuery = attentionLeadIds.length > 0
+    ? db
+      .from('leads')
+      .select('id, full_name, property_address, station, classification')
+      .in('id', attentionLeadIds)
+      .limit(1000)
+    : Promise.resolve({ data: [], error: null })
+  const terminalEventsQuery = attentionLeadIds.length > 0
+    ? db
+      .from('crm_lifecycle_events')
+      .select('lead_id, to_stage, occurred_at')
+      .in('lead_id', attentionLeadIds)
+      .in('to_stage', ['dead', 'closed_lost'])
+      .lte('occurred_at', activityEnd.toISOString())
+      .order('occurred_at', { ascending: true })
+      .limit(1000)
+    : Promise.resolve({ data: [], error: null })
+
+  const [activityResult, caseyFunnelActivityResult, agentTasksResult, assignedTasksResult, appointmentsResult, attentionLeadsResult, terminalEventsResult] = await Promise.all([
     activityQuery,
+    db
+      .from('lead_activities')
+      .select('id, lead_id, activity_type, description, agent, metadata, created_at')
+      .in('activity_type', [...FUNNEL_ACTIVITY_TYPES])
+      .ilike('agent', '%casey%')
+      .gte('created_at', activityStart.toISOString())
+      .lte('created_at', activityEnd.toISOString())
+      .order('created_at', { ascending: true })
+      .limit(10000),
     db
       .from('lead_activities')
       .select('id, lead_id, activity_type, description, agent, metadata, created_at')
@@ -136,9 +178,12 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .lte('scheduled_at', commitmentEnd)
       .order('scheduled_at', { ascending: true })
       .limit(1000),
+    attentionLeadsQuery,
+    terminalEventsQuery,
   ])
 
   if (activityResult.error) throw new Error(`Casey's activity history could not load: ${activityResult.error.message}`)
+  if (caseyFunnelActivityResult.error) throw new Error(`Casey's funnel history could not load: ${caseyFunnelActivityResult.error.message}`)
   const taskErrors = [agentTasksResult.error, assignedTasksResult.error].filter(Boolean)
   if (taskErrors.length === 2) throw new Error(`Casey's task queue could not load: ${taskErrors[0]?.message}`)
 
@@ -148,6 +193,15 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
     weeklyOpportunities: configuredNumber(targets?.leads_qualified_per_week),
     weeklyAppointments: configuredNumber(targets?.appointments_set_per_week),
   }
+  const attentionAvailable = !mojoEventsResult.error && !attentionLeadsResult.error && !terminalEventsResult.error
+  const attentionItems = attentionAvailable
+    ? buildMojoAttentionItems({
+      events: mojoEvents,
+      leads: (attentionLeadsResult.data ?? []) as MyDayAttentionLead[],
+      terminalEvents: (terminalEventsResult.data ?? []) as MyDayTerminalEvent[],
+      range,
+    })
+    : []
 
   return buildMyDay({
     month,
@@ -157,12 +211,17 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
     performance: performanceResult.error ? [] : (performanceResult.data ?? []) as MyDayPerformanceRow[],
     dialerPerformance: (dialerPerformanceResult.data?.rows ?? []) as MyDayNativeDialerPerformanceRow[],
     leads,
-    activities: (activityResult.data ?? []) as MyDayActivity[],
+    activities: dedupeActivities([
+      ...((activityResult.data ?? []) as MyDayActivity[]),
+      ...((caseyFunnelActivityResult.data ?? []) as MyDayActivity[]),
+    ]),
     tasks: dedupeActivities([
       ...((agentTasksResult.data ?? []) as MyDayActivity[]),
       ...((assignedTasksResult.data ?? []) as MyDayActivity[]),
     ]),
     appointments: appointmentsResult.error ? [] : (appointmentsResult.data ?? []) as MyDayAppointment[],
+    attentionItems,
+    attentionAvailable,
     goals,
     availability: {
       mojoPerformance: !performanceResult.error,
