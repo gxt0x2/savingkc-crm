@@ -135,7 +135,14 @@ describe('web dialer call intent authorization', () => {
       token: 'signed-intent',
       claims: { to: '+19135550123', callerId: '+18167277667', kind: 'lead', leadId, prospectId: null, prospectPhoneId: null, campaignMemberId: null, clientAttemptId: 'attempt-1', expiresAt: 123 },
     })
-    mocks.getDialerSession.mockResolvedValue({ id: sessionId, currentSubjectKind: 'lead', currentSubjectId: leadId, currentCampaignMemberId: null, callerId: '+18167277667' })
+    mocks.getDialerSession.mockResolvedValue({
+      id: sessionId,
+      currentSubjectKind: 'lead',
+      currentSubjectId: leadId,
+      currentCampaignMemberId: null,
+      callerId: '+18167277667',
+      settingsSnapshot: { ringCount: 6 },
+    })
 
     const response = await POST(request({
       phone: '(913) 555-0123',
@@ -160,6 +167,7 @@ describe('web dialer call intent authorization', () => {
       phone: '+19135550123',
       callerId: '+18167277667',
     })
+    await expect(response.clone().json()).resolves.toMatchObject({ ringCount: 6 })
   })
 
   it('uses the server-owned session caller ID instead of a stale agent default', async () => {

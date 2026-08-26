@@ -15,19 +15,19 @@ export type ProspectingCampaignStatus = typeof PROSPECTING_CAMPAIGN_STATUSES[num
 export type ProspectingCampaignActivityFilter = typeof PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS[number]
 export type ProspectingDialerStartBehavior = 'resume' | 'first_unworked'
 export type ProspectingDialerCallerMode = 'static' | 'rotation'
-export type ProspectingDialerAttemptLimit = 4 | 5 | 6 | 7
+export type ProspectingDialerRingCount = 4 | 5 | 6 | 7
 export type ProspectingDialerRecencyHours = 24 | 72 | 168 | 336 | 720
 
 export interface ProspectingDialerSessionSetup {
   startBehavior: ProspectingDialerStartBehavior
   callerMode: ProspectingDialerCallerMode
   callerIds: string[]
-  maxAttemptsPerNumber: ProspectingDialerAttemptLimit
+  ringCount: ProspectingDialerRingCount
   notDialedHours: ProspectingDialerRecencyHours | null
   notContactedHours: ProspectingDialerRecencyHours | null
 }
 
-export const PROSPECTING_DIALER_ATTEMPT_LIMITS = [4, 5, 6, 7] as const
+export const PROSPECTING_DIALER_RING_COUNTS = [4, 5, 6, 7] as const
 export const PROSPECTING_DIALER_RECENCY_HOURS = [24, 72, 168, 336, 720] as const
 
 export function defaultProspectingDialerSessionSetup(): ProspectingDialerSessionSetup {
@@ -35,7 +35,7 @@ export function defaultProspectingDialerSessionSetup(): ProspectingDialerSession
     startBehavior: 'resume',
     callerMode: 'static',
     callerIds: COLD_CALL_DIALER_NUMBERS[0] ? [COLD_CALL_DIALER_NUMBERS[0].value] : [],
-    maxAttemptsPerNumber: 7,
+    ringCount: 7,
     notDialedHours: null,
     notContactedHours: null,
   }
@@ -60,9 +60,9 @@ export function parseProspectingDialerSessionSetup(value: unknown): ProspectingD
   const startBehavior = row.startBehavior === undefined ? defaults.startBehavior : text(row.startBehavior)
   const callerMode = row.callerMode === undefined ? defaults.callerMode : text(row.callerMode)
   const rawCallerIds = row.callerIds === undefined ? defaults.callerIds : row.callerIds
-  const maxAttemptsPerNumber = row.maxAttemptsPerNumber === undefined
-    ? defaults.maxAttemptsPerNumber
-    : Number(row.maxAttemptsPerNumber)
+  const ringCount = row.ringCount === undefined
+    ? defaults.ringCount
+    : Number(row.ringCount)
 
   if (startBehavior !== 'resume' && startBehavior !== 'first_unworked') {
     throw new ProspectingCampaignInputError('invalid_start_behavior', 'Choose Resume where I stopped or First unworked seller')
@@ -86,15 +86,15 @@ export function parseProspectingDialerSessionSetup(value: unknown): ProspectingD
   if (callerIds.some((callerId) => !isColdCallDialerNumber(callerId))) {
     throw new ProspectingCampaignInputError('invalid_session_setup', 'Prospecting sessions can use only designated cold-call numbers')
   }
-  if (!PROSPECTING_DIALER_ATTEMPT_LIMITS.includes(maxAttemptsPerNumber as ProspectingDialerAttemptLimit)) {
-    throw new ProspectingCampaignInputError('invalid_session_setup', 'Choose an attempt limit from 4 through 7')
+  if (!PROSPECTING_DIALER_RING_COUNTS.includes(ringCount as ProspectingDialerRingCount)) {
+    throw new ProspectingCampaignInputError('invalid_session_setup', 'Choose a ring count from 4 through 7')
   }
 
   return {
     startBehavior,
     callerMode,
     callerIds,
-    maxAttemptsPerNumber: maxAttemptsPerNumber as ProspectingDialerAttemptLimit,
+    ringCount: ringCount as ProspectingDialerRingCount,
     notDialedHours: parseRecencyHours(row.notDialedHours, 'Not dialed'),
     notContactedHours: parseRecencyHours(row.notContactedHours, 'Not contacted'),
   }

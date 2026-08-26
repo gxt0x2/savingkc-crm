@@ -80,6 +80,7 @@ interface DispositionModalProps {
   isSaving?: boolean
   contact?: ContactSummary
   variant?: 'standard' | 'prospecting' | 'compact'
+  autoSubmitOnPick?: boolean
   primaryActionLabel?: string
   secondaryActionLabel?: string
   showSecondaryAction?: boolean
@@ -182,6 +183,7 @@ export function DispositionModal({
   isSaving = false,
   contact,
   variant = 'standard',
+  autoSubmitOnPick = true,
   primaryActionLabel = 'Save & Next Lead',
   secondaryActionLabel = 'Save & Close',
   showSecondaryAction = true,
@@ -204,7 +206,7 @@ export function DispositionModal({
 
   const isControlledDisposition = selectedDisposition !== undefined
   const isControlledNotes = notes !== undefined
-  const autoSubmitVariant = variant === 'prospecting'
+  const autoSubmitVariant = variant === 'prospecting' && autoSubmitOnPick
 
   useEffect(() => {
     if (!open) return

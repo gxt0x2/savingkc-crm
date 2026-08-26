@@ -2,7 +2,7 @@
 
 import { Icon } from '@/components/ui/icon'
 
-export type WorkspaceSessionAction = 'hangup' | 'pause' | 'resume' | 'skip' | 'dead' | 'end'
+export type WorkspaceSessionAction = 'hangup' | 'pause' | 'resume' | 'skip' | 'end'
 
 type WorkspaceSessionControlsProps = {
   status: 'active' | 'paused' | 'completed' | 'stopped' | null
@@ -46,14 +46,6 @@ export function WorkspaceSessionControls({
         className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-4 text-sm font-bold text-[var(--skc-text-primary)] hover:bg-[var(--skc-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
       >
         <Icon name="skip_next" size="text-lg" /> Skip seller
-      </button>
-      <button
-        type="button"
-        onClick={() => onAction('dead')}
-        disabled={callBusy || outcomeRequired || status !== 'active'}
-        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-4 text-sm font-bold text-[var(--skc-text-secondary)] hover:bg-[var(--skc-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <Icon name="person_off" size="text-lg" /> Mark seller dead
       </button>
       <button
         type="button"

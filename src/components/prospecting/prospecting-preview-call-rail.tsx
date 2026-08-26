@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { WorkspaceCallController } from '@/components/telephony/workspace-call-controller'
+import { WorkspaceDispositionControls } from '@/components/telephony/workspace-disposition-controls'
 import { FIRST_DIAL_COUNTDOWN_SECONDS } from '@/components/telephony/use-dialer-start-countdown'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
@@ -15,17 +16,17 @@ type ProspectingPreviewCallRailProps = {
   callerMode: string
   rotationNumbers: string
   startBehavior: string
-  maxAttempts: string
+  ringCount: string
   notDialedHours: string | null
   notContactedHours: string | null
 }
 
 function recencySummary(value: string | null) {
-  if (!value) return 'No recency hold'
+  if (!value) return 'No filter'
   const hours = Number(value)
-  if (hours === 24) return 'Hold calls from last 24 hours'
-  if (hours % 24 === 0) return `Hold calls from last ${hours / 24} days`
-  return `Hold calls from last ${hours} hours`
+  if (hours === 24) return '24 hours'
+  if (hours % 24 === 0) return `${hours / 24} days`
+  return `${hours} hours`
 }
 
 export function ProspectingPreviewCallRail({
@@ -35,7 +36,7 @@ export function ProspectingPreviewCallRail({
   callerMode,
   rotationNumbers,
   startBehavior,
-  maxAttempts,
+  ringCount,
   notDialedHours,
   notContactedHours,
 }: ProspectingPreviewCallRailProps) {
@@ -112,12 +113,14 @@ export function ProspectingPreviewCallRail({
           statusLabel={previewStatus}
         />
 
+        <WorkspaceDispositionControls outcomeRequired previewOnly />
+
         <section aria-label="Preview session policy" className="rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-4 text-xs">
           <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--skc-text-tertiary)]">Session policy</p>
           <dl className="mt-3 space-y-2 text-[var(--skc-text-secondary)]">
             <div className="flex justify-between gap-3"><dt>Start</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{startBehavior === 'first_unworked' ? 'First unworked seller' : 'Resume saved place'}</dd></div>
             <div className="flex justify-between gap-3"><dt>Caller ID</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{callerPlan.mode === 'rotation' ? `${callerPlan.rotationCallerIds.length} rotating lines` : 'Static line'}</dd></div>
-            <div className="flex justify-between gap-3"><dt>Attempt limit</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{maxAttempts || '7'} per number</dd></div>
+            <div className="flex justify-between gap-3"><dt>Rings before no answer</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{ringCount || '7'} rings</dd></div>
             <div className="flex justify-between gap-3"><dt>Not dialed</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{recencySummary(notDialedHours)}</dd></div>
             <div className="flex justify-between gap-3"><dt>Not contacted</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{recencySummary(notContactedHours)}</dd></div>
           </dl>

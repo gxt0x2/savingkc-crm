@@ -230,7 +230,6 @@ function mapDatabaseError(error: { message?: string; code?: string } | null | un
   if (raw.includes('session_not_found')) return new DialerSessionError('session_not_found', 404, 'Dialer session not found')
   if (raw.includes('call_in_progress') || raw.includes('attempt_in_progress')) return new DialerSessionError('call_in_progress', 409, 'Finish or disposition the current call first')
   if (raw.includes('session_stop_requested')) return new DialerSessionError('session_stop_requested', 409, 'This calling session is ending; finish the current call outcome')
-  if (raw.includes('dialer_attempt_limit')) return new DialerSessionError('dialer_attempt_limit', 409, 'This number reached the session attempt limit')
   if (raw.includes('dialer_recently_contacted')) return new DialerSessionError('dialer_recently_contacted', 409, 'This number was contacted inside the session hold period')
   if (raw.includes('dialer_recently_dialed')) return new DialerSessionError('dialer_recently_dialed', 409, 'This number was dialed inside the session hold period')
   if (raw.includes('session_not_active')) return new DialerSessionError('session_not_active', 409, 'Resume the dialer session before calling')

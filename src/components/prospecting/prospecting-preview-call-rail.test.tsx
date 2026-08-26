@@ -15,7 +15,7 @@ const props = {
   callerMode: 'static',
   rotationNumbers: '+18163100845',
   startBehavior: 'resume',
-  maxAttempts: '7',
+  ringCount: '7',
   notDialedHours: '24',
   notContactedHours: '72',
 }
@@ -39,7 +39,8 @@ describe('ProspectingPreviewCallRail', () => {
     expect(screen.getByText('Helen Seller')).toBeVisible()
     expect(screen.getByText('+18165550123')).toBeVisible()
     expect(screen.getByText('Resume saved place')).toBeVisible()
-    expect(screen.getByText('7 per number')).toBeVisible()
+    expect(screen.getByText('7 rings')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Call disposition controls' })).toBeVisible()
 
     for (let second = 0; second < 15; second += 1) {
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })

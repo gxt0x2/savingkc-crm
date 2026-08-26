@@ -28,7 +28,7 @@ describe('prospecting campaign launch route', () => {
         startBehavior: 'resume',
         callerMode: 'static',
         callerIds: ['+18163100845'],
-        maxAttemptsPerNumber: 7,
+        ringCount: 7,
       }),
     )
   })
@@ -61,7 +61,7 @@ describe('prospecting campaign launch route', () => {
       body: JSON.stringify({
         callerMode: 'rotation',
         callerIds: ['+18166088588', '+18163100845'],
-        maxAttemptsPerNumber: 7,
+        ringCount: 7,
       }),
     }), context)
 

@@ -278,7 +278,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
         rotation_numbers: setup.callerIds.join(','),
         rotation_every: '1',
         start_behavior: setup.startBehavior,
-        max_attempts: String(setup.maxAttemptsPerNumber),
+        ring_count: String(setup.ringCount),
         return_to: `/prospecting?campaign=${encodeURIComponent(detail.id)}`,
       })
       if (setup.notDialedHours !== null) query.set('not_dialed_hours', String(setup.notDialedHours))
@@ -298,6 +298,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
         session_id: result.session.id,
         campaign: detail.id,
         queue_label: detail.name,
+        ring_count: String(setup.ringCount),
         return_to: `/prospecting?campaign=${encodeURIComponent(detail.id)}`,
       })
       window.sessionStorage.setItem(`savingkc:dialer-autostart:${result.session.id}`, '1')

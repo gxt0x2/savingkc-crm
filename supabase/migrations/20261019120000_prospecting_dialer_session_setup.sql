@@ -1,6 +1,6 @@
 -- Durable agent-facing setup for the single-line Prospecting dialer.
 -- Caller IDs are restricted to cold-call-designated lines, queue eligibility
--- is bounded by recorded attempts/recency, and the final attempt boundary
+-- is bounded by recorded recency, and the final attempt boundary
 -- rechecks the same policy before a call can be authorized.
 
 SET lock_timeout = '10s';
@@ -73,12 +73,6 @@ AS $$
   SELECT
     public.prospecting_phone_key_v1(p_phone) <> ''
     AND (
-      SELECT count(*)
-      FROM public.dialer_session_attempts attempt
-      WHERE public.prospecting_phone_key_v1(attempt.phone) = public.prospecting_phone_key_v1(p_phone)
-        AND attempt.status IN ('dialing', 'connected', 'awaiting_disposition', 'dispositioned')
-    ) < coalesce((p_session_setup ->> 'maxAttemptsPerNumber')::integer, 7)
-    AND (
       nullif(p_session_setup ->> 'notDialedHours', '') IS NULL
       OR NOT EXISTS (
         SELECT 1
@@ -129,7 +123,7 @@ DECLARE
   start_behavior text;
   caller_mode text;
   caller_ids text[];
-  max_attempts integer;
+  ring_count integer;
   not_dialed_hours integer;
   not_contacted_hours integer;
   session_settings jsonb;
@@ -143,13 +137,13 @@ BEGIN
 
   start_behavior := lower(trim(coalesce(setup ->> 'startBehavior', 'resume')));
   caller_mode := lower(trim(coalesce(setup ->> 'callerMode', 'static')));
-  max_attempts := coalesce((setup ->> 'maxAttemptsPerNumber')::integer, 7);
+  ring_count := coalesce((setup ->> 'ringCount')::integer, 7);
   not_dialed_hours := nullif(setup ->> 'notDialedHours', '')::integer;
   not_contacted_hours := nullif(setup ->> 'notContactedHours', '')::integer;
 
   IF start_behavior NOT IN ('resume', 'first_unworked')
     OR caller_mode NOT IN ('static', 'rotation')
-    OR max_attempts NOT BETWEEN 4 AND 7
+    OR ring_count NOT BETWEEN 4 AND 7
     OR (not_dialed_hours IS NOT NULL AND not_dialed_hours NOT IN (24, 72, 168, 336, 720))
     OR (not_contacted_hours IS NOT NULL AND not_contacted_hours NOT IN (24, 72, 168, 336, 720))
     OR jsonb_typeof(setup -> 'callerIds') <> 'array'
@@ -169,7 +163,7 @@ BEGIN
     'startBehavior', start_behavior,
     'callerMode', caller_mode,
     'callerIds', to_jsonb(caller_ids),
-    'maxAttemptsPerNumber', max_attempts,
+    'ringCount', ring_count,
     'notDialedHours', not_dialed_hours,
     'notContactedHours', not_contacted_hours
   );
@@ -188,6 +182,7 @@ BEGIN
     'prospectingCampaignId', p_campaign_id,
     'campaignName', campaign_row.name,
     'startBehavior', start_behavior,
+    'ringCount', ring_count,
     'prospectingSession', setup,
     'callerPlan', jsonb_build_object(
       'mode', caller_mode,
@@ -390,13 +385,6 @@ BEGIN
 
     PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('dialer-phone:' || normalized_phone, 0));
     IF NOT public.prospecting_dialer_phone_is_eligible_v1(p_phone, setup) THEN
-      IF (
-        SELECT count(*) FROM public.dialer_session_attempts attempt
-        WHERE public.prospecting_phone_key_v1(attempt.phone) = normalized_phone
-          AND attempt.status IN ('dialing', 'connected', 'awaiting_disposition', 'dispositioned')
-      ) >= (setup ->> 'maxAttemptsPerNumber')::integer THEN
-        RAISE EXCEPTION 'dialer_attempt_limit';
-      END IF;
       IF nullif(setup ->> 'notContactedHours', '') IS NOT NULL AND EXISTS (
         SELECT 1 FROM public.dialer_session_attempts attempt
         WHERE public.prospecting_phone_key_v1(attempt.phone) = normalized_phone

@@ -384,7 +384,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     callerMode={searchParams.get('caller_mode') || 'static'}
     rotationNumbers={searchParams.get('rotation_numbers') || ''}
     startBehavior={searchParams.get('start_behavior') || 'resume'}
-    maxAttempts={searchParams.get('max_attempts') || '7'}
+              ringCount={searchParams.get('ring_count') || '7'}
     notDialedHours={searchParams.get('not_dialed_hours')}
     notContactedHours={searchParams.get('not_contacted_hours')}
   /> : shouldRenderDialer ? <DialerPanel

@@ -12,6 +12,7 @@ export type DialerCallIntentAllowedResponse = {
   campaignMemberId: string | null
   clientAttemptId: string
   sessionId?: string | null
+  ringCount?: number | null
 }
 
 type DialerCallIntentDeniedResponse = {
@@ -64,5 +65,6 @@ export async function requestDialerCallIntent(input: {
     campaignMemberId: payload.campaignMemberId ?? null,
     clientAttemptId: payload.clientAttemptId,
     sessionId: payload.sessionId ?? input.sessionId ?? null,
+    ringCount: typeof payload.ringCount === 'number' ? payload.ringCount : null,
   }
 }

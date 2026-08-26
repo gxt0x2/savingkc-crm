@@ -91,7 +91,7 @@ describe('AppShell first-load work', () => {
 
   it('keeps a safe persistent call rail visible during a Prospecting preview', () => {
     navigation.pathname = '/prospecting'
-    navigation.search = 'preview_campaign=campaign-1&queue_label=Pilot&caller_id=%2B18163100845&caller_mode=static&start_behavior=resume&max_attempts=7'
+    navigation.search = 'preview_campaign=campaign-1&queue_label=Pilot&caller_id=%2B18163100845&caller_mode=static&start_behavior=resume&ring_count=7'
     render(<AppShell><main>Calling workflow preview</main></AppShell>)
 
     expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')

@@ -62,6 +62,11 @@ function sessionCallerIdForAttempt(
   return requestedCallerId || allowed[0]
 }
 
+function sessionRingCount(settingsSnapshot: Record<string, unknown>): number | null {
+  const value = Number(settingsSnapshot.ringCount)
+  return Number.isInteger(value) && value >= 4 && value <= 7 ? value : null
+}
+
 export async function POST(request: Request) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return json({ allowed: false, error: 'Unauthorized' }, 401)
@@ -187,6 +192,7 @@ export async function POST(request: Request) {
       campaignMemberId: issued.claims.campaignMemberId,
       clientAttemptId: issued.claims.clientAttemptId,
       sessionId,
+      ringCount: session ? sessionRingCount(session.settingsSnapshot || {}) : null,
       expiresAt: issued.claims.expiresAt,
     })
   } catch (error) {

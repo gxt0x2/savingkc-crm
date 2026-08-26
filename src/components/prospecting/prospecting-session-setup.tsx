@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import {
-  PROSPECTING_DIALER_ATTEMPT_LIMITS,
+  PROSPECTING_DIALER_RING_COUNTS,
   PROSPECTING_DIALER_RECENCY_HOURS,
   defaultProspectingDialerSessionSetup,
   type ProspectingDialerSessionSetup,
@@ -26,19 +26,16 @@ function initialSetup(campaignCallerId: string | null): ProspectingDialerSession
 }
 
 function recencyLabel(hours: number | null) {
-  if (hours === null) return 'Any time'
-  if (hours === 24) return 'Last 24 hours'
-  if (hours < 168) return `Last ${hours / 24} days`
-  if (hours === 168) return 'Last 7 days'
-  if (hours === 336) return 'Last 14 days'
-  return 'Last 30 days'
+  if (hours === null) return 'No filter'
+  if (hours === 24) return '24 hours'
+  return `${hours / 24} days`
 }
 
 function summary(setup: ProspectingDialerSessionSetup) {
   const identity = setup.callerMode === 'rotation'
     ? `Rotate ${setup.callerIds.length} lines`
     : formatPhone(setup.callerIds[0] || '')
-  return `${identity} · stop after ${setup.maxAttemptsPerNumber}`
+  return `${identity} · ${setup.ringCount} rings`
 }
 
 export function ProspectingSessionSetup({
@@ -142,9 +139,9 @@ export function ProspectingSessionSetup({
 
           <div className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4">
             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--crm-text-muted)]">Calling eligibility</p>
-            <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Maximum attempts per number<select aria-label="Maximum attempts per number" value={draft.maxAttemptsPerNumber} onChange={(event) => setDraft((current) => ({ ...current, maxAttemptsPerNumber: Number(event.target.value) as ProspectingDialerSessionSetup['maxAttemptsPerNumber'] }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold">{PROSPECTING_DIALER_ATTEMPT_LIMITS.map((limit) => <option key={limit} value={limit}>{limit} attempts</option>)}</select></label>
-            <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Do not redial within<select aria-label="Not dialed time frame" value={draft.notDialedHours ?? ''} onChange={(event) => setDraft((current) => ({ ...current, notDialedHours: event.target.value ? Number(event.target.value) as ProspectingDialerSessionSetup['notDialedHours'] : null }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold"><option value="">Any time</option>{PROSPECTING_DIALER_RECENCY_HOURS.map((hours) => <option key={hours} value={hours}>{recencyLabel(hours)}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Holds numbers dialed in the selected period.</span></label>
-            <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Do not contact again within<select aria-label="Not contacted time frame" value={draft.notContactedHours ?? ''} onChange={(event) => setDraft((current) => ({ ...current, notContactedHours: event.target.value ? Number(event.target.value) as ProspectingDialerSessionSetup['notContactedHours'] : null }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold"><option value="">Any time</option>{PROSPECTING_DIALER_RECENCY_HOURS.map((hours) => <option key={hours} value={hours}>{recencyLabel(hours)}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Holds numbers with a recorded conversation.</span></label>
+            <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Rings before no answer<select aria-label="Rings before no answer" value={draft.ringCount} onChange={(event) => setDraft((current) => ({ ...current, ringCount: Number(event.target.value) as ProspectingDialerSessionSetup['ringCount'] }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold">{PROSPECTING_DIALER_RING_COUNTS.map((count) => <option key={count} value={count}>{count} rings</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Treat the call as No Answer after this many rings.</span></label>
+            <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Not dialed<select aria-label="Not dialed time frame" value={draft.notDialedHours ?? ''} onChange={(event) => setDraft((current) => ({ ...current, notDialedHours: event.target.value ? Number(event.target.value) as ProspectingDialerSessionSetup['notDialedHours'] : null }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold"><option value="">No filter</option>{PROSPECTING_DIALER_RECENCY_HOURS.map((hours) => <option key={hours} value={hours}>{recencyLabel(hours)}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Only dial numbers not attempted during the selected time range.</span></label>
+            <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Not contacted<select aria-label="Not contacted time frame" value={draft.notContactedHours ?? ''} onChange={(event) => setDraft((current) => ({ ...current, notContactedHours: event.target.value ? Number(event.target.value) as ProspectingDialerSessionSetup['notContactedHours'] : null }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold"><option value="">No filter</option>{PROSPECTING_DIALER_RECENCY_HOURS.map((hours) => <option key={hours} value={hours}>{recencyLabel(hours)}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Only dial numbers without a recorded Contact result during the selected time range.</span></label>
             <button type="button" onClick={applySetup} className="crm-primary-button mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black"><Icon name="check" className="text-lg" />Apply setup</button>
           </div>
         </div>

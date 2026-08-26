@@ -81,26 +81,26 @@ describe('prospecting campaign contract', () => {
       startBehavior: 'first_unworked',
       callerMode: 'rotation',
       callerIds: ['(816) 310-0845', '+18162538313'],
-      maxAttemptsPerNumber: 5,
+      ringCount: 5,
       notDialedHours: 72,
       notContactedHours: 168,
     })).toEqual({
       startBehavior: 'first_unworked',
       callerMode: 'rotation',
       callerIds: ['+18163100845', '+18162538313'],
-      maxAttemptsPerNumber: 5,
+      ringCount: 5,
       notDialedHours: 72,
       notContactedHours: 168,
     })
     expect(() => parseProspectingDialerSessionSetup({
       callerMode: 'static',
       callerIds: ['+18166088588'],
-      maxAttemptsPerNumber: 7,
+      ringCount: 7,
     })).toThrow(/only designated cold-call numbers/i)
     expect(() => parseProspectingDialerSessionSetup({
       callerMode: 'rotation',
       callerIds: Array.from({ length: 6 }, (_, index) => `+1816310084${index}`),
-      maxAttemptsPerNumber: 7,
+      ringCount: 7,
     })).toThrow(/between 1 and 5/i)
   })
 
@@ -109,7 +109,7 @@ describe('prospecting campaign contract', () => {
       startBehavior: 'resume',
       callerMode: 'static',
       callerIds: ['+18163100845'],
-      maxAttemptsPerNumber: 7,
+      ringCount: 7,
       notDialedHours: null,
       notContactedHours: null,
     })

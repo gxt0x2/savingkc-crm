@@ -11,6 +11,7 @@ describe('prospecting dialer session setup migration', () => {
   it('persists the caller plan and bounded agent setup in the session snapshot', () => {
     expect(migration).toContain("'settingsSnapshot', coalesce(p_session.settings_snapshot")
     expect(migration).toContain("'prospectingSession', setup")
+    expect(migration).toContain("'ringCount', ring_count")
     expect(migration).toContain("'callerPlan', jsonb_build_object")
     expect(migration).toContain("'rotateEveryCalls', 1")
   })
@@ -18,7 +19,7 @@ describe('prospecting dialer session setup migration', () => {
   it('keeps queue creation and final attempt authorization under the same eligibility rules', () => {
     expect(migration).toContain('public.prospecting_dialer_phone_is_eligible_v1(contact.phone_snapshot, setup)')
     expect(migration).toContain('IF NOT public.prospecting_dialer_phone_is_eligible_v1(p_phone, setup)')
-    expect(migration).toContain("RAISE EXCEPTION 'dialer_attempt_limit'")
+    expect(migration).not.toContain("RAISE EXCEPTION 'dialer_attempt_limit'")
     expect(migration).toContain("RAISE EXCEPTION 'dialer_recently_contacted'")
     expect(migration).toContain("RAISE EXCEPTION 'dialer_recently_dialed'")
   })

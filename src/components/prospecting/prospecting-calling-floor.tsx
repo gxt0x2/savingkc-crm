@@ -98,9 +98,12 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     ? false
     : true
   const sessionRingCountParam = params.get('ring_count')
-  const sessionRingCount = sessionRingCountParam && Number.isFinite(Number(sessionRingCountParam))
-    ? Number(sessionRingCountParam)
-    : null
+  const savedSessionRingCount = durableSession?.settingsSnapshot?.ringCount
+  const sessionRingCount = typeof savedSessionRingCount === 'number' && savedSessionRingCount >= 4 && savedSessionRingCount <= 7
+    ? savedSessionRingCount
+    : sessionRingCountParam && Number.isFinite(Number(sessionRingCountParam))
+      ? Number(sessionRingCountParam)
+      : null
   const sessionCallerPlan = useMemo(() => {
     const durableCallerPlan = durableSession?.settingsSnapshot?.callerPlan
     const plan = normalizeDialerCallerPlan(durableCallerPlan && typeof durableCallerPlan === 'object' && !Array.isArray(durableCallerPlan)

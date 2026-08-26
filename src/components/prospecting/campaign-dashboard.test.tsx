@@ -99,7 +99,7 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText('1', { selector: 'p' })).toBeVisible()
     expect(screen.getByText('ready to call')).toBeVisible()
     expect(screen.getByText('All associated contacts stay visible')).toBeVisible()
-    expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('stop after 7')
+    expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('7 rings')
     const start = screen.getByRole('button', { name: 'Resume calling' })
     expect(start).toBeVisible()
     fireEvent.click(start)
@@ -107,7 +107,7 @@ describe('CampaignDashboard', () => {
       startBehavior: 'resume',
       callerMode: 'static',
       callerIds: ['+18163100845'],
-      maxAttemptsPerNumber: 7,
+      ringCount: 7,
     }))
     expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
     expect(screen.queryByText('Audience health')).not.toBeInTheDocument()
@@ -148,7 +148,7 @@ describe('CampaignDashboard', () => {
     expect(screen.getByRole('region', { name: 'Calling session setup' })).toBeVisible()
     expect(screen.getByText('(816) 310-0845')).toBeVisible()
     expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Maximum attempts per number' })).toHaveValue('7')
+    expect(screen.getByRole('combobox', { name: 'Rings before no answer' })).toHaveValue('7')
     expect(screen.getByRole('combobox', { name: 'Not dialed time frame' })).toHaveValue('')
   })
 
@@ -164,13 +164,13 @@ describe('CampaignDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
     const setup = screen.getByRole('region', { name: 'Calling session setup' })
     const rotate = screen.getByRole('radio', { name: /Rotate numbers/ })
-    const attempts = screen.getByRole('combobox', { name: 'Maximum attempts per number' })
+    const rings = screen.getByRole('combobox', { name: 'Rings before no answer' })
     expect(setup).toBeVisible()
     expect(setup).toHaveClass('crm-panel-raised')
     expect(rotate).toBeVisible()
     expect(rotate.closest('label')).toHaveClass('bg-[var(--crm-surface)]')
-    expect(attempts).toBeVisible()
-    expect(attempts).toHaveClass('crm-field')
+    expect(rings).toBeVisible()
+    expect(rings).toHaveClass('crm-field')
     fireEvent.click(preview)
     expect(launch).toHaveBeenCalledOnce()
   })

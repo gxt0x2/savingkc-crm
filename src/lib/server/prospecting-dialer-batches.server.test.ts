@@ -12,7 +12,7 @@ const setup = {
   startBehavior: 'resume' as const,
   callerMode: 'static' as const,
   callerIds: ['+18163100845'],
-  maxAttemptsPerNumber: 7 as const,
+  ringCount: 7 as const,
   notDialedHours: null,
   notContactedHours: null,
 }
