@@ -29,6 +29,7 @@ import type {
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
 import { joinProspectingAddress as joinAddress } from '@/components/prospecting/prospecting-calling-utils'
 import { useDialerPauseAndLeave } from '@/components/prospecting/use-dialer-pause-and-leave'
+import { useDialerTodayMetrics } from '@/components/prospecting/use-dialer-today-metrics'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
@@ -68,9 +69,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   // SMS compose state
   const [smsTarget, setSmsTarget] = useState<ProspectingSmsTarget | null>(null)
 
-  // Session tally (Mojo-style HUD) + mark-lead-dead dialog
-  const [sessionDials, setSessionDials] = useState(0)
-  const [sessionContacts, setSessionContacts] = useState(0)
+  // Authoritative daily performance + mark-lead-dead dialog
+  const todayMetrics = useDialerTodayMetrics(readOnlyPreview)
   const [showMarkDead, setShowMarkDead] = useState(false)
   const [markDeadReason, setMarkDeadReason] = useState('')
   const [markDeadNotes, setMarkDeadNotes] = useState('')
@@ -133,8 +133,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         setDurableSession(null)
         setSubjects(campaignPreview.subjects)
         setCurrentIndex(0)
-        setSessionDials(0)
-        setSessionContacts(0)
         setResolveError(campaignPreview.error)
         setLoading(campaignPreview.loading)
         return
@@ -147,8 +145,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
             ? session.queueItems
             : session.leadIds.map((id) => ({ kind: 'lead' as const, id, leadId: id, prospectId: null, campaignMemberId: null })))
           setCurrentIndex(session.currentIndex)
-          setSessionDials(session.dialsCompleted)
-          setSessionContacts(session.contacts)
           const autoStartKey = `savingkc:dialer-autostart:${session.id}`
           const autoStartRequested = window.sessionStorage.getItem(autoStartKey) === '1'
           if (autoStartRequested) window.sessionStorage.removeItem(autoStartKey)
@@ -310,8 +306,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       ? session.queueItems
       : session.leadIds.map((id) => ({ kind: 'lead' as const, id, leadId: id, prospectId: null, campaignMemberId: null })))
     setCurrentIndex(session.currentIndex)
-    setSessionDials(session.dialsCompleted)
-    setSessionContacts(session.contacts)
     if (session.status === 'active' && !session.stopRequestedAt) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
     if (session.stopRequestedAt) setAutoQueueSubjectKey(null)
     if (session.status === 'completed' || session.status === 'stopped') setAutoQueueSubjectKey(null)
@@ -449,20 +443,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     return () => window.removeEventListener('keydown', onKey)
   }, [back, durableSessionId, skipCurrentLead])
 
-  // Tally dials / contacts for the session HUD. crm:disposition-logged fires
-  // once per saved call disposition and carries `reached` (the agent actually
-  // talked to someone). Header-driven "mark dead" is not a dial, so it does not
-  // dispatch this event.
-  useEffect(() => {
-    function onDispo(e: Event) {
-      const detail = (e as CustomEvent).detail as { reached?: boolean } | null
-      setSessionDials((n) => n + 1)
-      if (detail?.reached) setSessionContacts((n) => n + 1)
-    }
-    window.addEventListener('crm:disposition-logged', onDispo)
-    return () => window.removeEventListener('crm:disposition-logged', onDispo)
-  }, [])
-
   const markLeadDead = useCallback(async () => {
     if (!currentLeadId || !markDeadReason) return
     if (markDeadReason === 'other' && !markDeadNotes.trim()) {
@@ -598,8 +578,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         durableSessionId={durableSessionId}
         durableStatus={durableSession?.status}
         stopRequested={Boolean(durableSession?.stopRequestedAt)}
-        dials={sessionDials}
-        contacts={sessionContacts}
+        todayMetrics={todayMetrics}
         queueState={queueState}
         controlsDocked={callRailOpen}
         actionPending={sessionActionPending}

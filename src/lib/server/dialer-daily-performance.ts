@@ -1,0 +1,292 @@
+import { MY_DAY_TIME_ZONE, shiftMyDayDate } from '@/lib/my-day-range'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+
+const MAX_RANGE_DAYS = 90
+const MAX_SESSIONS = 1_000
+const MAX_ACTIVITY_ROWS = 20_000
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const CENTRAL_DATE_KEY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: MY_DAY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+const CENTRAL_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: MY_DAY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+
+interface DialerSessionRow {
+  id: string
+  started_at: string
+  ended_at: string | null
+  paused_at: string | null
+  status: string
+}
+
+interface DialerSessionEventRow {
+  session_id: string
+  event_type: string
+  created_at: string
+}
+
+interface DialerSessionAttemptRow {
+  started_at: string | null
+  reached: boolean | null
+}
+
+interface AssignedLeadRow {
+  created_at: string
+}
+
+export interface DialerDailyPerformanceRow {
+  metric_date: string
+  dialing_seconds: number
+  calls: number
+  contacts: number
+  leads: number
+}
+
+export interface DialerPerformanceSummary {
+  generatedAt: string
+  timeZone: typeof MY_DAY_TIME_ZONE
+  rows: DialerDailyPerformanceRow[]
+}
+
+interface SummarizeDialerPerformanceInput {
+  from: string
+  to: string
+  now: Date
+  sessions: DialerSessionRow[]
+  events: DialerSessionEventRow[]
+  attempts: DialerSessionAttemptRow[]
+  leads: AssignedLeadRow[]
+}
+
+function dateKey(value: Date): string {
+  return CENTRAL_DATE_KEY.format(value)
+}
+
+function validDateKey(value: string): boolean {
+  if (!DATE_KEY_PATTERN.test(value)) return false
+  return new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value
+}
+
+function partsAt(value: Date) {
+  const parts = Object.fromEntries(CENTRAL_PARTS.formatToParts(value).map((part) => [part.type, part.value]))
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  }
+}
+
+/** Convert a Central wall-clock time to UTC without assuming CST versus CDT. */
+export function centralMidnightUtc(value: string): Date {
+  if (!validDateKey(value)) throw new Error('Invalid Central date key')
+  const [year, month, day] = value.split('-').map(Number)
+  const wallClockUtc = Date.UTC(year, month - 1, day)
+  let instant = wallClockUtc
+  for (let index = 0; index < 3; index += 1) {
+    const parts = partsAt(new Date(instant))
+    const representedAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
+    instant = wallClockUtc - (representedAsUtc - instant)
+  }
+  return new Date(instant)
+}
+
+function rangeDateKeys(from: string, to: string): string[] {
+  if (!validDateKey(from) || !validDateKey(to) || from > to) throw new Error('Invalid dialer performance range')
+  const values: string[] = []
+  for (let value = from; value <= to; value = shiftMyDayDate(value, 1)) {
+    values.push(value)
+    if (values.length > MAX_RANGE_DAYS) throw new Error('Dialer performance range exceeds 90 days')
+  }
+  return values
+}
+
+function validTime(value: string | null | undefined): number | null {
+  if (!value) return null
+  const parsed = new Date(value).getTime()
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function addActiveInterval(
+  rows: Map<string, DialerDailyPerformanceRow>,
+  startMs: number,
+  endMs: number,
+) {
+  let cursor = startMs
+  while (cursor < endMs) {
+    const key = dateKey(new Date(cursor))
+    const row = rows.get(key)
+    const nextBoundary = centralMidnightUtc(shiftMyDayDate(key, 1)).getTime()
+    const intervalEnd = Math.min(endMs, nextBoundary)
+    if (row) row.dialing_seconds += Math.max(0, Math.round((intervalEnd - cursor) / 1_000))
+    cursor = intervalEnd
+  }
+}
+
+export function summarizeDialerPerformance(input: SummarizeDialerPerformanceInput): DialerPerformanceSummary {
+  const keys = rangeDateKeys(input.from, input.to)
+  const rows = new Map(keys.map((metricDate) => [metricDate, {
+    metric_date: metricDate,
+    dialing_seconds: 0,
+    calls: 0,
+    contacts: 0,
+    leads: 0,
+  }]))
+  const rangeStart = centralMidnightUtc(input.from).getTime()
+  const rangeEnd = centralMidnightUtc(shiftMyDayDate(input.to, 1)).getTime()
+  const summaryEnd = Math.min(rangeEnd, input.now.getTime())
+  const eventsBySession = new Map<string, DialerSessionEventRow[]>()
+  for (const event of input.events) {
+    const values = eventsBySession.get(event.session_id) ?? []
+    values.push(event)
+    eventsBySession.set(event.session_id, values)
+  }
+
+  for (const session of input.sessions) {
+    const sessionStart = validTime(session.started_at)
+    if (sessionStart === null || sessionStart >= summaryEnd) continue
+    const sessionEnd = Math.min(validTime(session.ended_at) ?? summaryEnd, summaryEnd)
+    if (sessionEnd <= rangeStart) continue
+    const timeline = [...(eventsBySession.get(session.id) ?? [])]
+      .flatMap((event) => {
+        const at = validTime(event.created_at)
+        return at === null ? [] : [{ at, type: event.event_type }]
+      })
+    if (session.status === 'paused' && session.paused_at) {
+      const pausedAt = validTime(session.paused_at)
+      if (pausedAt !== null && !timeline.some((event) => event.type === 'session_pause' && event.at === pausedAt)) {
+        timeline.push({ at: pausedAt, type: 'session_pause' })
+      }
+    }
+    timeline.sort((left, right) => left.at - right.at)
+
+    let active = true
+    let cursor = Math.max(sessionStart, rangeStart)
+    for (const event of timeline) {
+      if (event.at <= sessionStart) continue
+      if (event.at < rangeStart) {
+        if (event.type === 'session_pause' || event.type === 'session_stop') active = false
+        if (event.type === 'session_resume' || event.type === 'session_started') active = true
+        continue
+      }
+      if (event.at >= sessionEnd) break
+      if ((event.type === 'session_pause' || event.type === 'session_stop') && active) {
+        addActiveInterval(rows, cursor, event.at)
+        active = false
+      } else if ((event.type === 'session_resume' || event.type === 'session_started') && !active) {
+        active = true
+        cursor = event.at
+      }
+    }
+    if (active && cursor < sessionEnd) addActiveInterval(rows, cursor, sessionEnd)
+  }
+
+  for (const attempt of input.attempts) {
+    const startedAt = validTime(attempt.started_at)
+    if (startedAt === null) continue
+    const row = rows.get(dateKey(new Date(startedAt)))
+    if (!row) continue
+    row.calls += 1
+    if (attempt.reached === true) row.contacts += 1
+  }
+  for (const lead of input.leads) {
+    const createdAt = validTime(lead.created_at)
+    if (createdAt === null) continue
+    const row = rows.get(dateKey(new Date(createdAt)))
+    if (row) row.leads += 1
+  }
+
+  return { generatedAt: input.now.toISOString(), timeZone: MY_DAY_TIME_ZONE, rows: [...rows.values()] }
+}
+
+function agentMatch(agentName: string): string {
+  const firstName = agentName.trim().split(/\s+/)[0] || agentName.trim()
+  return `%${firstName.replaceAll('%', '').replaceAll('_', '')}%`
+}
+
+export async function loadDialerDailyPerformance(input: {
+  actorEmail: string
+  agentName: string
+  from: string
+  to: string
+  now?: Date
+  includeLeads?: boolean
+}): Promise<DialerPerformanceSummary> {
+  rangeDateKeys(input.from, input.to)
+  const now = input.now ?? new Date()
+  const rangeStart = centralMidnightUtc(input.from).toISOString()
+  const rangeEnd = centralMidnightUtc(shiftMyDayDate(input.to, 1)).toISOString()
+  const db = supabaseAdmin()
+  const sessionQuery = db
+    .from('dialer_sessions')
+    .select('id, started_at, ended_at, paused_at, status')
+    .ilike('actor_email', input.actorEmail.trim().toLowerCase())
+    .lt('started_at', rangeEnd)
+    .or(`ended_at.is.null,ended_at.gte.${rangeStart}`)
+    .order('started_at', { ascending: true })
+    .limit(MAX_SESSIONS)
+  const leadsQuery = input.includeLeads === false
+    ? Promise.resolve({ data: [] as AssignedLeadRow[], error: null })
+    : db
+      .from('leads')
+      .select('created_at')
+      .ilike('assigned_agent', agentMatch(input.agentName))
+      .gte('created_at', rangeStart)
+      .lt('created_at', rangeEnd)
+      .limit(MAX_ACTIVITY_ROWS)
+  const [sessionResult, leadsResult] = await Promise.all([sessionQuery, leadsQuery])
+  if (sessionResult.error) throw new Error(`Dialer sessions unavailable: ${sessionResult.error.message}`)
+  if (leadsResult.error) throw new Error(`Assigned leads unavailable: ${leadsResult.error.message}`)
+  const sessions = (sessionResult.data ?? []) as DialerSessionRow[]
+  if (sessions.length >= MAX_SESSIONS) throw new Error('Dialer session result exceeded its safety bound')
+  if ((leadsResult.data?.length ?? 0) >= MAX_ACTIVITY_ROWS) throw new Error('Assigned lead result exceeded its safety bound')
+  const sessionIds = sessions.map((session) => session.id)
+  let events: DialerSessionEventRow[] = []
+  let attempts: DialerSessionAttemptRow[] = []
+  if (sessionIds.length > 0) {
+    const [eventResult, attemptResult] = await Promise.all([
+      db.from('dialer_session_events')
+        .select('session_id, event_type, created_at')
+        .in('session_id', sessionIds)
+        .lt('created_at', rangeEnd)
+        .order('created_at', { ascending: true })
+        .limit(MAX_ACTIVITY_ROWS),
+      db.from('dialer_session_attempts')
+        .select('started_at, reached')
+        .in('session_id', sessionIds)
+        .gte('started_at', rangeStart)
+        .lt('started_at', rangeEnd)
+        .order('started_at', { ascending: true })
+        .limit(MAX_ACTIVITY_ROWS),
+    ])
+    if (eventResult.error) throw new Error(`Dialer session events unavailable: ${eventResult.error.message}`)
+    if (attemptResult.error) throw new Error(`Dialer attempts unavailable: ${attemptResult.error.message}`)
+    if ((eventResult.data?.length ?? 0) >= MAX_ACTIVITY_ROWS || (attemptResult.data?.length ?? 0) >= MAX_ACTIVITY_ROWS) {
+      throw new Error('Dialer activity result exceeded its safety bound')
+    }
+    events = (eventResult.data ?? []) as DialerSessionEventRow[]
+    attempts = (attemptResult.data ?? []) as DialerSessionAttemptRow[]
+  }
+  return summarizeDialerPerformance({
+    from: input.from,
+    to: input.to,
+    now,
+    sessions,
+    events,
+    attempts,
+    leads: (leadsResult.data ?? []) as AssignedLeadRow[],
+  })
+}

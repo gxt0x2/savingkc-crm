@@ -12,8 +12,14 @@ function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSess
     callerId: '+18165550123',
     durableSessionId: 'session-1',
     durableStatus: 'active',
-    dials: 7,
-    contacts: 2,
+    todayMetrics: {
+      metric_date: '2026-08-25',
+      dialing_seconds: 4_025,
+      calls: 17,
+      contacts: 4,
+      leads: 1,
+      generatedAt: '2026-08-25T15:00:00.000Z',
+    },
     queueState: {
       queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
       queueIndex: 0,
@@ -46,18 +52,22 @@ describe('DialerSessionCommand', () => {
     expect(screen.getByRole('heading', { name: 'Calling session' })).toBeVisible()
     expect(screen.getByText('August absentee owners')).toBeVisible()
     expect(screen.getByText('Assigned line (816) 555-0123')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Live session status' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' })).toBeVisible()
     expect(screen.queryByText('Caller ID')).not.toBeInTheDocument()
     expect(screen.queryByText('Sellers worked')).not.toBeInTheDocument()
-    expect(screen.getByText('Current call')).toBeVisible()
+    expect(screen.getByText('Dialer time')).toBeVisible()
+    expect(screen.getByText('1:07:05')).toBeVisible()
     expect(screen.getByText('Calls')).toBeVisible()
+    expect(screen.getByText('17')).toBeVisible()
     expect(screen.getByText('Contacts')).toBeVisible()
+    expect(screen.getByText('4')).toBeVisible()
+    expect(screen.getByText('Leads')).toBeVisible()
     expect(screen.getByText('Seller progress')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Live session status' }).querySelectorAll('article')).toHaveLength(4)
-    expect(screen.getByRole('region', { name: 'Live session status' }).querySelector('[data-tone="info"]')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Live session status' }).querySelector('[data-tone="brand"]')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Live session status' }).querySelector('[data-tone="success"]')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Live session status' }).querySelector('[data-tone="warning"]')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelectorAll('article')).toHaveLength(5)
+    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="info"]')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="brand"]')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="success"]')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="warning"]')).toBeVisible()
     expect(screen.queryByText('Helen Seller')).not.toBeInTheDocument()
     expect(screen.queryByText('(816) 555-0199')).not.toBeInTheDocument()
     expect(screen.getByText('Session progress 20%')).toBeInTheDocument()
@@ -114,7 +124,7 @@ describe('DialerSessionCommand', () => {
     } })
 
     expect(screen.getByText('Outcome required')).toBeVisible()
-    expect(screen.getByText('Outcome', { exact: true })).toBeVisible()
+    expect(screen.queryByText('Outcome', { exact: true })).not.toBeInTheDocument()
   })
 
   it('lets an agent reopen hidden call controls without restarting the session', () => {
@@ -144,7 +154,7 @@ describe('DialerSessionCommand', () => {
     })
 
     expect(screen.getByText('Connected now')).toBeVisible()
-    expect(screen.getAllByText('03:12').length).toBeGreaterThan(0)
+    expect(screen.queryByText('03:12')).not.toBeInTheDocument()
     expect(screen.queryByText(/predictive/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/3 lines/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hang up' })).toBeVisible()

@@ -72,6 +72,15 @@ export interface DialerHistoryPage<T> {
   pageInfo: { limit: number; hasMore: boolean; nextCursor: string | null }
 }
 
+export interface DialerTodayMetrics {
+  metric_date: string
+  dialing_seconds: number
+  calls: number
+  contacts: number
+  leads: number
+  generatedAt: string
+}
+
 async function payload(response: Response, fallback: string) {
   const body = await response.json().catch(() => null)
   if (!response.ok || !body) throw new Error(body?.error || fallback)
@@ -83,6 +92,13 @@ export async function loadDurableDialerSession(sessionId: string): Promise<Durab
   const body = await payload(response, 'Could not load the dialer session.')
   if (!body.session) throw new Error('Could not load the dialer session.')
   return body.session as DurableDialerSession
+}
+
+export async function loadDialerTodayMetrics(): Promise<DialerTodayMetrics> {
+  const response = await fetch('/api/dialer/metrics/today', { cache: 'no-store' })
+  const body = await payload(response, 'Today’s dialer metrics are unavailable.')
+  if (!body.metrics || typeof body.generatedAt !== 'string') throw new Error('Today’s dialer metrics are unavailable.')
+  return { ...body.metrics, generatedAt: body.generatedAt } as DialerTodayMetrics
 }
 
 export async function loadDialerSessionHistory(cursor?: string | null): Promise<DialerHistoryPage<DurableDialerSession>> {

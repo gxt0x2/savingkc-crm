@@ -36,6 +36,13 @@ export interface MyDayPerformanceRow {
   source_fetched_at: string
 }
 
+export interface MyDayNativeDialerPerformanceRow {
+  metric_date: string
+  dialing_seconds: number
+  calls: number
+  contacts: number
+}
+
 export interface MyDayLead {
   id: string
   full_name: string | null
@@ -143,7 +150,7 @@ export interface MyDayData {
   generatedAt: string
   agent: { name: 'Casey'; initials: 'C' }
   performance: {
-    source: 'mojo'
+    source: 'mojo' | 'combined' | 'native_dialer'
     status: 'available' | 'partial' | 'unavailable'
     dialingSeconds: number | null
     sourceFetchedAt: string | null
@@ -162,6 +169,7 @@ export interface MyDayData {
   goals: MyDayGoalSet
   availability: {
     mojoPerformance: boolean
+    dialerPerformance?: boolean
     agentStats: boolean
     appointments: boolean
     habits: boolean
@@ -174,6 +182,7 @@ export interface BuildMyDayInput {
   now: Date
   stats: MyDayAgentStat[]
   performance: MyDayPerformanceRow[]
+  dialerPerformance?: MyDayNativeDialerPerformanceRow[]
   leads: MyDayLead[]
   activities: MyDayActivity[]
   tasks: MyDayActivity[]
@@ -404,7 +413,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const performanceRows = input.performance.filter((row) => row.metric_date >= input.range.from && row.metric_date <= input.range.to)
   const performanceByDate = new Map(input.performance.map((row) => [row.metric_date, row]))
   const requiredDates = requiredPerformanceDates(input.range, input.now)
-  const performanceStatus: MyDayData['performance']['status'] = !input.availability.mojoPerformance
+  const mojoPerformanceStatus: MyDayData['performance']['status'] = !input.availability.mojoPerformance
     ? 'unavailable'
     : requiredDates.length > 0 && requiredDates.every((day) => performanceByDate.has(day))
       ? 'available'
@@ -420,17 +429,24 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     return Boolean(disposition)
   })
   const nativeDialerActivities = allNativeDialerActivities.filter((activity) => isWithinRange(activity.created_at, input.range))
+  const nativePerformanceRows = (input.dialerPerformance ?? []).filter((row) => row.metric_date >= input.range.from && row.metric_date <= input.range.to)
+  const nativePerformanceByDate = new Map((input.dialerPerformance ?? []).map((row) => [row.metric_date, row]))
+  const hasNativePerformance = input.availability.dialerPerformance === true
   const isMeaningfulActivity = (activity: MyDayActivity) => {
     const outcome = text(activity.metadata?.outcome).toLowerCase()
     return ['callback_scheduled', 'meaningful_conversation', 'appointment_set', 'not_interested', 'already_sold', 'listed'].includes(outcome)
       || isReachedDisposition(text(activity.metadata?.disposition))
   }
-  const hasProviderPerformance = performanceStatus === 'available'
-  const calls = hasProviderPerformance
-    ? performanceRows.reduce((sum, row) => sum + number(row.calls), 0) + nativeDialerActivities.length
+  const hasProviderPerformance = mojoPerformanceStatus === 'available'
+  const legacyNativeCalls = input.dialerPerformance === undefined ? nativeDialerActivities.length : 0
+  const legacyNativeContacts = input.dialerPerformance === undefined ? nativeDialerActivities.filter(isMeaningfulActivity).length : 0
+  const nativeCalls = nativePerformanceRows.reduce((sum, row) => sum + number(row.calls), 0) + legacyNativeCalls
+  const nativeContacts = nativePerformanceRows.reduce((sum, row) => sum + number(row.contacts), 0) + legacyNativeContacts
+  const calls = hasProviderPerformance || hasNativePerformance
+    ? (hasProviderPerformance ? performanceRows.reduce((sum, row) => sum + number(row.calls), 0) : 0) + nativeCalls
     : null
-  const contacts = hasProviderPerformance
-    ? performanceRows.reduce((sum, row) => sum + number(row.contacts), 0) + nativeDialerActivities.filter(isMeaningfulActivity).length
+  const contacts = hasProviderPerformance || hasNativePerformance
+    ? (hasProviderPerformance ? performanceRows.reduce((sum, row) => sum + number(row.contacts), 0) : 0) + nativeContacts
     : null
   const leadEntries = new Map(input.leads
     .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinRange(lead.created_at, input.range))
@@ -463,8 +479,10 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const weekRange = { from: days[0], to: days.at(-1)! }
   const today = dateKey(input.now)
   const weeklyNativeDialerActivities = allNativeDialerActivities.filter((activity) => isWithinRange(activity.created_at, weekRange))
-  const nativeCallsByDay = valuesByDay(weeklyNativeDialerActivities.map((activity) => activity.created_at), days)
-  const nativeConversationsByDay = valuesByDay(weeklyNativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
+  const legacyNativeCallsByDay = valuesByDay(weeklyNativeDialerActivities.map((activity) => activity.created_at), days)
+  const legacyNativeConversationsByDay = valuesByDay(weeklyNativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
+  const nativeCallsByDay = days.map((day, index) => number(nativePerformanceByDate.get(day)?.calls) + (input.dialerPerformance === undefined ? legacyNativeCallsByDay[index] : 0))
+  const nativeConversationsByDay = days.map((day, index) => number(nativePerformanceByDate.get(day)?.contacts) + (input.dialerPerformance === undefined ? legacyNativeConversationsByDay[index] : 0))
   const weeklyLeadEntries = new Map(input.leads
     .filter((lead) => (lead.assigned_agent || '').toLowerCase().includes('casey') && isWithinRange(lead.created_at, weekRange))
     .map((lead) => [lead.id, lead.created_at]))
@@ -473,9 +491,10 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const weeklyOfferEntries = stageEntries(input, 4, weekRange)
   const weeklyContractEntries = stageEntries(input, 5, weekRange)
   const providerDayValue = (day: string, field: 'calls' | 'contacts', nativeValue: number): number | null => {
-    if (!input.availability.mojoPerformance || !today || day > today) return null
+    if (!today || day > today) return null
     const row = performanceByDate.get(day)
-    return row ? number(row[field]) + nativeValue : null
+    if (row) return number(row[field]) + nativeValue
+    return hasNativePerformance ? nativeValue : null
   }
   const weeklyRowValues: MyDayWeeklyRow[] = [
     {
@@ -594,9 +613,16 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     .map((row) => row.source_fetched_at)
     .filter((value) => Number.isFinite(new Date(value).getTime()))
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null
-  const dialingSeconds = hasProviderPerformance
-    ? performanceRows.reduce((sum, row) => sum + number(row.dialing_seconds), 0)
+  const nativeDialingSeconds = nativePerformanceRows.reduce((sum, row) => sum + number(row.dialing_seconds), 0)
+  const dialingSeconds = hasProviderPerformance || hasNativePerformance
+    ? (hasProviderPerformance ? performanceRows.reduce((sum, row) => sum + number(row.dialing_seconds), 0) : 0) + nativeDialingSeconds
     : null
+  const performanceSource: MyDayData['performance']['source'] = hasNativePerformance
+    ? (performanceRows.length > 0 ? 'combined' : 'native_dialer')
+    : 'mojo'
+  const performanceStatus: MyDayData['performance']['status'] = hasProviderPerformance
+    ? 'available'
+    : hasNativePerformance ? 'partial' : mojoPerformanceStatus
 
   return {
     month: input.month,
@@ -605,7 +631,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     generatedAt: input.now.toISOString(),
     agent: { name: 'Casey', initials: 'C' },
     performance: {
-      source: 'mojo',
+      source: performanceSource,
       status: performanceStatus,
       dialingSeconds,
       sourceFetchedAt,

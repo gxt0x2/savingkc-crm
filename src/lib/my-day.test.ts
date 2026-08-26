@@ -147,6 +147,27 @@ describe('Casey My Day model', () => {
     expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, 0, null, null])
   })
 
+  it('uses server-owned dialer performance without double-counting its activity rows', () => {
+    const heirCall = activity({
+      id: 'heir-call',
+      activity_type: 'call',
+      agent: 'Casey',
+      metadata: { source: 'heir_dialer', disposition: 'spoke_with_owner' },
+      created_at: '2026-08-03T18:00:00.000Z',
+    })
+    const report = buildMyDay(input({
+      activities: [...input().activities, heirCall],
+      dialerPerformance: [
+        { metric_date: '2026-08-03', dialing_seconds: 1_800, calls: 1, contacts: 1 },
+      ],
+      availability: { ...input().availability, dialerPerformance: true },
+    }))
+
+    expect(report.funnel[0].value).toBe(31)
+    expect(report.funnel[1].value).toBe(10)
+    expect(report.performance).toMatchObject({ source: 'combined', status: 'available', dialingSeconds: 12_600 })
+  })
+
   it('withholds aggregate totals when even one required provider day is missing', () => {
     const report = buildMyDay(input({ performance: input().performance.filter((row) => row.metric_date !== '2026-08-02') }))
     expect(report.performance.status).toBe('partial')
