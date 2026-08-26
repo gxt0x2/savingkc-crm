@@ -45,7 +45,8 @@
     "hygiene": "npm run gate:hygiene",
     "preview": "npm run gate:canonical && vercel deploy --yes",
     "manifest:archive:export": "node scripts/archive/export-manifest-history.mjs",
-    "manifest:archive:verify": "node scripts/archive/verify-manifest-history.mjs"
+    "manifest:archive:verify": "node scripts/archive/verify-manifest-history.mjs",
+    "manifest:archive:rehearse": "bash scripts/rehearse-manifest-physical-archive.sh"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.35",
