@@ -14,7 +14,8 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('next/dynamic', () => ({
-  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; pendingSessionId?: string | null; presentation?: string }) {
+  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; pendingSessionId?: string | null; presentation?: string; campaignId?: string }) {
+    if (props.campaignId) return <section aria-label="Preview prospecting call controls"><span>Read-only preview</span></section>
     if (typeof props.open !== 'boolean') return null
     return <div data-testid="lazy-dialer" data-open={String(props.open)} data-presentation={props.presentation} data-session-id={props.pendingSessionId ?? ''}><button type="button" onClick={props.onClose}>Close phone</button></div>
   },
@@ -96,9 +97,6 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
     expect(screen.getByRole('region', { name: 'Preview prospecting call controls' })).toBeVisible()
     expect(screen.getByText('Read-only preview')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'First call countdown' })).toHaveTextContent('15')
-    expect(screen.getByRole('button', { name: 'Pause before first call' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'End preview' })).toBeVisible()
     expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
   })
 

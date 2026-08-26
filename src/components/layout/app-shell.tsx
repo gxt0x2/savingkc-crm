@@ -14,7 +14,6 @@ import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button
 import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 import { isCallReviewer } from '@/lib/call-review-reviewers'
-import { ProspectingPreviewCallRail } from '@/components/prospecting/prospecting-preview-call-rail'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -26,6 +25,13 @@ const DialerPanel = dynamic(
   {
     ssr: false,
     loading: () => <div role="status" className="fixed bottom-5 right-5 z-[70] rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-xs font-black shadow-[var(--crm-shadow-lg)]">Opening phone…</div>,
+  },
+)
+const ProspectingPreviewCallRail = dynamic(
+  () => import('@/components/prospecting/prospecting-preview-call-rail').then((mod) => mod.ProspectingPreviewCallRail),
+  {
+    ssr: false,
+    loading: () => <div role="status" className="grid h-full place-items-center p-6 text-center text-xs font-black text-[var(--skc-text-tertiary)]">Loading safe call preview…</div>,
   },
 )
 
