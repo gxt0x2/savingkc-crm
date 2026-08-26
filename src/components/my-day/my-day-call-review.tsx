@@ -214,7 +214,7 @@ function CompletedScorecardOverlay({ call, onClose }: { call: ReviewCall; onClos
   )
 }
 
-export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange?: (active: boolean) => void }) {
+export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }: { onReviewActiveChange?: (active: boolean) => void; surface?: 'workspace' | 'scorecard' }) {
   const [calls, setCalls] = useState<ReviewCall[]>([])
   const [viewerEmail, setViewerEmail] = useState('')
   const [view, setView] = useState<QueueView>('assigned')
@@ -305,10 +305,9 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
     },
     [voiceoverUrl],
   )
+  const visibleCalls = useMemo(() => (surface === 'scorecard' ? calls.filter((call) => call.reviewWorkflow.status === 'submitted').slice(0, 25) : calls.filter((call) => (view === 'assigned' ? call.reviewWorkflow.status === 'submitted' && call.reviewWorkflow.assignedReviewer === viewerEmail : call.reviewWorkflow.status === 'completed' && (call.reviewWorkflow.submittedBy === viewerEmail || call.reviewWorkflow.assignedReviewer === viewerEmail))).slice(0, 6)), [calls, surface, view, viewerEmail])
 
-  const visibleCalls = useMemo(() => calls.filter((call) => (view === 'assigned' ? call.reviewWorkflow.status === 'submitted' && call.reviewWorkflow.assignedReviewer === viewerEmail : call.reviewWorkflow.status === 'completed' && (call.reviewWorkflow.submittedBy === viewerEmail || call.reviewWorkflow.assignedReviewer === viewerEmail))).slice(0, 6), [calls, view, viewerEmail])
-
-  const assigned = calls.filter((call) => call.reviewWorkflow.status === 'submitted' && call.reviewWorkflow.assignedReviewer === viewerEmail).length
+  const assigned = calls.filter((call) => call.reviewWorkflow.status === 'submitted' && (surface === 'scorecard' || call.reviewWorkflow.assignedReviewer === viewerEmail)).length
   const completed = calls.filter((call) => call.reviewWorkflow.status === 'completed' && (call.reviewWorkflow.submittedBy === viewerEmail || call.reviewWorkflow.assignedReviewer === viewerEmail)).length
   const framework = reviewing ? getCallReviewFramework(reviewing.reviewWorkflow.framework || 'junior_acquisitions') : null
   const itemCount = framework?.sections.reduce((count, section) => count + section.items.length, 0) || 0
@@ -317,8 +316,9 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
 
   function openReview(call: ReviewCall) {
     setReviewing(call)
-    setRatings(call.reviewWorkflow.aiStatus === 'ready' ? Object.fromEntries(Object.entries(call.reviewWorkflow.aiAnswers || {}).map(([id, assessment]) => [id, assessment.score])) : {})
-    setNote('')
+    const previousAnswers = call.reviewWorkflow.answers || {}
+    setRatings(Object.keys(previousAnswers).length ? previousAnswers : call.reviewWorkflow.aiStatus === 'ready' ? Object.fromEntries(Object.entries(call.reviewWorkflow.aiAnswers || {}).map(([id, assessment]) => [id, assessment.score])) : {})
+    setNote(call.reviewWorkflow.reviewNote || '')
     setVoiceoverBlob(null)
     if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl)
     setVoiceoverUrl(null)
@@ -556,10 +556,10 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
               <h2 id="scorecard-reviews-title" className="text-[20px] font-black">
                 Scorecard Reviews
               </h2>
-              <p className="text-[11px] font-semibold text-[var(--crm-text-muted)]">Only calls intentionally submitted for review appear here.</p>
+              <p className="text-[11px] font-semibold text-[var(--crm-text-muted)]">{surface === 'scorecard' ? 'All submitted calls can be graded here without leaving Scorecard.' : 'Only calls intentionally submitted for review appear here.'}</p>
             </div>
           </div>
-          <div className="flex rounded-lg border border-[var(--crm-border)] p-1 text-xs font-black">
+          {surface === 'workspace' ? <div className="flex rounded-lg border border-[var(--crm-border)] p-1 text-xs font-black">
             {(
               [
                 ['assigned', `Needs Review (${assigned})`],
@@ -570,7 +570,7 @@ export function MyDayCallReview({ onReviewActiveChange }: { onReviewActiveChange
                 {label}
               </button>
             ))}
-          </div>
+          </div> : <span className="rounded-full bg-[var(--crm-warning-soft)] px-3 py-1 text-xs font-black text-[var(--crm-warning)]">Needs Review ({assigned})</span>}
         </div>
         {error ? <p className="m-4 rounded-lg bg-[var(--crm-danger-soft)] p-3 text-xs font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {visibleCalls.length === 0 ? (

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
@@ -42,6 +43,13 @@ type ScorecardCall = {
   analysisSummary: string | null
   reviewWorkflow: CompletedWorkflow
 }
+
+type ScorecardView = 'needs-review' | 'reviewed'
+
+const ScorecardCallReviewQueue = dynamic(
+  () => import('@/components/my-day/my-day-call-review').then((module) => module.MyDayCallReview),
+  { ssr: false, loading: () => <div className="crm-panel rounded-xl p-8 text-center text-sm font-bold text-[var(--crm-text-muted)]">Loading review queue…</div> },
+)
 
 function formatDuration(seconds: number) {
   const hours = Math.floor(seconds / 3600)
@@ -98,6 +106,9 @@ function ScorePill({ score }: { score: number | null }) {
 export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpandedId?: string | null }) {
   const [calls, setCalls] = useState<ScorecardCall[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId)
+  const [activeView, setActiveView] = useState<ScorecardView>('reviewed')
+  const [reopeningId, setReopeningId] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -120,12 +131,36 @@ export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpa
   const averageCritical = criticalScores.length ? criticalScores.reduce((sum, score) => sum + score, 0) / criticalScores.length : 0
   const calibration = useMemo(() => scorecardCalibrationStatus(calls.filter((call) => call.id !== 'test-review-preview' && call.reviewWorkflow.scoringVersion === CALL_SCORECARD_SCORING_VERSION).length), [calls])
 
+  async function reopenReview(call: ScorecardCall) {
+    if (call.id === 'test-review-preview') return
+    setReopeningId(call.id)
+    setError(null)
+    setNotice(null)
+    try {
+      const response = await fetch('/api/marketing/call-recordings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activityId: call.id, action: 'reopen' }),
+      })
+      const payload = (await response.json()) as { error?: string }
+      if (!response.ok) throw new Error(payload.error || 'The scorecard could not be reopened.')
+      setCalls((current) => current.filter((item) => item.id !== call.id))
+      setExpandedId(null)
+      setNotice(`${call.leadName} is back in Needs Review. The prior score remains in its audit history.`)
+      setActiveView('needs-review')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The scorecard could not be reopened.')
+    } finally {
+      setReopeningId(null)
+    }
+  }
+
   return <main className="mx-auto w-full max-w-[1500px] space-y-5 p-4 md:p-6">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="crm-eyebrow">Call coaching</p>
         <h1 className="text-3xl font-black tracking-tight">Scorecard</h1>
-        <p className="mt-1 text-sm text-[var(--crm-text-muted)]">Completed call reviews and coaching results.</p>
+        <p className="mt-1 text-sm text-[var(--crm-text-muted)]">Grade submitted calls, review coaching results, or reopen a completed scorecard.</p>
       </div>
       <Link href="/marketing/calls" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-xs font-black"><Icon name="headphones" />Open Call Recordings</Link>
     </header>
@@ -141,7 +176,14 @@ export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpa
       <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black">{calibration.due ? 'Scorecard recalibration due' : 'Scorecard calibration cycle'}</p><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{calibration.due ? `${calibration.completed} human-reviewed calls are ready for weight and AI-agreement analysis. Weights remain unchanged until approved.` : `${calibration.completed} of ${calibration.target} human-reviewed calls completed on the current weighted model.`}</p></div><strong className="text-sm">{calibration.due ? 'Review calibration' : `${calibration.remaining} remaining`}</strong></div>
     </section>
 
-    <section aria-labelledby="completed-scorecards-title" className="crm-panel overflow-hidden rounded-xl">
+    {notice ? <p role="status" className="rounded-xl border border-[var(--crm-success)] bg-[var(--crm-success-soft)] p-4 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
+
+    <div role="tablist" aria-label="Scorecard views" className="inline-flex rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-1 text-sm font-black">
+      <button type="button" role="tab" aria-selected={activeView === 'needs-review'} onClick={() => setActiveView('needs-review')} className={`rounded-lg px-4 py-2 ${activeView === 'needs-review' ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--crm-text-muted)]'}`}>Needs Review</button>
+      <button type="button" role="tab" aria-selected={activeView === 'reviewed'} onClick={() => setActiveView('reviewed')} className={`rounded-lg px-4 py-2 ${activeView === 'reviewed' ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--crm-text-muted)]'}`}>Reviewed</button>
+    </div>
+
+    {activeView === 'needs-review' ? <ScorecardCallReviewQueue surface="scorecard" /> : <section aria-labelledby="completed-scorecards-title" className="crm-panel overflow-hidden rounded-xl">
       <div className="border-b border-[var(--crm-border)] px-5 py-4"><h2 id="completed-scorecards-title" className="text-xl font-black">Reviewed Calls</h2><p className="text-xs text-[var(--crm-text-muted)]">Expand a reviewed call to see the complete scorecard.</p></div>
       {error ? <p className="m-4 rounded-lg bg-[var(--crm-danger-soft)] p-3 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
       {loading ? <div className="p-8 text-center text-sm font-bold text-[var(--crm-text-muted)]">Loading scorecards…</div> : null}
@@ -154,7 +196,7 @@ export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpa
           return <Fragment key={call.id}>
             <tr className="hover:bg-[var(--crm-surface-subtle)]"><td className="px-5 py-4"><p className="font-black">{address(call)}</p><p className="text-[11px] text-[var(--crm-text-muted)]">{formatDate(call.createdAt)}</p></td><td className="px-4 py-4"><p className="font-bold">{call.leadName}</p><p className="text-[11px] text-[var(--crm-text-muted)]">{call.leadSource || 'Direct'}</p></td><td className="px-4 py-4"><span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-1 text-[11px] font-black capitalize text-[var(--crm-info)]">{call.direction || 'Call'}</span></td><td className="px-4 py-4 text-sm font-bold">{reviewerName(call.reviewWorkflow.completedBy)}</td><td className="px-4 py-4"><span className="inline-flex items-center gap-1 text-xs font-black text-[var(--crm-success)]"><Icon name="check_circle" />Reviewed</span></td><td className="px-4 py-4 text-sm font-bold">{formatDuration(call.durationSeconds)}</td><td className="px-4 py-4"><ScorePill score={call.reviewWorkflow.score} /></td><td className="px-5 py-4 text-right"><button type="button" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? null : call.id)} className="crm-secondary-button inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-black"><Icon name="visibility" />{expanded ? 'Close' : 'View'}<Icon name={expanded ? 'expand_less' : 'expand_more'} /></button></td></tr>
             {expanded && framework ? <tr><td colSpan={8} className="bg-[var(--crm-surface-subtle)] p-5"><div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-              <aside className="space-y-4"><div className="crm-panel rounded-xl p-4"><p className="crm-eyebrow">Call details</p><dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-[var(--crm-text-muted)]">Owner</dt><dd className="mt-1 font-black">{call.leadName}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Property</dt><dd className="mt-1 font-black">{address(call)}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Call type</dt><dd className="mt-1 font-black capitalize">{call.direction || 'Call'}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Duration</dt><dd className="mt-1 font-black">{formatDuration(call.durationSeconds)}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Reviewed by</dt><dd className="mt-1 font-black">{reviewerName(call.reviewWorkflow.completedBy)}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Reviewed</dt><dd className="mt-1 font-black">{formatDate(call.reviewWorkflow.completedAt)}</dd></div></dl>{call.leadUrl ? <Link href={call.leadUrl} className="mt-4 inline-flex items-center gap-1 text-xs font-black text-[var(--crm-info)]">Open contact <Icon name="open_in_new" /></Link> : null}</div><div className="crm-panel rounded-xl p-4"><p className="text-xs font-black">Original call</p><audio controls preload="none" src={call.recordingUrl} className="mt-3 w-full" /></div>{call.reviewWorkflow.voiceoverPath ? <div className="rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4"><p className="flex items-center gap-2 text-xs font-black text-[var(--crm-brand)]"><Icon name="mic" />Mixed coaching review</p><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">Original call and reviewer commentary</p><audio controls preload="none" src={call.reviewWorkflow.voiceoverPath.startsWith('/') ? call.reviewWorkflow.voiceoverPath : `/api/marketing/call-review-voiceover?path=${encodeURIComponent(call.reviewWorkflow.voiceoverPath)}`} className="mt-3 w-full" /></div> : null}{call.analysisSummary ? <div className="crm-panel rounded-xl p-4"><p className="text-xs font-black">Call summary</p><p className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]">{call.analysisSummary}</p></div> : null}{call.reviewWorkflow.reviewNote ? <div className="rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4"><p className="text-xs font-black text-[var(--crm-brand)]">Coaching notes</p><p className="mt-2 text-sm leading-6">{call.reviewWorkflow.reviewNote}</p></div> : null}</aside>
+              <aside className="space-y-4"><div className="crm-panel rounded-xl p-4"><p className="crm-eyebrow">Call details</p><dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-[var(--crm-text-muted)]">Owner</dt><dd className="mt-1 font-black">{call.leadName}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Property</dt><dd className="mt-1 font-black">{address(call)}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Call type</dt><dd className="mt-1 font-black capitalize">{call.direction || 'Call'}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Duration</dt><dd className="mt-1 font-black">{formatDuration(call.durationSeconds)}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Reviewed by</dt><dd className="mt-1 font-black">{reviewerName(call.reviewWorkflow.completedBy)}</dd></div><div><dt className="text-[var(--crm-text-muted)]">Reviewed</dt><dd className="mt-1 font-black">{formatDate(call.reviewWorkflow.completedAt)}</dd></div></dl><div className="mt-4 flex flex-wrap gap-2">{call.leadUrl ? <Link href={call.leadUrl} className="inline-flex items-center gap-1 text-xs font-black text-[var(--crm-info)]">Open contact <Icon name="open_in_new" /></Link> : null}<button type="button" disabled={call.id === 'test-review-preview' || reopeningId === call.id} title={call.id === 'test-review-preview' ? 'Preview-only test reviews cannot change CRM data.' : undefined} onClick={() => void reopenReview(call)} className="crm-secondary-button inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-black"><Icon name="replay" />{call.id === 'test-review-preview' ? 'Preview only' : reopeningId === call.id ? 'Reopening…' : 'Reopen review'}</button></div><p className="mt-2 text-[10px] text-[var(--crm-text-muted)]">Moves this call to Needs Review and preserves the completed score in its audit history.</p></div><div className="crm-panel rounded-xl p-4"><p className="text-xs font-black">Original call</p><audio controls preload="none" src={call.recordingUrl} className="mt-3 w-full" /></div>{call.reviewWorkflow.voiceoverPath ? <div className="rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4"><p className="flex items-center gap-2 text-xs font-black text-[var(--crm-brand)]"><Icon name="mic" />Mixed coaching review</p><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">Original call and reviewer commentary</p><audio controls preload="none" src={call.reviewWorkflow.voiceoverPath.startsWith('/') ? call.reviewWorkflow.voiceoverPath : `/api/marketing/call-review-voiceover?path=${encodeURIComponent(call.reviewWorkflow.voiceoverPath)}`} className="mt-3 w-full" /></div> : null}{call.analysisSummary ? <div className="crm-panel rounded-xl p-4"><p className="text-xs font-black">Call summary</p><p className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]">{call.analysisSummary}</p></div> : null}{call.reviewWorkflow.reviewNote ? <div className="rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4"><p className="text-xs font-black text-[var(--crm-brand)]">Coaching notes</p><p className="mt-2 text-sm leading-6">{call.reviewWorkflow.reviewNote}</p></div> : null}</aside>
               <section className="crm-panel overflow-hidden rounded-xl"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--crm-border)] p-4"><div><p className="crm-eyebrow">Completed scorecard</p><h3 className="text-lg font-black">{framework.label}</h3></div><ScorePill score={call.reviewWorkflow.score} /></div><div className="grid grid-cols-4 border-b border-[var(--crm-border)]">{CALL_SCORE_RUBRIC.map((level) => <div key={level.value} className="border-r border-[var(--crm-border)] p-3 last:border-r-0"><strong className="text-xs">{level.value} — {level.label}</strong><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">{level.description}</p></div>)}</div><div className="divide-y divide-[var(--crm-border)]">{framework.sections.map((section) => {
                 const sectionValues = section.items.map((item) => call.reviewWorkflow.answers[item.id]).filter((value): value is number => typeof value === 'number')
                 const sectionScore = sectionValues.length ? sectionValues.reduce((sum, value) => sum + value, 0) / sectionValues.length : 0
@@ -164,6 +206,6 @@ export function ScorecardResultsPage({ initialExpandedId = null }: { initialExpa
           </Fragment>
         })}</tbody>
       </table></div> : null}
-    </section>
+    </section>}
   </main>
 }

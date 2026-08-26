@@ -7,7 +7,7 @@ import { CALL_REVIEWERS, isCallReviewer } from '@/lib/call-review-reviewers'
 import { CALL_REVIEW_TAGS, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
 import { processCallReviewAi } from '@/lib/call-review-ai'
-import { buildRecordingSummary, compactTranscript, isGoogleAdsCall, isRecordingReviewOutcome, mergeRecordingReviewMetadata, mergeCallReviewWorkflow, playableRecordingUrl, readRecordingDuration, readRecordingReview, readCallReviewWorkflow, readRecordingSid, record, text, type RecordingReviewOutcome } from '@/lib/marketing/call-recordings'
+import { buildRecordingSummary, compactTranscript, isGoogleAdsCall, isRecordingReviewOutcome, mergeRecordingReviewMetadata, mergeCallReviewWorkflow, playableRecordingUrl, readRecordingDuration, readRecordingReview, readCallReviewWorkflow, readRecordingSid, record, reopenCallReviewWorkflow, text, type RecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { sendCallReviewSubmittedSmsAlert } from '@/lib/server/operational-sms-alerts'
 
@@ -153,6 +153,9 @@ function previewTestReview(): CallRecordingItem {
       reviewNote: null,
       voiceoverPath: null,
       voiceoverMimeType: null,
+      revisionHistory: [],
+      lastReopenedAt: null,
+      lastReopenedBy: null,
     },
   }
 }
@@ -364,7 +367,7 @@ export async function PATCH(req: NextRequest) {
   const action = text(body?.action)
   const outcome = text(body?.outcome)
   const note = text(body?.note)
-  if ((!activityId && !recordingSid) || (!['submit', 'complete', 'retry_ai'].includes(action) && !isRecordingReviewOutcome(outcome))) {
+  if ((!activityId && !recordingSid) || (!['submit', 'complete', 'retry_ai', 'reopen'].includes(action) && !isRecordingReviewOutcome(outcome))) {
     return NextResponse.json({ error: 'Invalid review payload' }, { status: 400, headers: NO_STORE_HEADERS })
   }
 
@@ -382,6 +385,62 @@ export async function PATCH(req: NextRequest) {
 
   const now = new Date().toISOString()
   const activityRow = activity as LeadActivityRow
+
+  if (action === 'reopen') {
+    const existing = readCallReviewWorkflow(activityRow.metadata)
+    if (existing.status === 'submitted') {
+      return NextResponse.json(
+        { ok: true, activityId: activityRow.id, action, idempotent: true, workflow: existing },
+        { headers: NO_STORE_HEADERS },
+      )
+    }
+    if (existing.status !== 'completed') {
+      return NextResponse.json({ error: 'Only completed scorecards can be reopened' }, { status: 409, headers: NO_STORE_HEADERS })
+    }
+    const canReopen = existing.completedBy === email || existing.assignedReviewer === email || await isCurrentUserAdmin()
+    if (!canReopen) {
+      return NextResponse.json({ error: 'Only the assigned reviewer or an administrator can reopen this scorecard' }, { status: 403, headers: NO_STORE_HEADERS })
+    }
+
+    const reopened = reopenCallReviewWorkflow(activityRow.metadata, { reopenedAt: now, reopenedBy: email })
+    const { error: updateError } = await db.from('lead_activities').update({ metadata: reopened.metadata }).eq('id', activityRow.id)
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500, headers: NO_STORE_HEADERS })
+    }
+
+    const priorReview = reopened.workflow.revisionHistory.at(-1)
+    let auditNoteSaved = true
+    if (activityRow.lead_id) {
+      const frameworkLabel = getCallReviewFramework(priorReview?.framework)?.label || 'Call scorecard'
+      const { error: noteError } = await db.from('lead_activities').insert({
+        lead_id: activityRow.lead_id,
+        activity_type: 'note',
+        description: `${frameworkLabel} reopened for review${priorReview?.score === null || priorReview?.score === undefined ? '' : ` — prior score ${priorReview.score}/3 preserved`}`,
+        agent: email,
+        metadata: {
+          source: 'call_review_workflow',
+          call_activity_id: activityRow.id,
+          action,
+          framework: priorReview?.framework || existing.framework,
+          assigned_reviewer: reopened.workflow.assignedReviewer,
+          prior_completed_at: priorReview?.completedAt || null,
+          prior_completed_by: priorReview?.completedBy || null,
+          prior_score: priorReview?.score ?? null,
+          reopened_at: now,
+          reopened_by: email,
+        },
+      })
+      if (noteError) {
+        auditNoteSaved = false
+        console.error('[call-review] Reopen audit note failed:', noteError)
+      }
+    }
+
+    return NextResponse.json(
+      { ok: true, activityId: activityRow.id, action, auditNoteSaved, workflow: reopened.workflow },
+      { headers: NO_STORE_HEADERS },
+    )
+  }
 
   if (action === 'retry_ai') {
     const existing = readCallReviewWorkflow(activityRow.metadata)

@@ -21,6 +21,24 @@ export type RecordingSummary = {
   averageDurationSeconds: number
 }
 
+export type CallReviewRevision = {
+  reopenedAt: string
+  reopenedBy: string
+  framework: 'junior_acquisitions' | 'niche' | null
+  completedAt: string | null
+  completedBy: string | null
+  score: number | null
+  criticalScore: number | null
+  needsCoaching: boolean
+  coachingReasons: string[]
+  scoringVersion: string | null
+  answers: Record<string, number>
+  tags: string[]
+  reviewNote: string | null
+  voiceoverPath: string | null
+  voiceoverMimeType: string | null
+}
+
 export type CallReviewWorkflow = {
   status: 'available' | 'submitted' | 'completed'
   framework: 'junior_acquisitions' | 'niche' | null
@@ -57,6 +75,9 @@ export type CallReviewWorkflow = {
   reviewNote: string | null
   voiceoverPath: string | null
   voiceoverMimeType: string | null
+  revisionHistory: CallReviewRevision[]
+  lastReopenedAt: string | null
+  lastReopenedBy: string | null
 }
 
 export function record(value: unknown): Record<string, unknown> {
@@ -135,6 +156,35 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
   const framework = text(workflow.framework)
   const rawAnswers = record(workflow.answers)
   const rawAiAnswers = record(workflow.ai_answers)
+  const revisionHistory = Array.isArray(workflow.revision_history)
+    ? workflow.revision_history.flatMap((value): CallReviewRevision[] => {
+        const revision = record(value)
+        const framework = text(revision.framework)
+        const rawRevisionAnswers = record(revision.answers)
+        return [{
+          reopenedAt: text(revision.reopened_at),
+          reopenedBy: text(revision.reopened_by),
+          framework: framework === 'junior_acquisitions' || framework === 'niche' ? framework : null,
+          completedAt: text(revision.completed_at) || null,
+          completedBy: text(revision.completed_by) || null,
+          score: numberValue(revision.score),
+          criticalScore: numberValue(revision.critical_score),
+          needsCoaching: revision.needs_coaching === true,
+          coachingReasons: Array.isArray(revision.coaching_reasons) ? revision.coaching_reasons.filter((reason): reason is string => typeof reason === 'string' && Boolean(reason.trim())) : [],
+          scoringVersion: text(revision.scoring_version) || null,
+          answers: Object.fromEntries(
+            Object.entries(rawRevisionAnswers).flatMap(([key, answer]) => {
+              const parsed = numberValue(answer)
+              return parsed === null ? [] : [[key, Math.min(3, Math.max(0, Math.round(parsed)))]]
+            }),
+          ),
+          tags: Array.isArray(revision.tags) ? revision.tags.filter((tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())) : [],
+          reviewNote: text(revision.review_note) || null,
+          voiceoverPath: text(revision.voiceover_path) || null,
+          voiceoverMimeType: text(revision.voiceover_mime_type) || null,
+        }]
+      })
+    : []
   return {
     status: rawStatus === 'submitted' || rawStatus === 'completed' ? rawStatus : 'available',
     framework: framework === 'junior_acquisitions' || framework === 'niche' ? framework : null,
@@ -187,6 +237,9 @@ export function readCallReviewWorkflow(metadata: unknown): CallReviewWorkflow {
     reviewNote: text(workflow.review_note) || null,
     voiceoverPath: text(workflow.voiceover_path) || null,
     voiceoverMimeType: text(workflow.voiceover_mime_type) || null,
+    revisionHistory,
+    lastReopenedAt: text(workflow.last_reopened_at) || null,
+    lastReopenedBy: text(workflow.last_reopened_by) || null,
   }
 }
 
@@ -220,6 +273,25 @@ export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<Cal
     review_note: workflow.reviewNote,
     voiceover_path: workflow.voiceoverPath,
     voiceover_mime_type: workflow.voiceoverMimeType,
+    revision_history: workflow.revisionHistory?.map((revision) => ({
+      reopened_at: revision.reopenedAt,
+      reopened_by: revision.reopenedBy,
+      framework: revision.framework,
+      completed_at: revision.completedAt,
+      completed_by: revision.completedBy,
+      score: revision.score,
+      critical_score: revision.criticalScore,
+      needs_coaching: revision.needsCoaching,
+      coaching_reasons: revision.coachingReasons,
+      scoring_version: revision.scoringVersion,
+      answers: revision.answers,
+      tags: revision.tags,
+      review_note: revision.reviewNote,
+      voiceover_path: revision.voiceoverPath,
+      voiceover_mime_type: revision.voiceoverMimeType,
+    })),
+    last_reopened_at: workflow.lastReopenedAt,
+    last_reopened_by: workflow.lastReopenedBy,
   }
   return {
     ...meta,
@@ -228,6 +300,55 @@ export function mergeCallReviewWorkflow(metadata: unknown, workflow: Partial<Cal
       ...Object.fromEntries(Object.entries(keys).filter(([, value]) => value !== undefined)),
     },
   }
+}
+
+export function reopenCallReviewWorkflow(
+  metadata: unknown,
+  { reopenedAt, reopenedBy }: { reopenedAt: string; reopenedBy: string },
+): { metadata: Record<string, unknown>; workflow: CallReviewWorkflow } {
+  const existing = readCallReviewWorkflow(metadata)
+  if (existing.status !== 'completed') {
+    return { metadata: { ...record(metadata) }, workflow: existing }
+  }
+
+  const revision: CallReviewRevision = {
+    reopenedAt,
+    reopenedBy,
+    framework: existing.framework,
+    completedAt: existing.completedAt,
+    completedBy: existing.completedBy,
+    score: existing.score,
+    criticalScore: existing.criticalScore,
+    needsCoaching: existing.needsCoaching,
+    coachingReasons: existing.coachingReasons,
+    scoringVersion: existing.scoringVersion,
+    answers: existing.answers,
+    tags: existing.tags,
+    reviewNote: existing.reviewNote,
+    voiceoverPath: existing.voiceoverPath,
+    voiceoverMimeType: existing.voiceoverMimeType,
+  }
+  const updatedMetadata = mergeCallReviewWorkflow(metadata, {
+    status: 'submitted',
+    submittedAt: reopenedAt,
+    submittedBy: reopenedBy,
+    assignedReviewer: existing.assignedReviewer || reopenedBy,
+    completedAt: null,
+    completedBy: null,
+    score: null,
+    criticalScore: null,
+    needsCoaching: false,
+    coachingReasons: [],
+    scoringVersion: null,
+    answers: existing.answers,
+    reviewNote: existing.reviewNote,
+    voiceoverPath: null,
+    voiceoverMimeType: null,
+    revisionHistory: [...existing.revisionHistory, revision],
+    lastReopenedAt: reopenedAt,
+    lastReopenedBy: reopenedBy,
+  })
+  return { metadata: updatedMetadata, workflow: readCallReviewWorkflow(updatedMetadata) }
 }
 
 export function mergeRecordingReviewMetadata(
