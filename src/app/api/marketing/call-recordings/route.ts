@@ -9,6 +9,7 @@ import { scoreCallReview } from '@/lib/call-review-scoring'
 import { processCallReviewAi } from '@/lib/call-review-ai'
 import { buildRecordingSummary, compactTranscript, isGoogleAdsCall, isRecordingReviewOutcome, mergeRecordingReviewMetadata, mergeCallReviewWorkflow, playableRecordingUrl, readRecordingDuration, readRecordingReview, readCallReviewWorkflow, readRecordingSid, record, text, type RecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { sendCallReviewSubmittedSmsAlert } from '@/lib/server/operational-sms-alerts'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -481,7 +482,18 @@ export async function PATCH(req: NextRequest) {
     const resolvedActivityId = activityRow.id
     const { error: workflowUpdateError } = await db.from('lead_activities').update({ metadata: updatedMetadata }).eq('id', resolvedActivityId)
     if (workflowUpdateError) return NextResponse.json({ error: workflowUpdateError.message }, { status: 500, headers: NO_STORE_HEADERS })
-    if (action === 'submit') after(() => processCallReviewAi(resolvedActivityId))
+    if (action === 'submit') {
+      after(() => processCallReviewAi(resolvedActivityId))
+      if (existing.status !== 'submitted' || existing.assignedReviewer !== readCallReviewWorkflow(updatedMetadata).assignedReviewer) {
+        after(() => sendCallReviewSubmittedSmsAlert({
+          activityId: resolvedActivityId,
+          leadId: activityRow.lead_id,
+          frameworkLabel: framework.label,
+          submittedBy: email,
+          assignedReviewer: readCallReviewWorkflow(updatedMetadata).assignedReviewer ?? '',
+        }))
+      }
+    }
     if (activityRow.lead_id) {
       await db.from('lead_activities').insert({
         lead_id: activityRow.lead_id,

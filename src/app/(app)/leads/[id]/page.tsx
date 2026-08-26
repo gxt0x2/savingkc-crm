@@ -800,6 +800,7 @@ export default function LeadDetailPage() {
           priority: update.priority,
           dead_reason: update.dead_reason,
         } : current)}
+        onOwnerChange={(assigned_agent) => setLead((current) => current ? { ...current, assigned_agent } : current)}
         sectionPanels={{
           property: (
             <div className="mx-auto grid w-full max-w-[1380px] items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">

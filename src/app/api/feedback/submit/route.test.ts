@@ -4,6 +4,16 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   from: vi.fn(),
   insert: vi.fn(),
+  after: vi.fn(),
+  sendAndonRaisedSmsAlert: vi.fn(),
+}))
+
+vi.mock('next/server', async (importOriginal) => ({
+  ...await importOriginal<typeof import('next/server')>(),
+  after: (callback: () => unknown) => {
+    mocks.after(callback)
+    return callback()
+  },
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -12,6 +22,10 @@ vi.mock('@/lib/supabase/server', () => ({
 
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: { from: mocks.from },
+}))
+
+vi.mock('@/lib/server/operational-sms-alerts', () => ({
+  sendAndonRaisedSmsAlert: mocks.sendAndonRaisedSmsAlert,
 }))
 
 import { POST } from './route'
@@ -41,6 +55,7 @@ describe('system Andon submission', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'user-ernest', email: 'ernest@savingkc.com' } } })
+    mocks.sendAndonRaisedSmsAlert.mockResolvedValue({ attempted: true })
     mocks.from.mockReturnValue({
       insert: (payload: unknown) => {
         mocks.insert(payload)
@@ -71,6 +86,15 @@ describe('system Andon submission', () => {
       record_url: 'https://crm.savingkc.com/leads/lead-123',
       status: 'open',
     }))
+    expect(mocks.after).toHaveBeenCalledTimes(1)
+    expect(mocks.sendAndonRaisedSmsAlert).toHaveBeenCalledWith({
+      issueId: 'andon-1',
+      issueKind: 'process',
+      department: 'Acquisitions',
+      category: 'AI Text Bot Sequence',
+      priority: 'high',
+      raisedBy: 'Ernest',
+    })
   })
 
   it('requires an authenticated CRM user', async () => {
