@@ -68,13 +68,13 @@ async function main() {
   // Test 5: If we found a parcel, try to get its detail
   if (Array.isArray(data1) && data1.length > 0) {
     const parcel = data1[0]
-    const idFields = Object.entries(parcel).filter(([k, v]) =>
+    const idFields = Object.entries(parcel).filter(([k]) =>
       k.toLowerCase().includes('id') || k.toLowerCase().includes('parcel') || k.toLowerCase().includes('prop')
     )
     console.log('\n5. Potential ID fields:', idFields)
 
     // Try each ID-like field
-    for (const [key, value] of idFields) {
+    for (const [, value] of idFields) {
       console.log(`\n   Trying /parcel/${value} ...`)
       try {
         const res = await fetch(`${BASE}/parcel/${value}`, {

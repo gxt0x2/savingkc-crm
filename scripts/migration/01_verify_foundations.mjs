@@ -15,7 +15,7 @@ const checks = {
 
 // Try calling the function with a non-existent manifest — should raise a clean
 // "Manifest not found" error, which proves the function is callable and wired.
-const { data, error } = await supabase.rpc('update_manifest_and_cascade', {
+const { error } = await supabase.rpc('update_manifest_and_cascade', {
   p_manifest_id: '00000000-0000-4000-8000-000000000000',
   p_subtrees: {},
   p_actor: 'verification_probe',

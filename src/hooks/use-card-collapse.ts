@@ -1,6 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
+
+const COLLAPSE_CHANGE_EVENT = 'ck-collapse-change'
+
+function readCollapseState(storageKey: string, defaultOpen: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(storageKey)
+    return raw == null ? defaultOpen : raw === '1'
+  } catch {
+    return defaultOpen
+  }
+}
 
 /**
  * Per-card collapse state persisted to localStorage.
@@ -8,27 +19,34 @@ import { useEffect, useState } from 'react'
  */
 export function useCardCollapse(id: string, defaultOpen = true): [boolean, () => void] {
   const storageKey = `ck_collapse_${id}`
-  const [open, setOpen] = useState(defaultOpen)
-  const [ready, setReady] = useState(false)
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey)
-      if (raw != null) setOpen(raw === '1')
-    } catch {
-      /* ignore */
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === storageKey) onStoreChange()
     }
-    setReady(true)
+    const handleLocalChange = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === storageKey) onStoreChange()
+    }
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(COLLAPSE_CHANGE_EVENT, handleLocalChange)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(COLLAPSE_CHANGE_EVENT, handleLocalChange)
+    }
   }, [storageKey])
-
-  useEffect(() => {
-    if (!ready) return
+  const getSnapshot = useCallback(
+    () => readCollapseState(storageKey, defaultOpen),
+    [defaultOpen, storageKey],
+  )
+  const getServerSnapshot = useCallback(() => defaultOpen, [defaultOpen])
+  const open = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+  const toggle = useCallback(() => {
     try {
-      localStorage.setItem(storageKey, open ? '1' : '0')
+      localStorage.setItem(storageKey, open ? '0' : '1')
+      window.dispatchEvent(new CustomEvent(COLLAPSE_CHANGE_EVENT, { detail: storageKey }))
     } catch {
-      /* ignore */
+      /* Keep the rendered default when storage is unavailable. */
     }
-  }, [open, ready, storageKey])
+  }, [open, storageKey])
 
-  return [open, () => setOpen((v) => !v)]
+  return [open, toggle]
 }

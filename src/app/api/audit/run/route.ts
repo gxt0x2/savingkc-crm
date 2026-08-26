@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { runDataQualityAudit, verifySystemHealth } from '@/lib/ari-audit-engine'
 
 /**
@@ -6,7 +6,7 @@ import { runDataQualityAudit, verifySystemHealth } from '@/lib/ari-audit-engine'
  * Runs the full Ari audit engine (AUD-01 + AUD-04)
  * Can be called manually or via cron
  */
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
     // Run data quality audit
     const findings = await runDataQualityAudit()
@@ -20,12 +20,13 @@ export async function POST(req: NextRequest) {
       findings: findings.slice(0, 10), // Return first 10 for preview
       message: `Audit complete. Found ${findings.length} issues.`,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Audit run error:', error)
+    const message = error instanceof Error ? error.message : 'Audit run failed'
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: message,
       },
       { status: 500 }
     )
@@ -36,6 +37,6 @@ export async function POST(req: NextRequest) {
  * GET /api/audit/run
  * Same as POST, for easy cron triggering via GET request
  */
-export async function GET(req: NextRequest) {
-  return POST(req)
+export async function GET() {
+  return POST()
 }

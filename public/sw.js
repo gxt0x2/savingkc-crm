@@ -1,7 +1,7 @@
 // Saving KC CRM - Push Notification Service Worker
 
 // Self-update: skip waiting and claim clients immediately
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting()
 })
 
@@ -16,7 +16,7 @@ self.addEventListener('push', (event) => {
   let data
   try {
     data = event.data.json()
-  } catch (e) {
+  } catch {
     data = {
       title: 'Saving KC CRM',
       body: event.data.text(),

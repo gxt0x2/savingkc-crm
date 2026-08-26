@@ -3,6 +3,14 @@
 
 import type { Browser } from 'playwright'
 import { supabase as supabaseCache } from '@/lib/supabase-lazy'
+import type {
+  CountyApiRecord,
+  EnrichmentRawData,
+  JacksonCountyData,
+  JacksonCountyTaxData,
+  PlatteDwelling,
+  PlatteValuation,
+} from '@/lib/county-enrichment-types'
 
 export interface EnrichmentInput {
   address: string
@@ -39,7 +47,11 @@ export interface EnrichmentResult {
   source?: string
   fetchedAt?: string
   error?: string
-  rawData?: any
+  rawData?: EnrichmentRawData
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
 /**
@@ -167,11 +179,11 @@ export class CountyEnrichmentService {
           error: `County not supported: ${county}, ${state}`,
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       return {
         success: false,
         county: input.county,
-        error: err.message || 'Enrichment failed',
+        error: errorMessage(err, 'Enrichment failed'),
       }
     } finally {
       await this.close()
@@ -251,7 +263,6 @@ export class CountyEnrichmentService {
           if (taxRes.ok) {
             const html = await taxRes.text()
             // Extract: Current Amount Due | Past Years Due | Total Due
-            const lines = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').split(/(?=\$)/)
             const dollarVal = (label: string): number | undefined => {
               const m = html.match(new RegExp(label + '[^$]*\\$([\\d,]+\\.\\d{2})', 'i'))
               return m ? parseFloat(m[1].replace(/,/g, '')) : undefined
@@ -260,7 +271,7 @@ export class CountyEnrichmentService {
             pastYearsDue = dollarVal('Past Years Due')
             taxOwed = dollarVal('Total Due')
           }
-        } catch (_) {
+        } catch {
           // Tax balance lookup failed — leave as undefined
         }
       }
@@ -282,8 +293,6 @@ export class CountyEnrichmentService {
       let totalBasementSqft: number | undefined
       let finishedBasementSqft: number | undefined
       let deckSqft: number | undefined
-      let landValue: number | undefined
-      let improvementValue: number | undefined
 
       if (parcelId) {
         try {
@@ -329,7 +338,7 @@ export class CountyEnrichmentService {
               if (desc.includes('Wood Deck') && units > 0) deckSqft = units
             }
           }
-        } catch (_) {
+        } catch {
           // APR detail lookup failed — continue without dwelling data
         }
       }
@@ -376,8 +385,8 @@ export class CountyEnrichmentService {
           lng,
         },
       }
-    } catch (err: any) {
-      return { success: false, county: 'Johnson', error: err.message }
+    } catch (err: unknown) {
+      return { success: false, county: 'Johnson', error: errorMessage(err, 'Johnson County enrichment failed') }
     }
   }
 
@@ -394,8 +403,9 @@ export class CountyEnrichmentService {
 
     // Merge Set-Cookie headers into the cookie jar
     const mergeCookies = (res: Response) => {
-      const setCookies: string[] = typeof (res.headers as any).getSetCookie === 'function'
-        ? (res.headers as any).getSetCookie()
+      const headers = res.headers as Headers & { getSetCookie?: () => string[] }
+      const setCookies: string[] = typeof headers.getSetCookie === 'function'
+        ? headers.getSetCookie()
         : res.headers.get('set-cookie') ? [res.headers.get('set-cookie')!] : []
       for (const c of setCookies) {
         const [kv] = c.split(';')
@@ -551,7 +561,7 @@ export class CountyEnrichmentService {
           referer = `${BASE}/datalets/datalet.aspx?mode=${mode}&sIndex=0&idx=1&LMparent=20`
         } catch (tabErr) {
           // Continue — not all tabs exist for every parcel
-          console.warn(`[Jackson] tab ${mode} failed:`, (tabErr as any)?.message)
+          console.warn(`[Jackson] tab ${mode} failed:`, errorMessage(tabErr, 'Unknown tab error'))
         }
       }
 
@@ -559,9 +569,9 @@ export class CountyEnrichmentService {
       const parsed = this.parseJacksonCountyData(profileText, valuesText, residentialText + '\n' + cardText)
 
       // Step 9: Tax collection data (best-effort, non-blocking)
-      let taxData: any = {}
+      let taxData: Partial<JacksonCountyTaxData> = {}
       if (parsed.paridFormatted) {
-        taxData = await this.enrichJacksonCountyTaxCollection(parsed.paridFormatted)
+        taxData = await this.enrichJacksonCountyTaxCollection()
       }
 
       const outOfState = parsed.mailingState && parsed.mailingState !== 'MO'
@@ -599,8 +609,8 @@ export class CountyEnrichmentService {
           residentialText: residentialText.substring(0, 500),
         },
       }
-    } catch (err: any) {
-      return { success: false, county: 'Jackson', error: err.message }
+    } catch (err: unknown) {
+      return { success: false, county: 'Jackson', error: errorMessage(err, 'Jackson County enrichment failed') }
     }
   }
 
@@ -613,7 +623,7 @@ export class CountyEnrichmentService {
     suffix: string
   } {
     // Strip city/state/zip — only keep the street portion before the first comma
-    let streetOnly = address.split(',')[0].trim()
+    const streetOnly = address.split(',')[0].trim()
 
     const suffixMap: Record<string, string> = {
       'AVE': 'AVE', 'AVENUE': 'AVE',
@@ -687,30 +697,8 @@ export class CountyEnrichmentService {
     profileText: string,
     valuesText: string,
     residentialText: string
-  ): {
-    paridFormatted?: string
-    ownerName?: string
-    mailingAddress?: string
-    mailingState?: string
-    propertyType?: string
-    appraisedValue?: number
-    assessedValue?: number
-    landValue?: number
-    improvementValue?: number
-    yearBuilt?: number
-    sqft?: number
-    bedrooms?: number
-    bathrooms?: number
-    halfBaths?: number
-    condition?: string
-    exterior?: string
-    roofType?: string
-    style?: string
-    basement?: string
-    fireplaces?: number
-    physicalCondition?: string
-  } {
-    const result: any = {}
+  ): JacksonCountyData {
+    const result: JacksonCountyData = {}
 
     // Parse profile data
     const paridMatch = profileText.match(/PARID:\s*([\d]+)/i)
@@ -719,10 +707,6 @@ export class CountyEnrichmentService {
     // Owner name — usually at top of profile
     const ownerMatch = profileText.match(/\n([A-Z][A-Z\s&,.']+)\n/m)
     if (ownerMatch) result.ownerName = ownerMatch[1].trim()
-
-    // Property address
-    const addressMatch = profileText.match(/Address\s+([^\n]+)/i)
-    const cityMatch = profileText.match(/City, State, Zip\s+([^\n]+)/i)
 
     // Mailing address (owner's address from Owners section)
     const mailingMatch = profileText.match(/Owners[^]*?Address[^\n]*\n([^\n]+(?:\n[^\n]+)?)/i)
@@ -817,27 +801,7 @@ export class CountyEnrichmentService {
    * mo-jackson.publicaccessnow.com is an Angular SPA; we try ScraperAPI (render=true)
    * if SCRAPER_API_KEY is set, otherwise return unknown gracefully.
    */
-  private async enrichJacksonCountyTaxCollection(
-    parid: string
-  ): Promise<{
-    taxOwed?: number
-    taxStatus: string
-    yearsDelinquent?: number
-    lastPaymentDate?: string
-    lastPaymentAmount?: number
-    delinquentBills?: Array<{
-      taxYear: number
-      billNumber: string
-      totalCharges: number
-      totalPaid: number
-      principal: number
-      penalty: number
-      interest: number
-      status: string
-    }>
-    isBankruptcy?: boolean
-    error?: string
-  }> {
+  private async enrichJacksonCountyTaxCollection(): Promise<JacksonCountyTaxData> {
     const parseTaxText = (text: string) => {
       const totalDueMatch = text.match(/Total Due:\s*\$?([\d,]+\.?\d*)/)
       const taxOwed = totalDueMatch ? parseFloat(totalDueMatch[1].replace(/,/g, '')) : 0
@@ -914,8 +878,8 @@ export class CountyEnrichmentService {
       }
 
       return parseTaxText(text)
-    } catch (err: any) {
-      return { taxStatus: 'unknown', error: err.message || 'Tax collection lookup failed' }
+    } catch (err: unknown) {
+      return { taxStatus: 'unknown', error: errorMessage(err, 'Tax collection lookup failed') }
     }
   }
 
@@ -1013,11 +977,11 @@ export class CountyEnrichmentService {
       } finally {
         await page.close()
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       return {
         success: false,
         county: 'Wyandotte',
-        error: err.message,
+        error: errorMessage(err, 'Wyandotte County enrichment failed'),
       }
     }
   }
@@ -1066,7 +1030,7 @@ export class CountyEnrichmentService {
         if (short && !queries.includes(short)) queries.push(short)
       }
 
-      let allParcels: any = []
+      let allParcels: CountyApiRecord[] = []
       for (const q of queries) {
         if (!q || q.length < 3) continue
         try {
@@ -1075,9 +1039,9 @@ export class CountyEnrichmentService {
             { headers, signal: AbortSignal.timeout(15000) },
           )
           if (!res.ok) continue
-          const json = await res.json()
+          const json: unknown = await res.json()
           if (Array.isArray(json) && json.length > 0 && typeof json[0] !== 'string') {
-            allParcels = json
+            allParcels = json as CountyApiRecord[]
             break
           }
         } catch { /* try next */ }
@@ -1089,7 +1053,7 @@ export class CountyEnrichmentService {
 
       // Match by house number
       const houseNum = input.address.match(/^(\d+)/)?.[1] || ''
-      const parcel = allParcels.find((p: any) =>
+      const parcel = allParcels.find((p) =>
         p.situs && houseNum && p.situs.toString().startsWith(houseNum)
       ) || allParcels[0]
       const propId = parcel.prop_id
@@ -1120,14 +1084,14 @@ export class CountyEnrichmentService {
         taxCollectionPromise,
       ])
 
-      const detail = detailRes.ok ? await detailRes.json() : []
-      const dwelling = dwellingRes.ok ? await dwellingRes.json() : []
-      const value = valueRes.ok ? await valueRes.json() : []
+      const detail = detailRes.ok ? await detailRes.json() as CountyApiRecord | CountyApiRecord[] : []
+      const dwelling = dwellingRes.ok ? await dwellingRes.json() as CountyApiRecord | CountyApiRecord[] : []
+      const value = valueRes.ok ? await valueRes.json() as CountyApiRecord | CountyApiRecord[] : []
 
       const d = Array.isArray(detail) ? detail[0] || {} : detail
       const dw = Array.isArray(dwelling) ? dwelling[0] || {} : dwelling
       const v = Array.isArray(value)
-        ? (value.find((x: any) => x.val_yr === 'current year') || value[0] || {})
+        ? (value.find((entry) => entry.val_yr === 'current year') || value[0] || {})
         : value
 
       const mailingAddress = [d.owner_street, d.owner_city, d.owner_state, d.owner_zip]
@@ -1162,8 +1126,8 @@ export class CountyEnrichmentService {
           pastYearsDue: taxData?.pastYearsDue,
         },
       }
-    } catch (err: any) {
-      return { success: false, county: 'Clay', error: err.message }
+    } catch (err: unknown) {
+      return { success: false, county: 'Clay', error: errorMessage(err, 'Clay County enrichment failed') }
     }
   }
 
@@ -1366,7 +1330,6 @@ export class CountyEnrichmentService {
       })
 
       // Calculate delinquency
-      const currentYear = new Date().getFullYear()
       const unpaidYears = taxData.filter(t => !t.paid)
       const totalOwed = unpaidYears.reduce((sum, t) => sum + t.amount, 0)
       const latestTax = taxData.length > 0 ? taxData[0].amount : undefined
@@ -1375,8 +1338,8 @@ export class CountyEnrichmentService {
       // Uses ScraperAPI or ZenRows to bypass Cloudflare Turnstile on Beacon
       // Set SCRAPER_API_KEY env var to enable (sign up free at scraperapi.com or zenrows.com)
 
-      let dwelling: any = {}
-      let valuation: any = {}
+      let dwelling: PlatteDwelling = {}
+      let valuation: PlatteValuation = {}
 
       const scraperApiKey = process.env.SCRAPER_API_KEY
       const beaconUrl = `https://beacon.schneidercorp.com/Application.aspx?AppID=589&LayerID=17697&PageTypeID=4&PageID=7914&KeyValue=${encodeURIComponent(parcelId)}`
@@ -1432,8 +1395,8 @@ export class CountyEnrichmentService {
           } else {
             console.warn('[Platte] ScraperAPI returned page without property data')
           }
-        } catch (scraperErr: any) {
-          console.warn('[Platte] ScraperAPI failed (continuing with collector data):', scraperErr.message)
+        } catch (scraperErr: unknown) {
+          console.warn('[Platte] ScraperAPI failed (continuing with collector data):', errorMessage(scraperErr, 'Unknown scraper error'))
         }
       } else {
         console.log('[Platte] No SCRAPER_API_KEY set — skipping Beacon dwelling data')
@@ -1449,9 +1412,6 @@ export class CountyEnrichmentService {
       const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : undefined
       const bathMatch = dwelling.bathrooms?.match(/(\d+)\s*Standard Bath/)
       const bathrooms = bathMatch ? parseInt(bathMatch[1]) : undefined
-      const basementMatch = dwelling.basementArea?.match(/(\d[\d,]*)/)
-      const basementSqft = basementMatch ? parseInt(basementMatch[1].replace(/,/g, '')) : undefined
-
       return {
         success: true,
         county: 'Platte',
@@ -1477,9 +1437,9 @@ export class CountyEnrichmentService {
         ownerName: searchResult.owner || undefined,
         fetchedAt: new Date().toISOString(),
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       await page.close().catch(() => {})
-      return { success: false, county: 'Platte', error: err.message }
+      return { success: false, county: 'Platte', error: errorMessage(err, 'Platte County enrichment failed') }
     }
   }
 }

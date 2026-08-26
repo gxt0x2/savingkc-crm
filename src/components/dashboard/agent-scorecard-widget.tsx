@@ -10,26 +10,32 @@ interface Props {
 }
 
 export function AgentScorecardWidget({ agentId, period = 'daily' }: Props) {
-  const [scorecard, setScorecard] = useState<AgentScorecard | null>(null)
-  const [loading, setLoading] = useState(true)
+  const requestKey = `${agentId}:${period}`
+  const [result, setResult] = useState<{
+    key: string
+    scorecard: AgentScorecard | null
+  } | null>(null)
 
   useEffect(() => {
-    fetchScorecard()
-  }, [agentId, period])
+    const controller = new AbortController()
+    fetch(`/api/agent/scorecard?agent_id=${agentId}&period=${period}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return null
+        return response.json() as Promise<AgentScorecard>
+      })
+      .then((scorecard) => setResult({ key: requestKey, scorecard }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        console.error('Failed to fetch scorecard:', error)
+        setResult({ key: requestKey, scorecard: null })
+      })
+    return () => controller.abort()
+  }, [agentId, period, requestKey])
 
-  async function fetchScorecard() {
-    try {
-      const res = await fetch(`/api/agent/scorecard?agent_id=${agentId}&period=${period}`)
-      if (res.ok) {
-        const data = await res.json()
-        setScorecard(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch scorecard:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loading = result?.key !== requestKey
+  const scorecard = loading ? null : result.scorecard
 
   if (loading) {
     return (

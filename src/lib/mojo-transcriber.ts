@@ -5,6 +5,11 @@
 import { readFile, stat } from 'fs/promises'
 const GROQ_AUDIO_UPLOAD_LIMIT_BYTES = 24 * 1024 * 1024
 
+type GroqTranscriptionResponse = {
+  segments?: { text?: string }[]
+  text?: string
+}
+
 export async function transcribeAudio(filePath: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
@@ -34,12 +39,12 @@ export async function transcribeAudio(filePath: string): Promise<string> {
     throw new Error(`Groq Whisper API error: ${response.status} — ${errorText}`)
   }
 
-  const result = await response.json()
+  const result = await response.json() as GroqTranscriptionResponse
 
   // verbose_json returns segments with timestamps — join into readable transcript
   if (result.segments && Array.isArray(result.segments)) {
     return result.segments
-      .map((seg: any) => seg.text?.trim())
+      .map((segment) => segment.text?.trim())
       .filter(Boolean)
       .join(' ')
   }
@@ -70,9 +75,10 @@ async function prepareAudioForGroq(filePath: string): Promise<string> {
       '32k',
       compressedPath,
     ])
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
     throw new Error(
-      `Recording is ${(original.size / 1024 / 1024).toFixed(1)} MB, over Groq's upload limit, and ffmpeg compression is unavailable: ${error?.message || String(error)}`,
+      `Recording is ${(original.size / 1024 / 1024).toFixed(1)} MB, over Groq's upload limit, and ffmpeg compression is unavailable: ${message}`,
     )
   }
 

@@ -50,13 +50,13 @@ async function main() {
     execSync('rm -rf .next', { cwd: '/Users/ernestdodson/savingkc-crm' })
 
     log('Running next build...')
-    const buildOutput = execSync('npx next build', {
+    execSync('npx next build', {
       cwd: '/Users/ernestdodson/savingkc-crm',
       encoding: 'utf8',
       timeout: 120000 // 2 min timeout
     })
     log('Build completed successfully')
-  } catch (err) {
+  } catch {
     log(`BUILD FAILED: ${err.message}`)
     return
   }
@@ -67,7 +67,7 @@ async function main() {
     execSync('kill $(lsof -ti:3002) 2>/dev/null || true', { encoding: 'utf8' })
     log('Port 3002 cleared')
     await new Promise(resolve => setTimeout(resolve, 2000))
-  } catch (err) {
+  } catch {
     log('No existing process on port 3002')
   }
 
@@ -99,7 +99,7 @@ async function main() {
         log(`Server ready (status ${response.status})`)
         break
       }
-    } catch (err) {
+    } catch {
       // Still starting up
     }
     await new Promise(resolve => setTimeout(resolve, 1000))

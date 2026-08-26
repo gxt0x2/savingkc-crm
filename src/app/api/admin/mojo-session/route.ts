@@ -32,8 +32,9 @@ export async function GET(req: Request) {
       configured: true,
       updatedAt: data.updated_at,
     })
-  } catch (e: any) {
-    return NextResponse.json({ configured: false, error: e.message })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Could not read Mojo session status'
+    return NextResponse.json({ configured: false, error: message })
   }
 }
 
@@ -63,7 +64,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ success: true, message: 'Mojo session saved' })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Could not save Mojo session'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -195,6 +195,8 @@ async function main() {
     )
 
     check('Auto-enrichment triggered', em?.auditTrail?.length > (m.auditTrail?.length || 0), `trail length: ${em?.auditTrail?.length} vs ${m.auditTrail?.length}`)
+    check('Prospect enrichment recorded', hasProspectEnrich, 'No prospect enrichment audit event')
+    check('County enrichment recorded', hasCountyEnrich, 'No county enrichment audit event')
 
     // Property data from enrichment
     const hasDwelling = em?.property?.dwelling?.sqft || em?.property?.dwelling?.yearBuilt
@@ -224,10 +226,6 @@ async function main() {
     const stderr = fs.readFileSync('/Users/ernestdodson/savingkc-crm/logs/stderr.log', 'utf8')
     const recentErrors = stderr.split('\n')
       .filter(l => l.includes('Error') || l.includes('error') || l.includes('FAIL') || l.includes('fail'))
-      .filter(l => {
-        // Only check errors from the last 2 minutes
-        return true // Can't easily filter by timestamp in stderr
-      })
       .slice(-10)
 
     if (recentErrors.length > 0) {

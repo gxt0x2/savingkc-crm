@@ -40,8 +40,9 @@ export async function GET() {
       coming_soon: comingSoon || [],
       recently_shipped: recentlyShipped || [],
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Agent status error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Could not load agent status'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

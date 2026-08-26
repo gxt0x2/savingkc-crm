@@ -175,7 +175,10 @@ export async function checkContractDeadlines(): Promise<StageTimeoutAlert[]> {
   const now = new Date()
 
   for (const lead of leads) {
-    const metadata = lead.metadata as any
+    const metadata = lead.metadata as {
+      inspection_end_date?: string
+      closing_date?: string
+    } | null
 
     // Check inspection deadline (flag if <48hrs)
     if (metadata?.inspection_end_date) {

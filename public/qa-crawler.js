@@ -181,12 +181,7 @@
 
       // Check for buttons that do nothing
       if (tag === 'button' || el.getAttribute('role') === 'button') {
-        const hasClick = el.onclick || el.getAttribute('onclick');
-        const hasHandler = getEventListeners ? false : true; // can't check in production
         const isDisabled = el.disabled || el.getAttribute('aria-disabled') === 'true';
-        const isSubmit = el.type === 'submit';
-        const isInForm = el.closest('form');
-        const hasDataAction = el.dataset.action || el.dataset.callback || el.getAttribute('data-radix-collection-item') !== null;
 
         if (isDisabled) {
           pageResults.push(makeResult('warn', 'Disabled button', `"${label}" is disabled — intentional?`, el));
@@ -444,9 +439,6 @@
 
     // Click-to-highlight handlers
     container.querySelectorAll('.qa-result-item[data-qa-el]').forEach((item, idx) => {
-      const resultIdx = results.filter((r) => r.type === 'result').indexOf(
-        results.filter((r) => r.type === 'result')[idx]
-      );
       item.addEventListener('click', () => {
         const r = results.filter((r) => r.type === 'result')[idx];
         if (r && r._el && document.contains(r._el)) {
@@ -481,7 +473,8 @@
       },
       results: results.map((r) => {
         if (r.type === 'header') return r;
-        const { _el, ...rest } = r;
+        const rest = { ...r };
+        delete rest._el;
         return rest;
       }),
     };

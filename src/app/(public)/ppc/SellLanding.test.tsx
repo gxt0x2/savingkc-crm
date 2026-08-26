@@ -7,7 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SellLanding } from './SellLanding'
 
 vi.mock('next/image', () => ({
-  default: ({ fill: _fill, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean }) => React.createElement('img', props),
+  default: (props: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean }) => {
+    const imageProps = { ...props }
+    delete imageProps.fill
+    return React.createElement('img', imageProps)
+  },
 }))
 
 function renderLanding(variant?: React.ComponentProps<typeof SellLanding>['variant']) {

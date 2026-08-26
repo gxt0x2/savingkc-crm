@@ -107,7 +107,7 @@ async function main() {
     const followUps = (actData.activities || []).filter(a => a[1] === 6)
     console.log(`   Found ${followUps.length} follow-up(s)`)
     followUps.forEach(a => {
-      const [id, type, agent, ts, details] = a
+      const details = a[4]
       console.log(`   ${details.contact_name}: ${details.datetime} (contact_id: ${details.contact_id})`)
     })
   }

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { useCardCollapse } from '@/hooks/use-card-collapse'
 
 interface CollapsibleCardProps {
   id: string
@@ -31,28 +31,7 @@ export function CollapsibleCard({
   action,
   className,
 }: CollapsibleCardProps) {
-  const storageKey = `ck_collapse_${id}`
-  const [open, setOpen] = useState(defaultOpen)
-  const [ready, setReady] = useState(false)
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey)
-      if (raw != null) setOpen(raw === '1')
-    } catch {
-      /* ignore */
-    }
-    setReady(true)
-  }, [storageKey])
-
-  useEffect(() => {
-    if (!ready) return
-    try {
-      localStorage.setItem(storageKey, open ? '1' : '0')
-    } catch {
-      /* ignore */
-    }
-  }, [open, ready, storageKey])
+  const [open, toggleOpen] = useCardCollapse(id, defaultOpen)
 
   return (
     <section
@@ -61,7 +40,7 @@ export function CollapsibleCard({
     >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className="w-full flex items-center justify-between px-5 py-3"
       >
         <div className="flex items-center gap-2">

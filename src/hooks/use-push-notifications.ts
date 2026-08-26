@@ -1,8 +1,24 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react'
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ''
+
+function subscribeToPushSupport() {
+  return () => undefined
+}
+
+function getPushSupportSnapshot() {
+  return (
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    'Notification' in window
+  )
+}
+
+function getServerPushSupportSnapshot() {
+  return false
+}
 
 /**
  * Convert a base64 URL-safe string to a Uint8Array for use with pushManager.subscribe()
@@ -22,7 +38,11 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 }
 
 export function usePushNotifications() {
-  const [isSupported, setIsSupported] = useState(false)
+  const isSupported = useSyncExternalStore(
+    subscribeToPushSupport,
+    getPushSupportSnapshot,
+    getServerPushSupportSnapshot,
+  )
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>('default')
   const autoSubscribeAttempted = useRef(false)
@@ -31,22 +51,13 @@ export function usePushNotifications() {
 
   // Check support and current state on mount
   useEffect(() => {
-    const supported =
-      typeof window !== 'undefined' &&
-      'serviceWorker' in navigator &&
-      'PushManager' in window &&
-      'Notification' in window
-
-    setIsSupported(supported)
-
-    if (!supported) return
-
-    setPermission(Notification.permission)
+    if (!isSupported) return
 
     // Register the service worker
     navigator.serviceWorker
       .register('/sw.js')
       .then(async (registration) => {
+        setPermission(Notification.permission)
         // Check if already subscribed
         const existing = await registration.pushManager.getSubscription()
         setIsSubscribed(!!existing)
@@ -54,7 +65,7 @@ export function usePushNotifications() {
       .catch((err) => {
         console.error('[push] Service worker registration failed:', err)
       })
-  }, [])
+  }, [isSupported])
 
   const subscribeImpl = useCallback(async () => {
     if (!isSupported) return
@@ -114,9 +125,12 @@ export function usePushNotifications() {
 
     if (isSupported && permission === 'granted' && !isSubscribed && !autoSubscribeAttempted.current) {
       autoSubscribeAttempted.current = true
-      subscribeImpl().catch((err) => {
-        console.error('[push] Auto-subscribe failed:', err)
-      })
+      const timer = window.setTimeout(() => {
+        subscribeImpl().catch((err) => {
+          console.error('[push] Auto-subscribe failed:', err)
+        })
+      }, 0)
+      return () => window.clearTimeout(timer)
     }
   }, [hasVapidKey, isSupported, permission, isSubscribed, subscribeImpl])
 

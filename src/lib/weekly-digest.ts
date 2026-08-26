@@ -32,6 +32,16 @@ export interface WeeklyDigest {
   recommendations: string[]
 }
 
+type StoredWeeklyDigestHealth = {
+  items_shipped?: number
+  bugs_resolved?: number
+  bugs_new?: number
+  bugs_open?: number
+  worker_health?: WeeklyDigest['worker_health']
+  error_rate?: WeeklyDigest['error_rate']
+  recommendations?: string[]
+}
+
 /**
  * Generate weekly system health digest
  */
@@ -263,7 +273,7 @@ export async function getLatestWeeklyDigest(): Promise<WeeklyDigest | null> {
     return null
   }
 
-  const health = data.system_health as any
+  const health = data.system_health as StoredWeeklyDigestHealth
 
   return {
     week_start: data.week_start,

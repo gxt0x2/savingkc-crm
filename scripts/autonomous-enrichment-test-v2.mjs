@@ -106,7 +106,7 @@ async function main() {
         log(`✓ Server ready (HTTP ${response.status})`)
         break
       }
-    } catch (err) {
+    } catch {
       // Still starting
     }
     await new Promise(resolve => setTimeout(resolve, 1000))

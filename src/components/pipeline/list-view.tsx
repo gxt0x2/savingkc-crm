@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { PersonalityBadge } from '@/components/ui/personality-badge'
 import { cn, stageLabel } from '@/lib/utils'
 import type { PersonalityType, DealStage } from '@/types'
 

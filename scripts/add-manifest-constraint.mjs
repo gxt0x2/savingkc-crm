@@ -9,7 +9,7 @@ const supabase = createClient(
 
 console.log('\n🔧 Adding unique constraint to manifests.lead_id...\n')
 
-const { data, error } = await supabase.rpc('exec_sql', {
+const { error } = await supabase.rpc('exec_sql', {
   sql: 'CREATE UNIQUE INDEX IF NOT EXISTS manifests_lead_id_unique ON manifests(lead_id);'
 })
 

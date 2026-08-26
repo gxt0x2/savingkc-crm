@@ -22,8 +22,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(scorecard)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Scorecard generation error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Could not generate agent scorecard'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type UIEvent as ReactUIEvent } from 'react'
+import Image from 'next/image'
 import OfferForm from './offer-form'
 import ShareButton from './share-button'
 import { trackEvent } from './track-events'
@@ -648,10 +649,13 @@ export default function MobileDealPage({
           <div className="absolute left-5 top-[calc(env(safe-area-inset-top)+24px)] z-10 rounded-full bg-black/45 px-3 py-1 text-[13px] font-semibold backdrop-blur">
             {galleryIndex + 1} / {photos.length}
           </div>
-          <img
+          <Image
             src={photos[galleryIndex]}
             alt={`${title} expanded photo ${galleryIndex + 1}`}
-            className="h-full w-full object-contain"
+            fill
+            sizes="100vw"
+            unoptimized
+            className="object-contain"
           />
           {photos.length > 1 && (
             <>

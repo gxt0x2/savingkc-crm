@@ -6,10 +6,6 @@ import { dirname, join } from 'path'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// Supabase connection string (password would be needed - this is a placeholder)
-// For production, you'd need the actual database password
-const connectionString = 'postgresql://postgres.fprrknfyzlthbxewnwmi:[PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres'
-
 const migrationPath = join(__dirname, '..', 'supabase', 'migrations', '20260328_manifests_table.sql')
 const sql = readFileSync(migrationPath, 'utf8')
 

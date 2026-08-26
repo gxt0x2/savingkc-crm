@@ -25,6 +25,12 @@ export interface MissingPillarWarning {
   callback_time?: string
 }
 
+type CallbackWithLead = {
+  lead_id: string | null
+  metadata: { due_date?: string } | null
+  leads: { full_name: string | null } | { full_name: string | null }[] | null
+}
+
 /**
  * Get pillar status for a lead
  */
@@ -135,9 +141,11 @@ export async function generateCallbackPillarWarnings(): Promise<number> {
 
   let created = 0
 
-  for (const callback of callbacks) {
-    const leadName = (callback as any).leads?.full_name
-    const callbackTime = (callback as any).metadata?.due_date
+  for (const rawCallback of callbacks) {
+    const callback = rawCallback as unknown as CallbackWithLead
+    const relatedLead = Array.isArray(callback.leads) ? callback.leads[0] : callback.leads
+    const leadName = relatedLead?.full_name ?? null
+    const callbackTime = callback.metadata?.due_date
 
     if (callback.lead_id && callbackTime) {
       await createCallbackBriefingWithPillars(

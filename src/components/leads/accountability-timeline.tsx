@@ -9,26 +9,32 @@ interface Props {
 }
 
 export function AccountabilityTimeline({ leadId }: Props) {
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([])
-  const [loading, setLoading] = useState(true)
+  const [result, setResult] = useState<{
+    leadId: string
+    timeline: TimelineEvent[]
+  } | null>(null)
 
   useEffect(() => {
-    fetchTimeline()
+    const controller = new AbortController()
+    fetch(`/api/agent/accountability-timeline?lead_id=${leadId}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return []
+        const data = await response.json() as { timeline?: TimelineEvent[] }
+        return data.timeline ?? []
+      })
+      .then((timeline) => setResult({ leadId, timeline }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        console.error('Failed to fetch accountability timeline:', error)
+        setResult({ leadId, timeline: [] })
+      })
+    return () => controller.abort()
   }, [leadId])
 
-  async function fetchTimeline() {
-    try {
-      const res = await fetch(`/api/agent/accountability-timeline?lead_id=${leadId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setTimeline(data.timeline || [])
-      }
-    } catch (err) {
-      console.error('Failed to fetch accountability timeline:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loading = result?.leadId !== leadId
+  const timeline = loading ? [] : result.timeline
 
   if (loading) {
     return (

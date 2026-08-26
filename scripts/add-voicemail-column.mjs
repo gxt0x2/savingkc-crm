@@ -18,7 +18,7 @@ async function addColumn() {
   console.log('Running SQL:', sql)
   console.log('')
 
-  const { data, error } = await supabase.rpc('exec_sql', { sql_query: sql })
+  const { error } = await supabase.rpc('exec_sql', { sql_query: sql })
 
   if (error) {
     console.error('❌ Error:', error)

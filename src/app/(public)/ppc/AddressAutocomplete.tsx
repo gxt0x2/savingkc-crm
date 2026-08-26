@@ -169,16 +169,7 @@ export function AddressAutocomplete({
     if (!focused || !placesAvailable) return
 
     const query = value.trim()
-    if (query && query === lastSelectedValueRef.current) {
-      setSuggestions([])
-      setActiveIndex(-1)
-      return
-    }
-    if (query.length < 4) {
-      setSuggestions([])
-      setActiveIndex(-1)
-      return
-    }
+    if (query === lastSelectedValueRef.current || query.length < 4) return
 
     const requestId = ++requestIdRef.current
     const timer = window.setTimeout(() => {
@@ -262,6 +253,9 @@ export function AddressAutocomplete({
         }}
         onChange={(e) => {
           lastSelectedValueRef.current = null
+          setSuggestions([])
+          setActiveIndex(-1)
+          setLoading(false)
           onChange(e.target.value)
         }}
         onKeyDown={(e) => {

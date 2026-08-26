@@ -50,7 +50,7 @@ async function insertBatch(table, rows, batchSize = 500) {
 
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize)
-    const { data, error } = await supabase.from(table).insert(batch)
+    const { error } = await supabase.from(table).insert(batch)
 
     if (error) {
       console.error(`❌ Batch ${Math.floor(i / batchSize) + 1} failed:`, error.message)
