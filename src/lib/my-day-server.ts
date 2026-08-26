@@ -10,11 +10,14 @@ import {
   type MyDayData,
   type MyDayGoalSet,
   type MyDayLead,
+  type MyDayNativeDialerPerformanceRow,
   type MyDayPerformanceRow,
   type MyDayRangeRequest,
 } from '@/lib/my-day'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
+import { CASEY_CRM_EMAIL } from '@/lib/telephony/agent-identity'
+import { loadDialerDailyPerformance } from '@/lib/server/dialer-daily-performance'
 
 const TASK_ACTIVITY_TYPES = ['task', 'appointment', 'follow_up', 'callback', 'send_offer'] as const
 
@@ -58,7 +61,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
   activityEnd.setUTCDate(activityEnd.getUTCDate() + 1)
   const commitmentEnd = new Date(now.getTime() + 14 * 86_400_000).toISOString()
 
-  const [statsResult, performanceResult, leadsResult, rolesResult] = await Promise.all([
+  const [statsResult, performanceResult, leadsResult, rolesResult, dialerPerformanceResult] = await Promise.all([
     db
       .from('agent_daily_stats')
       .select('date, calls_made, meaningful_conversations, followups_completed, followups_missed, metadata')
@@ -81,6 +84,17 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .order('updated_at', { ascending: false })
       .limit(5000),
     db.from('roles').select('name, kpi_targets').eq('name', 'Acquisition Agent').maybeSingle(),
+    loadDialerDailyPerformance({
+      actorEmail: CASEY_CRM_EMAIL,
+      agentName: 'Casey',
+      from: queryStart,
+      to: queryEnd,
+      now,
+      includeLeads: false,
+    }).then((data) => ({ data, error: null as Error | null })).catch((error: unknown) => ({
+      data: null,
+      error: error instanceof Error ? error : new Error('Native dialer performance unavailable'),
+    })),
   ])
 
   if (leadsResult.error) throw new Error(`Casey's pipeline could not load: ${leadsResult.error.message}`)
@@ -141,6 +155,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
     now,
     stats: statsResult.error ? [] : (statsResult.data ?? []) as MyDayAgentStat[],
     performance: performanceResult.error ? [] : (performanceResult.data ?? []) as MyDayPerformanceRow[],
+    dialerPerformance: (dialerPerformanceResult.data?.rows ?? []) as MyDayNativeDialerPerformanceRow[],
     leads,
     activities: (activityResult.data ?? []) as MyDayActivity[],
     tasks: dedupeActivities([
@@ -151,6 +166,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
     goals,
     availability: {
       mojoPerformance: !performanceResult.error,
+      dialerPerformance: !dialerPerformanceResult.error,
       agentStats: !statsResult.error,
       appointments: !appointmentsResult.error,
       habits: false,

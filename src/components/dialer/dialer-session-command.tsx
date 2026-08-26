@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { formatPhone } from '@/lib/format'
+import type { DialerTodayMetrics } from '@/lib/dialer-session-client'
 
 type SessionStatus = 'active' | 'paused' | 'completed' | 'stopped'
 type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
@@ -27,8 +28,7 @@ interface DialerSessionCommandProps {
   durableSessionId: string
   durableStatus?: SessionStatus
   stopRequested?: boolean
-  dials: number
-  contacts: number
+  todayMetrics: DialerTodayMetrics | null
   queueState: SessionQueueState | null
   controlsDocked?: boolean
   actionPending: boolean
@@ -70,6 +70,14 @@ function SessionMetric({ icon, label, value, tone }: { icon: string; label: stri
   </article>
 }
 
+function formatDialerTime(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const seconds = Math.max(0, Math.floor(value))
+  const hours = Math.floor(seconds / 3_600)
+  const minutes = Math.floor((seconds % 3_600) / 60)
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 export function DialerSessionCommand(props: DialerSessionCommandProps) {
   const [confirmEndOpen, setConfirmEndOpen] = useState(false)
   const {
@@ -82,11 +90,6 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
   } = props
   const endSessionDialogRef = useDialogAccessibility<HTMLElement>(confirmEndOpen, () => setConfirmEndOpen(false))
   const isCalling = Boolean(props.queueState?.queueItem && ['calling', 'on_call'].includes(props.queueState.status))
-  const dialTime = props.queueState?.outcomeRequired
-    ? 'Outcome'
-    : props.queueState?.status === 'on_call'
-    ? props.queueState.callDuration || '00:00'
-    : props.queueState?.status === 'calling' ? 'Dialing' : 'Idle'
   const isDurable = Boolean(props.durableSessionId)
   const isPaused = props.durableStatus === 'paused'
   const canEndSession = isDurable && !props.stopRequested && Boolean(props.durableStatus && ['active', 'paused'].includes(props.durableStatus))
@@ -146,10 +149,11 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
 
         {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Preview only — calling controls are shown but disabled. In production, Resume calling restores the saved seller and loads every ready number.</div> : null}
 
-        <section aria-label="Live session status" className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <SessionMetric icon="schedule" label="Current call" value={dialTime} tone="info" />
-          <SessionMetric icon="call" label="Calls" value={props.dials} tone="brand" />
-          <SessionMetric icon="phone_in_talk" label="Contacts" value={props.contacts} tone="success" />
+        <section aria-label="Today’s acquisition metrics" className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
+          <SessionMetric icon="timer" label="Dialer time" value={formatDialerTime(props.todayMetrics?.dialing_seconds)} tone="info" />
+          <SessionMetric icon="call" label="Calls" value={props.todayMetrics?.calls ?? '—'} tone="brand" />
+          <SessionMetric icon="phone_in_talk" label="Contacts" value={props.todayMetrics?.contacts ?? '—'} tone="success" />
+          <SessionMetric icon="person_add" label="Leads" value={props.todayMetrics?.leads ?? '—'} tone="brand" />
           <SessionMetric icon="format_list_numbered" label="Seller progress" value={`${props.currentIndex + 1}/${props.queueSize}`} tone="warning" />
         </section>
       </div>

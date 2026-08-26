@@ -279,14 +279,17 @@ function formatWeekRange(endValue: string) {
 
 function FunnelCard({ data }: { data: MyDayData }) {
   const { metrics, performance } = { metrics: data.funnel, performance: data.performance }
+  const performanceSource = performance.source === 'combined'
+    ? 'Mojo + CRM dialer'
+    : performance.source === 'native_dialer' ? 'CRM dialer' : 'Mojo'
   return (
     <section aria-labelledby="conversion-funnel-title" className="crm-panel rounded-xl px-4 py-4 sm:px-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="conversion-funnel-title" className="text-[22px] font-black tracking-[-0.02em]">Conversion Funnel</h2>
         {performance.status === 'available' ? (
-          <p className="text-[11px] font-bold text-[var(--crm-text-muted)]">Mojo source · {dialingTime(performance.dialingSeconds)} · {sourceFreshness(performance.sourceFetchedAt)}</p>
+          <p className="text-[11px] font-bold text-[var(--crm-text-muted)]">{performanceSource} · {dialingTime(performance.dialingSeconds)} · {sourceFreshness(performance.sourceFetchedAt)}</p>
         ) : performance.status === 'partial' ? (
-          <p className="text-[11px] font-bold text-[var(--crm-warning)]">Mojo performance incomplete · totals are withheld</p>
+          <p className="text-[11px] font-bold text-[var(--crm-warning)]">{performanceSource} is partial · available totals are shown</p>
         ) : (
           <p className="text-[11px] font-bold text-[var(--crm-danger)]">Mojo performance unavailable · call totals are not inferred</p>
         )}
