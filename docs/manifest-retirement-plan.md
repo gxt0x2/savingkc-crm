@@ -68,7 +68,7 @@ My Day, Pipeline, and Prospecting smoke checks passed after the cutover.
 
 The writer shutdown preserves all 367 historical Manifest rows and 10,668 history rows observed in the production preflight. It does not delete, rewrite, or detach them from retained PPC history.
 
-## Retention boundary
+## Retention boundary: Do not delete yet
 
 The archive is private historical storage, not deletion authority. Deleting its
 rows or tables would be a new destructive operation requiring its own retention
