@@ -29,9 +29,33 @@ function requiredText(value: unknown, field: string, maxLength: number): string 
   return normalized
 }
 
-function databaseFailure(context: string, error: { message?: string } | null | undefined): never {
+function databaseFailure(
+  context: string,
+  error: { message?: string } | null | undefined,
+  publicMessage = 'The contact note could not be saved',
+): never {
   console.error(`[prospecting-contact-note] ${context}`, error?.message || 'Unknown database error')
-  throw new ProspectingCampaignError('contact_note_unavailable', 503, 'The contact note could not be saved')
+  throw new ProspectingCampaignError('contact_note_unavailable', 503, publicMessage)
+}
+
+export async function loadProspectingContactNotes(
+  rawProspectId: unknown,
+  database: ContactNoteDatabase = supabase,
+) {
+  const prospectId = requiredText(rawProspectId, 'Source Prospect', 80)
+  const { data, error } = await database
+    .from('lead_activities')
+    .select('id,lead_id,activity_type,description,agent,metadata,created_at')
+    .eq('activity_type', 'note')
+    .contains('metadata', {
+      source: 'prospecting_contact_note',
+      prospect_id: prospectId,
+    })
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (error) databaseFailure('activity list failed', error, 'Contact notes are temporarily unavailable')
+
+  return { activities: data ?? [] }
 }
 
 export async function saveProspectingContactNote(

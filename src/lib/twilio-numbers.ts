@@ -49,6 +49,9 @@ export const TWILIO_NUMBERS = [
 export const CONVERSATION_TWILIO_NUMBERS = TWILIO_NUMBERS.filter((number) => number.conversationEligible)
 export const BROADCAST_TWILIO_NUMBERS = TWILIO_NUMBERS.filter((number) => number.broadcastEligible)
 export const DIALER_CALLER_ID_NUMBERS = TWILIO_NUMBERS.filter((number) => number.dialerEligible)
+export const COLD_CALL_DIALER_NUMBERS = TWILIO_NUMBERS.filter((number) => (
+  number.purpose === 'cold_call' && number.dialerEligible
+))
 
 export type SmsSenderUse = 'conversation' | 'broadcast' | 'reply' | 'system'
 
@@ -79,6 +82,10 @@ export function isAllowedSmsSender(value: string | null | undefined, use: SmsSen
 
 export function isDialerCallerIdNumber(value: string | null | undefined): boolean {
   return Boolean(value && DIALER_CALLER_ID_NUMBERS.some((number) => number.value === value))
+}
+
+export function isColdCallDialerNumber(value: string | null | undefined): boolean {
+  return Boolean(value && COLD_CALL_DIALER_NUMBERS.some((number) => number.value === value))
 }
 
 export function isReservedTwilioNumber(value: string | null | undefined): boolean {

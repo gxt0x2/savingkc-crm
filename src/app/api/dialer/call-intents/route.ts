@@ -45,6 +45,28 @@ function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+function sessionCallerIdForAttempt(
+  settingsSnapshot: Record<string, unknown>,
+  fallbackCallerId: string | null,
+  requestedCallerId: string | null,
+): string | null {
+  const rawPlan = settingsSnapshot.callerPlan
+  if (!rawPlan || typeof rawPlan !== 'object' || Array.isArray(rawPlan)) return fallbackCallerId
+  const plan = rawPlan as Record<string, unknown>
+  const mode = plan.mode === 'rotation' ? 'rotation' : 'static'
+  const allowed = mode === 'rotation' && Array.isArray(plan.rotationCallerIds)
+    ? plan.rotationCallerIds.flatMap((value) => text(value) ? [text(value) as string] : [])
+    : text(plan.staticCallerId) ? [text(plan.staticCallerId) as string] : []
+  if (allowed.length < 1) return null
+  if (requestedCallerId && !allowed.includes(requestedCallerId)) return null
+  return requestedCallerId || allowed[0]
+}
+
+function sessionRingCount(settingsSnapshot: Record<string, unknown>): number | null {
+  const value = Number(settingsSnapshot.ringCount)
+  return Number.isInteger(value) && value >= 4 && value <= 7 ? value : null
+}
+
 export async function POST(request: Request) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return json({ allowed: false, error: 'Unauthorized' }, 401)
@@ -93,7 +115,9 @@ export async function POST(request: Request) {
       return json({ allowed: false, error: 'Calling is paused because session authorization is unavailable', reason: 'session_engine_unavailable' }, 503)
     }
   }
-  const sessionCallerId = session ? text(session.callerId) : null
+  const sessionCallerId = session
+    ? sessionCallerIdForAttempt(session.settingsSnapshot || {}, text(session.callerId), requestedCallerId)
+    : null
   if (session && !sessionCallerId) {
     return json({ allowed: false, error: 'The active campaign has no approved caller ID', reason: 'invalid_caller_id' }, 409)
   }
@@ -168,6 +192,7 @@ export async function POST(request: Request) {
       campaignMemberId: issued.claims.campaignMemberId,
       clientAttemptId: issued.claims.clientAttemptId,
       sessionId,
+      ringCount: session ? sessionRingCount(session.settingsSnapshot || {}) : null,
       expiresAt: issued.claims.expiresAt,
     })
   } catch (error) {

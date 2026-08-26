@@ -119,6 +119,26 @@ describe('DispositionModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 
+  it('keeps a rail-selected reached outcome open for qualification review', () => {
+    const onDisposition = vi.fn()
+    render(
+      <DispositionModal
+        open
+        onClose={() => {}}
+        onDisposition={onDisposition}
+        leadName="Angela Taylor"
+        variant="prospecting"
+        dispositions={PROSPECTING_DIALER_DISPOSITIONS}
+        selectedDisposition="spoke_with_owner"
+        autoSubmitOnPick={false}
+        primaryActionLabel="Save & Next Number"
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Save & Next Number' })).toBeEnabled()
+    expect(onDisposition).not.toHaveBeenCalled()
+  })
+
   it('keeps Appointment Set manual in an heir queue so the real time can be entered', () => {
     render(
       <DispositionModal

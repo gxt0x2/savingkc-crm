@@ -25,6 +25,7 @@ export interface DurableDialerSession {
   currentSubjectId: string
   currentCampaignMemberId: string | null
   callerId: string | null
+  settingsSnapshot: Record<string, unknown>
   dialsCompleted: number
   contacts: number
   skips: number

@@ -8,6 +8,14 @@ import { launchProspectingDialerCampaign } from '@/lib/server/prospecting-campai
 
 const actor = { email: 'ernest@savingkc.com', name: 'Ernest' }
 const campaignId = '11111111-1111-4111-8111-111111111111'
+const setup = {
+  startBehavior: 'resume' as const,
+  callerMode: 'static' as const,
+  callerIds: ['+18163100845'],
+  ringCount: 7 as const,
+  notDialedHours: null,
+  notContactedHours: null,
+}
 const campaignRow = {
   id: campaignId,
   name: 'August Absentee',
@@ -49,14 +57,14 @@ describe('launchProspectingDialerCampaign', () => {
     mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
       ? Promise.resolve({ data: [], error: null })
       : Promise.resolve({ data: { created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 }, error: null }))
-    const result = await launchProspectingDialerCampaign(actor, campaignId)
+    const result = await launchProspectingDialerCampaign(actor, campaignId, setup)
 
-    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v3', {
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v4', {
       p_campaign_id: campaignId,
       p_actor_email: actor.email,
       p_actor_name: actor.name,
-      p_caller_id: campaignRow.caller_id,
-      p_start_behavior: 'resume',
+      p_caller_id: '+18163100845',
+      p_session_setup: setup,
     })
     expect(result).toEqual({ created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 })
   })
@@ -65,10 +73,11 @@ describe('launchProspectingDialerCampaign', () => {
     mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
       ? Promise.resolve({ data: [], error: null })
       : Promise.resolve({ data: { created: true, session: { id: 'session-1' }, batchSize: 80, remaining: 0 }, error: null }))
-    await launchProspectingDialerCampaign(actor, campaignId, 'first_unworked')
+    const firstUnworkedSetup = { ...setup, startBehavior: 'first_unworked' as const }
+    await launchProspectingDialerCampaign(actor, campaignId, firstUnworkedSetup)
 
-    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v3', expect.objectContaining({
-      p_start_behavior: 'first_unworked',
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v4', expect.objectContaining({
+      p_session_setup: firstUnworkedSetup,
     }))
   })
 
@@ -76,7 +85,7 @@ describe('launchProspectingDialerCampaign', () => {
     mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
       ? Promise.resolve({ data: [], error: null })
       : Promise.resolve({ data: null, error: { message: 'campaign_dialer_complete' } }))
-    await expect(launchProspectingDialerCampaign(actor, campaignId)).rejects.toMatchObject({
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup)).rejects.toMatchObject({
       code: 'campaign_dialer_complete',
       status: 409,
     })

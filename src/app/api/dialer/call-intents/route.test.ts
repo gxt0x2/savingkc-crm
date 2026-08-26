@@ -13,7 +13,7 @@ vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: moc
 vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   evaluateOutboundDialerCall: mocks.evaluateOutboundDialerCall,
   recordBlockedDialerCall: mocks.recordBlockedDialerCall,
-  isAllowedDialerCallerId: (value: string) => value === '+18167277667',
+  isAllowedDialerCallerId: (value: string) => ['+18167277667', '+18163100845'].includes(value),
   dialerBlockStatus: (reason: string) => reason === 'policy_unavailable' ? 503 : 409,
 }))
 vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: mocks.createDialerCallIntent }))
@@ -135,7 +135,14 @@ describe('web dialer call intent authorization', () => {
       token: 'signed-intent',
       claims: { to: '+19135550123', callerId: '+18167277667', kind: 'lead', leadId, prospectId: null, prospectPhoneId: null, campaignMemberId: null, clientAttemptId: 'attempt-1', expiresAt: 123 },
     })
-    mocks.getDialerSession.mockResolvedValue({ id: sessionId, currentSubjectKind: 'lead', currentSubjectId: leadId, currentCampaignMemberId: null, callerId: '+18167277667' })
+    mocks.getDialerSession.mockResolvedValue({
+      id: sessionId,
+      currentSubjectKind: 'lead',
+      currentSubjectId: leadId,
+      currentCampaignMemberId: null,
+      callerId: '+18167277667',
+      settingsSnapshot: { ringCount: 6 },
+    })
 
     const response = await POST(request({
       phone: '(913) 555-0123',
@@ -160,6 +167,7 @@ describe('web dialer call intent authorization', () => {
       phone: '+19135550123',
       callerId: '+18167277667',
     })
+    await expect(response.clone().json()).resolves.toMatchObject({ ringCount: 6 })
   })
 
   it('uses the server-owned session caller ID instead of a stale agent default', async () => {
@@ -191,6 +199,42 @@ describe('web dialer call intent authorization', () => {
     expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith(expect.objectContaining({ callerId: '+18167277667' }))
     expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({ callerId: '+18167277667' }))
     expect(mocks.authorizeDialerSessionAttempt).toHaveBeenCalledWith(expect.objectContaining({ callerId: '+18167277667' }))
+  })
+
+  it('accepts only the current session rotation lines', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000010'
+    const leadId = '00000000-0000-4000-8000-000000000011'
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({ ...allowed, leadId })
+    mocks.getDialerSession.mockResolvedValue({
+      id: sessionId,
+      currentSubjectKind: 'lead',
+      currentSubjectId: leadId,
+      currentCampaignMemberId: null,
+      callerId: '+18167277667',
+      settingsSnapshot: {
+        callerPlan: {
+          mode: 'rotation',
+          staticCallerId: '+18167277667',
+          rotationCallerIds: ['+18167277667', '+18163100845'],
+        },
+      },
+    })
+    mocks.createDialerCallIntent.mockImplementation((input) => ({
+      token: 'signed-intent',
+      claims: { ...input, clientAttemptId: 'attempt-1', expiresAt: 123 },
+    }))
+
+    const allowedResponse = await POST(request({
+      phone: '(913) 555-0123', callerId: '+18163100845', kind: 'lead', leadId, sessionId, clientAttemptId: 'attempt-1',
+    }))
+    expect(allowedResponse.status).toBe(200)
+    expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith(expect.objectContaining({ callerId: '+18163100845' }))
+
+    const blockedResponse = await POST(request({
+      phone: '(913) 555-0123', callerId: '+18166088588', kind: 'lead', leadId, sessionId, clientAttemptId: 'attempt-2',
+    }))
+    expect(blockedResponse.status).toBe(409)
+    expect(await blockedResponse.json()).toMatchObject({ reason: 'invalid_caller_id' })
   })
 
   it('authorizes a session-bound source Prospect without inventing a Lead', async () => {

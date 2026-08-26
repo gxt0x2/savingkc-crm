@@ -14,7 +14,8 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('next/dynamic', () => ({
-  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; pendingSessionId?: string | null; presentation?: string }) {
+  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; pendingSessionId?: string | null; presentation?: string; campaignId?: string }) {
+    if (props.campaignId) return <section aria-label="Preview prospecting call controls"><span>Read-only preview</span></section>
     if (typeof props.open !== 'boolean') return null
     return <div data-testid="lazy-dialer" data-open={String(props.open)} data-presentation={props.presentation} data-session-id={props.pendingSessionId ?? ''}><button type="button" onClick={props.onClose}>Close phone</button></div>
   },
@@ -86,6 +87,35 @@ describe('AppShell first-load work', () => {
     act(() => window.dispatchEvent(new Event('show-dialer-controls')))
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+  })
+
+  it('keeps a safe persistent call rail visible during a Prospecting preview', () => {
+    navigation.pathname = '/prospecting'
+    navigation.search = 'preview_campaign=campaign-1&queue_label=Pilot&caller_id=%2B18163100845&caller_mode=static&start_behavior=resume&ring_count=7'
+    render(<AppShell><main>Calling workflow preview</main></AppShell>)
+
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
+    expect(screen.getByRole('region', { name: 'Preview prospecting call controls' })).toBeVisible()
+    expect(screen.getByText('Read-only preview')).toBeVisible()
+    expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
+  })
+
+  it('does not reopen the session dialer after returning to the campaign screen', () => {
+    navigation.pathname = '/prospecting'
+    navigation.search = 'session_id=session-1&campaign=campaign-1'
+    const { rerender } = render(<AppShell><main>Calling floor</main></AppShell>)
+
+    act(() => window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: {
+      queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],
+      sessionId: 'session-1',
+    } })))
+    expect(screen.getByTestId('lazy-dialer')).toBeInTheDocument()
+
+    navigation.search = 'campaign=campaign-1'
+    rerender(<AppShell><main>Campaign screen</main></AppShell>)
+
+    expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
+    expect(screen.getByText('Campaign screen')).toBeVisible()
   })
 
   it('removes a cached profile photo after the server confirms it was deleted', async () => {

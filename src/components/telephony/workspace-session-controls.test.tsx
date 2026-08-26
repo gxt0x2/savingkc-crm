@@ -13,10 +13,9 @@ describe('WorkspaceSessionControls', () => {
     expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Pause session' }))
     fireEvent.click(screen.getByRole('button', { name: 'Skip seller' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Mark seller dead' }))
     fireEvent.click(screen.getByRole('button', { name: 'End session' }))
 
-    expect(onAction.mock.calls).toEqual([['pause'], ['skip'], ['dead'], ['end']])
+    expect(onAction.mock.calls).toEqual([['pause'], ['skip'], ['end']])
   })
 
   it('keeps hang up available in the rail for an active call', () => {
@@ -37,5 +36,16 @@ describe('WorkspaceSessionControls', () => {
     rerender(<WorkspaceSessionControls status="active" callBusy={false} outcomeRequired onAction={onAction} />)
     expect(screen.getByRole('button', { name: 'Pause after outcome' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
+  })
+
+  it('keeps the live control layout visible but inert in read-only preview', () => {
+    const onAction = vi.fn()
+    render(<WorkspaceSessionControls status="active" callBusy outcomeRequired previewOnly onAction={onAction} />)
+
+    expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause after outcome' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()
+    expect(onAction).not.toHaveBeenCalled()
   })
 })

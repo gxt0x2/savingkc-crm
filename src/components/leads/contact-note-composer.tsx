@@ -4,14 +4,22 @@ import { useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 
-export function ContactNoteComposer({ contactName, onSave }: { contactName: string; onSave: (description: string) => Promise<void> }) {
+export function ContactNoteComposer({
+  contactName,
+  onSave,
+  readOnlyPreview = false,
+}: {
+  contactName: string
+  onSave: (description: string) => Promise<void>
+  readOnlyPreview?: boolean
+}) {
   const [note, setNote] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [error, setError] = useState<string | null>(null)
 
   async function submit() {
     const description = note.trim()
-    if (!description || status === 'saving') return
+    if (readOnlyPreview || !description || status === 'saving') return
     setStatus('saving')
     setError(null)
     try {
@@ -33,15 +41,17 @@ export function ContactNoteComposer({ contactName, onSave }: { contactName: stri
           onChange={(event) => { setNote(event.target.value); setStatus('idle'); setError(null) }}
           rows={1}
           maxLength={2_000}
+          disabled={readOnlyPreview}
           placeholder={`Add a note for ${contactName}…`}
-          className="crm-field min-h-10 w-full resize-y rounded-lg px-3 py-2 text-xs leading-5"
+          className="crm-field min-h-10 w-full resize-y rounded-lg px-3 py-2 text-xs leading-5 disabled:cursor-not-allowed disabled:opacity-70"
         />
       </label>
-      <button type="submit" disabled={!note.trim() || status === 'saving'} className="crm-secondary-button inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:opacity-40">
+      <button type="submit" disabled={readOnlyPreview || !note.trim() || status === 'saving'} title={readOnlyPreview ? 'Available in a live calling session' : undefined} className="crm-secondary-button inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40">
         <Icon name={status === 'saving' ? 'progress_activity' : 'note_add'} size="text-sm" className={status === 'saving' ? 'animate-spin' : ''} />
         {status === 'saving' ? 'Saving…' : 'Save note'}
       </button>
     </form>
+    {readOnlyPreview ? <p className="mt-1.5 text-[10px] font-bold text-[var(--crm-text-muted)]">Notes are visible for workflow review and save only during live calling.</p> : null}
     {status === 'saved' ? <p role="status" className="mt-1.5 text-[10px] font-bold text-[var(--crm-success)]">Note saved to this contact.</p> : null}
     {error ? <p role="alert" className="mt-1.5 text-[10px] font-bold text-[var(--crm-danger)]">{error}</p> : null}
   </div>

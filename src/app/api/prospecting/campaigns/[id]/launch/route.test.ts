@@ -24,7 +24,12 @@ describe('prospecting campaign launch route', () => {
     expect(mocks.launch).toHaveBeenCalledWith(
       { email: 'ernest@savingkc.com', name: 'Ernest' },
       '11111111-1111-4111-8111-111111111111',
-      'resume',
+      expect.objectContaining({
+        startBehavior: 'resume',
+        callerMode: 'static',
+        callerIds: ['+18163100845'],
+        ringCount: 7,
+      }),
     )
   })
 
@@ -35,7 +40,7 @@ describe('prospecting campaign launch route', () => {
       body: JSON.stringify({ startBehavior: 'first_unworked' }),
     }), context)
 
-    expect(mocks.launch).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'first_unworked')
+    expect(mocks.launch).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ startBehavior: 'first_unworked' }))
   })
 
   it('rejects an unknown start behavior before session mutation', async () => {
@@ -46,6 +51,22 @@ describe('prospecting campaign launch route', () => {
     }), context)
 
     expect(response.status).toBe(400)
+    expect(mocks.launch).not.toHaveBeenCalled()
+  })
+
+  it('rejects non-cold-call lines and oversized rotations before session mutation', async () => {
+    const response = await POST(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x/launch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callerMode: 'rotation',
+        callerIds: ['+18166088588', '+18163100845'],
+        ringCount: 7,
+      }),
+    }), context)
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'invalid_session_setup' })
     expect(mocks.launch).not.toHaveBeenCalled()
   })
 

@@ -5,8 +5,9 @@ import { CampaignActivityFeed } from '@/components/prospecting/campaign-activity
 import { CampaignAudienceWorkbench } from '@/components/prospecting/campaign-audience-workbench'
 import { CampaignDeliveryPulse } from '@/components/prospecting/campaign-delivery-pulse'
 import { CampaignLaunchReadiness } from '@/components/prospecting/campaign-launch-readiness'
+import { ProspectingSessionSetup } from '@/components/prospecting/prospecting-session-setup'
 import { Icon } from '@/components/ui/icon'
-import type { ProspectingCampaignDetail, ProspectingCampaignSummary, ProspectingDialerStartBehavior } from '@/lib/prospecting/campaign-contract'
+import type { ProspectingCampaignDetail, ProspectingCampaignSummary, ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 
 function percent(part: number, total: number) {
   return total > 0 ? Math.round((part / total) * 100) : 0
@@ -50,7 +51,7 @@ type CampaignDashboardProps = {
   onDuplicate: (campaign: ProspectingCampaignDetail) => void
   onEdit?: (campaign: ProspectingCampaignDetail) => void
   onTransition: (status: 'active' | 'paused' | 'archived') => void
-  onLaunchDialer: (startBehavior: ProspectingDialerStartBehavior) => void
+  onLaunchDialer: (setup: ProspectingDialerSessionSetup) => void
   onAudienceChanged?: () => void | Promise<void>
 }
 
@@ -73,7 +74,6 @@ export function CampaignDashboard({
   onAudienceChanged,
 }: CampaignDashboardProps) {
   const [managementOpen, setManagementOpen] = useState(false)
-  const [startBehavior, setStartBehavior] = useState<ProspectingDialerStartBehavior>('resume')
 
   const campaignMetrics = detail?.kind === 'dialer'
     ? [
@@ -94,7 +94,6 @@ export function CampaignDashboard({
 
   function selectCampaign(id: string) {
     setManagementOpen(false)
-    setStartBehavior('resume')
     onSelect(id)
   }
 
@@ -139,16 +138,7 @@ export function CampaignDashboard({
                     <p className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white/60">ready to call</p>
                     <p className="mt-5 max-w-2xl text-sm leading-6 text-white/70">Review one seller, see every associated person and phone number, place a call, then save the outcome before moving to the next seller. Your progress is preserved if you stop.</p>
                   </div>
-                  {detail.status === 'active' ? <div className="min-w-[280px] space-y-3 text-left lg:text-right">
-                    {writesEnabled ? <fieldset className="rounded-2xl border border-white/15 bg-black/15 p-1" aria-label="Choose where calling begins">
-                      {([
-                        ['resume', 'Resume where I stopped', 'Default · restores the exact seller and number'],
-                        ['first_unworked', 'First unworked seller', 'Rebuilds from the remaining unworked audience'],
-                      ] as const).map(([value, label, hint]) => <label key={value} className={`flex cursor-pointer items-start gap-2 rounded-xl px-3 py-2 text-left transition-colors ${startBehavior === value ? 'bg-white text-[#121a26]' : 'text-white/70 hover:bg-white/10'}`}><input type="radio" name="dialer-start-behavior" value={value} checked={startBehavior === value} onChange={() => setStartBehavior(value)} className="mt-1 accent-[#E32E2E]" /><span><strong className="block text-xs">{label}</strong><span className={`mt-0.5 block text-[10px] ${startBehavior === value ? 'text-slate-500' : 'text-white/45'}`}>{hint}</span></span></label>)}
-                    </fieldset> : null}
-                    <button type="button" onClick={() => onLaunchDialer(startBehavior)} disabled={actionPending || detail.stats.active === 0} className="crm-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl px-7 text-base font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={writesEnabled ? (startBehavior === 'resume' ? 'resume' : 'first_page') : 'preview'} className="text-xl" />{writesEnabled ? (startBehavior === 'resume' ? 'Resume calling' : 'Start with first unworked') : 'Preview calling workflow'}</button>
-                    {!writesEnabled ? <p className="mt-2 max-w-xs text-xs font-bold text-white/55">Read-only: review sellers and numbers without calling or saving changes.</p> : null}
-                  </div> : null}
+                  {detail.status === 'active' ? <ProspectingSessionSetup key={detail.id} actionPending={actionPending} activeCount={detail.stats.active} campaignCallerId={detail.callerId} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} /> : null}
                 </div> : <div className="mt-7"><p className="text-sm font-bold text-white/70">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p><p className="mt-2 text-xs text-white/50">Replies and opt-outs stop the sequence automatically.</p></div>}
 
                 <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 border-t border-white/10 pt-5 text-xs font-bold text-white/65">

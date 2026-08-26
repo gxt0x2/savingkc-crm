@@ -27,6 +27,13 @@ const DialerPanel = dynamic(
     loading: () => <div role="status" className="fixed bottom-5 right-5 z-[70] rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-xs font-black shadow-[var(--crm-shadow-lg)]">Opening phone…</div>,
   },
 )
+const ProspectingPreviewCallRail = dynamic(
+  () => import('@/components/prospecting/prospecting-preview-call-rail').then((mod) => mod.ProspectingPreviewCallRail),
+  {
+    ssr: false,
+    loading: () => <div role="status" className="grid h-full place-items-center p-6 text-center text-xs font-black text-[var(--skc-text-tertiary)]">Loading safe call preview…</div>,
+  },
+)
 
 function HeaderSvg({ name, className = 'h-5 w-5' }: { name: 'menu' | 'search' | 'phone' | 'sun' | 'moon' | 'close'; className?: string }) {
   const paths = {
@@ -63,6 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
   const [dialerMounted, setDialerMounted] = useState(false)
+  const [dialerOwnerRoute, setDialerOwnerRoute] = useState<string | null>(null)
   const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [adminReviewerEmail, setAdminReviewerEmail] = useState<string | null>(null)
@@ -74,6 +82,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const currentRouteKey = `${pathname || ''}?${searchParams.toString()}`
+  const currentRouteKeyRef = useRef(currentRouteKey)
+  currentRouteKeyRef.current = currentRouteKey
   const isAcquisitionsCalendar =
     (pathname?.startsWith('/calendar') ?? false) &&
     (searchParams.get('department') === 'acquisitions' || (!searchParams.get('department') && mode === 'acquisitions'))
@@ -113,8 +124,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // the softphone docked there so saving a disposition does not open a second
   // full-screen dialer over the heir queue. `/dialer` remains redirect-only
   // compatibility for previously shared session links.
+  const isProspectingPreviewFloor = pathname?.startsWith('/prospecting') && Boolean(searchParams.get('preview_campaign'))
   const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
-    searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort'),
+    searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort') || isProspectingPreviewFloor,
   )
   const dialerPresentation = pathname?.startsWith('/dialer')
     ? 'dock'
@@ -207,6 +219,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   function handleDialerStatusChange(status: CallStatus) {
     setDialerStatus(status)
     if (status === 'incoming') {
+      setDialerOwnerRoute(currentRouteKeyRef.current)
       setDialerMounted(true)
       setShowDialer(true)
     }
@@ -228,6 +241,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueAutoDial(false)
         setPendingQueueRingCount(null)
         setPendingSessionId(null)
+        setDialerOwnerRoute(currentRouteKeyRef.current)
         setDialerMounted(true)
         setShowDialer(true)
       }
@@ -240,10 +254,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setPendingQueueAutoDial(false)
       setPendingQueueRingCount(null)
       setPendingSessionId(null)
+      setDialerOwnerRoute(currentRouteKeyRef.current)
       setDialerMounted(true)
       setShowDialer(true)
     }
     function handleShowDialerControls() {
+      setDialerOwnerRoute(currentRouteKeyRef.current)
       setDialerMounted(true)
       setShowDialer(true)
     }
@@ -258,6 +274,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueRingCount(typeof detail.ringCount === 'number' ? detail.ringCount : null)
         setPendingSessionId(typeof detail.sessionId === 'string' ? detail.sessionId : null)
         setPendingDialLead(null)
+        setDialerOwnerRoute(currentRouteKeyRef.current)
         setDialerMounted(true)
         setShowDialer(true)
       }
@@ -353,8 +370,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [effectiveWorkspaceEmail, signedInEmail, user])
 
-  const shouldRenderDialer = dialerMounted || Boolean(isProspectingCallingFloor)
-  const dialerPanel = shouldRenderDialer ? <DialerPanel
+  const activeCallKeepsDialerMounted = ['calling', 'on_call', 'incoming'].includes(dialerStatus)
+  const activeFloorSessionId = isProspectingCallingFloor ? searchParams.get('session_id') : null
+  const floorQueueMatchesSession = !isProspectingCallingFloor
+    || pendingSessionId === null
+    || pendingSessionId === activeFloorSessionId
+  const shouldRenderDialer = Boolean(isProspectingCallingFloor)
+    || (dialerMounted && (activeCallKeepsDialerMounted || dialerOwnerRoute === currentRouteKey))
+  const dialerPanel = isProspectingPreviewFloor ? <ProspectingPreviewCallRail
+    campaignId={searchParams.get('preview_campaign') || ''}
+    queueLabel={searchParams.get('queue_label') || 'Prospecting session'}
+    callerId={searchParams.get('caller_id') || ''}
+    callerMode={searchParams.get('caller_mode') || 'static'}
+    rotationNumbers={searchParams.get('rotation_numbers') || ''}
+    startBehavior={searchParams.get('start_behavior') || 'resume'}
+              ringCount={searchParams.get('ring_count') || '7'}
+    notDialedHours={searchParams.get('not_dialed_hours')}
+    notContactedHours={searchParams.get('not_contacted_hours')}
+  /> : shouldRenderDialer ? <DialerPanel
+    key={isProspectingCallingFloor ? `prospecting:${activeFloorSessionId || 'preview'}` : 'global'}
     open={isProspectingCallingFloor ? true : showDialer}
     onClose={() => {
       if (isProspectingCallingFloor) return
@@ -369,12 +403,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }}
     onStatusChange={handleDialerStatusChange}
     pendingDial={pendingDialLead}
-    pendingQueue={pendingQueue}
-    pendingQueueCallerId={pendingQueueCallerId}
-    pendingQueueCallerPlan={pendingQueueCallerPlan}
-    pendingQueueAutoDial={pendingQueueAutoDial}
-    pendingQueueRingCount={pendingQueueRingCount}
-    pendingSessionId={pendingSessionId || (isProspectingCallingFloor ? searchParams.get('session_id') : null)}
+    pendingQueue={floorQueueMatchesSession ? pendingQueue : null}
+    pendingQueueCallerId={floorQueueMatchesSession ? pendingQueueCallerId : null}
+    pendingQueueCallerPlan={floorQueueMatchesSession ? pendingQueueCallerPlan : null}
+    pendingQueueAutoDial={floorQueueMatchesSession && pendingQueueAutoDial}
+    pendingQueueRingCount={floorQueueMatchesSession ? pendingQueueRingCount : null}
+    pendingSessionId={isProspectingCallingFloor ? activeFloorSessionId : pendingSessionId}
     presentation={dialerPresentation}
     signedInEmail={user?.email}
   /> : null
@@ -494,6 +528,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
+                  setDialerOwnerRoute(currentRouteKey)
                   setDialerMounted(true)
                   setShowDialer((value) => !value)
                 }}

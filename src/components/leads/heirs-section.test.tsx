@@ -197,7 +197,10 @@ describe('HeirsSection dial queue', () => {
 
   it('shows where the full phone run starts in preview without enabling calling', async () => {
     mockHeirsFetch()
-    renderHeirsSection({ collapsible: false, showAllPhones: true, readOnlyPreview: true })
+    const queueEvents: CustomEvent[] = []
+    const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
+    window.addEventListener('prospecting-preview-queue-ready', onQueue)
+    renderHeirsSection({ collapsible: false, showAllPhones: true, readOnlyPreview: true, autoStart: true })
 
     expect(await screen.findByRole('button', { name: 'Call all 4 numbers' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Call all 4 numbers' })).toHaveAttribute(
@@ -207,7 +210,15 @@ describe('HeirsSection dial queue', () => {
     expect(screen.getByRole('button', { name: 'Call 2 numbers for Angela Taylor' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Call 2 numbers for Ben Taylor' })).toBeDisabled()
     expect(screen.getAllByText('Call 2 numbers')).toHaveLength(2)
-    expect(screen.queryByRole('textbox', { name: /Note for/i })).not.toBeInTheDocument()
+    const previewNotes = screen.getAllByRole('textbox', { name: /Note for/i })
+    expect(previewNotes).toHaveLength(2)
+    previewNotes.forEach((note) => expect(note).toBeDisabled())
+    expect(screen.getAllByRole('button', { name: 'Save note' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Verify this number' }).every((button) => button.hasAttribute('disabled'))).toBe(true)
+    expect(screen.getAllByRole('button', { name: 'Send SMS' }).every((button) => button.hasAttribute('disabled'))).toBe(true)
+    await waitFor(() => expect(queueEvents).toHaveLength(1))
+    expect(queueEvents[0].detail.queue).toHaveLength(4)
+    window.removeEventListener('prospecting-preview-queue-ready', onQueue)
   })
 
   it('labels each person-level phone run with its exact eligible number count', async () => {

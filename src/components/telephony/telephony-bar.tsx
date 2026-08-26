@@ -20,6 +20,8 @@ import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
 import { WorkspaceCallController } from './workspace-call-controller'
 import { WorkspaceSessionControls } from './workspace-session-controls'
+import { WorkspaceDispositionControls } from './workspace-disposition-controls'
+import { ActiveCallCard, IncomingCallCard } from './dialer-call-state-cards'
 import { DialerQueueHeader } from './dialer-queue-header'
 import { DialerPanelHeader } from './dialer-panel-header'
 import { useDialerStartCountdown } from './use-dialer-start-countdown'
@@ -145,6 +147,9 @@ export function DialerPanel({
   const [attemptsPlaced, setAttemptsPlaced] = useState(0)
 
   const [showDisposition, setShowDisposition] = useState(false)
+  const [outcomeRequired, setOutcomeRequired] = useState(false)
+  const [workspaceDispositionPreset, setWorkspaceDispositionPreset] = useState<DispositionType | null>(null)
+  const [workspaceDispositionSaving, setWorkspaceDispositionSaving] = useState<DispositionType | null>(null)
   const [reviewContext, setReviewContext] = useState<{ sessionId: string; clientAttemptId: string } | null>(null)
   const [recoveryPending, setRecoveryPending] = useState<RecoverableDialerAttempt | null>(null)
   const [showNewTaskFor, setShowNewTaskFor] = useState<SearchResult | null>(null)
@@ -189,7 +194,16 @@ export function DialerPanel({
   const { arm: armAutoStart, cancel: cancelAutoStart, finish: finishAutoStart, remainingSeconds: autoStartCountdownSeconds } = useDialerStartCountdown(pendingAutoDialRef)
   const callIntentPendingRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
-  const postCallReview = useDialerPostCallReview({ open: showDisposition, sessionId: reviewContext?.sessionId || null, clientAttemptId: reviewContext?.clientAttemptId || null })
+  const postCallReview = useDialerPostCallReview({ open: outcomeRequired, sessionId: reviewContext?.sessionId || null, clientAttemptId: reviewContext?.clientAttemptId || null })
+  const requireDisposition = useCallback(() => {
+    setOutcomeRequired(true)
+    if (presentation !== 'workspace') setShowDisposition(true)
+  }, [presentation])
+  const clearDispositionRequirement = useCallback(() => {
+    setOutcomeRequired(false)
+    setShowDisposition(false)
+    setWorkspaceDispositionPreset(null)
+  }, [])
   const endQueue = useCallback(() => {
     cancelAutoStart()
     campaignCallerIdRef.current = null
@@ -197,7 +211,8 @@ export function DialerPanel({
     setQueueIndex(0)
     setSelectedLead(null)
     setDialNumber('')
-  }, [cancelAutoStart])
+    clearDispositionRequirement()
+  }, [cancelAutoStart, clearDispositionRequirement])
 
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
@@ -241,11 +256,11 @@ export function DialerPanel({
         queueLength: queue?.length ?? 0,
         status,
         sessionId: pendingSessionId,
-        outcomeRequired: showDisposition || Boolean(recoveryPending),
+        outcomeRequired: outcomeRequired || Boolean(recoveryPending),
         callDuration: status === 'on_call' ? callTimer : status === 'calling' ? '00:00' : null,
       },
     }))
-  }, [callTimer, pendingSessionId, queueItem, queueIndex, queue, recoveryPending, showDisposition, status])
+  }, [callTimer, outcomeRequired, pendingSessionId, queueItem, queueIndex, queue, recoveryPending, status])
 
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
@@ -253,6 +268,7 @@ export function DialerPanel({
       setViewTab('dial')
       setQueue(pendingQueue)
       setQueueIndex(0)
+      clearDispositionRequirement()
       ringCountRef.current = pendingQueueRingCount ?? null
       const planFromEvent = normalizeDialerCallerPlan(
         pendingQueueCallerPlan,
@@ -283,7 +299,7 @@ export function DialerPanel({
       setSearchQuery('')
       setSearchResults([])
     }
-  }, [armAutoStart, cancelAutoStart, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount, pendingSessionId])
+  }, [armAutoStart, cancelAutoStart, clearDispositionRequirement, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount, pendingSessionId])
 
   useEffect(() => {
     if (!open || !pendingSessionId || !pendingQueue?.length) return
@@ -334,13 +350,13 @@ export function DialerPanel({
           return
         }
         setError(null)
-        setShowDisposition(true)
+        requireDisposition()
       })
       .catch((restoreError) => {
         if (!cancelled) setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.')
       })
     return () => { cancelled = true }
-  }, [cancelAutoStart, open, pendingQueue, pendingSessionId])
+  }, [cancelAutoStart, open, pendingQueue, pendingSessionId, requireDisposition])
 
   useEffect(() => {
     function onSessionState(event: Event) {
@@ -377,11 +393,11 @@ export function DialerPanel({
         callRef.current.disconnect()
         return
       }
-      if (activeSessionIdRef.current === pendingSessionId && activeAttemptIdRef.current) setShowDisposition(true)
+      if (activeSessionIdRef.current === pendingSessionId && activeAttemptIdRef.current) requireDisposition()
     }
     window.addEventListener('dialer-session-pause-requested', onPauseRequested)
     return () => window.removeEventListener('dialer-session-pause-requested', onPauseRequested)
-  }, [cancelAutoStart, pendingSessionId])
+  }, [cancelAutoStart, pendingSessionId, requireDisposition])
 
   useEffect(() => {
     function onStopRequested(event: Event) {
@@ -399,12 +415,12 @@ export function DialerPanel({
         return
       }
       if (activeSessionIdRef.current === pendingSessionId && activeAttemptIdRef.current) {
-        setShowDisposition(true)
+        requireDisposition()
       }
     }
     window.addEventListener('dialer-session-stop-requested', onStopRequested)
     return () => window.removeEventListener('dialer-session-stop-requested', onStopRequested)
-  }, [cancelAutoStart, endQueue, pendingSessionId])
+  }, [cancelAutoStart, endQueue, pendingSessionId, requireDisposition])
 
   function log(msg: string) {
     console.log(`[DialerPanel] ${msg}`)
@@ -635,7 +651,8 @@ export function DialerPanel({
         CallerId: authorized.callerId,
         DialIntentToken: authorized.intent,
       }
-      if (ringCountRef.current && ringCountRef.current > 0) params.RingCount = String(ringCountRef.current)
+      const authorizedRingCount = authorized.ringCount ?? ringCountRef.current
+      if (authorizedRingCount && authorizedRingCount > 0) params.RingCount = String(authorizedRingCount)
       // enableRingingState: true is required by the Twilio Voice SDK so the
       // parent (browser) call emits a 'ringing' event and plays the network
       // ringback tone while the destination phone rings. Without it the
@@ -739,7 +756,7 @@ export function DialerPanel({
         }
         // Always prompt for disposition after a call ends — the modal
         // handles the no-lead case (manual dial) gracefully.
-        setShowDisposition(true)
+        requireDisposition()
       })
       call.on('cancel', () => {
         callRef.current = null
@@ -753,7 +770,7 @@ export function DialerPanel({
             durationSeconds: lastCallDurationSecondsRef.current,
           }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
         }
-        setShowDisposition(true)
+        requireDisposition()
       })
       if (dialerStopIsPending(activeSessionIdRef.current, stopRequestedSessionIdRef.current)) {
         call.disconnect()
@@ -783,7 +800,7 @@ export function DialerPanel({
     if (
       !pendingAutoDialRef.current ||
       (autoStartCountdownSeconds !== null && autoStartCountdownSeconds > 0) ||
-      showDisposition ||
+      outcomeRequired ||
       status !== 'ready' ||
       !queueMode ||
       !queueItem ||
@@ -795,7 +812,7 @@ export function DialerPanel({
     const timeout = window.setTimeout(() => {
       if (
         !pendingAutoDialRef.current ||
-        showDisposition ||
+        outcomeRequired ||
         status !== 'ready' ||
         !queueItem ||
         !dialNumber.trim()
@@ -807,7 +824,7 @@ export function DialerPanel({
     }, 350)
 
     return () => window.clearTimeout(timeout)
-  }, [autoStartCountdownSeconds, dialNumber, finishAutoStart, queueItem, queueMode, showDisposition, status])
+  }, [autoStartCountdownSeconds, dialNumber, finishAutoStart, outcomeRequired, queueItem, queueMode, status])
 
   // Auto-focus the dial input when the dialer opens (idle / dial tab only),
   // so the user can immediately type a number on their keyboard without
@@ -843,7 +860,7 @@ export function DialerPanel({
         })
         setRecoveryPending({ ...recoveryPending, needsEndTransition: false })
       }
-      setShowDisposition(true)
+      requireDisposition()
     } catch (restoreError) {
       setError(restoreError instanceof Error ? restoreError.message : 'Could not finish the interrupted call.')
     }
@@ -855,6 +872,7 @@ export function DialerPanel({
       return
     }
     setShowDisposition(false)
+    setWorkspaceDispositionPreset(null)
   }
 
   function acceptIncoming() {
@@ -966,6 +984,7 @@ export function DialerPanel({
           clientAttemptId: durableAttemptId,
           notes,
         })
+        clearDispositionRequirement()
         return true
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not save call outcome.')
@@ -1103,7 +1122,29 @@ export function DialerPanel({
     activeAttemptIdRef.current = null
     setRecoveryPending(null)
     if (completesLead) activeSessionIdRef.current = null
+    clearDispositionRequirement()
     return true
+  }
+
+  async function chooseWorkspaceDisposition(disposition: DispositionType) {
+    if (!outcomeRequired || workspaceDispositionSaving) return
+    const availableDispositions = PROSPECTING_DIALER_DISPOSITIONS.filter((item) => activeQueueItemRef.current?.leadId || item.id !== 'appointment_set')
+    const requiresReview = availableDispositions.some((item) => (
+      item.id === disposition && (item.group === 'reached' || item.requiresReason)
+    ))
+    if (!availableDispositions.some((item) => item.id === disposition)) return
+    if (requiresReview) {
+      setWorkspaceDispositionPreset(disposition)
+      setShowDisposition(true)
+      return
+    }
+
+    setWorkspaceDispositionSaving(disposition)
+    try {
+      await handleDisposition(disposition, undefined, { autoDialNext: true })
+    } finally {
+      setWorkspaceDispositionSaving(null)
+    }
   }
 
   function advanceQueue(): HeirQueueItem | null {
@@ -1372,74 +1413,11 @@ export function DialerPanel({
           )}
 
           {/* Incoming Call UI */}
-          {status === 'incoming' && (
-            <div className="bg-[#1A1616] border border-[#7D2626] rounded-[6px] p-5 animate-pulse">
-              <div className="text-center mb-4">
-                <div className="w-14 h-14 bg-[#E32E2E]/20 rounded-[6px] flex items-center justify-center mx-auto mb-3">
-                  <Icon name="call" className="text-[#FF7A7A]" size="text-2xl" />
-                </div>
-                <p className="text-white font-bold text-lg">Incoming Call</p>
-                <p className="text-white/50 text-sm">Unknown Caller</p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={acceptIncoming}
-                  className="flex-1 py-3 bg-white text-black font-bold rounded-[6px] hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icon name="call" size="text-lg" />
-                  Accept
-                </button>
-                <button
-                  onClick={rejectIncoming}
-                  className="flex-1 py-3 bg-[#E32E2E] text-white font-bold rounded-[6px] hover:bg-[#C42626] transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icon name="call_end" size="text-lg" />
-                  Reject
-                </button>
-              </div>
-            </div>
-          )}
+          {status === 'incoming' ? <IncomingCallCard onAccept={acceptIncoming} onReject={rejectIncoming} /> : null}
 
           {/* Active Call Card */}
-          {isOnCall && (
-            <div className={`rounded-[6px] p-5 border transition-all ${status === 'on_call' ? 'bg-[#191417] border-[#7D2626]' : 'bg-[#18181E] border-[#2F2F38]'}`}
-              style={status === 'on_call' ? { animation: 'pulse-border 2s ease-in-out infinite' } : undefined}
-            >
-              <div className="text-center mb-4">
-                <div className={`w-12 h-12 rounded-[6px] flex items-center justify-center mx-auto mb-2 ${status === 'on_call' ? 'bg-[#E32E2E]/20' : 'bg-white/10'}`}>
-                  <Icon name="call" className={status === 'on_call' ? 'text-[#FF7A7A]' : 'text-white'} size="text-2xl" />
-                </div>
-                {selectedLead && (
-                  <p className="text-white font-bold text-base">{selectedLead.full_name}</p>
-                )}
-                <p className="text-white/60 font-mono text-sm">{dialNumber}</p>
-                {status === 'on_call' && (
-                  <p className="text-[#FF7A7A] font-mono text-xl font-bold mt-1">{callTimer}</p>
-                )}
-                {status === 'calling' && (
-                  <p className="text-white/80 text-sm mt-1 animate-pulse">Dialing...</p>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={toggleMute}
-                  className={`flex-1 py-2.5 rounded-[6px] font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
-                    muted ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-[#1E1E25] text-white/75 border border-[#31313A] hover:bg-[#272730]'
-                  }`}
-                >
-                  <Icon name={muted ? 'mic_off' : 'mic'} size="text-lg" />
-                  {muted ? 'Unmute' : 'Mute'}
-                </button>
-                <button
-                  onClick={hangup}
-                  className="flex-1 py-2.5 bg-[#E32E2E] text-white font-bold rounded-[6px] hover:bg-[#C42626] transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icon name="call_end" size="text-lg" />
-                  Hang Up
-                </button>
-              </div>
-            </div>
-          )}
+          {isOnCall ? <ActiveCallCard callTimer={callTimer} dialNumber={dialNumber} leadName={selectedLead?.full_name}
+            muted={muted} onHangup={hangup} onToggleMute={toggleMute} status={status} /> : null}
 
           {isWorkspace && !isOnCall && status !== 'incoming' && (
             <WorkspaceCallController
@@ -1448,12 +1426,20 @@ export function DialerPanel({
               dialDisplay={dialNumber ? formatDialDisplay(dialNumber) : ''}
               dialReady={Boolean(dialNumber.trim()) && status === 'ready' && workspaceSessionStatus !== 'paused'}
               effectiveCallerId={effectiveCallerId}
+              loadingSessionQueue={Boolean(pendingSessionId && !pendingQueue && !queue?.length)}
               onCall={makeCall}
               onPauseAutoStart={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))}
               queueItem={queueItem}
               statusLabel={DIALER_STATUS_LABEL[status]}
             />
           )}
+
+          {isWorkspace && pendingSessionId ? <WorkspaceDispositionControls
+            dispositions={PROSPECTING_DIALER_DISPOSITIONS.filter((item) => queueItem?.leadId || item.id !== 'appointment_set')}
+            outcomeRequired={outcomeRequired || Boolean(recoveryPending)}
+            savingDisposition={workspaceDispositionSaving}
+            onDisposition={(disposition) => { void chooseWorkspaceDisposition(disposition) }}
+          /> : null}
 
           {/* Dial Section (when not on call and not incoming) */}
           {!isWorkspace && !isOnCall && status !== 'incoming' && viewTab === 'dial' && (
@@ -1670,7 +1656,7 @@ export function DialerPanel({
         </div>
         {isWorkspace && pendingSessionId ? <div className="shrink-0 bg-[var(--skc-surface-1)] px-5 pb-4">
           <WorkspaceSessionControls status={workspaceSessionStatus} callBusy={isOnCall}
-            outcomeRequired={showDisposition || Boolean(recoveryPending)} onAction={(action) => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action } }))} />
+            outcomeRequired={outcomeRequired || Boolean(recoveryPending)} onAction={(action) => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action } }))} />
         </div> : null}
         </div>
       </div>
@@ -1701,6 +1687,9 @@ export function DialerPanel({
         showVerifyToggle={Boolean(dispositionQueueItem?.prospect_phone_id)}
         verifyLabel={dispositionQueueItem?.prospect_phone_id ? `Verified — this is ${dispositionQueueItem.heirName}` : undefined}
         variant={dispositionQueueItem ? 'prospecting' : 'standard'}
+        autoSubmitOnPick={!workspaceDispositionPreset}
+        selectedDisposition={workspaceDispositionPreset ?? undefined}
+        onDispositionChange={workspaceDispositionPreset ? setWorkspaceDispositionPreset : undefined}
         primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save Call'}
         showSecondaryAction={Boolean(dispositionQueueItem)}
         nextActions={selectedLead && (!dispositionQueueItem || dispositionQueueItem.leadId) ? [

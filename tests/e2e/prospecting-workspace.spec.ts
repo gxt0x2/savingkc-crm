@@ -102,10 +102,12 @@ async function mockCallingPreview(page: Page) {
     }],
   }))
   await page.route('**/api/leads/*/activities?**', (route) => fulfill(route, { activities: [] }))
-  await page.route('**/api/prospecting/contact-notes', (route) => route.fulfill({
-    status: 201,
+  await page.route('**/api/prospecting/contact-notes**', (route) => route.fulfill({
+    status: route.request().method() === 'GET' ? 200 : 201,
     contentType: 'application/json',
-    body: JSON.stringify({ activity: { id: 'activity-1' } }),
+    body: JSON.stringify(route.request().method() === 'GET'
+      ? { activities: [] }
+      : { activity: { id: 'activity-1' } }),
   }))
 }
 
@@ -161,17 +163,17 @@ test('a read-only deployment opens the real calling workflow without exposing mu
   await mockCallingPreview(page)
   await page.goto(`/prospecting?campaign=${dialerCampaign.id}`, { waitUntil: 'domcontentloaded' })
 
-  await page.getByRole('button', { name: 'Preview calling workflow' }).click()
+  await page.getByRole('button', { name: 'Preview call session' }).click()
   await expect(page).toHaveURL(new RegExp(`preview_campaign=${dialerCampaign.id}`))
   await expect(page.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
   await expect(page.getByText(/Preview only .* calling controls are shown but disabled/i)).toBeVisible()
   await expect(page.getByRole('link', { name: 'Open live calling' })).toHaveCount(0)
-  const liveStatus = page.getByRole('region', { name: 'Live session status' })
+  const liveStatus = page.getByRole('region', { name: 'Today’s acquisition metrics' })
   await expect(liveStatus).toBeVisible()
-  await expect(liveStatus.locator('article')).toHaveCount(4)
-  await expect(page.getByText('Caller ID')).toHaveCount(0)
+  await expect(liveStatus.locator('article')).toHaveCount(5)
+  await expect(page.getByText('Caller ID')).toBeVisible()
   await expect(page.getByText('Sellers worked')).toHaveCount(0)
-  await expect(page.getByText('Current call')).toBeVisible()
+  await expect(page.getByText('Dialer time')).toBeVisible()
   await expect(page.getByText('Calls', { exact: true })).toBeVisible()
   await expect(page.getByText('Contacts', { exact: true })).toBeVisible()
   await expect(liveStatus.getByText('Seller progress', { exact: true })).toBeVisible()
@@ -185,10 +187,18 @@ test('a read-only deployment opens the real calling workflow without exposing mu
   await expect(page.getByText('(816) 555-0123', { exact: true })).toBeVisible()
   await expect(page.getByText('(816) 555-0124', { exact: true })).toBeVisible()
   await expect(page.getByText(/2 ready numbers shown · no call attempt will be recorded/i)).toHaveCount(0)
-  await expect(page.getByRole('textbox', { name: /Note for/i })).toHaveCount(0)
+  const previewNote = page.getByRole('textbox', { name: 'Note for Helen Seller' })
+  await expect(previewNote).toBeVisible()
+  await expect(previewNote).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Save note' })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Calling unavailable in read-only preview' })).toHaveCount(2)
-  await expect(page.getByRole('button', { name: 'Call controls' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Dead' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Pause session' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'End session' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Dead Lead' })).toBeDisabled()
+  await expect(page.getByText(/Texting is visible for workflow review but disabled/i)).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Type a text...' })).toHaveCount(0)
   expect(mutationRequests).toEqual([])
 })
 
