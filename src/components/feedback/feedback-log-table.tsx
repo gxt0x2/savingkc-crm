@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 
 interface FeedbackItem {
@@ -18,34 +18,41 @@ interface FeedbackItem {
 }
 
 export function FeedbackLogTable() {
-  const [items, setItems] = useState<FeedbackItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [filterType, setFilterType] = useState<string>('')
   const [filterStatus, setFilterStatus] = useState<string>('')
   const [selectedItem, setSelectedItem] = useState<FeedbackItem | null>(null)
+  const [refreshVersion, refreshItems] = useReducer((version: number) => version + 1, 0)
+  const params = new URLSearchParams()
+  if (filterType) params.set('type', filterType)
+  if (filterStatus) params.set('status', filterStatus)
+  const queryString = params.toString()
+  const [result, setResult] = useState<{
+    queryString: string
+    refreshVersion: number
+    items: FeedbackItem[]
+  } | null>(null)
 
   useEffect(() => {
-    fetchItems()
-  }, [filterType, filterStatus])
+    const controller = new AbortController()
+    fetch(`/api/feedback/log?${queryString}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return []
+        const data = await response.json() as { items?: FeedbackItem[] }
+        return data.items ?? []
+      })
+      .then((items) => setResult({ queryString, refreshVersion, items }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        console.error('Failed to fetch feedback log:', error)
+        setResult({ queryString, refreshVersion, items: [] })
+      })
+    return () => controller.abort()
+  }, [queryString, refreshVersion])
 
-  async function fetchItems() {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      if (filterType) params.append('type', filterType)
-      if (filterStatus) params.append('status', filterStatus)
-
-      const res = await fetch(`/api/feedback/log?${params}`)
-      if (res.ok) {
-        const data = await res.json()
-        setItems(data.items || [])
-      }
-    } catch (err) {
-      console.error('Failed to fetch feedback log:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const hasCurrentResult =
+    result?.queryString === queryString && result.refreshVersion === refreshVersion
+  const loading = !hasCurrentResult
+  const items = hasCurrentResult ? result.items : []
 
   async function updateStatus(id: string, source: string, newStatus: string) {
     try {
@@ -56,8 +63,8 @@ export function FeedbackLogTable() {
       })
 
       if (res.ok) {
-        fetchItems()
         setSelectedItem(null)
+        refreshItems()
       }
     } catch (err) {
       console.error('Failed to update status:', err)
