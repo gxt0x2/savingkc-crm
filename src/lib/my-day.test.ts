@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  buildMojoAttentionItems,
   buildMyDay,
   normalizeMyDayMonth,
   resolveMyDayDateRange,
@@ -9,6 +8,7 @@ import {
   type MyDayActivity,
   type MyDayLead,
 } from './my-day'
+import { buildMojoAttentionItems } from './my-day-attention'
 
 function lead(overrides: Partial<MyDayLead> = {}): MyDayLead {
   return {

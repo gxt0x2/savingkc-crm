@@ -2,22 +2,24 @@ import 'server-only'
 
 import { isCurrentUserAdmin } from '@/lib/auth/admin'
 import {
-  buildMojoAttentionItems,
   buildMyDay,
   resolveMyDayDateRange,
   type MyDayActivity,
   type MyDayAgentStat,
-  type MyDayAttentionLead,
   type MyDayAppointment,
   type MyDayData,
   type MyDayGoalSet,
   type MyDayLead,
   type MyDayNativeDialerPerformanceRow,
-  type MyDayMojoEvent,
   type MyDayPerformanceRow,
   type MyDayRangeRequest,
-  type MyDayTerminalEvent,
 } from '@/lib/my-day'
+import {
+  buildMojoAttentionItems,
+  type MyDayAttentionLead,
+  type MyDayMojoEvent,
+  type MyDayTerminalEvent,
+} from '@/lib/my-day-attention'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 import { CASEY_CRM_EMAIL } from '@/lib/telephony/agent-identity'
