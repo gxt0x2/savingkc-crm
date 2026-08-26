@@ -5,30 +5,28 @@ import { useAuth } from './use-auth'
 
 export function useIsAdmin() {
   const { user, loading: authLoading } = useAuth()
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const email = user?.email ?? null
+  const [result, setResult] = useState<{ email: string; isAdmin: boolean } | null>(null)
 
   useEffect(() => {
-    if (authLoading) return
-    if (!user?.email) {
-      setIsAdmin(false)
-      setLoading(false)
-      return
-    }
+    if (authLoading || !email) return
     let cancelled = false
-    fetch(`/api/settings?email=${encodeURIComponent(user.email)}`)
+    fetch(`/api/settings?email=${encodeURIComponent(email)}`)
       .then(r => r.json())
       .then(d => {
         if (cancelled) return
-        setIsAdmin(Boolean(d?.profile?.is_admin))
-        setLoading(false)
+        setResult({ email, isAdmin: Boolean(d?.profile?.is_admin) })
       })
       .catch(() => {
         if (cancelled) return
-        setLoading(false)
+        setResult({ email, isAdmin: false })
       })
     return () => { cancelled = true }
-  }, [user?.email, authLoading])
+  }, [email, authLoading])
+
+  const hasCurrentResult = email !== null && result?.email === email
+  const isAdmin = hasCurrentResult ? result.isAdmin : false
+  const loading = authLoading || (email !== null && !hasCurrentResult)
 
   return { isAdmin, loading }
 }

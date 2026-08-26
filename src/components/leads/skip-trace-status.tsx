@@ -1,6 +1,7 @@
 // SKP-01: Skip Trace Status Section
 // Night 4 Phase 1: Property Dossier
 
+import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 
 export interface SkipTracePhone {
@@ -23,8 +24,9 @@ interface SkipTraceStatusProps {
 }
 
 export function SkipTraceStatus({ data, onRetrace }: SkipTraceStatusProps) {
+  const [renderedAt] = useState(Date.now)
   const daysSinceTrace = data.last_traced_date
-    ? Math.floor((Date.now() - new Date(data.last_traced_date).getTime()) / (1000 * 60 * 60 * 24))
+    ? Math.floor((renderedAt - new Date(data.last_traced_date).getTime()) / (1000 * 60 * 60 * 24))
     : null
 
   const needsRetrace = data.needs_retrace || (daysSinceTrace !== null && daysSinceTrace > 90)

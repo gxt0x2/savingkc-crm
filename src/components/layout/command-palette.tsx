@@ -47,14 +47,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Auto-focus input on open, reset state on close
+  // This component is unmounted when closed, so state resets naturally.
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 0)
-    } else {
-      setQuery('')
-      setResults([])
-      setActiveIndex(0)
     }
   }, [open])
 
@@ -62,14 +58,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   useEffect(() => {
     if (!open) return
     const q = query.trim()
-    if (q.length < 2) {
-      setResults([])
-      setLoading(false)
-      return
-    }
-    setLoading(true)
+    if (q.length < 2) return
     const ctrl = new AbortController()
     const t = setTimeout(() => {
+      setLoading(true)
       fetch(`/api/leads/search?q=${encodeURIComponent(q)}&limit=8`, { signal: ctrl.signal })
         .then((r) => r.json())
         .then((d) => {
@@ -103,13 +95,13 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       onClose()
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActiveIndex((i) => Math.min(i + 1, Math.max(results.length - 1, 0)))
+      setActiveIndex((i) => Math.min(i + 1, Math.max(visibleResults.length - 1, 0)))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setActiveIndex((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const lead = results[activeIndex]
+      const lead = visibleResults[activeIndex]
       if (lead) handleSelect(lead)
     }
   }
@@ -118,7 +110,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   const trimmed = query.trim()
   const showEmpty = trimmed.length < 2
-  const showNoMatch = trimmed.length >= 2 && !loading && results.length === 0
+  const searchActive = open && !showEmpty
+  const visibleResults = searchActive ? results : []
+  const visibleLoading = searchActive && loading
+  const showNoMatch = searchActive && !visibleLoading && visibleResults.length === 0
 
   return (
     <div
@@ -141,7 +136,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             placeholder="Search leads by name, phone, or address…"
             className="flex-1 text-sm bg-transparent outline-none placeholder:text-slate-400"
           />
-          {loading && (
+          {visibleLoading && (
             <Icon name="progress_activity" size="text-sm" className="text-slate-400 animate-spin" />
           )}
           <kbd className="hidden sm:inline-block text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5">
@@ -165,7 +160,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             </div>
           )}
 
-          {results.map((lead, idx) => {
+          {visibleResults.map((lead, idx) => {
             const isActive = idx === activeIndex
             const stationCls = STATION_COLORS[lead.station || ''] || 'bg-slate-100 text-slate-600'
             return (

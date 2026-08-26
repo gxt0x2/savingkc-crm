@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
 /**
  * Click-to-edit overlay for the live preview at lp.savingkc.com/sell.
@@ -48,15 +48,27 @@ function markEditable(root: HTMLElement) {
   })
 }
 
+function subscribeToLocationChange(onStoreChange: () => void) {
+  window.addEventListener('popstate', onStoreChange)
+  return () => window.removeEventListener('popstate', onStoreChange)
+}
+
+function getEditModeSnapshot() {
+  return new URLSearchParams(window.location.search).get('edit') === '1'
+}
+
+function getServerEditModeSnapshot() {
+  return false
+}
+
 export function EditOverlay() {
-  const [active, setActive] = useState(false)
+  const active = useSyncExternalStore(
+    subscribeToLocationChange,
+    getEditModeSnapshot,
+    getServerEditModeSnapshot,
+  )
   const [editing, setEditing] = useState(true)
   const [status, setStatus] = useState('0 edits')
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('edit') === '1') setActive(true)
-  }, [])
 
   useEffect(() => {
     if (!active) return

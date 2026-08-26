@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 
 interface TimelineEvent {
@@ -29,6 +30,7 @@ function formatDate(dateStr: string | null): string {
 const STATION_ORDER = ['intake', 'not_contacted', 'contacted', 'qualifying', 'appt_set', 'negotiations', 'contract_signed']
 
 export function SellersTimeline({ leadCreatedAt, station, activities }: SellersTimelineProps) {
+  const [renderedAt] = useState(Date.now)
   // Derive timeline events from activities and station
   const currentStationIdx = STATION_ORDER.indexOf(station || 'intake')
 
@@ -72,7 +74,7 @@ export function SellersTimeline({ leadCreatedAt, station, activities }: SellersT
   ]
 
   // Calculate days in pipeline
-  const daysInPipeline = Math.floor((Date.now() - new Date(leadCreatedAt).getTime()) / (1000 * 60 * 60 * 24))
+  const daysInPipeline = Math.floor((renderedAt - new Date(leadCreatedAt).getTime()) / (1000 * 60 * 60 * 24))
 
   return (
     <section className="bg-[#1B2A4A] rounded-2xl p-6">
