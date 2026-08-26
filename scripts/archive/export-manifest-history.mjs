@@ -21,6 +21,7 @@ import {
   assertExpectedSupabaseProject,
   createArchiveDigest,
   stableJson,
+  withArchiveReadRetries,
 } from './manifest-archive-format.mjs'
 
 const TABLES = ['manifests', 'manifest_history']
@@ -42,8 +43,10 @@ function safeTimestamp() {
 }
 
 async function exactCount(supabase, table) {
-  const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true })
-  if (error) throw new Error(`Could not count ${table}: ${error.code ?? 'query_failed'}`)
+  const { count, error } = await withArchiveReadRetries(
+    () => supabase.from(table).select('id', { count: 'exact', head: true }),
+  )
+  if (error) throw new Error(`Could not count ${table}: ${error.code ?? 'query_failed'} ${error.message ?? ''}`.trim())
   return count ?? 0
 }
 
@@ -62,13 +65,20 @@ async function exportTable(supabase, table, archiveDirectory, pageSize) {
 
   try {
     while (true) {
-      const { data, error } = await supabase
-        .from(table)
-        .select('*')
-        .order('id', { ascending: true })
-        .range(offset, offset + pageSize - 1)
+      const rangeEnd = offset + pageSize - 1
+      const { data, error } = await withArchiveReadRetries(
+        () => supabase
+          .from(table)
+          .select('*')
+          .order('id', { ascending: true })
+          .range(offset, rangeEnd),
+      )
 
-      if (error) throw new Error(`Could not export ${table}: ${error.code ?? 'query_failed'}`)
+      if (error) {
+        throw new Error(
+          `Could not export ${table} rows ${offset}-${rangeEnd}: ${error.code ?? 'query_failed'} ${error.message ?? ''}`.trim(),
+        )
+      }
       const rows = data ?? []
       for (const row of rows) {
         digest.update(row)

@@ -11,6 +11,7 @@ import {
   createArchiveDigest,
   stableJson,
   validateArchiveReceipt,
+  withArchiveReadRetries,
 } from '../../../scripts/archive/manifest-archive-format.mjs'
 
 describe('Manifest archive format', () => {
@@ -45,6 +46,33 @@ describe('Manifest archive format', () => {
     expect(() => assertExpectedSupabaseProject('https://abcdefgh.supabase.co', 'different')).toThrow(
       'does not match --project-ref',
     )
+  })
+
+  it('retries transient archive reads without changing the returned result', async () => {
+    const waits: number[] = []
+    let attempts = 0
+    const result = await withArchiveReadRetries(
+      async () => {
+        attempts += 1
+        return attempts < 3 ? { data: null, error: { code: 'query_failed' } } : { data: [{ id: 'row-1' }], error: null }
+      },
+      { maxAttempts: 4, baseDelayMs: 25, wait: async (delayMs) => { waits.push(delayMs) } },
+    )
+
+    expect(attempts).toBe(3)
+    expect(waits).toEqual([25, 50])
+    expect(result).toEqual({ data: [{ id: 'row-1' }], error: null })
+  })
+
+  it('returns the final database error after exhausting bounded retries', async () => {
+    let attempts = 0
+    const result = await withArchiveReadRetries(
+      async () => ({ data: null, error: { code: `failure-${++attempts}` } }),
+      { maxAttempts: 3, baseDelayMs: 0, wait: async () => {} },
+    )
+
+    expect(attempts).toBe(3)
+    expect(result.error).toEqual({ code: 'failure-3' })
   })
 
   it('validates the two-table checksum receipt', () => {
