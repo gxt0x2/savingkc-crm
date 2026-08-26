@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,7 +7,7 @@ interface Finding {
   type: 'dead-link' | 'console-error' | 'broken-image' | 'empty-state' | '404-link' | 'network-failure' | 'non-200-response';
   severity: 'high' | 'medium' | 'low';
   message: string;
-  details?: any;
+  details?: unknown;
 }
 
 interface QAReport {
@@ -30,8 +30,6 @@ const ROUTES = [
 ];
 
 const findings: Finding[] = [];
-const consoleErrors: string[] = [];
-
 function addFinding(finding: Finding) {
   findings.push(finding);
 }
@@ -94,7 +92,9 @@ async function checkDeadLinks(page: Page, route: string) {
     const text = await button.textContent();
     const hasClickHandler = await button.evaluate((el) => {
       // Check if button has any event listeners
-      const events = (window as any).getEventListeners?.(el);
+      const events = (window as Window & {
+        getEventListeners?: (target: EventTarget) => Record<string, EventListener[]>;
+      }).getEventListeners?.(el);
       return events && events.click && events.click.length > 0;
     }).catch(() => false);
 
