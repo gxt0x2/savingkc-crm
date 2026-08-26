@@ -3,6 +3,30 @@ import { resolve, sep } from 'node:path'
 
 export const MANIFEST_ARCHIVE_FORMAT = 'savingkc-manifest-archive-v1'
 
+export async function withArchiveReadRetries(
+  read,
+  { maxAttempts = 4, baseDelayMs = 500, wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)) } = {},
+) {
+  if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
+    throw new Error('Archive read retries require at least one attempt.')
+  }
+
+  let lastThrownError
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const result = await read()
+      if (!result?.error || attempt === maxAttempts) return result
+    } catch (error) {
+      lastThrownError = error
+      if (attempt === maxAttempts) throw error
+    }
+
+    await wait(baseDelayMs * attempt)
+  }
+
+  throw lastThrownError ?? new Error('Archive read failed without a result.')
+}
+
 function normalizeJson(value) {
   if (Array.isArray(value)) return value.map(normalizeJson)
   if (value && typeof value === 'object') {
