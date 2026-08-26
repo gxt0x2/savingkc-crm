@@ -55,6 +55,7 @@ function renderWorkspace(onOpenProperty = vi.fn()) {
       onRefresh={noop}
       onStageChange={noop}
       onLeadStatusChange={noop}
+      onOwnerChange={noop}
     />,
   )
   return onOpenProperty
@@ -89,6 +90,12 @@ describe('LeadWorkspace property actions', () => {
     expect(screen.queryByText('Qualified')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open more lead actions' })).toHaveTextContent('More')
     expect(screen.queryByRole('button', { name: 'Property' })).not.toBeInTheDocument()
+  })
+
+  it('exposes the assigned-person selector on the seller profile', () => {
+    renderWorkspace()
+
+    expect(screen.getByRole('combobox', { name: 'Assigned person' })).toHaveValue('Ernest')
   })
 
   it('opens a manual verbal or written offer form from the Opportunity panel', () => {
@@ -149,6 +156,7 @@ describe('LeadWorkspace property actions', () => {
         onRefresh={noop}
         onStageChange={noop}
         onLeadStatusChange={noop}
+        onOwnerChange={noop}
       />,
     )
 

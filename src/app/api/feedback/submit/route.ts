@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { createClient } from '@/lib/supabase/server'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
@@ -10,6 +10,7 @@ import {
   isAndonIssueKind,
   legacyFeedbackType,
 } from '@/lib/andon'
+import { sendAndonRaisedSmsAlert } from '@/lib/server/operational-sms-alerts'
 
 export const dynamic = 'force-dynamic'
 
@@ -136,6 +137,15 @@ export async function POST(req: NextRequest) {
         { status: storageMissing ? 503 : 500 },
       )
     }
+
+    after(() => sendAndonRaisedSmsAlert({
+      issueId: data.id,
+      issueKind,
+      department,
+      category,
+      priority,
+      raisedBy: agent.displayName,
+    }))
 
     return NextResponse.json({
       success: true,

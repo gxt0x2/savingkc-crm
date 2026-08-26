@@ -12,6 +12,7 @@ import { openLeadNextAction } from '@/components/leads/governed-next-action'
 import { RecordOfferModal } from '@/components/leads/record-offer-modal'
 import { StageSelector } from '@/components/leads/stage-selector'
 import { LeadStatusControl, type LeadStatusUpdate } from '@/components/leads/lead-status-control'
+import { LeadOwnerControl } from '@/components/leads/lead-owner-control'
 import { formatPhone, toProperCase } from '@/lib/format'
 import {
   filterLeadConversation,
@@ -83,6 +84,7 @@ interface LeadWorkspaceProps {
   onRefresh: () => void
   onStageChange: (station: string, outcome?: { deadReason: string | null }) => void
   onLeadStatusChange: (update: LeadStatusUpdate) => void
+  onOwnerChange: (owner: string | null) => void
   sectionPanels?: Partial<Record<LeadWorkspaceSection, React.ReactNode>>
 }
 
@@ -157,6 +159,7 @@ export function LeadWorkspace({
   onRefresh,
   onStageChange,
   onLeadStatusChange,
+  onOwnerChange,
   sectionPanels,
 }: LeadWorkspaceProps) {
   const [activeSection, setActiveSection] = useState<LeadWorkspaceSection>('overview')
@@ -363,10 +366,7 @@ export function LeadWorkspace({
                       <Icon name="flag" className="text-[13px]" />
                       {LEAD_WORKSPACE_STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
                     </span>
-                    <span className="hidden items-center gap-1.5 text-[11px] font-semibold text-[var(--crm-text-muted)] sm:inline-flex">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[8px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
-                      {owner}
-                    </span>
+                    <span className="hidden sm:inline-flex"><LeadOwnerControl leadId={lead.id} owner={lead.assigned_agent} onChanged={onOwnerChange} /></span>
                     <EntityIdentityStatus context={lead.entityContext} />
                     <button type="button" onClick={onEdit} className="crm-icon-button hidden h-8 w-8 items-center justify-center rounded-lg sm:flex" aria-label="Edit contact">
                       <Icon name="edit" className="text-[17px]" />
@@ -563,10 +563,7 @@ export function LeadWorkspace({
                   />
                 </SummaryItem>
                 <SummaryItem label="Owner" tone="blue">
-                  <span className="flex items-center gap-2 font-semibold text-[var(--crm-text)]">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--crm-charcoal)] text-[10px] font-bold text-[var(--crm-surface)]">{owner.slice(0, 2).toUpperCase()}</span>
-                    {owner}
-                  </span>
+                  <LeadOwnerControl leadId={lead.id} owner={lead.assigned_agent} onChanged={onOwnerChange} variant="panel" />
                 </SummaryItem>
                 <SummaryItem label="Next action" tone="amber">
                   <button type="button" onClick={runNextAction} className="flex max-w-[245px] items-center gap-2 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-warning-soft)] px-3 py-2 text-left text-sm font-bold text-[var(--crm-warning)] hover:brightness-95">
