@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeirsSection } from './heirs-section'
 
@@ -141,6 +141,45 @@ describe('HeirsSection dial queue', () => {
     expect(screen.queryByText('People found')).not.toBeInTheDocument()
     expect(screen.queryByText('Ready numbers')).not.toBeInTheDocument()
     expect(screen.getAllByText('Verified').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/auto-advances through queue/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/All heir phones attempted/i)).not.toBeInTheDocument()
+  })
+
+  it('saves a durable note for the selected associated contact', async () => {
+    const onContactNoteSaved = vi.fn()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.startsWith('/api/heirs?')) return { ok: true, json: async () => heirsPayload }
+      if (url === '/api/prospecting/contact-notes' && init?.method === 'POST') {
+        return { ok: true, json: async () => ({ activity: { id: 'activity-1' } }) }
+      }
+      throw new Error(`Unexpected request ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHeirsSection({
+      showAllPhones: true,
+      campaignMemberId: 'member-1',
+      dialerSessionId: 'session-1',
+      onContactNoteSaved,
+    })
+
+    const note = await screen.findByLabelText('Note for Angela Taylor')
+    fireEvent.change(note, { target: { value: 'Sister handles the estate calls.' } })
+    fireEvent.click(within(note.closest('form')!).getByRole('button', { name: 'Save note' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/prospecting/contact-notes', expect.objectContaining({ method: 'POST' })))
+    const request = fetchMock.mock.calls.find(([url]) => String(url) === '/api/prospecting/contact-notes')
+    expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({
+      leadId: 'lead-1',
+      campaignMemberId: 'member-1',
+      dialerSessionId: 'session-1',
+      contactKey: 'Angela::daughter',
+      contactName: 'Angela Taylor',
+      relation: 'daughter',
+      description: 'Sister handles the estate calls.',
+    })
+    expect(await screen.findByText('Note saved to this contact.')).toBeVisible()
+    expect(onContactNoteSaved).toHaveBeenCalledOnce()
   })
 
   it('keeps every associated phone visible at once on the agent calling floor', async () => {
@@ -168,6 +207,7 @@ describe('HeirsSection dial queue', () => {
     expect(screen.getByRole('button', { name: 'Call 2 numbers for Angela Taylor' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Call 2 numbers for Ben Taylor' })).toBeDisabled()
     expect(screen.getAllByText('Call 2 numbers')).toHaveLength(2)
+    expect(screen.queryByRole('textbox', { name: /Note for/i })).not.toBeInTheDocument()
   })
 
   it('labels each person-level phone run with its exact eligible number count', async () => {

@@ -102,6 +102,11 @@ async function mockCallingPreview(page: Page) {
     }],
   }))
   await page.route('**/api/leads/*/activities?**', (route) => fulfill(route, { activities: [] }))
+  await page.route('**/api/prospecting/contact-notes', (route) => route.fulfill({
+    status: 201,
+    contentType: 'application/json',
+    body: JSON.stringify({ activity: { id: 'activity-1' } }),
+  }))
 }
 
 test('Prospecting makes the agent calling workflow obvious and keeps management secondary', async ({ page }) => {
@@ -112,7 +117,7 @@ test('Prospecting makes the agent calling workflow obvious and keeps management 
   await expect(page.getByRole('combobox', { name: 'Choose campaign' })).toBeVisible()
   await expect(page.getByText('84', { exact: true })).toBeVisible()
   await expect(page.getByText('ready to call')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Start calling session' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Start calling session|Resume calling/ })).toBeVisible()
   await expect(page.getByText('All associated contacts stay visible')).toBeVisible()
   await expect(page.getByText('Audience health')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Campaign details/ })).toHaveAttribute('aria-expanded', 'false')
@@ -137,7 +142,7 @@ test('Prospecting keeps campaign choice and session start clear on a phone', asy
 
   await expect(page.getByRole('combobox', { name: 'Choose campaign' })).toBeVisible()
   await expect(page.getByText('84', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Start calling session' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Start calling session|Resume calling/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /Campaign details/ })).toBeVisible()
   await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll')
 })
@@ -159,15 +164,17 @@ test('a read-only deployment opens the real calling workflow without exposing mu
   await page.getByRole('button', { name: 'Preview calling workflow' }).click()
   await expect(page).toHaveURL(new RegExp(`preview_campaign=${dialerCampaign.id}`))
   await expect(page.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
-  await expect(page.getByText(/select Start calling session, then Call all numbers/i)).toBeVisible()
+  await expect(page.getByText(/Preview only .* calling controls are shown but disabled/i)).toBeVisible()
   await expect(page.getByRole('link', { name: 'Open live calling' })).toHaveCount(0)
-  await expect(page.getByRole('region', { name: 'Live session status' })).toBeVisible()
-  await expect(page.getByText('Caller ID')).toBeVisible()
+  const liveStatus = page.getByRole('region', { name: 'Live session status' })
+  await expect(liveStatus).toBeVisible()
+  await expect(liveStatus.locator('article')).toHaveCount(4)
+  await expect(page.getByText('Caller ID')).toHaveCount(0)
+  await expect(page.getByText('Sellers worked')).toHaveCount(0)
   await expect(page.getByText('Current call')).toBeVisible()
-  await expect(page.getByText('Session calls')).toBeVisible()
-  await expect(page.getByText('Sellers worked')).toBeVisible()
+  await expect(page.getByText('Calls', { exact: true })).toBeVisible()
   await expect(page.getByText('Contacts', { exact: true })).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Live session status' }).getByText('Seller', { exact: true })).toBeVisible()
+  await expect(liveStatus.getByText('Seller progress', { exact: true })).toBeVisible()
   await expect(page.getByText('Reach the right person')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: /Callable people/ })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Call all 2 numbers' })).toBeDisabled()
@@ -177,7 +184,8 @@ test('a read-only deployment opens the real calling workflow without exposing mu
   await expect(personPhoneRun).toContainText('Call 2 numbers')
   await expect(page.getByText('(816) 555-0123', { exact: true })).toBeVisible()
   await expect(page.getByText('(816) 555-0124', { exact: true })).toBeVisible()
-  await expect(page.getByText(/2 ready numbers shown · no call attempt will be recorded/i)).toBeVisible()
+  await expect(page.getByText(/2 ready numbers shown · no call attempt will be recorded/i)).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: /Note for/i })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Calling unavailable in read-only preview' })).toHaveCount(2)
   await expect(page.getByRole('button', { name: 'Call controls' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Dead' })).toHaveCount(0)
@@ -186,6 +194,7 @@ test('a read-only deployment opens the real calling workflow without exposing mu
 
 test('the live calling floor has an explicit end-session flow and a bounded theme-aware context rail', async ({ page }) => {
   let transitionBody: unknown = null
+  await page.addInitScript(() => window.localStorage.setItem('crm-theme', 'light'))
   await mockCampaigns(page)
   await mockCallingPreview(page)
   await page.route(`**/api/dialer/sessions/${durableSessionId}`, async (route) => {
@@ -205,11 +214,14 @@ test('the live calling floor has an explicit end-session flow and a bounded them
 
   await expect(page.getByRole('heading', { name: 'Calling session' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'End session' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Leave' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Back to campaigns' })).toBeVisible()
   await expect(page.getByText('Recent Calls', { exact: true })).toHaveCount(0)
+  const note = page.getByRole('textbox', { name: 'Note for Helen Seller' })
+  await expect(note).toBeVisible()
+  await note.fill('Daughter is the best contact after 5 PM.')
+  await note.locator('xpath=ancestor::form').getByRole('button', { name: 'Save note' }).click()
+  await expect(page.getByText('Note saved to this contact.')).toBeVisible()
 
-  const lightThemeButton = page.getByRole('button', { name: 'Switch to light theme' })
-  if (await lightThemeButton.isVisible().catch(() => false)) await lightThemeButton.click()
   const commandBackground = await page.getByRole('region', { name: 'Calling floor command center' }).evaluate((element) => getComputedStyle(element).backgroundColor)
   expect(commandBackground).toBe('rgb(255, 255, 255)')
 
@@ -226,7 +238,7 @@ test('the live calling floor has an explicit end-session flow and a bounded them
   await expect(dialog).toBeVisible()
   await dialog.getByRole('button', { name: 'End session' }).click()
   await expect(page).toHaveURL(/\/prospecting$/)
-  expect(transitionBody).toEqual({ action: 'stop' })
+  expect(transitionBody).toEqual({ action: 'request_stop' })
 })
 
 test('Prospecting studio remains usable on a phone-sized viewport', async ({ page }) => {
