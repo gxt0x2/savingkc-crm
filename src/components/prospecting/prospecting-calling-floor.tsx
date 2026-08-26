@@ -615,7 +615,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
               ringCount={sessionRingCount}
               dialerSessionId={durableSessionId || null}
               readOnlyPreview={readOnlyPreview}
-              autoStart={autoQueueSubjectKey === currentSubjectKey}
+              autoStart={readOnlyPreview || autoQueueSubjectKey === currentSubjectKey}
               onAutoStartHandled={() => setAutoQueueSubjectKey(null)}
               onAutoStartEmpty={handleAutoStartEmpty}
               defaultExpanded

@@ -40,6 +40,9 @@ describe('prospecting workspace UI contract', () => {
     expect(sessionSetup).toContain('Cold-call numbers')
     expect(sessionSetup).toContain('Maximum attempts per number')
     expect(workspace).toContain('savingkc:dialer-autostart:${result.session.id}')
+    expect(workspace).toContain("caller_mode: setup.callerMode")
+    expect(workspace).toContain("rotation_numbers: setup.callerIds.join(',')")
+    expect(workspace).toContain("max_attempts: String(setup.maxAttemptsPerNumber)")
     expect(callingFloor).toContain('window.sessionStorage.removeItem(autoStartKey)')
     expect(callingFloor).toContain("session.status === 'active' && !session.stopRequestedAt")
     expect(callingFloor).toContain('setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)')
@@ -84,6 +87,8 @@ describe('prospecting workspace UI contract', () => {
     expect(callingFloor).toContain('export function ProspectingCallingFloor({')
     expect(prospectingPage).toContain('readOnlyPreview={Boolean(previewCampaignId)}')
     expect(callingFloor).toContain('readOnlyPreview={readOnlyPreview}')
+    expect(appShell).toContain("searchParams.get('preview_campaign')")
+    expect(appShell).toContain('<ProspectingPreviewCallRail')
     expect(callingFloor).not.toContain('function DialerHome')
   })
 

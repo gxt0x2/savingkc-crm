@@ -14,6 +14,7 @@ import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button
 import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 import { isCallReviewer } from '@/lib/call-review-reviewers'
+import { ProspectingPreviewCallRail } from '@/components/prospecting/prospecting-preview-call-rail'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -117,8 +118,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // the softphone docked there so saving a disposition does not open a second
   // full-screen dialer over the heir queue. `/dialer` remains redirect-only
   // compatibility for previously shared session links.
+  const isProspectingPreviewFloor = pathname?.startsWith('/prospecting') && Boolean(searchParams.get('preview_campaign'))
   const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
-    searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort'),
+    searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort') || isProspectingPreviewFloor,
   )
   const dialerPresentation = pathname?.startsWith('/dialer')
     ? 'dock'
@@ -369,7 +371,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     || pendingSessionId === activeFloorSessionId
   const shouldRenderDialer = Boolean(isProspectingCallingFloor)
     || (dialerMounted && (activeCallKeepsDialerMounted || dialerOwnerRoute === currentRouteKey))
-  const dialerPanel = shouldRenderDialer ? <DialerPanel
+  const dialerPanel = isProspectingPreviewFloor ? <ProspectingPreviewCallRail
+    campaignId={searchParams.get('preview_campaign') || ''}
+    queueLabel={searchParams.get('queue_label') || 'Prospecting session'}
+    callerId={searchParams.get('caller_id') || ''}
+    callerMode={searchParams.get('caller_mode') || 'static'}
+    rotationNumbers={searchParams.get('rotation_numbers') || ''}
+    startBehavior={searchParams.get('start_behavior') || 'resume'}
+    maxAttempts={searchParams.get('max_attempts') || '7'}
+    notDialedHours={searchParams.get('not_dialed_hours')}
+    notContactedHours={searchParams.get('not_contacted_hours')}
+  /> : shouldRenderDialer ? <DialerPanel
     key={isProspectingCallingFloor ? `prospecting:${activeFloorSessionId || 'preview'}` : 'global'}
     open={isProspectingCallingFloor ? true : showDialer}
     onClose={() => {

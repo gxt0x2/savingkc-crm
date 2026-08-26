@@ -152,15 +152,19 @@ describe('CampaignDashboard', () => {
     expect(screen.getByRole('combobox', { name: 'Not dialed time frame' })).toHaveValue('')
   })
 
-  it('offers an honest read-only workflow review when session writes are unavailable', () => {
+  it('keeps the complete session builder available in a safe read-only workflow preview', () => {
     const launch = vi.fn()
     const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
     render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} writesEnabled={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={launch} />)
 
-    const preview = screen.getByRole('button', { name: 'Preview calling workflow' })
+    const preview = screen.getByRole('button', { name: 'Preview call session' })
     expect(preview).toBeVisible()
-    expect(screen.getByText(/without calling or saving changes/i)).toBeVisible()
+    expect(screen.getByText(/15-second start sequence/i)).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Resume calling' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
+    expect(screen.getByRole('region', { name: 'Calling session setup' })).toBeVisible()
+    expect(screen.getByRole('radio', { name: /Rotate numbers/ })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Maximum attempts per number' })).toBeVisible()
     fireEvent.click(preview)
     expect(launch).toHaveBeenCalledOnce()
   })

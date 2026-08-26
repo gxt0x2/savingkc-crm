@@ -271,7 +271,6 @@ export function HeirsSection({
   }, [campaignMemberId, dialerSessionId, leadId, onContactNoteSaved, prospectId])
 
   useEffect(() => {
-    if (readOnlyPreview) return
     if (!autoStart || loading) return
     // If the heirs failed to load, hold on this record — surface the error and
     // let the agent retry rather than silently auto-advancing to the next
@@ -283,7 +282,8 @@ export function HeirsSection({
     const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
 
     if (queue.length > 0) {
-      dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount }, dialerSessionId)
+      if (readOnlyPreview) window.dispatchEvent(new CustomEvent('prospecting-preview-queue-ready', { detail: { queue } }))
+      else dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount }, dialerSessionId)
       onAutoStartHandled?.()
       return
     }

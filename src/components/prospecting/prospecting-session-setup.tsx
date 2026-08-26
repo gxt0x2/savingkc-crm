@@ -99,10 +99,6 @@ export function ProspectingSessionSetup({
     setSelectionError(null)
   }
 
-  if (!writesEnabled) {
-    return <div className="space-y-2"><button type="button" onClick={() => onLaunch(applied)} disabled={actionPending || activeCount === 0} className="crm-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl px-7 text-base font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name="preview" className="text-xl" />Preview calling workflow</button><p className="max-w-xs text-xs font-bold text-white/55">Read-only: review sellers and numbers without calling or saving changes.</p></div>
-  }
-
   return (
     <div className="min-w-0 space-y-3 text-left lg:w-[38rem]">
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -110,8 +106,10 @@ export function ProspectingSessionSetup({
           <span className="min-w-0"><span className="block text-[9px] uppercase tracking-[0.15em] text-white/45">Session setup</span><span className="mt-1 block truncate">{summary(applied)}</span></span>
           <Icon name={open ? 'expand_less' : 'tune'} className="shrink-0 text-xl text-white/65" />
         </button>
-        <button type="button" onClick={() => onLaunch(applied)} disabled={actionPending || activeCount === 0} className="crm-primary-button inline-flex min-h-12 min-w-48 items-center justify-center gap-2 rounded-xl px-6 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={applied.startBehavior === 'resume' ? 'resume' : 'first_page'} className="text-xl" />{applied.startBehavior === 'resume' ? 'Resume calling' : 'Start calling'}</button>
+        <button type="button" onClick={() => onLaunch(applied)} disabled={actionPending || activeCount === 0} className="crm-primary-button inline-flex min-h-12 min-w-48 items-center justify-center gap-2 rounded-xl px-6 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={writesEnabled ? applied.startBehavior === 'resume' ? 'resume' : 'first_page' : 'preview'} className="text-xl" />{writesEnabled ? applied.startBehavior === 'resume' ? 'Resume calling' : 'Start calling' : 'Preview call session'}</button>
       </div>
+
+      {!writesEnabled ? <p className="text-xs font-bold leading-5 text-white/60">Preview mode: setup changes stay in this browser. The calling floor and 15-second start sequence are interactive, but no call or CRM write can occur.</p> : null}
 
       {open ? <section aria-label="Calling session setup" className="rounded-2xl border border-white/15 bg-[#f8fafc] p-4 text-[#121a26] shadow-2xl sm:p-5">
         <div className="grid gap-5 lg:grid-cols-2">

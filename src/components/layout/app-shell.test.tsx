@@ -88,6 +88,20 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
   })
 
+  it('keeps a safe persistent call rail visible during a Prospecting preview', () => {
+    navigation.pathname = '/prospecting'
+    navigation.search = 'preview_campaign=campaign-1&queue_label=Pilot&caller_id=%2B18163100845&caller_mode=static&start_behavior=resume&max_attempts=7'
+    render(<AppShell><main>Calling workflow preview</main></AppShell>)
+
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
+    expect(screen.getByRole('region', { name: 'Preview prospecting call controls' })).toBeVisible()
+    expect(screen.getByText('Read-only preview')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'First call countdown' })).toHaveTextContent('15')
+    expect(screen.getByRole('button', { name: 'Pause before first call' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'End preview' })).toBeVisible()
+    expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
+  })
+
   it('does not reopen the session dialer after returning to the campaign screen', () => {
     navigation.pathname = '/prospecting'
     navigation.search = 'session_id=session-1&campaign=campaign-1'

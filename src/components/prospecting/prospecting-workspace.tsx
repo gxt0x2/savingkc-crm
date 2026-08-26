@@ -273,8 +273,16 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
         preview_campaign: detail.id,
         campaign: detail.id,
         queue_label: detail.name,
+        caller_id: setup.callerIds[0] || '',
+        caller_mode: setup.callerMode,
+        rotation_numbers: setup.callerIds.join(','),
+        rotation_every: '1',
+        start_behavior: setup.startBehavior,
+        max_attempts: String(setup.maxAttemptsPerNumber),
         return_to: `/prospecting?campaign=${encodeURIComponent(detail.id)}`,
       })
+      if (setup.notDialedHours !== null) query.set('not_dialed_hours', String(setup.notDialedHours))
+      if (setup.notContactedHours !== null) query.set('not_contacted_hours', String(setup.notContactedHours))
       router.push(`/prospecting?${query.toString()}`)
       return
     }
