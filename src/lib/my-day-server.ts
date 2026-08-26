@@ -117,6 +117,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
   const leadIds = leads.map((lead) => lead.id)
   const mojoEvents = mojoEventsResult.error ? [] : (mojoEventsResult.data ?? []) as MyDayMojoEvent[]
   const attentionLeadIds = [...new Set(mojoEvents.map((event) => event.lead_id).filter((id): id is string => Boolean(id)))]
+  const mojoRecordIds = [...new Set(mojoEvents.map((event) => event.record_id))]
 
   const activityQuery = leadIds.length > 0
     ? db
@@ -146,8 +147,16 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .order('occurred_at', { ascending: true })
       .limit(1000)
     : Promise.resolve({ data: [], error: null })
+  const reviewedMojoEventsQuery = mojoRecordIds.length > 0
+    ? db
+      .from('lead_activities')
+      .select('metadata')
+      .eq('activity_type', 'mojo_review')
+      .in('metadata->>record_id', mojoRecordIds)
+      .limit(1000)
+    : Promise.resolve({ data: [], error: null })
 
-  const [activityResult, caseyFunnelActivityResult, agentTasksResult, assignedTasksResult, appointmentsResult, attentionLeadsResult, terminalEventsResult] = await Promise.all([
+  const [activityResult, caseyFunnelActivityResult, agentTasksResult, assignedTasksResult, appointmentsResult, attentionLeadsResult, terminalEventsResult, reviewedMojoEventsResult] = await Promise.all([
     activityQuery,
     db
       .from('lead_activities')
@@ -182,6 +191,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .limit(1000),
     attentionLeadsQuery,
     terminalEventsQuery,
+    reviewedMojoEventsQuery,
   ])
 
   if (activityResult.error) throw new Error(`Casey's activity history could not load: ${activityResult.error.message}`)
@@ -195,12 +205,17 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
     weeklyOpportunities: configuredNumber(targets?.leads_qualified_per_week),
     weeklyAppointments: configuredNumber(targets?.appointments_set_per_week),
   }
-  const attentionAvailable = !mojoEventsResult.error && !attentionLeadsResult.error && !terminalEventsResult.error
+  const attentionAvailable = !mojoEventsResult.error && !attentionLeadsResult.error && !terminalEventsResult.error && !reviewedMojoEventsResult.error
+  const reviewedRecordIds = (reviewedMojoEventsResult.data ?? []).flatMap((row) => {
+    const metadata = row.metadata as Record<string, unknown> | null
+    return typeof metadata?.record_id === 'string' ? [metadata.record_id] : []
+  })
   const attentionItems = attentionAvailable
     ? buildMojoAttentionItems({
       events: mojoEvents,
       leads: (attentionLeadsResult.data ?? []) as MyDayAttentionLead[],
       terminalEvents: (terminalEventsResult.data ?? []) as MyDayTerminalEvent[],
+      reviewedRecordIds,
       range,
     })
     : []

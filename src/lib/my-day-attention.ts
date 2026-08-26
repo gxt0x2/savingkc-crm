@@ -2,6 +2,7 @@ import { MY_DAY_TIME_ZONE } from '@/lib/my-day-range'
 
 export interface MyDayAttentionItem {
   id: string
+  recordId: string
   leadId: string
   leadName: string
   property: string
@@ -55,14 +56,16 @@ export function buildMojoAttentionItems(input: {
   events: MyDayMojoEvent[]
   leads: MyDayAttentionLead[]
   terminalEvents: MyDayTerminalEvent[]
+  reviewedRecordIds: string[]
   range: { from: string; to: string }
 }): MyDayAttentionItem[] {
   const leadsById = new Map(input.leads.map((lead) => [lead.id, lead]))
+  const reviewedRecordIds = new Set(input.reviewedRecordIds)
   const terminalStages = new Set(['dead', 'closed_lost'])
   const reviewableOutcomes = new Set(['callback_scheduled', 'meaningful_conversation', 'appointment_set'])
 
   return input.events.flatMap((event): MyDayAttentionItem[] => {
-    if (!event.lead_id || !isWithinRange(event.call_at, input.range) || !reviewableOutcomes.has(event.outcome)) return []
+    if (!event.lead_id || reviewedRecordIds.has(event.record_id) || !isWithinRange(event.call_at, input.range) || !reviewableOutcomes.has(event.outcome)) return []
     const lead = leadsById.get(event.lead_id)
     const terminal = terminalStages.has((lead?.station || '').toLowerCase())
       || (lead?.classification || '').toLowerCase() === 'dead'
@@ -75,6 +78,7 @@ export function buildMojoAttentionItems(input: {
     if (!lead || !terminal || !wasTerminalAtEvent) return []
     return [{
       id: `mojo:${event.record_id}`,
+      recordId: event.record_id,
       leadId: lead.id,
       leadName: lead.full_name?.trim() || event.contact_name?.trim() || 'Unknown seller',
       property: lead.property_address?.trim() || event.property_address?.trim() || 'No property linked',

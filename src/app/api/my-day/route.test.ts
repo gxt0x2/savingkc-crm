@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   canAccessCaseyMyDay: vi.fn(),
   getCurrentUserEmail: vi.fn(),
   loadCaseyMyDay: vi.fn(),
+  recordMyDayMojoReview: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/admin', () => ({
@@ -16,10 +17,22 @@ vi.mock('@/lib/my-day-server', () => ({
   loadCaseyMyDay: mocks.loadCaseyMyDay,
 }))
 
-import { GET } from './route'
+vi.mock('@/lib/server/my-day-attention-review', () => ({
+  recordMyDayMojoReview: mocks.recordMyDayMojoReview,
+}))
+
+import { GET, POST } from './route'
 
 function request(query = 'range=today') {
   return new NextRequest(`https://crm.savingkc.com/api/my-day?${query}`)
+}
+
+function reviewRequest(body: unknown) {
+  return new NextRequest('https://crm.savingkc.com/api/my-day', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
 
 describe('Casey My Day API', () => {
@@ -27,6 +40,7 @@ describe('Casey My Day API', () => {
     vi.clearAllMocks()
     mocks.canAccessCaseyMyDay.mockResolvedValue(false)
     mocks.loadCaseyMyDay.mockResolvedValue({ month: '2026-08', agent: { name: 'Casey' } })
+    mocks.recordMyDayMojoReview.mockResolvedValue({ recordId: 'mojo-record', reviewedAt: '2026-08-26T03:45:00.000Z' })
   })
 
   it('returns Casey data to Casey', async () => {
@@ -84,5 +98,29 @@ describe('Casey My Day API', () => {
       to: '2026-08-24',
       month: null,
     })
+  })
+
+  it('durably marks a reconciliation notice reviewed for an authorized user', async () => {
+    mocks.getCurrentUserEmail.mockResolvedValue('casey@savingkc.com')
+    mocks.canAccessCaseyMyDay.mockResolvedValue(true)
+
+    const response = await POST(reviewRequest({ recordId: 'mojo-record' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.recordMyDayMojoReview).toHaveBeenCalledWith({
+      recordId: 'mojo-record',
+      reviewedBy: 'casey@savingkc.com',
+    })
+    await expect(response.json()).resolves.toMatchObject({ ok: true, recordId: 'mojo-record' })
+  })
+
+  it('rejects a malformed review request without writing an activity', async () => {
+    mocks.getCurrentUserEmail.mockResolvedValue('casey@savingkc.com')
+    mocks.canAccessCaseyMyDay.mockResolvedValue(true)
+
+    const response = await POST(reviewRequest({ recordId: '' }))
+
+    expect(response.status).toBe(400)
+    expect(mocks.recordMyDayMojoReview).not.toHaveBeenCalled()
   })
 })

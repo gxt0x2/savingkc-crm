@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
 import React from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { MyDayDateRange } from '@/lib/my-day'
+import type { MyDayData, MyDayDateRange } from '@/lib/my-day'
 
-import { MyDayDateRangeSelector } from './my-day-workspace'
+import { MyDayDateRangeSelector, ReconciliationAttention } from './my-day-workspace'
+
+afterEach(() => vi.unstubAllGlobals())
 
 const todayRange: MyDayDateRange = {
   preset: 'today',
@@ -44,5 +46,44 @@ describe('My Day date range selector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply custom range' }))
 
     expect(onChange).toHaveBeenCalledWith({ preset: 'custom', from: '2026-08-01', to: '2026-08-24' })
+  })
+})
+
+describe('My Day reconciliation attention', () => {
+  it('separates record navigation from durable review acknowledgement', async () => {
+    const onReviewed = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, recordId: 'mojo-record' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const data = {
+      attention: {
+        status: 'available',
+        items: [{
+          id: 'mojo:mojo-record',
+          recordId: 'mojo-record',
+          leadId: 'lead-one',
+          leadName: 'Seller One',
+          property: '1 Main St',
+          happenedAt: '2026-08-25T15:13:00.000Z',
+          disposition: 'Callback Requested',
+          kind: 'terminal_record_activity',
+          missingFollowUpAt: true,
+          href: '/leads/lead-one',
+        }],
+      },
+    } as MyDayData
+
+    render(<ReconciliationAttention data={data} onReviewed={onReviewed} />)
+
+    expect(screen.getByRole('link', { name: /Open record/ })).toHaveAttribute('href', '/leads/lead-one')
+    fireEvent.click(screen.getByRole('button', { name: /Mark reviewed/ }))
+
+    await waitFor(() => expect(onReviewed).toHaveBeenCalledWith('mojo:mojo-record'))
+    expect(fetchMock).toHaveBeenCalledWith('/api/my-day', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ recordId: 'mojo-record' }),
+    }))
   })
 })

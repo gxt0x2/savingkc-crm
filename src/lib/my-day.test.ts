@@ -270,6 +270,7 @@ describe('Casey My Day model', () => {
       }],
       leads: [{ id: 'dead-lead', full_name: 'Seller One', property_address: '1 Main St', station: 'dead', classification: 'dead' }],
       terminalEvents: [{ lead_id: 'dead-lead', to_stage: 'dead', occurred_at: '2026-08-05T15:08:00.000Z' }],
+      reviewedRecordIds: [],
       range: input().range,
     })
 
@@ -297,6 +298,28 @@ describe('Casey My Day model', () => {
       }],
       leads: [{ id: 'dead-lead', full_name: 'Seller One', property_address: '1 Main St', station: 'dead', classification: 'dead' }],
       terminalEvents: [{ lead_id: 'dead-lead', to_stage: 'dead', occurred_at: '2026-08-05T16:00:00.000Z' }],
+      reviewedRecordIds: [],
+      range: input().range,
+    })
+
+    expect(items).toEqual([])
+  })
+
+  it('suppresses a Mojo reconciliation notice after its record was reviewed', () => {
+    const items = buildMojoAttentionItems({
+      events: [{
+        record_id: 'reviewed-event',
+        lead_id: 'dead-lead',
+        contact_name: 'Seller One',
+        property_address: '1 Main St',
+        call_at: '2026-08-05T15:13:00.000Z',
+        disposition_raw: 'Callback Requested',
+        outcome: 'callback_scheduled',
+        follow_up_at: null,
+      }],
+      leads: [{ id: 'dead-lead', full_name: 'Seller One', property_address: '1 Main St', station: 'dead', classification: 'dead' }],
+      terminalEvents: [{ lead_id: 'dead-lead', to_stage: 'dead', occurred_at: '2026-08-05T15:08:00.000Z' }],
+      reviewedRecordIds: ['reviewed-event'],
       range: input().range,
     })
 
