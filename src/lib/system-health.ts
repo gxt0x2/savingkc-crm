@@ -17,7 +17,7 @@ export interface SystemWorker {
   last_error: string | null
   failure_count_24h: number
   status: WorkerStatus
-  metadata: Record<string, any> | null
+  metadata: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -35,7 +35,7 @@ export interface WorkerHealthSummary {
  * Get all system workers with their current health status
  */
 export async function getAllWorkers(
-  supabase: SupabaseClient<any>
+  supabase: SupabaseClient
 ): Promise<SystemWorker[]> {
   const { data, error } = await supabase
     .from('system_workers')
@@ -55,7 +55,7 @@ export async function getAllWorkers(
  * Get summary of worker health
  */
 export async function getWorkerHealthSummary(
-  supabase: SupabaseClient<any>
+  supabase: SupabaseClient
 ): Promise<WorkerHealthSummary> {
   const workers = await getAllWorkers(supabase)
 
@@ -88,14 +88,20 @@ export async function getWorkerHealthSummary(
  * Record a worker run (success or failure)
  */
 export async function recordWorkerRun(
-  supabase: SupabaseClient<any>,
+  supabase: SupabaseClient,
   workerName: string,
   success: boolean,
   error?: string
 ): Promise<void> {
   const now = new Date().toISOString()
 
-  const updateData: any = {
+  const updateData: {
+    last_run: string
+    updated_at: string
+    last_success?: string
+    last_error?: string | null
+    failure_count_24h?: number
+  } = {
     last_run: now,
     updated_at: now,
   }
@@ -128,7 +134,7 @@ export async function recordWorkerRun(
  * Reset 24-hour failure counts (should be called daily)
  */
 export async function resetFailureCounts(
-  supabase: SupabaseClient<any>
+  supabase: SupabaseClient
 ): Promise<number> {
   const { data, error } = await supabase
     .from('system_workers')
@@ -148,7 +154,7 @@ export async function resetFailureCounts(
  * Generate Ari briefing event for worker health issues
  */
 export async function alertOnWorkerIssues(
-  supabase: SupabaseClient<any>
+  supabase: SupabaseClient
 ): Promise<number> {
   const workers = await getAllWorkers(supabase)
   const problematicWorkers = workers.filter(
@@ -192,13 +198,13 @@ export async function alertOnWorkerIssues(
  * Get role by name
  */
 export async function getRole(
-  supabase: SupabaseClient<any>,
+  supabase: SupabaseClient,
   roleName: string
 ): Promise<{
   id: string
   name: string
   description: string | null
-  kpi_targets: Record<string, any> | null
+  kpi_targets: Record<string, unknown> | null
 } | null> {
   const { data } = await supabase
     .from('roles')
@@ -213,11 +219,11 @@ export async function getRole(
  * Get user's role and KPI targets
  */
 export async function getUserRole(
-  supabase: SupabaseClient<any>,
+  supabase: SupabaseClient,
   userId: string
 ): Promise<{
   role_name: string
-  kpi_targets: Record<string, any> | null
+  kpi_targets: Record<string, unknown> | null
 } | null> {
   const { data: user } = await supabase
     .from('users')

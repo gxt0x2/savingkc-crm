@@ -75,7 +75,7 @@ export function ContractStatus({ data, onSendContract }: ContractStatusProps) {
               🚨 CRITICAL: Contract Viewed 48+ Hours Ago
             </p>
             <p className="text-xs text-red-700">
-              Seller opened the contract {hoursSinceViewed} hours ago but hasn't signed. Immediate follow-up required.
+              Seller opened the contract {hoursSinceViewed} hours ago but hasn&apos;t signed. Immediate follow-up required.
             </p>
           </div>
         </div>

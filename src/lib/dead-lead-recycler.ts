@@ -3,16 +3,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-interface DeadLead {
-  id: string
-  full_name: string | null
-  property_address: string | null
-  station: string | null
-  priority: string | null
-  created_at: string
-  updated_at?: string
-}
-
 interface RecycleCandidate {
   lead_id: string
   lead_name: string
@@ -27,7 +17,7 @@ interface RecycleCandidate {
  * and check if conditions have changed (new data available)
  */
 export async function findRecycleCandidates(
-  supabase: SupabaseClient<any>,
+  supabase: SupabaseClient,
   daysThreshold: 90 | 180 = 90
 ): Promise<RecycleCandidate[]> {
   const cutoffDate = new Date()
@@ -119,7 +109,7 @@ export async function findRecycleCandidates(
  * Generate Ari briefing events for recycle candidates
  */
 export async function generateRecycleAlerts(
-  supabase: SupabaseClient<any>,
+  supabase: SupabaseClient,
   daysThreshold: 90 | 180 = 90
 ): Promise<number> {
   const candidates = await findRecycleCandidates(supabase, daysThreshold)
@@ -155,7 +145,7 @@ export async function generateRecycleAlerts(
  * Moves them from dead back to not_contacted with high priority
  */
 export async function autoRecycleLeads(
-  supabase: SupabaseClient<any>,
+  supabase: SupabaseClient,
   daysThreshold: 90 | 180 = 90,
   autoRecycle: boolean = false
 ): Promise<{ candidates: number; recycled: number; alerted: number }> {
@@ -225,7 +215,7 @@ export async function autoRecycleLeads(
 /**
  * Get summary stats for dead leads
  */
-export async function getDeadLeadStats(supabase: SupabaseClient<any>): Promise<{
+export async function getDeadLeadStats(supabase: SupabaseClient): Promise<{
   total_dead: number
   dead_30_90_days: number
   dead_90_180_days: number

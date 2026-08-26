@@ -54,7 +54,7 @@ function describeTempChange(old_temp: Temperature, new_temp: Temperature, reason
  * Creates Ari briefing event if major change detected (Hot↔Cold, Warm↔Cool, etc.)
  */
 export async function detectTemperatureChanges(
-  supabase: SupabaseClient<any>,
+  supabase: SupabaseClient,
   lead: Lead,
   reason: string = 'activity update'
 ): Promise<void> {
@@ -155,7 +155,7 @@ export async function detectTemperatureChanges(
  * Should be run periodically (daily) to catch gradual changes
  */
 export async function scanAllLeadsForTemperatureChanges(
-  supabase: SupabaseClient<any>
+  supabase: SupabaseClient
 ): Promise<TemperatureChange[]> {
   const { data: leads } = await supabase
     .from('leads')

@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   }
 
   const db = supabaseAdmin()
-  let query = db
+  const query = db
     .from('user_oauth_tokens')
     .select('user_email, last_sync_at, created_at, scope')
     .eq('provider', 'google')

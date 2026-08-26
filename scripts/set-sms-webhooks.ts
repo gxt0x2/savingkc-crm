@@ -47,8 +47,9 @@ async function main() {
         console.log(`  ??  ${number} — not found in account`)
         fail++
       }
-    } catch (err: any) {
-      console.error(`  ERR ${number} — ${err.message}`)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`  ERR ${number} — ${message}`)
       fail++
     }
   }

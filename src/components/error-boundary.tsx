@@ -60,7 +60,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               </div>
               <h1 className="text-2xl font-black text-primary mb-2">Something went wrong</h1>
               <p className="text-sm text-on-surface-variant mb-6">
-                We've logged the error and will look into it. Try refreshing the page.
+                We&apos;ve logged the error and will look into it. Try refreshing the page.
               </p>
               <button
                 onClick={() => window.location.reload()}

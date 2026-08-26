@@ -17,8 +17,9 @@ export async function GET(req: NextRequest) {
     const timeline = await generateAccountabilityTimeline(leadId)
 
     return NextResponse.json({ lead_id: leadId, timeline })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Accountability timeline error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Could not generate accountability timeline'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
