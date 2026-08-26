@@ -55,11 +55,23 @@ seven PPC conversion-outbox and eight PPC tracking-event foreign-key references
 attached to the moved table. No row or table is deleted.
 
 `npm run manifest:archive:rehearse` proves the move and its emergency
-data-location rollback against an isolated PostgreSQL cluster. The migration and
-rollback are preparation only until a separate production approval is given.
+data-location rollback against an isolated PostgreSQL cluster.
+
+After PR `#574` merged and the exact production deployment passed its hosted
+gates, the separately approved migration
+`20261020120000_manifest_physical_archive.sql` was applied to production on
+August 26, 2026. The migration's fail-closed count, reference, trigger, and
+runtime-writer checks all passed. The tables now reside in the private
+`manifest_archive` schema, the verified receipt is recorded, both retained PPC
+foreign keys point to the moved table, and no row or table was deleted. Signed-in
+My Day, Pipeline, and Prospecting smoke checks passed after the cutover.
 
 The writer shutdown preserves all 367 historical Manifest rows and 10,668 history rows observed in the production preflight. It does not delete, rewrite, or detach them from retained PPC history.
 
-## Do not delete yet
+## Retention boundary: Do not delete yet
 
-Immediate deletion would bypass the required historical export, checksum, rollback rehearsal, and schema-history reconciliation. The application has reached zero operational authority and zero active writers; physical archive remains a separately reviewed data operation.
+The archive is private historical storage, not deletion authority. Deleting its
+rows or tables would be a new destructive operation requiring its own retention
+decision, current backup verification, and explicit approval. The application
+continues to operate from canonical CRM evidence with zero Manifest operational
+authority and zero active Manifest writers.

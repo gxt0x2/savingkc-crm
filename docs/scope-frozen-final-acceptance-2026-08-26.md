@@ -10,9 +10,10 @@ desktop, mobile, and production release checks. No audit step created a Lead,
 placed a call, sent a message, started a workflow, or changed production CRM
 data.
 
-This is a product-scope acceptance, not a claim that all historical repository
-debt is complete. The two remaining engineering debts are recorded below and
-must not be allowed to reopen or redesign the accepted CRM scope.
+This is a product-scope acceptance. The two engineering debts recorded at the
+acceptance point and the separately approved physical Manifest archive were
+subsequently completed on August 26, 2026. None of those closeout operations
+reopened or redesigned the accepted CRM scope.
 
 ## Accepted product boundary
 
@@ -72,41 +73,41 @@ must not be allowed to reopen or redesign the accepted CRM scope.
   `20261019120000_prospecting_dialer_session_setup.sql` exactly once and reports
   no pending migration after apply.
 
-## Remaining engineering debt
+## Engineering debt closeout
 
-### 1. Repository-wide lint baseline
+### 1. Repository-wide lint baseline — complete
 
-`npm run lint` currently reports 77 errors and 71 warnings on the unchanged
-`main` baseline. The accepted release files remain protected by the changed-file
-hygiene gate, and the exact merge SHA passed all required hosted checks, but the
-repository as a whole is not lint-clean.
+The repository-wide lint baseline was repaired without changing CRM behavior.
+On the post-archive production head, `npm run lint` exits successfully with zero
+errors and zero warnings. Changed-file hygiene and the full hosted quality gate
+remain enabled.
 
-Treat this as a separate bounded hardening train. Do not mix it with CRM feature
-work, alter business behavior to satisfy a lint rule, or describe it as a
-regression introduced by PR `#560`.
+This closeout does not authorize business-rule, workflow, or UI changes under a
+lint label.
 
-### 2. Expiring mobile dependency exceptions
+### 2. Expiring mobile dependency exceptions — complete
 
-The mobile security gate passes with two documented upstream `image-size`
-exceptions (`GHSA-w3rx-r6r6-pgpr` and `GHSA-5p2g-fcmc-qvqq`). Both expire on
-September 15, 2026 and are owned by Mobile Platform. Replace or upgrade the
-affected upstream dependency before that date; do not silently extend the
-exceptions.
+PR `#571` removed both temporary `image-size` exceptions and pinned the reviewed
+hardening commit as version `2.0.3`. The mobile health gate now requires the
+patched source, malicious-input termination probes, Expo asset parsing, Expo
+Doctor, and mobile TypeScript. `apps/mobile/security-advisory-exceptions.json`
+contains no exceptions.
 
-## Deferred by design
+## Physical Manifest archive — complete
 
-Physical Manifest archival remains a separately reviewed encrypted-data
-operation. Runtime authority and writers are retired, but deleting historical
-rows is not part of this acceptance and requires the verified archive receipt,
-current row-count match, rollback rehearsal, and separate approval already
-defined in `docs/manifest-retirement-plan.md`.
+The separately reviewed archive export, checksum verification, rollback
+rehearsal, merge, deployment verification, and production-migration approval
+were completed. Migration `20261020120000_manifest_physical_archive.sql` is
+recorded in production. It moved all 367 retained Manifest rows and 10,668
+history rows into the private `manifest_archive` schema, preserved the seven PPC
+outbox and eight PPC tracking references, recorded the verified archive receipt,
+and deleted no rows or tables. Signed-in My Day, Pipeline, and Prospecting smoke
+checks passed after the move.
 
 ## Next execution order
 
 1. Keep the accepted CRM scope frozen.
-2. Complete the bounded repository lint-baseline hardening without behavior
-   changes.
-3. Remove the two mobile dependency exceptions before September 15, 2026.
-4. Run normal operator pilot feedback through Andon evidence; fix verified
+2. Run normal operator pilot feedback through Andon evidence; fix verified
    defects without reopening the information architecture.
-5. Treat physical Manifest archival as its own approval-gated data operation.
+3. Require a reproduced defect, narrow acceptance test, and proportionate
+   production verification for each additional CRM change.
