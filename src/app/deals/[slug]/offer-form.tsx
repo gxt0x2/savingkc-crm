@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
+import Image from 'next/image'
 import { trackEvent } from './track-events'
 import { dispatchConversion } from './tracker'
 
@@ -277,7 +278,14 @@ export default function OfferForm({
               {/* Property header with photo */}
               <div className="flex items-center gap-3.5 border-b border-[#f0f0f0] px-5 pb-4 pt-2">
                 {photo && (
-                  <img src={photo} alt="" className="h-16 w-16 flex-shrink-0 rounded-2xl object-cover" />
+                  <Image
+                    src={photo}
+                    alt=""
+                    width={64}
+                    height={64}
+                    sizes="64px"
+                    className="h-16 w-16 flex-shrink-0 rounded-2xl object-cover"
+                  />
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">

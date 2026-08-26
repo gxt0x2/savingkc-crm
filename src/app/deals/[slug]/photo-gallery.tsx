@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback, type SyntheticEvent } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { trackEvent } from './track-events'
+import { DealGalleryImage } from './deal-gallery-image'
 
 interface PhotoGalleryProps {
   photos: string[]
@@ -42,13 +43,6 @@ function img(url: string, width: number, quality = 82): string {
   if (!url) return url
   if (!isDealAssetUrl(url)) return url
   return `/api/deals/image?src=${encodeURIComponent(url)}&w=${width}&q=${quality}`
-}
-
-function fallbackToOriginal(e: SyntheticEvent<HTMLImageElement>, originalUrl: string) {
-  const image = e.currentTarget
-  if (image.dataset.fallbackOriginal === '1') return
-  image.dataset.fallbackOriginal = '1'
-  image.src = originalUrl
 }
 
 // Hint a resource to start downloading before the JS handler runs.
@@ -337,29 +331,29 @@ export default function PhotoGallery({
       <div className="mb-6 relative">
         {photos.length === 1 ? (
           /* Single photo */
-          <div className="rounded-xl overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
-            <img
+          <div className="relative h-[400px] rounded-xl overflow-hidden cursor-pointer" onClick={() => openLightbox(0)}>
+            <DealGalleryImage
               src={img(photos[0], 1600, 84)}
+              originalUrl={photos[0]}
               alt="Property"
-              className="w-full h-[400px] object-cover"
-              decoding="async"
+              sizes="(max-width: 1024px) 100vw, 1200px"
+              className="object-cover"
               fetchPriority="high"
-              onError={(e) => fallbackToOriginal(e, photos[0])}
             />
           </div>
         ) : photos.length === 2 ? (
           /* Two photos */
           <div className="grid grid-cols-2 gap-1 rounded-xl overflow-hidden">
             {photos.slice(0, 2).map((url, i) => (
-              <div key={i} className="cursor-pointer" onClick={() => openLightbox(i)}>
-                <img
+              <div key={i} className="relative h-[350px] cursor-pointer" onClick={() => openLightbox(i)}>
+                <DealGalleryImage
                   src={img(url, 900)}
+                  originalUrl={url}
                   alt={`Property ${i + 1}`}
-                  className="w-full h-[350px] object-cover"
-                  decoding="async"
+                  sizes="(max-width: 1024px) 50vw, 600px"
+                  className="object-cover"
                   fetchPriority={i === 0 ? 'high' : 'auto'}
                   loading={i === 0 ? 'eager' : 'lazy'}
-                  onError={(e) => fallbackToOriginal(e, url)}
                 />
               </div>
             ))}
@@ -383,13 +377,13 @@ export default function PhotoGallery({
               className="row-span-2 cursor-pointer relative group"
               onClick={() => openLightbox(0)}
             >
-              <img
+              <DealGalleryImage
                 src={img(photos[0], 1600, 84)}
+                originalUrl={photos[0]}
                 alt="Property"
-                className="w-full h-full object-cover"
-                decoding="async"
+                sizes="(max-width: 1024px) 25vw, 320px"
+                className="object-cover"
                 fetchPriority="high"
-                onError={(e) => fallbackToOriginal(e, photos[0])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -399,13 +393,13 @@ export default function PhotoGallery({
               className="cursor-pointer relative group"
               onClick={() => openLightbox(1)}
             >
-              <img
+              <DealGalleryImage
                 src={img(photos[1], 900, 84)}
+                originalUrl={photos[1]}
                 alt="Property 2"
-                className="w-full h-full object-cover"
-                decoding="async"
+                sizes="(max-width: 1024px) 25vw, 320px"
+                className="object-cover"
                 loading="lazy"
-                onError={(e) => fallbackToOriginal(e, photos[1])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -416,13 +410,13 @@ export default function PhotoGallery({
               onClick={openStreetView}
             >
               {streetViewStaticUrl && !streetStaticBroken ? (
-                <img
+                <DealGalleryImage
                   src={streetViewStaticUrl}
                   alt="Street View"
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  decoding="async"
+                  sizes="(max-width: 1024px) 50vw, 640px"
+                  className="object-cover transition-transform duration-500 group-hover:scale-105"
                   fetchPriority="high"
-                  onError={() => setStreetStaticBroken(true)}
+                  onUnavailable={() => setStreetStaticBroken(true)}
                 />
               ) : (
                 <div className="absolute inset-0 bg-gradient-to-br from-[#3a4a5a] via-[#2a3a4a] to-[#1a2a3a] flex items-center justify-center">
@@ -451,13 +445,13 @@ export default function PhotoGallery({
             >
               {mapStaticUrl && !mapStaticBroken ? (
                 <>
-                  <img
+                  <DealGalleryImage
                     src={mapStaticUrl}
                     alt="Map"
-                    className="absolute inset-0 w-full h-full object-cover group-hover:brightness-95 transition-all"
-                    decoding="async"
+                    sizes="(max-width: 1024px) 25vw, 320px"
+                    className="object-cover group-hover:brightness-95 transition-all"
                     fetchPriority="high"
-                    onError={() => setMapStaticBroken(true)}
+                    onUnavailable={() => setMapStaticBroken(true)}
                   />
                   <div className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20">
                     <IconGoogleMap className="w-3.5 h-3.5" />
@@ -481,13 +475,13 @@ export default function PhotoGallery({
               className="cursor-pointer relative group"
               onClick={() => openLightbox(2)}
             >
-              <img
+              <DealGalleryImage
                 src={img(photos[2], 800, 84)}
+                originalUrl={photos[2]}
                 alt="Property 3"
-                className="w-full h-full object-cover"
-                decoding="async"
+                sizes="(max-width: 1024px) 25vw, 320px"
+                className="object-cover"
                 loading="lazy"
-                onError={(e) => fallbackToOriginal(e, photos[2])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -497,13 +491,13 @@ export default function PhotoGallery({
               className="cursor-pointer relative group"
               onClick={() => { if (remaining > 0) openPhotoGrid(); else openLightbox(3) }}
             >
-              <img
+              <DealGalleryImage
                 src={img(photos[3], 800, 84)}
+                originalUrl={photos[3]}
                 alt="Property 4"
-                className="w-full h-full object-cover"
-                decoding="async"
+                sizes="(max-width: 1024px) 25vw, 320px"
+                className="object-cover"
                 loading="lazy"
-                onError={(e) => fallbackToOriginal(e, photos[3])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
               {remaining > 0 && (
@@ -523,13 +517,13 @@ export default function PhotoGallery({
               className="col-span-2 row-span-2 cursor-pointer relative group"
               onClick={() => openLightbox(0)}
             >
-              <img
+              <DealGalleryImage
                 src={img(photos[0], 1600, 84)}
+                originalUrl={photos[0]}
                 alt="Property"
-                className="w-full h-full object-cover"
-                decoding="async"
+                sizes="(max-width: 1024px) 50vw, 640px"
+                className="object-cover"
                 fetchPriority="high"
-                onError={(e) => fallbackToOriginal(e, photos[0])}
               />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
             </div>
@@ -539,13 +533,13 @@ export default function PhotoGallery({
                 className="col-span-1 row-span-1 cursor-pointer relative group"
                 onClick={() => openLightbox(i + 1)}
               >
-                <img
+                <DealGalleryImage
                   src={img(url, 500)}
+                  originalUrl={url}
                   alt={`Property ${i + 2}`}
-                  className="w-full h-full object-cover"
-                  decoding="async"
+                  sizes="(max-width: 1024px) 25vw, 320px"
+                  className="object-cover"
                   loading="lazy"
-                  onError={(e) => fallbackToOriginal(e, url)}
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
               </div>
@@ -664,11 +658,13 @@ export default function PhotoGallery({
                 title="Map View"
               />
             ) : mapModalStaticUrl ? (
-              <img
+              <DealGalleryImage
                 src={mapModalStaticUrl}
                 alt={`Map of ${fullAddress}`}
+                width={640}
+                height={500}
+                sizes="(max-width: 768px) 100vw, 640px"
                 className="block h-[500px] w-full object-contain bg-gray-100"
-                decoding="async"
               />
             ) : publicGoogleMapUrl ? (
               <iframe
@@ -732,17 +728,17 @@ export default function PhotoGallery({
                 {photos.map((url, i) => (
                   <div
                     key={i}
-                    className="cursor-pointer aspect-[4/3] rounded-lg overflow-hidden bg-neutral-900"
+                    className="relative cursor-pointer aspect-[4/3] rounded-lg overflow-hidden bg-neutral-900"
                     onClick={() => { setCurrentIndex(i); setGridView(false) }}
                   >
-                    <img
+                    <DealGalleryImage
                       src={img(url, GRID_THUMB_WIDTH, GRID_THUMB_QUALITY)}
+                      originalUrl={url}
                       alt={`Photo ${i + 1}`}
-                      className="w-full h-full object-cover hover:opacity-80 transition-opacity"
-                      decoding="async"
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      className="object-cover hover:opacity-80 transition-opacity"
                       fetchPriority={i < 8 ? 'high' : 'low'}
                       loading={i < 8 ? 'eager' : 'lazy'}
-                      onError={(e) => fallbackToOriginal(e, url)}
                     />
                   </div>
                 ))}
@@ -760,13 +756,15 @@ export default function PhotoGallery({
                 </svg>
               </button>
 
-              <img
+              <DealGalleryImage
                 src={img(photos[currentIndex], 2000, 86)}
+                originalUrl={photos[currentIndex]}
                 alt={`Photo ${currentIndex + 1}`}
-                className="max-h-[80vh] max-w-full object-contain rounded-lg"
-                decoding="async"
+                width={2000}
+                height={1500}
+                sizes="calc(100vw - 8rem)"
+                className="h-auto w-auto max-h-[80vh] max-w-full object-contain rounded-lg"
                 fetchPriority="high"
-                onError={(e) => fallbackToOriginal(e, photos[currentIndex])}
               />
 
               <button
@@ -790,17 +788,17 @@ export default function PhotoGallery({
                   <button
                     key={i}
                     onClick={() => setCurrentIndex(i)}
-                    className={`w-16 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${
+                    className={`relative w-16 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${
                       i === currentIndex ? 'ring-2 ring-white opacity-100' : 'opacity-50 hover:opacity-75'
                     }`}
                   >
-                    <img
+                    <DealGalleryImage
                       src={img(url, 160)}
+                      originalUrl={url}
                       alt=""
-                      className="w-full h-full object-cover"
-                      decoding="async"
+                      sizes="64px"
+                      className="object-cover"
                       loading="lazy"
-                      onError={(e) => fallbackToOriginal(e, url)}
                     />
                   </button>
                   )
