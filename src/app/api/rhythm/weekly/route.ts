@@ -10,11 +10,6 @@
 
 import { NextResponse } from 'next/server'
 import { getWeeklyReview, saveWeeklyReview } from '@/lib/operating-rhythm'
-import {
-  generateWeeklyDigest,
-  saveWeeklyDigest,
-  getCurrentWeekRange,
-} from '@/lib/weekly-digest'
 
 export async function GET(request: Request) {
   try {

@@ -106,7 +106,7 @@ async function sendToSubscriptions(
 
   let sentCount = 0
 
-  const results = await Promise.allSettled(
+  await Promise.allSettled(
     subscriptions.map(async (sub) => {
       const pushSubscription: webpush.PushSubscription = {
         endpoint: sub.endpoint,

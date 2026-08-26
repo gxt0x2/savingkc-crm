@@ -121,7 +121,7 @@ function generateMessage(
 export async function getMissedCallResponse(
   context: MissedCallContext
 ): Promise<MissedCallResponse | null> {
-  const { leadId, leadName, fromPhone, calledNumber, isKnownLead } = context
+  const { leadName, fromPhone, calledNumber, isKnownLead } = context
 
   // Get agent routing based on which number was called
   const routing = getAgentRouting(calledNumber)

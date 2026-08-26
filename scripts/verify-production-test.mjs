@@ -100,7 +100,7 @@ if (booking.lead_id) {
 console.log('\n' + '='.repeat(80))
 
 // Final verdict
-const { data: manifests, count } = await supabase
+const { count } = await supabase
   .from('manifests')
   .select('id', { count: 'exact' })
   .eq('lead_id', booking.lead_id)

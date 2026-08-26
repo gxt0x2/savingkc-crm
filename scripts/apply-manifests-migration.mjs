@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -13,8 +12,6 @@ if (!supabaseUrl || !supabaseKey) {
   console.error('Missing required env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY')
   process.exit(1)
 }
-
-const supabase = createClient(supabaseUrl, supabaseKey)
 
 const migrationPath = join(__dirname, '..', 'supabase', 'migrations', '20260328_manifests_table.sql')
 const sql = readFileSync(migrationPath, 'utf8')
