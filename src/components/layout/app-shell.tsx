@@ -73,7 +73,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [dialerOwnerRoute, setDialerOwnerRoute] = useState<string | null>(null)
   const [dialerStatus, setDialerStatus] = useState<CallStatus>('offline')
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [adminReviewerEmail, setAdminReviewerEmail] = useState<string | null>(null)
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
@@ -133,35 +132,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     : isProspectingCallingFloor
       ? 'workspace'
       : 'modal'
-  const effectiveWorkspaceEmail = pathname?.startsWith('/my-day') || pathname?.startsWith('/scorecard')
-    ? 'casey@savingkc.com'
-    : viewedAgentEmail || user?.email
-  const shouldRedirectCaseyDashboard = pathname === '/dashboard' && isCaseyCrmUser(effectiveWorkspaceEmail)
   const signedInEmail = user?.email?.toLowerCase() ?? null
-  const canReviewCalls = Boolean(signedInEmail && (isCallReviewer(signedInEmail) || adminReviewerEmail === signedInEmail))
-
-  useEffect(() => {
-    const email = signedInEmail
-    if (!email) return
-
-    if (isCallReviewer(email)) return
-
-    let cancelled = false
-    const timeoutId = window.setTimeout(() => {
-      void fetch('/api/call-review/access', { cache: 'no-store' })
-        .then((response) => response.ok ? response.json() : { canReviewCalls: false })
-        .then((payload) => {
-          if (!cancelled) setAdminReviewerEmail(payload.canReviewCalls ? email : null)
-        })
-        .catch(() => {
-          if (!cancelled) setAdminReviewerEmail(null)
-        })
-    }, 1_500)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timeoutId)
-    }
-  }, [signedInEmail])
+  // My Day is Casey's purpose-built workspace. Scorecard is reviewer-owned and
+  // must always preserve the authenticated reviewer instead of inheriting a
+  // previously viewed agent or painting Casey's profile into the global shell.
+  const effectiveWorkspaceEmail = pathname?.startsWith('/my-day')
+    ? 'casey@savingkc.com'
+    : pathname?.startsWith('/scorecard')
+      ? signedInEmail
+      : viewedAgentEmail || user?.email
+  const shouldRedirectCaseyDashboard = pathname === '/dashboard' && isCaseyCrmUser(effectiveWorkspaceEmail)
+  const canReviewCalls = Boolean(signedInEmail && isCallReviewer(signedInEmail))
 
   useEffect(() => {
     if (shouldRedirectCaseyDashboard) router.replace('/my-day')

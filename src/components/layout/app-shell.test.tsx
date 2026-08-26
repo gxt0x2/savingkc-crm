@@ -143,4 +143,16 @@ describe('AppShell first-load work', () => {
     expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Opening Casey’s My Day…')
   })
+
+  it('keeps Scorecard on the authenticated reviewer when Casey was previously viewed', async () => {
+    navigation.pathname = '/scorecard'
+    window.sessionStorage.setItem('savingkc:viewed-agent-email', 'casey@savingkc.com')
+
+    render(<AppShell><main>Scorecard content</main></AppShell>)
+
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-user-email', 'ernest@savingkc.com')
+    expect(screen.getByText('Scorecard content')).toBeVisible()
+    expect(navigation.replace).not.toHaveBeenCalled()
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings?email=ernest%40savingkc.com'))
+  })
 })

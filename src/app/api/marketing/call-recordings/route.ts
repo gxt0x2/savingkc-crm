@@ -1,5 +1,5 @@
 import { after, NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
+import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { formatPhone } from '@/lib/format'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { cleanDeadReason } from '@/lib/lead-outcomes'
@@ -370,6 +370,9 @@ export async function PATCH(req: NextRequest) {
   if ((!activityId && !recordingSid) || (!['submit', 'complete', 'retry_ai', 'reopen'].includes(action) && !isRecordingReviewOutcome(outcome))) {
     return NextResponse.json({ error: 'Invalid review payload' }, { status: 400, headers: NO_STORE_HEADERS })
   }
+  if (['complete', 'retry_ai', 'reopen'].includes(action) && !isCallReviewer(email)) {
+    return NextResponse.json({ error: 'Call review access is restricted to assigned reviewers' }, { status: 403, headers: NO_STORE_HEADERS })
+  }
 
   const db = supabaseAdmin()
   let activityQuery = db.from('lead_activities').select('id, lead_id, activity_type, description, metadata, created_at, agent').eq('activity_type', 'call').limit(1)
@@ -397,9 +400,9 @@ export async function PATCH(req: NextRequest) {
     if (existing.status !== 'completed') {
       return NextResponse.json({ error: 'Only completed scorecards can be reopened' }, { status: 409, headers: NO_STORE_HEADERS })
     }
-    const canReopen = existing.completedBy === email || existing.assignedReviewer === email || await isCurrentUserAdmin()
+    const canReopen = existing.completedBy === email || existing.assignedReviewer === email
     if (!canReopen) {
-      return NextResponse.json({ error: 'Only the assigned reviewer or an administrator can reopen this scorecard' }, { status: 403, headers: NO_STORE_HEADERS })
+      return NextResponse.json({ error: 'Only the assigned reviewer can reopen this scorecard' }, { status: 403, headers: NO_STORE_HEADERS })
     }
 
     const reopened = reopenCallReviewWorkflow(activityRow.metadata, { reopenedAt: now, reopenedBy: email })
@@ -447,7 +450,7 @@ export async function PATCH(req: NextRequest) {
     if (existing.status !== 'submitted') {
       return NextResponse.json({ error: 'Only submitted calls can be rescored' }, { status: 409, headers: NO_STORE_HEADERS })
     }
-    if (existing.assignedReviewer !== email && !(await isCurrentUserAdmin())) {
+    if (existing.assignedReviewer !== email) {
       return NextResponse.json({ error: 'This review is assigned to another reviewer' }, { status: 403, headers: NO_STORE_HEADERS })
     }
     const updatedMetadata = mergeCallReviewWorkflow(activityRow.metadata, {
@@ -502,7 +505,7 @@ export async function PATCH(req: NextRequest) {
       description = `Call submitted to ${reviewerName} for review — ${framework.label}`
     } else {
       if (existing.status !== 'submitted') return NextResponse.json({ error: 'Submit the call before completing its review' }, { status: 409, headers: NO_STORE_HEADERS })
-      if (existing.assignedReviewer !== email && !(await isCurrentUserAdmin())) {
+      if (existing.assignedReviewer !== email) {
         return NextResponse.json({ error: 'This review is assigned to another reviewer' }, { status: 403, headers: NO_STORE_HEADERS })
       }
       const supplied = record(body?.answers)
