@@ -403,14 +403,15 @@ export function HeirsSection({
       {/* One secondary maintenance action; phone-attempt state is already shown on each row. */}
       {!loading && totalHeirs > 0 && (
         <div className="mt-4 flex items-center justify-end border-t border-[var(--ck-border)] pt-3">
-          {!readOnlyPreview ? <button
+          <button
             onClick={runSync}
-            disabled={isSyncing}
-            className="text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] inline-flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+            disabled={readOnlyPreview || isSyncing}
+            title={readOnlyPreview ? 'Available in a live calling session' : undefined}
+            className="text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] inline-flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
           >
             <Icon name={isSyncing ? 'progress_activity' : 'refresh'} size="text-xs" className={isSyncing ? 'animate-spin' : ''} />
             {isSyncing ? 'Re-syncing…' : 'Re-sync'}
-          </button> : <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]"><Icon name="lock" size="text-xs" />Read-only preview</span>}
+          </button>
         </div>
       )}
       {/* --- expanded body ends --- */}
@@ -569,7 +570,7 @@ function HeirRow({
           />
         ))}
       </div>
-      {!readOnlyPreview ? <ContactNoteComposer contactName={displayName} onSave={onSaveNote} /> : null}
+      <ContactNoteComposer contactName={displayName} onSave={onSaveNote} readOnlyPreview={readOnlyPreview} />
       </>}
     </div>
   )
@@ -644,25 +645,27 @@ function PhonePill({
       {/* Verify / unverify is available only when the snapshot still points to
           the canonical source phone row. Lead-primary snapshots remain callable
           through Lead policy without inventing source-phone provenance. */}
-      {!readOnlyPreview && sourceProspectPhoneId(phone) ? <button
+      {sourceProspectPhoneId(phone) ? <button
         onClick={() => onToggleVerify(!verified)}
+        disabled={readOnlyPreview}
         className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors border ${
           verified
             ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
             : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
-        }`}
-        title={verified ? 'Verified as this heir — click to unverify' : 'Mark this as the verified number for this heir'}
+        } disabled:cursor-not-allowed disabled:opacity-50`}
+        title={readOnlyPreview ? 'Verification is available in a live calling session' : verified ? 'Verified as this heir — click to unverify' : 'Mark this as the verified number for this heir'}
         aria-label={verified ? 'Unverify this number' : 'Verify this number'}
         aria-pressed={verified}
       >
         <Icon name={verified ? 'verified' : 'verified_user'} size="text-sm" filled={verified} />
       </button> : null}
 
-      {onSms && (
+      {(onSms || (readOnlyPreview && sourceProspectPhoneId(phone))) && (
         <button
           onClick={onSms}
-          className="shrink-0 w-8 h-8 rounded-lg bg-[var(--ck-surface-elev)] hover:bg-[var(--ck-surface-hi)] border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] flex items-center justify-center transition-colors"
-          title="Send SMS to this number"
+          disabled={readOnlyPreview || !onSms}
+          className="shrink-0 w-8 h-8 rounded-lg bg-[var(--ck-surface-elev)] hover:bg-[var(--ck-surface-hi)] border border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)] flex items-center justify-center transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={readOnlyPreview ? 'SMS is available in a live calling session' : 'Send SMS to this number'}
           aria-label="Send SMS"
         >
           <Icon name="chat" size="text-sm" />

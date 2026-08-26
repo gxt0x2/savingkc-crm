@@ -33,6 +33,7 @@ interface ProspectingCallingContextRailProps {
   activities: DialerActivity[]
   activeTab: ProspectingCallingTab
   callerId: string
+  readOnlyPreview?: boolean
   onTabChange: (tab: ProspectingCallingTab) => void
   onRefreshActivities: () => void
 }
@@ -44,9 +45,31 @@ function compactDollars(value: number | null | undefined): string {
   return `$${value.toLocaleString()}`
 }
 
+function contactNoteLabel(activity: DialerActivity): string {
+  const contactName = activity.metadata?.contact_name
+  return typeof contactName === 'string' && contactName.trim() ? contactName.trim() : 'Associated contact'
+}
+
+function contactNoteTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Chicago',
+  }).format(date)
+}
+
 export function ProspectingCallingContextRail(props: ProspectingCallingContextRailProps) {
   const commsEvents = useMemo(() => buildCommsTimeline(props.activities), [props.activities])
   const commsSummary = useMemo(() => summarizeComms(commsEvents), [commsEvents])
+  const contactNotes = useMemo(() => props.activities.filter((activity) => (
+    activity.activity_type === 'note'
+    && activity.metadata?.source === 'prospecting_contact_note'
+  )), [props.activities])
+  const historyCount = commsEvents.length + contactNotes.length
 
   return <aside aria-label="Seller context" className={`order-2 col-span-12 space-y-3 lg:self-start ${props.fullWidth ? 'lg:col-span-12' : 'lg:sticky lg:top-[168px] lg:col-span-4 lg:max-h-[calc(100vh-184px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1'}`}>
     <section className="ck-card p-4">
@@ -84,13 +107,31 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
     <section aria-label="Seller communication workspace" className="ck-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="inline-flex rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-0.5">{([['texts', 'Text Hub'], ['activity', 'History']] as const).map(([tab, label]) => <button key={tab} type="button" onClick={() => props.onTabChange(tab)} className={`rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${props.activeTab === tab ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'}`}>{label}</button>)}</div>
-        <span className="text-[10px] text-[var(--ck-text-dim)]">{props.activeTab === 'texts' ? `${commsSummary.sms} texts` : `${commsEvents.length} touches`}</span>
+        <span className="text-[10px] text-[var(--ck-text-dim)]">{props.activeTab === 'texts' ? `${commsSummary.sms} texts` : `${historyCount} items`}</span>
       </div>
       <div className="max-h-[360px] overflow-y-auto overscroll-contain pr-1">
-        {props.activeTab === 'texts' ? props.leadId
+        {props.activeTab === 'texts' ? props.readOnlyPreview
+        ? <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-xs leading-5 text-[var(--ck-text-muted)]">Texting is visible for workflow review but disabled in read-only preview. Start a live calling session to send a message.</div>
+        : props.leadId
         ? <SmsThreadPanel leadId={props.leadId} leadName={props.ownerName} phone={props.lead?.phone} propertyAddress={props.situsAddress} activities={props.activities} defaultFromPhone={props.callerId || null} onRefresh={props.onRefreshActivities} />
         : <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-xs leading-5 text-[var(--ck-text-muted)]">SMS stays locked until a reviewed recipient is selected from the campaign audience. Calling this source Prospect does not create a Lead.</div>
-        : <div className="space-y-3"><CommsSummaryBar summary={commsSummary} /><div className="border-t border-[var(--ck-border)] pt-3"><CommsTimeline events={commsEvents} emptyHint="No calls, texts, or emails logged for this seller yet." /></div></div>}
+        : <div className="space-y-3">
+          {contactNotes.length > 0 ? <section aria-label="Contact notes" className="space-y-2">
+            <p className="text-[9px] font-black uppercase tracking-[0.12em] text-[var(--ck-text-dim)]">Contact notes</p>
+            {contactNotes.map((activity) => <article key={activity.id} className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs font-black text-[var(--ck-text)]">{contactNoteLabel(activity)}</p>
+                <time dateTime={activity.created_at} className="shrink-0 text-[9px] font-bold text-[var(--ck-text-dim)]">{contactNoteTime(activity.created_at)}</time>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[var(--ck-text-muted)]">{activity.description || 'Note saved without details.'}</p>
+              {activity.agent ? <p className="mt-1.5 text-[9px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">Saved by {activity.agent}</p> : null}
+            </article>)}
+          </section> : null}
+          {commsEvents.length > 0 ? <>
+            <CommsSummaryBar summary={commsSummary} />
+            <div className="border-t border-[var(--ck-border)] pt-3"><CommsTimeline events={commsEvents} /></div>
+          </> : contactNotes.length === 0 ? <p className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4 text-xs leading-5 text-[var(--ck-text-muted)]">No calls, texts, emails, or contact notes logged for this seller yet.</p> : null}
+        </div>}
       </div>
       {props.leadId ? <Link href={`/conversations?lead=${encodeURIComponent(props.leadId)}`} prefetch={false} className="mt-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)] hover:underline">Open full conversation <Icon name="arrow_forward" size="text-xs" /></Link> : null}
     </section>

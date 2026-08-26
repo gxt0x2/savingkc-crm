@@ -8,7 +8,7 @@ import { useWorkspaceCallRailOpen } from '@/components/conversations/workspace-f
 import { formatPhone, toProperCase } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
-import { loadDialerActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
+import { loadDialerSubjectActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
 import { DialerSessionCommand } from '@/components/dialer/dialer-session-command'
 import { ProspectingCallingContextRail } from '@/components/prospecting/prospecting-calling-context-rail'
 import { ProspectingMarkDeadDialog } from '@/components/prospecting/prospecting-mark-dead-dialog'
@@ -53,10 +53,10 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   const [loading, setLoading] = useState(true)
   const [resolveError, setResolveError] = useState<string | null>(null)
 
-  // Activity feed for current lead
+  // Activity feed for the current Lead or unpromoted source Prospect.
   const [activities, setActivities] = useState<Activity[]>([])
   const [leftTab, setLeftTab] = useState<ProspectingCallingTab>('texts')
-  const currentLeadIdRef = useRef<string | null>(null)
+  const currentActivitySubjectRef = useRef<string | null>(null)
 
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
@@ -125,8 +125,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   const startIndexParam = params.get('start_index')
 
   useEffect(() => {
-    currentLeadIdRef.current = currentLeadId
-  }, [currentLeadId])
+    currentActivitySubjectRef.current = currentSubjectKey
+  }, [currentSubjectKey])
 
   // Resolve the durable subject queue. Legacy URLs remain Lead-only, while new
   // campaign sessions preserve unpromoted source Prospects without creating
@@ -255,39 +255,45 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     load()
   }, [subjects])
 
-  // Load the bounded communication history for the current lead only.
+  // Load bounded history for either a canonical Lead or an unpromoted source
+  // Prospect. Source Prospects intentionally have no Lead row, so their
+  // per-contact notes are read through the Prospect-scoped endpoint.
   useEffect(() => {
-    if (!currentLeadId) {
+    if (!currentSubjectKey || (!currentLeadId && !currentProspectId)) {
       setActivities([])
       return
     }
-    const requestedLeadId = currentLeadId
+    const requestedSubjectKey = currentSubjectKey
     let cancelled = false
-    void loadDialerActivities(requestedLeadId)
+    void loadDialerSubjectActivities({ leadId: currentLeadId, prospectId: currentProspectId })
       .then((nextActivities) => {
-        if (cancelled || currentLeadIdRef.current !== requestedLeadId) return
+        if (cancelled || currentActivitySubjectRef.current !== requestedSubjectKey) return
         setActivities(nextActivities)
       })
-      .catch((error) => console.error('[Dialer] Could not load lead activity', error))
+      .catch((error) => console.error('[Dialer] Could not load seller activity', error))
     return () => { cancelled = true }
-  }, [currentLeadId])
+  }, [currentLeadId, currentProspectId, currentSubjectKey])
 
   const refreshActivities = useCallback(async () => {
-    if (!currentLeadId) return
-    const requestedLeadId = currentLeadId
+    if (!currentSubjectKey || (!currentLeadId && !currentProspectId)) return
+    const requestedSubjectKey = currentSubjectKey
     try {
-      const nextActivities = await loadDialerActivities(requestedLeadId)
-      if (currentLeadIdRef.current === requestedLeadId) setActivities(nextActivities)
+      const nextActivities = await loadDialerSubjectActivities({ leadId: currentLeadId, prospectId: currentProspectId })
+      if (currentActivitySubjectRef.current === requestedSubjectKey) setActivities(nextActivities)
     } catch (error) {
-      console.error('[Dialer] Could not refresh lead activity', error)
+      console.error('[Dialer] Could not refresh seller activity', error)
     }
-  }, [currentLeadId])
+  }, [currentLeadId, currentProspectId, currentSubjectKey])
 
   // Refresh activities when an attempt is logged.
   useEffect(() => {
     function onAttempt(e: Event) {
       const detail = (e as CustomEvent).detail
-      if (!detail || detail.leadId === currentLeadId) refreshActivities()
+      if (
+        !detail
+        || (currentLeadId && detail.leadId === currentLeadId)
+        || (currentProspectId && detail.prospectId === currentProspectId)
+      ) refreshActivities()
     }
     window.addEventListener('heir-attempt-logged', onAttempt)
     window.addEventListener('crm:disposition-logged', onAttempt)
@@ -295,7 +301,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       window.removeEventListener('heir-attempt-logged', onAttempt)
       window.removeEventListener('crm:disposition-logged', onAttempt)
     }
-  }, [currentLeadId, refreshActivities])
+  }, [currentLeadId, currentProspectId, refreshActivities])
 
   // Listen to queue-state events from the telephony bar
   useEffect(() => {
@@ -645,6 +651,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           activities={activities}
           activeTab={leftTab}
           callerId={sessionCallerId}
+          readOnlyPreview={readOnlyPreview}
           onTabChange={setLeftTab}
           onRefreshActivities={() => { void refreshActivities() }}
         />

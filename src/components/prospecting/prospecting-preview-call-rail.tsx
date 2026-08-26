@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { WorkspaceCallController } from '@/components/telephony/workspace-call-controller'
 import { WorkspaceDispositionControls } from '@/components/telephony/workspace-disposition-controls'
+import { WorkspaceSessionControls } from '@/components/telephony/workspace-session-controls'
 import { FIRST_DIAL_COUNTDOWN_SECONDS } from '@/components/telephony/use-dialer-start-countdown'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
@@ -127,8 +128,14 @@ export function ProspectingPreviewCallRail({
         </section>
       </div>
 
-      <footer aria-label="Preview calling session controls" className="shrink-0 space-y-2 border-t border-[var(--skc-separator)] bg-[var(--skc-surface-1)] p-4">
-        <button type="button" disabled className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--skc-surface-3)] px-4 text-sm font-black text-[var(--skc-text-tertiary)]"><Icon name="call_end" size="text-lg" />No live call to hang up</button>
+      <footer aria-label="Preview calling session controls" className="shrink-0 space-y-2 bg-[var(--skc-surface-1)] p-4">
+        <WorkspaceSessionControls
+          status={paused ? 'paused' : 'active'}
+          callBusy={false}
+          outcomeRequired={false}
+          previewOnly
+          onAction={() => {}}
+        />
         <button type="button" onClick={endPreview} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#7D2626] bg-[#E32E2E]/10 px-4 text-sm font-bold text-[#FF7A7A]"><Icon name="stop_circle" size="text-lg" />End preview</button>
       </footer>
     </section>

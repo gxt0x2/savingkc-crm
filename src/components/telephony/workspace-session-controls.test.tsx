@@ -37,4 +37,15 @@ describe('WorkspaceSessionControls', () => {
     expect(screen.getByRole('button', { name: 'Pause after outcome' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
   })
+
+  it('keeps the live control layout visible but inert in read-only preview', () => {
+    const onAction = vi.fn()
+    render(<WorkspaceSessionControls status="active" callBusy outcomeRequired previewOnly onAction={onAction} />)
+
+    expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause after outcome' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()
+    expect(onAction).not.toHaveBeenCalled()
+  })
 })

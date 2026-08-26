@@ -41,6 +41,10 @@ describe('ProspectingPreviewCallRail', () => {
     expect(screen.getByText('Resume saved place')).toBeVisible()
     expect(screen.getByText('7 rings')).toBeVisible()
     expect(screen.getByRole('region', { name: 'Call disposition controls' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()
 
     for (let second = 0; second < 15; second += 1) {
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })

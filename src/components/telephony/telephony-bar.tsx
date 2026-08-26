@@ -21,6 +21,7 @@ import { useDialerPostCallReview } from './use-dialer-post-call-review'
 import { WorkspaceCallController } from './workspace-call-controller'
 import { WorkspaceSessionControls } from './workspace-session-controls'
 import { WorkspaceDispositionControls } from './workspace-disposition-controls'
+import { ActiveCallCard, IncomingCallCard } from './dialer-call-state-cards'
 import { DialerQueueHeader } from './dialer-queue-header'
 import { DialerPanelHeader } from './dialer-panel-header'
 import { useDialerStartCountdown } from './use-dialer-start-countdown'
@@ -1412,74 +1413,11 @@ export function DialerPanel({
           )}
 
           {/* Incoming Call UI */}
-          {status === 'incoming' && (
-            <div className="bg-[#1A1616] border border-[#7D2626] rounded-[6px] p-5 animate-pulse">
-              <div className="text-center mb-4">
-                <div className="w-14 h-14 bg-[#E32E2E]/20 rounded-[6px] flex items-center justify-center mx-auto mb-3">
-                  <Icon name="call" className="text-[#FF7A7A]" size="text-2xl" />
-                </div>
-                <p className="text-white font-bold text-lg">Incoming Call</p>
-                <p className="text-white/50 text-sm">Unknown Caller</p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={acceptIncoming}
-                  className="flex-1 py-3 bg-white text-black font-bold rounded-[6px] hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icon name="call" size="text-lg" />
-                  Accept
-                </button>
-                <button
-                  onClick={rejectIncoming}
-                  className="flex-1 py-3 bg-[#E32E2E] text-white font-bold rounded-[6px] hover:bg-[#C42626] transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icon name="call_end" size="text-lg" />
-                  Reject
-                </button>
-              </div>
-            </div>
-          )}
+          {status === 'incoming' ? <IncomingCallCard onAccept={acceptIncoming} onReject={rejectIncoming} /> : null}
 
           {/* Active Call Card */}
-          {isOnCall && (
-            <div className={`rounded-[6px] p-5 border transition-all ${status === 'on_call' ? 'bg-[#191417] border-[#7D2626]' : 'bg-[#18181E] border-[#2F2F38]'}`}
-              style={status === 'on_call' ? { animation: 'pulse-border 2s ease-in-out infinite' } : undefined}
-            >
-              <div className="text-center mb-4">
-                <div className={`w-12 h-12 rounded-[6px] flex items-center justify-center mx-auto mb-2 ${status === 'on_call' ? 'bg-[#E32E2E]/20' : 'bg-white/10'}`}>
-                  <Icon name="call" className={status === 'on_call' ? 'text-[#FF7A7A]' : 'text-white'} size="text-2xl" />
-                </div>
-                {selectedLead && (
-                  <p className="text-white font-bold text-base">{selectedLead.full_name}</p>
-                )}
-                <p className="text-white/60 font-mono text-sm">{dialNumber}</p>
-                {status === 'on_call' && (
-                  <p className="text-[#FF7A7A] font-mono text-xl font-bold mt-1">{callTimer}</p>
-                )}
-                {status === 'calling' && (
-                  <p className="text-white/80 text-sm mt-1 animate-pulse">Dialing...</p>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={toggleMute}
-                  className={`flex-1 py-2.5 rounded-[6px] font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
-                    muted ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-[#1E1E25] text-white/75 border border-[#31313A] hover:bg-[#272730]'
-                  }`}
-                >
-                  <Icon name={muted ? 'mic_off' : 'mic'} size="text-lg" />
-                  {muted ? 'Unmute' : 'Mute'}
-                </button>
-                <button
-                  onClick={hangup}
-                  className="flex-1 py-2.5 bg-[#E32E2E] text-white font-bold rounded-[6px] hover:bg-[#C42626] transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icon name="call_end" size="text-lg" />
-                  Hang Up
-                </button>
-              </div>
-            </div>
-          )}
+          {isOnCall ? <ActiveCallCard callTimer={callTimer} dialNumber={dialNumber} leadName={selectedLead?.full_name}
+            muted={muted} onHangup={hangup} onToggleMute={toggleMute} status={status} /> : null}
 
           {isWorkspace && !isOnCall && status !== 'incoming' && (
             <WorkspaceCallController

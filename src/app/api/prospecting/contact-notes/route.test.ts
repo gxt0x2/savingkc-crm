@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), save: vi.fn() }))
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), load: vi.fn(), save: vi.fn() }))
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
-vi.mock('@/lib/server/prospecting-contact-notes', () => ({ saveProspectingContactNote: mocks.save }))
+vi.mock('@/lib/server/prospecting-contact-notes', () => ({
+  loadProspectingContactNotes: mocks.load,
+  saveProspectingContactNote: mocks.save,
+}))
 
-import { POST } from './route'
+import { GET, POST } from './route'
 
 const actor = { email: 'agent@savingkc.com', name: 'Agent Example' }
 
@@ -12,6 +15,7 @@ describe('POST /api/prospecting/contact-notes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.actor.mockResolvedValue(actor)
+    mocks.load.mockResolvedValue({ activities: [{ id: 'activity-1' }] })
     mocks.save.mockResolvedValue({ activity: { id: 'activity-1' } })
   })
 
@@ -46,5 +50,23 @@ describe('POST /api/prospecting/contact-notes', () => {
     expect(response.status).toBe(201)
     expect(response.headers.get('cache-control')).toContain('no-store')
     expect(mocks.save).toHaveBeenCalledWith(actor, input)
+  })
+
+  it('loads source-Prospect contact notes for the authenticated workspace', async () => {
+    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/contact-notes?prospect_id=prospect%2F1'))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toContain('no-store')
+    expect(mocks.load).toHaveBeenCalledWith('prospect/1')
+    await expect(response.json()).resolves.toEqual({ activities: [{ id: 'activity-1' }] })
+  })
+
+  it('rejects anonymous source-Prospect note reads', async () => {
+    mocks.actor.mockResolvedValue(null)
+
+    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/contact-notes?prospect_id=prospect-1'))
+
+    expect(response.status).toBe(401)
+    expect(mocks.load).not.toHaveBeenCalled()
   })
 })
