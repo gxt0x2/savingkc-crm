@@ -2,6 +2,7 @@
 
 import { createPortal } from 'react-dom'
 import { useId, useRef, useState } from 'react'
+import Link from 'next/link'
 
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
@@ -63,6 +64,7 @@ export function LeadStatusControl({
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [missingQualification, setMissingQualification] = useState<string[]>([])
   const titleId = useId()
   const leadButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -70,6 +72,7 @@ export function LeadStatusControl({
     if (saving) return
     setOpen(false)
     setError(null)
+    setMissingQualification([])
     setSelectedStatus(currentSelection)
     setSelectedReason(canonicalReason ?? '')
     setNotes('')
@@ -77,6 +80,12 @@ export function LeadStatusControl({
 
   const dialogRef = useDialogAccessibility<HTMLDivElement>(open, closeDialog, leadButtonRef)
   const visibleReason = currentlyNotLead ? deadReasonLabel(deadReason) || 'Reason required' : null
+
+  function chooseStatus(status: typeof selectedStatus) {
+    setSelectedStatus(status)
+    setError(null)
+    setMissingQualification([])
+  }
 
   async function saveLeadStatus() {
     if (saving) return
@@ -96,6 +105,7 @@ export function LeadStatusControl({
 
     setSaving(true)
     setError(null)
+    setMissingQualification([])
     try {
       const nextStation = markingNotLead
         ? 'dead'
@@ -123,12 +133,19 @@ export function LeadStatusControl({
       const payload = await response.json().catch(() => ({})) as {
         success?: boolean
         error?: string
+        code?: string
+        missingPillars?: string[]
         result?: {
           classification?: LeadStatusUpdate['classification']
           stage?: string | null
           priority?: string | null
           deadReason?: string | null
         }
+      }
+      if (response.status === 409 && payload.code === 'qualification_incomplete') {
+        setError(payload.error || 'Complete seller qualification before moving this record to Opportunities.')
+        setMissingQualification(Array.isArray(payload.missingPillars) ? payload.missingPillars : [])
+        return
       }
       if (!response.ok || !payload.success) throw new Error(payload.error || 'Lead status could not be saved')
 
@@ -152,6 +169,7 @@ export function LeadStatusControl({
       onClick={() => {
         setSelectedStatus(currentSelection)
         setSelectedReason(canonicalReason ?? '')
+        setMissingQualification([])
         setOpen(true)
       }}
       aria-label={`Change pipeline status. Current: ${currentStatusLabel}`}
@@ -201,7 +219,7 @@ export function LeadStatusControl({
               <button
                 type="button"
                 aria-label="New intake"
-                onClick={() => setSelectedStatus('new_intake')}
+                onClick={() => chooseStatus('new_intake')}
                 aria-pressed={selectedStatus === 'new_intake'}
                 className={cn(
                   'rounded-xl border-2 p-4 text-left transition-colors',
@@ -218,7 +236,7 @@ export function LeadStatusControl({
               ref={leadButtonRef}
               type="button"
               aria-label="Lead"
-              onClick={() => setSelectedStatus('lead')}
+              onClick={() => chooseStatus('lead')}
               aria-pressed={selectedStatus === 'lead'}
               className={cn(
                 'rounded-xl border-2 p-4 text-left transition-colors',
@@ -233,7 +251,7 @@ export function LeadStatusControl({
             <button
               type="button"
               aria-label="Opportunity"
-              onClick={() => setSelectedStatus('opportunity')}
+              onClick={() => chooseStatus('opportunity')}
               aria-pressed={selectedStatus === 'opportunity'}
               className={cn(
                 'rounded-xl border-2 p-4 text-left transition-colors',
@@ -248,7 +266,7 @@ export function LeadStatusControl({
             <button
               type="button"
               aria-label="Not a lead"
-              onClick={() => setSelectedStatus('not_a_lead')}
+              onClick={() => chooseStatus('not_a_lead')}
               aria-pressed={selectedStatus === 'not_a_lead'}
               className={cn(
                 'rounded-xl border-2 p-4 text-left transition-colors',
@@ -297,7 +315,20 @@ export function LeadStatusControl({
             </div>
           ) : null}
 
-          {error ? <p role="alert" className="rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-brand)]">{error}</p> : null}
+          {error && missingQualification.length > 0 ? (
+            <div role="alert" className="rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] p-4 text-sm text-[var(--crm-ink)]">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-surface)] text-[var(--crm-warning)]"><Icon name="fact_check" className="text-[18px]" /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-black">Opportunity requires verified qualification</p>
+                  <p className="mt-1 leading-5 text-[var(--crm-text-muted)]">Verify {missingQualification.map((pillar) => pillar.toLowerCase()).join(', ')} first. Nothing changed on this record.</p>
+                  <Link href={`/leads/${encodeURIComponent(leadId)}#lead-qualification`} onClick={closeDialog} className="crm-secondary-button mt-3 inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-black">
+                    <Icon name="arrow_forward" className="text-[16px]" />Review qualification
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : error ? <p role="alert" className="rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-brand)]">{error}</p> : null}
         </div>
 
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-6 py-4">
