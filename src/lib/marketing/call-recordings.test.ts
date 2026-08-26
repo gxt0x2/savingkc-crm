@@ -8,6 +8,7 @@ import {
   readRecordingDuration,
   readRecordingReview,
   readCallReviewWorkflow,
+  reopenCallReviewWorkflow,
 } from './call-recordings'
 
 describe('marketing call recordings helpers', () => {
@@ -65,6 +66,75 @@ describe('marketing call recordings helpers', () => {
     })
     expect(completed.recordingSid).toBe('RE123')
     expect(readCallReviewWorkflow(completed)).toMatchObject({ status: 'completed', framework: 'junior_acquisitions', assignedReviewer: 'ernest@savingkc.com', tags: ['Needs Coaching', 'Motivation'], score: 2.5, answers: { permission: 3 }, reviewNote: 'Slow down', voiceoverPath: 'call-review-voiceovers/call-1/review.webm', voiceoverMimeType: 'audio/webm' })
+  })
+
+  it('reopens a completed scorecard while preserving its prior review as audit history', () => {
+    const completed = mergeCallReviewWorkflow({ recordingSid: 'RE123' }, {
+      status: 'completed',
+      framework: 'junior_acquisitions',
+      submittedAt: '2026-08-25T18:11:11.124Z',
+      submittedBy: 'casey@savingkc.com',
+      assignedReviewer: 'ernest@savingkc.com',
+      completedAt: '2026-08-26T14:30:53.816Z',
+      completedBy: 'ernest@savingkc.com',
+      score: 1.5,
+      criticalScore: 2.02,
+      needsCoaching: true,
+      coachingReasons: ['Price discovery'],
+      scoringVersion: 'weighted-v1',
+      answers: { permission: 3, price: 0 },
+      tags: ['Needs Coaching'],
+      reviewNote: 'Ask for price directly.',
+      voiceoverPath: 'call-review-voiceovers/call-1/review.webm',
+      voiceoverMimeType: 'audio/webm',
+    })
+
+    const reopened = reopenCallReviewWorkflow(completed, {
+      reopenedAt: '2026-08-26T23:15:00.000Z',
+      reopenedBy: 'casey@savingkc.com',
+    })
+
+    expect(reopened.metadata.recordingSid).toBe('RE123')
+    expect(reopened.workflow).toMatchObject({
+      status: 'submitted',
+      submittedAt: '2026-08-26T23:15:00.000Z',
+      submittedBy: 'casey@savingkc.com',
+      assignedReviewer: 'ernest@savingkc.com',
+      completedAt: null,
+      completedBy: null,
+      score: null,
+      answers: { permission: 3, price: 0 },
+      reviewNote: 'Ask for price directly.',
+      voiceoverPath: null,
+      lastReopenedBy: 'casey@savingkc.com',
+    })
+    expect(reopened.workflow.revisionHistory).toEqual([
+      expect.objectContaining({
+        reopenedBy: 'casey@savingkc.com',
+        completedBy: 'ernest@savingkc.com',
+        score: 1.5,
+        answers: { permission: 3, price: 0 },
+        voiceoverPath: 'call-review-voiceovers/call-1/review.webm',
+      }),
+    ])
+  })
+
+  it('does not duplicate audit history when an already submitted review is reopened again', () => {
+    const submitted = mergeCallReviewWorkflow({ recordingSid: 'RE123' }, {
+      status: 'submitted',
+      assignedReviewer: 'ernest@savingkc.com',
+      revisionHistory: [{
+        reopenedAt: '2026-08-26T23:15:00.000Z', reopenedBy: 'casey@savingkc.com', framework: 'junior_acquisitions', completedAt: '2026-08-26T14:30:53.816Z', completedBy: 'ernest@savingkc.com', score: 1.5, criticalScore: 2.02, needsCoaching: true, coachingReasons: ['Price discovery'], scoringVersion: 'weighted-v1', answers: { permission: 3 }, tags: ['Needs Coaching'], reviewNote: 'Ask for price directly.', voiceoverPath: null, voiceoverMimeType: null,
+      }],
+    })
+
+    const reopened = reopenCallReviewWorkflow(submitted, {
+      reopenedAt: '2026-08-26T23:16:00.000Z',
+      reopenedBy: 'casey@savingkc.com',
+    })
+
+    expect(reopened.workflow.status).toBe('submitted')
+    expect(reopened.workflow.revisionHistory).toHaveLength(1)
   })
 
   it('summarizes review workload and call quality bands', () => {
