@@ -96,6 +96,24 @@ describe('lead lifecycle command route', () => {
     expect(mocks.apply).not.toHaveBeenCalled()
   })
 
+  it('returns the missing qualification pillars without attempting a lifecycle write', async () => {
+    mocks.qualification.mockResolvedValue({
+      qualified: false,
+      missing: ['PRICE'],
+      pillars: { TIMELINE: true, CONDITION: true, MOTIVATION: true, PRICE: false },
+    })
+
+    const response = await POST(request({ action: 'transition', stage: 'qualified' }), routeParams)
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      code: 'qualification_incomplete',
+      missingPillars: ['PRICE'],
+    })
+    expect(mocks.apply).not.toHaveBeenCalled()
+  })
+
   it('requires explicit signed seller-contract evidence before the Dispositions handoff', async () => {
     const response = await POST(request({ action: 'transition', stage: 'under_contract' }), routeParams)
     expect(response.status).toBe(409)

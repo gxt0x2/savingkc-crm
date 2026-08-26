@@ -172,7 +172,9 @@ describe('LeadStatusControl', () => {
       status: 409,
       json: async () => ({
         success: false,
-        error: 'Seller qualification requires human verification for: Timeline, Condition, Motivation, Price',
+        error: 'Qualification incomplete. Verify PRICE before moving this record to Opportunities.',
+        code: 'qualification_incomplete',
+        missingPillars: ['PRICE'],
       }),
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -183,9 +185,9 @@ describe('LeadStatusControl', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Opportunity' }))
     fireEvent.click(screen.getByRole('button', { name: 'Move to Opportunity' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Seller qualification requires human verification for: Timeline, Condition, Motivation, Price',
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('Opportunity requires verified qualification')
+    expect(screen.getByRole('alert')).toHaveTextContent('Verify price first. Nothing changed on this record.')
+    expect(screen.getByRole('link', { name: 'Review qualification' })).toHaveAttribute('href', '/leads/lead-1#lead-qualification')
     expect(screen.getByRole('dialog', { name: 'Pipeline status' })).toBeVisible()
   })
 })

@@ -28,6 +28,7 @@ describe('lead qualification panel', () => {
 
     render(<LeadQualificationPanel leadId="lead-1" />)
 
+    expect(screen.getByRole('region', { name: 'Seller qualification' })).toHaveAttribute('id', 'lead-qualification')
     expect(await screen.findByText('0/4 human verified')).toBeVisible()
     expect(screen.getByText('1 legacy suggestion need human review.')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Capture' }))

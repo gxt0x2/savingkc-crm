@@ -93,7 +93,7 @@ export function LeadQualificationPanel({ leadId }: { leadId: string }) {
 
   return (
     <>
-      <section className="mt-6 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4" aria-label="Seller qualification">
+      <section id="lead-qualification" className="mt-6 scroll-mt-6 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4" aria-label="Seller qualification">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-violet-soft)] text-[var(--crm-violet)]">
             <Icon name="fact_check" className="text-[19px]" />
