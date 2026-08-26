@@ -1,11 +1,13 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { Icon } from '@/components/ui/icon'
 import { ANDON_KIND_LABELS, ANDON_STATUSES, type AndonIssueKind } from '@/lib/andon'
+import { formatAndonAttachmentBytes, type AndonAttachmentRow } from '@/lib/andon-attachments'
 
 type RangePreset = 'today' | '7d' | '30d' | 'all' | 'custom'
 type QueueFilter = 'active' | 'completed' | 'all' | string
@@ -39,6 +41,10 @@ interface AndonResponse {
   warnings?: string[]
   storage_ready?: boolean
   automatic_error_log_ready?: boolean
+}
+
+interface AndonAttachmentsResponse {
+  attachments: AndonAttachmentRow[]
 }
 
 const EMPTY_ANDONS: AndonItem[] = []
@@ -107,6 +113,16 @@ export function AndonDashboard() {
   const { data, error, isLoading, isFetching, refetch } = useAndons(preset, customStart, customEnd)
   const items = data?.items ?? EMPTY_ANDONS
   const selected = items.find((item) => item.id === selectedId) ?? null
+  const attachmentsQuery = useQuery<AndonAttachmentsResponse>({
+    queryKey: ['andon-attachments', selectedId],
+    queryFn: async () => {
+      const response = await fetch(`/api/feedback/${selectedId}/attachments`, { cache: 'no-store' })
+      if (!response.ok) throw new Error('Supporting evidence could not be loaded.')
+      return response.json() as Promise<AndonAttachmentsResponse>
+    },
+    enabled: Boolean(selectedId && selected?.source === 'feedback'),
+    staleTime: 15_000,
+  })
 
   const filteredItems = useMemo(() => items.filter((item) => {
     if (kindFilter !== 'all' && item.issue_kind !== kindFilter) return false
@@ -216,6 +232,7 @@ export function AndonDashboard() {
         <header className="flex items-start justify-between gap-4"><div><p className="crm-eyebrow">{ANDON_KIND_LABELS[selected.issue_kind]} · {selected.department}</p><h2 id="andon-detail-title" className="mt-1 text-xl font-black">{selected.category}</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Raised {new Date(selected.created_at).toLocaleString()} by {selected.agent_name || 'System'}</p></div><button type="button" onClick={() => setSelectedId(null)} aria-label="Close Andon details" className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg"><Icon name="close" /></button></header>
         <div className="mt-5 flex flex-wrap gap-2"><ImpactBadge priority={selected.priority} /><StatusBadge status={selected.status} />{selected.record_url ? <a href={selected.record_url} className="crm-secondary-button inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-black"><Icon name="open_in_new" />Open impacted {selected.record_type || 'record'}</a> : null}</div>
         <section className="mt-5 rounded-xl border border-[var(--crm-border)] p-4"><h3 className="text-xs font-black uppercase tracking-wider">What happened</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{selected.description}</p></section>
+        {selected.source === 'feedback' ? <AndonEvidence attachments={attachmentsQuery.data?.attachments ?? []} loading={attachmentsQuery.isLoading} error={attachmentsQuery.error?.message} /> : null}
         <section className="mt-3 rounded-xl border border-[var(--crm-border)] p-4"><div><h3 className="text-xs font-black uppercase tracking-wider">Ownership and target</h3><p className="mt-1 text-[11px] text-[var(--crm-text-muted)]">High and critical issues need a visible recovery target.</p></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold">Assignee<input list="andon-assignees" aria-label="Andon assignee" value={draftAssignee} onChange={(event) => setDraftAssignee(event.target.value)} className="crm-field mt-1 h-10 w-full rounded-lg px-3 text-xs font-medium" placeholder="Unassigned" /><datalist id="andon-assignees"><option value="Ernest" /><option value="Casey" /><option value="Gertha" /><option value="Operations manager" /><option value="Developer" /></datalist></label><label className="text-xs font-bold">Estimated resolution date<input aria-label="Estimated resolution date" type="date" value={draftEta} onChange={(event) => setDraftEta(event.target.value)} className="crm-field mt-1 h-10 w-full rounded-lg px-3 text-xs font-medium" /></label></div>{['high', 'critical'].includes(selected.priority) && !draftEta ? <p className="mt-2 text-[11px] font-bold text-[var(--crm-danger)]">Set a target date so the affected team knows when work can safely resume.</p> : null}<button type="button" disabled={saving} onClick={() => void updateItem(selected.status, { includeOwnership: true })} className="crm-secondary-button mt-3 w-full rounded-lg px-3 py-2 text-xs font-black disabled:opacity-50">Save owner and target</button></section>
         <section className="mt-3 rounded-xl border border-[var(--crm-border)] p-4"><div className="flex items-center justify-between"><div><h3 className="text-xs font-black uppercase tracking-wider">Five Whys</h3><p className="mt-1 text-[11px] text-[var(--crm-text-muted)]">Complete the root-cause chain before resolution.</p></div><span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-1 text-[10px] font-black text-[var(--crm-info)]">{draftWhys.filter(Boolean).length}/5</span></div><div className="mt-3 space-y-2">{draftWhys.map((why, index) => <label key={index} className="grid items-center gap-2 text-xs font-bold sm:grid-cols-[58px_1fr]"><span>Why {index + 1}</span><input value={why} onChange={(event) => setDraftWhys((current) => current.map((entry, entryIndex) => entryIndex === index ? event.target.value : entry))} className="crm-field h-10 rounded-lg px-3 text-xs font-medium" placeholder="Root cause not recorded" /></label>)}</div><button type="button" disabled={saving} onClick={() => void updateItem(selected.status, { includeWhys: true })} className="crm-secondary-button mt-3 w-full rounded-lg px-3 py-2 text-xs font-black">Save root-cause analysis</button></section>
         {!['resolved', 'closed'].includes(selected.status) ? <section className="mt-3 rounded-xl border border-[var(--crm-border)] p-4"><h3 className="text-xs font-black uppercase tracking-wider">Move through resolution</h3><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{(selected.source === 'error_log' ? ['open'] : ANDON_STATUSES.filter((status) => !['resolved', 'closed'].includes(status))).map((status) => <button key={status} type="button" disabled={saving || selected.status === status} onClick={() => void updateItem(status)} className={`rounded-lg border px-2 py-2 text-xs font-bold capitalize ${selected.status === status ? 'border-[var(--crm-info)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]' : 'border-[var(--crm-border)] hover:border-[var(--crm-border-strong)] disabled:opacity-60'}`}>{status.replaceAll('_', ' ')}</button>)}</div><button type="button" disabled={saving} onClick={() => void updateItem('resolved', { includeWhys: true, includeOwnership: true, closeAfter: true })} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--crm-success)] px-3 py-3 text-xs font-black text-white disabled:opacity-50"><Icon name="task_alt" />Resolve and clear from active queue</button></section> : <button type="button" disabled={saving} onClick={() => void updateItem('open', { closeAfter: true })} className="crm-secondary-button mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-xs font-black"><Icon name="restart_alt" />Reopen issue</button>}
@@ -223,6 +240,23 @@ export function AndonDashboard() {
       </aside></div> : null}
     </main>
   )
+}
+
+export function AndonEvidence({ attachments, loading, error }: { attachments: AndonAttachmentRow[]; loading: boolean; error?: string }) {
+  if (loading) return <section className="mt-3 rounded-xl border border-[var(--crm-border)] p-4 text-xs font-semibold text-[var(--crm-text-muted)]">Loading attached evidence…</section>
+  if (error) return <section role="status" className="mt-3 rounded-xl border border-[var(--crm-warning)]/30 p-4 text-xs font-semibold text-[var(--crm-warning)]">{error}</section>
+  if (attachments.length === 0) return null
+
+  return <section className="mt-3 rounded-xl border border-[var(--crm-border)] p-4"><div className="flex items-center justify-between"><h3 className="text-xs font-black uppercase tracking-wider">Attached evidence</h3><span className="rounded-full bg-[var(--crm-info-soft)] px-2 py-1 text-[10px] font-black text-[var(--crm-info)]">{attachments.length}</span></div><div className="mt-3 space-y-3">{attachments.map((attachment) => {
+    const previewUrl = `/api/feedback/attachments/${attachment.id}/download?preview=1`
+    const downloadUrl = `/api/feedback/attachments/${attachment.id}/download`
+    return <article key={attachment.id} className="overflow-hidden rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]">
+      {attachment.kind === 'image' ? <a href={previewUrl} target="_blank" rel="noreferrer" className="block bg-black/5"><Image src={previewUrl} alt={attachment.filename} width={640} height={360} unoptimized className="max-h-72 w-full object-contain" /></a> : null}
+      {attachment.kind === 'video' ? <video aria-label={`Video evidence ${attachment.filename}`} controls preload="metadata" className="max-h-72 w-full bg-black"><source src={previewUrl} type={attachment.mime_type || undefined} />Your browser cannot preview this video.</video> : null}
+      {attachment.kind === 'audio' ? <div className="p-3"><audio aria-label={`Audio evidence ${attachment.filename}`} controls preload="metadata" className="w-full"><source src={previewUrl} type={attachment.mime_type || undefined} />Your browser cannot preview this audio.</audio></div> : null}
+      <div className="flex items-center gap-2 border-t border-[var(--crm-border)] px-3 py-2 text-xs"><Icon name={attachment.kind === 'image' ? 'image' : attachment.kind === 'video' ? 'videocam' : attachment.kind === 'audio' ? 'audio_file' : 'description'} className="shrink-0 text-[var(--crm-info)]" /><span className="min-w-0 flex-1"><strong className="block truncate">{attachment.filename}</strong><span className="text-[10px] text-[var(--crm-text-muted)]">{formatAndonAttachmentBytes(attachment.byte_size)}</span></span><a href={attachment.kind === 'file' ? downloadUrl : previewUrl} target="_blank" rel="noreferrer" className="crm-secondary-button inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-black"><Icon name={attachment.kind === 'file' ? 'download' : 'open_in_new'} className="text-sm" />{attachment.kind === 'file' ? 'Download' : 'Open'}</a></div>
+    </article>
+  })}</div></section>
 }
 
 function AndonRow({ item, onOpen }: { item: AndonItem; onOpen: () => void }) {

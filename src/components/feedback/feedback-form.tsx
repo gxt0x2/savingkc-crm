@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 import {
@@ -13,6 +13,13 @@ import {
   type AndonPriority,
   type AndonWorkArea,
 } from '@/lib/andon'
+import {
+  ANDON_ATTACHMENT_ACCEPT,
+  ANDON_ATTACHMENTS_BUCKET,
+  MAX_ANDON_ATTACHMENTS,
+  formatAndonAttachmentBytes,
+  validateAndonAttachment,
+} from '@/lib/andon-attachments'
 
 interface Props {
   defaultSection?: string
@@ -26,6 +33,16 @@ const KIND_ICONS: Record<AndonIssueKind, string> = {
   data: 'database',
   improvement: 'lightbulb',
   ai_glitch: 'smart_toy',
+}
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`
+}
+
+function voiceMemoExtension(mimeType: string) {
+  if (mimeType.includes('mp4')) return 'm4a'
+  if (mimeType.includes('ogg')) return 'ogg'
+  return 'webm'
 }
 
 function defaultsForContext(context: string): { kind: AndonIssueKind; workstream: AndonWorkArea; category: string } {
@@ -48,10 +65,36 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
   const [description, setDescription] = useState('')
   const [fiveWhys, setFiveWhys] = useState(['', '', '', '', ''])
   const [priority, setPriority] = useState<AndonPriority>('medium')
+  const [attachments, setAttachments] = useState<File[]>([])
+  const [uploadedAttachmentKeys, setUploadedAttachmentKeys] = useState<string[]>([])
+  const [submittedId, setSubmittedId] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState('')
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const attachmentsRef = useRef<File[]>([])
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const recorderStreamRef = useRef<MediaStream | null>(null)
+  const recorderChunksRef = useRef<Blob[]>([])
 
   const categories = ANDON_PROCESS_CASCADES[workstream] ?? []
+
+  useEffect(() => {
+    if (!isRecording) return
+    const timer = window.setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [isRecording])
+
+  useEffect(() => () => {
+    if (recorderRef.current) {
+      recorderRef.current.ondataavailable = null
+      recorderRef.current.onstop = null
+      if (recorderRef.current.state === 'recording') recorderRef.current.stop()
+    }
+    recorderStreamRef.current?.getTracks().forEach((track) => track.stop())
+  }, [])
 
   function chooseKind(nextKind: AndonIssueKind) {
     setIssueKind(nextKind)
@@ -66,41 +109,168 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
     setFiveWhys((current) => current.map((why, whyIndex) => whyIndex === index ? value : why))
   }
 
+  function addAttachments(files: File[]) {
+    setError('')
+    const next = [...attachmentsRef.current]
+    const existing = new Set(next.map(fileKey))
+    for (const file of files) {
+      const validationError = validateAndonAttachment(file)
+      if (validationError) {
+        setError(validationError)
+        continue
+      }
+      if (existing.has(fileKey(file))) continue
+      if (next.length >= MAX_ANDON_ATTACHMENTS) {
+        setError(`You can attach up to ${MAX_ANDON_ATTACHMENTS} files to one Andon.`)
+        break
+      }
+      next.push(file)
+      existing.add(fileKey(file))
+    }
+    attachmentsRef.current = next
+    setAttachments(next)
+  }
+
+  function removeAttachment(key: string) {
+    if (uploadedAttachmentKeys.includes(key)) return
+    const next = attachmentsRef.current.filter((file) => fileKey(file) !== key)
+    attachmentsRef.current = next
+    setAttachments(next)
+  }
+
+  async function startVoiceMemo() {
+    setError('')
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Voice recording is not supported in this browser. You can attach an existing audio file instead.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const preferredMimeTypes = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
+      const mimeType = typeof MediaRecorder.isTypeSupported === 'function'
+        ? preferredMimeTypes.find((type) => MediaRecorder.isTypeSupported(type))
+        : undefined
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      recorderStreamRef.current = stream
+      recorderRef.current = recorder
+      recorderChunksRef.current = []
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recorderChunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        const recordedType = recorder.mimeType || mimeType || 'audio/webm'
+        const blob = new Blob(recorderChunksRef.current, { type: recordedType })
+        if (blob.size > 0) {
+          const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
+          addAttachments([new File([blob], `voice-memo-${timestamp}.${voiceMemoExtension(recordedType)}`, { type: recordedType })])
+        }
+        stream.getTracks().forEach((track) => track.stop())
+        recorderRef.current = null
+        recorderStreamRef.current = null
+        recorderChunksRef.current = []
+        setIsRecording(false)
+      }
+      recorder.start()
+      setRecordingSeconds(0)
+      setIsRecording(true)
+    } catch (recordingError) {
+      console.error('Voice memo recording failed:', recordingError)
+      setError('Microphone access was not available. You can attach an existing voice memo instead.')
+    }
+  }
+
+  function stopVoiceMemo() {
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+  }
+
+  async function uploadAttachment(feedbackId: string, file: File) {
+    const prepareResponse = await fetch(`/api/feedback/${feedbackId}/attachments/prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, mime_type: file.type, byte_size: file.size }),
+    })
+    const prepared = await prepareResponse.json().catch(() => null) as { error?: string; path?: string; token?: string; bucket?: string } | null
+    if (!prepareResponse.ok || !prepared?.path || !prepared.token) {
+      throw new Error(prepared?.error || `${file.name} could not be prepared for upload.`)
+    }
+
+    const { createClient } = await import('@/lib/supabase/client')
+    const storage = createClient().storage.from(prepared.bucket || ANDON_ATTACHMENTS_BUCKET)
+    const { error: uploadError } = await storage.uploadToSignedUrl(prepared.path, prepared.token, file, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: false,
+    })
+    if (uploadError) throw new Error(`${file.name} could not be uploaded: ${uploadError.message}`)
+
+    const completeResponse = await fetch(`/api/feedback/${feedbackId}/attachments/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: file.name,
+        mime_type: file.type,
+        byte_size: file.size,
+        storage_path: prepared.path,
+      }),
+    })
+    const completed = await completeResponse.json().catch(() => null) as { error?: string } | null
+    if (!completeResponse.ok) throw new Error(completed?.error || `${file.name} could not be linked to the Andon.`)
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!description.trim() || !workstream || !category) return
 
     setLoading(true)
     setError('')
+    let andonAlreadyRaised = Boolean(submittedId)
     try {
-      const recordContext = extractAndonRecordContext(window.location.href)
-      const response = await fetch('/api/feedback/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          issue_kind: issueKind,
-          department: workstream,
-          category,
-          description,
-          five_whys: fiveWhys,
-          priority,
-          page_url: window.location.href,
-          record_id: recordContext.recordId,
-          record_type: recordContext.recordType,
-          record_url: recordContext.recordUrl,
-          user_agent: navigator.userAgent,
-        }),
-      })
+      let feedbackId = submittedId
+      if (!feedbackId) {
+        const recordContext = extractAndonRecordContext(window.location.href)
+        const response = await fetch('/api/feedback/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            issue_kind: issueKind,
+            department: workstream,
+            category,
+            description,
+            five_whys: fiveWhys,
+            priority,
+            page_url: window.location.href,
+            record_id: recordContext.recordId,
+            record_type: recordContext.recordType,
+            record_url: recordContext.recordUrl,
+            user_agent: navigator.userAgent,
+          }),
+        })
 
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: string } | null
-        throw new Error(payload?.error || 'The Andon could not be submitted. Please try again.')
+        const payload = await response.json().catch(() => null) as { error?: string; feedback_id?: string } | null
+        if (!response.ok || !payload?.feedback_id) {
+          throw new Error(payload?.error || 'The Andon could not be submitted. Please try again.')
+        }
+        feedbackId = payload.feedback_id
+        setSubmittedId(feedbackId)
+        andonAlreadyRaised = true
       }
+
+      const completedKeys = new Set(uploadedAttachmentKeys)
+      const pending = attachments.filter((file) => !completedKeys.has(fileKey(file)))
+      for (let index = 0; index < pending.length; index += 1) {
+        const file = pending[index]
+        setUploadProgress(`Uploading ${index + 1} of ${pending.length}: ${file.name}`)
+        await uploadAttachment(feedbackId, file)
+        completedKeys.add(fileKey(file))
+        setUploadedAttachmentKeys([...completedKeys])
+      }
+      setUploadProgress('')
       onSubmit()
       onClose()
     } catch (err) {
       console.error('Failed to submit Andon:', err)
-      setError(err instanceof Error ? err.message : 'The Andon could not be submitted. Please try again.')
+      setUploadProgress('')
+      const message = err instanceof Error ? err.message : 'The Andon could not be submitted. Please try again.'
+      setError(andonAlreadyRaised ? `The Andon was raised, but an attachment failed. ${message} Retry the remaining attachments or close.` : message)
     } finally {
       setLoading(false)
     }
@@ -117,7 +287,17 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
           <button type="button" onClick={onClose} aria-label="Close Andon form" className="crm-icon-button flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"><Icon name="close" size="text-lg" /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          onPaste={(event) => {
+            const pastedFiles = Array.from(event.clipboardData.files)
+            if (pastedFiles.length > 0) {
+              event.preventDefault()
+              addAttachments(pastedFiles)
+            }
+          }}
+          className="space-y-4"
+        >
           <fieldset>
             <legend className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">1. What needs attention?</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -156,8 +336,49 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
             <textarea aria-label="What happened" value={description} onChange={(event) => setDescription(event.target.value)} required rows={4} placeholder="What were you doing, what happened, and what should have happened?" className="crm-field mt-2 w-full resize-y rounded-lg px-3 py-2 text-sm font-medium normal-case tracking-normal outline-none focus:ring-2 focus:ring-[var(--crm-info)]/25" />
           </label>
 
+          <section className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-[var(--crm-ink)]">6. Attach evidence <span className="font-medium normal-case tracking-normal text-[var(--crm-text-muted)]">- optional</span></h3>
+                <p className="mt-1 text-[11px] text-[var(--crm-text-muted)]">Files, screenshots, images, videos, audio, or voice memos · up to 8 files · 50 MB each</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" disabled={loading || isRecording} onClick={() => fileInputRef.current?.click()} className="crm-secondary-button inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black disabled:opacity-50"><Icon name="attach_file" />Add files</button>
+                {isRecording ? <button type="button" onClick={stopVoiceMemo} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--crm-danger)] px-3 py-2 text-xs font-black text-white"><Icon name="stop_circle" />Stop {recordingSeconds}s</button> : <button type="button" disabled={loading} onClick={() => void startVoiceMemo()} className="crm-secondary-button inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black disabled:opacity-50"><Icon name="mic" />Voice memo</button>}
+              </div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ANDON_ATTACHMENT_ACCEPT}
+              aria-label="Attach evidence"
+              className="sr-only"
+              onChange={(event) => {
+                addAttachments(Array.from(event.target.files ?? []))
+                event.target.value = ''
+              }}
+            />
+            <div
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                addAttachments(Array.from(event.dataTransfer.files))
+              }}
+              className="mt-3 rounded-lg border border-dashed border-[var(--crm-border-strong)] bg-[var(--crm-surface)] px-3 py-3 text-center text-[11px] font-semibold text-[var(--crm-text-muted)]"
+            >
+              Drop files here, paste a screenshot, choose files, or record a voice memo.
+            </div>
+            {attachments.length > 0 ? <ul aria-label="Selected Andon attachments" className="mt-3 space-y-2">{attachments.map((file) => {
+              const key = fileKey(file)
+              const uploaded = uploadedAttachmentKeys.includes(key)
+              return <li key={key} className="flex items-center gap-2 rounded-lg border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2 text-xs"><Icon name={file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'videocam' : file.type.startsWith('audio/') ? 'audio_file' : 'description'} className="shrink-0 text-[var(--crm-info)]" /><span className="min-w-0 flex-1"><strong className="block truncate">{file.name}</strong><span className="text-[10px] text-[var(--crm-text-muted)]">{formatAndonAttachmentBytes(file.size)}{uploaded ? ' · uploaded' : ''}</span></span>{uploaded ? <Icon name="check_circle" className="text-[var(--crm-success)]" /> : <button type="button" aria-label={`Remove ${file.name}`} disabled={loading} onClick={() => removeAttachment(key)} className="crm-icon-button grid h-7 w-7 place-items-center rounded-md disabled:opacity-50"><Icon name="close" className="text-sm" /></button>}</li>
+            })}</ul> : null}
+            {uploadProgress ? <div role="status" className="mt-3 flex items-center gap-2 text-xs font-bold text-[var(--crm-info)]"><Icon name="progress_activity" className="animate-spin" />{uploadProgress}</div> : null}
+          </section>
+
           <details className="rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-3" open>
-            <summary className="cursor-pointer text-xs font-black uppercase tracking-wider text-[var(--crm-ink)]">6. Five Whys <span className="font-medium normal-case tracking-normal text-[var(--crm-text-muted)]">- add what is known now</span></summary>
+            <summary className="cursor-pointer text-xs font-black uppercase tracking-wider text-[var(--crm-ink)]">7. Five Whys <span className="font-medium normal-case tracking-normal text-[var(--crm-text-muted)]">- add what is known now</span></summary>
             <p className="mb-3 mt-1 text-[11px] text-[var(--crm-text-muted)]">Each answer should explain the answer above it. Missing answers stay visible on the Andon dashboard for follow-up.</p>
             <div className="space-y-2">
               {fiveWhys.map((why, index) => <label key={index} className="grid items-center gap-2 text-xs font-bold sm:grid-cols-[58px_1fr]"><span>Why {index + 1}</span><input aria-label={`Why ${index + 1}`} value={why} onChange={(event) => updateWhy(index, event.target.value)} placeholder={index === 0 ? 'Why did it happen?' : 'Why was that true?'} className="crm-field h-9 rounded-lg px-3 text-xs font-medium" /></label>)}
@@ -168,8 +389,8 @@ export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) 
           {error ? <div role="alert" className="rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--crm-danger)]">{error}</div> : null}
 
           <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="crm-secondary-button flex-1 rounded-xl px-6 py-3 text-sm font-bold">Cancel</button>
-            <button type="submit" disabled={loading || !description.trim() || !workstream || !category} className="flex-1 rounded-xl bg-[var(--crm-danger)] px-6 py-3 text-sm font-bold text-white transition-all hover:brightness-95 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50">{loading ? 'Sending Andon…' : 'Raise Andon'}</button>
+            <button type="button" onClick={onClose} className="crm-secondary-button flex-1 rounded-xl px-6 py-3 text-sm font-bold">{submittedId ? 'Close' : 'Cancel'}</button>
+            <button type="submit" disabled={loading || isRecording || !description.trim() || !workstream || !category} className="flex-1 rounded-xl bg-[var(--crm-danger)] px-6 py-3 text-sm font-bold text-white transition-all hover:brightness-95 active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50">{loading ? (uploadProgress || 'Sending Andon…') : submittedId ? 'Retry attachments' : 'Raise Andon'}</button>
           </div>
         </form>
       </div>

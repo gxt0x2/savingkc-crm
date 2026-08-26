@@ -25,6 +25,11 @@
         "reason": "Update the visible in-call elapsed-time counter once per second; this timer does not poll the network."
       },
       {
+        "path": "src/components/feedback/feedback-form.tsx",
+        "minimumIntervalMs": 1000,
+        "reason": "Update the visible voice-memo elapsed-time counter once per second only while the signed-in agent is actively recording; this timer does not poll the network."
+      },
+      {
         "path": "src/app/(public)/ppc/SellLanding.tsx",
         "minimumIntervalMs": 2000,
         "reason": "Read the active embedded testimonial player's local progress every two seconds only while it is playing so 25, 50, and 75 percent analytics fire once; this does not poll the CRM or a network API.",
@@ -316,8 +321,8 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/reports/andon"],
-      "apiRoutes": ["/api/feedback/log", "/api/feedback/submit", "/api/feedback/update-status", "/api/error/log"],
-      "tables": ["feedback_submissions", "error_log"],
+      "apiRoutes": ["/api/feedback/log", "/api/feedback/submit", "/api/feedback/update-status", "/api/feedback/[id]/attachments", "/api/feedback/[id]/attachments/prepare", "/api/feedback/[id]/attachments/complete", "/api/feedback/attachments/[attachmentId]/download", "/api/error/log"],
+      "tables": ["feedback_submissions", "feedback_attachments", "error_log"],
       "environment": ["VERCEL_ENV"]
     },
     {
