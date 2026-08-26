@@ -102,7 +102,10 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     ? Number(sessionRingCountParam)
     : null
   const sessionCallerPlan = useMemo(() => {
-    const plan = normalizeDialerCallerPlan({
+    const durableCallerPlan = durableSession?.settingsSnapshot?.callerPlan
+    const plan = normalizeDialerCallerPlan(durableCallerPlan && typeof durableCallerPlan === 'object' && !Array.isArray(durableCallerPlan)
+      ? durableCallerPlan
+      : {
       mode: sessionCallerModeParam === 'rotation' ? 'rotation' : 'static',
       staticCallerId: sessionCallerId || DEFAULT_DIALER_CALLER_ID,
       rotationCallerIds: parseCallerIdsCsv(sessionRotationNumbersParam),
@@ -110,7 +113,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       redialCallerId: sessionRedialCallerId || null,
     }, sessionCallerId || DEFAULT_DIALER_CALLER_ID)
     return plan
-  }, [sessionCallerId, sessionCallerModeParam, sessionRotateEveryParam, sessionRotationNumbersParam, sessionRedialCallerId])
+  }, [durableSession?.settingsSnapshot?.callerPlan, sessionCallerId, sessionCallerModeParam, sessionRotateEveryParam, sessionRotationNumbersParam, sessionRedialCallerId])
   const sessionCallerPolicyLabel = sessionCallerPlan.mode === 'rotation' && sessionCallerPlan.rotationCallerIds.length > 1
     ? `Rotating ${sessionCallerPlan.rotationCallerIds.length} approved lines every ${sessionCallerPlan.rotateEveryCalls} calls`
     : sessionCallerId

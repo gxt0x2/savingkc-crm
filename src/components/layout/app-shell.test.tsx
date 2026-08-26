@@ -88,6 +88,24 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
   })
 
+  it('does not reopen the session dialer after returning to the campaign screen', () => {
+    navigation.pathname = '/prospecting'
+    navigation.search = 'session_id=session-1&campaign=campaign-1'
+    const { rerender } = render(<AppShell><main>Calling floor</main></AppShell>)
+
+    act(() => window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: {
+      queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],
+      sessionId: 'session-1',
+    } })))
+    expect(screen.getByTestId('lazy-dialer')).toBeInTheDocument()
+
+    navigation.search = 'campaign=campaign-1'
+    rerender(<AppShell><main>Campaign screen</main></AppShell>)
+
+    expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
+    expect(screen.getByText('Campaign screen')).toBeVisible()
+  })
+
   it('removes a cached profile photo after the server confirms it was deleted', async () => {
     window.localStorage.setItem('savingkc:profile-photo:ernest@savingkc.com', 'https://example.com/stale.jpg')
     vi.mocked(fetch).mockResolvedValue({

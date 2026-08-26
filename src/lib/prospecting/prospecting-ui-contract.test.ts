@@ -14,6 +14,7 @@ const contextNavigation = readFileSync(join(process.cwd(), 'src/components/conve
 const dialerPage = readFileSync(join(process.cwd(), 'src/app/(app)/dialer/page.tsx'), 'utf8')
 const prospectingPage = readFileSync(join(process.cwd(), 'src/app/(app)/prospecting/page.tsx'), 'utf8')
 const callingFloor = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-floor.tsx'), 'utf8')
+const sessionSetup = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-session-setup.tsx'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
@@ -34,8 +35,10 @@ describe('prospecting workspace UI contract', () => {
     expect(studio).toContain('SMS cadence')
     expect(studio).toContain('Replies stop automation')
     expect(dashboard).toContain('Replies and opt-outs stop the sequence automatically.')
-    expect(dashboard).toContain('Resume where I stopped')
-    expect(dashboard).toContain('First unworked seller')
+    expect(sessionSetup).toContain('Exact saved seller and number')
+    expect(sessionSetup).toContain('First unworked')
+    expect(sessionSetup).toContain('Cold-call numbers')
+    expect(sessionSetup).toContain('Maximum attempts per number')
     expect(workspace).toContain('savingkc:dialer-autostart:${result.session.id}')
     expect(callingFloor).toContain('window.sessionStorage.removeItem(autoStartKey)')
     expect(callingFloor).toContain("session.status === 'active' && !session.stopRequestedAt")

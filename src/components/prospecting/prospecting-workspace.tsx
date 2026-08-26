@@ -8,7 +8,7 @@ import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
 import { Icon } from '@/components/ui/icon'
 import { parseStoredProspectingAudienceSelection, PROSPECTING_AUDIENCE_STORAGE_KEY, type ProspectingAudienceSelection } from '@/lib/prospecting/audience-handoff'
-import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerStartBehavior } from '@/lib/prospecting/campaign-contract'
+import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
 const CAMPAIGN_LIVE_REFRESH_MS = 15000
@@ -266,7 +266,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     }
   }
 
-  async function launchDialer(startBehavior: ProspectingDialerStartBehavior) {
+  async function launchDialer(setup: ProspectingDialerSessionSetup) {
     if (!detail || actionPending) return
     if (!writesEnabled) {
       const query = new URLSearchParams({
@@ -284,7 +284,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       const result = await jsonRequest<{ session: { id: string } }>(`/api/prospecting/campaigns/${detail.id}/launch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startBehavior }),
+        body: JSON.stringify(setup),
       })
       const query = new URLSearchParams({
         session_id: result.session.id,
@@ -338,7 +338,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       onDuplicate={duplicateCampaign}
       onEdit={editCampaign}
       onTransition={(status) => void transition(status)}
-      onLaunchDialer={(startBehavior) => void launchDialer(startBehavior)}
+      onLaunchDialer={(setup) => void launchDialer(setup)}
       onAudienceChanged={detail ? async () => { await loadDetail(detail.id) } : undefined}
     />}
   </>

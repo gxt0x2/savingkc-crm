@@ -1,5 +1,10 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
-import { isAllowedSmsSender, isDialerCallerIdNumber } from '@/lib/twilio-numbers'
+import {
+  COLD_CALL_DIALER_NUMBERS,
+  isAllowedSmsSender,
+  isColdCallDialerNumber,
+  isDialerCallerIdNumber,
+} from '@/lib/twilio-numbers'
 
 export const PROSPECTING_CAMPAIGN_KINDS = ['dialer', 'sms'] as const
 export const PROSPECTING_CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'completed', 'archived'] as const
@@ -9,6 +14,91 @@ export type ProspectingCampaignKind = typeof PROSPECTING_CAMPAIGN_KINDS[number]
 export type ProspectingCampaignStatus = typeof PROSPECTING_CAMPAIGN_STATUSES[number]
 export type ProspectingCampaignActivityFilter = typeof PROSPECTING_CAMPAIGN_ACTIVITY_FILTERS[number]
 export type ProspectingDialerStartBehavior = 'resume' | 'first_unworked'
+export type ProspectingDialerCallerMode = 'static' | 'rotation'
+export type ProspectingDialerAttemptLimit = 4 | 5 | 6 | 7
+export type ProspectingDialerRecencyHours = 24 | 72 | 168 | 336 | 720
+
+export interface ProspectingDialerSessionSetup {
+  startBehavior: ProspectingDialerStartBehavior
+  callerMode: ProspectingDialerCallerMode
+  callerIds: string[]
+  maxAttemptsPerNumber: ProspectingDialerAttemptLimit
+  notDialedHours: ProspectingDialerRecencyHours | null
+  notContactedHours: ProspectingDialerRecencyHours | null
+}
+
+export const PROSPECTING_DIALER_ATTEMPT_LIMITS = [4, 5, 6, 7] as const
+export const PROSPECTING_DIALER_RECENCY_HOURS = [24, 72, 168, 336, 720] as const
+
+export function defaultProspectingDialerSessionSetup(): ProspectingDialerSessionSetup {
+  return {
+    startBehavior: 'resume',
+    callerMode: 'static',
+    callerIds: COLD_CALL_DIALER_NUMBERS[0] ? [COLD_CALL_DIALER_NUMBERS[0].value] : [],
+    maxAttemptsPerNumber: 7,
+    notDialedHours: null,
+    notContactedHours: null,
+  }
+}
+
+function parseRecencyHours(value: unknown, field: string): ProspectingDialerRecencyHours | null {
+  if (value === null || value === undefined || value === '') return null
+  const hours = Number(value)
+  if (!PROSPECTING_DIALER_RECENCY_HOURS.includes(hours as ProspectingDialerRecencyHours)) {
+    throw new ProspectingCampaignInputError('invalid_session_setup', `${field} has an unsupported time frame`)
+  }
+  return hours as ProspectingDialerRecencyHours
+}
+
+export function parseProspectingDialerSessionSetup(value: unknown): ProspectingDialerSessionSetup {
+  const defaults = defaultProspectingDialerSessionSetup()
+  if (value === undefined || value === null) return defaults
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ProspectingCampaignInputError('invalid_session_setup', 'Calling session setup is invalid')
+  }
+  const row = value as Record<string, unknown>
+  const startBehavior = row.startBehavior === undefined ? defaults.startBehavior : text(row.startBehavior)
+  const callerMode = row.callerMode === undefined ? defaults.callerMode : text(row.callerMode)
+  const rawCallerIds = row.callerIds === undefined ? defaults.callerIds : row.callerIds
+  const maxAttemptsPerNumber = row.maxAttemptsPerNumber === undefined
+    ? defaults.maxAttemptsPerNumber
+    : Number(row.maxAttemptsPerNumber)
+
+  if (startBehavior !== 'resume' && startBehavior !== 'first_unworked') {
+    throw new ProspectingCampaignInputError('invalid_start_behavior', 'Choose Resume where I stopped or First unworked seller')
+  }
+  if (callerMode !== 'static' && callerMode !== 'rotation') {
+    throw new ProspectingCampaignInputError('invalid_session_setup', 'Choose a static caller ID or caller ID rotation')
+  }
+  if (!Array.isArray(rawCallerIds)) {
+    throw new ProspectingCampaignInputError('invalid_session_setup', 'Choose at least one cold-call number')
+  }
+  const callerIds = Array.from(new Set(rawCallerIds.flatMap((item) => {
+    const phone = normalizePhoneToE164(text(item))
+    return phone ? [phone] : []
+  })))
+  const maximumCallerIds = callerMode === 'rotation' ? 5 : 1
+  if (callerIds.length < 1 || callerIds.length > maximumCallerIds || callerIds.length !== rawCallerIds.length) {
+    throw new ProspectingCampaignInputError('invalid_session_setup', callerMode === 'rotation'
+      ? 'Choose between 1 and 5 unique cold-call numbers'
+      : 'Choose one static cold-call number')
+  }
+  if (callerIds.some((callerId) => !isColdCallDialerNumber(callerId))) {
+    throw new ProspectingCampaignInputError('invalid_session_setup', 'Prospecting sessions can use only designated cold-call numbers')
+  }
+  if (!PROSPECTING_DIALER_ATTEMPT_LIMITS.includes(maxAttemptsPerNumber as ProspectingDialerAttemptLimit)) {
+    throw new ProspectingCampaignInputError('invalid_session_setup', 'Choose an attempt limit from 4 through 7')
+  }
+
+  return {
+    startBehavior,
+    callerMode,
+    callerIds,
+    maxAttemptsPerNumber: maxAttemptsPerNumber as ProspectingDialerAttemptLimit,
+    notDialedHours: parseRecencyHours(row.notDialedHours, 'Not dialed'),
+    notContactedHours: parseRecencyHours(row.notContactedHours, 'Not contacted'),
+  }
+}
 
 export interface ProspectingCampaignStepInput {
   delayMinutes: number

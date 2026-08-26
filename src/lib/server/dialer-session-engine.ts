@@ -36,6 +36,7 @@ export interface DialerSessionState {
   currentSubjectId: string
   currentCampaignMemberId: string | null
   callerId: string | null
+  settingsSnapshot: Record<string, unknown>
   dialsCompleted: number
   contacts: number
   skips: number
@@ -156,6 +157,12 @@ function numberRecord(value: unknown): Record<string, number> {
   }))
 }
 
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
 export function parseDialerSession(value: unknown): DialerSessionState {
   if (!value || typeof value !== 'object') throw new DialerSessionError('invalid_session_payload', 503, 'Dialer session data is unavailable')
   const row = value as Record<string, unknown>
@@ -204,6 +211,7 @@ export function parseDialerSession(value: unknown): DialerSessionState {
     currentSubjectId: currentItem.id,
     currentCampaignMemberId,
     callerId: textValue(row.callerId),
+    settingsSnapshot: objectRecord(row.settingsSnapshot),
     dialsCompleted: numberValue(row.dialsCompleted),
     contacts: numberValue(row.contacts),
     skips: numberValue(row.skips),
@@ -222,6 +230,9 @@ function mapDatabaseError(error: { message?: string; code?: string } | null | un
   if (raw.includes('session_not_found')) return new DialerSessionError('session_not_found', 404, 'Dialer session not found')
   if (raw.includes('call_in_progress') || raw.includes('attempt_in_progress')) return new DialerSessionError('call_in_progress', 409, 'Finish or disposition the current call first')
   if (raw.includes('session_stop_requested')) return new DialerSessionError('session_stop_requested', 409, 'This calling session is ending; finish the current call outcome')
+  if (raw.includes('dialer_attempt_limit')) return new DialerSessionError('dialer_attempt_limit', 409, 'This number reached the session attempt limit')
+  if (raw.includes('dialer_recently_contacted')) return new DialerSessionError('dialer_recently_contacted', 409, 'This number was contacted inside the session hold period')
+  if (raw.includes('dialer_recently_dialed')) return new DialerSessionError('dialer_recently_dialed', 409, 'This number was dialed inside the session hold period')
   if (raw.includes('session_not_active')) return new DialerSessionError('session_not_active', 409, 'Resume the dialer session before calling')
   if (raw.includes('session_lead_mismatch') || raw.includes('session_subject_mismatch') || raw.includes('attempt_context_mismatch')) return new DialerSessionError('session_context_mismatch', 409, 'The selected contact no longer matches the active dialer session')
   if (raw.includes('disposition_required')) return new DialerSessionError('disposition_required', 409, 'Save a call outcome before advancing')
@@ -281,6 +292,7 @@ type DialerSessionRow = {
   current_subject_id: string | null
   current_campaign_member_id: string | null
   caller_id: string | null
+  settings_snapshot: unknown
   dials_completed: number
   contacts: number
   skips: number
@@ -311,6 +323,7 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
     currentSubjectId: row.current_subject_id,
     currentCampaignMemberId: row.current_campaign_member_id,
     callerId: row.caller_id,
+    settingsSnapshot: row.settings_snapshot,
     dialsCompleted: row.dials_completed,
     contacts: row.contacts,
     skips: row.skips,
@@ -324,7 +337,7 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
   })
 }
 
-const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,current_prospect_id,current_subject_kind,current_subject_id,current_campaign_member_id,caller_id,dials_completed,contacts,skips,outcomes,started_at,paused_at,stop_requested_at,ended_at,updated_at,state_version'
+const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,current_prospect_id,current_subject_kind,current_subject_id,current_campaign_member_id,caller_id,settings_snapshot,dials_completed,contacts,skips,outcomes,started_at,paused_at,stop_requested_at,ended_at,updated_at,state_version'
 
 type HistoryCursor = { timestamp: string; id: string }
 
@@ -571,7 +584,7 @@ export async function authorizeDialerSessionAttempt(input: {
     || (input.subjectKind === 'prospect' && (input.prospectId !== input.subjectId || input.leadId || !input.prospectPhoneId))) {
     throw new DialerSessionError('invalid_attempt_context', 400, 'Call context is invalid')
   }
-  const { data, error } = await supabase.rpc('authorize_dialer_attempt_v2', {
+  const { data, error } = await supabase.rpc('authorize_dialer_attempt_v3', {
     p_session_id: input.sessionId,
     p_actor_email: input.actor.email,
     p_client_attempt_id: input.clientAttemptId,

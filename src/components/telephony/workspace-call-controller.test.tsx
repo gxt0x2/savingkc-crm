@@ -17,6 +17,24 @@ const queueItem = {
 }
 
 describe('WorkspaceCallController', () => {
+  it('uses one stable loading state while the session queue is restored', () => {
+    render(
+      <WorkspaceCallController
+        callerPlan={{ mode: 'static', staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
+        dialDisplay=""
+        dialReady={false}
+        effectiveCallerId="+18163078735"
+        loadingSessionQueue
+        onCall={vi.fn()}
+        queueItem={null}
+        statusLabel="Connecting"
+      />,
+    )
+
+    expect(screen.getByRole('status', { name: 'Loading calling session' })).toHaveTextContent('Loading call controls')
+    expect(screen.queryByText('Choose a number from the seller list')).not.toBeInTheDocument()
+  })
+
   it('offers one explicit call action for the selected associated number', () => {
     const onCall = vi.fn()
     render(

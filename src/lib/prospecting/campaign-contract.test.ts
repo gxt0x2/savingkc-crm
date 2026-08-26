@@ -8,6 +8,7 @@ import {
   nextProspectingWindow,
   parseCreateProspectingCampaignInput,
   parseLeadIds,
+  parseProspectingDialerSessionSetup,
   renderProspectingTemplate,
 } from './campaign-contract'
 
@@ -73,6 +74,45 @@ describe('prospecting campaign contract', () => {
       name: 'Unknown sender', kind: 'sms', fromPhone: '+19135550123',
       steps: [{ delayMinutes: 0, bodyTemplate: 'Hello' }],
     })).toThrow(/approved texting number/)
+  })
+
+  it('accepts only one to five designated cold-call caller IDs for a session', () => {
+    expect(parseProspectingDialerSessionSetup({
+      startBehavior: 'first_unworked',
+      callerMode: 'rotation',
+      callerIds: ['(816) 310-0845', '+18162538313'],
+      maxAttemptsPerNumber: 5,
+      notDialedHours: 72,
+      notContactedHours: 168,
+    })).toEqual({
+      startBehavior: 'first_unworked',
+      callerMode: 'rotation',
+      callerIds: ['+18163100845', '+18162538313'],
+      maxAttemptsPerNumber: 5,
+      notDialedHours: 72,
+      notContactedHours: 168,
+    })
+    expect(() => parseProspectingDialerSessionSetup({
+      callerMode: 'static',
+      callerIds: ['+18166088588'],
+      maxAttemptsPerNumber: 7,
+    })).toThrow(/only designated cold-call numbers/i)
+    expect(() => parseProspectingDialerSessionSetup({
+      callerMode: 'rotation',
+      callerIds: Array.from({ length: 6 }, (_, index) => `+1816310084${index}`),
+      maxAttemptsPerNumber: 7,
+    })).toThrow(/between 1 and 5/i)
+  })
+
+  it('defaults safely without hiding fresh sellers', () => {
+    expect(parseProspectingDialerSessionSetup({})).toMatchObject({
+      startBehavior: 'resume',
+      callerMode: 'static',
+      callerIds: ['+18163100845'],
+      maxAttemptsPerNumber: 7,
+      notDialedHours: null,
+      notContactedHours: null,
+    })
   })
 
   it('renders both campaign and legacy variables and rejects unknown placeholders', () => {

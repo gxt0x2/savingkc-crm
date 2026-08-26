@@ -12,6 +12,7 @@ type WorkspaceCallControllerProps = {
   dialDisplay: string
   dialReady: boolean
   effectiveCallerId: string
+  loadingSessionQueue?: boolean
   onCall: () => void
   onPauseAutoStart?: () => void
   queueItem: HeirDialerQueueItem | null
@@ -24,11 +25,22 @@ export function WorkspaceCallController({
   dialDisplay,
   dialReady,
   effectiveCallerId,
+  loadingSessionQueue = false,
   onCall,
   onPauseAutoStart,
   queueItem,
   statusLabel,
 }: WorkspaceCallControllerProps) {
+  if (loadingSessionQueue) {
+    return (
+      <section role="status" aria-label="Loading calling session" className="mx-1 rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-5 text-center">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[var(--skc-surface-3)]"><Icon name="progress_activity" className="animate-spin text-2xl text-[var(--skc-text-secondary)]" /></span>
+        <p className="mt-4 text-sm font-black text-[var(--skc-text-primary)]">Loading call controls</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--skc-text-tertiary)]">Restoring the saved seller, number, and session policy.</p>
+      </section>
+    )
+  }
+
   if (autoStartCountdownSeconds !== null) {
     const waitingForPhone = autoStartCountdownSeconds === 0 && statusLabel !== 'Ready'
     return (

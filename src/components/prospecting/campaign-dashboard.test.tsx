@@ -99,11 +99,16 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText('1', { selector: 'p' })).toBeVisible()
     expect(screen.getByText('ready to call')).toBeVisible()
     expect(screen.getByText('All associated contacts stay visible')).toBeVisible()
-    expect(screen.getByRole('radio', { name: /Resume where I stopped/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('stop after 7')
     const start = screen.getByRole('button', { name: 'Resume calling' })
     expect(start).toBeVisible()
     fireEvent.click(start)
-    expect(launch).toHaveBeenCalledWith('resume')
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({
+      startBehavior: 'resume',
+      callerMode: 'static',
+      callerIds: ['+18163100845'],
+      maxAttemptsPerNumber: 7,
+    }))
     expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
     expect(screen.queryByText('Audience health')).not.toBeInTheDocument()
   })
@@ -128,9 +133,23 @@ describe('CampaignDashboard', () => {
     const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
     render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={launch} />)
 
-    fireEvent.click(screen.getByRole('radio', { name: /First unworked seller/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Start with first unworked' }))
-    expect(launch).toHaveBeenCalledWith('first_unworked')
+    fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /First unworked/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply setup' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start calling' }))
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ startBehavior: 'first_unworked' }))
+  })
+
+  it('offers only cold-call lines and caps rotation at five', () => {
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18166088588', fromPhone: null, steps: [] }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
+    expect(screen.getByRole('region', { name: 'Calling session setup' })).toBeVisible()
+    expect(screen.getByText('(816) 310-0845')).toBeVisible()
+    expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Maximum attempts per number' })).toHaveValue('7')
+    expect(screen.getByRole('combobox', { name: 'Not dialed time frame' })).toHaveValue('')
   })
 
   it('offers an honest read-only workflow review when session writes are unavailable', () => {

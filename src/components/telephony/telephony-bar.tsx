@@ -1448,6 +1448,7 @@ export function DialerPanel({
               dialDisplay={dialNumber ? formatDialDisplay(dialNumber) : ''}
               dialReady={Boolean(dialNumber.trim()) && status === 'ready' && workspaceSessionStatus !== 'paused'}
               effectiveCallerId={effectiveCallerId}
+              loadingSessionQueue={Boolean(pendingSessionId && !pendingQueue && !queue?.length)}
               onCall={makeCall}
               onPauseAutoStart={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))}
               queueItem={queueItem}
