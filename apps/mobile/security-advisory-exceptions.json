@@ -1,19 +1,4 @@
 {
   "schemaVersion": 1,
-  "exceptions": [
-    {
-      "advisoryId": "GHSA-w3rx-r6r6-pgpr",
-      "package": "image-size",
-      "owner": "Mobile Platform",
-      "reason": "Unpatched denial-of-service advisory in Metro's build-time image inspection. The mobile app does not accept untrusted ICNS assets during development or CI, and the forced npm remediation would downgrade Expo and React Native.",
-      "expiresOn": "2026-09-15"
-    },
-    {
-      "advisoryId": "GHSA-5p2g-fcmc-qvqq",
-      "package": "image-size",
-      "owner": "Mobile Platform",
-      "reason": "Unpatched denial-of-service advisory in Metro's build-time JXL and HEIF inspection. The mobile app does not accept untrusted build assets, and the forced npm remediation would downgrade Expo and React Native.",
-      "expiresOn": "2026-09-15"
-    }
-  ]
+  "exceptions": []
 }
