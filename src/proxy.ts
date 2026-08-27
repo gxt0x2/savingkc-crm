@@ -47,12 +47,10 @@ const PUBLIC_API_PREFIXES = [
   '/api/mobile/',
 ]
 
-// Routes that are guarded inside their route handlers by a shared server secret.
-const TRUSTED_BEARER_API_PREFIXES = [
-  '/api/eod',
-]
-
 const TRUSTED_BEARER_API_EXACT = new Set([
+  // EOD is exact-listed so a lookalike route cannot inherit service-bearer
+  // trust. The reviewed operational caller posts only to this route.
+  '/api/eod',
   // Admin routes are exact-listed so a newly added administrative endpoint
   // cannot inherit service-bearer trust before its handler authorization and
   // operational caller are reviewed. These four routes are used by the
@@ -165,8 +163,7 @@ function isTrustedBearerRoute(request: NextRequest): boolean {
 
   return (
     HEALTH_CHECK_PATHS.has(pathname) ||
-    TRUSTED_BEARER_API_EXACT.has(pathname) ||
-    TRUSTED_BEARER_API_PREFIXES.some(prefix => pathname.startsWith(prefix))
+    TRUSTED_BEARER_API_EXACT.has(pathname)
   )
 }
 
