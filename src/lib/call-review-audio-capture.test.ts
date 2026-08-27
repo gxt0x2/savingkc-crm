@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { monitorMicrophoneSignal, primeCallReviewAudio, startPrimedCallReviewAudio } from './call-review-audio-capture'
+import { buildReviewMicrophoneConstraints, monitorMicrophoneSignal, primeCallReviewAudio, resumeReviewAudioContext, startPrimedCallReviewAudio } from './call-review-audio-capture'
 
 describe('call review microphone signal validation', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -52,5 +52,13 @@ describe('call review microphone signal validation', () => {
     await expect(primeCallReviewAudio(audio)).rejects.toThrow('Seller call audio could not be loaded.')
     expect(audio.muted).toBe(false)
     expect(audio.loop).toBe(false)
+  })
+
+  it('targets the selected microphone and resumes the audio engine after permission', async () => {
+    expect(buildReviewMicrophoneConstraints('jabra')).toMatchObject({ deviceId: { exact: 'jabra' } })
+    let state: AudioContextState = 'suspended'
+    const context = { get state() { return state }, resume: vi.fn(async () => { state = 'running' }) } as unknown as AudioContext
+    await resumeReviewAudioContext(context)
+    expect(context.resume).toHaveBeenCalledOnce()
   })
 })

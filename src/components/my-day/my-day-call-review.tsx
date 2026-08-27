@@ -5,12 +5,12 @@ import { Icon } from '@/components/ui/icon'
 import { CallReviewAudioPlayer, finiteSeconds, formatPlaybackTime } from '@/components/call-review/call-review-audio-player'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
-import { monitorMicrophoneSignal, primeCallReviewAudio, resetPrimedCallReviewAudio, REVIEW_AUDIO_BITS_PER_SECOND, REVIEW_CALL_GAIN, REVIEW_MICROPHONE_CONSTRAINTS, REVIEW_MICROPHONE_GAIN, startPrimedCallReviewAudio } from '@/lib/call-review-audio-capture'
+import { monitorMicrophoneSignal, openReviewMicrophone, primeCallReviewAudio, resetPrimedCallReviewAudio, resumeReviewAudioContext, REVIEW_AUDIO_BITS_PER_SECOND, REVIEW_CALL_GAIN, REVIEW_MICROPHONE_GAIN, startPrimedCallReviewAudio } from '@/lib/call-review-audio-capture'
+import { useCallReviewMicrophones } from '@/hooks/use-call-review-microphones'
 import { blobAsDataUrl, readCallReviewResponse, uploadCallReviewVoiceover } from '@/lib/call-review-voiceover-client'
 import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
 import { previewMicrophoneTestCall } from '@/lib/call-review-preview-test'
 import type { ReviewCall, Workflow } from './my-day-call-review.types'
-
 type QueueView = 'assigned' | 'completed'
 type ReviewMode = 'idle' | 'call' | 'comment'
 const TEST_REVIEW_STORAGE_KEY = 'savingkc:test-scorecard-review'
@@ -202,6 +202,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
   const reviewStartedAtRef = useRef<number | null>(null)
   const reviewTimerRef = useRef<number | null>(null)
   const stopMicrophoneMonitorRef = useRef<(() => boolean) | null>(null)
+  const { devices: microphoneDevices, selectedDeviceId, setSelectedDeviceId } = useCallReviewMicrophones(Boolean(reviewing))
 
   useEffect(() => {
     void fetch('/api/marketing/call-recordings?days=30&minDuration=30', {
@@ -323,10 +324,9 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       const AudioContextConstructor = window.AudioContext
       const context = audioContextRef.current || new AudioContextConstructor()
       audioContextRef.current = context
-      if (context.state === 'suspended') await context.resume()
+      await resumeReviewAudioContext(context)
       await primeCallReviewAudio(callAudio)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: REVIEW_MICROPHONE_CONSTRAINTS })
-      if (!stream.getAudioTracks().some((track) => track.readyState === 'live')) throw new Error('Microphone stream is not live.')
+      const { stream, track: microphoneTrack } = await openReviewMicrophone(context, selectedDeviceId)
       if (!callSourceRef.current) {
         callSourceRef.current = context.createMediaElementSource(callAudio)
         callSourceRef.current.connect(context.destination)
@@ -365,7 +365,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
             if (current) URL.revokeObjectURL(current)
             return null
           })
-          setError(blob.size < MIN_REVIEW_RECORDING_BYTES ? 'No coaching audio was captured. Check the microphone, then record the review again.' : 'No reviewer voice was detected. Select the correct microphone and record the review again.')
+          setError(blob.size < MIN_REVIEW_RECORDING_BYTES ? 'No coaching audio was captured. Check the microphone, then record the review again.' : `No reviewer voice was detected from ${microphoneTrack.label || 'the selected microphone'}. Choose another microphone or unmute it, then record again.`)
         } else {
           setVoiceoverBlob(blob)
           setVoiceoverUrl((current) => {
@@ -698,6 +698,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                     {voiceoverBlob ? 'Record Again' : 'Start Review'}
                   </button>
                 </div>
+                {!voiceoverBlob && microphoneDevices.length ? <label className="mt-3 flex items-center gap-2 text-[11px] font-bold text-[var(--crm-text-muted)]">Microphone<select aria-label="Review microphone" value={selectedDeviceId} onChange={(event) => setSelectedDeviceId(event.target.value)} className="crm-input h-9 min-w-0 flex-1 rounded-lg px-2 text-xs text-[var(--crm-text)]">{microphoneDevices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}</select></label> : null}
                 {voiceoverUrl ? (
                   <div className="mt-3">
                     <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Completed coaching review</p>

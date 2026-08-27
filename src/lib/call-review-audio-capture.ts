@@ -10,6 +10,25 @@ export const REVIEW_MICROPHONE_CONSTRAINTS: MediaTrackConstraints = {
   noiseSuppression: false,
 }
 
+export function buildReviewMicrophoneConstraints(deviceId?: string): MediaTrackConstraints {
+  return deviceId ? { ...REVIEW_MICROPHONE_CONSTRAINTS, deviceId: { exact: deviceId } } : REVIEW_MICROPHONE_CONSTRAINTS
+}
+
+export async function resumeReviewAudioContext(context: AudioContext) {
+  if (context.state !== 'running') await context.resume()
+  if (context.state !== 'running') throw new Error('Review audio engine could not start.')
+}
+
+export async function openReviewMicrophone(context: AudioContext, deviceId?: string) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: buildReviewMicrophoneConstraints(deviceId) })
+  const track = stream.getAudioTracks().find((candidate) => candidate.readyState === 'live')
+  if (!track) throw new Error('Microphone stream is not live.')
+  track.enabled = true
+  await resumeReviewAudioContext(context)
+  console.info(`[call-review] Capturing reviewer microphone: ${track.label || 'browser default'}; audio context: ${context.state}; track muted: ${track.muted}`)
+  return { stream, track }
+}
+
 export async function primeCallReviewAudio(audio: HTMLAudioElement) {
   audio.currentTime = 0
   audio.loop = true
