@@ -8,6 +8,7 @@ import { scoreCallReview } from '@/lib/call-review-scoring'
 import { monitorMicrophoneSignal, primeCallReviewAudio, resetPrimedCallReviewAudio, REVIEW_AUDIO_BITS_PER_SECOND, REVIEW_CALL_GAIN, REVIEW_MICROPHONE_CONSTRAINTS, REVIEW_MICROPHONE_GAIN, startPrimedCallReviewAudio } from '@/lib/call-review-audio-capture'
 import { blobAsDataUrl, readCallReviewResponse, uploadCallReviewVoiceover } from '@/lib/call-review-voiceover-client'
 import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
+import { previewMicrophoneTestCall } from '@/lib/call-review-preview-test'
 import type { ReviewCall, Workflow } from './my-day-call-review.types'
 
 type QueueView = 'assigned' | 'completed'
@@ -209,6 +210,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       .then(async (response) => (response.ok ? response.json() : Promise.reject(new Error('Scorecard reviews could not load.'))))
       .then((payload: { recordings: ReviewCall[]; viewerEmail: string }) => {
         const preview = window.location.hostname.endsWith('.vercel.app') || window.location.hostname === 'localhost'
+        const hostedPreview = window.location.hostname.endsWith('.vercel.app')
         const previewCalls: ReviewCall[] = preview
           ? readPreviewCallReviewQueue(window.localStorage).map((submission) => {
               const id = submission.activityId || submission.recordingSid || `preview-${submission.submittedAt}`
@@ -239,7 +241,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
           ...previewCalls,
           ...payload.recordings.filter((call) => call.reviewWorkflow.status !== 'available' && !previewIds.has(call.id)),
         ]
-        setCalls(preview && !submitted.some((call) => call.id === 'test-review-preview') ? [testCall(payload.viewerEmail, savedTestWorkflow()), ...submitted] : submitted)
+        setCalls(preview && !submitted.some((call) => call.id === 'test-review-preview') ? [...(hostedPreview ? [previewMicrophoneTestCall(payload.viewerEmail)] : []), testCall(payload.viewerEmail, savedTestWorkflow()), ...submitted] : submitted)
         setViewerEmail(payload.viewerEmail || '')
       })
       .catch((reason: Error) => setError(reason.message))
