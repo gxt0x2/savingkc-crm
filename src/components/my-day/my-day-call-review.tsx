@@ -2,53 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
-import { CALL_SCORE_RUBRIC, getCallReviewFramework, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
+import { CALL_SCORE_RUBRIC, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
 import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
-type Workflow = {
-  status: 'available' | 'submitted' | 'completed'
-  framework: CallReviewFrameworkId | null
-  score: number | null
-  criticalScore?: number | null
-  needsCoaching?: boolean
-  coachingReasons?: string[]
-  scoringVersion?: string | null
-  submittedBy: string | null
-  assignedReviewer: string | null
-  completedBy?: string | null
-  reviewNote?: string | null
-  answers?: Record<string, number>
-  tags: string[]
-  voiceoverPath?: string | null
-  voiceoverMimeType?: string | null
-  aiStatus?: 'idle' | 'processing' | 'ready' | 'failed'
-  aiProcessedAt?: string | null
-  aiModel?: string | null
-  aiError?: string | null
-  aiScore?: number | null
-  aiCriticalScore?: number | null
-  aiAnswers?: Record<
-    string,
-    {
-      score: number
-      confidence: 'low' | 'medium' | 'high'
-      evidence: string
-      timestamp: string | null
-      reasoning: string
-    }
-  >
-  aiCorrections?: string[]
-}
-
-type ReviewCall = {
-  id: string
-  leadName: string
-  recordingUrl: string
-  durationSeconds: number
-  analysisSummary: string | null
-  reviewWorkflow: Workflow
-  previewLocal?: boolean
-}
+import type { ReviewCall, Workflow } from './my-day-call-review.types'
 
 type QueueView = 'assigned' | 'completed'
 type ReviewMode = 'idle' | 'call' | 'comment'
@@ -165,6 +122,12 @@ function CompletedScorecardOverlay({ call, onClose }: { call: ReviewCall; onClos
             <p className="mt-1 text-xs text-[var(--crm-text-muted)]">This recovered test scorecard did not retain the earlier voiceover recording.</p>
           </div>
         )}
+        {workflow.submissionNote ? (
+          <div className="mt-3 rounded-xl border border-[var(--crm-info)] bg-[var(--crm-info-soft)] p-4">
+            <p className="text-xs font-black text-[var(--crm-info)]">Original submitter note</p>
+            <p className="mt-2 text-sm leading-6">{workflow.submissionNote}</p>
+          </div>
+        ) : null}
         {workflow.reviewNote ? (
           <div className="mt-3 rounded-xl border border-[var(--crm-border)] p-4">
             <p className="text-xs font-black">Coaching note</p>
@@ -266,6 +229,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                   score: null,
                   submittedBy: 'preview-user',
                   assignedReviewer: payload.viewerEmail,
+                  submissionNote: submission.submissionNote,
                   tags: ['Preview'],
                   aiStatus: 'failed',
                   aiError: 'AI pre-scoring runs after production submission. This preview copy can be scored manually.',
@@ -587,6 +551,11 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                   <div>
                     <p className="font-black">{call.leadName}</p>
                     <p className="text-[11px] text-[var(--crm-text-muted)]">{call.reviewWorkflow.status === 'completed' ? `${call.reviewWorkflow.score ?? 0} / 3 · ${call.reviewWorkflow.completedBy || 'Reviewed'}` : `Submitted for review · ${formatDuration(call.durationSeconds)}`}</p>
+                    {call.reviewWorkflow.submissionNote ? (
+                      <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--crm-text)]">
+                        <span className="font-black text-[var(--crm-brand)]">Submitter note:</span> {call.reviewWorkflow.submissionNote}
+                      </p>
+                    ) : null}
                     <div className="mt-1 flex flex-wrap gap-1">
                       {call.reviewWorkflow.tags.map((tag) => (
                         <span key={tag} className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--crm-info)]">
@@ -631,6 +600,13 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                 <Icon name="close" />
               </button>
             </div>
+            {reviewing.reviewWorkflow.submissionNote ? (
+              <div className="mt-4 rounded-xl border border-[var(--crm-info)] bg-[var(--crm-info-soft)] p-4">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-info)]">Note to reviewer</p>
+                <p className="mt-2 text-sm leading-6">{reviewing.reviewWorkflow.submissionNote}</p>
+                {reviewing.reviewWorkflow.submittedBy ? <p className="mt-2 text-[10px] font-bold text-[var(--crm-text-muted)]">Submitted by {reviewing.reviewWorkflow.submittedBy}</p> : null}
+              </div>
+            ) : null}
             <audio ref={originalAudioRef} controls={!recordingVoiceover} src={reviewing.recordingUrl} onTimeUpdate={(event) => setCallPosition(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setCallDuration(event.currentTarget.duration)} onEnded={handleCallEnded} className="mt-4 w-full" />
             {recordingVoiceover ? (
               <div className="mt-3 rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4">
