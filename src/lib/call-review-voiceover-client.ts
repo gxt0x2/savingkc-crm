@@ -22,3 +22,12 @@ export async function uploadCallReviewVoiceover(activityId: string, blob: Blob) 
   if (error) throw new Error(`Coaching voiceover could not be uploaded: ${error.message}`)
   return { path: prepared.path, mimeType: prepared.mimeType || blob.type }
 }
+
+export function blobAsDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Review recording could not be preserved.'))
+    reader.readAsDataURL(blob)
+  })
+}

@@ -5,7 +5,8 @@ import { Icon } from '@/components/ui/icon'
 import { CallReviewAudioPlayer, finiteSeconds, formatPlaybackTime } from '@/components/call-review/call-review-audio-player'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
-import { readCallReviewResponse, uploadCallReviewVoiceover } from '@/lib/call-review-voiceover-client'
+import { monitorMicrophoneSignal, REVIEW_AUDIO_BITS_PER_SECOND, REVIEW_CALL_GAIN, REVIEW_MICROPHONE_CONSTRAINTS, REVIEW_MICROPHONE_GAIN } from '@/lib/call-review-audio-capture'
+import { blobAsDataUrl, readCallReviewResponse, uploadCallReviewVoiceover } from '@/lib/call-review-voiceover-client'
 import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
 import type { ReviewCall, Workflow } from './my-day-call-review.types'
 
@@ -64,15 +65,6 @@ function reviewRecordingUrl(call: ReviewCall) {
   const path = call.reviewWorkflow.voiceoverPath
   if (!path) return null
   return path.startsWith('/') || path.startsWith('blob:') || path.startsWith('data:') ? path : `/api/marketing/call-review-voiceover?path=${encodeURIComponent(path)}`
-}
-
-function blobAsDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error || new Error('Review recording could not be preserved.'))
-    reader.readAsDataURL(blob)
-  })
 }
 
 function CompletedScorecardOverlay({ call, onClose }: { call: ReviewCall; onClose: () => void }) {
@@ -197,6 +189,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
   const [callPosition, setCallPosition] = useState(0)
   const [callDuration, setCallDuration] = useState(0)
   const [reviewElapsed, setReviewElapsed] = useState(0)
+  const [microphoneLevel, setMicrophoneLevel] = useState(0)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const originalAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -207,6 +200,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
   const microphoneGainRef = useRef<GainNode | null>(null)
   const reviewStartedAtRef = useRef<number | null>(null)
   const reviewTimerRef = useRef<number | null>(null)
+  const stopMicrophoneMonitorRef = useRef<(() => boolean) | null>(null)
 
   useEffect(() => {
     void fetch('/api/marketing/call-recordings?days=30&minDuration=30', {
@@ -258,6 +252,8 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
 
   useEffect(
     () => () => {
+      stopMicrophoneMonitorRef.current?.()
+      stopMicrophoneMonitorRef.current = null
       streamRef.current?.getTracks().forEach((track) => track.stop())
       mixNodesRef.current.forEach((node) => node.disconnect())
       if (reviewTimerRef.current !== null) window.clearTimeout(reviewTimerRef.current)
@@ -322,7 +318,8 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     try {
       const callAudio = originalAudioRef.current
       if (!callAudio) throw new Error('Call audio is unavailable.')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: REVIEW_MICROPHONE_CONSTRAINTS })
+      if (!stream.getAudioTracks().some((track) => track.readyState === 'live')) throw new Error('Microphone stream is not live.')
       const AudioContextConstructor = window.AudioContext
       const context = audioContextRef.current || new AudioContextConstructor()
       audioContextRef.current = context
@@ -335,33 +332,37 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       const destination = context.createMediaStreamDestination()
       const callGain = context.createGain()
       const microphoneGain = context.createGain()
-      callGain.gain.value = 0.82
-      microphoneGain.gain.value = 1
+      const microphoneAnalyser = context.createAnalyser()
+      callGain.gain.value = REVIEW_CALL_GAIN
+      microphoneGain.gain.value = REVIEW_MICROPHONE_GAIN
       const microphoneSource = context.createMediaStreamSource(stream)
       callSourceRef.current.connect(callGain).connect(destination)
-      microphoneSource.connect(microphoneGain).connect(destination)
-      mixNodesRef.current = [callGain, microphoneSource, microphoneGain, destination]
+      microphoneSource.connect(microphoneAnalyser).connect(microphoneGain).connect(destination)
+      mixNodesRef.current = [callGain, microphoneSource, microphoneAnalyser, microphoneGain, destination]
+      stopMicrophoneMonitorRef.current = monitorMicrophoneSignal(microphoneAnalyser, setMicrophoneLevel)
       callGainRef.current = callGain
       microphoneGainRef.current = microphoneGain
 
       const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) => MediaRecorder.isTypeSupported(type))
-      const recorder = new MediaRecorder(destination.stream, preferredType ? { mimeType: preferredType, audioBitsPerSecond: 32_000 } : { audioBitsPerSecond: 32_000 })
+      const recorder = new MediaRecorder(destination.stream, preferredType ? { mimeType: preferredType, audioBitsPerSecond: REVIEW_AUDIO_BITS_PER_SECOND } : { audioBitsPerSecond: REVIEW_AUDIO_BITS_PER_SECOND })
       const chunks: Blob[] = []
       recorder.ondataavailable = (event) => {
         if (event.data.size) chunks.push(event.data)
       }
       recorder.onstop = () => {
+        const microphoneWasDetected = stopMicrophoneMonitorRef.current?.() ?? false
+        stopMicrophoneMonitorRef.current = null
         const blob = new Blob(chunks, {
           type: recorder.mimeType || 'audio/webm',
         })
-        if (blob.size < MIN_REVIEW_RECORDING_BYTES) {
-          console.warn('[call-review] Browser returned an empty coaching recording', { bytes: blob.size, chunks: chunks.length })
+        if (blob.size < MIN_REVIEW_RECORDING_BYTES || !microphoneWasDetected) {
+          console.warn('[call-review] Coaching recording failed microphone validation', { bytes: blob.size, chunks: chunks.length, microphoneWasDetected })
           setVoiceoverBlob(null)
           setVoiceoverUrl((current) => {
             if (current) URL.revokeObjectURL(current)
             return null
           })
-          setError('No coaching audio was captured. Check the microphone, then record the review again.')
+          setError(blob.size < MIN_REVIEW_RECORDING_BYTES ? 'No coaching audio was captured. Check the microphone, then record the review again.' : 'No reviewer voice was detected. Select the correct microphone and record the review again.')
         } else {
           setVoiceoverBlob(blob)
           setVoiceoverUrl((current) => {
@@ -395,13 +396,15 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       callAudio.currentTime = 0
       await callAudio.play()
     } catch (reason) {
+      stopMicrophoneMonitorRef.current?.()
+      stopMicrophoneMonitorRef.current = null
       if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
       streamRef.current?.getTracks().forEach((track) => track.stop())
       setRecordingVoiceover(false)
       setReviewMode('idle')
       if (reviewTimerRef.current !== null) window.clearTimeout(reviewTimerRef.current)
       reviewTimerRef.current = null
-      setError(reason instanceof Error && reason.message === 'Call audio is unavailable.' ? reason.message : 'Microphone access and playable call audio are required to start Review Mode.')
+      setError(reason instanceof Error && (reason.message === 'Call audio is unavailable.' || reason.message === 'Microphone stream is not live.') ? reason.message : 'Microphone access and playable call audio are required to start Review Mode.')
     }
   }
 
@@ -421,13 +424,13 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
   function pauseAndComment() {
     originalAudioRef.current?.pause()
     if (callGainRef.current && audioContextRef.current) callGainRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime)
-    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(1.08, audioContextRef.current.currentTime)
+    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(REVIEW_MICROPHONE_GAIN, audioContextRef.current.currentTime)
     setReviewMode('comment')
   }
 
   async function resumeCall() {
-    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(1, audioContextRef.current.currentTime)
-    if (callGainRef.current && audioContextRef.current) callGainRef.current.gain.setValueAtTime(0.82, audioContextRef.current.currentTime)
+    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(REVIEW_MICROPHONE_GAIN, audioContextRef.current.currentTime)
+    if (callGainRef.current && audioContextRef.current) callGainRef.current.gain.setValueAtTime(REVIEW_CALL_GAIN, audioContextRef.current.currentTime)
     setReviewMode('call')
     await originalAudioRef.current?.play()
   }
@@ -630,6 +633,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                   <div>
                     <p className="text-xs font-black text-[var(--crm-brand)]">Review Mode</p>
                     <p className="mt-1 text-[11px] text-[var(--crm-text-muted)]">{reviewMode === 'call' ? 'The seller call and your microphone are both recording.' : 'The call is paused. Your coaching commentary is recording.'}</p>
+                    <div aria-label="Live microphone level" className="mt-2 h-1.5 w-40 overflow-hidden rounded-full bg-[var(--crm-border)]"><span className="block h-full bg-[var(--crm-success)] transition-[width]" style={{ width: `${Math.round(microphoneLevel * 100)}%` }} /></div>
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Review recording</p>
