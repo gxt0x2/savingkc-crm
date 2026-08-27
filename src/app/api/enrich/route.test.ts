@@ -43,6 +43,10 @@ describe('county enrichment API', () => {
   it('persists successful provider output before reporting success', async () => {
     const response = await POST(request({ lead_id: LEAD_ID, address: '100 Main', state: 'MO', county: 'Jackson' }))
     expect(response.status).toBe(200)
+    expect(mocks.enrich).toHaveBeenCalledWith(
+      expect.objectContaining({ lead_id: LEAD_ID, address: '100 Main', state: 'MO', county: 'Jackson' }),
+      false,
+    )
     expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({
       leadId: LEAD_ID,
       source: 'county_assessor',
@@ -53,6 +57,14 @@ describe('county enrichment API', () => {
       success: true,
       canonical: { propertyId: 'property-1', eventId: 'event-1' },
     })
+  })
+
+  it('bypasses the property cache when forceRefresh is requested', async () => {
+    const response = await POST(request({
+      lead_id: LEAD_ID, address: '100 Main', state: 'MO', county: 'Jackson', forceRefresh: true,
+    }))
+    expect(response.status).toBe(200)
+    expect(mocks.enrich).toHaveBeenCalledWith(expect.objectContaining({ forceRefresh: true }), true)
   })
 
   it('fails honestly when provider data cannot be persisted', async () => {

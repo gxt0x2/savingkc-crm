@@ -47,6 +47,9 @@ interface PropertyDetailsCardProps {
   zip?: string
   leadId?: string
   onEdit?: () => void
+  onReenrich?: () => void
+  reenriching?: boolean
+  reenrichError?: string | null
 }
 
 function formatLotSize(sqft: number | null): string {
@@ -83,7 +86,13 @@ function getDataSourceBadge(source: string | null): { label: string } {
   }
 }
 
-export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProps) {
+export function PropertyDetailsCard({
+  details,
+  onEdit,
+  onReenrich,
+  reenriching = false,
+  reenrichError = null,
+}: PropertyDetailsCardProps) {
   const sourceBadge = getDataSourceBadge(details.data_source)
 
   return (
@@ -107,14 +116,36 @@ export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProp
             {sourceBadge.label}
           </span>
         </div>
-        {onEdit && (
-          <button
-            onClick={onEdit}
-            className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text)] transition-colors"
-            title="Edit property details"
-          >
-            <Icon name="edit" size="text-sm" />
-          </button>
+        {(onEdit || onReenrich) && (
+          <div className="flex items-center gap-2 shrink-0">
+            {onReenrich && (
+              <button
+                type="button"
+                onClick={onReenrich}
+                disabled={reenriching}
+                className="rounded-lg border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors disabled:opacity-60"
+                style={{
+                  borderColor: 'var(--ck-border)',
+                  color: 'var(--ck-text)',
+                  background: 'var(--ck-surface-elev)',
+                }}
+                aria-label={reenriching ? 'Re-enriching property details' : 'Re-enrich property details'}
+              >
+                {reenriching ? 'Re-enriching…' : 'Re-enrich'}
+              </button>
+            )}
+            {onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text)] transition-colors"
+                title="Edit property details"
+                aria-label="Edit property details"
+              >
+                <Icon name="edit" size="text-sm" />
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -273,6 +304,15 @@ export function PropertyDetailsCard({ details, onEdit }: PropertyDetailsCardProp
           style={{ color: 'var(--ck-text-muted)' }}
         >
           Last enriched: {formatDate(details.data_enriched_at)}
+        </p>
+      )}
+      {reenrichError && (
+        <p
+          className="mt-2 text-[10px]"
+          role="status"
+          style={{ color: 'var(--ck-accent-bright)' }}
+        >
+          {reenrichError}
         </p>
       )}
     </section>
