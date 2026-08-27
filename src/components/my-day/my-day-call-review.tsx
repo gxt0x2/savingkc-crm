@@ -11,6 +11,7 @@ import type { ReviewCall, Workflow } from './my-day-call-review.types'
 type QueueView = 'assigned' | 'completed'
 type ReviewMode = 'idle' | 'call' | 'comment'
 const TEST_REVIEW_STORAGE_KEY = 'savingkc:test-scorecard-review'
+const MIN_REVIEW_RECORDING_BYTES = 128
 
 function testCall(viewerEmail: string, savedWorkflow?: Workflow | null): ReviewCall {
   const framework = getCallReviewFramework('junior_acquisitions')
@@ -362,11 +363,21 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
         const blob = new Blob(chunks, {
           type: recorder.mimeType || 'audio/webm',
         })
-        setVoiceoverBlob(blob)
-        setVoiceoverUrl((current) => {
-          if (current) URL.revokeObjectURL(current)
-          return URL.createObjectURL(blob)
-        })
+        if (blob.size < MIN_REVIEW_RECORDING_BYTES) {
+          console.warn('[call-review] Browser returned an empty coaching recording', { bytes: blob.size, chunks: chunks.length })
+          setVoiceoverBlob(null)
+          setVoiceoverUrl((current) => {
+            if (current) URL.revokeObjectURL(current)
+            return null
+          })
+          setError('No coaching audio was captured. Check the microphone, then record the review again.')
+        } else {
+          setVoiceoverBlob(blob)
+          setVoiceoverUrl((current) => {
+            if (current) URL.revokeObjectURL(current)
+            return URL.createObjectURL(blob)
+          })
+        }
         stream.getTracks().forEach((track) => track.stop())
         mixNodesRef.current.forEach((node) => node.disconnect())
         mixNodesRef.current = []
@@ -380,7 +391,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       }
       streamRef.current = stream
       recorderRef.current = recorder
-      recorder.start(1000)
+      recorder.start(250)
       setRecordingVoiceover(true)
       setReviewMode('call')
       setReviewElapsed(0)
@@ -403,9 +414,17 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     }
   }
 
-  function stopVoiceover() {
+  async function stopVoiceover() {
     originalAudioRef.current?.pause()
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+    const recorder = recorderRef.current
+    if (recorder?.state !== 'recording') return
+    try {
+      recorder.requestData()
+      await new Promise((resolve) => window.setTimeout(resolve, 100))
+    } catch {
+      // Some Safari MediaRecorder implementations do not support requestData reliably.
+    }
+    if (recorder.state === 'recording') recorder.stop()
   }
 
   function pauseAndComment() {
@@ -676,7 +695,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                       Resume Call
                     </button>
                   )}
-                  <button type="button" onClick={stopVoiceover} className="crm-secondary-button inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black">
+                  <button type="button" onClick={() => void stopVoiceover()} className="crm-secondary-button inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black">
                     <Icon name="stop_circle" />
                     Finish Review
                   </button>
