@@ -86,6 +86,12 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('does not exist') || detail.includes('pgrst202') || detail.includes('42p01') || detail.includes('42883')) {
     return new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Prospecting campaigns are not available in this environment')
   }
+  console.error('[prospecting-campaigns] unexpected database error', {
+    code: error?.code || 'unknown',
+  })
+  if (detail.includes('42702') || detail.includes('ambiguous')) {
+    return new ProspectingCampaignError('campaign_engine_conflict', 503, 'Calling session could not start because the campaign engine has a database conflict')
+  }
   return new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign state could not be saved')
 }
 
