@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { CallReviewAudioPlayer, finiteSeconds, formatPlaybackTime } from '@/components/call-review/call-review-audio-player'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
+import { readCallReviewResponse, uploadCallReviewVoiceover } from '@/lib/call-review-voiceover-client'
 import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
 import type { ReviewCall, Workflow } from './my-day-call-review.types'
 
@@ -72,16 +73,6 @@ function blobAsDataUrl(blob: Blob) {
     reader.onerror = () => reject(reader.error || new Error('Review recording could not be preserved.'))
     reader.readAsDataURL(blob)
   })
-}
-
-async function readJsonResponse<T extends { error?: string }>(response: Response, fallback: string): Promise<T> {
-  const text = await response.text()
-  if (!text) return { error: fallback } as T
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    return { error: text.slice(0, 180) || fallback } as T
-  }
 }
 
 function CompletedScorecardOverlay({ call, onClose }: { call: ReviewCall; onClose: () => void }) {
@@ -493,25 +484,9 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
         let voiceoverPath: string | null = null
         let voiceoverMimeType: string | null = null
         if (voiceoverBlob) {
-          const file = new File([voiceoverBlob], `coaching-voiceover.${voiceoverBlob.type.includes('mp4') ? 'm4a' : 'webm'}`, { type: voiceoverBlob.type })
-          const prepareResponse = await fetch('/api/marketing/call-review-voiceover', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ activityId: call.id, mimeType: file.type, byteSize: file.size }),
-          })
-          const uploadPayload = await readJsonResponse<{
-            error?: string
-            path?: string
-            mimeType?: string
-            token?: string
-            bucket?: string
-          }>(prepareResponse, 'Coaching voiceover upload could not be prepared.')
-          if (!prepareResponse.ok || !uploadPayload.path || !uploadPayload.token) throw new Error(uploadPayload.error || 'Coaching voiceover could not be prepared.')
-          const { createClient } = await import('@/lib/supabase/client')
-          const { error: uploadError } = await createClient().storage.from(uploadPayload.bucket || 'documents').uploadToSignedUrl(uploadPayload.path, uploadPayload.token, file, { contentType: file.type, upsert: false })
-          if (uploadError) throw new Error(`Coaching voiceover could not be uploaded: ${uploadError.message}`)
-          voiceoverPath = uploadPayload.path
-          voiceoverMimeType = uploadPayload.mimeType || voiceoverBlob.type
+          const uploaded = await uploadCallReviewVoiceover(call.id, voiceoverBlob)
+          voiceoverPath = uploaded.path
+          voiceoverMimeType = uploaded.mimeType
         }
         const response = await fetch('/api/marketing/call-recordings', {
           method: 'PATCH',
@@ -526,7 +501,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
             voiceoverMimeType,
           }),
         })
-        const payload = await readJsonResponse<{
+        const payload = await readCallReviewResponse<{
           error?: string
           workflow?: Workflow
         }>(response, 'Scorecard returned an invalid response.')
