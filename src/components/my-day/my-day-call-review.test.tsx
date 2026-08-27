@@ -52,6 +52,25 @@ describe('MyDayCallReview submitter notes', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
   })
 
+  it('saves a preview scorecard after every current behavior is rated even with a stale saved answer', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ viewerEmail: 'ernest@savingkc.com', recordings: [{
+        id: 'preview-local', leadName: 'Preview save test', recordingUrl: '/audio/ivr-voicemail.mp3', durationSeconds: 5, analysisSummary: null, previewLocal: true,
+        reviewWorkflow: { status: 'submitted', framework: 'junior_acquisitions', score: null, submittedBy: 'preview-user', assignedReviewer: 'ernest@savingkc.com', tags: [], aiStatus: 'idle', answers: { retired_behavior: 3 } },
+      }] }),
+    }))
+
+    render(<MyDayCallReview surface="scorecard" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Score Call' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Preview save test' })
+    for (const group of within(dialog).getAllByRole('radiogroup')) fireEvent.click(within(group).getByRole('radio', { name: '0' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Complete Scorecard' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Preview save test' })).not.toBeInTheDocument())
+    expect(window.localStorage.getItem('savingkc:preview-call-review-result:v1:preview-local')).toContain('"status":"completed"')
+  })
+
   it('keeps the reviewer microphone live while the seller call plays', async () => {
     const gains: Array<{ gain: { value: number; setValueAtTime: ReturnType<typeof vi.fn> }; connect: (target: unknown) => unknown; disconnect: ReturnType<typeof vi.fn> }> = []
     const track = { readyState: 'live', stop: vi.fn() }

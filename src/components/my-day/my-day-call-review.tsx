@@ -272,14 +272,14 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     [voiceoverUrl],
   )
   const visibleCalls = useMemo(() => (surface === 'scorecard' ? calls.filter((call) => call.reviewWorkflow.status === 'submitted').slice(0, 25) : calls.filter((call) => (view === 'assigned' ? call.reviewWorkflow.status === 'submitted' && call.reviewWorkflow.assignedReviewer === viewerEmail : call.reviewWorkflow.status === 'completed' && (call.reviewWorkflow.submittedBy === viewerEmail || call.reviewWorkflow.assignedReviewer === viewerEmail))).slice(0, 6)), [calls, surface, view, viewerEmail])
-
   const assigned = calls.filter((call) => call.reviewWorkflow.status === 'submitted' && (surface === 'scorecard' || call.reviewWorkflow.assignedReviewer === viewerEmail)).length
   const completed = calls.filter((call) => call.reviewWorkflow.status === 'completed' && (call.reviewWorkflow.submittedBy === viewerEmail || call.reviewWorkflow.assignedReviewer === viewerEmail)).length
   const framework = reviewing ? getCallReviewFramework(reviewing.reviewWorkflow.framework || 'junior_acquisitions') : null
-  const itemCount = framework?.sections.reduce((count, section) => count + section.items.length, 0) || 0
+  const requiredRatingIds = framework?.sections.flatMap((section) => section.items.map((item) => item.id)) || []
+  const itemCount = requiredRatingIds.length
+  const missingRatingCount = requiredRatingIds.filter((id) => ratings[id] === undefined).length
   const liveScoring = framework ? scoreCallReview(framework, ratings) : null
   const liveScore = liveScoring?.score ?? 0
-
   function openReview(call: ReviewCall) {
     setReviewing(call)
     const previousAnswers = call.reviewWorkflow.answers || {}
@@ -291,7 +291,6 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     setCallPosition(0)
     setCallDuration(finiteSeconds(call.durationSeconds))
   }
-
   async function retryAiScore(call: ReviewCall) {
     if (call.id === 'test-review-preview' || call.previewLocal) return
     setBusy(true)
@@ -315,7 +314,6 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       setBusy(false)
     }
   }
-
   async function startVoiceover() {
     setError(null)
     try {
@@ -457,6 +455,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
   }
 
   async function completeReview(call: ReviewCall) {
+    if (missingRatingCount) return setError(`Score the remaining ${missingRatingCount} ${missingRatingCount === 1 ? 'behavior' : 'behaviors'} before completing the scorecard.`)
     const frameworkId = call.reviewWorkflow.framework || 'junior_acquisitions'
     setBusy(true)
     setError(null)
@@ -556,7 +555,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
             ))}
           </div> : <span className="rounded-full bg-[var(--crm-warning-soft)] px-3 py-1 text-xs font-black text-[var(--crm-warning)]">Needs Review ({assigned})</span>}
         </div>
-        {error ? <p className="m-4 rounded-lg bg-[var(--crm-danger-soft)] p-3 text-xs font-bold text-[var(--crm-danger)]">{error}</p> : null}
+        {error && !reviewing ? <p className="m-4 rounded-lg bg-[var(--crm-danger-soft)] p-3 text-xs font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {visibleCalls.length === 0 ? (
           <div className="flex min-h-24 items-center justify-center gap-2 text-sm font-bold text-[var(--crm-text-muted)]">
             <Icon name="task_alt" className="text-[var(--crm-success)]" />
@@ -630,6 +629,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
             <div className="mt-4">
               <CallReviewAudioPlayer audioRef={originalAudioRef} src={reviewing.recordingUrl} knownDuration={reviewing.durationSeconds} onPositionChange={setCallPosition} onDurationChange={setCallDuration} onEnded={handleCallEnded} />
             </div>
+            {error ? <p role="alert" className="mt-3 rounded-lg bg-[var(--crm-danger-soft)] p-3 text-xs font-bold text-[var(--crm-danger)]">{error}</p> : null}
             {recordingVoiceover ? (
               <div className="mt-3 rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -787,8 +787,8 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
               <textarea value={note} onChange={(event) => setNote(event.target.value)} className="crm-field mt-2 min-h-24 w-full rounded-lg p-3 text-sm font-normal" />
             </label>
             <div className="sticky bottom-0 mt-5 flex items-center justify-between border-t border-[var(--crm-border)] bg-[var(--crm-surface)] py-4">
-              <strong>{liveScore} / 3</strong>
-              <button disabled={busy || recordingVoiceover || Object.keys(ratings).length !== itemCount} onClick={() => void completeReview(reviewing)} className="crm-primary-button rounded-lg px-5 py-3 text-sm font-black">
+              <div><strong>{liveScore} / 3</strong><p className="text-[10px] font-bold text-[var(--crm-text-muted)]">{itemCount - missingRatingCount} of {itemCount} scored{missingRatingCount ? ` · ${missingRatingCount} remaining` : ''}</p></div>
+              <button disabled={busy || recordingVoiceover} onClick={() => void completeReview(reviewing)} className="crm-primary-button rounded-lg px-5 py-3 text-sm font-black">
                 Complete Scorecard
               </button>
             </div>
