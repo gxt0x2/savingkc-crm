@@ -10,8 +10,8 @@ SET statement_timeout = '5min';
 DO $migration$
 DECLARE
   function_signature constant text := 'public.start_prospecting_dialer_session_v4(uuid,text,text,text,jsonb)';
-  broken_fragment constant text := E'FROM public.dialer_session_attempts\n        WHERE session_id = open_session.id';
-  repaired_fragment constant text := E'FROM public.dialer_session_attempts attempt\n        WHERE attempt.session_id = open_session.id';
+  broken_fragment constant text := 'WHERE session_id = open_session.id';
+  repaired_fragment constant text := 'WHERE dialer_session_attempts.session_id = open_session.id';
   function_definition text;
   occurrence_count integer;
 BEGIN

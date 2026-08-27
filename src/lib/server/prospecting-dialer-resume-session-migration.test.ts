@@ -13,10 +13,12 @@ const repairMigration = readFileSync(join(
 ), 'utf8')
 
 describe('prospecting dialer resume-session repair migration', () => {
-  it('matches both ambiguous resume checks in the deployed V4 function', () => {
+  it('qualifies both ambiguous V4 checks without depending on indentation', () => {
     expect(originalMigration.match(/WHERE session_id = open_session\.id/g)).toHaveLength(2)
     expect(repairMigration).toContain('occurrence_count <> 2')
-    expect(repairMigration).toContain('WHERE attempt.session_id = open_session.id')
+    expect(repairMigration).toContain("broken_fragment constant text := 'WHERE session_id = open_session.id'")
+    expect(repairMigration).toContain('WHERE dialer_session_attempts.session_id = open_session.id')
+    expect(repairMigration).not.toContain('FROM public.dialer_session_attempts\\n')
   })
 
   it('fails closed if the production function has drifted', () => {
