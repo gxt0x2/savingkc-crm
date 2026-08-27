@@ -53,13 +53,17 @@ const TRUSTED_BEARER_API_PREFIXES = [
   '/api/workers/',
   '/api/eod',
   '/api/ari/',
-  '/api/enrich/',
   '/api/cron/',
 ]
 
 const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/deals/import-photos',
   '/api/deals/upload',
+  // Enrichment is intentionally exact-listed so adding a new route under the
+  // namespace does not silently inherit proxy-level bearer trust. Both current
+  // handlers also enforce their own user/admin-or-secret authorization.
+  '/api/enrich',
+  '/api/enrich/batch',
 ])
 
 const HEALTH_CHECK_PATHS = new Set([
