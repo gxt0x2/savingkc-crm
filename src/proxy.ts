@@ -51,7 +51,6 @@ const PUBLIC_API_PREFIXES = [
 const TRUSTED_BEARER_API_PREFIXES = [
   '/api/admin/',
   '/api/eod',
-  '/api/ari/',
   '/api/cron/',
 ]
 
