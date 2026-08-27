@@ -50,7 +50,6 @@ const PUBLIC_API_PREFIXES = [
 // Routes that are guarded inside their route handlers by a shared server secret.
 const TRUSTED_BEARER_API_PREFIXES = [
   '/api/admin/',
-  '/api/workers/',
   '/api/eod',
   '/api/ari/',
   '/api/cron/',
@@ -64,6 +63,14 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   // handlers also enforce their own user/admin-or-secret authorization.
   '/api/enrich',
   '/api/enrich/batch',
+  // Worker routes are exact-listed so a newly added worker cannot inherit
+  // service-bearer trust before its handler authorization is reviewed.
+  '/api/workers/ppc-conversion-export-alert',
+  '/api/workers/ppc-conversion-export',
+  '/api/workers/property-enrichment',
+  '/api/workers/prospecting-campaigns',
+  '/api/workers/sms-sender',
+  '/api/workers/workflow-runs',
 ])
 
 const HEALTH_CHECK_PATHS = new Set([
