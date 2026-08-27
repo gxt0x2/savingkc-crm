@@ -10,6 +10,13 @@ export function supabaseAdmin() {
     _client = createClient(
       getSupabaseUrl(),
       getSupabaseAdminKey(),
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      },
     )
   }
   return _client
