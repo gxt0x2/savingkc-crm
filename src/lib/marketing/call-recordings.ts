@@ -1,4 +1,5 @@
 export const RECORDING_REVIEW_OUTCOMES = ['seller', 'spam', 'wrong_number', 'follow_up', 'review_later'] as const
+export const CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH = 500
 
 export type RecordingReviewOutcome = (typeof RECORDING_REVIEW_OUTCOMES)[number]
 export type StoredRecordingReviewOutcome = RecordingReviewOutcome | 'unreviewed'

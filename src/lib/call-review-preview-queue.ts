@@ -7,6 +7,7 @@ export type PreviewCallReviewSubmission = {
   recordingUrl: string
   durationSeconds: number
   submittedAt: string
+  submissionNote: string | null
 }
 
 export function readPreviewCallReviewQueue(storage: Pick<Storage, 'getItem'>): PreviewCallReviewSubmission[] {

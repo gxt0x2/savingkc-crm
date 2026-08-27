@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CALL_REVIEW_FRAMEWORKS, CALL_REVIEW_TAGS, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
-import type { RecordingReviewOutcome, StoredRecordingReviewOutcome } from '@/lib/marketing/call-recordings'
+import { CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH, type RecordingReviewOutcome, type StoredRecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 
 type RecordingSummary = {
   total: number
@@ -318,9 +318,10 @@ export function CallRecordingsPage() {
                     <div className="review-line">
                       <input
                         aria-label={`Review note for ${row.leadName}`}
+                        maxLength={CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH}
                         value={notes[row.id] ?? row.reviewNote ?? ''}
                         onChange={(event) => setNotes((current) => ({ ...current, [row.id]: event.target.value }))}
-                        placeholder="Optional review note"
+                        placeholder={row.reviewWorkflow.status === 'available' ? 'Quick note to reviewer (optional)' : 'Optional review note'}
                       />
                       <div className="review-actions">
                         {REVIEW_ACTIONS.map((action) => (

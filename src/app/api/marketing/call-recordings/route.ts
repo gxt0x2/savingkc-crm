@@ -7,7 +7,7 @@ import { CALL_REVIEWERS, isCallReviewer } from '@/lib/call-review-reviewers'
 import { CALL_REVIEW_TAGS, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
 import { processCallReviewAi } from '@/lib/call-review-ai'
-import { buildRecordingSummary, compactTranscript, isGoogleAdsCall, isRecordingReviewOutcome, mergeRecordingReviewMetadata, mergeCallReviewWorkflow, playableRecordingUrl, readRecordingDuration, readRecordingReview, readCallReviewWorkflow, readRecordingSid, record, reopenCallReviewWorkflow, text, type RecordingReviewOutcome } from '@/lib/marketing/call-recordings'
+import { buildRecordingSummary, CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH, compactTranscript, isGoogleAdsCall, isRecordingReviewOutcome, mergeRecordingReviewMetadata, mergeCallReviewWorkflow, playableRecordingUrl, readRecordingDuration, readRecordingReview, readCallReviewWorkflow, readRecordingSid, record, reopenCallReviewWorkflow, text, type RecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { sendCallReviewSubmittedSmsAlert } from '@/lib/server/operational-sms-alerts'
 
@@ -369,6 +369,12 @@ export async function PATCH(req: NextRequest) {
   const note = text(body?.note)
   if ((!activityId && !recordingSid) || (!['submit', 'complete', 'retry_ai', 'reopen'].includes(action) && !isRecordingReviewOutcome(outcome))) {
     return NextResponse.json({ error: 'Invalid review payload' }, { status: 400, headers: NO_STORE_HEADERS })
+  }
+  if (action === 'submit' && note.length > CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH) {
+    return NextResponse.json(
+      { error: `Note to reviewer must be ${CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH} characters or fewer` },
+      { status: 400, headers: NO_STORE_HEADERS },
+    )
   }
   if (['complete', 'retry_ai', 'reopen'].includes(action) && !isCallReviewer(email)) {
     return NextResponse.json({ error: 'Call review access is restricted to assigned reviewers' }, { status: 403, headers: NO_STORE_HEADERS })
