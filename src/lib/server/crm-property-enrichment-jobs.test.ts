@@ -23,17 +23,17 @@ describe('canonical property enrichment worker', () => {
     expect(dependencies.finish).toHaveBeenCalledWith(claim, true, null)
   })
 
-  it('releases a failed provider attempt for durable retry', async () => {
+  it('releases a failed provider attempt for durable retry, including blank county results', async () => {
     const dependencies = {
       claim: vi.fn().mockResolvedValue([claim]),
-      enrich: vi.fn().mockRejectedValue(new Error('county unavailable')),
+      enrich: vi.fn().mockRejectedValue(new Error('County assessor did not return property details')),
       finish: vi.fn().mockResolvedValue('retry'),
     }
 
     await expect(runPropertyEnrichmentWorker(3, dependencies)).resolves.toMatchObject({
       claimed: 1, completed: 0, pending: 1, failed: 0,
     })
-    expect(dependencies.finish).toHaveBeenCalledWith(claim, false, 'county unavailable')
+    expect(dependencies.finish).toHaveBeenCalledWith(claim, false, 'County assessor did not return property details')
   })
 
   it('leaves a newer revision pending instead of falsely completing it', async () => {

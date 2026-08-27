@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase } from '@/lib/format'
+import { leadHousingDetails } from '@/lib/lead-housing-details'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
@@ -280,6 +281,8 @@ export default function LeadDetailPage() {
   const [zillowEnriching, setZillowEnriching] = useState(false)
   const [redfinEnriching, setRedfinEnriching] = useState(false)
   const [redfinError, setRedfinError] = useState<string | null>(null)
+  const [reenriching, setReenriching] = useState(false)
+  const [reenrichError, setReenrichError] = useState<string | null>(null)
   const [detailsExpanded, setDetailsExpanded] = useState(false)
   const [editPanelOpen, setEditPanelOpen] = useState(false)
   const [contractModalOpen, setContractModalOpen] = useState(false)
@@ -403,6 +406,29 @@ export default function LeadDetailPage() {
       setRedfinEnriching(false)
     }
   }, [lead, redfinEnriching, refreshAll])
+
+  const reenrichProperty = useCallback(async () => {
+    if (!lead || reenriching) return
+    setReenriching(true)
+    setReenrichError(null)
+    try {
+      const response = await fetch(`/api/leads/${lead.id}/reenrich`, { method: 'POST' })
+      const data = await response.json().catch(() => null) as {
+        success?: boolean
+        countyEnriched?: boolean
+        error?: string
+      } | null
+      if (!response.ok || !data?.success) {
+        setReenrichError(data?.error || 'County details could not be refreshed. Try again.')
+        return
+      }
+      refreshAll()
+    } catch {
+      setReenrichError('County details could not be refreshed. Try again.')
+    } finally {
+      setReenriching(false)
+    }
+  }, [lead, reenriching, refreshAll])
 
   useEffect(() => {
     async function fetchActivities() {
@@ -726,35 +752,7 @@ export default function LeadDetailPage() {
       }
     })
 
-  const workspacePropertyDetails = (() => {
-    const pick = <T,>(a: T | null | undefined, b: T | null | undefined): T | null =>
-      (a !== null && a !== undefined ? a : (b !== null && b !== undefined ? b : null))
-
-    return {
-      beds: pick(canonicalProperty?.bedrooms, lead.beds),
-      baths_full: pick(canonicalProperty?.bathroomsFull, lead.baths_full),
-      baths_half: pick(canonicalProperty?.bathroomsHalf, lead.baths_half),
-      sqft: pick(canonicalProperty?.sqft, lead.sqft),
-      lot_size: pick(canonicalProperty?.lotSize, lead.lot_size),
-      year_built: pick(canonicalProperty?.yearBuilt, lead.year_built),
-      basement_type: pick(canonicalProperty?.basementType, lead.basement_type),
-      stories: pick(canonicalProperty?.stories, lead.stories),
-      garage_spaces: pick(canonicalProperty?.garageSpaces, lead.garage_spaces),
-      roof_type: pick(canonicalProperty?.roofType, lead.roof_type),
-      heating: pick(canonicalProperty?.heating, lead.heating),
-      cooling: pick(canonicalProperty?.cooling, lead.cooling),
-      property_type: pick(canonicalProperty?.propertyType, lead.property_type),
-      zoning: pick(canonicalProperty?.zoning, lead.zoning),
-      hoa_amount: pick(canonicalProperty?.hoaAmount, lead.hoa_amount),
-      tax_assessment: pick(canonicalProperty?.taxAssessment, lead.tax_assessment),
-      tax_owed: canonicalProperty?.taxOwed ?? null,
-      first_delinquent_year: canonicalProperty?.firstDelinquentYear ?? null,
-      last_sale_date: pick(canonicalProperty?.lastSaleDate, lead.last_sale_date),
-      last_sale_price: pick(canonicalProperty?.lastSalePrice, lead.last_sale_price),
-      data_source: pick(canonicalProperty?.dataSource, lead.data_source),
-      data_enriched_at: pick(canonicalProperty?.dataEnrichedAt, lead.data_enriched_at),
-    }
-  })()
+  const workspacePropertyDetails = leadHousingDetails(canonicalProperty, lead)
 
   return (
     <>
@@ -822,6 +820,9 @@ export default function LeadDetailPage() {
                 <PropertyDetailsCard
                   details={workspacePropertyDetails}
                   onEdit={() => setEditPanelOpen(true)}
+                  onReenrich={reenrichProperty}
+                  reenriching={reenriching}
+                  reenrichError={reenrichError}
                 />
               </div>
             </div>
@@ -1040,35 +1041,8 @@ export default function LeadDetailPage() {
         icon="home_work"
         size="lg"
       >
-        {(() => {
-          const pick = <T,>(a: T | null | undefined, b: T | null | undefined): T | null =>
-            (a !== null && a !== undefined ? a : (b !== null && b !== undefined ? b : null))
-          return (
             <PropertyDetailsCard
-              details={{
-                beds: pick(canonicalProperty?.bedrooms, lead.beds),
-                baths_full: pick(canonicalProperty?.bathroomsFull, lead.baths_full),
-                baths_half: pick(canonicalProperty?.bathroomsHalf, lead.baths_half),
-                sqft: pick(canonicalProperty?.sqft, lead.sqft),
-                lot_size: pick(canonicalProperty?.lotSize, lead.lot_size),
-                year_built: pick(canonicalProperty?.yearBuilt, lead.year_built),
-                basement_type: pick(canonicalProperty?.basementType, lead.basement_type),
-                stories: pick(canonicalProperty?.stories, lead.stories),
-                garage_spaces: pick(canonicalProperty?.garageSpaces, lead.garage_spaces),
-                roof_type: pick(canonicalProperty?.roofType, lead.roof_type),
-                heating: pick(canonicalProperty?.heating, lead.heating),
-                cooling: pick(canonicalProperty?.cooling, lead.cooling),
-                property_type: pick(canonicalProperty?.propertyType, lead.property_type),
-                zoning: pick(canonicalProperty?.zoning, lead.zoning),
-                hoa_amount: pick(canonicalProperty?.hoaAmount, lead.hoa_amount),
-                tax_assessment: pick(canonicalProperty?.taxAssessment, lead.tax_assessment),
-                tax_owed: canonicalProperty?.taxOwed ?? null,
-                first_delinquent_year: canonicalProperty?.firstDelinquentYear ?? null,
-                last_sale_date: pick(canonicalProperty?.lastSaleDate, lead.last_sale_date),
-                last_sale_price: pick(canonicalProperty?.lastSalePrice, lead.last_sale_price),
-                data_source: pick(canonicalProperty?.dataSource, lead.data_source),
-                data_enriched_at: pick(canonicalProperty?.dataEnrichedAt, lead.data_enriched_at),
-              }}
+              details={workspacePropertyDetails}
               address={lead.property_address || undefined}
               city={lead.city || undefined}
               state={lead.state || undefined}
@@ -1078,9 +1052,10 @@ export default function LeadDetailPage() {
                 setDetailsExpanded(false)
                 setEditPanelOpen(true)
               }}
+              onReenrich={reenrichProperty}
+              reenriching={reenriching}
+              reenrichError={reenrichError}
             />
-          )
-        })()}
       </CockpitModal>
     </>
   )

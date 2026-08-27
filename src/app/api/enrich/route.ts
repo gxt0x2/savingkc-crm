@@ -10,6 +10,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 type CanonicalEnrichmentInput = EnrichmentInput & {
   lead_id?: unknown
   manifest_id?: unknown
+  forceRefresh?: unknown
+  force_refresh?: unknown
 }
 
 // POST /api/enrich — enrich the canonical property linked to a lead.
@@ -36,7 +38,8 @@ export async function POST(req: NextRequest) {
     }
 
     const service = new CountyEnrichmentService()
-    const result = await service.enrich(body)
+    const forceRefresh = body.forceRefresh === true || body.force_refresh === true
+    const result = await service.enrich(body, forceRefresh)
     if (!result.success) return NextResponse.json(result)
 
     try {
