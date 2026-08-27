@@ -9,6 +9,10 @@ export const dynamic = 'force-dynamic'
 const MAX_BYTES = 50 * 1024 * 1024
 const ALLOWED_TYPES = new Set(['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/mpeg'])
 
+function baseMimeType(type: string) {
+  return type.split(';', 1)[0].trim().toLowerCase()
+}
+
 function safeExtension(type: string) {
   if (type === 'audio/mp4') return 'm4a'
   if (type === 'audio/ogg') return 'ogg'
@@ -21,12 +25,16 @@ export async function POST(req: NextRequest) {
   const email = await getCurrentUserEmail()
   if (!email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const form = await req.formData()
-  const file = form.get('file')
-  const activityId = String(form.get('activityId') || '')
-  if (!(file instanceof File) || !activityId) return NextResponse.json({ error: 'Voiceover and call are required' }, { status: 400 })
-  if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: 'Unsupported voiceover format' }, { status: 415 })
-  if (file.size <= 0 || file.size > MAX_BYTES) return NextResponse.json({ error: 'Voiceover must be under 50 MB' }, { status: 413 })
+  const contentType = req.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) return NextResponse.json({ error: 'Voiceover uploads must be prepared before direct upload' }, { status: 415 })
+  const body = await req.json().catch(() => null) as { activityId?: unknown; mimeType?: unknown; byteSize?: unknown } | null
+  const activityId = String(body?.activityId || '')
+  const mimeType = String(body?.mimeType || '')
+  const normalizedMimeType = baseMimeType(mimeType)
+  const byteSize = Number(body?.byteSize || 0)
+  if (!activityId || !mimeType) return NextResponse.json({ error: 'Voiceover and call are required' }, { status: 400 })
+  if (!ALLOWED_TYPES.has(normalizedMimeType)) return NextResponse.json({ error: 'Unsupported voiceover format' }, { status: 415 })
+  if (!Number.isFinite(byteSize) || byteSize <= 0 || byteSize > MAX_BYTES) return NextResponse.json({ error: 'Voiceover must be under 50 MB' }, { status: 413 })
 
   const db = supabaseAdmin()
   const { data: activity, error } = await db.from('lead_activities').select('id, metadata').eq('id', activityId).eq('activity_type', 'call').maybeSingle()
@@ -36,11 +44,10 @@ export async function POST(req: NextRequest) {
   if (workflow.status !== 'submitted') return NextResponse.json({ error: 'Call must be awaiting review' }, { status: 409 })
   if (workflow.assignedReviewer !== email && !(await isCurrentUserAdmin())) return NextResponse.json({ error: 'This review is assigned to another reviewer' }, { status: 403 })
 
-  const path = `call-review-voiceovers/${activityId}/${crypto.randomUUID()}.${safeExtension(file.type)}`
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const { error: uploadError } = await db.storage.from(DOCUMENTS_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false })
-  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 })
-  return NextResponse.json({ path, mimeType: file.type, url: `/api/marketing/call-review-voiceover?path=${encodeURIComponent(path)}` }, { status: 201 })
+  const path = `call-review-voiceovers/${activityId}/${crypto.randomUUID()}.${safeExtension(normalizedMimeType)}`
+  const { data: prepared, error: uploadError } = await db.storage.from(DOCUMENTS_BUCKET).createSignedUploadUrl(path, { upsert: false })
+  if (uploadError || !prepared?.token) return NextResponse.json({ error: uploadError?.message || 'Voiceover upload could not be prepared' }, { status: 500 })
+  return NextResponse.json({ path, token: prepared.token, bucket: DOCUMENTS_BUCKET, mimeType }, { status: 201 })
 }
 
 export async function GET(req: NextRequest) {

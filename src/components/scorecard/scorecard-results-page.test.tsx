@@ -47,6 +47,14 @@ const completedCall = {
 describe('ScorecardResultsPage', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('opens on Needs Review by default', () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ recordings: [], viewerEmail: 'ernest@savingkc.com' }) }))
+    render(<ScorecardResultsPage />)
+
+    expect(screen.getByRole('tab', { name: 'Needs Review' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Reviewed' })).toHaveAttribute('aria-selected', 'false')
+  })
+
   it('reopens a reviewed call and moves the operator to the grading queue', async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       if (init?.method === 'PATCH') {
@@ -57,6 +65,8 @@ describe('ScorecardResultsPage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(<ScorecardResultsPage />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Reviewed' }))
 
     const owner = await screen.findByText('Gunner Byrd')
     const row = owner.closest('tr')

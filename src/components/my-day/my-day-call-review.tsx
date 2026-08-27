@@ -2,14 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { CallReviewAudioPlayer, finiteSeconds, formatPlaybackTime } from '@/components/call-review/call-review-audio-player'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
+import { readCallReviewResponse, uploadCallReviewVoiceover } from '@/lib/call-review-voiceover-client'
 import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
 import type { ReviewCall, Workflow } from './my-day-call-review.types'
 
 type QueueView = 'assigned' | 'completed'
 type ReviewMode = 'idle' | 'call' | 'comment'
 const TEST_REVIEW_STORAGE_KEY = 'savingkc:test-scorecard-review'
+const MIN_REVIEW_RECORDING_BYTES = 128
 
 function testCall(viewerEmail: string, savedWorkflow?: Workflow | null): ReviewCall {
   const framework = getCallReviewFramework('junior_acquisitions')
@@ -54,7 +57,7 @@ function savedTestWorkflow() {
 }
 
 function formatDuration(seconds: number) {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  return formatPlaybackTime(seconds)
 }
 
 function reviewRecordingUrl(call: ReviewCall) {
@@ -286,6 +289,8 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     setVoiceoverBlob(null)
     if (voiceoverUrl) URL.revokeObjectURL(voiceoverUrl)
     setVoiceoverUrl(null)
+    setCallPosition(0)
+    setCallDuration(finiteSeconds(call.durationSeconds))
   }
 
   async function retryAiScore(call: ReviewCall) {
@@ -317,7 +322,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     try {
       const callAudio = originalAudioRef.current
       if (!callAudio) throw new Error('Call audio is unavailable.')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
       const AudioContextConstructor = window.AudioContext
       const context = audioContextRef.current || new AudioContextConstructor()
       audioContextRef.current = context
@@ -331,7 +336,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       const callGain = context.createGain()
       const microphoneGain = context.createGain()
       callGain.gain.value = 0.82
-      microphoneGain.gain.value = 0
+      microphoneGain.gain.value = 1
       const microphoneSource = context.createMediaStreamSource(stream)
       callSourceRef.current.connect(callGain).connect(destination)
       microphoneSource.connect(microphoneGain).connect(destination)
@@ -340,7 +345,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       microphoneGainRef.current = microphoneGain
 
       const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) => MediaRecorder.isTypeSupported(type))
-      const recorder = new MediaRecorder(destination.stream, preferredType ? { mimeType: preferredType } : undefined)
+      const recorder = new MediaRecorder(destination.stream, preferredType ? { mimeType: preferredType, audioBitsPerSecond: 32_000 } : { audioBitsPerSecond: 32_000 })
       const chunks: Blob[] = []
       recorder.ondataavailable = (event) => {
         if (event.data.size) chunks.push(event.data)
@@ -349,11 +354,21 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
         const blob = new Blob(chunks, {
           type: recorder.mimeType || 'audio/webm',
         })
-        setVoiceoverBlob(blob)
-        setVoiceoverUrl((current) => {
-          if (current) URL.revokeObjectURL(current)
-          return URL.createObjectURL(blob)
-        })
+        if (blob.size < MIN_REVIEW_RECORDING_BYTES) {
+          console.warn('[call-review] Browser returned an empty coaching recording', { bytes: blob.size, chunks: chunks.length })
+          setVoiceoverBlob(null)
+          setVoiceoverUrl((current) => {
+            if (current) URL.revokeObjectURL(current)
+            return null
+          })
+          setError('No coaching audio was captured. Check the microphone, then record the review again.')
+        } else {
+          setVoiceoverBlob(blob)
+          setVoiceoverUrl((current) => {
+            if (current) URL.revokeObjectURL(current)
+            return URL.createObjectURL(blob)
+          })
+        }
         stream.getTracks().forEach((track) => track.stop())
         mixNodesRef.current.forEach((node) => node.disconnect())
         mixNodesRef.current = []
@@ -367,7 +382,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       }
       streamRef.current = stream
       recorderRef.current = recorder
-      recorder.start(1000)
+      recorder.start(250)
       setRecordingVoiceover(true)
       setReviewMode('call')
       setReviewElapsed(0)
@@ -390,9 +405,17 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     }
   }
 
-  function stopVoiceover() {
+  async function stopVoiceover() {
     originalAudioRef.current?.pause()
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+    const recorder = recorderRef.current
+    if (recorder?.state !== 'recording') return
+    try {
+      recorder.requestData()
+      await new Promise((resolve) => window.setTimeout(resolve, 100))
+    } catch {
+      // Some Safari MediaRecorder implementations do not support requestData reliably.
+    }
+    if (recorder.state === 'recording') recorder.stop()
   }
 
   function pauseAndComment() {
@@ -403,7 +426,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
   }
 
   async function resumeCall() {
-    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime)
+    if (microphoneGainRef.current && audioContextRef.current) microphoneGainRef.current.gain.setValueAtTime(1, audioContextRef.current.currentTime)
     if (callGainRef.current && audioContextRef.current) callGainRef.current.gain.setValueAtTime(0.82, audioContextRef.current.currentTime)
     setReviewMode('call')
     await originalAudioRef.current?.play()
@@ -461,18 +484,9 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
         let voiceoverPath: string | null = null
         let voiceoverMimeType: string | null = null
         if (voiceoverBlob) {
-          const form = new FormData()
-          form.set('activityId', call.id)
-          form.set('file', new File([voiceoverBlob], `coaching-voiceover.${voiceoverBlob.type.includes('mp4') ? 'm4a' : 'webm'}`, { type: voiceoverBlob.type }))
-          const uploadResponse = await fetch('/api/marketing/call-review-voiceover', { method: 'POST', body: form })
-          const uploadPayload = (await uploadResponse.json()) as {
-            error?: string
-            path?: string
-            mimeType?: string
-          }
-          if (!uploadResponse.ok || !uploadPayload.path) throw new Error(uploadPayload.error || 'Coaching voiceover could not be attached.')
-          voiceoverPath = uploadPayload.path
-          voiceoverMimeType = uploadPayload.mimeType || voiceoverBlob.type
+          const uploaded = await uploadCallReviewVoiceover(call.id, voiceoverBlob)
+          voiceoverPath = uploaded.path
+          voiceoverMimeType = uploaded.mimeType
         }
         const response = await fetch('/api/marketing/call-recordings', {
           method: 'PATCH',
@@ -487,10 +501,10 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
             voiceoverMimeType,
           }),
         })
-        const payload = (await response.json()) as {
+        const payload = await readCallReviewResponse<{
           error?: string
           workflow?: Workflow
-        }
+        }>(response, 'Scorecard returned an invalid response.')
         if (!response.ok || !payload.workflow) throw new Error(payload.error || 'Scorecard could not be saved.')
         workflow = payload.workflow
       }
@@ -586,7 +600,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       </section>
       {viewingCompleted ? <CompletedScorecardOverlay call={viewingCompleted} onClose={() => setViewingCompleted(null)} /> : null}
       {reviewing && framework ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60">
+        <div className="fixed inset-0 z-[70] flex justify-end bg-black/60">
           <section role="dialog" aria-modal="true" aria-labelledby="scorecard-title" className="h-full w-full max-w-[760px] overflow-y-auto bg-[var(--crm-surface)] p-5 shadow-2xl">
             <div className="flex justify-between">
               <div>
@@ -607,13 +621,15 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                 {reviewing.reviewWorkflow.submittedBy ? <p className="mt-2 text-[10px] font-bold text-[var(--crm-text-muted)]">Submitted by {reviewing.reviewWorkflow.submittedBy}</p> : null}
               </div>
             ) : null}
-            <audio ref={originalAudioRef} controls={!recordingVoiceover} src={reviewing.recordingUrl} onTimeUpdate={(event) => setCallPosition(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setCallDuration(event.currentTarget.duration)} onEnded={handleCallEnded} className="mt-4 w-full" />
+            <div className="mt-4">
+              <CallReviewAudioPlayer audioRef={originalAudioRef} src={reviewing.recordingUrl} knownDuration={reviewing.durationSeconds} onPositionChange={setCallPosition} onDurationChange={setCallDuration} onEnded={handleCallEnded} />
+            </div>
             {recordingVoiceover ? (
               <div className="mt-3 rounded-xl border border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-black text-[var(--crm-brand)]">Review Mode</p>
-                    <p className="mt-1 text-[11px] text-[var(--crm-text-muted)]">{reviewMode === 'call' ? 'The seller call is playing. Your microphone is muted.' : 'The call is paused. Your coaching commentary is recording.'}</p>
+                    <p className="mt-1 text-[11px] text-[var(--crm-text-muted)]">{reviewMode === 'call' ? 'The seller call and your microphone are both recording.' : 'The call is paused. Your coaching commentary is recording.'}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Review recording</p>
@@ -625,7 +641,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                 <div className="mt-4 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">
                   <span>Call position</span>
                   <span>
-                    {formatDuration(Math.floor(callPosition))} / {formatDuration(Math.floor(callDuration || 0))}
+                    {formatDuration(callPosition)} / {formatDuration(callDuration || reviewing.durationSeconds)}
                   </span>
                 </div>
                 <input
@@ -654,7 +670,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                       Resume Call
                     </button>
                   )}
-                  <button type="button" onClick={stopVoiceover} className="crm-secondary-button inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black">
+                  <button type="button" onClick={() => void stopVoiceover()} className="crm-secondary-button inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black">
                     <Icon name="stop_circle" />
                     Finish Review
                   </button>
