@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { CallReviewAudioPlayer, finiteSeconds, formatPlaybackTime } from '@/components/call-review/call-review-audio-player'
 import { CALL_SCORE_RUBRIC, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
-import { monitorMicrophoneSignal, REVIEW_AUDIO_BITS_PER_SECOND, REVIEW_CALL_GAIN, REVIEW_MICROPHONE_CONSTRAINTS, REVIEW_MICROPHONE_GAIN } from '@/lib/call-review-audio-capture'
+import { monitorMicrophoneSignal, primeCallReviewAudio, resetPrimedCallReviewAudio, REVIEW_AUDIO_BITS_PER_SECOND, REVIEW_CALL_GAIN, REVIEW_MICROPHONE_CONSTRAINTS, REVIEW_MICROPHONE_GAIN, startPrimedCallReviewAudio } from '@/lib/call-review-audio-capture'
 import { blobAsDataUrl, readCallReviewResponse, uploadCallReviewVoiceover } from '@/lib/call-review-voiceover-client'
 import { readPreviewCallReviewQueue, readPreviewCallReviewResult, savePreviewCallReviewResult } from '@/lib/call-review-preview-queue'
 import type { ReviewCall, Workflow } from './my-day-call-review.types'
@@ -318,12 +318,13 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
     try {
       const callAudio = originalAudioRef.current
       if (!callAudio) throw new Error('Call audio is unavailable.')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: REVIEW_MICROPHONE_CONSTRAINTS })
-      if (!stream.getAudioTracks().some((track) => track.readyState === 'live')) throw new Error('Microphone stream is not live.')
       const AudioContextConstructor = window.AudioContext
       const context = audioContextRef.current || new AudioContextConstructor()
       audioContextRef.current = context
       if (context.state === 'suspended') await context.resume()
+      await primeCallReviewAudio(callAudio)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: REVIEW_MICROPHONE_CONSTRAINTS })
+      if (!stream.getAudioTracks().some((track) => track.readyState === 'live')) throw new Error('Microphone stream is not live.')
       if (!callSourceRef.current) {
         callSourceRef.current = context.createMediaElementSource(callAudio)
         callSourceRef.current.connect(context.destination)
@@ -393,9 +394,9 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
         reviewTimerRef.current = window.setTimeout(updateReviewElapsed, 250)
       }
       reviewTimerRef.current = window.setTimeout(updateReviewElapsed, 250)
-      callAudio.currentTime = 0
-      await callAudio.play()
+      startPrimedCallReviewAudio(callAudio)
     } catch (reason) {
+      if (originalAudioRef.current) resetPrimedCallReviewAudio(originalAudioRef.current)
       stopMicrophoneMonitorRef.current?.()
       stopMicrophoneMonitorRef.current = null
       if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
@@ -404,7 +405,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
       setReviewMode('idle')
       if (reviewTimerRef.current !== null) window.clearTimeout(reviewTimerRef.current)
       reviewTimerRef.current = null
-      setError(reason instanceof Error && (reason.message === 'Call audio is unavailable.' || reason.message === 'Microphone stream is not live.') ? reason.message : 'Microphone access and playable call audio are required to start Review Mode.')
+      setError(reason instanceof Error && ['Call audio is unavailable.', 'Seller call audio could not be loaded.', 'Microphone stream is not live.'].includes(reason.message) ? reason.message : 'Microphone access and playable call audio are required to start Review Mode.')
     }
   }
 

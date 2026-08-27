@@ -10,6 +10,30 @@ export const REVIEW_MICROPHONE_CONSTRAINTS: MediaTrackConstraints = {
   noiseSuppression: false,
 }
 
+export async function primeCallReviewAudio(audio: HTMLAudioElement) {
+  audio.currentTime = 0
+  audio.loop = true
+  audio.muted = true
+  try {
+    await audio.play()
+  } catch {
+    resetPrimedCallReviewAudio(audio)
+    throw new Error('Seller call audio could not be loaded.')
+  }
+}
+
+export function startPrimedCallReviewAudio(audio: HTMLAudioElement) {
+  audio.currentTime = 0
+  audio.loop = false
+  audio.muted = false
+}
+
+export function resetPrimedCallReviewAudio(audio: HTMLAudioElement) {
+  audio.pause()
+  audio.loop = false
+  audio.muted = false
+}
+
 const MINIMUM_MICROPHONE_RMS = 0.006
 
 export function monitorMicrophoneSignal(analyser: AnalyserNode, onLevel: (level: number) => void) {
