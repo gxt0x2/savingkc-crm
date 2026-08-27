@@ -51,10 +51,20 @@ const PUBLIC_API_PREFIXES = [
 const TRUSTED_BEARER_API_PREFIXES = [
   '/api/admin/',
   '/api/eod',
-  '/api/cron/',
 ]
 
 const TRUSTED_BEARER_API_EXACT = new Set([
+  // Cron routes are exact-listed so a newly added scheduled endpoint cannot
+  // inherit service-bearer trust before its handler authorization is reviewed.
+  '/api/cron/data-retention',
+  '/api/cron/google-ads-missed-calls',
+  '/api/cron/google-ads-reporting-sync',
+  '/api/cron/openai-ads-reporting-sync',
+  '/api/cron/process-mojo-queue',
+  '/api/cron/sweep-briefings',
+  '/api/cron/sync-gmail',
+  '/api/cron/sync-gmail/trigger',
+  '/api/cron/sync-mojo-emails',
   '/api/deals/import-photos',
   '/api/deals/upload',
   // Enrichment is intentionally exact-listed so adding a new route under the
