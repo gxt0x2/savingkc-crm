@@ -317,7 +317,9 @@ export class CountyEnrichmentService {
             }
             sqft = parseInt(getAPR('sfla') || '0') || undefined
             bedrooms = parseInt(getAPR('bedrooms') || '0') || undefined
-            bathrooms = parseInt(getAPR('full_baths') || '0') || undefined
+            const fullBaths = parseInt(getAPR('full_baths') || '0') || 0
+            const halfBaths = parseInt(getAPR('half_baths') || '0') || 0
+            bathrooms = fullBaths || halfBaths ? fullBaths + (halfBaths ? 0.5 * halfBaths : 0) : undefined
             propertyType = getAPR('PropTypeCode') || undefined  // SF, MH, etc.
             propertyStyle = getAPR('Style_desc') || undefined
             basementDesc = getAPR('basement_desc') || undefined
@@ -1456,7 +1458,15 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
     if (c?.includes('platte city') || c?.includes('parkville') || c?.includes('weston') || c?.includes('riverside') || c?.includes('weatherby lake') || c?.includes('platte woods') || c?.includes('camden point') || c?.includes('edgerton') || c?.includes('tracy')) return { county: 'Platte', state: 'MO' }
   }
   if (s === 'KS') {
-    if (c?.includes('overland park') || c?.includes('olathe') || c?.includes('shawnee') || c?.includes('lenexa') || c?.includes('leawood') || c?.includes('prairie village') || c?.includes('merriam') || c?.includes('gardner')) return { county: 'Johnson', state: 'KS' }
+    if (
+      c?.includes('overland park') || c?.includes('olathe') || c?.includes('shawnee') ||
+      c?.includes('lenexa') || c?.includes('leawood') || c?.includes('prairie village') ||
+      c?.includes('merriam') || c?.includes('gardner') || c?.includes('de soto') ||
+      c?.includes('edgerton') || c?.includes('spring hill') || c?.includes('stilwell') ||
+      c?.includes('roeland park') || c?.includes('fairway') || c?.includes('westwood') ||
+      c?.includes('lake quivira') || c?.includes('mission hills') || c?.includes('mission woods') ||
+      c === 'mission'
+    ) return { county: 'Johnson', state: 'KS' }
     if (c?.includes('kansas city') || c?.includes('bonner springs') || c?.includes('edwardsville')) return { county: 'Wyandotte', state: 'KS' }
   }
   if (zip) {
@@ -1469,7 +1479,9 @@ export function detectCounty(city?: string, state?: string, zip?: string): { cou
     if ((z >= 64150 && z <= 64154) || z === 64079 || z === 64083 || z === 64098) return { county: 'Platte', state: 'MO' }
     // Jackson County, MO: Kansas City metro + eastern cities (Independence, Blue Springs, Lee's Summit, Raytown, Grandview, Summit)
     if ((z >= 64012 && z <= 64089) || (z >= 64101 && z <= 64199)) return { county: 'Jackson', state: 'MO' }
-    if (z >= 66200 && z <= 66299) return { county: 'Johnson', state: 'KS' }
+    // Johnson County KS includes 662xx plus western/southern cities (De Soto 66018, Gardner, Spring Hill, Stilwell, Olathe 66061/66062).
+    const johnsonKsZips = new Set([66013, 66018, 66019, 66021, 66030, 66031, 66061, 66062, 66083, 66085])
+    if (johnsonKsZips.has(z) || (z >= 66200 && z <= 66299)) return { county: 'Johnson', state: 'KS' }
     if (z >= 66100 && z <= 66119) return { county: 'Wyandotte', state: 'KS' }
   }
   return null
@@ -1504,12 +1516,15 @@ export function parseAddressForCounty(address: string): {
   // Fallback: detect known KC metro city names embedded in address
   if (!city) {
     const knownCities = [
+      'north kansas city', 'overland park', 'prairie village', 'mission hills',
+      'mission woods', 'roeland park', 'lake quivira', 'spring hill',
+      'bonner springs', "lee's summit", 'lees summit', 'excelsior springs',
       'kansas city', 'independence', 'blue springs', 'raytown',
-      'grandview', 'liberty', 'kearney', 'smithville', 'excelsior springs',
-      'north kansas city', 'overland park', 'olathe', 'shawnee',
-      'lenexa', 'leawood', 'prairie village', 'merriam', 'gardner',
-      'bonner springs', 'edwardsville', "lee's summit", 'lees summit',
-      'gladstone', 'belton', 'raymore', 'peculiar', 'pleasant hill',
+      'grandview', 'liberty', 'kearney', 'smithville',
+      'olathe', 'shawnee', 'lenexa', 'leawood', 'merriam', 'gardner',
+      'edwardsville', 'gladstone', 'belton', 'raymore', 'peculiar',
+      'pleasant hill', 'de soto', 'edgerton', 'stilwell', 'fairway',
+      'westwood', 'mission',
     ]
     const lower = address.toLowerCase()
     for (const c of knownCities) {

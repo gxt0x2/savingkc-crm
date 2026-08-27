@@ -7,6 +7,7 @@ function retiredResponse() {
     error: 'The Manifest-based lead reprocessing pipeline is retired. Use canonical workers and reconciliation reports.',
     code: 'manifest_lead_reprocess_retired',
     replacements: [
+      '/api/leads/[id]/reenrich',
       '/api/workers/property-enrichment',
       '/api/cron/process-mojo-queue',
       '/api/reports/operational-reconciliation',
