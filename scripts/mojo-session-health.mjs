@@ -40,7 +40,16 @@ export function loadMojoEnv(extraCandidates = []) {
     const envPath = path.isAbsolute(candidate) ? candidate : path.resolve(process.cwd(), candidate)
     if (!fs.existsSync(envPath)) continue
 
-    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/)
+    let contents
+    try {
+      contents = fs.readFileSync(envPath, 'utf8')
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : 'read_failed'
+      console.warn(`[mojo-session] Skipping unreadable env candidate ${envPath}: ${code}`)
+      continue
+    }
+
+    const lines = contents.split(/\r?\n/)
     for (const line of lines) {
       const parsed = parseEnvLine(line)
       if (!parsed) continue
