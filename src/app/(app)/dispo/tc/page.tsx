@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { AssignmentPreviewModal } from '@/components/dispo/assignment-preview-modal'
 import { DocusealUnavailableNotice, useDocusealAvailability } from '@/components/dispo/docuseal-availability'
 import { DispoPageHeader, DispoWorkspaceTabs, NextStepCard } from '@/components/dispo/workspace-ui'
+import { DealFileLedger } from '@/components/dispo/deal-file-ledger'
 import { TcHandoffStrip } from '@/components/dispo/tc-handoff-strip'
 import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/hooks/use-auth'
@@ -56,7 +57,6 @@ const DETAIL_TABS = [
 ] as const
 
 type DetailTab = (typeof DETAIL_TABS)[number]['key']
-
 type TcPageView = 'files' | 'communications' | 'docs' | 'tasks' | 'reports'
 
 const TC_PAGE_TABS: { key: TcPageView; label: string; href: string; icon: string }[] = [
@@ -747,7 +747,7 @@ function DetailDrawer({
             <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 marker:content-none">
               <Icon name="tune" size="text-base" className="text-[var(--crm-brand)]" />
               <span className="flex-1 text-sm font-black text-[var(--crm-ink)]">File details</span>
-              <span className="text-xs font-semibold text-[var(--crm-text-muted)]">Status, dates, fee</span>
+              <span className="text-xs font-semibold text-[var(--crm-text-muted)]">Status, dates, ledger</span>
               <Icon name="expand_more" size="text-lg" className="text-[var(--crm-text-muted)] transition-transform group-open:rotate-180" />
             </summary>
             <div className="border-t border-[var(--crm-border)] p-4">
@@ -771,7 +771,7 @@ function DetailDrawer({
                 <input type="number" value={assignmentFee} onChange={(e) => setAssignmentFee(e.target.value)} className={fieldClass} />
               </label>
               </div>
-
+              <DealFileLedger leadId={file.lead_id} fileNumber={file.file_number} />
               <label className="mt-3 block space-y-1">
                 <span className={fieldLabelClass}>Next Action</span>
                 <textarea value={nextAction} onChange={(e) => setNextAction(e.target.value)} rows={3} className={cn(fieldClass, 'resize-none')} />
