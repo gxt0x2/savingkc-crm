@@ -85,6 +85,9 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/workers/prospecting-campaigns',
   '/api/workers/sms-sender',
   '/api/workers/workflow-runs',
+  // Deal File ledger is exact-listed so Treasury/Close can post and read
+  // lines with a trusted bearer without inheriting trust for lookalike routes.
+  '/api/deal-ledger',
 ])
 
 const HEALTH_CHECK_PATHS = new Set([
