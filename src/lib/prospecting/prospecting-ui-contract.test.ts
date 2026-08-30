@@ -14,6 +14,7 @@ const contextNavigation = readFileSync(join(process.cwd(), 'src/components/conve
 const dialerPage = readFileSync(join(process.cwd(), 'src/app/(app)/dialer/page.tsx'), 'utf8')
 const prospectingPage = readFileSync(join(process.cwd(), 'src/app/(app)/prospecting/page.tsx'), 'utf8')
 const callingFloor = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-floor.tsx'), 'utf8')
+const callingRail = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-context-rail.tsx'), 'utf8')
 const sessionSetup = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-session-setup.tsx'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
@@ -97,5 +98,13 @@ describe('prospecting workspace UI contract', () => {
     expect(callingFloor).toContain('payload.coOwners')
     expect(callingFloor).not.toContain('loadDialerLeadContext')
     expect(callingFloor).not.toContain('currentManifest')
+  })
+
+  it('shows owner MI, suffix, and unit cells next to first, last, and street', () => {
+    expect(callingFloor).toContain('formatOwnerDisplayName')
+    expect(callingRail).toContain('ProspectOwnerNameFields')
+    expect(callingRail).toContain('ProspectAddressFields')
+    expect(callingRail).toContain('Situs address cells')
+    expect(callingRail).toContain('Mailing address cells')
   })
 })
