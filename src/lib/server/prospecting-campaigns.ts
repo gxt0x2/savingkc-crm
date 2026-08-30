@@ -334,6 +334,28 @@ export async function enrollCountyProspectingCampaignMembers(
   return data as { requested: number; subjects: number; eligible: number; needsReview: number; suppressed: number; missing: number }
 }
 
+export async function enrollCountyProspectingCampaignMembersByIds(
+  actor: AuthenticatedActor,
+  campaignId: string,
+  input: { parcelIds: string[]; reviewedCount: number },
+) {
+  if (!Number.isInteger(input.reviewedCount) || input.reviewedCount < 1 || input.reviewedCount > 25_000) {
+    throw new ProspectingCampaignError('invalid_county_audience', 400, 'Review a non-empty Jackson parcel list')
+  }
+  if (input.reviewedCount !== input.parcelIds.length) {
+    throw new ProspectingCampaignError('county_audience_changed', 409, 'The county Saved View changed after review. Refresh it and confirm the current audience')
+  }
+  const { data, error } = await supabase.rpc('enroll_county_prospecting_campaign_members_by_ids_v1', {
+    p_campaign_id: campaignId,
+    p_actor_email: actor.email,
+    p_actor_name: actor.name,
+    p_parcel_ids: input.parcelIds,
+    p_reviewed_count: input.reviewedCount,
+  })
+  if (error) throw databaseError(error)
+  return data as { requested: number; subjects: number; eligible: number; needsReview: number; suppressed: number; missing: number }
+}
+
 export async function removeProspectingCampaignMember(actor: AuthenticatedActor, campaignId: string, memberId: string) {
   if (!/^[0-9a-f-]{36}$/i.test(campaignId) || !/^[0-9a-f-]{36}$/i.test(memberId)) {
     throw new ProspectingCampaignError('invalid_campaign_member', 400, 'Campaign contact is invalid')

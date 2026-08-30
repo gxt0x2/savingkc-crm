@@ -7,7 +7,9 @@ import {
   isWithinProspectingWindow,
   nextProspectingWindow,
   parseCreateProspectingCampaignInput,
+  parseCountyParcelIds,
   parseLeadIds,
+  parsePastedCountyParcelIds,
   parseProspectingDialerSessionSetup,
   renderProspectingTemplate,
 } from './campaign-contract'
@@ -127,6 +129,13 @@ describe('prospecting campaign contract', () => {
     const id = '11111111-1111-4111-8111-111111111111'
     expect(() => parseLeadIds([id, id])).toThrow(/valid contacts/)
     expect(() => parseLeadIds(['not-a-uuid'])).toThrow(/valid contacts/)
+  })
+
+  it('accepts a unique pasted Jackson parcel list and rejects a drifted set', () => {
+    expect(parsePastedCountyParcelIds('SYN-JACKSON-PARCEL-0001\nSYN-JACKSON-PARCEL-0002, SYN-JACKSON-PARCEL-0001'))
+      .toEqual(['SYN-JACKSON-PARCEL-0001', 'SYN-JACKSON-PARCEL-0002'])
+    expect(() => parseCountyParcelIds(['SYN-JACKSON-PARCEL-0001', 'SYN-JACKSON-PARCEL-0001'])).toThrow(/unique Jackson parcel/)
+    expect(() => parseCountyParcelIds([])).toThrow(/unique Jackson parcel/)
   })
 
   it('checks the member timezone instead of the server timezone', () => {

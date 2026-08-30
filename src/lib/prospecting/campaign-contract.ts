@@ -409,6 +409,27 @@ export function parseLeadIds(value: unknown, maximum = 1000): string[] {
   return ids
 }
 
+export const MAX_COUNTY_PARCEL_IDS = 25_000
+
+export function parseCountyParcelIds(value: unknown, maximum = MAX_COUNTY_PARCEL_IDS): string[] {
+  if (!Array.isArray(value)) {
+    throw new ProspectingCampaignInputError('invalid_county_audience', 'Paste at least one Jackson parcel ID')
+  }
+  const ids = Array.from(new Set(value.flatMap((item) => {
+    const parcelId = typeof item === 'string' ? item.trim() : ''
+    return parcelId && parcelId.length <= 80 ? [parcelId] : []
+  })))
+  if (ids.length < 1 || ids.length > maximum || ids.length !== value.length) {
+    throw new ProspectingCampaignInputError('invalid_county_audience', `Review between 1 and ${maximum.toLocaleString()} unique Jackson parcel IDs`)
+  }
+  return ids
+}
+
+export function parsePastedCountyParcelIds(value: string, maximum = MAX_COUNTY_PARCEL_IDS): string[] {
+  const unique = Array.from(new Set(value.split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean)))
+  return parseCountyParcelIds(unique, maximum)
+}
+
 type CampaignWindow = {
   timezone: string
   sendWindowStart: string
