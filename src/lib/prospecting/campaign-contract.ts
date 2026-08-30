@@ -119,6 +119,39 @@ export interface CreateProspectingCampaignInput {
   steps: ProspectingCampaignStepInput[]
 }
 
+type ProspectingDialerPickerCampaign = {
+  id?: string
+  name: string
+  kind: string
+  status: string
+}
+
+export function isProspectingPilotCampaign(campaign: Pick<ProspectingDialerPickerCampaign, 'name' | 'kind'>): boolean {
+  return campaign.name.toLowerCase().includes('pilot') || campaign.kind.toLowerCase() === 'pilot'
+}
+
+export function isProspectingDialerPickerCampaign(campaign: ProspectingDialerPickerCampaign): boolean {
+  return campaign.status !== 'draft' && !isProspectingPilotCampaign(campaign)
+}
+
+export function prospectingDialerPickerCampaigns<T extends ProspectingDialerPickerCampaign>(campaigns: T[]): T[] {
+  return campaigns.filter(isProspectingDialerPickerCampaign)
+}
+
+export function prospectingDialerPickerLabel(campaign: Pick<ProspectingDialerPickerCampaign, 'name'>): string {
+  return campaign.name
+}
+
+export function preferredProspectingDialerPickerCampaignId(
+  campaigns: Array<Pick<ProspectingDialerPickerCampaign, 'id' | 'name' | 'kind' | 'status'> & { id: string }>,
+  currentId?: string | null,
+  requestedId?: string | null,
+): string | null {
+  if (currentId && campaigns.some((campaign) => campaign.id === currentId)) return currentId
+  if (requestedId && campaigns.some((campaign) => campaign.id === requestedId)) return requestedId
+  return campaigns.find(isProspectingDialerPickerCampaign)?.id ?? campaigns[0]?.id ?? null
+}
+
 export interface ProspectingCampaignSummary {
   id: string
   name: string

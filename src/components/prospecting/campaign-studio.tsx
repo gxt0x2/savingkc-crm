@@ -207,8 +207,8 @@ export function CampaignStudio({
             <div className="grid gap-4 lg:grid-cols-2">
               <label className="crm-panel rounded-2xl p-5 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Campaign name</span>
-                <input required maxLength={120} value={form.name} onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))} placeholder="September absentee owners" className="crm-field mt-2 h-12 w-full rounded-xl px-4 text-base font-bold" autoFocus />
-                <span className="mt-2 block text-xs text-[var(--crm-text-muted)]">Use a name the team will recognize in history and reporting.</span>
+                <input required maxLength={120} value={form.name} onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))} placeholder="Casey · Jackson · Tax 3+ · 7 zips · Aug 30" className="crm-field mt-2 h-12 w-full rounded-xl px-4 text-base font-bold" autoFocus />
+                <span className="mt-2 block text-xs text-[var(--crm-text-muted)]">Casey · county · list · cut · Aug 30. County stays in the name. Use a short date, not 2026-08-30. Status stays on the badge.</span>
               </label>
               <button type="button" onClick={() => onChange((current) => ({ ...current, kind: 'dialer' }))} className={`crm-panel group rounded-2xl border-2 p-5 text-left transition ${form.kind === 'dialer' ? 'border-[var(--crm-brand)] shadow-[0_10px_30px_rgba(52,78,48,0.12)]' : 'border-transparent hover:border-[var(--crm-border)]'}`}>
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="phone_in_talk" className="text-2xl" /></span>

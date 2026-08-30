@@ -8,7 +8,7 @@ import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
 import { Icon } from '@/components/ui/icon'
 import { parseStoredProspectingAudienceSelection, PROSPECTING_AUDIENCE_STORAGE_KEY, type ProspectingAudienceSelection } from '@/lib/prospecting/audience-handoff'
-import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
+import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, preferredProspectingDialerPickerCampaignId, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
 const CAMPAIGN_LIVE_REFRESH_MS = 15000
@@ -49,7 +49,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const loadCampaigns = useCallback(async () => {
     const page = await jsonRequest<CampaignPage>('/api/prospecting/campaigns?limit=50')
     setCampaigns(page.items)
-    setSelectedId((current) => current || initialCampaignId || page.items[0]?.id || null)
+    setSelectedId((current) => preferredProspectingDialerPickerCampaignId(page.items, current, initialCampaignId))
   }, [initialCampaignId])
 
   const loadDetail = useCallback(async (id: string, background = false) => {
