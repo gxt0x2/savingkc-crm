@@ -237,5 +237,6 @@ export function resolveMailingDisplay(
 
 export function joinOwnerAddress(parts: OwnerAddressDisplay): string {
   const streetLine = [parts.street, parts.unit].filter(Boolean).join(' ')
-  return [streetLine, parts.city, parts.state, parts.zip].filter(Boolean).join(', ')
+  const cityStateZip = [parts.city, [parts.state, parts.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+  return [streetLine, cityStateZip].filter(Boolean).join(', ')
 }

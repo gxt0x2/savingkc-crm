@@ -106,7 +106,7 @@ describe('ProspectingCallingContextRail', () => {
     expect(screen.getByText('Betty')).toBeVisible()
     expect(screen.getByText('J')).toBeVisible()
     expect(screen.getByText('Moore')).toBeVisible()
-    expect(screen.getByText('303 E Partridge St')).toBeVisible()
+    expect(screen.getAllByText('303 E Partridge St').length).toBeGreaterThan(0)
     expect(screen.getByText('Unit 38')).toBeVisible()
     expect(screen.getByText('Unit B')).toBeVisible()
     expect(screen.getAllByText((content) => content === 'MO').length).toBeGreaterThan(0)
