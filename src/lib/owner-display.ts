@@ -56,7 +56,7 @@ const SUFFIX_BY_TOKEN: Record<string, string> = {
 
 const STREET_DIRECTIONALS = new Set(['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'])
 
-const UNIT_TRAILING_RE = /(?:,\s*|\s+)(?:(?<label>UNIT|APT|APARTMENT|STE|SUITE)\.?\s+|#\s*)(?<value>[A-Z0-9][A-Z0-9-]*)\s*$/i
+const UNIT_TRAILING_RE = /(?:,\s*|\s+)(?:(UNIT|APT|APARTMENT|STE|SUITE)\.?\s+|#\s*)([A-Z0-9][A-Z0-9-]*)\s*$/i
 
 function blankToNull(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null
@@ -140,18 +140,19 @@ export function parseStreetUnit(value: string | null | undefined): StreetUnitPar
   if (!clean) return { street: null, unit: null }
 
   const match = UNIT_TRAILING_RE.exec(clean)
-  if (!match?.groups?.value) {
+  const label = match?.[1] ?? null
+  const rawValue = match?.[2] ?? null
+  if (!match || !rawValue) {
     return { street: titleCaseStreet(clean), unit: null }
   }
 
   const street = titleCaseStreet(clean.slice(0, match.index))
-  const label = match.groups.label
-  const unitValue = match.groups.value.toUpperCase() === match.groups.value
-    ? toProperCase(match.groups.value)
-    : match.groups.value
+  const unitValue = rawValue.toUpperCase() === rawValue
+    ? toProperCase(rawValue)
+    : rawValue
   const unit = label
     ? `${toProperCase(label)} ${unitValue}`
-    : `#${match.groups.value}`
+    : `#${rawValue}`
   return { street, unit }
 }
 
