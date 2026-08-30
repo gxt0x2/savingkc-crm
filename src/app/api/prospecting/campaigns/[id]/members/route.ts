@@ -1,7 +1,7 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingError, prospectingJson } from '@/lib/api/prospecting-response'
-import { parseLeadIds } from '@/lib/prospecting/campaign-contract'
-import { enrollCountyProspectingCampaignMembers, enrollProspectingCampaignMembers, removeProspectingCampaignMember } from '@/lib/server/prospecting-campaigns'
+import { parseCountyParcelIds, parseLeadIds } from '@/lib/prospecting/campaign-contract'
+import { enrollCountyProspectingCampaignMembers, enrollCountyProspectingCampaignMembersByIds, enrollProspectingCampaignMembers, removeProspectingCampaignMember } from '@/lib/server/prospecting-campaigns'
 import { enrollProspectingAudienceSelection, parseProspectingAudienceSelection } from '@/lib/server/prospecting-audience-selection'
 import { CAMPAIGN_MEMBER_FILTERS, listProspectingCampaignMembers, type CampaignMemberFilter } from '@/lib/server/prospecting-campaign-members'
 
@@ -37,7 +37,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const countyAudience = body.countyAudience && typeof body.countyAudience === 'object' && !Array.isArray(body.countyAudience)
       ? body.countyAudience as Record<string, unknown>
       : null
-    const enrollment = countyAudience
+    const enrollment = countyAudience && Array.isArray(countyAudience.parcelIds)
+      ? await enrollCountyProspectingCampaignMembersByIds(actor, campaignId, {
+          parcelIds: parseCountyParcelIds(countyAudience.parcelIds),
+          reviewedCount: Number(countyAudience.reviewedCount),
+        })
+      : countyAudience
       ? await enrollCountyProspectingCampaignMembers(actor, campaignId, {
           savedView: String(countyAudience.savedView || '') as 'tax_2yr' | 'tax_3yr_plus',
           deceasedFilter: String(countyAudience.deceasedFilter || '') as 'all' | 'deceased' | 'non_deceased',
