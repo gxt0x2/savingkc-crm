@@ -111,6 +111,46 @@ async function mockCallingPreview(page: Page) {
   }))
 }
 
+test('live dialer picker hides draft and Pilot campaigns and omits status from the selected chip', async ({ page }) => {
+  const live = {
+    ...dialerCampaign,
+    id: '74609ed4-7e26-4111-b626-b2e3f68efa0b',
+    name: 'Casey · Jackson · Tax 3+ · 7 zips · Aug 30',
+  }
+  const pilot = {
+    ...dialerCampaign,
+    id: '5c45d2f7-c120-4477-bb1f-f04d69c4efdf',
+    name: 'County Tax Delinquent 2-Year — Pilot',
+  }
+  const draft = {
+    ...dialerCampaign,
+    id: '8d94a8d6-e3cd-4ab7-983c-44efcf8c92a2',
+    name: 'August Absentee',
+    status: 'draft',
+  }
+
+  await page.route('**/api/prospecting/campaigns**', (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith('/activity')) return fulfill(route, { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    if (pathname.endsWith('/members')) return fulfill(route, { items: live.members, pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    if (pathname.endsWith(live.id)) return fulfill(route, { campaign: live, capabilities: { writesEnabled: true } })
+    return fulfill(route, { items: [pilot, draft, live], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+  })
+
+  await page.goto(`/prospecting?campaign=${live.id}`, { waitUntil: 'domcontentloaded' })
+
+  const picker = page.getByRole('combobox', { name: 'Choose campaign' })
+  await expect(page.getByRole('heading', { name: live.name })).toBeVisible()
+  await expect(picker).toBeVisible()
+  await expect(picker).toHaveValue(live.id)
+  await expect(picker.locator('option')).toHaveCount(1)
+  await expect(picker.locator('option')).toHaveText(live.name)
+  await expect(picker).not.toContainText('active')
+  await expect(picker).not.toContainText('2026-08-30')
+  await expect(picker.getByRole('option', { name: /Pilot/ })).toHaveCount(0)
+  await expect(picker.getByRole('option', { name: draft.name })).toHaveCount(0)
+})
+
 test('Prospecting makes the agent calling workflow obvious and keeps management secondary', async ({ page }) => {
   await mockCampaigns(page)
   await page.goto(`/prospecting?campaign=${dialerCampaign.id}`, { waitUntil: 'domcontentloaded' })
