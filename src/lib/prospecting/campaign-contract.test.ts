@@ -143,7 +143,7 @@ describe('prospecting campaign contract', () => {
   })
 
   it('hides draft campaigns and names containing Pilot from the live dialer picker', () => {
-    const live = { id: '74609ed4-7e26-4111-b626-b2e3f68efa0b', name: 'Casey · Jackson · Tax 3+ · 7 zips · Aug 30', kind: 'dialer', status: 'active' }
+    const live = { id: '74609ed4-7e26-4111-b626-b2e3f68efa0b', name: 'Jackson · Tax 3+ · 7 zips · Aug 30', kind: 'dialer', status: 'active' }
     const pilot = { id: '5c45d2f7-c120-4477-bb1f-f04d69c4efdf', name: 'County Tax Delinquent 2-Year — Pilot', kind: 'dialer', status: 'active' }
     const draft = { id: '8d94a8d6-e3cd-4ab7-983c-44efcf8c92a2', name: 'August Absentee', kind: 'dialer', status: 'draft' }
 
@@ -151,7 +151,8 @@ describe('prospecting campaign contract', () => {
     expect(isProspectingDialerPickerCampaign(pilot)).toBe(false)
     expect(isProspectingDialerPickerCampaign(draft)).toBe(false)
     expect(prospectingDialerPickerCampaigns([pilot, draft, live])).toEqual([live])
-    expect(prospectingDialerPickerLabel(live)).toBe('Casey · Jackson · Tax 3+ · 7 zips · Aug 30')
+    expect(prospectingDialerPickerLabel(live)).toBe('Jackson · Tax 3+ · 7 zips · Aug 30')
+    expect(prospectingDialerPickerLabel(live)).not.toMatch(/Casey/i)
     expect(prospectingDialerPickerLabel(live)).not.toMatch(/active/i)
     expect(prospectingDialerPickerLabel(live)).not.toMatch(/\d{4}-\d{2}-\d{2}/)
     expect(preferredProspectingDialerPickerCampaignId([pilot, draft, live])).toBe(live.id)

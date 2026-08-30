@@ -115,7 +115,7 @@ test('live dialer picker hides draft and Pilot campaigns and omits status from t
   const live = {
     ...dialerCampaign,
     id: '74609ed4-7e26-4111-b626-b2e3f68efa0b',
-    name: 'Casey · Jackson · Tax 3+ · 7 zips · Aug 30',
+    name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
   }
   const pilot = {
     ...dialerCampaign,
@@ -145,6 +145,7 @@ test('live dialer picker hides draft and Pilot campaigns and omits status from t
   await expect(picker).toHaveValue(live.id)
   await expect(picker.locator('option')).toHaveCount(1)
   await expect(picker.locator('option')).toHaveText(live.name)
+  await expect(picker).not.toContainText('Casey')
   await expect(picker).not.toContainText('active')
   await expect(picker).not.toContainText('2026-08-30')
   await expect(picker.getByRole('option', { name: /Pilot/ })).toHaveCount(0)

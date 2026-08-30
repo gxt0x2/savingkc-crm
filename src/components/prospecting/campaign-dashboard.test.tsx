@@ -87,7 +87,7 @@ describe('CampaignDashboard', () => {
     const live: ProspectingCampaignSummary = {
       ...detail,
       id: '74609ed4-7e26-4111-b626-b2e3f68efa0b',
-      name: 'Casey · Jackson · Tax 3+ · 7 zips · Aug 30',
+      name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
       kind: 'dialer',
       callerId: '+18165550199',
       fromPhone: null,
@@ -99,13 +99,14 @@ describe('CampaignDashboard', () => {
     render(<CampaignDashboard campaigns={[pilot, draft, live]} selectedId={live.id} detail={liveDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
 
     const picker = screen.getByRole('combobox', { name: 'Choose campaign' })
-    expect(picker).toHaveDisplayValue('Casey · Jackson · Tax 3+ · 7 zips · Aug 30')
+    expect(picker).toHaveDisplayValue('Jackson · Tax 3+ · 7 zips · Aug 30')
+    expect(picker).not.toHaveTextContent(/Casey/i)
     expect(picker).not.toHaveTextContent(/active/i)
     expect(picker).not.toHaveTextContent(/2026-08-30/)
-    expect(screen.getByRole('option', { name: 'Casey · Jackson · Tax 3+ · 7 zips · Aug 30' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Jackson · Tax 3+ · 7 zips · Aug 30' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Pilot/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'August Absentee' })).not.toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Casey · Jackson · Tax 3+ · 7 zips · Aug 30' })).not.toHaveTextContent(/active/i)
+    expect(screen.getByRole('option', { name: 'Jackson · Tax 3+ · 7 zips · Aug 30' })).not.toHaveTextContent(/active/i)
   })
 
   it('changes the selected campaign from one compact control', () => {
