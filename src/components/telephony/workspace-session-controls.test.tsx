@@ -10,7 +10,6 @@ describe('WorkspaceSessionControls', () => {
     const onAction = vi.fn()
     render(<WorkspaceSessionControls status="active" callBusy={false} outcomeRequired={false} onAction={onAction} />)
 
-    expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Pause session' }))
     fireEvent.click(screen.getByRole('button', { name: 'Skip seller' }))
     fireEvent.click(screen.getByRole('button', { name: 'End session' }))
@@ -18,13 +17,13 @@ describe('WorkspaceSessionControls', () => {
     expect(onAction.mock.calls).toEqual([['pause'], ['skip'], ['end']])
   })
 
-  it('keeps hang up available in the rail for an active call', () => {
+  it('uses pause-and-hang-up as the only footer call interruption', () => {
     const onAction = vi.fn()
     render(<WorkspaceSessionControls status="active" callBusy outcomeRequired={false} onAction={onAction} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Hang up current call' }))
-    expect(onAction).toHaveBeenCalledWith('hangup')
-    expect(screen.getByRole('button', { name: 'Pause & hang up' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Hang up current call' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Pause & hang up' }))
+    expect(onAction).toHaveBeenCalledWith('pause')
   })
 
   it('resumes a paused session and blocks queue movement while an outcome is required', () => {
@@ -54,7 +53,6 @@ describe('WorkspaceSessionControls', () => {
     const onAction = vi.fn()
     render(<WorkspaceSessionControls status="active" callBusy outcomeRequired previewOnly onAction={onAction} />)
 
-    expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Pause & hang up' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()

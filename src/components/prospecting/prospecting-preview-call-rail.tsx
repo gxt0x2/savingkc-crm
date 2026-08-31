@@ -114,7 +114,10 @@ export function ProspectingPreviewCallRail({
           statusLabel={previewStatus}
         />
 
-        <WorkspaceDispositionControls outcomeRequired previewOnly />
+        <details className="rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-3">
+          <summary className="cursor-pointer text-xs font-black text-[var(--skc-text-secondary)]">Preview call-outcome state</summary>
+          <div className="mt-3"><WorkspaceDispositionControls outcomeRequired previewOnly /></div>
+        </details>
 
         <section aria-label="Preview session policy" className="rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-4 text-xs">
           <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--skc-text-tertiary)]">Session policy</p>

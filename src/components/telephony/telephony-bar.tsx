@@ -1441,7 +1441,7 @@ export function DialerPanel({
             />
           )}
 
-          {isWorkspace && pendingSessionId ? <WorkspaceDispositionControls
+          {isWorkspace && pendingSessionId && (outcomeRequired || Boolean(recoveryPending)) ? <WorkspaceDispositionControls
             dispositions={PROSPECTING_DIALER_DISPOSITIONS.filter((item) => queueItem?.leadId || item.id !== 'appointment_set')}
             outcomeRequired={outcomeRequired || Boolean(recoveryPending)}
             savingDisposition={workspaceDispositionSaving}

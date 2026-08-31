@@ -52,7 +52,7 @@ describe('WorkspaceCallController', () => {
     expect(screen.getByRole('heading', { name: 'Helen Seller' })).toBeVisible()
     expect(screen.getByText('(816) 555-0123')).toBeVisible()
     expect(screen.getByText('Calling from')).toBeVisible()
-    expect(screen.getByText('Campaign line')).toBeVisible()
+    expect(screen.getByText('Campaign')).toBeVisible()
     expect(screen.queryByText(/verified by the server before every call/i)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Call selected number' }))
     expect(onCall).toHaveBeenCalledOnce()
@@ -71,8 +71,8 @@ describe('WorkspaceCallController', () => {
       />,
     )
 
-    expect(screen.getByText('Rotation')).toBeVisible()
-    expect(screen.getByText('2 approved lines · rotates every 25 calls')).toBeVisible()
+    expect(screen.getByText('2 lines')).toBeVisible()
+    expect(screen.queryByText('2 approved lines · rotates every 25 calls')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connecting' })).toBeDisabled()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
@@ -96,8 +96,7 @@ describe('WorkspaceCallController', () => {
     expect(screen.queryByText('Campaign-assigned line · verified by the server before every call')).not.toBeInTheDocument()
   })
 
-  it('shows a visible first-call countdown with a one-click durable pause action', () => {
-    const onPauseAutoStart = vi.fn()
+  it('shows a visible first-call countdown without duplicating the persistent pause action', () => {
     render(
       <WorkspaceCallController
         autoStartCountdownSeconds={15}
@@ -106,7 +105,6 @@ describe('WorkspaceCallController', () => {
         dialReady={false}
         effectiveCallerId="+18163078735"
         onCall={vi.fn()}
-        onPauseAutoStart={onPauseAutoStart}
         queueItem={queueItem}
         statusLabel="Ready"
       />,
@@ -118,7 +116,7 @@ describe('WorkspaceCallController', () => {
     expect(screen.getByText('Helen Seller')).toBeVisible()
     expect(screen.getByText('(816) 555-0123')).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Call selected number' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Pause before first call' }))
-    expect(onPauseAutoStart).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Pause session below to stop the countdown.')).toBeVisible()
   })
 })

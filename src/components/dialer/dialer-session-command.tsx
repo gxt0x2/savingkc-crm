@@ -137,7 +137,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
           <div className="min-w-0 xl:max-w-[390px]">
             <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${isCalling ? 'animate-pulse bg-[var(--crm-success)]' : isPaused ? 'bg-[var(--crm-warning)]' : 'bg-[var(--crm-success)]'}`} /><p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">{props.queueLabel}</p></div>
             <div className="mt-1 flex items-baseline gap-2"><h1 className="truncate text-xl font-black tracking-[-0.03em]">{props.readOnlyPreview ? 'Calling workflow preview' : 'Calling session'}</h1><span className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{statusLabel}</span></div>
-            <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{props.callerPolicyLabel || (props.callerId ? `Assigned line ${formatPhone(props.callerId)}` : 'Caller ID unavailable')}</p>
+            {!props.controlsDocked ? <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{props.callerPolicyLabel || (props.callerId ? `Assigned line ${formatPhone(props.callerId)}` : 'Caller ID unavailable')}</p> : null}
           </div>
 
           <div aria-label="Session actions" className="flex flex-wrap items-center gap-2 xl:max-w-[860px] xl:justify-end">

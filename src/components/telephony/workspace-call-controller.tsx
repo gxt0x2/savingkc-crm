@@ -65,15 +65,15 @@ export function WorkspaceCallController({
         <div role="progressbar" aria-label="Time until first call" aria-valuemin={0} aria-valuemax={FIRST_DIAL_COUNTDOWN_SECONDS} aria-valuenow={FIRST_DIAL_COUNTDOWN_SECONDS - autoStartCountdownSeconds} className="mt-5 h-1.5 overflow-hidden rounded-full bg-[var(--skc-surface-3)]">
           <div className="h-full rounded-full bg-[#E32E2E] transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, ((FIRST_DIAL_COUNTDOWN_SECONDS - autoStartCountdownSeconds) / FIRST_DIAL_COUNTDOWN_SECONDS) * 100)}%` }} />
         </div>
-        <button type="button" onClick={onPauseAutoStart} className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-4 text-sm font-bold text-[var(--skc-text-primary)] hover:bg-[var(--skc-surface-2)]">
-          <Icon name={previewComplete ? 'replay' : countdownPaused ? 'play_arrow' : 'pause'} size="text-lg" /> {previewComplete ? 'Restart countdown' : countdownPaused ? 'Resume countdown' : 'Pause before first call'}
-        </button>
+        {previewOnly ? <button type="button" onClick={onPauseAutoStart} className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-4 text-sm font-bold text-[var(--skc-text-primary)] hover:bg-[var(--skc-surface-2)]">
+          <Icon name={previewComplete ? 'replay' : countdownPaused ? 'play_arrow' : 'pause_circle'} size="text-lg" /> {previewComplete ? 'Restart countdown' : countdownPaused ? 'Resume countdown' : 'Pause countdown preview'}
+        </button> : <p className="mt-4 text-xs font-semibold text-[var(--skc-text-tertiary)]">Pause session below to stop the countdown.</p>}
       </section>
     )
   }
 
   return (
-    <div className="mx-1 rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-5 text-center">
+    <section aria-label="Next contact" className="mx-1 rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-4 text-center">
       <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--skc-text-tertiary)]">
         {queueItem ? 'Next contact' : 'Choose a number from the seller list'}
       </p>
@@ -94,20 +94,19 @@ export function WorkspaceCallController({
         <Icon name="call" size="text-xl" filled />
         {dialReady ? 'Call selected number' : statusLabel}
       </button>
-      <div className="mt-4 border-t border-[var(--skc-separator)] pt-4 text-left">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">Calling from</p>
-          {queueItem ? <span className="rounded-full bg-[var(--skc-surface-3)] px-2 py-1 text-[9px] font-black uppercase tracking-wider text-[var(--skc-text-tertiary)]">{callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1 ? 'Rotation' : 'Campaign line'}</span> : null}
-        </div>
-        <p className="mt-1.5 text-sm font-semibold text-[var(--skc-text-primary)]">
+      <div className="mt-4 flex items-start justify-between gap-3 border-t border-[var(--skc-separator)] pt-3 text-left">
+        <div className="min-w-0">
+          <p className="text-[9px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">Calling from</p>
+          <p className="mt-1 truncate text-xs font-semibold text-[var(--skc-text-primary)]">
           {queueItem
             ? effectiveCallerId
               ? formatPhone(effectiveCallerId)
               : 'No approved line available'
             : 'Select a seller number'}
-        </p>
-        {queueItem && callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1 ? <p className="mt-1 text-[10px] font-semibold text-[var(--skc-text-tertiary)]">{callerPlan.rotationCallerIds.length} approved lines · rotates every {callerPlan.rotateEveryCalls} calls</p> : null}
+          </p>
+        </div>
+        {queueItem ? <span className="shrink-0 rounded-full bg-[var(--skc-surface-3)] px-2 py-1 text-[9px] font-black uppercase tracking-wider text-[var(--skc-text-tertiary)]">{callerPlan.mode === 'rotation' && callerPlan.rotationCallerIds.length > 1 ? `${callerPlan.rotationCallerIds.length} lines` : 'Campaign'}</span> : null}
       </div>
-    </div>
+    </section>
   )
 }

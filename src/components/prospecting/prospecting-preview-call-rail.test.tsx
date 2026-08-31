@@ -40,8 +40,7 @@ describe('ProspectingPreviewCallRail', () => {
     expect(screen.getByText('+18165550123')).toBeVisible()
     expect(screen.getByText('Resume saved place')).toBeVisible()
     expect(screen.getByText('7 rings')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Call disposition controls' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
+    expect(screen.getByText('Preview call-outcome state')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()
@@ -55,7 +54,7 @@ describe('ProspectingPreviewCallRail', () => {
 
   it('pauses immediately and ends back at the selected campaign', async () => {
     render(<ProspectingPreviewCallRail {...props} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Pause before first call' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pause countdown preview' }))
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
     expect(screen.getByRole('region', { name: 'First call countdown' })).toHaveTextContent('15')
     expect(screen.getByRole('button', { name: 'Resume countdown' })).toBeVisible()
