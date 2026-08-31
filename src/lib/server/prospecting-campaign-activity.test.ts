@@ -6,9 +6,10 @@ const source = readFileSync(join(process.cwd(), 'src/lib/server/prospecting-camp
 const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20260904150000_prospecting_campaign_activity_filters.sql'), 'utf8')
 
 describe('prospecting campaign activity data plane', () => {
-  it('checks campaign ownership before reading protected history', () => {
-    expect(source.indexOf(".eq('owner_email', actor.email.toLowerCase())")).toBeGreaterThan(-1)
-    expect(source.indexOf(".eq('owner_email', actor.email.toLowerCase())")).toBeLessThan(source.indexOf(".from('prospecting_campaign_events')"))
+  it('authorizes the owner or an active dialer operator before reading protected history', () => {
+    expect(source).toContain("campaign?.owner_email.trim().toLowerCase() === actor.email.trim().toLowerCase()")
+    expect(source).toContain("campaign?.kind === 'dialer' && campaign.status === 'active'")
+    expect(source.indexOf('isSharedActiveDialer')).toBeLessThan(source.indexOf(".from('prospecting_campaign_events')"))
   })
 
   it('uses indexed keyset ordering and caps every hydration set', () => {
