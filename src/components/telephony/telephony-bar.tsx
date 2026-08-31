@@ -188,6 +188,7 @@ export function DialerPanel({
   const activeAttemptIdRef = useRef<string | null>(null)
   const stopRequestedSessionIdRef = useRef<string | null>(null)
   const pausedSessionIdRef = useRef<string | null>(null)
+  const pauseLeaveAfterOutcomeRef = useRef(false)
   const [workspaceSessionStatus, setWorkspaceSessionStatus] = useState<'active' | 'paused' | 'completed' | 'stopped' | null>(null)
   const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
@@ -382,13 +383,17 @@ export function DialerPanel({
 
   useEffect(() => {
     function onPauseRequested(event: Event) {
-      const detail = (event as CustomEvent).detail as { session?: { id?: string; status?: 'paused' }; requiresDisposition?: boolean } | null
+      const detail = (event as CustomEvent).detail as { session?: { id?: string; status?: 'paused' }; requiresDisposition?: boolean; leaveAfterPause?: boolean } | null
       if (!pendingSessionId || detail?.session?.id !== pendingSessionId) return
       pausedSessionIdRef.current = pendingSessionId
+      pauseLeaveAfterOutcomeRef.current = detail.leaveAfterPause === true
       setWorkspaceSessionStatus('paused')
       cancelAutoStart()
       setError(null)
-      if (!detail.requiresDisposition) return
+      if (!detail.requiresDisposition) {
+        pauseLeaveAfterOutcomeRef.current = false
+        return
+      }
       if (callRef.current) {
         callRef.current.disconnect()
         return
@@ -1083,14 +1088,16 @@ export function DialerPanel({
     }
 
     if (durableSessionId && durableAttemptId && postDisposition === 'pause_session') {
+      const leaveAfterPause = pauseLeaveAfterOutcomeRef.current
       pendingAutoDialRef.current = false
       pausedSessionIdRef.current = null
+      pauseLeaveAfterOutcomeRef.current = false
       endQueue()
       activeQueueItemRef.current = null
       activeSessionIdRef.current = null
       activeAttemptIdRef.current = null
       setRecoveryPending(null)
-      window.dispatchEvent(new CustomEvent('dialer-session-pause-completed', { detail: { sessionId: durableSessionId } }))
+      window.dispatchEvent(new CustomEvent('dialer-session-pause-completed', { detail: { sessionId: durableSessionId, leaveAfterPause } }))
       return true
     }
 

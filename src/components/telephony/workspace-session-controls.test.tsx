@@ -24,6 +24,7 @@ describe('WorkspaceSessionControls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Hang up current call' }))
     expect(onAction).toHaveBeenCalledWith('hangup')
+    expect(screen.getByRole('button', { name: 'Pause & hang up' })).toBeVisible()
   })
 
   it('resumes a paused session and blocks queue movement while an outcome is required', () => {
@@ -38,12 +39,23 @@ describe('WorkspaceSessionControls', () => {
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
   })
 
+  it('cannot resume until the paused call has ended and its outcome is saved', () => {
+    const onAction = vi.fn()
+    const { rerender } = render(<WorkspaceSessionControls status="paused" callBusy outcomeRequired={false} onAction={onAction} />)
+
+    expect(screen.getByRole('button', { name: 'Pausing call…' })).toBeDisabled()
+
+    rerender(<WorkspaceSessionControls status="paused" callBusy={false} outcomeRequired onAction={onAction} />)
+    expect(screen.getByRole('button', { name: 'Paused — save outcome' })).toBeDisabled()
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
   it('keeps the live control layout visible but inert in read-only preview', () => {
     const onAction = vi.fn()
     render(<WorkspaceSessionControls status="active" callBusy outcomeRequired previewOnly onAction={onAction} />)
 
     expect(screen.getByRole('button', { name: 'Hang up current call' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Pause after outcome' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pause & hang up' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()
     expect(onAction).not.toHaveBeenCalled()

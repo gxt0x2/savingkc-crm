@@ -15,6 +15,7 @@ import { ProspectingCallingContextRail } from '@/components/prospecting/prospect
 import { ProspectingMarkDeadDialog } from '@/components/prospecting/prospecting-mark-dead-dialog'
 import {
   loadDurableDialerSession,
+  requestPauseDurableDialerSession,
   transitionDurableDialerSession,
   type DurableDialerSession,
   type DurableDialerQueueSubject,
@@ -28,7 +29,10 @@ import type {
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
-import { useDialerPauseAndLeave } from '@/components/prospecting/use-dialer-pause-and-leave'
+import {
+  dispatchDialerPauseRequested,
+  useDialerPauseAndLeave,
+} from '@/components/prospecting/use-dialer-pause-and-leave'
 import { useDialerTodayMetrics } from '@/components/prospecting/use-dialer-today-metrics'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
@@ -419,9 +423,19 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   }, [durableSessionId, navigateAwayFromSession, transitionCurrentSession])
 
   const pauseSession = useCallback(async () => {
-    if (!durableSessionId) return
-    await transitionCurrentSession('pause')
-  }, [durableSessionId, transitionCurrentSession])
+    if (!durableSessionId || durableSession?.status !== 'active') return
+    setSessionActionPending(true)
+    setSessionError(null)
+    try {
+      const result = await requestPauseDurableDialerSession(durableSessionId, 'Agent paused the calling session')
+      applyDurableSession(result.session)
+      dispatchDialerPauseRequested(result, false)
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Could not pause the dialer session.')
+    } finally {
+      setSessionActionPending(false)
+    }
+  }, [applyDurableSession, durableSession?.status, durableSessionId])
 
   useEffect(() => {
     if (durableSession?.status === 'stopped' && durableSession.stopRequestedAt) {
