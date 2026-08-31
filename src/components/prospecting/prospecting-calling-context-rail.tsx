@@ -12,9 +12,11 @@ import type {
   ProspectingCallingTab,
   ProspectingOccupancy,
 } from '@/components/prospecting/prospecting-calling-types'
+import { ProspectAddressFields, ProspectOwnerNameFields } from '@/components/prospecting/prospect-display-fields'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
 import { toProperCase } from '@/lib/format'
 import type { DialerActivity } from '@/lib/dialer-lead-activity'
+import { resolveMailingDisplay, resolveOwnerDisplay, resolveSitusDisplay } from '@/lib/owner-display'
 
 const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assist').then((module) => module.DialerAiAssist))
 const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
@@ -70,23 +72,38 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
     && activity.metadata?.source === 'prospecting_contact_note'
   )), [props.activities])
   const historyCount = commsEvents.length + contactNotes.length
+  const owner = useMemo(() => resolveOwnerDisplay(props.prospect, props.lead?.full_name), [props.prospect, props.lead])
+  const situs = useMemo(() => resolveSitusDisplay(props.prospect, {
+    street: props.lead?.property_address,
+    city: props.lead?.city,
+    state: props.lead?.state,
+    zip: props.lead?.zip,
+  }), [props.prospect, props.lead])
+  const mailing = useMemo(() => resolveMailingDisplay(props.prospect), [props.prospect])
 
   return <aside aria-label="Seller context" className={`order-2 col-span-12 space-y-3 lg:self-start ${props.fullWidth ? 'lg:col-span-12' : 'lg:sticky lg:top-[168px] lg:col-span-4 lg:max-h-[calc(100vh-184px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1'}`}>
     <section className="ck-card p-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Subject property</p>
-          <h1 className="truncate text-xl font-black leading-tight text-[var(--ck-text)]">{props.prospect?.situs_street || props.lead?.property_address || '—'}</h1>
-          <p className="mt-0.5 text-sm text-[var(--ck-text-muted)]">{[props.prospect?.situs_city || props.lead?.city, props.prospect?.situs_state || props.lead?.state].filter(Boolean).join(', ')}{(props.prospect?.situs_zip || props.lead?.zip) ? ` ${props.prospect?.situs_zip || props.lead?.zip}` : ''}</p>
+      <div className="mb-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Subject property</p>
+            <h1 className="truncate text-xl font-black leading-tight text-[var(--ck-text)]">{situs.street || '—'}</h1>
+          </div>
+          {props.leadId ? <Link href={`/leads/${props.leadId}`} prefetch={false} target="_blank" title="Open full lead profile in a new tab" className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Profile <Icon name="open_in_new" size="text-xs" /></Link>
+            : <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">Source Prospect</span>}
         </div>
-        {props.leadId ? <Link href={`/leads/${props.leadId}`} prefetch={false} target="_blank" title="Open full lead profile in a new tab" className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Profile <Icon name="open_in_new" size="text-xs" /></Link>
-          : <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">Source Prospect</span>}
+        <ProspectAddressFields label="Situs address cells" address={situs} />
+        <div className="mt-3">
+          <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mailing</p>
+          <ProspectAddressFields label="Mailing address cells" address={mailing} />
+        </div>
       </div>
 
       <div className="mb-3 rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-3">
         <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[#E32E2E]">Owner of record</p>
-        <p className="text-sm font-bold text-[var(--ck-text)]">{props.ownerName}</p>
-        <p className="mt-0.5 text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">{props.prospect?.is_deceased === true ? 'Deceased owner · contact the associated people below' : 'Owner record · contact the associated people below'}</p>
+        <p className="text-sm font-bold text-[var(--ck-text)]">{owner.fullName || props.ownerName}</p>
+        <div className="mt-2"><ProspectOwnerNameFields owner={owner} /></div>
+        <p className="mt-2 text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">{props.prospect?.is_deceased === true ? 'Deceased owner · contact the associated people below' : 'Owner record · contact the associated people below'}</p>
         {props.coOwners.length > 0 ? <div className="mt-3 border-t border-[#E32E2E]/20 pt-3"><p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Co-owners on title</p><ul className="space-y-0.5">{props.coOwners.map((name) => <li key={name} className="flex items-center gap-1.5 text-xs text-[var(--ck-text)]"><Icon name="person" size="text-xs" className="text-[var(--ck-text-dim)]" />{toProperCase(name)}</li>)}</ul></div> : null}
       </div>
 

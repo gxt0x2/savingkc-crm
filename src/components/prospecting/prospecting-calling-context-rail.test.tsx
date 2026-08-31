@@ -59,6 +59,57 @@ describe('ProspectingCallingContextRail', () => {
     expect(screen.getByText('Daughter handles the estate calls.')).toBeVisible()
     expect(screen.getByText('Saved by Ernest')).toBeVisible()
     expect(screen.getByText('1 items')).toBeVisible()
+    expect(screen.getByLabelText('Owner name cells')).toBeVisible()
+    expect(screen.getByLabelText('Situs address cells')).toBeVisible()
+    expect(screen.getByLabelText('Mailing address cells')).toBeVisible()
+  })
+
+  it('shows swallowed MI and unit in their own cells without turning MO into Mo', () => {
+    render(<ProspectingCallingContextRail
+      leadId={null}
+      lead={null}
+      prospect={{
+        id: 'prospect-lock',
+        owner_1: 'MOORE BETTY J',
+        owner_1_first: 'BETTY J',
+        owner_1_last: 'MOORE',
+        situs_street: '303 E PARTRIDGE ST UNIT 38',
+        situs_city: 'KANSAS CITY',
+        situs_state: 'MO',
+        situs_zip: '64133',
+        county: 'Jackson',
+        is_deceased: true,
+        occupancy_status: 'absentee',
+        delinquent_years_category: '3yr_plus',
+        mailing_street: '303 E PARTRIDGE ST UNIT B',
+        mailing_city: 'KANSAS CITY',
+        mailing_state: 'MO',
+        mailing_zip: '64133',
+        cumulative_due: 6_000,
+        zestimate: 198_000,
+        total_market_value: 144_000,
+        earliest_delinquent_year: 2024,
+      }}
+      ownerName="Betty J Moore"
+      situsAddress="303 E Partridge St Unit 38, Kansas City, MO 64133"
+      coOwners={[]}
+      occupancy={null}
+      delinquentYears="3+ yr"
+      durableSessionId=""
+      activities={[]}
+      activeTab="activity"
+      callerId="+18163077835"
+      onTabChange={vi.fn()}
+      onRefreshActivities={vi.fn()}
+    />)
+
+    expect(screen.getByText('Betty')).toBeVisible()
+    expect(screen.getByText('J')).toBeVisible()
+    expect(screen.getByText('Moore')).toBeVisible()
+    expect(screen.getAllByText('303 E Partridge St').length).toBeGreaterThan(0)
+    expect(screen.getByText('Unit 38')).toBeVisible()
+    expect(screen.getByText('Unit B')).toBeVisible()
+    expect(screen.getAllByText((content) => content === 'MO').length).toBeGreaterThan(0)
   })
 
   it('keeps the Text Hub visible but removes its composer in read-only preview', () => {

@@ -15,7 +15,7 @@ const NO_STORE_HEADERS: HeadersInit = {
   Expires: '0',
 }
 
-const EXPANDED_PROSPECT_SELECT = 'id, lead_id, owner_1, cumulative_due, earliest_delinquent_year, delinquent_years_category, total_market_value, zestimate, situs_street, situs_city, situs_state, situs_zip, mailing_street, mailing_city, mailing_state, mailing_zip, county, is_deceased, occupancy_status'
+const EXPANDED_PROSPECT_SELECT = 'id, lead_id, owner_1, owner_1_first, owner_1_mi, owner_1_last, owner_1_suffix, cumulative_due, earliest_delinquent_year, delinquent_years_category, total_market_value, zestimate, situs_street, situs_unit, situs_city, situs_state, situs_zip, mailing_street, mailing_unit, mailing_city, mailing_state, mailing_zip, county, is_deceased, occupancy_status'
 function successHeaders(
   startedAt: number,
   projectionDuration: number,
