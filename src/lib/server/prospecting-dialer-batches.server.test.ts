@@ -41,7 +41,7 @@ const campaignRow = {
 function query(data: unknown = []) {
   const result = Promise.resolve({ data, error: null, count: 0 })
   const chain: Record<string, unknown> = { then: result.then.bind(result) }
-  for (const method of ['select', 'eq', 'neq', 'in', 'not', 'order', 'limit']) chain[method] = vi.fn(() => chain)
+  for (const method of ['select', 'eq', 'neq', 'in', 'not', 'contains', 'order', 'limit']) chain[method] = vi.fn(() => chain)
   chain.maybeSingle = vi.fn(() => Promise.resolve({ data, error: null }))
   return chain
 }
