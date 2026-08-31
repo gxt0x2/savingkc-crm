@@ -82,12 +82,14 @@ export async function listProspectingCampaignActivity(
 
   const ownership = await supabase
     .from('prospecting_campaigns')
-    .select('id')
+    .select('id,kind,status,owner_email')
     .eq('id', campaignId)
-    .eq('owner_email', actor.email.toLowerCase())
     .maybeSingle()
   if (ownership.error) throw new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign activity is unavailable')
-  if (!ownership.data) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
+  const campaign = ownership.data as { id: string; kind: string; status: string; owner_email: string } | null
+  const isOwner = campaign?.owner_email.trim().toLowerCase() === actor.email.trim().toLowerCase()
+  const isSharedActiveDialer = campaign?.kind === 'dialer' && campaign.status === 'active'
+  if (!campaign || (!isOwner && !isSharedActiveDialer)) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
 
   let eventQuery = supabase
     .from('prospecting_campaign_events')

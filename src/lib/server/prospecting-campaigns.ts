@@ -132,7 +132,9 @@ export async function listProspectingCampaigns(
   let query = supabase
     .from('prospecting_campaigns')
     .select(CAMPAIGN_SELECT)
-    .eq('owner_email', actor.email.toLowerCase())
+    // Active voice campaigns are team work. Keep drafts, paused campaigns,
+    // archived campaigns, and every SMS campaign private to their owner.
+    .or(`owner_email.eq.${actor.email.toLowerCase()},and(kind.eq.dialer,status.eq.active)`)
     .order('updated_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(limit + 1)
@@ -218,23 +220,20 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     .from('prospecting_campaigns')
     .select(CAMPAIGN_SELECT)
     .eq('id', campaignId)
-    .eq('owner_email', actor.email.toLowerCase())
     .maybeSingle()
+  const campaignResult = await campaignPromise
+  if (campaignResult.error) throw databaseError(campaignResult.error)
+  if (!campaignResult.data) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
+  const campaignRow = campaignResult.data as CampaignRow
+  const isOwner = campaignRow.owner_email.trim().toLowerCase() === actor.email.trim().toLowerCase()
+  const isSharedActiveDialer = campaignRow.kind === 'dialer' && campaignRow.status === 'active'
+  if (!isOwner && !isSharedActiveDialer) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
   const stepsPromise = supabase
     .from('prospecting_campaign_steps')
     .select('id,position,delay_minutes,body_template')
     .eq('campaign_id', campaignId)
     .order('position')
     .limit(12)
-  const membersPromise = supabase.rpc('prospecting_campaign_member_page_v3', {
-    p_actor_email: actor.email,
-    p_campaign_id: campaignId,
-    p_status: 'all',
-    p_query: null,
-    p_limit: 100,
-    p_after_enrolled_at: null,
-    p_after_id: null,
-  })
   const counts = Promise.all([
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).neq('status', 'removed'),
     supabase.from('prospecting_campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('status', 'active'),
@@ -252,9 +251,18 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     supabase.from('prospecting_campaign_actions').select('scheduled_at').eq('campaign_id', campaignId).eq('status', 'queued').order('scheduled_at', { ascending: true }).limit(1).maybeSingle(),
     supabase.from('prospecting_campaign_actions').select('sent_at').eq('campaign_id', campaignId).in('status', ['sent', 'delivered']).not('sent_at', 'is', null).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
   ])
-  const [campaignResult, stepsResult, membersResult, countResults, operationResults] = await Promise.all([campaignPromise, stepsPromise, membersPromise, counts, operations])
-  if (campaignResult.error) throw databaseError(campaignResult.error)
-  if (!campaignResult.data) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
+  const membersPromise = supabase.rpc('prospecting_campaign_member_page_v3', {
+    // The existing read RPC validates the campaign owner. The server has
+    // already authenticated and authorized this team operator above.
+    p_actor_email: campaignRow.owner_email,
+    p_campaign_id: campaignId,
+    p_status: 'all',
+    p_query: null,
+    p_limit: 100,
+    p_after_enrolled_at: null,
+    p_after_id: null,
+  })
+  const [stepsResult, membersResult, countResults, operationResults] = await Promise.all([stepsPromise, membersPromise, counts, operations])
   if (stepsResult.error) throw databaseError(stepsResult.error)
   if (membersResult.error) throw databaseError(membersResult.error)
   for (const result of countResults) if (result.error) throw databaseError(result.error)
@@ -281,7 +289,7 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
     }
   })
   return {
-    ...mapCampaign(campaignResult.data as CampaignRow),
+    ...mapCampaign(campaignRow),
     steps: (stepsResult.data || []).map(mapStep),
     members,
     stats: {
@@ -482,6 +490,9 @@ export async function setProspectingCampaignStatus(
   status: Extract<ProspectingCampaignStatus, 'paused' | 'active' | 'archived'>,
 ) {
   const campaign = await getProspectingCampaign(actor, campaignId)
+  if (campaign.ownerEmail.trim().toLowerCase() !== actor.email.trim().toLowerCase()) {
+    throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
+  }
   if (status === 'active') return activateProspectingCampaign(actor, campaignId)
   if (status === 'paused' && campaign.status !== 'active') throw new ProspectingCampaignError('invalid_campaign_state', 409, 'Only active campaigns can be paused')
   if (status === 'archived' && campaign.status === 'active') throw new ProspectingCampaignError('invalid_campaign_state', 409, 'Pause the campaign before archiving it')
