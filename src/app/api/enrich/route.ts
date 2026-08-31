@@ -49,6 +49,14 @@ export async function POST(req: NextRequest) {
         sourceReference: result.source || `${body.county}:${body.state}`,
         facts: countyEnrichmentFacts(result, body),
         observedAt: result.fetchedAt,
+        location: {
+          address: body.address,
+          city: body.city ?? null,
+          state: body.state,
+          zip: body.zip ?? null,
+          county: result.county || body.county,
+          parcelId: result.parcelId || body.parcel_id || null,
+        },
       })
       return NextResponse.json({ ...result, canonical })
     } catch (error) {

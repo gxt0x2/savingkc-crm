@@ -18,6 +18,7 @@ import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
 import {
   recordCanonicalPropertyEnrichment,
   type CanonicalPropertyFacts,
+  type CanonicalPropertyLocation,
 } from './server/crm-property-enrichment'
 
 function getSupabase() {
@@ -248,6 +249,22 @@ function prospectLocationHint(match: ProspectMatch): LocationHint {
   }
 }
 
+function canonicalLocationFromHint(hint: LocationHint): CanonicalPropertyLocation | null {
+  if (!hint.address) return null
+  return {
+    address: streetLineFromAddress(hint.address, {
+      city: hint.city,
+      state: hint.state,
+      zip: hint.zip,
+    }),
+    city: hint.city ?? null,
+    state: hint.state ?? null,
+    zip: hint.zip ?? null,
+    county: hint.county ?? null,
+    parcelId: hint.parcelId ?? null,
+  }
+}
+
 async function enrichFromProspect(leadId: string, phone: string, overwrite: boolean): Promise<{
   matched: boolean
   hint: LocationHint | null
@@ -255,6 +272,9 @@ async function enrichFromProspect(leadId: string, phone: string, overwrite: bool
   const matches = await lookupProspectByPhone(phone)
   if (matches.length === 0) return { matched: false, hint: null }
   const match = matches[0]
+  const hint = prospectLocationHint(match)
+  const location = canonicalLocationFromHint(hint)
+  if (!location) throw new Error('Matched prospect has no canonical property address')
   await linkProspectToLead(match, leadId)
   await recordCanonicalPropertyEnrichment({
     leadId,
@@ -262,8 +282,9 @@ async function enrichFromProspect(leadId: string, phone: string, overwrite: bool
     sourceReference: match.prospect_id,
     facts: prospectEnrichmentFacts(match),
     overwrite,
+    location,
   })
-  return { matched: true, hint: prospectLocationHint(match) }
+  return { matched: true, hint }
 }
 
 async function enrichFromCounty(
@@ -286,6 +307,14 @@ async function enrichFromCounty(
     facts,
     observedAt: result.fetchedAt,
     overwrite,
+    location: {
+      address: input.address,
+      city: input.city ?? null,
+      state: input.state,
+      zip: input.zip ?? null,
+      county: result.county || input.county,
+      parcelId: result.parcelId || input.parcel_id || null,
+    },
   })
   return facts
 }
