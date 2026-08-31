@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { CampaignAiCadence } from '@/components/prospecting/campaign-ai-cadence'
 import { Icon } from '@/components/ui/icon'
+import { prospectingCampaignListType } from '@/lib/prospecting/campaign-contract'
 import { BROADCAST_TWILIO_NUMBERS, DIALER_CALLER_ID_NUMBERS } from '@/lib/twilio-numbers'
 
 export type CampaignForm = {
@@ -124,6 +125,7 @@ export function CampaignStudio({
 }: CampaignStudioProps) {
   const [studioStep, setStudioStep] = useState(1)
   const [activeMessage, setActiveMessage] = useState(0)
+  const factoryListType = prospectingCampaignListType(form.name)
   const stepIsValid = useMemo(() => {
     if (studioStep === 1) return form.name.trim().length > 0
     if (studioStep === 2 && form.kind === 'sms') {
@@ -207,8 +209,11 @@ export function CampaignStudio({
             <div className="grid gap-4 lg:grid-cols-2">
               <label className="crm-panel rounded-2xl p-5 lg:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Campaign name</span>
-                <input required maxLength={120} value={form.name} onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))} placeholder="September absentee owners" className="crm-field mt-2 h-12 w-full rounded-xl px-4 text-base font-bold" autoFocus />
-                <span className="mt-2 block text-xs text-[var(--crm-text-muted)]">Use a name the team will recognize in history and reporting.</span>
+                <input required maxLength={120} value={form.name} onChange={(event) => onChange((current) => {
+                  const name = event.target.value
+                  return { ...current, name, kind: prospectingCampaignListType(name) ? 'dialer' : current.kind }
+                })} placeholder="Jackson · Tax 3+ · 7 zips · Aug 30" className="crm-field mt-2 h-12 w-full rounded-xl px-4 text-base font-bold" autoFocus />
+                <span className="mt-2 block text-xs text-[var(--crm-text-muted)]">County · list · cut · Aug 30. Put Tax 3+ or Deceased in the title—never both, and never mix those piles. County stays in the name. Do not put the calling agent in the title. Tax 3+ and Deceased lists are voice only. Use a short date, not 2026-08-30. Status stays on the badge.</span>
               </label>
               <button type="button" onClick={() => onChange((current) => ({ ...current, kind: 'dialer' }))} className={`crm-panel group rounded-2xl border-2 p-5 text-left transition ${form.kind === 'dialer' ? 'border-[var(--crm-brand)] shadow-[0_10px_30px_rgba(52,78,48,0.12)]' : 'border-transparent hover:border-[var(--crm-border)]'}`}>
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="phone_in_talk" className="text-2xl" /></span>
@@ -216,7 +221,7 @@ export function CampaignStudio({
                 <span className="mt-2 block text-sm leading-6 text-[var(--crm-text-muted)]">Work one seller at a time with a pre-call brief, required outcome, and automatic advance.</span>
                 <span className="mt-4 block text-[10px] font-black uppercase tracking-widest text-[var(--crm-brand)]">Mojo-inspired · honest single line</span>
               </button>
-              <button type="button" onClick={() => onChange((current) => ({ ...current, kind: 'sms' }))} className={`crm-panel group rounded-2xl border-2 p-5 text-left transition ${form.kind === 'sms' ? 'border-[var(--crm-brand)] shadow-[0_10px_30px_rgba(52,78,48,0.12)]' : 'border-transparent hover:border-[var(--crm-border)]'}`}>
+              <button type="button" disabled={Boolean(factoryListType)} title={factoryListType ? 'Tax 3+ and Deceased factory lists are voice only' : undefined} onClick={() => onChange((current) => ({ ...current, kind: 'sms' }))} className={`crm-panel group rounded-2xl border-2 p-5 text-left transition ${form.kind === 'sms' ? 'border-[var(--crm-brand)] shadow-[0_10px_30px_rgba(52,78,48,0.12)]' : 'border-transparent hover:border-[var(--crm-border)]'} ${factoryListType ? 'cursor-not-allowed opacity-50' : ''}`}>
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--crm-info-soft)] text-[var(--crm-info)]"><Icon name="sms" className="text-2xl" /></span>
                 <span className="mt-5 flex items-center justify-between"><span className="text-lg font-black text-[var(--crm-ink)]">SMS cadence</span>{form.kind === 'sms' ? <Icon name="check_circle" className="text-xl text-[var(--crm-brand)]" /> : null}</span>
                 <span className="mt-2 block text-sm leading-6 text-[var(--crm-text-muted)]">Create a paced sequence that stops when a seller replies or opts out.</span>

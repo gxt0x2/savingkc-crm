@@ -8,6 +8,12 @@ import {
   type ProspectingCampaignSummary,
   type ProspectingCampaignStep,
   type ProspectingDialerSessionSetup,
+  countySavedViewFactoryListError,
+  factoryListRowMixError,
+  prospectingCampaignListTypeForCampaign,
+  prospectingFactoryCampaignNameError,
+  prospectingFactoryErrorMessage,
+  type ProspectingFactoryErrorCode,
 } from '@/lib/prospecting/campaign-contract'
 import { parseDialerSession } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
@@ -81,6 +87,10 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('campaign_setup_locked')) return new ProspectingCampaignError('campaign_setup_locked', 409, 'Only a campaign that has never run can be edited')
   if (detail.includes('campaign_member_in_active_dialer_batch')) return new ProspectingCampaignError('campaign_member_in_active_dialer_batch', 409, 'Stop the open calling session before removing this contact')
   if (detail.includes('county_audience_changed')) return new ProspectingCampaignError('county_audience_changed', 409, 'The county Saved View changed after review. Refresh it and confirm the current audience')
+  if (detail.includes('tax_3_plus_excludes_deceased')) return factoryEnrollmentError('tax_3_plus_excludes_deceased')
+  if (detail.includes('deceased_list_excludes_living')) return factoryEnrollmentError('deceased_list_excludes_living')
+  if (detail.includes('campaign_list_piles_mixed')) return factoryEnrollmentError('campaign_list_piles_mixed')
+  if (detail.includes('factory_list_voice_only')) return factoryEnrollmentError('factory_list_voice_only')
   if (detail.includes('campaign_members_locked') || detail.includes('invalid_campaign_transition')) return new ProspectingCampaignError('invalid_campaign_state', 409, 'Pause the campaign before changing its audience')
   if (detail.includes('invalid_') || detail.includes('23514') || detail.includes('23505') || detail.includes('22p02')) return new ProspectingCampaignError('invalid_campaign', 400, 'Campaign details are invalid')
   if (detail.includes('does not exist') || detail.includes('pgrst202') || detail.includes('42p01') || detail.includes('42883')) {
@@ -294,7 +304,84 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
   }
 }
 
+function factoryEnrollmentError(code: ProspectingFactoryErrorCode): ProspectingCampaignError {
+  return new ProspectingCampaignError(code, 409, prospectingFactoryErrorMessage(code))
+}
+
+function throwFactoryEnrollmentError(code: ProspectingFactoryErrorCode | null): void {
+  if (code) throw factoryEnrollmentError(code)
+}
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let index = 0; index < values.length; index += size) chunks.push(values.slice(index, index + size))
+  return chunks
+}
+
+async function loadCampaignFactoryContext(actor: AuthenticatedActor, campaignId: string) {
+  const { data, error } = await supabase
+    .from('prospecting_campaigns')
+    .select('id,name,kind')
+    .eq('id', campaignId)
+    .eq('owner_email', actor.email.toLowerCase())
+    .maybeSingle()
+  if (error) throw databaseError(error)
+  if (!data) throw new ProspectingCampaignError('campaign_not_found', 404, 'Campaign not found')
+  const campaign = data as { id: string; name: string; kind: string }
+  throwFactoryEnrollmentError(prospectingFactoryCampaignNameError(campaign.name))
+  if (prospectingCampaignListTypeForCampaign(campaign) && campaign.kind !== 'dialer') {
+    throw factoryEnrollmentError('factory_list_voice_only')
+  }
+  return campaign
+}
+
+async function assertProspectRowsMatchFactoryList(input: {
+  campaignId: string
+  campaignName: string
+  rows: Array<{ is_deceased?: boolean | null }>
+}) {
+  const deceasedCount = input.rows.filter((row) => row.is_deceased === true).length
+  const livingCount = input.rows.filter((row) => row.is_deceased !== true).length
+  throwFactoryEnrollmentError(factoryListRowMixError({
+    campaignId: input.campaignId,
+    campaignName: input.campaignName,
+    deceasedCount,
+    livingCount,
+  }))
+}
+
+async function assertLeadIdsMatchFactoryList(campaign: { id: string; name: string }, leadIds: string[]) {
+  if (!prospectingCampaignListTypeForCampaign(campaign) || leadIds.length < 1) return
+  const rows: Array<{ is_deceased?: boolean | null }> = []
+  for (const ids of chunkValues(leadIds, 200)) {
+    const { data, error } = await supabase
+      .from('prospects')
+      .select('lead_id, is_deceased')
+      .in('lead_id', ids)
+    if (error) throw databaseError(error)
+    rows.push(...((data || []) as Array<{ is_deceased?: boolean | null }>))
+  }
+  await assertProspectRowsMatchFactoryList({ campaignId: campaign.id, campaignName: campaign.name, rows })
+}
+
+async function assertParcelIdsMatchFactoryList(campaign: { id: string; name: string }, parcelIds: string[]) {
+  if (!prospectingCampaignListTypeForCampaign(campaign) || parcelIds.length < 1) return
+  const rows: Array<{ is_deceased?: boolean | null }> = []
+  for (const ids of chunkValues(parcelIds, 200)) {
+    const { data, error } = await supabase
+      .from('prospects')
+      .select('parcel_id, is_deceased')
+      .eq('county', 'jackson')
+      .in('parcel_id', ids)
+    if (error) throw databaseError(error)
+    rows.push(...((data || []) as Array<{ is_deceased?: boolean | null }>))
+  }
+  await assertProspectRowsMatchFactoryList({ campaignId: campaign.id, campaignName: campaign.name, rows })
+}
+
 export async function enrollProspectingCampaignMembers(actor: AuthenticatedActor, campaignId: string, leadIds: string[]) {
+  const campaign = await loadCampaignFactoryContext(actor, campaignId)
+  await assertLeadIdsMatchFactoryList(campaign, leadIds)
   const { data, error } = await supabase.rpc('enroll_prospecting_campaign_members_v1', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
@@ -321,6 +408,13 @@ export async function enrollCountyProspectingCampaignMembers(
     || !Number.isInteger(input.reviewedCount) || input.reviewedCount < 1 || input.reviewedCount > 25_000) {
     throw new ProspectingCampaignError('invalid_county_audience', 400, 'Choose a non-empty county Saved View and review its filters')
   }
+  const campaign = await loadCampaignFactoryContext(actor, campaignId)
+  throwFactoryEnrollmentError(countySavedViewFactoryListError({
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    savedView: input.savedView,
+    deceasedFilter: input.deceasedFilter,
+  }))
   const { data, error } = await supabase.rpc('enroll_county_prospecting_campaign_members_v1', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
@@ -345,6 +439,8 @@ export async function enrollCountyProspectingCampaignMembersByIds(
   if (input.reviewedCount !== input.parcelIds.length) {
     throw new ProspectingCampaignError('county_audience_changed', 409, 'The county Saved View changed after review. Refresh it and confirm the current audience')
   }
+  const campaign = await loadCampaignFactoryContext(actor, campaignId)
+  await assertParcelIdsMatchFactoryList(campaign, input.parcelIds)
   const { data, error } = await supabase.rpc('enroll_county_prospecting_campaign_members_by_ids_v1', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,

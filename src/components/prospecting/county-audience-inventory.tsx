@@ -11,6 +11,11 @@ import {
   type CountySavedViewDefinition,
   type CountySavedViewSummary,
 } from '@/lib/prospecting/county-saved-views'
+import {
+  countyOwnerStatusFiltersForListType,
+  countySavedViewsForListType,
+  prospectingCampaignListTypeForCampaign,
+} from '@/lib/prospecting/campaign-contract'
 import type { CountyProspectAudienceSummary } from '@/lib/server/county-prospect-audiences'
 
 const DECEASED_FILTERS: ReadonlyArray<{ value: CountyDeceasedFilter; label: string }> = [
@@ -46,17 +51,22 @@ function phoneCandidateLabel(count: number) {
 
 export function CountyAudienceInventory({
   campaignId,
+  campaignName,
   campaignKind,
   onEnrolled,
 }: {
   campaignId?: string
+  campaignName?: string
   campaignKind?: 'dialer' | 'sms'
   onEnrolled?: () => void | Promise<void>
 } = {}) {
+  const listType = prospectingCampaignListTypeForCampaign({ id: campaignId, name: campaignName ?? '' })
+  const allowedViews = countySavedViewsForListType(listType)
+  const allowedDeceasedFilters = countyOwnerStatusFiltersForListType(listType)
   const [summary, setSummary] = useState<CountyProspectAudienceSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [viewId, setViewId] = useState<CountySavedViewDefinition['id']>('tax_2yr')
-  const [deceasedFilter, setDeceasedFilter] = useState<CountyDeceasedFilter>('all')
+  const [viewId, setViewId] = useState<CountySavedViewDefinition['id']>(allowedViews[0] ?? 'tax_2yr')
+  const [deceasedFilter, setDeceasedFilter] = useState<CountyDeceasedFilter>(allowedDeceasedFilters[0] ?? 'all')
   const [propertyFilter, setPropertyFilter] = useState<CountyPropertyClassFilter>('all')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
@@ -79,9 +89,15 @@ export function CountyAudienceInventory({
     return () => controller.abort()
   }, [])
 
-  const views = summary?.savedViews ?? (summary ? buildCountySavedViews(summary.rows) : [])
-  const activeView = selectedView(views, viewId)
-  const activeMetrics = activeView ? filterCountySavedView(activeView, deceasedFilter, propertyFilter) : null
+  const views = (summary?.savedViews ?? (summary ? buildCountySavedViews(summary.rows) : []))
+    .filter((view) => allowedViews.includes(view.id))
+  const visibleDeceasedFilters = DECEASED_FILTERS.filter((filter) => allowedDeceasedFilters.includes(filter.value))
+  const selectedViewId = allowedViews.includes(viewId) ? viewId : (allowedViews[0] ?? 'tax_2yr')
+  const selectedDeceasedFilter = allowedDeceasedFilters.includes(deceasedFilter)
+    ? deceasedFilter
+    : (allowedDeceasedFilters[0] ?? 'all')
+  const activeView = selectedView(views, selectedViewId)
+  const activeMetrics = activeView ? filterCountySavedView(activeView, selectedDeceasedFilter, propertyFilter) : null
 
   async function enrollReviewedAudience() {
     if (!campaignId || !activeView || !activeMetrics || activeMetrics.total < 1 || enrolling) return
@@ -95,7 +111,7 @@ export function CountyAudienceInventory({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ countyAudience: {
           savedView: activeView.id,
-          deceasedFilter,
+          deceasedFilter: selectedDeceasedFilter,
           propertyFilter,
           reviewedCount: activeMetrics.total,
         } }),
@@ -117,7 +133,7 @@ export function CountyAudienceInventory({
 
   return <section className="mt-5 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-4" aria-label="County prospect saved views">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><p className="crm-eyebrow">County source Saved Views</p><h3 className="mt-1 text-sm font-black text-[var(--crm-ink)]">Tax-delinquent prospect inventory</h3><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Dynamic source views—not copied lists or CRM leads. Opening or filtering a view never starts calls or messages.</p></div>
+      <div><p className="crm-eyebrow">County source Saved Views</p><h3 className="mt-1 text-sm font-black text-[var(--crm-ink)]">Tax-delinquent prospect inventory</h3><p className="mt-1 text-xs text-[var(--crm-text-muted)]">{listType === 'tax_3_plus' ? 'Tax 3+ is living first-pass only. Deceased owners stay on a separate Deceased campaign. Voice only.' : listType === 'deceased' ? 'This Deceased campaign enrolls inherited or deceased owners only. Do not mix in living Tax 3+ rows. Voice only.' : 'Dynamic source views—not copied lists or CRM leads. Opening or filtering a view never starts calls or messages.'}</p></div>
       {summary ? <span className="rounded-full bg-[var(--crm-info-soft)] px-3 py-1 text-[10px] font-black text-[var(--crm-info)]">{summary.withPhoneCandidate.toLocaleString()} with a phone candidate</span> : null}
     </div>
 
@@ -126,8 +142,8 @@ export function CountyAudienceInventory({
 
     {summary && activeView && activeMetrics ? <>
       <div className="mt-4 grid gap-2 sm:grid-cols-2" aria-label="Tax delinquency Saved Views">
-        {views.map((view) => <button key={view.id} type="button" aria-pressed={activeView.id === view.id} onClick={() => setViewId(view.id)} className={`rounded-xl border p-4 text-left transition-colors ${activeView.id === view.id ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] hover:border-[var(--crm-brand-border)]'}`}>
-          <span className="flex items-start justify-between gap-3"><span><strong className="block text-sm text-[var(--crm-ink)]">{view.label}</strong><span className="mt-1 block text-[10px] font-semibold text-[var(--crm-text-muted)]">{view.description}</span></span><Icon name="bookmark" className={activeView.id === view.id ? 'text-xl text-[var(--crm-brand)]' : 'text-xl text-[var(--crm-text-dim)]'} /></span>
+        {views.map((view) => <button key={view.id} type="button" aria-pressed={selectedViewId === view.id} onClick={() => setViewId(view.id)} className={`rounded-xl border p-4 text-left transition-colors ${selectedViewId === view.id ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] hover:border-[var(--crm-brand-border)]'}`}>
+          <span className="flex items-start justify-between gap-3"><span><strong className="block text-sm text-[var(--crm-ink)]">{view.label}</strong><span className="mt-1 block text-[10px] font-semibold text-[var(--crm-text-muted)]">{view.description}</span></span><Icon name="bookmark" className={selectedViewId === view.id ? 'text-xl text-[var(--crm-brand)]' : 'text-xl text-[var(--crm-text-dim)]'} /></span>
           <span className="mt-3 block text-2xl font-black text-[var(--crm-ink)]">{view.total.toLocaleString()}</span>
           <span className="text-[10px] font-semibold text-[var(--crm-text-muted)]">{view.withPhoneCandidate.toLocaleString()} with a phone candidate · {view.needsPropertyClass.toLocaleString()} need classification</span>
         </button>)}
@@ -137,13 +153,13 @@ export function CountyAudienceInventory({
         <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-black text-[var(--crm-ink)]">{activeView.label}</p><p className="mt-1 text-[10px] font-semibold text-[var(--crm-text-muted)]">Deceased status and property class filter this Saved View; they do not create separate source systems.</p></div><div className="text-right"><p className="text-2xl font-black text-[var(--crm-ink)]">{activeMetrics.total.toLocaleString()}</p><p className="text-[10px] font-semibold text-[var(--crm-text-muted)]">matching records</p></div></div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <fieldset><legend className="text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Owner status</legend><div className="mt-2 flex flex-wrap gap-1.5">{DECEASED_FILTERS.map((filter) => <FilterButton key={filter.value} active={deceasedFilter === filter.value} label={filter.label} onClick={() => setDeceasedFilter(filter.value)} />)}</div></fieldset>
+          <fieldset><legend className="text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Owner status</legend><div className="mt-2 flex flex-wrap gap-1.5">{visibleDeceasedFilters.map((filter) => <FilterButton key={filter.value} active={selectedDeceasedFilter === filter.value} label={filter.label} onClick={() => setDeceasedFilter(filter.value)} />)}</div></fieldset>
           <fieldset><legend className="text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Property class</legend><div className="mt-2 flex flex-wrap gap-1.5">{PROPERTY_FILTERS.map((filter) => <FilterButton key={filter.value} active={propertyFilter === filter.value} label={filter.label} onClick={() => setPropertyFilter(filter.value)} />)}</div></fieldset>
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           {PROPERTY_CARDS.map((property) => {
-            const metrics = filterCountySavedView(activeView, deceasedFilter, property.value)
+            const metrics = filterCountySavedView(activeView, selectedDeceasedFilter, property.value)
             return <button key={property.value} type="button" aria-label={`${property.label}: ${metrics.total.toLocaleString()} records, ${phoneCandidateLabel(metrics.withPhoneCandidate)}`} aria-pressed={propertyFilter === property.value} onClick={() => setPropertyFilter(property.value)} className={`rounded-lg border p-3 text-left ${propertyFilter === property.value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface-subtle)]'}`}>
               <span className="flex items-start justify-between gap-2"><strong className="text-xs text-[var(--crm-ink)]">{property.label}</strong><Icon name={property.icon} className={`text-lg ${property.value === 'unknown' ? 'text-[var(--crm-warning)]' : 'text-[var(--crm-info)]'}`} /></span>
               <span className="mt-2 block text-xl font-black text-[var(--crm-ink)]">{metrics.total.toLocaleString()}</span>
@@ -159,7 +175,7 @@ export function CountyAudienceInventory({
       </div>
 
       {summary.needsPropertyClass > 0 ? <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs text-[var(--crm-ink)]"><Icon name="fact_check" className="mt-0.5 text-base text-[var(--crm-warning)]" /><p><strong>{summary.needsPropertyClass.toLocaleString()} records remain visible under Needs classification.</strong> County or import evidence can move them into Residential or Land later; valuation and occupancy are not used as guesses.</p></div> : null}
-      {confirmOpen ? <div className="fixed inset-0 z-[90] grid place-items-center bg-[#101711]/60 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !enrolling) setConfirmOpen(false) }}><section role="dialog" aria-modal="true" aria-labelledby="county-enrollment-title" className="crm-panel w-full max-w-lg rounded-2xl p-6 shadow-2xl"><p className="crm-eyebrow">Reviewed source enrollment</p><h2 id="county-enrollment-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Add {activeMetrics.total.toLocaleString()} matching records?</h2><p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">{activeView.label} · {DECEASED_FILTERS.find((item) => item.value === deceasedFilter)?.label} · {PROPERTY_FILTERS.find((item) => item.value === propertyFilter)?.label}</p><div className="mt-4 rounded-xl bg-[var(--crm-surface-subtle)] p-4 text-xs leading-5 text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">This is inert enrollment.</strong> Existing Lead links are deduplicated, unlinked records remain source Prospects, blocked phones remain visible but unusable, and {campaignKind === 'sms' ? 'every source Prospect waits for an explicit recipient choice.' : 'calls begin only after campaign activation and a human starts the calling floor.'}</div>{enrollmentError ? <p role="alert" className="mt-3 text-xs font-bold text-[var(--crm-danger)]">{enrollmentError}</p> : null}<div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setConfirmOpen(false)} disabled={enrolling} className="crm-secondary-button h-10 rounded-lg px-4 text-xs font-black">Cancel</button><button type="button" onClick={() => void enrollReviewedAudience()} disabled={enrolling} className="crm-primary-button h-10 rounded-lg px-4 text-xs font-black disabled:opacity-50">{enrolling ? 'Adding reviewed audience…' : 'Add reviewed audience'}</button></div></section></div> : null}
+      {confirmOpen ? <div className="fixed inset-0 z-[90] grid place-items-center bg-[#101711]/60 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !enrolling) setConfirmOpen(false) }}><section role="dialog" aria-modal="true" aria-labelledby="county-enrollment-title" className="crm-panel w-full max-w-lg rounded-2xl p-6 shadow-2xl"><p className="crm-eyebrow">Reviewed source enrollment</p><h2 id="county-enrollment-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Add {activeMetrics.total.toLocaleString()} matching records?</h2><p className="mt-3 text-sm leading-6 text-[var(--crm-text-muted)]">{activeView.label} · {DECEASED_FILTERS.find((item) => item.value === selectedDeceasedFilter)?.label} · {PROPERTY_FILTERS.find((item) => item.value === propertyFilter)?.label}</p><div className="mt-4 rounded-xl bg-[var(--crm-surface-subtle)] p-4 text-xs leading-5 text-[var(--crm-text-muted)]"><strong className="text-[var(--crm-ink)]">This is inert enrollment.</strong> Existing Lead links are deduplicated, unlinked records remain source Prospects, blocked phones remain visible but unusable, and {campaignKind === 'sms' ? 'every source Prospect waits for an explicit recipient choice.' : 'calls begin only after campaign activation and a human starts the calling floor.'}</div>{enrollmentError ? <p role="alert" className="mt-3 text-xs font-bold text-[var(--crm-danger)]">{enrollmentError}</p> : null}<div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setConfirmOpen(false)} disabled={enrolling} className="crm-secondary-button h-10 rounded-lg px-4 text-xs font-black">Cancel</button><button type="button" onClick={() => void enrollReviewedAudience()} disabled={enrolling} className="crm-primary-button h-10 rounded-lg px-4 text-xs font-black disabled:opacity-50">{enrolling ? 'Adding reviewed audience…' : 'Add reviewed audience'}</button></div></section></div> : null}
     </> : null}
   </section>
 }

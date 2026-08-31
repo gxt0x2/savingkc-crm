@@ -41,6 +41,15 @@ describe('CountyParcelAudienceEnroll', () => {
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('5c45d2f7-c120-4477-bb1f-f04d69c4efdf')
   })
 
+  it('tells operators that Tax 3+ parcel paste rejects deceased rows', () => {
+    render(<CountyParcelAudienceEnroll
+      campaignId="74609ed4-7e26-4111-b626-b2e3f68efa0b"
+      campaignName="Jackson · Tax 3+ · 7 zips · Aug 30"
+      campaignKind="dialer"
+    />)
+    expect(screen.getByText(/Deceased rows are rejected and stay off this campaign/)).toBeVisible()
+  })
+
   it('keeps the review action disabled until a parcel list is present', () => {
     render(<CountyParcelAudienceEnroll campaignId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" campaignKind="dialer" />)
     expect(screen.getByRole('button', { name: 'Review 0 parcels' })).toBeDisabled()

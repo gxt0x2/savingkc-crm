@@ -2,8 +2,21 @@ import { describe, expect, it } from 'vitest'
 import {
   ProspectingCampaignInputError,
   type ProspectingCampaignDetail,
+  PROSPECTING_LIVE_TAX_3_PLUS_CAMPAIGN_ID,
+  PROSPECTING_PILOT_CAMPAIGN_ID,
+  assertProspectingFactoryCampaignSpec,
   copyProspectingCampaignSetup,
+  countySavedViewFactoryListError,
+  countyOwnerStatusFiltersForListType,
   editableProspectingCampaignSetup,
+  factoryListRowMixError,
+  isProspectingDialerPickerCampaign,
+  preferredProspectingDialerPickerCampaignId,
+  prospectingCampaignListType,
+  prospectingCampaignListTypeForCampaign,
+  prospectingDialerPickerCampaigns,
+  prospectingDialerPickerLabel,
+  prospectingFactoryCampaignNameError,
   isWithinProspectingWindow,
   nextProspectingWindow,
   parseCreateProspectingCampaignInput,
@@ -136,6 +149,70 @@ describe('prospecting campaign contract', () => {
       .toEqual(['SYN-JACKSON-PARCEL-0001', 'SYN-JACKSON-PARCEL-0002'])
     expect(() => parseCountyParcelIds(['SYN-JACKSON-PARCEL-0001', 'SYN-JACKSON-PARCEL-0001'])).toThrow(/unique Jackson parcel/)
     expect(() => parseCountyParcelIds([])).toThrow(/unique Jackson parcel/)
+  })
+
+  it('hides draft campaigns and names containing Pilot from the live dialer picker', () => {
+    const live = { id: '74609ed4-7e26-4111-b626-b2e3f68efa0b', name: 'Jackson · Tax 3+ · 7 zips · Aug 30', kind: 'dialer', status: 'active' }
+    const pilot = { id: '5c45d2f7-c120-4477-bb1f-f04d69c4efdf', name: 'County Tax Delinquent 2-Year — Pilot', kind: 'dialer', status: 'active' }
+    const draft = { id: '8d94a8d6-e3cd-4ab7-983c-44efcf8c92a2', name: 'August Absentee', kind: 'dialer', status: 'draft' }
+
+    expect(isProspectingDialerPickerCampaign(live)).toBe(true)
+    expect(isProspectingDialerPickerCampaign(pilot)).toBe(false)
+    expect(isProspectingDialerPickerCampaign(draft)).toBe(false)
+    expect(prospectingDialerPickerCampaigns([pilot, draft, live])).toEqual([live])
+    expect(prospectingDialerPickerLabel(live)).toBe('Jackson · Tax 3+ · 7 zips · Aug 30')
+    expect(prospectingDialerPickerLabel(live)).not.toMatch(/Casey/i)
+    expect(prospectingDialerPickerLabel(live)).not.toMatch(/active/i)
+    expect(prospectingDialerPickerLabel(live)).not.toMatch(/\d{4}-\d{2}-\d{2}/)
+    expect(preferredProspectingDialerPickerCampaignId([pilot, draft, live])).toBe(live.id)
+    expect(preferredProspectingDialerPickerCampaignId([pilot, draft, live], null, draft.id)).toBe(draft.id)
+    expect(isProspectingDialerPickerCampaign({
+      id: PROSPECTING_PILOT_CAMPAIGN_ID,
+      name: 'County Tax Delinquent 2-Year',
+      kind: 'dialer',
+      status: 'active',
+    })).toBe(false)
+  })
+
+  it('locks Tax 3+ and Deceased factory titles to one pile and voice only', () => {
+    expect(prospectingCampaignListType('Jackson · Tax 3+ · 7 zips · Aug 30')).toBe('tax_3_plus')
+    expect(prospectingCampaignListType('Jackson · Deceased · heirs · Aug 30')).toBe('deceased')
+    expect(prospectingCampaignListType('August Absentee')).toBeNull()
+    expect(prospectingCampaignListTypeForCampaign({
+      id: PROSPECTING_LIVE_TAX_3_PLUS_CAMPAIGN_ID,
+      name: 'Jackson renamed cut',
+    })).toBe('tax_3_plus')
+    expect(prospectingFactoryCampaignNameError('Jackson · Tax 3+ · Deceased · Aug 30')).toBe('campaign_list_piles_mixed')
+    expect(prospectingFactoryCampaignNameError('Casey · Jackson · Tax 3+ · 7 zips · Aug 30')).toBe('campaign_name_excludes_caller')
+    expect(countyOwnerStatusFiltersForListType('tax_3_plus')).toEqual(['non_deceased'])
+    expect(countySavedViewFactoryListError({
+      campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      savedView: 'tax_3yr_plus',
+      deceasedFilter: 'deceased',
+    })).toBe('tax_3_plus_excludes_deceased')
+    expect(countySavedViewFactoryListError({
+      campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      savedView: 'tax_2yr',
+      deceasedFilter: 'non_deceased',
+    })).toBe('tax_3_plus_requires_tax_3yr_plus_view')
+    expect(factoryListRowMixError({
+      campaignId: PROSPECTING_LIVE_TAX_3_PLUS_CAMPAIGN_ID,
+      campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      deceasedCount: 1,
+      livingCount: 2,
+    })).toBe('tax_3_plus_excludes_deceased')
+    expect(() => assertProspectingFactoryCampaignSpec('Jackson · Tax 3+ · 7 zips · Aug 30', 'sms'))
+      .toThrowError(new ProspectingCampaignInputError('factory_list_voice_only', 'Tax 3+ and Deceased factory lists are voice only'))
+    expect(() => parseCreateProspectingCampaignInput({
+      name: 'Jackson · Tax 3+ · Deceased · Aug 30',
+      kind: 'dialer',
+      callerId: '+18163100845',
+    })).toThrow(/separate piles/)
+    expect(parseCreateProspectingCampaignInput({
+      name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      kind: 'dialer',
+      callerId: '+18163100845',
+    })).toMatchObject({ name: 'Jackson · Tax 3+ · 7 zips · Aug 30', kind: 'dialer' })
   })
 
   it('checks the member timezone instead of the server timezone', () => {

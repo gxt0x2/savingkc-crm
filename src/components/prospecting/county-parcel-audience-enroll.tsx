@@ -1,17 +1,20 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { parsePastedCountyParcelIds } from '@/lib/prospecting/campaign-contract'
+import { parsePastedCountyParcelIds, prospectingCampaignListTypeForCampaign } from '@/lib/prospecting/campaign-contract'
 
 export function CountyParcelAudienceEnroll({
   campaignId,
+  campaignName,
   campaignKind,
   onEnrolled,
 }: {
   campaignId: string
+  campaignName?: string
   campaignKind?: 'dialer' | 'sms'
   onEnrolled?: () => void | Promise<void>
 }) {
+  const listType = prospectingCampaignListTypeForCampaign({ id: campaignId, name: campaignName ?? '' })
   const [paste, setPaste] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [enrolling, setEnrolling] = useState(false)
@@ -61,7 +64,7 @@ export function CountyParcelAudienceEnroll({
       <div>
         <p className="crm-eyebrow">Exact Jackson parcels</p>
         <h3 className="mt-1 text-sm font-black text-[var(--crm-ink)]">Enroll by parcel ID</h3>
-        <p className="mt-1 text-xs text-[var(--crm-text-muted)]">Paste reviewed Jackson source parcel IDs, one per line or comma-separated. This does not use a Saved View and does not create CRM leads.</p>
+        <p className="mt-1 text-xs text-[var(--crm-text-muted)]">{listType === 'tax_3_plus' ? 'Paste living Tax 3+ Jackson parcel IDs only. Deceased rows are rejected and stay off this campaign.' : listType === 'deceased' ? 'Paste deceased or inherited Jackson parcel IDs only. Living Tax 3+ rows belong on a separate campaign.' : 'Paste reviewed Jackson source parcel IDs, one per line or comma-separated. This does not use a Saved View and does not create CRM leads.'}</p>
       </div>
       <span className="rounded-full bg-[var(--crm-info-soft)] px-3 py-1 text-[10px] font-black text-[var(--crm-info)]">{parsed.parcelIds.length.toLocaleString()} unique parcel{parsed.parcelIds.length === 1 ? '' : 's'}</span>
     </div>

@@ -7,7 +7,7 @@ import { CampaignDeliveryPulse } from '@/components/prospecting/campaign-deliver
 import { CampaignLaunchReadiness } from '@/components/prospecting/campaign-launch-readiness'
 import { ProspectingSessionSetup } from '@/components/prospecting/prospecting-session-setup'
 import { Icon } from '@/components/ui/icon'
-import type { ProspectingCampaignDetail, ProspectingCampaignSummary, ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
+import { isProspectingDialerPickerCampaign, prospectingDialerPickerLabel, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 
 function percent(part: number, total: number) {
   return total > 0 ? Math.round((part / total) * 100) : 0
@@ -91,6 +91,7 @@ export function CampaignDashboard({
         ]
       : []
   const canEditAudience = Boolean(detail && ['draft', 'paused'].includes(detail.status))
+  const pickerCampaigns = campaigns.filter((campaign) => campaign.id === selectedId || isProspectingDialerPickerCampaign(campaign))
 
   function selectCampaign(id: string) {
     setManagementOpen(false)
@@ -109,12 +110,12 @@ export function CampaignDashboard({
             <select
               aria-label="Choose campaign"
               className="crm-field h-11 min-w-0 rounded-xl px-3 text-sm font-black sm:min-w-80"
-              disabled={loading || campaigns.length === 0}
+              disabled={loading || pickerCampaigns.length === 0}
               value={selectedId ?? ''}
               onChange={(event) => selectCampaign(event.target.value)}
             >
-              {campaigns.length === 0 ? <option value="">No campaigns available</option> : null}
-              {campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.status}</option>)}
+              {pickerCampaigns.length === 0 ? <option value="">No campaigns available</option> : null}
+              {pickerCampaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{prospectingDialerPickerLabel(campaign)}</option>)}
             </select>
           </div>
         </section>

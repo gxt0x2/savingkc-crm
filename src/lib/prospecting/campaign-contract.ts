@@ -119,6 +119,141 @@ export interface CreateProspectingCampaignInput {
   steps: ProspectingCampaignStepInput[]
 }
 
+type ProspectingDialerPickerCampaign = {
+  id?: string
+  name: string
+  kind: string
+  status: string
+}
+
+export const PROSPECTING_LIVE_TAX_3_PLUS_CAMPAIGN_ID = '74609ed4-7e26-4111-b626-b2e3f68efa0b'
+export const PROSPECTING_PILOT_CAMPAIGN_ID = '5c45d2f7-c120-4477-bb1f-f04d69c4efdf'
+
+export const PROSPECTING_CAMPAIGN_LIST_TYPES = ['tax_3_plus', 'deceased'] as const
+export type ProspectingCampaignListType = typeof PROSPECTING_CAMPAIGN_LIST_TYPES[number]
+
+const TAX_3_PLUS_TITLE = /\btax\s*3\+/i
+const DECEASED_TITLE = /\bdeceased\b/i
+const CALLER_NAME_TITLE = /^(casey|ernest)\s*[·•\-]/i
+
+export const PROSPECTING_FACTORY_ERROR_MESSAGES = {
+  campaign_list_piles_mixed: 'Tax 3+ and Deceased are separate piles. Use one list type in the campaign name.',
+  campaign_name_excludes_caller: 'Do not put the calling agent in the campaign title',
+  factory_list_voice_only: 'Tax 3+ and Deceased factory lists are voice only',
+  tax_3_plus_excludes_deceased: 'Tax 3+ campaigns are living first-pass only. Enroll deceased owners on a Deceased campaign.',
+  tax_3_plus_requires_tax_3yr_plus_view: 'Tax 3+ campaigns enroll only the 3+ Year Tax Delinquent Saved View.',
+  deceased_list_excludes_living: 'Deceased campaigns cannot include living owners. Use a Tax 3+ campaign for the living pile.',
+} as const
+
+export type ProspectingFactoryErrorCode = keyof typeof PROSPECTING_FACTORY_ERROR_MESSAGES
+
+export function prospectingFactoryErrorMessage(code: ProspectingFactoryErrorCode): string {
+  return PROSPECTING_FACTORY_ERROR_MESSAGES[code]
+}
+
+export function prospectingCampaignNameHasTax3Plus(name: string): boolean {
+  return TAX_3_PLUS_TITLE.test(name)
+}
+
+export function prospectingCampaignNameHasDeceased(name: string): boolean {
+  return DECEASED_TITLE.test(name)
+}
+
+export function prospectingFactoryCampaignNameError(name: string): ProspectingFactoryErrorCode | null {
+  const hasTax3Plus = prospectingCampaignNameHasTax3Plus(name)
+  const hasDeceased = prospectingCampaignNameHasDeceased(name)
+  if (hasTax3Plus && hasDeceased) return 'campaign_list_piles_mixed'
+  if (CALLER_NAME_TITLE.test(name.trim())) return 'campaign_name_excludes_caller'
+  return null
+}
+
+export function prospectingCampaignListType(name: string): ProspectingCampaignListType | null {
+  if (prospectingFactoryCampaignNameError(name)) return null
+  if (prospectingCampaignNameHasTax3Plus(name)) return 'tax_3_plus'
+  if (prospectingCampaignNameHasDeceased(name)) return 'deceased'
+  return null
+}
+
+export function prospectingCampaignListTypeForCampaign(campaign: { id?: string | null; name: string }): ProspectingCampaignListType | null {
+  if (campaign.id === PROSPECTING_LIVE_TAX_3_PLUS_CAMPAIGN_ID) return 'tax_3_plus'
+  return prospectingCampaignListType(campaign.name)
+}
+
+export function assertProspectingFactoryCampaignSpec(name: string, kind?: string): void {
+  const nameError = prospectingFactoryCampaignNameError(name)
+  if (nameError) {
+    throw new ProspectingCampaignInputError(nameError, prospectingFactoryErrorMessage(nameError))
+  }
+  if (kind && prospectingCampaignListType(name) && kind !== 'dialer') {
+    throw new ProspectingCampaignInputError('factory_list_voice_only', prospectingFactoryErrorMessage('factory_list_voice_only'))
+  }
+}
+
+export function countyOwnerStatusFiltersForListType(listType: ProspectingCampaignListType | null): Array<'all' | 'non_deceased' | 'deceased'> {
+  if (listType === 'tax_3_plus') return ['non_deceased']
+  if (listType === 'deceased') return ['deceased']
+  return ['all', 'non_deceased', 'deceased']
+}
+
+export function countySavedViewsForListType(listType: ProspectingCampaignListType | null): Array<'tax_2yr' | 'tax_3yr_plus'> {
+  return listType === 'tax_3_plus' ? ['tax_3yr_plus'] : ['tax_2yr', 'tax_3yr_plus']
+}
+
+export function countySavedViewFactoryListError(input: {
+  campaignId?: string | null
+  campaignName: string
+  savedView: string
+  deceasedFilter: string
+}): ProspectingFactoryErrorCode | null {
+  const listType = prospectingCampaignListTypeForCampaign({ id: input.campaignId, name: input.campaignName })
+  if (listType === 'tax_3_plus') {
+    if (input.deceasedFilter !== 'non_deceased') return 'tax_3_plus_excludes_deceased'
+    if (input.savedView !== 'tax_3yr_plus') return 'tax_3_plus_requires_tax_3yr_plus_view'
+  }
+  if (listType === 'deceased' && input.deceasedFilter !== 'deceased') return 'deceased_list_excludes_living'
+  return null
+}
+
+export function factoryListRowMixError(input: {
+  campaignId?: string | null
+  campaignName: string
+  deceasedCount: number
+  livingCount: number
+}): ProspectingFactoryErrorCode | null {
+  const listType = prospectingCampaignListTypeForCampaign({ id: input.campaignId, name: input.campaignName })
+  if (listType === 'tax_3_plus' && input.deceasedCount > 0) return 'tax_3_plus_excludes_deceased'
+  if (listType === 'deceased' && input.livingCount > 0) return 'deceased_list_excludes_living'
+  return null
+}
+
+export function isProspectingPilotCampaign(campaign: Pick<ProspectingDialerPickerCampaign, 'name' | 'kind'> & { id?: string }): boolean {
+  return campaign.id === PROSPECTING_PILOT_CAMPAIGN_ID
+    || campaign.name.toLowerCase().includes('pilot')
+    || campaign.kind.toLowerCase() === 'pilot'
+}
+
+export function isProspectingDialerPickerCampaign(campaign: ProspectingDialerPickerCampaign): boolean {
+  return campaign.status !== 'draft' && !isProspectingPilotCampaign(campaign)
+}
+
+export function prospectingDialerPickerCampaigns<T extends ProspectingDialerPickerCampaign>(campaigns: T[]): T[] {
+  return campaigns.filter(isProspectingDialerPickerCampaign)
+}
+
+export function prospectingDialerPickerLabel(campaign: Pick<ProspectingDialerPickerCampaign, 'name'>): string {
+  return campaign.name
+}
+
+export function preferredProspectingDialerPickerCampaignId(
+  campaigns: Array<Pick<ProspectingDialerPickerCampaign, 'id' | 'name' | 'kind' | 'status'> & { id: string }>,
+  currentId?: string | null,
+  requestedId?: string | null,
+): string | null {
+  if (currentId && campaigns.some((campaign) => campaign.id === currentId)) return currentId
+  if (requestedId && campaigns.some((campaign) => campaign.id === requestedId)) return requestedId
+  return campaigns.find(isProspectingDialerPickerCampaign)?.id ?? campaigns[0]?.id ?? null
+}
+
 export interface ProspectingCampaignSummary {
   id: string
   name: string
@@ -318,6 +453,7 @@ export function parseCreateProspectingCampaignInput(value: unknown): CreateProsp
   if (!PROSPECTING_CAMPAIGN_KINDS.includes(kind as ProspectingCampaignKind)) {
     throw new ProspectingCampaignInputError('invalid_kind', 'Choose a dialer or SMS campaign')
   }
+  assertProspectingFactoryCampaignSpec(name, kind)
   if (!isValidTimeZone(defaultTimezone)) {
     throw new ProspectingCampaignInputError('invalid_timezone', 'Choose a valid campaign timezone')
   }

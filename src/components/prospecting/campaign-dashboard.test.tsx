@@ -51,7 +51,7 @@ const detail: ProspectingCampaignDetail = {
   operations: { queued: 2, processing: 1, nextActionAt: '2026-08-22T14:00:00.000Z', lastSentAt: '2026-08-21T20:00:00.000Z' },
 }
 
-const campaigns: ProspectingCampaignSummary[] = [detail, { ...detail, id: 'campaign-2', name: 'Calling block', kind: 'dialer', status: 'draft' }]
+const campaigns: ProspectingCampaignSummary[] = [detail, { ...detail, id: 'campaign-2', name: 'Calling block', kind: 'dialer', status: 'active' }]
 
 describe('CampaignDashboard', () => {
   beforeEach(() => {
@@ -81,6 +81,32 @@ describe('CampaignDashboard', () => {
     render(<CampaignDashboard campaigns={campaigns} selectedId={detail.id} detail={detail} loading={false} detailLoading={false} actionPending={false} liveRefreshDelayed onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
     expect(screen.getByRole('heading', { name: detail.name })).toBeVisible()
     expect(screen.getByText('Updates delayed')).toBeVisible()
+  })
+
+  it('hides draft and Pilot campaigns from the live dialer picker and leaves status off the selected chip', () => {
+    const live: ProspectingCampaignSummary = {
+      ...detail,
+      id: '74609ed4-7e26-4111-b626-b2e3f68efa0b',
+      name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      kind: 'dialer',
+      callerId: '+18165550199',
+      fromPhone: null,
+    }
+    const pilot: ProspectingCampaignSummary = { ...live, id: '5c45d2f7-c120-4477-bb1f-f04d69c4efdf', name: 'County Tax Delinquent 2-Year — Pilot' }
+    const draft: ProspectingCampaignSummary = { ...live, id: '8d94a8d6-e3cd-4ab7-983c-44efcf8c92a2', name: 'August Absentee', status: 'draft' }
+    const liveDetail: ProspectingCampaignDetail = { ...detail, ...live, steps: [], members: detail.members }
+
+    render(<CampaignDashboard campaigns={[pilot, draft, live]} selectedId={live.id} detail={liveDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+
+    const picker = screen.getByRole('combobox', { name: 'Choose campaign' })
+    expect(picker).toHaveDisplayValue('Jackson · Tax 3+ · 7 zips · Aug 30')
+    expect(picker).not.toHaveTextContent(/Casey/i)
+    expect(picker).not.toHaveTextContent(/active/i)
+    expect(picker).not.toHaveTextContent(/2026-08-30/)
+    expect(screen.getByRole('option', { name: 'Jackson · Tax 3+ · 7 zips · Aug 30' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Pilot/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'August Absentee' })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Jackson · Tax 3+ · 7 zips · Aug 30' })).not.toHaveTextContent(/active/i)
   })
 
   it('changes the selected campaign from one compact control', () => {

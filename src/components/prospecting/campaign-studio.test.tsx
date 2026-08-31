@@ -25,6 +25,16 @@ function StudioHarness({ onCreate = vi.fn(), sourceCampaignName, editingCampaign
 }
 
 describe('CampaignStudio', () => {
+  it('hints at a county-first campaign name without the calling agent', () => {
+    render(<StudioHarness />)
+    expect(screen.getByRole('textbox', { name: /Campaign name/ })).toHaveAttribute('placeholder', 'Jackson · Tax 3+ · 7 zips · Aug 30')
+    expect(screen.getByText(/County · list · cut · Aug 30/)).toBeVisible()
+    expect(screen.getByText(/Do not put the calling agent in the title/)).toBeVisible()
+    expect(screen.getByText(/Put Tax 3\+ or Deceased in the title—never both/)).toBeVisible()
+    expect(screen.getByText(/Tax 3\+ and Deceased lists are voice only/)).toBeVisible()
+    expect(screen.queryByText(/Casey ·/)).not.toBeInTheDocument()
+  })
+
   it('explains that a copied setup starts without the prior audience or activity', () => {
     render(<StudioHarness sourceCampaignName="August Absentee" />)
     expect(screen.getByText('Setup copied from August Absentee.')).toBeVisible()
@@ -89,6 +99,13 @@ describe('CampaignStudio', () => {
     fireEvent.change(screen.getByLabelText('Send window end'), { target: { value: '10:00' } })
     expect(screen.getByRole('alert')).toHaveTextContent('End time must be later than start time.')
     expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+  })
+
+  it('keeps Tax 3+ factory titles on the voice lane', () => {
+    render(<StudioHarness />)
+    fireEvent.change(screen.getByRole('textbox', { name: /Campaign name/ }), { target: { value: 'Jackson · Tax 3+ · 7 zips · Aug 30' } })
+    expect(screen.getByRole('button', { name: /SMS cadence/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Power dialer/ })).toBeEnabled()
   })
 
   it('describes a truthful single-line calling workflow', () => {
