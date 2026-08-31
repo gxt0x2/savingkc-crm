@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { useWorkspaceCallRailOpen } from '@/components/conversations/workspace-frame'
-import { formatPhone, toProperCase } from '@/lib/format'
+import { formatPhone } from '@/lib/format'
+import { formatOwnerDisplayName, joinOwnerAddress, resolveMailingDisplay, resolveSitusDisplay } from '@/lib/owner-display'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { loadDialerSubjectActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
@@ -27,7 +28,6 @@ import type {
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
-import { joinProspectingAddress as joinAddress } from '@/components/prospecting/prospecting-calling-utils'
 import { useDialerPauseAndLeave } from '@/components/prospecting/use-dialer-pause-and-leave'
 import { useDialerTodayMetrics } from '@/components/prospecting/use-dialer-today-metrics'
 
@@ -495,17 +495,17 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     }
   }, [currentLeadId, durableSessionId, markDeadReason, markDeadNotes, advance, refreshActivities, transitionCurrentSession])
 
-  const ownerName = useMemo(() => {
-    const raw = currentProspect?.owner_1 || currentLead?.full_name || 'Unknown'
-    return toProperCase(raw)
-  }, [currentProspect, currentLead])
+  const ownerName = useMemo(
+    () => formatOwnerDisplayName(currentProspect, currentLead?.full_name) || 'Unknown',
+    [currentProspect, currentLead],
+  )
 
-  const situsAddress = joinAddress([
-    currentProspect?.situs_street || currentLead?.property_address,
-    currentProspect?.situs_city || currentLead?.city,
-    currentProspect?.situs_state || currentLead?.state,
-    currentProspect?.situs_zip || currentLead?.zip,
-  ])
+  const situsAddress = joinOwnerAddress(resolveSitusDisplay(currentProspect, {
+    street: currentLead?.property_address,
+    city: currentLead?.city,
+    state: currentLead?.state,
+    zip: currentLead?.zip,
+  }))
   // Occupancy is a source-backed prospect fact. Mailing-vs-situs remains a
   // deterministic fallback for older county rows that predate the column.
   const occupancy: ProspectingOccupancy | null = (() => {
@@ -513,12 +513,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     if (sourceStatus === 'vacant') return { label: 'Vacant', tone: 'warn' }
     if (sourceStatus === 'absentee' || sourceStatus === 'non_owner_occupied') return { label: 'Absentee', tone: 'amber' }
     if (sourceStatus === 'owner_occupied' || sourceStatus === 'occupied') return { label: 'Owner occupied', tone: 'neutral' }
-    const mailing = joinAddress([
-      currentProspect?.mailing_street,
-      currentProspect?.mailing_city,
-      currentProspect?.mailing_state,
-      currentProspect?.mailing_zip,
-    ])
+    const mailing = joinOwnerAddress(resolveMailingDisplay(currentProspect))
     if (!mailing) return null
     if (mailing !== situsAddress) return { label: 'Absentee', tone: 'amber' }
     return { label: 'Owner occupied', tone: 'neutral' }

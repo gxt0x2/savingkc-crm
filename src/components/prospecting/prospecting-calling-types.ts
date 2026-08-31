@@ -14,16 +14,22 @@ export interface ProspectingCallingLead {
 export interface ProspectingCallingProspect {
   id: string
   owner_1: string | null
+  owner_1_first?: string | null
+  owner_1_mi?: string | null
+  owner_1_last?: string | null
+  owner_1_suffix?: string | null
   cumulative_due: number | null
   earliest_delinquent_year: number | null
   delinquent_years_category: string | null
   total_market_value: number | null
   zestimate: number | null
   situs_street: string | null
+  situs_unit?: string | null
   situs_city: string | null
   situs_state: string | null
   situs_zip: string | null
   mailing_street: string | null
+  mailing_unit?: string | null
   mailing_city: string | null
   mailing_state: string | null
   mailing_zip: string | null
