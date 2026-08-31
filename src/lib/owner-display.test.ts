@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   formatOwnerDisplayName,
   formatOwnerState,
   formatOwnerZip,
+  formatSmartSkipLastName,
   joinOwnerAddress,
+  parseOwnerFamilyName,
   parseOwnerGivenName,
   parseStreetUnit,
   resolveOwnerDisplay,
@@ -80,6 +83,24 @@ describe('owner lock casing', () => {
       owner_1_first: 'MICHAEL SR',
       owner_1_last: 'LOVE',
     })).toBe('Michael Love Sr')
+  })
+
+  it('peels Jr/Sr off Last Name after SmartSkip enroll into the CRM suffix cell', () => {
+    expect(parseOwnerFamilyName('LOVE SR')).toEqual({ last: 'Love', suffix: 'Sr' })
+    expect(resolveOwnerDisplay({
+      owner_1_first: 'MICHAEL',
+      owner_1_last: 'LOVE SR',
+    })).toMatchObject({ first: 'Michael', mi: null, last: 'Love', suffix: 'Sr', fullName: 'Michael Love Sr' })
+  })
+
+  it('folds suffix onto Last Name for SmartSkip and never invents a Suffix chip', () => {
+    expect(formatSmartSkipLastName('Love', 'Sr')).toBe('Love Sr')
+    expect(formatSmartSkipLastName('LOVE SR', null)).toBe('Love Sr')
+    expect(Object.keys({ lastName: formatSmartSkipLastName('Love', 'Sr') })).toEqual(['lastName'])
+    const skipUpload = readFileSync('src/app/api/heirs/sync/route.ts', 'utf8')
+    expect(skipUpload).toContain('first_name: prospect.owner_1_first')
+    expect(skipUpload).toContain('last_name: prospect.owner_1_last')
+    expect(skipUpload).not.toMatch(/suffix/i)
   })
 
   it('formats situs street, unit, city, MO, and zip without turning MO into Mo', () => {

@@ -72,6 +72,17 @@ function mapSuffix(token: string): string | null {
   return SUFFIX_BY_TOKEN[token.replace(/[.,]$/, '').toUpperCase()] ?? null
 }
 
+function peelTrailingSuffixes(tokens: string[]): { tokens: string[]; suffix: string | null } {
+  const suffixParts: string[] = []
+  while (tokens.length > 1) {
+    const mapped = mapSuffix(tokens[tokens.length - 1] ?? '')
+    if (!mapped) break
+    tokens.pop()
+    suffixParts.unshift(mapped)
+  }
+  return { tokens, suffix: suffixParts.join(' ') || null }
+}
+
 export function titleCasePerson(value: string | null | undefined): string | null {
   const clean = blankToNull(value)
   return clean ? toProperCase(clean) : null
@@ -118,20 +129,34 @@ export function parseOwnerGivenName(value: string | null | undefined): OwnerGive
   const clean = blankToNull(value)
   if (!clean) return { first: null, mi: null, suffix: null }
 
-  const tokens = tokensOf(clean)
-  const suffixParts: string[] = []
-  while (tokens.length > 1) {
-    const mapped = mapSuffix(tokens[tokens.length - 1] ?? '')
-    if (!mapped) break
-    tokens.pop()
-    suffixParts.unshift(mapped)
-  }
+  const { tokens, suffix } = peelTrailingSuffixes(tokensOf(clean))
 
   return {
     first: titleCasePerson(tokens[0] ?? null),
     mi: tokens.length > 1 ? tokens.slice(1).map((token) => titleCasePerson(token)).filter(Boolean).join(' ') || null : null,
-    suffix: suffixParts.join(' ') || null,
+    suffix,
   }
+}
+
+/** SmartSkip has no Suffix chip. Jr/Sr/II/III ride Last Name. */
+export function parseOwnerFamilyName(value: string | null | undefined): { last: string | null; suffix: string | null } {
+  const clean = blankToNull(value)
+  if (!clean) return { last: null, suffix: null }
+
+  const { tokens, suffix } = peelTrailingSuffixes(tokensOf(clean))
+  return {
+    last: tokens.map((token) => titleCasePerson(token)).filter(Boolean).join(' ') || null,
+    suffix,
+  }
+}
+
+/** Fold CRM suffix back onto Last Name for SmartSkip. Never emit a Suffix chip. */
+export function formatSmartSkipLastName(
+  last: string | null | undefined,
+  suffix?: string | null,
+): string | null {
+  const family = parseOwnerFamilyName(last)
+  return [family.last, formatOwnerSuffix(suffix) || family.suffix].filter(Boolean).join(' ') || null
 }
 
 /** Split a county street cell. Street currently swallows Apt/Ste/Unit. */
@@ -165,18 +190,19 @@ export function resolveOwnerDisplay(
   leadName?: string | null,
 ): OwnerDisplayParts {
   const storedFirst = titleCasePerson(prospect?.owner_1_first)
-  const storedLast = titleCasePerson(prospect?.owner_1_last)
   const storedMi = titleCasePerson(prospect?.owner_1_mi)
   const storedSuffix = formatOwnerSuffix(prospect?.owner_1_suffix)
-
-  const parsed = hasStoredValue(prospect?.owner_1_mi) || hasStoredValue(prospect?.owner_1_suffix)
+  const given = hasStoredValue(prospect?.owner_1_mi) || hasStoredValue(prospect?.owner_1_suffix)
     ? { first: storedFirst, mi: storedMi, suffix: storedSuffix }
     : parseOwnerGivenName(prospect?.owner_1_first)
+  const family = hasStoredValue(prospect?.owner_1_suffix)
+    ? { last: titleCasePerson(prospect?.owner_1_last), suffix: storedSuffix }
+    : parseOwnerFamilyName(prospect?.owner_1_last)
 
-  const first = parsed.first
-  const mi = parsed.mi
-  const last = storedLast
-  const suffix = parsed.suffix
+  const first = given.first
+  const mi = given.mi
+  const last = family.last
+  const suffix = given.suffix || family.suffix
   const fullName = [first, mi, last, suffix].filter(Boolean).join(' ')
     || titleCasePerson(prospect?.owner_1)
     || titleCasePerson(leadName)
