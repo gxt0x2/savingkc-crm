@@ -45,6 +45,7 @@ describe('ProspectingPreviewCallRail', () => {
     }
     expect(screen.getByRole('region', { name: 'Current call summary' })).toHaveTextContent('Outcome required')
     expect(screen.getByText('Call outcome').closest('details')).toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'Disconnected' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Restart preview' })).toBeVisible()
   })
 
