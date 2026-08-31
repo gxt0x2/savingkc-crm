@@ -52,6 +52,14 @@ describe('county enrichment API', () => {
       source: 'county_assessor',
       sourceReference: 'jackson-county',
       facts: expect.objectContaining({ parcelId: 'parcel-1', appraisedValue: 180000 }),
+      location: {
+        address: '100 Main',
+        city: null,
+        state: 'MO',
+        zip: null,
+        county: 'Jackson',
+        parcelId: 'parcel-1',
+      },
     }))
     await expect(response.json()).resolves.toMatchObject({
       success: true,
