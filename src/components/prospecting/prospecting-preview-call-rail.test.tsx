@@ -14,10 +14,6 @@ const props = {
   callerId: '+18163100845',
   callerMode: 'static',
   rotationNumbers: '+18163100845',
-  startBehavior: 'resume',
-  ringCount: '7',
-  notDialedHours: '24',
-  notContactedHours: '72',
 }
 
 describe('ProspectingPreviewCallRail', () => {
@@ -37,10 +33,9 @@ describe('ProspectingPreviewCallRail', () => {
 
     expect(screen.getByRole('region', { name: 'First call countdown' })).toHaveTextContent('15')
     expect(screen.getByText('Helen Seller')).toBeVisible()
-    expect(screen.getByText('+18165550123')).toBeVisible()
-    expect(screen.getByText('Resume saved place')).toBeVisible()
-    expect(screen.getByText('7 rings')).toBeVisible()
-    expect(screen.getByText('Preview call-outcome state')).toBeVisible()
+    expect(screen.getByText('(816) 555-0123')).toBeVisible()
+    expect(screen.getByText('Call outcome')).toBeVisible()
+    expect(screen.queryByText('Session policy')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()
@@ -48,8 +43,9 @@ describe('ProspectingPreviewCallRail', () => {
     for (let second = 0; second < 15; second += 1) {
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
     }
-    expect(screen.getByText('Preview complete — no call placed')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Restart countdown' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Current call summary' })).toHaveTextContent('Outcome required')
+    expect(screen.getByText('Call outcome').closest('details')).toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'Restart preview' })).toBeVisible()
   })
 
   it('pauses immediately and ends back at the selected campaign', async () => {

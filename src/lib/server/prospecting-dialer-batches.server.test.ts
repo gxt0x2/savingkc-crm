@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), parseSession: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  from: vi.fn(),
+  getOpenSession: vi.fn(),
+  parseSession: vi.fn(),
+}))
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }))
-vi.mock('@/lib/server/dialer-session-engine', () => ({ parseDialerSession: mocks.parseSession }))
+vi.mock('@/lib/server/dialer-session-engine', () => ({
+  getOpenDialerSession: mocks.getOpenSession,
+  parseDialerSession: mocks.parseSession,
+}))
 
 import { launchProspectingDialerCampaign } from '@/lib/server/prospecting-campaigns'
 
@@ -50,6 +58,7 @@ describe('launchProspectingDialerCampaign', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.from.mockImplementation((table: string) => table === 'prospecting_campaigns' ? query(campaignRow) : query())
+    mocks.getOpenSession.mockResolvedValue(null)
     mocks.parseSession.mockReturnValue({ id: 'session-1' })
   })
 
@@ -88,6 +97,37 @@ describe('launchProspectingDialerCampaign', () => {
     await expect(launchProspectingDialerCampaign(actor, campaignId, setup)).rejects.toMatchObject({
       code: 'campaign_dialer_complete',
       status: 409,
+    })
+  })
+
+  it('identifies the open campaign, session, and seller when an unfinished call blocks launch changes', async () => {
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: null, error: { message: 'call_in_progress' } }))
+    mocks.getOpenSession.mockResolvedValue({
+      id: '398a33c0-c502-4de5-b2d8-8b0092849ddc',
+      currentIndex: 17,
+      queueSize: 166,
+      settingsSnapshot: { campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30' },
+    })
+
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup)).rejects.toMatchObject({
+      code: 'call_in_progress',
+      status: 409,
+      message: '“Jackson · Tax 3+ · 7 zips · Aug 30” · session 398a33c0 · seller 18 of 166 has an unfinished call. Resume it and save the outcome before changing the start position.',
+    })
+  })
+
+  it('keeps the safe fallback when open-session details cannot be loaded', async () => {
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: null, error: { message: 'call_in_progress' } }))
+    mocks.getOpenSession.mockRejectedValue(new Error('diagnostic unavailable'))
+
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup)).rejects.toMatchObject({
+      code: 'call_in_progress',
+      status: 409,
+      message: 'Finish and save the current call before changing where the session begins',
     })
   })
 })

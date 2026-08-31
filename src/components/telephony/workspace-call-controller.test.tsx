@@ -119,4 +119,26 @@ describe('WorkspaceCallController', () => {
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
     expect(screen.getByText('Pause session below to stop the countdown.')).toBeVisible()
   })
+
+  it('formats an E.164 number and collapses the call card when an outcome is required', () => {
+    render(
+      <WorkspaceCallController
+        callerPlan={{ mode: 'static', staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
+        dialDisplay="+18165550123"
+        dialReady={false}
+        effectiveCallerId="+18163078735"
+        onCall={vi.fn()}
+        outcomeRequired
+        queueItem={queueItem}
+        statusLabel="Ready"
+      />,
+    )
+
+    const summary = screen.getByRole('region', { name: 'Current call summary' })
+    expect(summary).toHaveTextContent('Helen Seller')
+    expect(summary).toHaveTextContent('(816) 555-0123')
+    expect(summary).toHaveTextContent('Outcome required')
+    expect(screen.queryByRole('button', { name: 'Call selected number' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Calling from')).not.toBeInTheDocument()
+  })
 })

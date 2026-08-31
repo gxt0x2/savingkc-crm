@@ -16,18 +16,6 @@ type ProspectingPreviewCallRailProps = {
   callerId: string
   callerMode: string
   rotationNumbers: string
-  startBehavior: string
-  ringCount: string
-  notDialedHours: string | null
-  notContactedHours: string | null
-}
-
-function recencySummary(value: string | null) {
-  if (!value) return 'No filter'
-  const hours = Number(value)
-  if (hours === 24) return '24 hours'
-  if (hours % 24 === 0) return `${hours / 24} days`
-  return `${hours} hours`
 }
 
 export function ProspectingPreviewCallRail({
@@ -36,10 +24,6 @@ export function ProspectingPreviewCallRail({
   callerId,
   callerMode,
   rotationNumbers,
-  startBehavior,
-  ringCount,
-  notDialedHours,
-  notContactedHours,
 }: ProspectingPreviewCallRailProps) {
   const router = useRouter()
   const [queue, setQueue] = useState<HeirDialerQueueItem[]>([])
@@ -109,26 +93,17 @@ export function ProspectingPreviewCallRail({
           effectiveCallerId={callerId}
           onCall={() => {}}
           onPauseAutoStart={pauseOrResume}
+          outcomeRequired={completed}
           previewOnly
           queueItem={queueItem}
           statusLabel={previewStatus}
         />
 
-        <details className="rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-3">
-          <summary className="cursor-pointer text-xs font-black text-[var(--skc-text-secondary)]">Preview call-outcome state</summary>
-          <div className="mt-3"><WorkspaceDispositionControls outcomeRequired previewOnly /></div>
+        <details open={completed} className="rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-3">
+          <summary className="cursor-pointer text-xs font-black text-[var(--skc-text-secondary)]">Call outcome</summary>
+          <div className="mt-3"><WorkspaceDispositionControls outcomeRequired={completed} previewOnly /></div>
+          {completed ? <button type="button" onClick={pauseOrResume} className="mt-3 min-h-10 w-full rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-3 text-xs font-bold text-[var(--skc-text-primary)]">Restart preview</button> : null}
         </details>
-
-        <section aria-label="Preview session policy" className="rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-4 text-xs">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--skc-text-tertiary)]">Session policy</p>
-          <dl className="mt-3 space-y-2 text-[var(--skc-text-secondary)]">
-            <div className="flex justify-between gap-3"><dt>Start</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{startBehavior === 'first_unworked' ? 'First unworked seller' : 'Resume saved place'}</dd></div>
-            <div className="flex justify-between gap-3"><dt>Caller ID</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{callerPlan.mode === 'rotation' ? `${callerPlan.rotationCallerIds.length} rotating lines` : 'Static line'}</dd></div>
-            <div className="flex justify-between gap-3"><dt>Rings before no answer</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{ringCount || '7'} rings</dd></div>
-            <div className="flex justify-between gap-3"><dt>Not dialed</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{recencySummary(notDialedHours)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>Not contacted</dt><dd className="text-right font-bold text-[var(--skc-text-primary)]">{recencySummary(notContactedHours)}</dd></div>
-          </dl>
-        </section>
       </div>
 
       <footer aria-label="Preview calling session controls" className="shrink-0 space-y-2 bg-[var(--skc-surface-1)] p-4">

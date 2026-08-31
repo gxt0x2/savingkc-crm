@@ -1436,6 +1436,7 @@ export function DialerPanel({
               loadingSessionQueue={Boolean(pendingSessionId && !pendingQueue && !queue?.length)}
               onCall={makeCall}
               onPauseAutoStart={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))}
+              outcomeRequired={outcomeRequired || Boolean(recoveryPending)}
               queueItem={queueItem}
               statusLabel={DIALER_STATUS_LABEL[status]}
             />
