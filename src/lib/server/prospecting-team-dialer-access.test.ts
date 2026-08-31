@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const campaigns = readFileSync('src/lib/server/prospecting-campaigns.ts', 'utf8')
 const activity = readFileSync('src/lib/server/prospecting-campaign-activity.ts', 'utf8')
-const migration = readFileSync('supabase/migrations/20261024120000_team_operated_active_dialer_campaigns.sql', 'utf8')
+const migration = readFileSync('supabase/migrations/20261024123000_team_operated_active_dialer_campaigns.sql', 'utf8')
 
 describe('team-operated active prospecting dialer campaigns', () => {
   it('shares only active dialer campaigns while preserving owner-only administration', () => {

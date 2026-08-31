@@ -10,6 +10,7 @@ import {
   type ProspectingDialerSessionSetup,
   countySavedViewFactoryListError,
   factoryListRowMixError,
+  parseProspectingDialerSessionSetup,
   prospectingCampaignListTypeForCampaign,
   prospectingFactoryCampaignNameError,
   prospectingFactoryErrorMessage,
@@ -268,6 +269,28 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
   for (const result of countResults) if (result.error) throw databaseError(result.error)
   for (const result of operationResults) if (result.error) throw databaseError(result.error)
 
+  let dialerPreset: ProspectingDialerSessionSetup | null = null
+  if (campaignRow.kind === 'dialer') {
+    const { data: presetEvent, error: presetError } = await supabase
+      .from('prospecting_campaign_events')
+      .select('metadata')
+      .eq('campaign_id', campaignId)
+      .eq('event_type', 'dialer_preset_saved')
+      .contains('metadata', { actor_email: actor.email.trim().toLowerCase() })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (presetError) throw databaseError(presetError)
+    const metadata = presetEvent?.metadata
+    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      try {
+        dialerPreset = parseProspectingDialerSessionSetup((metadata as Record<string, unknown>).session_setup)
+      } catch {
+        dialerPreset = null
+      }
+    }
+  }
+
   const members: ProspectingCampaignMember[] = ((membersResult.data || []) as unknown[]).map((value: unknown) => {
     const row = value as Record<string, unknown>
     return {
@@ -290,6 +313,7 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
   })
   return {
     ...mapCampaign(campaignRow),
+    dialerPreset,
     steps: (stepsResult.data || []).map(mapStep),
     members,
     stats: {
@@ -310,6 +334,26 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
       lastSentAt: operationResults[3].data?.sent_at || null,
     },
   }
+}
+
+export async function saveProspectingDialerPreset(
+  actor: AuthenticatedActor,
+  campaignId: string,
+  setup: ProspectingDialerSessionSetup,
+): Promise<ProspectingDialerSessionSetup> {
+  const campaign = await getProspectingCampaign(actor, campaignId)
+  if (campaign.kind !== 'dialer') throw new ProspectingCampaignError('invalid_campaign_kind', 409, 'Only dialer campaigns have calling presets')
+  const { error } = await supabase.from('prospecting_campaign_events').insert({
+    campaign_id: campaignId,
+    event_type: 'dialer_preset_saved',
+    actor: actor.name,
+    metadata: {
+      actor_email: actor.email.trim().toLowerCase(),
+      session_setup: setup,
+    },
+  })
+  if (error) throw databaseError(error)
+  return setup
 }
 
 function factoryEnrollmentError(code: ProspectingFactoryErrorCode): ProspectingCampaignError {

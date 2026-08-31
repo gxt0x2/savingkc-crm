@@ -32,4 +32,12 @@ describe('canonical property link bootstrap migration', () => {
     expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.ensure_crm_property_link_v1[\s\S]+FROM PUBLIC, anon, authenticated;/)
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.ensure_crm_property_link_v1[\s\S]+TO service_role;/)
   })
+
+  it('retries only jobs that failed because the bootstrap function was missing', () => {
+    const sql = fs.readFileSync(migrationPath, 'utf8')
+
+    expect(sql).toContain("WHERE status = 'failed'")
+    expect(sql).toContain("last_error LIKE 'Canonical property bootstrap failed:%ensure_crm_property_link_v1%'")
+    expect(sql).toContain('attempts = 0')
+  })
 })

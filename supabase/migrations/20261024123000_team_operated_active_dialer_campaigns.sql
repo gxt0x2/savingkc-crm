@@ -33,4 +33,3 @@ REVOKE ALL ON FUNCTION public.start_prospecting_dialer_session_v4(uuid, text, te
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.start_prospecting_dialer_session_v4(uuid, text, text, text, jsonb)
   TO service_role;
-

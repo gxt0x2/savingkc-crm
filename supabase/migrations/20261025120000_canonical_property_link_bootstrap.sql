@@ -211,3 +211,18 @@ GRANT EXECUTE ON FUNCTION public.ensure_crm_property_link_v1(
 COMMENT ON FUNCTION public.ensure_crm_property_link_v1(
   uuid, text, text, text, text, text, text, text
 ) IS 'Creates and links a canonical property from a verified prospect match or county-assessor location.';
+
+-- The application release that first called this function reached production
+-- before this migration. Retry only the jobs that failed for that exact schema
+-- gap; unrelated failures remain terminal for review.
+UPDATE public.crm_property_enrichment_jobs SET
+  status = 'pending',
+  available_at = now(),
+  attempts = 0,
+  claim_token = NULL,
+  claimed_at = NULL,
+  completed_at = NULL,
+  last_error = NULL,
+  updated_at = now()
+WHERE status = 'failed'
+  AND last_error LIKE 'Canonical property bootstrap failed:%ensure_crm_property_link_v1%';

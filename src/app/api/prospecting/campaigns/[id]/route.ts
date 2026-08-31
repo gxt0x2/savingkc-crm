@@ -1,8 +1,8 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingError, prospectingJson } from '@/lib/api/prospecting-response'
-import { parseCreateProspectingCampaignInput } from '@/lib/prospecting/campaign-contract'
+import { parseCreateProspectingCampaignInput, parseProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 import { previewWriteBlocked } from '@/lib/preview-safety'
-import { getProspectingCampaign, setProspectingCampaignStatus, updateProspectingCampaignDraft } from '@/lib/server/prospecting-campaigns'
+import { getProspectingCampaign, saveProspectingDialerPreset, setProspectingCampaignStatus, updateProspectingCampaignDraft } from '@/lib/server/prospecting-campaigns'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -27,7 +27,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const actor = await resolveAuthenticatedActor()
   if (!actor) return prospectingJson({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const body = await request.json() as { status?: unknown; confirmed?: unknown; setup?: unknown }
+    const body = await request.json() as { status?: unknown; confirmed?: unknown; setup?: unknown; dialerPreset?: unknown }
+    if (body.dialerPreset !== undefined) {
+      return prospectingJson({ dialerPreset: await saveProspectingDialerPreset(
+        actor,
+        (await params).id,
+        parseProspectingDialerSessionSetup(body.dialerPreset),
+      ) })
+    }
     if (body.setup !== undefined) {
       return prospectingJson({ campaign: await updateProspectingCampaignDraft(
         actor,
