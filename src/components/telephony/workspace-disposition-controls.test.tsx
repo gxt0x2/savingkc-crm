@@ -11,6 +11,7 @@ describe('WorkspaceDispositionControls', () => {
 
     expect(screen.getByRole('button', { name: 'Reached Person' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'No Answer' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Disconnected' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Do Not Call' })).toBeDisabled()
     expect(screen.getByText('Available when a call ends')).toBeVisible()
   })
@@ -21,6 +22,11 @@ describe('WorkspaceDispositionControls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'No Answer' }))
     expect(onDisposition).toHaveBeenCalledWith('no_answer')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnected' }))
+    expect(onDisposition).toHaveBeenCalledWith('disconnected')
+    expect(screen.getByRole('button', { name: 'Disconnected' })).toHaveClass('w-full', 'min-w-0')
+    expect(screen.getByText('Disconnected')).toHaveClass('whitespace-normal', 'break-words')
   })
 
   it('shows the same controls without enabling writes in preview', () => {

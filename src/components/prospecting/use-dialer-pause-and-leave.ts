@@ -2,7 +2,21 @@
 
 import { useCallback, useEffect } from 'react'
 
-import { requestPauseDurableDialerSession, type DurableDialerSession } from '@/lib/dialer-session-client'
+import {
+  requestPauseDurableDialerSession,
+  type DialerPauseRequest,
+  type DurableDialerSession,
+} from '@/lib/dialer-session-client'
+
+export type DialerPauseRequestedDetail = DialerPauseRequest & {
+  leaveAfterPause: boolean
+}
+
+export function dispatchDialerPauseRequested(result: DialerPauseRequest, leaveAfterPause: boolean) {
+  window.dispatchEvent(new CustomEvent<DialerPauseRequestedDetail>('dialer-session-pause-requested', {
+    detail: { ...result, leaveAfterPause },
+  }))
+}
 
 type UseDialerPauseAndLeaveInput = {
   session: DurableDialerSession | null
@@ -30,7 +44,7 @@ export function useDialerPauseAndLeave({
     try {
       const result = await requestPauseDurableDialerSession(sessionId, 'Agent paused the calling session')
       applySession(result.session)
-      window.dispatchEvent(new CustomEvent('dialer-session-pause-requested', { detail: result }))
+      dispatchDialerPauseRequested(result, true)
       if (result.requiresDisposition) {
         setError('Session paused. Save the current call outcome to leave without dialing another number.')
         return
@@ -45,8 +59,8 @@ export function useDialerPauseAndLeave({
 
   useEffect(() => {
     function onPauseCompleted(event: Event) {
-      const detail = (event as CustomEvent).detail as { sessionId?: string } | null
-      if (detail?.sessionId === sessionId) navigateAway()
+      const detail = (event as CustomEvent).detail as { sessionId?: string; leaveAfterPause?: boolean } | null
+      if (detail?.sessionId === sessionId && detail.leaveAfterPause === true) navigateAway()
     }
     window.addEventListener('dialer-session-pause-completed', onPauseCompleted)
     return () => window.removeEventListener('dialer-session-pause-completed', onPauseCompleted)

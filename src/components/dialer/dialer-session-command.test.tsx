@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { DialerSessionCommand } from './dialer-session-command'
 
@@ -142,6 +142,35 @@ describe('DialerSessionCommand', () => {
     expect(props.onResume).toHaveBeenCalledOnce()
   })
 
+  it('blocks resume while a paused call still needs to hang up and save its outcome', () => {
+    renderCommand({
+      durableStatus: 'paused',
+      queueState: {
+        queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
+        queueIndex: 0,
+        queueLength: 3,
+        status: 'calling',
+      },
+    })
+
+    expect(screen.getByRole('button', { name: 'Pausing call…' })).toBeDisabled()
+  })
+
+  it('keeps a paused session locked until its required outcome is saved', () => {
+    renderCommand({
+      durableStatus: 'paused',
+      queueState: {
+        queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
+        queueIndex: 0,
+        queueLength: 3,
+        status: 'ready',
+        outcomeRequired: true,
+      },
+    })
+
+    expect(screen.getByRole('button', { name: 'Paused — save outcome' })).toBeDisabled()
+  })
+
   it('shows live connected state without adding predictive or parallel-line claims', () => {
     const props = renderCommand({
       queueState: {
@@ -158,6 +187,7 @@ describe('DialerSessionCommand', () => {
     expect(screen.queryByText(/predictive/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/3 lines/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hang up' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Pause & hang up' })).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: 'End session' }))
     const dialog = screen.getByRole('dialog', { name: 'Stop this session?' })
@@ -194,5 +224,15 @@ describe('DialerSessionCommand', () => {
     expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
     expect(props.onSkip).toHaveBeenCalledOnce()
+  })
+
+  it('shows the preview session status across the top command center', () => {
+    renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
+
+    expect(screen.getByText('Ready')).toBeVisible()
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-preview-status', { detail: { status: 'Paused' } })))
+    expect(screen.getByText('Paused')).toBeVisible()
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-preview-status', { detail: { status: 'Outcome required' } })))
+    expect(screen.getByText('Outcome required')).toBeVisible()
   })
 })

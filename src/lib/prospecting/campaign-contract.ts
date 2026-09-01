@@ -326,6 +326,7 @@ export interface ProspectingCampaignMemberContact {
 }
 
 export interface ProspectingCampaignDetail extends ProspectingCampaignSummary {
+  dialerPreset?: ProspectingDialerSessionSetup | null
   steps: ProspectingCampaignStep[]
   members: ProspectingCampaignMember[]
   stats: {

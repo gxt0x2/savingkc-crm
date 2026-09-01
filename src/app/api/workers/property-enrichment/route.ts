@@ -16,6 +16,15 @@ async function handle(request: Request) {
 
   try {
     const result = await runPropertyEnrichmentWorker(requestedLimit(request))
+    if (result.pending > 0 || result.failed > 0) {
+      console.error('[property-enrichment-worker] incomplete jobs', {
+        claimed: result.claimed,
+        completed: result.completed,
+        pending: result.pending,
+        failed: result.failed,
+        errors: Array.from(new Set(result.results.flatMap((item) => item.error ? [item.error] : []))).slice(0, 3),
+      })
+    }
     return NextResponse.json(result, {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
     })
@@ -35,4 +44,3 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handle(request)
 }
-

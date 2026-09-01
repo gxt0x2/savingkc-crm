@@ -80,6 +80,7 @@ function formatDialerTime(value: number | null | undefined) {
 
 export function DialerSessionCommand(props: DialerSessionCommandProps) {
   const [confirmEndOpen, setConfirmEndOpen] = useState(false)
+  const [previewStatus, setPreviewStatus] = useState('Ready')
   const {
     actionPending,
     onMarkDead,
@@ -93,9 +94,19 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
   const isDurable = Boolean(props.durableSessionId)
   const isPaused = props.durableStatus === 'paused'
   const canEndSession = isDurable && !props.stopRequested && Boolean(props.durableStatus && ['active', 'paused'].includes(props.durableStatus))
+  const pauseLabel = isCalling
+    ? 'Pause & hang up'
+    : props.queueState?.outcomeRequired
+      ? 'Pause after outcome'
+      : 'Pause session'
+  const pausedActionLabel = isCalling
+    ? 'Pausing call…'
+    : props.queueState?.outcomeRequired
+      ? 'Paused — save outcome'
+      : 'Resume session'
   const progress = Math.round(((props.currentIndex + 1) / Math.max(props.queueSize, 1)) * 100)
   const statusLabel = props.readOnlyPreview
-    ? 'Read-only'
+    ? previewStatus
     : props.queueState?.outcomeRequired
     ? 'Outcome required'
     : props.queueState?.status === 'on_call'
@@ -104,6 +115,16 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       ? 'Dialing now'
       : props.stopRequested ? 'Ending after outcome'
         : isPaused ? 'Session paused' : 'Ready'
+
+  useEffect(() => {
+    if (!readOnlyPreview) return
+    function onPreviewStatus(event: Event) {
+      const status = (event as CustomEvent).detail?.status
+      if (status === 'Ready' || status === 'Paused' || status === 'Outcome required') setPreviewStatus(status)
+    }
+    window.addEventListener('prospecting-preview-status', onPreviewStatus)
+    return () => window.removeEventListener('prospecting-preview-status', onPreviewStatus)
+  }, [readOnlyPreview])
 
   useEffect(() => {
     function onSessionCommand(event: Event) {
@@ -127,7 +148,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
           <div className="min-w-0 xl:max-w-[390px]">
             <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${isCalling ? 'animate-pulse bg-[var(--crm-success)]' : isPaused ? 'bg-[var(--crm-warning)]' : 'bg-[var(--crm-success)]'}`} /><p className="truncate text-[10px] font-black uppercase tracking-[0.18em] text-[var(--crm-brand)]">{props.queueLabel}</p></div>
             <div className="mt-1 flex items-baseline gap-2"><h1 className="truncate text-xl font-black tracking-[-0.03em]">{props.readOnlyPreview ? 'Calling workflow preview' : 'Calling session'}</h1><span className="text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{statusLabel}</span></div>
-            <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{props.callerPolicyLabel || (props.callerId ? `Assigned line ${formatPhone(props.callerId)}` : 'Caller ID unavailable')}</p>
+            {!props.controlsDocked ? <p className="mt-1 truncate text-xs text-[var(--ck-text-muted)]">{props.callerPolicyLabel || (props.callerId ? `Assigned line ${formatPhone(props.callerId)}` : 'Caller ID unavailable')}</p> : null}
           </div>
 
           <div aria-label="Session actions" className="flex flex-wrap items-center gap-2 xl:max-w-[860px] xl:justify-end">
@@ -136,8 +157,8 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
                 <Icon name="phone_in_talk" size="text-sm" /> {isCalling ? 'Current call' : 'Call controls'}
               </button> : null}
               {isCalling ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'hangup' } }))} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-danger)] px-3 text-xs font-black text-white hover:opacity-90"><Icon name="call_end" size="text-sm" />Hang up</button> : null}
-              {isPaused ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'resume' } }))} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-success)] px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50"><Icon name="play_arrow" size="text-sm" />Resume session</button>
-                : !props.readOnlyPreview ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))} disabled={props.actionPending || props.stopRequested} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:opacity-40"><Icon name="pause" size="text-sm" />Pause session</button> : null}
+              {isPaused ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'resume' } }))} disabled={props.actionPending || isCalling || props.queueState?.outcomeRequired} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-success)] px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50"><Icon name={isCalling || props.queueState?.outcomeRequired ? 'pause_circle' : 'play_arrow'} size="text-sm" />{pausedActionLabel}</button>
+                : !props.readOnlyPreview ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))} disabled={props.actionPending || props.stopRequested} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 text-xs font-black text-[var(--crm-on-warning)] hover:opacity-90 disabled:opacity-40"><Icon name="pause_circle" size="text-sm" />{pauseLabel}</button> : null}
               {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId || props.stopRequested} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 text-xs font-bold text-[var(--crm-danger)] hover:border-[var(--crm-danger)] disabled:opacity-30" title="Mark this lead dead and record why"><Icon name="cancel" size="text-sm" />Dead</button> : null}
               <button type="button" onClick={props.onPrevious} disabled={isDurable || props.currentIndex === 0} className="crm-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-30" title="Previous seller" aria-label="Previous seller"><Icon name="chevron_left" size="text-base" /></button>
               <button type="button" onClick={props.onSkip} disabled={props.actionPending || props.stopRequested || isCalling || isPaused || (!isDurable && props.currentIndex >= props.queueSize - 1)} className="crm-primary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-30" title={isDurable ? 'Skip this seller with an audited outcome' : 'Next seller'}>{isDurable ? 'Skip seller' : 'Next'}<Icon name="chevron_right" size="text-sm" /></button>

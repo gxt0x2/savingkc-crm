@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProspectingCampaignDetail, ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 import { CampaignDashboard } from './campaign-dashboard'
@@ -55,6 +55,7 @@ const campaigns: ProspectingCampaignSummary[] = [detail, { ...detail, id: 'campa
 
 describe('CampaignDashboard', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => ({
       ok: true,
       json: async () => String(input).includes('/activity')
@@ -161,9 +162,32 @@ describe('CampaignDashboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
     fireEvent.click(screen.getByRole('radio', { name: /First unworked/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Apply setup' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save preset' }))
     fireEvent.click(screen.getByRole('button', { name: 'Start calling' }))
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({ startBehavior: 'first_unworked' }))
+  })
+
+  it('saves and restores a calling filter preset for the selected campaign', async () => {
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, id: 'saved-preset-campaign', kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
+    const props = { campaigns: [dialerDetail], selectedId: dialerDetail.id, detail: dialerDetail, loading: false, detailLoading: false, actionPending: false, onSelect: vi.fn(), onCreate: vi.fn(), onDuplicate: vi.fn(), onTransition: vi.fn(), onLaunchDialer: vi.fn() }
+    const first = render(<CampaignDashboard {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Rings before no answer' }), { target: { value: '4' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Not dialed time frame' }), { target: { value: '72' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save preset' }))
+    expect(window.localStorage.getItem('savingkc:prospecting-session-preset:v1:saved-preset-campaign')).toContain('"ringCount":4')
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      '/api/prospecting/campaigns/saved-preset-campaign',
+      expect.objectContaining({ method: 'PATCH' }),
+    ))
+    expect(await screen.findByText('Campaign preset saved.')).toBeVisible()
+
+    first.unmount()
+    render(<CampaignDashboard {...props} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('4 rings'))
+    fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
+    expect(screen.getByRole('combobox', { name: 'Not dialed time frame' })).toHaveValue('72')
   })
 
   it('offers only cold-call lines and caps rotation at five', () => {

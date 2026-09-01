@@ -6,6 +6,7 @@ import {
   PROSPECTING_DIALER_RING_COUNTS,
   PROSPECTING_DIALER_RECENCY_HOURS,
   defaultProspectingDialerSessionSetup,
+  parseProspectingDialerSessionSetup,
   type ProspectingDialerSessionSetup,
 } from '@/lib/prospecting/campaign-contract'
 import { formatPhone } from '@/lib/format'
@@ -14,9 +15,29 @@ import { COLD_CALL_DIALER_NUMBERS, isColdCallDialerNumber } from '@/lib/twilio-n
 type ProspectingSessionSetupProps = {
   actionPending: boolean
   activeCount: number
+  campaignId: string
   campaignCallerId: string | null
+  initialPreset?: ProspectingDialerSessionSetup | null
   writesEnabled: boolean
   onLaunch: (setup: ProspectingDialerSessionSetup) => void
+}
+
+const PRESET_STORAGE_PREFIX = 'savingkc:prospecting-session-preset:v1:'
+
+export function prospectingSessionPresetStorageKey(campaignId: string) {
+  return `${PRESET_STORAGE_PREFIX}${campaignId}`
+}
+
+function savedSetup(campaignId: string, campaignCallerId: string | null, initialPreset?: ProspectingDialerSessionSetup | null) {
+  const fallback = initialPreset || initialSetup(campaignCallerId)
+  if (typeof window === 'undefined') return fallback
+  try {
+    const stored = window.localStorage.getItem(prospectingSessionPresetStorageKey(campaignId))
+    return stored ? parseProspectingDialerSessionSetup(JSON.parse(stored)) : fallback
+  } catch {
+    window.localStorage.removeItem(prospectingSessionPresetStorageKey(campaignId))
+    return fallback
+  }
 }
 
 function initialSetup(campaignCallerId: string | null): ProspectingDialerSessionSetup {
@@ -41,14 +62,17 @@ function summary(setup: ProspectingDialerSessionSetup) {
 export function ProspectingSessionSetup({
   actionPending,
   activeCount,
+  campaignId,
   campaignCallerId,
+  initialPreset,
   writesEnabled,
   onLaunch,
 }: ProspectingSessionSetupProps) {
-  const [applied, setApplied] = useState(() => initialSetup(campaignCallerId))
+  const [applied, setApplied] = useState(() => savedSetup(campaignId, campaignCallerId, initialPreset))
   const [draft, setDraft] = useState(applied)
   const [open, setOpen] = useState(false)
   const [selectionError, setSelectionError] = useState<string | null>(null)
+  const [presetState, setPresetState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   function openSetup() {
     setDraft(applied)
@@ -92,8 +116,26 @@ export function ProspectingSessionSetup({
       return
     }
     setApplied(draft)
+    try {
+      window.localStorage.setItem(prospectingSessionPresetStorageKey(campaignId), JSON.stringify(draft))
+    } catch {
+      // A blocked storage API must not prevent the agent from starting a call.
+    }
     setOpen(false)
     setSelectionError(null)
+    if (writesEnabled) {
+      setPresetState('saving')
+      void fetch(`/api/prospecting/campaigns/${campaignId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dialerPreset: draft }),
+      }).then(async (response) => {
+        if (!response.ok) throw new Error('Preset save failed')
+        setPresetState('saved')
+      }).catch(() => setPresetState('error'))
+    } else {
+      setPresetState('saved')
+    }
   }
 
   return (
@@ -107,6 +149,7 @@ export function ProspectingSessionSetup({
       </div>
 
       {!writesEnabled ? <p className="text-xs font-bold leading-5 text-white/60">Preview mode: setup changes stay in this browser. The calling floor and 15-second start sequence are interactive, but no call or CRM write can occur.</p> : null}
+      {presetState !== 'idle' ? <p role="status" className={`text-xs font-bold ${presetState === 'error' ? 'text-amber-200' : 'text-white/60'}`}>{presetState === 'saving' ? 'Saving campaign preset…' : presetState === 'saved' ? 'Campaign preset saved.' : 'Preset is saved in this browser, but account sync failed. Try Save preset again.'}</p> : null}
 
       {open ? <section aria-label="Calling session setup" className="crm-panel-raised rounded-2xl p-4 text-[var(--crm-text)] sm:p-5">
         <div className="grid gap-5 lg:grid-cols-2">
@@ -142,7 +185,8 @@ export function ProspectingSessionSetup({
             <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Rings before no answer<select aria-label="Rings before no answer" value={draft.ringCount} onChange={(event) => setDraft((current) => ({ ...current, ringCount: Number(event.target.value) as ProspectingDialerSessionSetup['ringCount'] }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold">{PROSPECTING_DIALER_RING_COUNTS.map((count) => <option key={count} value={count}>{count} rings</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Treat the call as No Answer after this many rings.</span></label>
             <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Not dialed<select aria-label="Not dialed time frame" value={draft.notDialedHours ?? ''} onChange={(event) => setDraft((current) => ({ ...current, notDialedHours: event.target.value ? Number(event.target.value) as ProspectingDialerSessionSetup['notDialedHours'] : null }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold"><option value="">No filter</option>{PROSPECTING_DIALER_RECENCY_HOURS.map((hours) => <option key={hours} value={hours}>{recencyLabel(hours)}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Only dial numbers not attempted during the selected time range.</span></label>
             <label className="mt-4 block text-xs font-black text-[var(--crm-ink)]">Not contacted<select aria-label="Not contacted time frame" value={draft.notContactedHours ?? ''} onChange={(event) => setDraft((current) => ({ ...current, notContactedHours: event.target.value ? Number(event.target.value) as ProspectingDialerSessionSetup['notContactedHours'] : null }))} className="crm-field mt-2 h-11 w-full rounded-xl px-3 text-sm font-bold"><option value="">No filter</option>{PROSPECTING_DIALER_RECENCY_HOURS.map((hours) => <option key={hours} value={hours}>{recencyLabel(hours)}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-[var(--crm-text-muted)]">Only dial numbers without a recorded Contact result during the selected time range.</span></label>
-            <button type="button" onClick={applySetup} className="crm-primary-button mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black"><Icon name="check" className="text-lg" />Apply setup</button>
+            <button type="button" onClick={applySetup} className="crm-primary-button mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black"><Icon name="save" className="text-lg" />Save preset</button>
+            <span className="mt-2 block text-center text-[10px] font-bold text-[var(--crm-text-muted)]">Saved for you on this campaign and reused across devices.</span>
           </div>
         </div>
       </section> : null}

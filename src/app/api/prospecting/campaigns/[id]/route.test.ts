@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), get: vi.fn(), transition: vi.fn(), update: vi.fn() }))
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), get: vi.fn(), preset: vi.fn(), transition: vi.fn(), update: vi.fn() }))
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/server/prospecting-campaigns', () => ({
   ProspectingCampaignError: class ProspectingCampaignError extends Error {},
   getProspectingCampaign: mocks.get,
+  saveProspectingDialerPreset: mocks.preset,
   setProspectingCampaignStatus: mocks.transition,
   updateProspectingCampaignDraft: mocks.update,
 }))
@@ -19,6 +20,7 @@ describe('prospecting campaign transition route', () => {
     vi.clearAllMocks()
     mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com', name: 'Ernest' })
     mocks.transition.mockResolvedValue({ id: 'campaign-1', status: 'active' })
+    mocks.preset.mockImplementation(async (_actor, _campaignId, setup) => setup)
     mocks.update.mockResolvedValue({ id: 'campaign-1', status: 'draft' })
   })
 
@@ -80,6 +82,28 @@ describe('prospecting campaign transition route', () => {
       { email: 'ernest@savingkc.com', name: 'Ernest' },
       '11111111-1111-4111-8111-111111111111',
       expect.objectContaining({ name: setup.name, kind: 'dialer', callerId: setup.callerId }),
+    )
+  })
+
+  it('validates and saves an agent-specific dialer preset', async () => {
+    const dialerPreset = {
+      startBehavior: 'resume',
+      callerMode: 'static',
+      callerIds: ['+18163100845'],
+      ringCount: 5,
+      notDialedHours: 24,
+      notContactedHours: 72,
+    }
+    const response = await PATCH(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x', {
+      method: 'PATCH',
+      body: JSON.stringify({ dialerPreset }),
+    }), params)
+
+    expect(response.status).toBe(200)
+    expect(mocks.preset).toHaveBeenCalledWith(
+      { email: 'ernest@savingkc.com', name: 'Ernest' },
+      '11111111-1111-4111-8111-111111111111',
+      dialerPreset,
     )
   })
 })

@@ -10,12 +10,13 @@ import {
   type ProspectingDialerSessionSetup,
   countySavedViewFactoryListError,
   factoryListRowMixError,
+  parseProspectingDialerSessionSetup,
   prospectingCampaignListTypeForCampaign,
   prospectingFactoryCampaignNameError,
   prospectingFactoryErrorMessage,
   type ProspectingFactoryErrorCode,
 } from '@/lib/prospecting/campaign-contract'
-import { parseDialerSession } from '@/lib/server/dialer-session-engine'
+import { getOpenDialerSession, parseDialerSession, type DialerSessionState } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
 import type { CountyDeceasedFilter, CountyPropertyClassFilter, CountySavedViewDefinition } from '@/lib/prospecting/county-saved-views'
 
@@ -103,6 +104,46 @@ function databaseError(error: { message?: string; code?: string } | null | undef
     return new ProspectingCampaignError('campaign_engine_conflict', 503, 'Calling session could not start because the campaign engine has a database conflict')
   }
   return new ProspectingCampaignError('campaign_engine_unavailable', 503, 'Campaign state could not be saved')
+}
+
+function openSessionSummary(session: DialerSessionState): string {
+  const campaignName = typeof session.settingsSnapshot.campaignName === 'string'
+    ? session.settingsSnapshot.campaignName.trim()
+    : ''
+  const sessionLabel = `session ${session.id.slice(0, 8)}`
+  const sellerPosition = session.queueSize > 0
+    ? `seller ${Math.min(session.currentIndex + 1, session.queueSize)} of ${session.queueSize}`
+    : null
+  return [campaignName ? `“${campaignName}”` : 'The open calling session', sessionLabel, sellerPosition]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+async function contextualLaunchError(
+  error: { message?: string; code?: string },
+  actor: AuthenticatedActor,
+): Promise<ProspectingCampaignError> {
+  const detail = `${error.message || ''} ${error.code || ''}`.toLowerCase()
+  if (!detail.includes('call_in_progress') && !detail.includes('another_dialer_session_open') && !detail.includes('session_stop_requested')) {
+    return databaseError(error)
+  }
+
+  let openSession: DialerSessionState | null = null
+  try {
+    openSession = await getOpenDialerSession(actor)
+  } catch {
+    // Preserve the original conflict when the diagnostic read is unavailable.
+  }
+  if (!openSession) return databaseError(error)
+
+  const summary = openSessionSummary(openSession)
+  if (detail.includes('another_dialer_session_open')) {
+    return new ProspectingCampaignError('another_dialer_session_open', 409, `${summary} is still open. Pause or end it before switching campaigns.`)
+  }
+  if (detail.includes('session_stop_requested')) {
+    return new ProspectingCampaignError('session_stop_requested', 409, `${summary} is ending. Resume it and save the pending call outcome.`)
+  }
+  return new ProspectingCampaignError('call_in_progress', 409, `${summary} has an unfinished call. Resume it and save the outcome before changing the start position.`)
 }
 
 type CampaignCursor = { updatedAt: string; id: string }
@@ -268,6 +309,28 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
   for (const result of countResults) if (result.error) throw databaseError(result.error)
   for (const result of operationResults) if (result.error) throw databaseError(result.error)
 
+  let dialerPreset: ProspectingDialerSessionSetup | null = null
+  if (campaignRow.kind === 'dialer') {
+    const { data: presetEvent, error: presetError } = await supabase
+      .from('prospecting_campaign_events')
+      .select('metadata')
+      .eq('campaign_id', campaignId)
+      .eq('event_type', 'dialer_preset_saved')
+      .contains('metadata', { actor_email: actor.email.trim().toLowerCase() })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (presetError) throw databaseError(presetError)
+    const metadata = presetEvent?.metadata
+    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      try {
+        dialerPreset = parseProspectingDialerSessionSetup((metadata as Record<string, unknown>).session_setup)
+      } catch {
+        dialerPreset = null
+      }
+    }
+  }
+
   const members: ProspectingCampaignMember[] = ((membersResult.data || []) as unknown[]).map((value: unknown) => {
     const row = value as Record<string, unknown>
     return {
@@ -290,6 +353,7 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
   })
   return {
     ...mapCampaign(campaignRow),
+    dialerPreset,
     steps: (stepsResult.data || []).map(mapStep),
     members,
     stats: {
@@ -310,6 +374,26 @@ export async function getProspectingCampaign(actor: AuthenticatedActor, campaign
       lastSentAt: operationResults[3].data?.sent_at || null,
     },
   }
+}
+
+export async function saveProspectingDialerPreset(
+  actor: AuthenticatedActor,
+  campaignId: string,
+  setup: ProspectingDialerSessionSetup,
+): Promise<ProspectingDialerSessionSetup> {
+  const campaign = await getProspectingCampaign(actor, campaignId)
+  if (campaign.kind !== 'dialer') throw new ProspectingCampaignError('invalid_campaign_kind', 409, 'Only dialer campaigns have calling presets')
+  const { error } = await supabase.from('prospecting_campaign_events').insert({
+    campaign_id: campaignId,
+    event_type: 'dialer_preset_saved',
+    actor: actor.name,
+    metadata: {
+      actor_email: actor.email.trim().toLowerCase(),
+      session_setup: setup,
+    },
+  })
+  if (error) throw databaseError(error)
+  return setup
 }
 
 function factoryEnrollmentError(code: ProspectingFactoryErrorCode): ProspectingCampaignError {
@@ -531,7 +615,7 @@ export async function launchProspectingDialerCampaign(
     p_caller_id: callerId,
     p_session_setup: setup,
   })
-  if (error) throw databaseError(error)
+  if (error) throw await contextualLaunchError(error, actor)
   const payload = data as { created?: unknown; session?: unknown; batchSize?: unknown; remaining?: unknown } | null
   return {
     created: payload?.created === true,

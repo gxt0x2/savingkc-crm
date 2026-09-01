@@ -360,14 +360,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     || (dialerMounted && (activeCallKeepsDialerMounted || dialerOwnerRoute === currentRouteKey))
   const dialerPanel = isProspectingPreviewFloor ? <ProspectingPreviewCallRail
     campaignId={searchParams.get('preview_campaign') || ''}
-    queueLabel={searchParams.get('queue_label') || 'Prospecting session'}
     callerId={searchParams.get('caller_id') || ''}
     callerMode={searchParams.get('caller_mode') || 'static'}
     rotationNumbers={searchParams.get('rotation_numbers') || ''}
-    startBehavior={searchParams.get('start_behavior') || 'resume'}
-              ringCount={searchParams.get('ring_count') || '7'}
-    notDialedHours={searchParams.get('not_dialed_hours')}
-    notContactedHours={searchParams.get('not_contacted_hours')}
   /> : shouldRenderDialer ? <DialerPanel
     key={isProspectingCallingFloor ? `prospecting:${activeFloorSessionId || 'preview'}` : 'global'}
     open={isProspectingCallingFloor ? true : showDialer}
