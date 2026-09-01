@@ -18,6 +18,7 @@ const callingSellerContext = readFileSync(join(process.cwd(), 'src/components/pr
 const callingRail = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-context-rail.tsx'), 'utf8')
 const sessionSetup = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-session-setup.tsx'), 'utf8')
 const sessionControl = readFileSync(join(process.cwd(), 'src/components/prospecting/use-prospecting-session-control.ts'), 'utf8')
+const workspaceE2e = readFileSync(join(process.cwd(), 'tests/e2e/prospecting-workspace.spec.ts'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
@@ -108,6 +109,9 @@ describe('prospecting workspace UI contract', () => {
     expect(appShell).toContain("searchParams.get('preview_campaign')")
     expect(appShell).toContain('<ProspectingPreviewCallRail')
     expect(callingFloor).not.toContain('function DialerHome')
+    expect(workspaceE2e).toContain('preview_campaign=${jacksonTaxCampaign.id}')
+    expect(workspaceE2e).toContain('hardStop: false')
+    expect(workspaceE2e).toContain('Clear stuck session')
   })
 
   it('keeps the calling floor on relational facts instead of Manifest compatibility data', () => {

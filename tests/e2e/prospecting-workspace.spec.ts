@@ -39,6 +39,28 @@ const dialerCampaign = {
   stats: { total: 85, active: 84, needsReview: 0, suppressed: 1, replied: 0, completed: 0, sent: 0, delivered: 0, failed: 0 },
 }
 
+const jacksonTaxCampaign = {
+  ...dialerCampaign,
+  id: '74609ed4-7e26-4111-b626-b2e3f68efa0b',
+  name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+}
+
+const jacksonTaxHardStop = {
+  code: 'stale_paused_session_blocks_start',
+  sessionId: '11355a3b-e5fa-4ecf-8cff-7720fa2428cb',
+  campaignId: jacksonTaxCampaign.id,
+  campaignName: jacksonTaxCampaign.name,
+  actorEmail: 'ernest@savingkc.com',
+  actorName: 'Ernest',
+  status: 'paused',
+  pausedAt: '2026-09-01T16:55:40.491Z',
+  startedAt: '2026-08-31T12:53:54.838Z',
+  attemptCountToday: 0,
+  reasons: ['zero_attempts_today'],
+  cannotStartNew: true,
+  andonCapable: true,
+}
+
 const durableSessionId = '55555555-5555-4555-8555-555555555555'
 
 function activeDialerSession(status: 'active' | 'paused' | 'stopped' = 'active') {
@@ -74,15 +96,34 @@ function fulfill(route: Route, body: unknown) {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 }
 
-async function mockCampaigns(page: Page, writesEnabled = true) {
+type MockCampaignsOptions = {
+  writesEnabled?: boolean
+  hardStop?: boolean
+}
+
+async function mockCampaigns(page: Page, writesEnabledOrOptions: boolean | MockCampaignsOptions = true) {
+  const options = typeof writesEnabledOrOptions === 'boolean'
+    ? { writesEnabled: writesEnabledOrOptions, hardStop: false }
+    : { writesEnabled: writesEnabledOrOptions.writesEnabled ?? true, hardStop: Boolean(writesEnabledOrOptions.hardStop) }
+  const state = { hardStop: options.hardStop }
+  const listed = state.hardStop ? [jacksonTaxCampaign, dialerCampaign, campaign] : [dialerCampaign, campaign]
+
   await page.route('**/api/prospecting/campaigns**', (route) => {
     const pathname = new URL(route.request().url()).pathname
     if (pathname.endsWith('/activity')) return fulfill(route, { items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
-    if (pathname.endsWith('/members')) return fulfill(route, { items: dialerCampaign.members, pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
-    if (pathname.endsWith(dialerCampaign.id)) return fulfill(route, { campaign: dialerCampaign, capabilities: { writesEnabled } })
-    if (pathname.endsWith(campaign.id)) return fulfill(route, { campaign, capabilities: { writesEnabled } })
-    return fulfill(route, { items: [dialerCampaign, campaign], pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    if (pathname.endsWith('/members')) return fulfill(route, { items: (state.hardStop ? jacksonTaxCampaign : dialerCampaign).members, pageInfo: { limit: 50, hasMore: false, nextCursor: null } })
+    const hardStop = state.hardStop ? jacksonTaxHardStop : null
+    const capabilities = {
+      writesEnabled: options.writesEnabled,
+      canClearStalePausedSession: options.writesEnabled && Boolean(hardStop),
+    }
+    if (pathname.endsWith(jacksonTaxCampaign.id)) return fulfill(route, { campaign: jacksonTaxCampaign, capabilities, hardStop })
+    if (pathname.endsWith(dialerCampaign.id)) return fulfill(route, { campaign: dialerCampaign, capabilities, hardStop })
+    if (pathname.endsWith(campaign.id)) return fulfill(route, { campaign, capabilities: { writesEnabled: options.writesEnabled }, hardStop })
+    return fulfill(route, { items: listed, pageInfo: { limit: 50, hasMore: false, nextCursor: null }, hardStop })
   })
+
+  return state
 }
 
 async function mockCallingPreview(page: Page) {
@@ -302,4 +343,66 @@ test('Prospecting studio remains usable on a phone-sized viewport', async ({ pag
   await expect(page.getByRole('button', { name: /SMS cadence/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /Continue/ })).toBeVisible()
   await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll')
+})
+
+test('a stale paused session is a live hard stop with Andon and a clear path that does not resume', async ({ page }) => {
+  const state = await mockCampaigns(page, { writesEnabled: true, hardStop: true })
+  let clearBody: unknown = null
+  await page.route('**/api/admin/stale-paused-dialer-session**', (route) => {
+    if (route.request().method() !== 'POST') {
+      return fulfill(route, { hardStop: state.hardStop ? jacksonTaxHardStop : null, items: state.hardStop ? [jacksonTaxHardStop] : [] })
+    }
+    clearBody = route.request().postDataJSON()
+    state.hardStop = false
+    return fulfill(route, {
+      cleared: true,
+      alreadyEnded: false,
+      session: { id: jacksonTaxHardStop.sessionId, status: 'stopped' },
+      hardStop: null,
+    })
+  })
+  await page.route('**/api/feedback/**', (route) => fulfill(route, { items: [], total: 0 }))
+
+  await page.goto(`/prospecting?campaign=${jacksonTaxCampaign.id}`, { waitUntil: 'domcontentloaded' })
+
+  const hardStop = page.getByRole('alert')
+  await expect(page.getByRole('heading', { name: jacksonTaxCampaign.name })).toBeVisible()
+  await expect(hardStop).toContainText('Cannot start a new session until this pause is cleared')
+  await expect(hardStop).toContainText('0 attempts today')
+  await expect(hardStop).toContainText('does not drain Mojo')
+  await expect(page.getByRole('button', { name: 'Cannot start' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /Start calling session|Resume calling|Start calling/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Clear stuck session' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Raise Andon' }).click()
+  await expect(page.getByRole('heading', { name: 'Report an issue' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close Andon form' }).click()
+
+  await page.getByRole('button', { name: 'Clear stuck session' }).click()
+  await expect(page.getByText('Stuck paused session cleared. Start calling when you are ready.')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Start calling|Resume calling/ })).toBeVisible()
+  expect(clearBody).toEqual({ sessionId: jacksonTaxHardStop.sessionId })
+})
+
+test('preview_campaign shows the stale pause hard stop without a clear or resume control', async ({ page }) => {
+  await mockCampaigns(page, { writesEnabled: false, hardStop: true })
+  await mockCallingPreview(page)
+  await page.route('**/api/admin/stale-paused-dialer-session**', (route) => route.fulfill({
+    status: 403,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'previewWriteBlocked' }),
+  }))
+
+  await page.goto(`/prospecting?preview_campaign=${jacksonTaxCampaign.id}`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page).toHaveURL(new RegExp(`preview_campaign=${jacksonTaxCampaign.id}`))
+  await expect(page.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
+  const hardStop = page.getByRole('alert')
+  await expect(hardStop).toContainText('Cannot start a new session until this pause is cleared')
+  await expect(hardStop).toContainText(jacksonTaxCampaign.name)
+  await expect(page.getByRole('button', { name: 'Raise Andon' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Clear stuck session' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Resume calling|Start calling/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Call all 2 numbers' })).toBeDisabled()
 })
