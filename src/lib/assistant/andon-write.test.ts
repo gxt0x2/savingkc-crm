@@ -8,19 +8,21 @@ import {
   updateAndonStatus,
 } from './andon-write'
 
+const EXAMPLE_ANDON_ID = '00000000-0000-4000-8000-000000000001'
+
 describe('Andon assistant write helpers', () => {
   it('names the Chat war room from department, category, and short id', () => {
-    expect(andonChatTitle('Acquisitions', 'Cold Dialer Lag', '9675d05a-5661-4bda-b528-1d98f3e95633'))
-      .toBe('Andon · Acquisitions · Cold Dialer Lag · 9675d05a')
-    expect(andonChatThreadKey('9675d05a-5661-4bda-b528-1d98f3e95633'))
-      .toBe('andon-9675d05a-5661-4bda-b528-1d98f3e95633')
-    expect(andonCrmUrl('9675d05a-5661-4bda-b528-1d98f3e95633'))
-      .toBe('https://crm.savingkc.com/reports/andon?andon=9675d05a-5661-4bda-b528-1d98f3e95633')
+    expect(andonChatTitle('Acquisitions', 'Cold Dialer Lag', EXAMPLE_ANDON_ID))
+      .toBe('Andon · Acquisitions · Cold Dialer Lag · 00000000')
+    expect(andonChatThreadKey(EXAMPLE_ANDON_ID))
+      .toBe('andon-00000000-0000-4000-8000-000000000001')
+    expect(andonCrmUrl(EXAMPLE_ANDON_ID))
+      .toBe('https://crm.savingkc.com/reports/andon?andon=00000000-0000-4000-8000-000000000001')
   })
 
   it('exposes a structured Chat nomination payload the bot can poll', () => {
     const presented = presentAndon({
-      id: '9675d05a-5661-4bda-b528-1d98f3e95633',
+      id: EXAMPLE_ANDON_ID,
       department: 'Acquisitions',
       category: 'Cold Dialer Lag',
       priority: 'medium',
@@ -30,9 +32,9 @@ describe('Andon assistant write helpers', () => {
     })
 
     expect(presented.chatNomination).toMatchObject({
-      title: 'Andon · Acquisitions · Cold Dialer Lag · 9675d05a',
-      crmUrl: 'https://crm.savingkc.com/reports/andon?andon=9675d05a-5661-4bda-b528-1d98f3e95633',
-      threadKey: 'andon-9675d05a-5661-4bda-b528-1d98f3e95633',
+      title: 'Andon · Acquisitions · Cold Dialer Lag · 00000000',
+      crmUrl: 'https://crm.savingkc.com/reports/andon?andon=00000000-0000-4000-8000-000000000001',
+      threadKey: andonChatThreadKey(EXAMPLE_ANDON_ID),
       needsThread: true,
     })
     expect(presented.notes).toHaveLength(1)
@@ -51,7 +53,7 @@ describe('Andon assistant write helpers', () => {
         eq: () => ({
           maybeSingle: async () => ({
             data: {
-              id: '9675d05a-5661-4bda-b528-1d98f3e95633',
+              id: EXAMPLE_ANDON_ID,
               department: 'Acquisitions',
               category: 'Cold Dialer Lag',
               status: 'open',
@@ -63,7 +65,7 @@ describe('Andon assistant write helpers', () => {
       update,
     })
 
-    const result = await updateAndonStatus({ from }, '9675d05a-5661-4bda-b528-1d98f3e95633', 'acknowledged')
+    const result = await updateAndonStatus({ from }, EXAMPLE_ANDON_ID, 'acknowledged')
 
     expect(from).toHaveBeenCalledWith('feedback_submissions')
     expect(from).not.toHaveBeenCalledWith('leads')

@@ -117,7 +117,7 @@ export async function POST(request: Request) {
       durationMs,
     })
     console.info('[assistant-write] completed', { action: parsed.data.action, actor: actor.email, access: actor.access, durationMs })
-    return NextResponse.json({ requestId, actor: { access: actor.access }, writeScope: 'andon_only', ...result }, { headers })
+    return NextResponse.json({ requestId, actor: { access: actor.access }, ...result }, { headers })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'CRM assistant write failed'
     const notFound = message === 'Andon not found'

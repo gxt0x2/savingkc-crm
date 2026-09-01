@@ -41,7 +41,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 import { POST } from './route'
 
-const ANDON_ID = '9675d05a-5661-4bda-b528-1d98f3e95633'
+const ANDON_ID = '00000000-0000-4000-8000-000000000001'
 
 function request(body: Record<string, unknown>, headers: Record<string, string> = {}) {
   return new Request('https://crm.savingkc.com/api/assistant/write', {

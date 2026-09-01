@@ -19,8 +19,9 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 import { isGoogleChatWebhookUrl, nominateAndonGoogleChatThread } from './andon-chat-nomination'
 
+const WEBHOOK = 'https://chat.googleapis.com/v1/spaces/AAA/messages'
 const example = {
-  issueId: '9675d05a-5661-4bda-b528-1d98f3e95633',
+  issueId: '00000000-0000-4000-8000-000000000001',
   issueKind: 'process',
   department: 'Acquisitions',
   category: 'Cold Dialer Lag',
@@ -44,7 +45,7 @@ describe('Andon Google Chat nomination', () => {
   })
 
   it('accepts only Google Chat incoming webhook hosts', () => {
-    expect(isGoogleChatWebhookUrl('https://chat.googleapis.com/v1/spaces/AAA/messages?key=x&token=y')).toBe(true)
+    expect(isGoogleChatWebhookUrl(WEBHOOK)).toBe(true)
     expect(isGoogleChatWebhookUrl('https://evil.example/chat')).toBe(false)
   })
 
@@ -75,7 +76,7 @@ describe('Andon Google Chat nomination', () => {
 
   it('posts into the configured space and stores the thread when a webhook exists', async () => {
     vi.stubEnv('CHAT_ANDON_SPACE', 'spaces/savingkc-andon')
-    vi.stubEnv('CHAT_ANDON_WEBHOOK_URL', 'https://chat.googleapis.com/v1/spaces/AAA/messages?key=x&token=y')
+    vi.stubEnv('CHAT_ANDON_WEBHOOK_URL', WEBHOOK)
 
     const result = await nominateAndonGoogleChatThread(example)
 
@@ -88,7 +89,7 @@ describe('Andon Google Chat nomination', () => {
     expect(String(mocks.fetch.mock.calls[0]?.[0])).toContain('messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD')
     expect(mocks.fetch.mock.calls[0]?.[1]).toMatchObject({
       method: 'POST',
-      body: expect.stringContaining('Andon · Acquisitions · Cold Dialer Lag · 9675d05a'),
+      body: expect.stringContaining('Andon · Acquisitions · Cold Dialer Lag · 00000000'),
     })
     expect(mocks.update).toHaveBeenCalledWith({
       chat_space_id: 'spaces/AAA',
@@ -97,7 +98,7 @@ describe('Andon Google Chat nomination', () => {
   })
 
   it('does not throw when Google Chat is down', async () => {
-    vi.stubEnv('CHAT_ANDON_WEBHOOK_URL', 'https://chat.googleapis.com/v1/spaces/AAA/messages?key=x&token=y')
+    vi.stubEnv('CHAT_ANDON_WEBHOOK_URL', WEBHOOK)
     mocks.fetch.mockRejectedValue(new Error('chat unavailable'))
 
     await expect(nominateAndonGoogleChatThread(example)).resolves.toMatchObject({

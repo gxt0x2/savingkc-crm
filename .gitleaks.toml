@@ -23,4 +23,6 @@ regexes = [
   # just dotted namespace strings with high enough entropy to trip the
   # generic-api-key default rule.
   '''skc\.ppc\.attribution\.v\d+''',
+  # Deterministic Andon Chat thread keys are issue ids, not credentials.
+  '''andon-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}''',
 ]
