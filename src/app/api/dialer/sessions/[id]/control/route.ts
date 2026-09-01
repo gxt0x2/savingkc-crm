@@ -34,10 +34,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!controller) return invalidDialerControllerResponse()
   try {
     const { id } = await context.params
+    const body = await request.json().catch(() => null) as { userActive?: unknown } | null
     return NextResponse.json(await heartbeatDialerSessionControl({
       actor,
       sessionId: id,
       controllerToken: controller.token,
+      userActive: body?.userActive === true,
     }), { headers: NO_STORE })
   } catch (error) {
     return response(error)

@@ -26,6 +26,8 @@ vi.mock('@/lib/telephony/dialer-controller-client', () => ({
 import { useDialerControlPresence } from './use-dialer-control-presence'
 import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
 
+const TEST_IDLE_EXPIRES_AT = new Date(Date.now() + 300_000).toISOString()
+
 function response(ok: boolean, body: Record<string, unknown> = {}) {
   return { ok, json: async () => body }
 }
@@ -55,6 +57,7 @@ function Harness({ onAccept }: { onAccept: () => void }) {
   useDialerControlPresence({
     readOnlyPreview: false,
     sessionId: 'session-1',
+    idleExpiresAt: TEST_IDLE_EXPIRES_AT,
     controlOwned: owned,
     controlOwnedRef: ownedRef,
     controlGenerationRef: generationRef,
@@ -64,6 +67,7 @@ function Harness({ onAccept }: { onAccept: () => void }) {
     showControlConflict: () => false,
     setSessionError,
     applySession: () => {},
+    onUserActivity: () => {},
   })
 
   return <div>
