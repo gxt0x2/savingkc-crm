@@ -10,6 +10,7 @@ import {
   isAndonIssueKind,
   legacyFeedbackType,
 } from '@/lib/andon'
+import { nominateAndonGoogleChatThread } from '@/lib/server/andon-chat-nomination'
 import { sendAndonRaisedSmsAlert } from '@/lib/server/operational-sms-alerts'
 
 export const dynamic = 'force-dynamic'
@@ -138,14 +139,27 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    after(() => sendAndonRaisedSmsAlert({
-      issueId: data.id,
-      issueKind,
-      department,
-      category,
-      priority,
-      raisedBy: agent.displayName,
-    }))
+    after(() => {
+      void sendAndonRaisedSmsAlert({
+        issueId: data.id,
+        issueKind,
+        department,
+        category,
+        priority,
+        raisedBy: agent.displayName,
+      })
+      void nominateAndonGoogleChatThread({
+        issueId: data.id,
+        issueKind,
+        department,
+        category,
+        priority,
+        raisedBy: agent.displayName,
+        reporterEmail: user.email,
+      }).catch((error) => {
+        console.error('[andon-chat] nomination failed after submit', error)
+      })
+    })
 
     return NextResponse.json({
       success: true,

@@ -323,7 +323,7 @@
       "routes": ["/reports/andon"],
       "apiRoutes": ["/api/feedback/log", "/api/feedback/submit", "/api/feedback/update-status", "/api/feedback/[id]/attachments", "/api/feedback/[id]/attachments/prepare", "/api/feedback/[id]/attachments/complete", "/api/feedback/attachments/[attachmentId]/download", "/api/error/log"],
       "tables": ["feedback_submissions", "feedback_attachments", "error_log"],
-      "environment": ["VERCEL_ENV"]
+      "environment": ["VERCEL_ENV", "CHAT_ANDON_SPACE", "CHAT_ANDON_WEBHOOK_URL"]
     },
     {
       "id": "ari",
@@ -368,6 +368,16 @@
       "apiRoutes": ["/api/assistant/read"],
       "tables": ["assistant_query_audit"],
       "environment": ["CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_ALLOWED_EMAILS", "CRM_ASSISTANT_OWNER_EMAILS"]
+    },
+    {
+      "id": "andon_assistant_write",
+      "name": "Andon-only Google Chat assistant write",
+      "owner": "Operations",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/assistant/write"],
+      "tables": ["feedback_submissions", "assistant_query_audit"],
+      "environment": ["CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_ALLOWED_EMAILS", "CRM_ASSISTANT_OWNER_EMAILS", "CHAT_ANDON_SPACE", "CHAT_ANDON_WEBHOOK_URL", "NEXT_PUBLIC_APP_URL"]
     },
     {
       "id": "workflows",

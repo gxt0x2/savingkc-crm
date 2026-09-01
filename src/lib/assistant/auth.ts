@@ -74,3 +74,7 @@ export async function resolveAssistantActor(email: string): Promise<AssistantAct
 export function assistantActorCanReadCompanyWide(actor: AssistantActor): boolean {
   return actor.access === 'owner' || actor.access === 'admin'
 }
+
+export function assistantActorCanWriteAndon(actor: AssistantActor): boolean {
+  return actor.access === 'owner' || actor.access === 'admin'
+}
