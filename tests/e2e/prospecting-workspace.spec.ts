@@ -96,12 +96,6 @@ function fulfill(route: Route, body: unknown) {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 }
 
-async function maybeWalkthroughShot(page: Page, name: string) {
-  const dir = process.env.WALKTHROUGH_ARTIFACT_DIR
-  if (!dir) return
-  await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true })
-}
-
 type MockCampaignsOptions = {
   writesEnabled?: boolean
   hardStop?: boolean
@@ -380,18 +374,15 @@ test('a stale paused session is a live hard stop with Andon and a clear path tha
   await expect(page.getByRole('button', { name: 'Cannot start' })).toBeDisabled()
   await expect(page.getByRole('button', { name: /Start calling session|Resume calling|Start calling/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Clear stuck session' })).toBeVisible()
-  await maybeWalkthroughShot(page, 'stale_pause_live_hard_stop_cannot_start')
 
   await page.getByRole('button', { name: 'Raise Andon' }).click()
   await expect(page.getByRole('heading', { name: 'Report an issue' })).toBeVisible()
-  await maybeWalkthroughShot(page, 'stale_pause_live_raise_andon')
   await page.getByRole('button', { name: 'Close Andon form' }).click()
 
   await page.getByRole('button', { name: 'Clear stuck session' }).click()
   await expect(page.getByText('Stuck paused session cleared. Start calling when you are ready.')).toBeVisible()
   await expect(page.getByRole('alert').filter({ hasText: 'Calling hard stop' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Start calling|Resume calling/ })).toBeVisible()
-  await maybeWalkthroughShot(page, 'stale_pause_live_cleared_start_unlocked')
   expect(clearBody).toEqual({ sessionId: jacksonTaxHardStop.sessionId })
 })
 
@@ -415,5 +406,4 @@ test('preview_campaign shows the stale pause hard stop without a clear or resume
   await expect(page.getByRole('button', { name: 'Clear stuck session' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Resume calling|Start calling/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Call all 2 numbers' })).toBeDisabled()
-  await maybeWalkthroughShot(page, 'stale_pause_preview_campaign_no_clear')
 })
