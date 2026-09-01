@@ -39,12 +39,12 @@ export function ProspectingSessionTakeoverDialog({
   const sameCampaign = summary.campaignId && selectedCampaignId
     ? summary.campaignId === selectedCampaignId
     : !selectedCampaignName || summary.campaignName === selectedCampaignName
-  const blockedReason = summary.operationActive
-    ? `${summary.operationLabel || 'A CRM change'} is still saving in the other window. Wait for it to finish, then check again.`
+  const interruptionNotice = summary.operationActive
+    ? `${summary.operationLabel || 'The in-progress CRM change'} will be cancelled in the other window before calling starts here.`
     : summary.attemptStatus === 'awaiting_disposition'
-      ? 'Save the required call outcome in the other window before transferring control.'
+      ? 'The unfinished call outcome will be recorded as interrupted so calling can continue here.'
       : summary.attemptStatus
-        ? 'Finish the active call in the other window before transferring control.'
+        ? 'The live call will be disconnected and recorded as interrupted before calling continues here.'
         : null
 
   return (
@@ -56,9 +56,9 @@ export function ProspectingSessionTakeoverDialog({
           </span>
           <div className="min-w-0">
             <p className="crm-eyebrow">Dialing session already open</p>
-            <h2 id="dialer-takeover-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Continue this dialing session here?</h2>
+            <h2 id="dialer-takeover-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Disconnect the other session and call here?</h2>
             <p id="dialer-takeover-description" className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]">
-              Continuing here preserves the campaign, seller position, metrics, and call history while disabling dialing in the other window.
+              One click removes dialing control from every other window, preserves this campaign and seller position, then starts a fresh 15-second countdown here.
             </p>
           </div>
         </div>
@@ -78,12 +78,12 @@ export function ProspectingSessionTakeoverDialog({
         </div>
 
         {!sameCampaign ? <div className="mt-4 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-4 py-3 text-xs leading-5 text-[var(--crm-on-warning)]">The selected campaign will not start. Continue the already-open <strong>{summary.campaignName}</strong> session here first.</div> : null}
-        {blockedReason ? <div className="mt-4 rounded-xl border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-3 text-xs font-bold text-[var(--crm-danger)]" role="alert">{blockedReason}</div> : null}
+        {interruptionNotice ? <div className="mt-4 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-4 py-3 text-xs font-bold text-[var(--crm-on-warning)]" role="status">{interruptionNotice}</div> : null}
         {error ? <div className="mt-4 rounded-xl border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-3 text-xs font-bold text-[var(--crm-danger)]" role="alert">{error}</div> : null}
 
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button type="button" autoFocus onClick={onCancel} disabled={busy} className="crm-secondary-button h-11 rounded-xl px-5 text-sm font-black disabled:opacity-50">Cancel</button>
-          <button type="button" onClick={onContinue} disabled={busy} className="crm-primary-button inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40"><Icon name={busy ? 'progress_activity' : summary.canTakeOver ? 'move_up' : 'refresh'} className={busy ? 'animate-spin' : ''} />{busy ? 'Checking…' : summary.canTakeOver ? 'Continue here' : 'Check again'}</button>
+          <button type="button" onClick={onContinue} disabled={busy} className="crm-primary-button inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40"><Icon name={busy ? 'progress_activity' : 'power_settings_new'} className={busy ? 'animate-spin' : ''} />{busy ? 'Disconnecting…' : 'Disconnect & start here'}</button>
         </div>
       </section>
     </div>

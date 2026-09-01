@@ -6,6 +6,7 @@ import {
   DialerSessionError,
   heartbeatDialerSessionControl,
 } from '@/lib/server/dialer-session-engine'
+import { disconnectProviderCallForTakeover } from '@/lib/server/dialer-provider-call-control'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -64,7 +65,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
   try {
     const { id } = await context.params
-    return NextResponse.json(await claimDialerSessionControl({
+    const result = await claimDialerSessionControl({
       actor,
       sessionId: id,
       controllerToken: controller.token,
@@ -72,7 +73,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       force: true,
       expectedGeneration,
       requestId: typeof body.requestId === 'string' ? body.requestId : null,
-    }), { headers: NO_STORE })
+    })
+    const providerDisconnect = await disconnectProviderCallForTakeover(
+      result.interruptedAttempt?.providerCallSid,
+    )
+    const { interruptedAttempt, ...publicResult } = result
+    return NextResponse.json({
+      ...publicResult,
+      interruption: interruptedAttempt ? {
+        recorded: true,
+        priorStatus: interruptedAttempt.status,
+        providerDisconnect,
+      } : null,
+    }, { headers: NO_STORE })
   } catch (error) {
     return response(error)
   }

@@ -354,8 +354,7 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       if (launchError instanceof DialerSessionClientError && launchError.details && [
         'session_control_conflict',
         'session_control_changed',
-        'session_takeover_live_call',
-        'session_takeover_disposition_required',
+        'session_takeover_operation_in_progress',
         'another_dialer_session_open',
       ].includes(launchError.code || '')) {
         setTakeoverPrompt({ summary: launchError.details, setup })

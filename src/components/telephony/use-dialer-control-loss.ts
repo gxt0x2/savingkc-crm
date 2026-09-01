@@ -2,15 +2,23 @@
 
 import { useEffect, useState, type RefObject } from 'react'
 
-type ControlledCallStatus = 'calling' | 'on_call' | string
+type DisconnectableCall = { disconnect: () => void }
+const controlLossRevisions = new Map<string, number>()
+
+export function dialerControlLossRevision(sessionId: string | null): number {
+  return sessionId ? controlLossRevisions.get(sessionId) || 0 : 0
+}
+
+export function dialerControlChanged(sessionId: string | null, revision: number): boolean {
+  return dialerControlLossRevision(sessionId) !== revision
+}
 
 export function useDialerControlLoss(
   sessionId: string | null,
   cancelAutoStart: () => void,
   endQueue: () => void,
-  callRef: RefObject<unknown>,
+  callRef: RefObject<DisconnectableCall | null>,
   callIntentPendingRef: RefObject<boolean>,
-  status: ControlledCallStatus,
 ) {
   const [unavailableSessionId, setUnavailableSessionId] = useState<string | null>(null)
 
@@ -21,14 +29,16 @@ export function useDialerControlLoss(
       if (!sessionId || lostSessionId !== sessionId) return
 
       setUnavailableSessionId(sessionId)
+      controlLossRevisions.set(sessionId, dialerControlLossRevision(sessionId) + 1)
       cancelAutoStart()
-      // Takeover is blocked during a call; a delayed event must still never
-      // disconnect that call defensively.
-      const callInProgress = Boolean(callRef.current)
-        || callIntentPendingRef.current
-        || status === 'calling'
-        || status === 'on_call'
-      if (!callInProgress) endQueue()
+      // A confirmed takeover is an emergency stop for this displaced browser.
+      // Disconnect its SDK leg immediately; the server also ends the correlated
+      // provider call when Twilio has already supplied a call SID.
+      const activeCall = callRef.current
+      callRef.current = null
+      activeCall?.disconnect()
+      callIntentPendingRef.current = false
+      endQueue()
     }
     function onControlAcquired(event: Event) {
       const detail = (event as CustomEvent).detail as { sessionId?: string } | string | null
@@ -42,7 +52,7 @@ export function useDialerControlLoss(
       window.removeEventListener('dialer-control-lost', onControlLost)
       window.removeEventListener('dialer-control-acquired', onControlAcquired)
     }
-  }, [callIntentPendingRef, callRef, cancelAutoStart, endQueue, sessionId, status])
+  }, [callIntentPendingRef, callRef, cancelAutoStart, endQueue, sessionId])
 
   return Boolean(sessionId && unavailableSessionId === sessionId)
 }

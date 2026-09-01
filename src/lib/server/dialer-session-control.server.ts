@@ -119,7 +119,7 @@ export function createDialerSessionControl(dependencies: DialerSessionControlDep
       operationActive,
       operationLabel: operationActive ? controlRow.controller_operation_label : null,
       operationExpiresAt: operationActive ? operationExpiresAt : null,
-      canTakeOver: attemptStatus === null && !operationActive,
+      canTakeOver: true,
     }
   }
 
@@ -188,7 +188,16 @@ export function createDialerSessionControl(dependencies: DialerSessionControlDep
     force: boolean
     expectedGeneration?: number | null
     requestId?: string | null
-  }): Promise<{ session: DialerSessionState; control: Record<string, unknown>; transferred: boolean }> {
+  }): Promise<{
+    session: DialerSessionState
+    control: Record<string, unknown>
+    transferred: boolean
+    interruptedAttempt: {
+      clientAttemptId: string | null
+      status: DialerAttemptState['status'] | null
+      providerCallSid: string | null
+    } | null
+  }> {
     if (!isUuid(input.sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')
     const { data, error } = await supabase.rpc('claim_dialer_session_control_v1', {
       p_session_id: input.sessionId,
@@ -200,11 +209,22 @@ export function createDialerSessionControl(dependencies: DialerSessionControlDep
       p_request_id: input.requestId?.trim() || null,
     })
     if (error) throw await controlErrorWithSummary(error, input.actor, input.sessionId)
-    const result = data as { session?: unknown; control?: unknown; transferred?: unknown } | null
+    const result = data as {
+      session?: unknown
+      control?: unknown
+      transferred?: unknown
+      interruptedAttempt?: unknown
+    } | null
+    const interrupted = objectRecord(result?.interruptedAttempt)
     return {
       session: parseDialerSession(result?.session),
       control: objectRecord(result?.control),
       transferred: result?.transferred === true,
+      interruptedAttempt: Object.keys(interrupted).length > 0 ? {
+        clientAttemptId: typeof interrupted.clientAttemptId === 'string' ? interrupted.clientAttemptId : null,
+        status: typeof interrupted.status === 'string' ? interrupted.status as DialerAttemptState['status'] : null,
+        providerCallSid: typeof interrupted.providerCallSid === 'string' ? interrupted.providerCallSid : null,
+      } : null,
     }
   }
 

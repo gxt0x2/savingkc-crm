@@ -121,7 +121,7 @@ function installFetch() {
       return response({
         session: {
           id: existingSessionId,
-          status: 'paused',
+          status: 'active',
           settingsSnapshot: { ringCount: 6, prospectingCampaignId: existingCampaignId },
         },
         control: { generation: 5 },
@@ -137,7 +137,7 @@ async function openConflict() {
   const start = await screen.findByRole('button', { name: 'Start calling' })
   await waitFor(() => expect(start).toBeEnabled())
   fireEvent.click(start)
-  return screen.findByRole('alertdialog', { name: 'Continue this dialing session here?' })
+  return screen.findByRole('alertdialog', { name: 'Disconnect the other session and call here?' })
 }
 
 describe('ProspectingWorkspace session takeover', () => {
@@ -169,12 +169,12 @@ describe('ProspectingWorkspace session takeover', () => {
     expect(mocks.publishDialerControlTaken).not.toHaveBeenCalled()
   })
 
-  it('continues the preserved session through its direct control endpoint and navigates there', async () => {
+  it('disconnects the prior controller, resumes the preserved session, and arms the countdown', async () => {
     const fetchMock = installFetch()
     vi.stubGlobal('fetch', fetchMock)
 
     await openConflict()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue here' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect & start here' }))
 
     await waitFor(() => expect(mocks.routerPush).toHaveBeenCalledOnce())
     const controlCall = fetchMock.mock.calls.find(([input]) => String(input) === `/api/dialer/sessions/${existingSessionId}/control`)
@@ -198,6 +198,6 @@ describe('ProspectingWorkspace session takeover', () => {
     expect(mocks.routerPush).toHaveBeenCalledWith(expect.stringMatching(
       new RegExp(`^/prospecting\\?session_id=${existingSessionId}&campaign=${existingCampaignId}`),
     ))
-    expect(window.sessionStorage.getItem(`savingkc:dialer-autostart:${existingSessionId}`)).toBeNull()
+    expect(window.sessionStorage.getItem(`savingkc:dialer-autostart:${existingSessionId}`)).toBe('1')
   })
 })

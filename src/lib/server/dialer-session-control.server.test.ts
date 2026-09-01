@@ -58,7 +58,7 @@ function query(result: { data: unknown; error: unknown }, terminal: 'maybeSingle
 describe('dialer session control summary', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('blocks takeover while exposing only the safe label and expiry of an active CRM operation', async () => {
+  it('exposes only safe operation context while keeping explicit takeover available', async () => {
     const operationExpiresAt = new Date(now + 300_000).toISOString()
     mocks.from
       .mockReturnValueOnce(query({
@@ -92,7 +92,7 @@ describe('dialer session control summary', () => {
       operationActive: true,
       operationLabel: 'Saving contact note',
       operationExpiresAt,
-      canTakeOver: false,
+      canTakeOver: true,
     })
     expect(summary).not.toHaveProperty('operationId')
   })

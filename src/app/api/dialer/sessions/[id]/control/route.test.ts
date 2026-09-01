@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
   claimDialerSessionControl: vi.fn(),
   heartbeatDialerSessionControl: vi.fn(),
+  disconnectProviderCallForTakeover: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.resolveAuthenticatedActor }))
@@ -18,6 +19,9 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   },
   claimDialerSessionControl: mocks.claimDialerSessionControl,
   heartbeatDialerSessionControl: mocks.heartbeatDialerSessionControl,
+}))
+vi.mock('@/lib/server/dialer-provider-call-control', () => ({
+  disconnectProviderCallForTakeover: mocks.disconnectProviderCallForTakeover,
 }))
 
 import { PATCH, POST } from './route'
@@ -44,6 +48,7 @@ describe('dialer session controller lease route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.resolveAuthenticatedActor.mockResolvedValue(actor)
+    mocks.disconnectProviderCallForTakeover.mockResolvedValue('not_required')
   })
 
   it('renews only the authenticated browser controller heartbeat', async () => {
@@ -65,10 +70,16 @@ describe('dialer session controller lease route', () => {
 
   it('atomically transfers control with the observed generation and request id', async () => {
     mocks.claimDialerSessionControl.mockResolvedValue({
-      session: { id: sessionId, status: 'paused' },
+      session: { id: sessionId, status: 'active' },
       control: { generation: 3 },
       transferred: true,
+      interruptedAttempt: {
+        clientAttemptId: 'attempt-1',
+        status: 'connected',
+        providerCallSid: `CA${'1'.repeat(32)}`,
+      },
     })
+    mocks.disconnectProviderCallForTakeover.mockResolvedValue('disconnected')
 
     const response = await POST(controlRequest('POST', {
       action: 'takeover',
@@ -85,6 +96,16 @@ describe('dialer session controller lease route', () => {
       force: true,
       expectedGeneration: 2,
       requestId: 'takeover-casey-1',
+    })
+    expect(mocks.disconnectProviderCallForTakeover).toHaveBeenCalledWith(`CA${'1'.repeat(32)}`)
+    expect(await response.json()).toMatchObject({
+      session: { id: sessionId, status: 'active' },
+      transferred: true,
+      interruption: {
+        recorded: true,
+        priorStatus: 'connected',
+        providerDisconnect: 'disconnected',
+      },
     })
   })
 

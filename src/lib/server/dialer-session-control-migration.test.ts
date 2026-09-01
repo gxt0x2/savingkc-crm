@@ -9,7 +9,11 @@ const operationMigration = readFileSync(
   'supabase/migrations/20261026123000_dialer_session_control_operations.sql',
   'utf8',
 )
-const migration = `${controllerMigration}\n${operationMigration}`
+const forceTakeoverMigration = readFileSync(
+  'supabase/migrations/20261027123000_force_dialer_session_takeover.sql',
+  'utf8',
+)
+const migration = `${controllerMigration}\n${operationMigration}\n${forceTakeoverMigration}`
 
 describe('dialer session browser control lease migration', () => {
   it('stores only a hashed controller identity with a bounded renewable lease', () => {
@@ -33,11 +37,14 @@ describe('dialer session browser control lease migration', () => {
     expect(migration).toContain('controller_generation = controller_generation + 1')
   })
 
-  it('never transfers control during a live call or while an outcome is required', () => {
-    expect(migration).toContain("status = 'awaiting_disposition'")
-    expect(migration).toContain("RAISE EXCEPTION 'session_takeover_disposition_required'")
-    expect(migration).toContain("status IN ('authorized', 'dialing', 'connected')")
-    expect(migration).toContain("RAISE EXCEPTION 'session_takeover_live_call'")
+  it('fences every older controller and records unfinished call work as interrupted', () => {
+    expect(forceTakeoverMigration).toContain("status IN ('authorized', 'dialing', 'connected', 'awaiting_disposition')")
+    expect(forceTakeoverMigration).toMatch(/IF p_force THEN[\s\S]*SET status = 'cancelled'/)
+    expect(forceTakeoverMigration).toContain("'interruption_reason', 'session_control_transferred'")
+    expect(forceTakeoverMigration).toContain("'attempt_interrupted_by_control_transfer'")
+    expect(forceTakeoverMigration).toContain("controller_generation = controller_generation + 1")
+    expect(forceTakeoverMigration).not.toContain("RAISE EXCEPTION 'session_takeover_disposition_required'")
+    expect(forceTakeoverMigration).not.toContain("RAISE EXCEPTION 'session_takeover_live_call'")
   })
 
   it('recovers only an expired pre-call authorization after the controller dies', () => {
@@ -76,11 +83,13 @@ describe('dialer session browser control lease migration', () => {
     expect(operationMigration).toMatch(/GRANT EXECUTE ON FUNCTION public\.record_dialer_attempt_provider_status_v1\([\s\S]*?TO service_role/)
   })
 
-  it('holds takeover while a bounded CRM operation is active', () => {
+  it('fences ordinary CRM writes and explicitly cancels their hold during forced takeover', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS controller_operation_id uuid')
     const claimStart = operationMigration.indexOf('CREATE OR REPLACE FUNCTION public.claim_dialer_session_control_v1')
     const claim = operationMigration.slice(claimStart, operationMigration.indexOf('$$;', claimStart) + 3)
     expect(claim).toMatch(/controller_operation_expires_at > now\(\)[\s\S]*RAISE EXCEPTION 'session_takeover_operation_in_progress'/)
+    expect(forceTakeoverMigration).toMatch(/prior_operation_id := session_row\.controller_operation_id[\s\S]*controller_operation_id = NULL/)
+    expect(forceTakeoverMigration).toContain("'cancelled_operation_id', prior_operation_id")
 
     for (const signature of [
       'begin_dialer_session_control_operation_v1',
@@ -99,6 +108,8 @@ describe('dialer session browser control lease migration', () => {
     expect(migration).toContain('result := public.start_prospecting_dialer_session_v4(')
     expect(migration).toContain('control_result := public.claim_dialer_session_control_v1(')
     expect(migration).toContain("'control', control_result -> 'control'")
+    expect(forceTakeoverMigration).toContain("status = CASE WHEN p_force THEN 'active' ELSE status END")
+    expect(forceTakeoverMigration).toContain("stop_requested_at = CASE WHEN p_force THEN NULL ELSE stop_requested_at END")
   })
 
   it('places controller assertion in every server-side state mutation wrapper', () => {
