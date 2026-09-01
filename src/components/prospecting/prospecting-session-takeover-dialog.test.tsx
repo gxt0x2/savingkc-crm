@@ -34,7 +34,7 @@ describe('ProspectingSessionTakeoverDialog', () => {
       onContinue={vi.fn()}
     />)
 
-    expect(screen.getByRole('alertdialog', { name: 'Continue this dialing session here?' })).toBeVisible()
+    expect(screen.getByRole('alertdialog', { name: 'Disconnect the other session and call here?' })).toBeVisible()
     expect(screen.getAllByText(summary.campaignName).length).toBeGreaterThan(0)
     expect(screen.getByText('Seller 18 of 166')).toBeVisible()
     expect(screen.getByText('Paused')).toBeVisible()
@@ -42,7 +42,7 @@ describe('ProspectingSessionTakeoverDialog', () => {
     expect(screen.getByText(/The selected campaign will not start/)).toHaveTextContent(summary.campaignName)
   })
 
-  it('keeps Cancel and Continue as explicit separate decisions', () => {
+  it('keeps Cancel and forced takeover as explicit separate decisions', () => {
     const onCancel = vi.fn()
     const onContinue = vi.fn()
     render(<ProspectingSessionTakeoverDialog
@@ -57,11 +57,11 @@ describe('ProspectingSessionTakeoverDialog', () => {
     expect(onCancel).toHaveBeenCalledOnce()
     expect(onContinue).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue here' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect & start here' }))
     expect(onContinue).toHaveBeenCalledOnce()
   })
 
-  it('blocks transfer while a live call still owns the session', () => {
+  it('explains that a live call will be disconnected by the takeover', () => {
     const onContinue = vi.fn()
     render(<ProspectingSessionTakeoverDialog
       summary={{ ...summary, status: 'active', attemptStatus: 'connected', canTakeOver: false }}
@@ -70,13 +70,13 @@ describe('ProspectingSessionTakeoverDialog', () => {
       onContinue={onContinue}
     />)
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Finish the active call in the other window')
-    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(screen.getByRole('status')).toHaveTextContent('The live call will be disconnected')
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect & start here' }))
     expect(onContinue).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
   })
 
-  it('waits for an in-flight CRM write before transferring control', () => {
+  it('explains that in-flight work is cancelled instead of blocking takeover', () => {
     render(<ProspectingSessionTakeoverDialog
       summary={{
         ...summary,
@@ -90,7 +90,7 @@ describe('ProspectingSessionTakeoverDialog', () => {
       onContinue={vi.fn()}
     />)
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Saving contact note is still saving in the other window')
-    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
+    expect(screen.getByRole('status')).toHaveTextContent('Saving contact note will be cancelled')
+    expect(screen.getByRole('button', { name: 'Disconnect & start here' })).toBeEnabled()
   })
 })

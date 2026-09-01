@@ -24,7 +24,7 @@ import { ActiveCallCard, IncomingCallCard } from './dialer-call-state-cards'
 import { DialerQueueHeader } from './dialer-queue-header'
 import { DialerPanelHeader } from './dialer-panel-header'
 import { useDialerStartCountdown } from './use-dialer-start-countdown'
-import { useDialerControlLoss } from './use-dialer-control-loss'
+import { dialerControlChanged, dialerControlLossRevision, useDialerControlLoss } from './use-dialer-control-loss'
 import { useCallTimer } from './use-call-timer'
 import type { CallStatus, DialerPanelProps, HeirQueueItem, TwilioDevice, TwilioErrorLike } from './telephony-bar-types'
 export type { CallStatus, HeirQueueItem } from './telephony-bar-types'
@@ -173,7 +173,7 @@ export function DialerPanel({
     setDialNumber('')
     clearDispositionRequirement()
   }, [cancelAutoStart, clearDispositionRequirement])
-  const workspaceControlsUnavailable = useDialerControlLoss(pendingSessionId, cancelAutoStart, endQueue, callRef, callIntentPendingRef, status)
+  const workspaceControlsUnavailable = useDialerControlLoss(pendingSessionId, cancelAutoStart, endQueue, callRef, callIntentPendingRef)
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
     if (open && pendingDial?.phone) return deferEffectUpdate(() => {
@@ -562,8 +562,8 @@ export function DialerPanel({
       if (status === 'offline') initDevice()
       return
     }
-
     callIntentPendingRef.current = true
+    const controlLossRevisionAtStart = dialerControlLossRevision(pendingSessionId)
     setError(null)
     try {
       const callerIdForThisCall = callerPlan.mode === 'rotation' && !callerIdLockedByUser
@@ -589,7 +589,6 @@ export function DialerPanel({
         clientAttemptId: createClientAttemptId(),
         sessionId: queueItemAtStart ? pendingSessionId : null,
       })
-
       activeSessionIdRef.current = authorized.sessionId ?? null
       activeAttemptIdRef.current = authorized.clientAttemptId
       setReviewContext(authorized.sessionId ? { sessionId: authorized.sessionId, clientAttemptId: authorized.clientAttemptId } : null)
@@ -600,7 +599,7 @@ export function DialerPanel({
           action: 'started',
         })
       }
-
+      if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
       // Pause/stop can win while call authorization or the durable `started`
       // transition is in flight. Do not submit that already-authorized intent
       // to Twilio after the operator's durable command has completed.
@@ -670,13 +669,13 @@ export function DialerPanel({
         rtcConstraints: { audio: true },
         enableRingingState: true,
       })
+      if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) { call.disconnect(); return }
       if (callerPlan.mode === 'rotation' && !callerIdLockedByUser) {
         setAttemptsPlaced((current) => current + 1)
       }
       callRef.current = call
       callStartRef.current = Date.now()
       let callWasAccepted = false
-
       call.on('ringing', () => {
         log('ringing...')
         setStatusLogged('calling')
@@ -718,8 +717,8 @@ export function DialerPanel({
           ...heirMeta,
         }),
       }).catch(() => {})
-
       call.on('disconnect', () => {
+        if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
         const duration = Math.round((Date.now() - callStartRef.current) / 1000)
         // The SDK accept event means the browser leg opened, not that the
         // seller answered. Treat this as an attempt until the user disposition
@@ -763,6 +762,7 @@ export function DialerPanel({
         requireDisposition()
       })
       call.on('cancel', () => {
+        if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
         callRef.current = null
         setStatusLogged('ready')
         setMuted(false)

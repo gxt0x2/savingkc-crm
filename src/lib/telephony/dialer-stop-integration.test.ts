@@ -36,16 +36,18 @@ describe('dialer stop lifecycle integration', () => {
     expect(callController).toContain("transitionDurableDialerSession(session.id, 'stop')")
   })
 
-  it('cancels queued dialing after matching session control is lost without hanging up a live call', () => {
+  it('cancels queued dialing and disconnects the displaced browser after matching session control is lost', () => {
     expect(countdown).toContain("window.addEventListener('dialer-control-lost', onControlLost)")
     expect(controlLoss).toContain("window.addEventListener('dialer-control-lost', onControlLost)")
     expect(controlLoss).toContain('lostSessionId !== sessionId')
     expect(controlLoss).toContain('cancelAutoStart()')
-    expect(controlLoss).toContain('if (!callInProgress) endQueue()')
-    expect(controlLoss).not.toMatch(/onControlLost[\s\S]*?callRef\.current\.disconnect\(\)[\s\S]*?window\.addEventListener\('dialer-control-lost'/)
+    expect(controlLoss).toContain('activeCall?.disconnect()')
+    expect(controlLoss).toContain('controlLossRevisions.set(sessionId')
+    expect(controlLoss).toContain('endQueue()')
+    expect(callController).toContain('dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)')
   })
 
-  it('keeps takeover blocked until the CRM disposition is stored', () => {
+  it('keeps ordinary progression blocked until the CRM disposition is stored', () => {
     const start = callController.indexOf('async function handleDisposition')
     const end = callController.indexOf('async function chooseWorkspaceDisposition', start)
     const dispositionFlow = callController.slice(start, end)
