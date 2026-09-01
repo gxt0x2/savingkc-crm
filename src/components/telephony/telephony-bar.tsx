@@ -1,5 +1,4 @@
 'use client'
-/* eslint-disable react-hooks/set-state-in-effect -- legacy event-driven dialer state is synchronized by effects */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
@@ -57,6 +56,12 @@ import {
   stationColors,
   stripDialFormatting,
 } from './telephony-bar-support'
+
+function deferEffectUpdate(update: () => void) {
+  let cancelled = false
+  queueMicrotask(() => { if (!cancelled) update() })
+  return () => { cancelled = true }
+}
 
 export function DialerPanel({
   open,
@@ -125,15 +130,14 @@ export function DialerPanel({
   const fallbackCallerId = selectedCallerId || callerIdDisplay || callerIdOptions[0]?.value || ''
   const rotatedCallerId = resolveCallerIdForAttempt(callerPlan, fallbackCallerId, attemptsPlaced)
 
-  useEffect(() => {
+  useEffect(() => deferEffectUpdate(() => {
     setAgentIdentity(signedInProfile.identity)
     setCallerIdDisplay(signedInProfile.defaultCallerId)
     if (callerIdLockedByUser) return
     setSelectedCallerId(signedInProfile.defaultCallerId)
     setCallerPlan(normalizeDialerCallerPlan(null, signedInProfile.defaultCallerId))
     setAttemptsPlaced(0)
-  }, [callerIdLockedByUser, signedInProfile])
-
+  }), [callerIdLockedByUser, signedInProfile])
   const [queue, setQueue] = useState<HeirQueueItem[] | null>(null)
   const [queueIndex, setQueueIndex] = useState(0)
   const queueItem = queue && queue[queueIndex] ? queue[queueIndex] : null
@@ -170,10 +174,9 @@ export function DialerPanel({
     clearDispositionRequirement()
   }, [cancelAutoStart, clearDispositionRequirement])
   const workspaceControlsUnavailable = useDialerControlLoss(pendingSessionId, cancelAutoStart, endQueue, callRef, callIntentPendingRef, status)
-
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
-    if (open && pendingDial?.phone) {
+    if (open && pendingDial?.phone) return deferEffectUpdate(() => {
       campaignCallerIdRef.current = null
       setViewTab('dial')
       setSelectedLead({
@@ -200,7 +203,7 @@ export function DialerPanel({
       }
       setSearchQuery('')
       setSearchResults([])
-    }
+    })
   }, [open, pendingDial])
 
   // Broadcast queue state so the /dialer page (or any other surface) can
@@ -218,10 +221,9 @@ export function DialerPanel({
       },
     }))
   }, [callTimer, outcomeRequired, pendingSessionId, queueItem, queueIndex, queue, recoveryPending, status])
-
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
-    if (open && pendingQueue && pendingQueue.length > 0) {
+    if (open && pendingQueue?.length) return deferEffectUpdate(() => {
       setViewTab('dial')
       setQueue(pendingQueue)
       setQueueIndex(0)
@@ -255,7 +257,7 @@ export function DialerPanel({
       else cancelAutoStart()
       setSearchQuery('')
       setSearchResults([])
-    }
+    })
   }, [armAutoStart, cancelAutoStart, clearDispositionRequirement, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueAutoDial, pendingQueueRingCount, pendingSessionId])
 
   useEffect(() => {
@@ -501,15 +503,15 @@ export function DialerPanel({
   // Debounced search
   useEffect(() => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+    const normalizedQuery = searchQuery.trim()
+    if (normalizedQuery.length < 2) return deferEffectUpdate(() => {
       setSearchResults([])
       setSearching(false)
-      return
-    }
-    setSearching(true)
+    })
+    const cancelSearchingUpdate = deferEffectUpdate(() => setSearching(true))
     searchTimeoutRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/leads/search?q=${encodeURIComponent(searchQuery.trim())}&limit=8`)
+        const res = await fetch(`/api/leads/search?q=${encodeURIComponent(normalizedQuery)}&limit=8`)
         const data = await res.json()
         setSearchResults(data.results || [])
       } catch {
@@ -519,6 +521,7 @@ export function DialerPanel({
       }
     }, 300)
     return () => {
+      cancelSearchingUpdate()
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
     }
   }, [searchQuery])
