@@ -20,7 +20,7 @@ export function splitCanonicalBaths(
   return { baths_full: null, baths_half: null }
 }
 
-type HousingLead = {
+export type HousingLead = {
   beds: number | null
   baths_full: number | null
   baths_half: number | null
@@ -97,5 +97,20 @@ export function leadHousingDetails(
     last_sale_price: pickValue(canonical?.lastSalePrice, lead.last_sale_price),
     data_source: pickValue(canonical?.dataSource, lead.data_source),
     data_enriched_at: pickValue(canonical?.dataEnrichedAt, lead.data_enriched_at),
+  }
+}
+
+/**
+ * Builds a read-only presentation aggregate for profile surfaces. Canonical
+ * property facts win, while the compatibility lead remains the fallback. This
+ * does not copy enrichment data back onto the lead record.
+ */
+export function applyCanonicalHousingToLead<T extends HousingLead>(
+  lead: T,
+  canonical: HousingProperty | null,
+): T & PropertyHousingDetails {
+  return {
+    ...lead,
+    ...leadHousingDetails(canonical, lead),
   }
 }

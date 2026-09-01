@@ -8,7 +8,7 @@ import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase } from '@/lib/format'
-import { leadHousingDetails } from '@/lib/lead-housing-details'
+import { applyCanonicalHousingToLead, leadHousingDetails } from '@/lib/lead-housing-details'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
@@ -484,6 +484,8 @@ export default function LeadDetailPage() {
 
   const formattedName = toProperCase(lead.full_name)
   const canonicalProperty = lead.entityContext?.property ?? null
+  const presentationLead = applyCanonicalHousingToLead(lead, canonicalProperty)
+  const workspacePropertyDetails = leadHousingDetails(canonicalProperty, lead)
   function openLeadDialer() {
     const dialLead = lead
     if (!dialLead?.phone) return
@@ -503,11 +505,11 @@ export default function LeadDetailPage() {
     state: lead.state || undefined,
     zip: lead.zip || undefined,
     county: lead.county || undefined,
-    beds: lead.beds ?? 0,
-    baths: (lead.baths_full ?? 0) + (lead.baths_half ? 0.5 : 0),
-    sqft: lead.sqft ?? 0,
-    yearBuilt: lead.year_built ?? 0,
-    lotSize: lead.lot_size ? String(lead.lot_size) : '--',
+    beds: presentationLead.beds ?? 0,
+    baths: (presentationLead.baths_full ?? 0) + ((presentationLead.baths_half ?? 0) * 0.5),
+    sqft: presentationLead.sqft ?? 0,
+    yearBuilt: presentationLead.year_built ?? 0,
+    lotSize: presentationLead.lot_size ? String(presentationLead.lot_size) : '--',
     tags: [lead.station || 'intake', lead.priority || 'normal'].filter(Boolean),
   }
 
@@ -752,12 +754,10 @@ export default function LeadDetailPage() {
       }
     })
 
-  const workspacePropertyDetails = leadHousingDetails(canonicalProperty, lead)
-
   return (
     <>
       <LeadWorkspace
-        lead={lead}
+        lead={presentationLead}
         activities={workspaceActivities}
         appointment={activeAppointment ? {
           scheduledAt: activeAppointment.scheduledAt,
