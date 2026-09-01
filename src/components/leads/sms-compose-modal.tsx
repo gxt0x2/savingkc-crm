@@ -6,6 +6,7 @@ import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numb
 import { toProperCase, formatPhone } from '@/lib/format'
 import { useAuth } from '@/hooks/use-auth'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
+import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
 
 // ── Agent → default Twilio number mapping ──
 const AGENT_DEFAULT_NUMBERS: Record<string, string> = {
@@ -103,6 +104,7 @@ interface ComposeModalProps {
   prospectOwnerName?: string | null
   /** Explicit sender selected by an active Dialer session. */
   defaultFromPhone?: string | null
+  dialerSessionId?: string | null
 }
 
 export function SmsComposeModal({
@@ -116,6 +118,7 @@ export function SmsComposeModal({
   heirRelation = null,
   prospectOwnerName = null,
   defaultFromPhone = null,
+  dialerSessionId = null,
 }: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
@@ -125,17 +128,7 @@ export function SmsComposeModal({
   const [activeTab, setActiveTab] = useState<'sms' | 'email'>(initialTab)
   const [messages, setMessages] = useState<Activity[]>([])
   const [message, setMessage] = useState('')
-  const [fromPhone, setFromPhone] = useState<string>(defaultFromPhone || AGENT_DEFAULT_NUMBERS.ernest)
-  const [fromPhoneOverridden, setFromPhoneOverridden] = useState(false)
-
-  // ── Set default from-number once auth loads ──
-  useEffect(() => {
-    if (defaultFromPhone && !fromPhoneOverridden) {
-      setFromPhone(defaultFromPhone)
-    } else if (user?.email && !fromPhoneOverridden) {
-      setFromPhone(getDefaultFromPhone(user.email))
-    }
-  }, [defaultFromPhone, user?.email, fromPhoneOverridden])
+  const [fromPhoneOverride, setFromPhoneOverride] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
@@ -145,6 +138,38 @@ export function SmsComposeModal({
     parcelId: lead.parcelId || undefined,
     legalDescription: lead.legalDescription || undefined,
   }
+  // Email-specific state
+  const [emailTo, setEmailTo] = useState(lead.email || '')
+  const [emailSubject, setEmailSubject] = useState(`${toProperCase(lead.full_name) || 'Your'} Property – Saving KC`)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const fetchHistory = useCallback(async (): Promise<Activity[] | null> => {
+    const response = await fetch(`/api/leads/${lead.id}/activities?limit=100`, { cache: 'no-store' })
+    if (!response.ok) return null
+    const payload = await response.json().catch(() => ({}))
+    const activities = Array.isArray(payload.activities) ? payload.activities as Activity[] : []
+    return activities
+      .filter((activity) => SMS_ACTIVITY_TYPES.includes(activity.activity_type))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .slice(-50)
+  }, [lead.id])
+
+  // ── Derive the active reply number unless the operator explicitly changes it ──
+  const detectedFromPhone = useMemo(() => {
+    if (defaultFromPhone) return null
+    const targetKey = phoneKey(lead.phone)
+    const lastThreadSms = [...messages].reverse().find((activity) => {
+      if (!targetKey) return Boolean(activityLinePhone(activity))
+      return phoneKey(activityContactPhone(activity)) === targetKey && Boolean(activityLinePhone(activity))
+    })
+    return lastThreadSms ? activityLinePhone(lastThreadSms) : null
+  }, [defaultFromPhone, lead.phone, messages])
+  const fromPhone = fromPhoneOverride
+    ?? defaultFromPhone
+    ?? detectedFromPhone
+    ?? getDefaultFromPhone(user?.email)
   const fromPhoneOptions = useMemo(() => {
     const options: Array<{ label: string; value: string }> = TWILIO_NUMBERS.map((number) => ({ label: number.label, value: number.value }))
     if (fromPhone && !options.some((option) => option.value === fromPhone)) {
@@ -153,40 +178,15 @@ export function SmsComposeModal({
     return options
   }, [fromPhone])
 
-  // Email-specific state
-  const [emailTo, setEmailTo] = useState(lead.email || '')
-  const [emailSubject, setEmailSubject] = useState(`${toProperCase(lead.full_name) || 'Your'} Property – Saving KC`)
-
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // ── Fetch conversation history ──
-  const fetchHistory = useCallback(async () => {
-    const response = await fetch(`/api/leads/${lead.id}/activities?limit=100`, { cache: 'no-store' })
-    if (!response.ok) return
-    const payload = await response.json().catch(() => ({}))
-    const activities = Array.isArray(payload.activities) ? payload.activities as Activity[] : []
-    setMessages(activities
-      .filter((activity) => SMS_ACTIVITY_TYPES.includes(activity.activity_type))
-      .sort((a, b) => a.created_at.localeCompare(b.created_at))
-      .slice(-50))
-  }, [lead.id])
-
-  // ── Auto-detect reply number from the active SMS thread unless manually changed ──
-  useEffect(() => {
-    if (fromPhoneOverridden || defaultFromPhone) return
-    const targetKey = phoneKey(lead.phone)
-    const lastThreadSms = [...messages].reverse().find((activity) => {
-      if (!targetKey) return Boolean(activityLinePhone(activity))
-      return phoneKey(activityContactPhone(activity)) === targetKey && Boolean(activityLinePhone(activity))
-    })
-    const detectedLine = lastThreadSms ? activityLinePhone(lastThreadSms) : null
-    if (detectedLine) setFromPhone(detectedLine)
-  }, [defaultFromPhone, lead.phone, messages, fromPhoneOverridden])
-
   // ── Load history + templates + property meta on mount ──
   useEffect(() => {
+    let active = true
     void fetchHistory()
+      .then((activities) => {
+        if (active && activities) setMessages(activities)
+      })
+      .catch(() => {})
+    return () => { active = false }
   }, [fetchHistory])
 
   useEffect(() => {
@@ -199,12 +199,21 @@ export function SmsComposeModal({
   // The parent workspace owns the one lead-activity subscription. Reuse its
   // refresh event so opening this modal does not create another database client.
   useEffect(() => {
+    let active = true
     function handleRefresh(event: Event) {
       const detail = (event as CustomEvent<{ leadId?: string }>).detail
-      if (detail?.leadId === lead.id) void fetchHistory()
+      if (detail?.leadId !== lead.id) return
+      void fetchHistory()
+        .then((activities) => {
+          if (active && activities) setMessages(activities)
+        })
+        .catch(() => {})
     }
     window.addEventListener('crm:lead-refresh', handleRefresh)
-    return () => window.removeEventListener('crm:lead-refresh', handleRefresh)
+    return () => {
+      active = false
+      window.removeEventListener('crm:lead-refresh', handleRefresh)
+    }
   }, [fetchHistory, lead.id])
 
   // ── Auto-scroll on new messages ──
@@ -233,9 +242,10 @@ export function SmsComposeModal({
     setSent(false)
 
     try {
-      const res = await fetch('/api/conversations/send', {
+      const res = await withDialerSessionControlOperation(dialerSessionId, 'Sending text message', (controlHeaders, signal) => fetch('/api/conversations/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal,
+        headers: { 'Content-Type': 'application/json', ...controlHeaders },
         body: JSON.stringify({
           leadId: lead.id,
           phone: lead.phone,
@@ -248,8 +258,9 @@ export function SmsComposeModal({
           heirName,
           heirRelation,
           prospectOwnerName,
+          dialerSessionId,
         }),
-      })
+      }))
 
       const data = await res.json()
 
@@ -283,9 +294,10 @@ export function SmsComposeModal({
     setSent(false)
 
     try {
-      const res = await fetch('/api/conversations/send', {
+      const res = await withDialerSessionControlOperation(dialerSessionId, 'Sending email', (controlHeaders, signal) => fetch('/api/conversations/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal,
+        headers: { 'Content-Type': 'application/json', ...controlHeaders },
         body: JSON.stringify({
           leadId: lead.id,
           to: emailTo,
@@ -293,8 +305,9 @@ export function SmsComposeModal({
           body: message.trim(),
           mode: 'email',
           agent: agentName,
+          dialerSessionId,
         }),
-      })
+      }))
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Send failed')
@@ -465,7 +478,7 @@ export function SmsComposeModal({
                   <span className="text-xs text-on-surface-variant/60 font-medium">From:</span>
                   <select
                     value={fromPhone}
-                    onChange={(e) => { setFromPhone(e.target.value); setFromPhoneOverridden(true) }}
+                    onChange={(e) => setFromPhoneOverride(e.target.value)}
                     className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
                   >
                     {fromPhoneOptions.map((n) => (

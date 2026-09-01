@@ -1,4 +1,5 @@
 import type { DialerPostCallReview } from '@/lib/dialer-post-call-review'
+import { dialerControllerHeaders } from '@/lib/telephony/dialer-controller-client'
 
 export interface DurableDialerQueueSubject {
   kind: 'lead' | 'prospect'
@@ -42,6 +43,46 @@ export interface DialerPauseRequest {
   requiresDisposition: boolean
 }
 
+export interface DialerSessionControlSummary {
+  sessionId: string
+  campaignId: string | null
+  campaignName: string
+  status: DurableDialerSession['status']
+  currentIndex: number
+  queueSize: number
+  controllerLabel: string | null
+  heartbeatAt: string | null
+  leaseExpiresAt: string | null
+  generation: number
+  stale: boolean
+  attemptStatus: DurableDialerAttempt['status'] | null
+  operationActive: boolean
+  operationLabel: string | null
+  operationExpiresAt: string | null
+  canTakeOver: boolean
+}
+
+export interface DialerSessionControlResult {
+  session: DurableDialerSession
+  control: Record<string, unknown>
+  transferred?: boolean
+}
+
+export class DialerSessionClientError extends Error {
+  constructor(message: string, public readonly code?: string, public readonly details?: DialerSessionControlSummary) {
+    super(message)
+    this.name = 'DialerSessionClientError'
+  }
+}
+
+export function isDialerControlLossError(error: unknown): error is DialerSessionClientError {
+  return error instanceof DialerSessionClientError && [
+    'session_control_changed',
+    'session_control_conflict',
+    'session_control_lost',
+  ].includes(error.code || '')
+}
+
 export interface DurableDialerAttempt {
   id: string
   client_attempt_id: string
@@ -61,6 +102,7 @@ export interface DurableDialerAttempt {
   connected_at: string | null
   ended_at: string | null
   dispositioned_at: string | null
+  advanced_at: string | null
   created_at: string
   updated_at: string
   leadName: string | null
@@ -83,8 +125,12 @@ export interface DialerTodayMetrics {
 }
 
 async function payload(response: Response, fallback: string) {
-  const body = await response.json().catch(() => null)
-  if (!response.ok || !body) throw new Error(body?.error || fallback)
+  const body = await response.json().catch(() => null) as (Record<string, unknown> & {
+    error?: string
+    code?: string
+    details?: DialerSessionControlSummary
+  }) | null
+  if (!response.ok || !body) throw new DialerSessionClientError(body?.error || fallback, body?.code, body?.details)
   return body
 }
 
@@ -99,14 +145,14 @@ export async function loadDialerTodayMetrics(): Promise<DialerTodayMetrics> {
   const response = await fetch('/api/dialer/metrics/today', { cache: 'no-store' })
   const body = await payload(response, 'Today’s dialer metrics are unavailable.')
   if (!body.metrics || typeof body.generatedAt !== 'string') throw new Error('Today’s dialer metrics are unavailable.')
-  return { ...body.metrics, generatedAt: body.generatedAt } as DialerTodayMetrics
+  return { ...(body.metrics as Record<string, unknown>), generatedAt: body.generatedAt } as unknown as DialerTodayMetrics
 }
 
 export async function loadDialerSessionHistory(cursor?: string | null): Promise<DialerHistoryPage<DurableDialerSession>> {
   const params = new URLSearchParams({ scope: 'history', limit: '20' })
   if (cursor) params.set('cursor', cursor)
   const response = await fetch(`/api/dialer/sessions?${params.toString()}`, { cache: 'no-store' })
-  return payload(response, 'Could not load dialer session history.') as Promise<DialerHistoryPage<DurableDialerSession>>
+  return payload(response, 'Could not load dialer session history.') as unknown as Promise<DialerHistoryPage<DurableDialerSession>>
 }
 
 export async function loadDialerAttemptHistory(
@@ -139,7 +185,7 @@ export async function decideDialerAiChanges(input: {
   const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(input.sessionId)}/attempts/${encodeURIComponent(input.clientAttemptId)}`, {
     method: 'POST',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
     body: JSON.stringify({ decision: input.decision, decisionKey: input.decisionKey, note: input.note }),
   })
   const body = await payload(response, 'Could not save the AI change decision.')
@@ -201,7 +247,7 @@ export async function createDurableDialerSession(input: {
   const response = await fetch('/api/dialer/sessions', {
     method: 'POST',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
     body: JSON.stringify(input),
   })
   const body = await response.json().catch(() => null)
@@ -219,7 +265,7 @@ export async function transitionDurableDialerSession(
   const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
     body: JSON.stringify({ action, reason }),
   })
   const body = await payload(response, 'Could not update the dialer session.')
@@ -234,7 +280,7 @@ export async function requestPauseDurableDialerSession(
   const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
     body: JSON.stringify({ action: 'request_pause', reason }),
   })
   const body = await payload(response, 'Could not pause the dialer session.')
@@ -255,8 +301,35 @@ export async function transitionDurableDialerAttempt(input: {
   const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(input.sessionId)}/attempts/${encodeURIComponent(input.clientAttemptId)}`, {
     method: 'PATCH',
     cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
     body: JSON.stringify(input),
   })
   return payload(response, 'Call session state could not be saved') as Promise<{ attempt?: unknown; session?: DurableDialerSession }>
+}
+
+export async function heartbeatDurableDialerSessionControl(sessionId: string): Promise<DialerSessionControlResult> {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}/control`, {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: await dialerControllerHeaders(),
+  })
+  return payload(response, 'Dialing control could not be verified.') as unknown as Promise<DialerSessionControlResult>
+}
+
+export async function takeOverDurableDialerSession(input: {
+  sessionId: string
+  expectedGeneration: number
+  requestId: string
+}): Promise<DialerSessionControlResult> {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(input.sessionId)}/control`, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
+    body: JSON.stringify({
+      action: 'takeover',
+      expectedGeneration: input.expectedGeneration,
+      requestId: input.requestId,
+    }),
+  })
+  return payload(response, 'Dialing control could not be transferred.') as unknown as Promise<DialerSessionControlResult>
 }

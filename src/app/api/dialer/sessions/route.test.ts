@@ -22,7 +22,11 @@ import { GET, POST } from './route'
 function request(body: Record<string, unknown>) {
   return new Request('https://crm.savingkc.com/api/dialer/sessions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Dialer-Controller': '10000000-0000-4000-8000-000000000001',
+      'User-Agent': 'Mozilla/5.0 (Macintosh) Chrome/140.0',
+    },
     body: JSON.stringify(body),
   })
 }
@@ -60,6 +64,7 @@ describe('dialer session routes', () => {
     expect(response.status).toBe(201)
     expect(mocks.startDialerSession).toHaveBeenCalledWith(expect.objectContaining({
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      controllerToken: '10000000-0000-4000-8000-000000000001',
     }))
   })
 

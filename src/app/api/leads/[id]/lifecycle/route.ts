@@ -3,6 +3,10 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import {
+  assertDialerMutationControl,
+  dialerMutationControlErrorResponse,
+} from '@/lib/api/dialer-mutation-control'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { DEAD_REASONS, cleanDeadReason } from '@/lib/lead-outcomes'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
@@ -24,6 +28,7 @@ type LifecycleBody = {
   deadReasonNotes?: unknown
   reason?: unknown
   idempotencyKey?: unknown
+  dialerSessionId?: unknown
   evidence?: { type?: unknown; referenceId?: unknown }
 }
 
@@ -100,6 +105,22 @@ export async function POST(
   }
   if (stage === 'dead' && deadReason === 'other' && !deadReasonNotes) {
     return NextResponse.json({ success: false, error: 'Notes are required when Other is selected.' }, { status: 400 })
+  }
+
+  if (stage === 'dead' || cleanText(body.dialerSessionId)) {
+    try {
+      await assertDialerMutationControl({
+        request: req,
+        actor,
+        sessionId: body.dialerSessionId,
+        subject: { leadId: id },
+        protectMatchingOpenSession: stage === 'dead',
+      })
+    } catch (error) {
+      const controlResponse = dialerMutationControlErrorResponse(error, { success: false })
+      if (controlResponse) return controlResponse
+      throw error
+    }
   }
 
   if (stage === 'qualified') {

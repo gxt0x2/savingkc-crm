@@ -4,6 +4,51 @@ import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabase } from '@/lib/supabase-lazy'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import {
+  assertDialerMutationControl,
+  dialerMutationControlErrorResponse,
+} from '@/lib/api/dialer-mutation-control'
+import {
+  dialerProviderDeadlineExceeded,
+  dialerProviderSignal,
+} from '@/lib/server/dialer-provider-boundary'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+
+const DIALER_OPERATION_UNCERTAIN_HEADERS = {
+  'X-Dialer-Operation-Uncertain': 'true',
+}
+
+async function controlledSmsRecipientMatches(input: {
+  leadId: unknown
+  phone: unknown
+  prospectPhoneId: unknown
+}): Promise<boolean> {
+  const leadId = typeof input.leadId === 'string' ? input.leadId.trim() : ''
+  const phone = normalizePhoneToE164(typeof input.phone === 'string' ? input.phone : '')
+  const prospectPhoneId = typeof input.prospectPhoneId === 'string' ? input.prospectPhoneId.trim() : ''
+  if (!leadId || !phone) return false
+
+  if (prospectPhoneId) {
+    const { data, error } = await supabase
+      .from('prospect_phones')
+      .select('phone, prospects(lead_id)')
+      .eq('id', prospectPhoneId)
+      .maybeSingle<{
+        phone: string | null
+        prospects: { lead_id: string | null } | null
+      }>()
+    if (error) throw error
+    return data?.prospects?.lead_id === leadId && normalizePhoneToE164(data.phone) === phone
+  }
+
+  const { data, error } = await supabase
+    .from('leads')
+    .select('phone')
+    .eq('id', leadId)
+    .maybeSingle<{ phone: string | null }>()
+  if (error) throw error
+  return normalizePhoneToE164(data?.phone) === phone
+}
 
 export async function POST(req: Request) {
   try {
@@ -27,6 +72,7 @@ export async function POST(req: Request) {
       heirName,
       heirRelation,
       prospectOwnerName,
+      dialerSessionId,
     } = json
     const activitySource = typeof source === 'string' && source.trim() ? source.trim() : undefined
     const prospectMetadata = {
@@ -43,7 +89,45 @@ export async function POST(req: Request) {
     } else if (!phone || !body?.trim()) {
       return NextResponse.json({ error: 'Missing phone or message body' }, { status: 400 })
     }
+
+    let controlledSession = null
+    try {
+      controlledSession = await assertDialerMutationControl({
+        request: req,
+        actor: authenticatedActor,
+        sessionId: dialerSessionId,
+        subject: { leadId },
+        required: activitySource === 'heir_dialer',
+        protectMatchingOpenSession: true,
+      })
+    } catch (error) {
+      const controlResponse = dialerMutationControlErrorResponse(error)
+      if (controlResponse) return controlResponse
+      throw error
+    }
+    if (controlledSession && mode === 'sms' && !await controlledSmsRecipientMatches({
+      leadId,
+      phone,
+      prospectPhoneId,
+    })) {
+      return NextResponse.json({
+        error: 'The selected phone no longer belongs to the active dialing seller.',
+        code: 'recipient_context_mismatch',
+      }, { status: 409 })
+    }
     const actor = authenticatedActor.name
+    const providerSignal = dialerProviderSignal(req, controlledSession)
+    const reassertPersistenceControl = controlledSession
+      ? async () => {
+          await assertDialerMutationControl({
+            request: req,
+            actor: authenticatedActor,
+            sessionId: controlledSession.id,
+            subject: { leadId },
+            required: true,
+          })
+        }
+      : undefined
 
     if (mode === 'sms') {
       const result = await sendLeadSms({
@@ -54,9 +138,24 @@ export async function POST(req: Request) {
         agent: actor,
         source: activitySource,
         metadata: Object.keys(prospectMetadata).length > 0 ? prospectMetadata : undefined,
+        signal: providerSignal,
+        beforePersistence: reassertPersistenceControl,
       })
 
       if (result.status === 'failed') {
+        if (result.deliveryState === 'delivery_unknown') {
+          return NextResponse.json({
+            success: false,
+            sent: null,
+            persisted: false,
+            code: 'delivery_unknown',
+            deliveryState: result.deliveryState,
+            error: result.error,
+          }, {
+            status: 504,
+            headers: DIALER_OPERATION_UNCERTAIN_HEADERS,
+          })
+        }
         return NextResponse.json({ error: result.error }, { status: 502 })
       }
       if (result.status === 'skipped') {
@@ -94,18 +193,92 @@ export async function POST(req: Request) {
       const { Resend } = await import('resend')
       const resend = new Resend(process.env.RESEND_API_KEY)
       const fromEmail = process.env.RESEND_FROM_EMAIL || 'ernest@savingkc.com'
-      const delivery = await resend.emails.send({
-        from: `Saving KC <${fromEmail}>`,
-        to: [to],
-        subject: emailSubject,
-        text: body.trim(),
-      })
+      type ResendRequestOptionsWithSignal = NonNullable<Parameters<typeof resend.emails.send>[1]> & {
+        signal: AbortSignal
+      }
+      const resendRequestOptions: ResendRequestOptionsWithSignal | undefined = providerSignal
+        ? {
+            signal: providerSignal,
+            ...(req.headers.get('x-dialer-operation')?.trim()
+              ? { idempotencyKey: req.headers.get('x-dialer-operation')!.trim() }
+              : {}),
+          }
+        : undefined
+      let delivery: Awaited<ReturnType<typeof resend.emails.send>>
+      try {
+        delivery = await resend.emails.send({
+          from: `Saving KC <${fromEmail}>`,
+          to: [to],
+          subject: emailSubject,
+          text: body.trim(),
+        }, resendRequestOptions)
+      } catch (error) {
+        if (providerSignal) {
+          const detail = dialerProviderDeadlineExceeded(providerSignal)
+            ? 'Email provider timed out after submission; delivery could not be confirmed. Do not resend this email.'
+            : 'Email provider connection ended after submission; delivery could not be confirmed. Do not resend this email.'
+          console.error('[CONVERSATIONS] Protected email delivery is unknown:', error)
+          return NextResponse.json({
+            success: false,
+            sent: null,
+            persisted: false,
+            code: 'delivery_unknown',
+            deliveryState: 'delivery_unknown',
+            error: detail,
+          }, {
+            status: 504,
+            headers: DIALER_OPERATION_UNCERTAIN_HEADERS,
+          })
+        }
+        throw error
+      }
+
+      const resendError = delivery.error as (typeof delivery.error & {
+        name?: unknown
+        statusCode?: unknown
+      }) | null
+      const resendTransportOutcomeUnknown = Boolean(providerSignal && (
+        providerSignal.aborted
+        || (resendError?.name === 'application_error' && resendError.statusCode == null)
+      ))
+      if (resendTransportOutcomeUnknown) {
+        const detail = dialerProviderDeadlineExceeded(providerSignal)
+          ? 'Email provider timed out after submission; delivery could not be confirmed. Do not resend this email.'
+          : 'Email provider connection ended after submission; delivery could not be confirmed. Do not resend this email.'
+        return NextResponse.json({
+          success: false,
+          sent: null,
+          persisted: false,
+          code: 'delivery_unknown',
+          deliveryState: 'delivery_unknown',
+          error: detail,
+        }, {
+          status: 504,
+          headers: DIALER_OPERATION_UNCERTAIN_HEADERS,
+        })
+      }
 
       if (delivery.error || !delivery.data?.id) {
         return NextResponse.json(
           { success: false, sent: false, error: delivery.error?.message || 'Email provider did not accept the message' },
           { status: 502 },
         )
+      }
+
+      if (reassertPersistenceControl) {
+        try {
+          await reassertPersistenceControl()
+        } catch (error) {
+          console.error('[CONVERSATIONS] Email delivered but dialing control could not be revalidated:', error)
+          return NextResponse.json({
+            success: true,
+            sent: true,
+            persisted: false,
+            deliveryState: 'delivered_not_persisted',
+            warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.',
+            id: delivery.data.id,
+          })
+        }
       }
 
       let activityPersistenceError: unknown = null
@@ -130,7 +303,13 @@ export async function POST(req: Request) {
       }
 
       if (leadId) {
-        checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+        if (reassertPersistenceControl) {
+          await checkAutoAdvance(leadId, 'outbound_contact', {
+            beforeMutation: reassertPersistenceControl,
+          }).catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+        } else {
+          checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+        }
       }
 
       if (activityPersistenceError) {

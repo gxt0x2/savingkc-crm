@@ -130,7 +130,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
         {props.activeTab === 'texts' ? props.readOnlyPreview
         ? <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-xs leading-5 text-[var(--ck-text-muted)]">Texting is visible for workflow review but disabled in read-only preview. Start a live calling session to send a message.</div>
         : props.leadId
-        ? <SmsThreadPanel leadId={props.leadId} leadName={props.ownerName} phone={props.lead?.phone} propertyAddress={props.situsAddress} activities={props.activities} defaultFromPhone={props.callerId || null} onRefresh={props.onRefreshActivities} />
+        ? <SmsThreadPanel key={props.leadId} leadId={props.leadId} leadName={props.ownerName} phone={props.lead?.phone} propertyAddress={props.situsAddress} activities={props.activities} defaultFromPhone={props.callerId || null} dialerSessionId={props.durableSessionId || null} onRefresh={props.onRefreshActivities} />
         : <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-xs leading-5 text-[var(--ck-text-muted)]">SMS stays locked until a reviewed recipient is selected from the campaign audience. Calling this source Prospect does not create a Lead.</div>
         : <div className="space-y-3">
           {contactNotes.length > 0 ? <section aria-label="Contact notes" className="space-y-2">

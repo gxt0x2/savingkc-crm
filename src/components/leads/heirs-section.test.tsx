@@ -150,6 +150,9 @@ describe('HeirsSection dial queue', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.startsWith('/api/heirs?')) return { ok: true, json: async () => heirsPayload }
+      if (url === '/api/dialer/sessions/session-1/control/operations') {
+        return { ok: true, json: async () => ({ control: { operationActive: init?.method === 'POST' } }) }
+      }
       if (url === '/api/prospecting/contact-notes' && init?.method === 'POST') {
         return { ok: true, json: async () => ({ activity: { id: 'activity-1' } }) }
       }
@@ -178,8 +181,53 @@ describe('HeirsSection dial queue', () => {
       relation: 'daughter',
       description: 'Sister handles the estate calls.',
     })
+    expect(request?.[1]?.headers).toEqual(expect.objectContaining({
+      'X-Dialer-Controller': expect.any(String),
+      'X-Dialer-Operation': expect.any(String),
+    }))
+    expect(request?.[1]?.signal).toBeInstanceOf(AbortSignal)
+    const operationRequests = fetchMock.mock.calls.filter(([url]) => String(url).includes('/control/operations'))
+    expect(operationRequests.map(([, init]) => init?.method)).toEqual(['POST', 'DELETE'])
+    expect(JSON.parse(String(operationRequests[0]?.[1]?.body)).operationId)
+      .toBe(JSON.parse(String(operationRequests[1]?.[1]?.body)).operationId)
     expect(await screen.findByText('Note saved to this contact.')).toBeVisible()
     expect(onContactNoteSaved).toHaveBeenCalledOnce()
+  })
+
+  it('scopes skip-trace and verification writes to the controlling dialer session', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.startsWith('/api/heirs?')) return { ok: true, json: async () => heirsPayload }
+      if (url === '/api/dialer/sessions/session-1/control/operations') {
+        return { ok: true, json: async () => ({ control: { operationActive: init?.method === 'POST' } }) }
+      }
+      if (url === '/api/heirs/verify' && init?.method === 'POST') {
+        return { ok: true, json: async () => ({ verified: true }) }
+      }
+      if (url === '/api/heirs/sync' && init?.method === 'POST') {
+        return { ok: true, json: async () => ({ synced: true }) }
+      }
+      throw new Error(`Unexpected request ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHeirsSection({ showAllPhones: true, dialerSessionId: 'session-1' })
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Verify this number' }))[0])
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/heirs/verify')).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Re-sync' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/heirs/sync')).toBe(true))
+
+    for (const url of ['/api/heirs/verify', '/api/heirs/sync']) {
+      const request = fetchMock.mock.calls.find(([input]) => String(input) === url)
+      expect(request?.[1]?.headers).toEqual(expect.objectContaining({
+        'X-Dialer-Controller': expect.any(String),
+        'X-Dialer-Operation': expect.any(String),
+      }))
+      expect(request?.[1]?.signal).toBeInstanceOf(AbortSignal)
+      expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ dialerSessionId: 'session-1' })
+    }
+    const operationRequests = fetchMock.mock.calls.filter(([input]) => String(input).includes('/control/operations'))
+    expect(operationRequests.map(([, init]) => init?.method)).toEqual(['POST', 'DELETE', 'POST', 'DELETE'])
   })
 
   it('keeps every associated phone visible at once on the agent calling floor', async () => {
@@ -368,6 +416,71 @@ describe('HeirsSection dial queue', () => {
       'phone-verified',
     ])
 
+    window.removeEventListener('open-dialer-queue', onQueue)
+  })
+
+  it('resumes automatic dialing after phone numbers already completed in this session', async () => {
+    mockHeirsFetch()
+    const queueEvents: CustomEvent[] = []
+    const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
+    window.addEventListener('open-dialer-queue', onQueue)
+
+    renderHeirsSection({
+      autoStart: true,
+      autoStartSkipPhoneIds: ['phone-fresh', 'phone-no-answer'],
+    })
+
+    await waitFor(() => expect(queueEvents).toHaveLength(1))
+    expect(queueEvents[0].detail.queue.map((item: { prospect_phone_id: string }) => item.prospect_phone_id)).toEqual([
+      'phone-second-fresh',
+      'phone-verified',
+    ])
+
+    window.removeEventListener('open-dialer-queue', onQueue)
+  })
+
+  it('uses the normalized number when a legacy phone snapshot has no source phone id', async () => {
+    const legacyPayload = structuredClone(heirsPayload)
+    Object.assign(legacyPayload.heirs[0].phones[0], { snapshot_id: 'snapshot-phone-1' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => legacyPayload }))
+    const queueEvents: CustomEvent[] = []
+    const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
+    window.addEventListener('open-dialer-queue', onQueue)
+
+    renderHeirsSection({ autoStart: true, autoStartSkipPhones: ['(816) 000-0001'] })
+
+    await waitFor(() => expect(queueEvents).toHaveLength(1))
+    expect(queueEvents[0].detail.queue.map((item: { phone: string }) => item.phone)).not.toContain('+18160000001')
+    window.removeEventListener('open-dialer-queue', onQueue)
+  })
+
+  it('queues the saved seller again exactly once after a new control epoch', async () => {
+    mockHeirsFetch()
+    const queueEvents: CustomEvent[] = []
+    const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
+    window.addEventListener('open-dialer-queue', onQueue)
+    const view = renderHeirsSection({ autoStart: true, autoStartEpoch: 1 })
+
+    await waitFor(() => expect(queueEvents).toHaveLength(1))
+    view.rerender(<HeirsSection
+      leadId="lead-1"
+      deceasedOwnerName="Mary Taylor"
+      propertyAddress="123 Main St"
+      defaultExpanded
+      autoStart={false}
+      autoStartEpoch={1}
+    />)
+    view.rerender(<HeirsSection
+      leadId="lead-1"
+      deceasedOwnerName="Mary Taylor"
+      propertyAddress="123 Main St"
+      defaultExpanded
+      autoStart
+      autoStartEpoch={2}
+    />)
+
+    await waitFor(() => expect(queueEvents).toHaveLength(2))
+    expect(queueEvents[1].detail.autoDial).toBe(true)
     window.removeEventListener('open-dialer-queue', onQueue)
   })
 

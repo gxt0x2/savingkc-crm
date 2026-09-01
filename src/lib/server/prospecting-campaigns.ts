@@ -16,12 +16,12 @@ import {
   prospectingFactoryErrorMessage,
   type ProspectingFactoryErrorCode,
 } from '@/lib/prospecting/campaign-contract'
-import { getOpenDialerSession, parseDialerSession, type DialerSessionState } from '@/lib/server/dialer-session-engine'
+import { getDialerSessionControlSummary, getOpenDialerSession, parseDialerSession, type DialerSessionControlSummary, type DialerSessionState } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
 import type { CountyDeceasedFilter, CountyPropertyClassFilter, CountySavedViewDefinition } from '@/lib/prospecting/county-saved-views'
 
 export class ProspectingCampaignError extends Error {
-  constructor(public code: string, public status: number, message: string) {
+  constructor(public code: string, public status: number, message: string, public details?: DialerSessionControlSummary) {
     super(message)
   }
 }
@@ -82,6 +82,12 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('campaign_has_no_steps')) return new ProspectingCampaignError('campaign_steps_required', 409, 'Add at least one message step before activating')
   if (detail.includes('campaign_dialer_complete')) return new ProspectingCampaignError('campaign_dialer_complete', 409, 'Every ready contact has been worked. Review skipped or suppressed contacts before starting another batch')
   if (detail.includes('campaign_session_filters_empty')) return new ProspectingCampaignError('campaign_session_filters_empty', 409, 'No ready number matches this session setup. Widen the recency filters or review completed attempts')
+  if (detail.includes('session_takeover_disposition_required')) return new ProspectingCampaignError('session_takeover_disposition_required', 409, 'Save the required call outcome in the other window before continuing here')
+  if (detail.includes('session_takeover_live_call')) return new ProspectingCampaignError('session_takeover_live_call', 409, 'Finish the active call in the other window before continuing here')
+  if (detail.includes('session_control_changed')) return new ProspectingCampaignError('session_control_changed', 409, 'Dialing control changed while you were confirming. Review the current session and try again')
+  if (detail.includes('session_control_conflict')) return new ProspectingCampaignError('session_control_conflict', 409, 'Another browser is controlling this dialing session')
+  if (detail.includes('session_control_lost')) return new ProspectingCampaignError('session_control_lost', 409, 'This dialing session was continued in another browser')
+  if (detail.includes('invalid_dialer_controller')) return new ProspectingCampaignError('invalid_dialer_controller', 400, 'This browser could not identify its dialing controls. Refresh and try again')
   if (detail.includes('another_dialer_session_open')) return new ProspectingCampaignError('another_dialer_session_open', 409, 'Finish or pause the other open calling session before switching campaigns')
   if (detail.includes('call_in_progress')) return new ProspectingCampaignError('call_in_progress', 409, 'Finish and save the current call before changing where the session begins')
   if (detail.includes('session_stop_requested')) return new ProspectingCampaignError('session_stop_requested', 409, 'This calling session is already ending; finish the current call outcome')
@@ -124,7 +130,9 @@ async function contextualLaunchError(
   actor: AuthenticatedActor,
 ): Promise<ProspectingCampaignError> {
   const detail = `${error.message || ''} ${error.code || ''}`.toLowerCase()
-  if (!detail.includes('call_in_progress') && !detail.includes('another_dialer_session_open') && !detail.includes('session_stop_requested')) {
+  const controlCodes = ['session_control_conflict', 'session_control_changed', 'session_takeover_live_call', 'session_takeover_disposition_required']
+  if (!detail.includes('call_in_progress') && !detail.includes('another_dialer_session_open') && !detail.includes('session_stop_requested')
+    && !controlCodes.some((code) => detail.includes(code))) {
     return databaseError(error)
   }
 
@@ -137,8 +145,25 @@ async function contextualLaunchError(
   if (!openSession) return databaseError(error)
 
   const summary = openSessionSummary(openSession)
+  if (controlCodes.some((code) => detail.includes(code))) {
+    const mapped = databaseError(error)
+    try {
+      return new ProspectingCampaignError(mapped.code, mapped.status, mapped.message, await getDialerSessionControlSummary(actor, openSession.id))
+    } catch {
+      return mapped
+    }
+  }
   if (detail.includes('another_dialer_session_open')) {
-    return new ProspectingCampaignError('another_dialer_session_open', 409, `${summary} is still open. Pause or end it before switching campaigns.`)
+    try {
+      return new ProspectingCampaignError(
+        'another_dialer_session_open',
+        409,
+        `${summary} is still open. Continue that session here before switching campaigns.`,
+        await getDialerSessionControlSummary(actor, openSession.id),
+      )
+    } catch {
+      return new ProspectingCampaignError('another_dialer_session_open', 409, `${summary} is still open. Pause or end it before switching campaigns.`)
+    }
   }
   if (detail.includes('session_stop_requested')) {
     return new ProspectingCampaignError('session_stop_requested', 409, `${summary} is ending. Resume it and save the pending call outcome.`)
@@ -602,18 +627,30 @@ export async function launchProspectingDialerCampaign(
   actor: AuthenticatedActor,
   campaignId: string,
   setup: ProspectingDialerSessionSetup,
+  control: {
+    token: string
+    label: string
+    takeover: boolean
+    expectedGeneration?: number | null
+    requestId?: string | null
+  },
 ) {
   const campaign = await getProspectingCampaign(actor, campaignId)
   if (campaign.kind !== 'dialer') throw new ProspectingCampaignError('invalid_campaign_kind', 409, 'Only dialer campaigns can start a calling session')
   if (campaign.status !== 'active') throw new ProspectingCampaignError('invalid_campaign_state', 409, 'Activate the campaign before starting calls')
   const callerId = normalizePhoneToE164(setup.callerIds[0] || '')
   if (!callerId) throw new ProspectingCampaignError('caller_id_required', 409, 'Choose a calling number before starting')
-  const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v4', {
+  const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v5', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_actor_name: actor.name,
     p_caller_id: callerId,
     p_session_setup: setup,
+    p_controller_token: control.token,
+    p_controller_label: control.label,
+    p_takeover: control.takeover,
+    p_expected_generation: control.expectedGeneration ?? null,
+    p_request_id: control.requestId?.trim() || null,
   })
   if (error) throw await contextualLaunchError(error, actor)
   const payload = data as { created?: unknown; session?: unknown; batchSize?: unknown; remaining?: unknown } | null

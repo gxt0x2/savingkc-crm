@@ -5,15 +5,26 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }))
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }))
 
 import {
+  advanceDialerSessionAfterDisposition,
+  assertDialerSessionControl,
+  assertDialerSessionControlOperation,
+  authorizeDialerSessionAttempt,
+  beginDialerSessionControlOperation,
+  claimDialerSessionControl,
   DialerSessionError,
+  endDialerSessionControlOperation,
   getDialerSessionHistory,
+  heartbeatDialerSessionControl,
   parseDialerSession,
   requestPauseDialerSession,
   startDialerSession,
+  transitionDialerAttempt,
+  transitionDialerSession,
 } from './dialer-session-engine'
 
 const leadId = '00000000-0000-4000-8000-000000000001'
 const sessionId = '00000000-0000-4000-8000-000000000010'
+const controllerToken = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 function session(overrides: Record<string, unknown> = {}) {
   return {
@@ -56,6 +67,8 @@ describe('durable dialer session engine', () => {
       leadIds: [leadId, leadId],
       queueKey: 'custom',
       callerId: '+18167277667',
+      controllerToken: '10000000-0000-4000-8000-000000000001',
+      controllerLabel: 'Chrome on Mac',
     })).rejects.toMatchObject({ code: 'invalid_queue', status: 400 })
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
@@ -69,16 +82,20 @@ describe('durable dialer session engine', () => {
       queueKey: 'cold_prospecting',
       callerId: '+18167277667',
       settings: { ringCount: 4 },
+      controllerToken: '10000000-0000-4000-8000-000000000001',
+      controllerLabel: 'Chrome on Mac',
     })
 
     expect(result.created).toBe(true)
     expect(result.session.currentLeadId).toBe(leadId)
-    expect(mocks.rpc).toHaveBeenCalledWith('start_dialer_session_v2', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('start_dialer_session_v3', expect.objectContaining({
       p_actor_email: 'casey@savingkc.com',
       p_agent_name: 'Casey',
       p_queue_items: [{ kind: 'lead', id: leadId, leadId, prospectId: null, campaignMemberId: null }],
       p_caller_id: '+18167277667',
       p_settings_snapshot: { ringCount: 4 },
+      p_controller_token: '10000000-0000-4000-8000-000000000001',
+      p_controller_label: 'Chrome on Mac',
     }))
   })
 
@@ -90,6 +107,8 @@ describe('durable dialer session engine', () => {
       leadIds: [leadId],
       queueKey: 'custom',
       callerId: '+18167277667',
+      controllerToken: '10000000-0000-4000-8000-000000000001',
+      controllerLabel: 'Chrome on Mac',
     })).rejects.toMatchObject({ code: 'session_engine_unavailable', status: 503 })
   })
 
@@ -102,15 +121,160 @@ describe('durable dialer session engine', () => {
     const result = await requestPauseDialerSession({
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
       sessionId,
+      controllerToken,
       reason: 'Agent paused the calling session',
     })
 
     expect(result.session.status).toBe('paused')
     expect(result.requiresDisposition).toBe(true)
-    expect(mocks.rpc).toHaveBeenCalledWith('request_pause_dialer_session_v1', {
+    expect(mocks.rpc).toHaveBeenCalledWith('request_pause_dialer_session_v2', {
       p_session_id: sessionId,
       p_actor_email: 'casey@savingkc.com',
+      p_controller_token: controllerToken,
       p_reason: 'Agent paused the calling session',
+    })
+  })
+
+  it('claims and renews a controller lease without exposing its token in returned state', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: { session: session(), control: { controllerLabel: 'Chrome on Mac', generation: 2 }, transferred: true },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { session: session(), control: { controllerLabel: 'Chrome on Mac', generation: 2 } },
+        error: null,
+      })
+
+    const claim = await claimDialerSessionControl({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId,
+      controllerToken,
+      controllerLabel: 'Chrome on Mac',
+      force: true,
+      expectedGeneration: 1,
+      requestId: 'takeover-1',
+    })
+    const heartbeat = await heartbeatDialerSessionControl({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId,
+      controllerToken,
+    })
+
+    expect(claim.transferred).toBe(true)
+    expect(claim.control).toEqual({ controllerLabel: 'Chrome on Mac', generation: 2 })
+    expect(heartbeat.control).toEqual({ controllerLabel: 'Chrome on Mac', generation: 2 })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'claim_dialer_session_control_v1', {
+      p_session_id: sessionId,
+      p_actor_email: 'casey@savingkc.com',
+      p_controller_token: controllerToken,
+      p_controller_label: 'Chrome on Mac',
+      p_force: true,
+      p_expected_generation: 1,
+      p_request_id: 'takeover-1',
+    })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'heartbeat_dialer_session_control_v1', {
+      p_session_id: sessionId,
+      p_actor_email: 'casey@savingkc.com',
+      p_controller_token: controllerToken,
+    })
+  })
+
+  it('begins, verifies, and ends a bounded CRM operation under the controller lease', async () => {
+    const operationId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    mocks.rpc
+      .mockResolvedValueOnce({ data: { control: { operationActive: true } }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { control: { operationActive: false } }, error: null })
+    const actor = { email: 'casey@savingkc.com', name: 'Casey' }
+
+    await beginDialerSessionControlOperation({
+      actor,
+      sessionId,
+      controllerToken,
+      operationId,
+      label: 'Saving contact note',
+    })
+    await assertDialerSessionControlOperation({ actor, sessionId, controllerToken, operationId })
+    await endDialerSessionControlOperation({ actor, sessionId, controllerToken, operationId })
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'begin_dialer_session_control_operation_v1', {
+      p_session_id: sessionId,
+      p_actor_email: actor.email,
+      p_controller_token: controllerToken,
+      p_operation_id: operationId,
+      p_operation_label: 'Saving contact note',
+    })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'assert_dialer_session_control_operation_v1', {
+      p_session_id: sessionId,
+      p_actor_email: actor.email,
+      p_controller_token: controllerToken,
+      p_operation_id: operationId,
+    })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(3, 'end_dialer_session_control_operation_v1', {
+      p_session_id: sessionId,
+      p_actor_email: actor.email,
+      p_controller_token: controllerToken,
+      p_operation_id: operationId,
+    })
+  })
+
+  it('uses controller-enforcing wrappers for every session and attempt mutation', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: session({ status: 'paused' }), error: null })
+      .mockResolvedValueOnce({ data: { id: 'attempt-row', status: 'authorized' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attempt-row', status: 'dialing' }, error: null })
+      .mockResolvedValueOnce({ data: session(), error: null })
+
+    const actor = { email: 'casey@savingkc.com', name: 'Casey' }
+    await assertDialerSessionControl({ actor, sessionId, controllerToken })
+    await transitionDialerSession({ actor, sessionId, controllerToken, action: 'pause', reason: 'Agent pause' })
+    await authorizeDialerSessionAttempt({
+      actor,
+      sessionId,
+      controllerToken,
+      clientAttemptId: 'attempt-1',
+      subjectKind: 'lead',
+      subjectId: leadId,
+      campaignMemberId: null,
+      leadId,
+      prospectId: null,
+      prospectPhoneId: null,
+      phone: '+19135550123',
+      callerId: '+18163100845',
+    })
+    await transitionDialerAttempt({
+      actor,
+      sessionId,
+      controllerToken,
+      clientAttemptId: 'attempt-1',
+      action: 'started',
+    })
+    await advanceDialerSessionAfterDisposition({ actor, sessionId, controllerToken, clientAttemptId: 'attempt-1' })
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'assert_dialer_session_control_v1', {
+      p_session_id: sessionId,
+      p_actor_email: actor.email,
+      p_controller_token: controllerToken,
+    })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'transition_dialer_session_v2', expect.objectContaining({
+      p_controller_token: controllerToken,
+      p_action: 'pause',
+    }))
+    expect(mocks.rpc).toHaveBeenNthCalledWith(3, 'authorize_dialer_attempt_v4', expect.objectContaining({
+      p_controller_token: controllerToken,
+      p_client_attempt_id: 'attempt-1',
+    }))
+    expect(mocks.rpc).toHaveBeenNthCalledWith(4, 'transition_dialer_attempt_v2', expect.objectContaining({
+      p_controller_token: controllerToken,
+      p_action: 'started',
+    }))
+    expect(mocks.rpc).toHaveBeenNthCalledWith(5, 'advance_dialer_session_v2', {
+      p_session_id: sessionId,
+      p_actor_email: actor.email,
+      p_controller_token: controllerToken,
+      p_client_attempt_id: 'attempt-1',
     })
   })
 

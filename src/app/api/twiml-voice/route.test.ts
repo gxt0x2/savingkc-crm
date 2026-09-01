@@ -257,6 +257,7 @@ describe('TwiML request containment', () => {
     })
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
+    expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1"')
   })
 
   it('rechecks a signed source-Prospect destination without a shadow Lead', async () => {

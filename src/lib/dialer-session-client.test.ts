@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createDurableDialerSession, loadDialerAttemptHistory, loadDialerSavedQueuesWithOpenSession, loadDialerSessionHistory } from './dialer-session-client'
+import {
+  createDurableDialerSession,
+  DialerSessionClientError,
+  isDialerControlLossError,
+  loadDialerAttemptHistory,
+  loadDialerSavedQueuesWithOpenSession,
+  loadDialerSessionHistory,
+} from './dialer-session-client'
 
 const session = {
   id: '00000000-0000-4000-8000-000000000010',
@@ -26,6 +33,14 @@ const session = {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('dialer session client', () => {
+  it('fails closed on a controller-loss code even when safe conflict details are unavailable', () => {
+    expect(isDialerControlLossError(new DialerSessionClientError(
+      'This dialing session moved to another window.',
+      'session_control_lost',
+    ))).toBe(true)
+    expect(isDialerControlLossError(new Error('network failed'))).toBe(false)
+  })
+
   it('treats a 409 existing session as resumable state', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ created: false, session }), {
       status: 409,

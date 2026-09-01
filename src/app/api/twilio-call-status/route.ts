@@ -158,19 +158,44 @@ export async function POST(req: Request) {
     const duration = parseCallDurationSeconds(body.get('CallDuration')) || 0
     const url = new URL(req.url)
     const identity = url.searchParams.get('identity') || ''
+    const clientAttemptId = url.searchParams.get('clientAttemptId')?.trim() || null
 
-    // Only log on terminal states. Twilio fires multiple times per call.
     const isTerminal = callStatus === 'completed' || callStatus === 'failed' || callStatus === 'canceled' || callStatus === 'busy' || callStatus === 'no-answer'
-    if (!isTerminal) {
-      return NextResponse.json({ ok: true, skipped: 'non_terminal', callStatus })
-    }
-
     const callbackSid = callSid || parentCallSid
-    if (!callbackSid) {
+    if ((clientAttemptId || isTerminal) && !callbackSid) {
       return NextResponse.json({ error: 'Missing CallSid' }, { status: 400 })
     }
+    if (clientAttemptId && clientAttemptId.length > 200) {
+      return NextResponse.json({ error: 'Invalid clientAttemptId' }, { status: 400 })
+    }
 
-    const supabase = createClient(
+    let supabase: SupabaseClient | null = null
+    let providerRecorded = false
+    if (clientAttemptId) {
+      supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      )
+      const { data: providerResult, error: providerError } = await supabase.rpc(
+        'record_dialer_attempt_provider_status_v1',
+        {
+          p_client_attempt_id: clientAttemptId,
+          p_provider_call_sid: callbackSid,
+          p_provider_status: callStatus,
+          p_duration_seconds: duration,
+        },
+      )
+      if (providerError) throw providerError
+      providerRecorded = (providerResult as { recorded?: unknown } | null)?.recorded === true
+    }
+
+    // Only Activity Feed rows and call-quality milestones are terminal. The
+    // correlated durable attempt above records every provider state first.
+    if (!isTerminal) {
+      return NextResponse.json({ ok: true, skipped: 'non_terminal', callStatus, providerRecorded })
+    }
+
+    supabase ||= createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
@@ -230,6 +255,7 @@ export async function POST(req: Request) {
           errorCode: errorCode ? Number(errorCode) : null,
           errorMessage,
           identity,
+          clientAttemptId,
         },
       })
 
@@ -253,7 +279,7 @@ export async function POST(req: Request) {
       })
     }
 
-    return NextResponse.json({ ok: true, callStatus, errorCode, duplicate })
+    return NextResponse.json({ ok: true, callStatus, errorCode, duplicate, providerRecorded })
   } catch (err) {
     console.error('[twilio-call-status] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

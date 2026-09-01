@@ -14,8 +14,10 @@ const contextNavigation = readFileSync(join(process.cwd(), 'src/components/conve
 const dialerPage = readFileSync(join(process.cwd(), 'src/app/(app)/dialer/page.tsx'), 'utf8')
 const prospectingPage = readFileSync(join(process.cwd(), 'src/app/(app)/prospecting/page.tsx'), 'utf8')
 const callingFloor = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-floor.tsx'), 'utf8')
+const callingSellerContext = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-seller-context.ts'), 'utf8')
 const callingRail = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-calling-context-rail.tsx'), 'utf8')
 const sessionSetup = readFileSync(join(process.cwd(), 'src/components/prospecting/prospecting-session-setup.tsx'), 'utf8')
+const sessionControl = readFileSync(join(process.cwd(), 'src/components/prospecting/use-prospecting-session-control.ts'), 'utf8')
 
 describe('prospecting workspace UI contract', () => {
   it('hands selected contacts to a first-class campaign builder', () => {
@@ -40,12 +42,12 @@ describe('prospecting workspace UI contract', () => {
     expect(sessionSetup).toContain('First unworked')
     expect(sessionSetup).toContain('Cold-call numbers')
     expect(sessionSetup).toContain('Rings before no answer')
-    expect(workspace).toContain('savingkc:dialer-autostart:${result.session.id}')
+    expect(workspace).toContain('savingkc:dialer-autostart:${input.session.id}')
     expect(workspace).toContain("caller_mode: setup.callerMode")
     expect(workspace).toContain("rotation_numbers: setup.callerIds.join(',')")
     expect(workspace).toContain("ring_count: String(setup.ringCount)")
-    expect(callingFloor).toContain('window.sessionStorage.removeItem(autoStartKey)')
-    expect(callingFloor).toContain("session.status === 'active' && !session.stopRequestedAt")
+    expect(sessionControl).toContain('window.sessionStorage.removeItem(autoStartKey)')
+    expect(sessionControl).toContain("nextSession.status === 'active'")
     expect(callingFloor).toContain('setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)')
     expect(studio).toContain('Jackson · Tax 3+ · 7 zips · Aug 30')
     expect(studio).toContain('Do not put the calling agent in the title')
@@ -103,14 +105,14 @@ describe('prospecting workspace UI contract', () => {
   })
 
   it('keeps the calling floor on relational facts instead of Manifest compatibility data', () => {
-    expect(callingFloor).toContain('currentProspect?.occupancy_status')
+    expect(callingSellerContext).toContain('prospect?.occupancy_status')
     expect(callingFloor).toContain('payload.coOwners')
-    expect(callingFloor).not.toContain('loadDialerLeadContext')
-    expect(callingFloor).not.toContain('currentManifest')
+    expect(`${callingFloor}\n${callingSellerContext}`).not.toContain('loadDialerLeadContext')
+    expect(`${callingFloor}\n${callingSellerContext}`).not.toContain('currentManifest')
   })
 
   it('shows owner MI, suffix, and unit cells next to first, last, and street', () => {
-    expect(callingFloor).toContain('formatOwnerDisplayName')
+    expect(callingSellerContext).toContain('formatOwnerDisplayName')
     expect(callingRail).toContain('ProspectOwnerNameFields')
     expect(callingRail).toContain('ProspectAddressFields')
     expect(callingRail).toContain('Situs address cells')

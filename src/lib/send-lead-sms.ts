@@ -32,7 +32,7 @@ export type SendLeadSmsResult =
       warning?: string
     }
   | { status: 'skipped'; reason: 'opted_out' | 'duplicate' }
-  | { status: 'failed'; error: string }
+  | { status: 'failed'; error: string; deliveryState?: 'delivery_unknown' }
 
 export interface SendLeadSmsInput {
   leadId?: string | null
@@ -44,6 +44,10 @@ export interface SendLeadSmsInput {
   source?: string
   metadata?: Record<string, unknown>
   statusCallback?: string
+  /** Protected provider request cancellation, checked before Twilio submission. */
+  signal?: AbortSignal
+  /** Revalidates the dialer operation after provider acceptance and before CRM persistence. */
+  beforePersistence?: () => Promise<void>
 }
 
 /**
@@ -126,15 +130,57 @@ export async function resolveSmsFromNumber(
 }
 
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
-  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback } = input
+  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, signal, beforePersistence } = input
   const body = input.body.trim()
 
   if (await isOptedOut(phone)) return { status: 'skipped', reason: 'opted_out' }
   if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
 
   const from = await resolveSmsFromNumber(leadId, phone, fromPhone)
-  const msg = await safeSendSMS({ body, from, to: phone, senderUse: 'conversation', statusCallback })
+  const msg = await safeSendSMS({
+    body,
+    from,
+    to: phone,
+    senderUse: 'conversation',
+    statusCallback,
+    signal,
+    beforePostProviderWrite: beforePersistence,
+  })
+  if (msg.deliveryUnknown) {
+    return {
+      status: 'failed',
+      error: msg.error || 'Twilio did not return a confirmed delivery result. Do not resend this message.',
+      deliveryState: 'delivery_unknown',
+    }
+  }
   if (!msg.success) return { status: 'failed', error: msg.error || 'SMS send failed' }
+
+  if (msg.postProviderPersistenceBlocked) {
+    return {
+      status: 'sent',
+      sid: msg.sid,
+      from: msg.from,
+      persisted: false,
+      deliveryState: 'delivered_not_persisted',
+      warning: 'SMS delivered, but CRM history could not be saved. Do not resend this message.',
+    }
+  }
+
+  if (beforePersistence) {
+    try {
+      await beforePersistence()
+    } catch (error) {
+      console.error('[SMS-SENDER] SMS delivered but dialing control could not be revalidated:', error)
+      return {
+        status: 'sent',
+        sid: msg.sid,
+        from: msg.from,
+        persisted: false,
+        deliveryState: 'delivered_not_persisted',
+        warning: 'SMS delivered, but CRM history could not be saved. Do not resend this message.',
+      }
+    }
+  }
 
   let persistenceError: unknown = null
   try {
@@ -159,10 +205,25 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     persistenceError = error
   }
 
-  logSmsSend(phone, body, msg.from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
+  if (beforePersistence) {
+    try {
+      await beforePersistence()
+      await logSmsSend(phone, body, msg.from, leadId || undefined)
+        .catch((err) => console.error('[SMS-DEDUP] Failed:', err))
 
-  if (leadId) {
-    checkAutoAdvance(leadId, 'outbound_contact').catch((err) => console.error('[AUTO-ADVANCE] Failed:', err))
+      if (leadId) {
+        await checkAutoAdvance(leadId, 'outbound_contact', { beforeMutation: beforePersistence })
+          .catch((err) => console.error('[AUTO-ADVANCE] Failed:', err))
+      }
+    } catch (error) {
+      console.error('[SMS-SENDER] Protected follow-up CRM writes were skipped after dialing control changed:', error)
+    }
+  } else {
+    logSmsSend(phone, body, msg.from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
+
+    if (leadId) {
+      checkAutoAdvance(leadId, 'outbound_contact').catch((err) => console.error('[AUTO-ADVANCE] Failed:', err))
+    }
   }
 
   if (persistenceError) {

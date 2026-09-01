@@ -20,16 +20,22 @@ vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: m
 vi.mock('@/lib/server/dialer-session-engine', () => ({
   authorizeDialerSessionAttempt: mocks.authorizeDialerSessionAttempt,
   getDialerSession: mocks.getDialerSession,
-  DialerSessionError: class DialerSessionError extends Error {},
+  DialerSessionError: class DialerSessionError extends Error {
+    constructor(public code: string, public status: number, message: string) { super(message) }
+  },
   isUuid: (value: unknown) => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value),
 }))
 
 import { POST } from './route'
 
-function request(body: Record<string, unknown>) {
+const controllerToken = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
+function request(body: Record<string, unknown>, withController = true) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (withController) headers['X-Dialer-Controller'] = controllerToken
   return new Request('https://crm.savingkc.com/api/dialer/call-intents', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   })
 }
@@ -50,6 +56,7 @@ describe('web dialer call intent authorization', () => {
     mocks.resolveAuthenticatedActor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
     mocks.evaluateOutboundDialerCall.mockResolvedValue(allowed)
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
+    mocks.authorizeDialerSessionAttempt.mockResolvedValue({ id: 'attempt-row' })
     mocks.createDialerCallIntent.mockReturnValue({
       token: 'signed-intent',
       claims: {
@@ -157,6 +164,7 @@ describe('web dialer call intent authorization', () => {
     expect(mocks.authorizeDialerSessionAttempt).toHaveBeenCalledWith({
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
       sessionId,
+      controllerToken,
       clientAttemptId: 'attempt-1',
       subjectKind: 'lead',
       subjectId: leadId,
@@ -168,6 +176,55 @@ describe('web dialer call intent authorization', () => {
       callerId: '+18167277667',
     })
     await expect(response.clone().json()).resolves.toMatchObject({ ringCount: 6 })
+  })
+
+  it('rejects a session-bound call before policy work when the browser controller is missing', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000010'
+    const leadId = '00000000-0000-4000-8000-000000000011'
+
+    const response = await POST(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'lead',
+      leadId,
+      sessionId,
+      clientAttemptId: 'attempt-1',
+    }, false))
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ reason: 'invalid_dialer_controller' })
+    expect(mocks.getDialerSession).not.toHaveBeenCalled()
+    expect(mocks.evaluateOutboundDialerCall).not.toHaveBeenCalled()
+    expect(mocks.createDialerCallIntent).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the server reports that this browser lost session control', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000010'
+    const leadId = '00000000-0000-4000-8000-000000000011'
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({ ...allowed, leadId })
+    mocks.getDialerSession.mockResolvedValue({
+      id: sessionId,
+      currentSubjectKind: 'lead',
+      currentSubjectId: leadId,
+      currentCampaignMemberId: null,
+      callerId: '+18167277667',
+    })
+    const DialerError = (await import('@/lib/server/dialer-session-engine')).DialerSessionError
+    mocks.authorizeDialerSessionAttempt.mockRejectedValue(
+      new DialerError('session_control_lost', 409, 'This dialing session is controlled in another browser'),
+    )
+
+    const response = await POST(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'lead',
+      leadId,
+      sessionId,
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ allowed: false, reason: 'session_control_lost' })
   })
 
   it('uses the server-owned session caller ID instead of a stale agent default', async () => {

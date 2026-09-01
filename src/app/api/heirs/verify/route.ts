@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import {
+  assertDialerMutationControl,
+  dialerMutationControlErrorResponse,
+} from '@/lib/api/dialer-mutation-control'
 import { supabase } from '@/lib/supabase-lazy'
 import { isMissingColumnError } from '@/lib/schema-compat'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -18,7 +22,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
-    const { prospect_phone_id, verified, lead_id, prospect_id } = body
+    const { prospect_phone_id, verified, lead_id, prospect_id, dialerSessionId } = body
 
     if (!prospect_phone_id || typeof verified !== 'boolean') {
       return NextResponse.json(
@@ -54,6 +58,20 @@ export async function POST(req: Request) {
     }
     if (!resolvedLeadId && !prospect_id) {
       return NextResponse.json({ error: 'Source prospect context is required for this heir phone' }, { status: 409 })
+    }
+
+    try {
+      await assertDialerMutationControl({
+        request: req,
+        actor,
+        sessionId: dialerSessionId,
+        subject: { leadId: resolvedLeadId, prospectId: resolvedProspectId },
+        protectMatchingOpenSession: true,
+      })
+    } catch (error) {
+      const controlResponse = dialerMutationControlErrorResponse(error)
+      if (controlResponse) return controlResponse
+      throw error
     }
 
     const now = new Date().toISOString()

@@ -9,6 +9,18 @@ const mocks = vi.hoisted(() => ({
   checkAutoAdvance: vi.fn(),
   getClaims: vi.fn(),
   profileMaybeSingle: vi.fn(),
+  recipientMaybeSingle: vi.fn(),
+  assertDialerControl: vi.fn(),
+}))
+
+vi.mock('@/lib/api/dialer-mutation-control', () => ({
+  assertDialerMutationControl: mocks.assertDialerControl,
+  dialerMutationControlErrorResponse: (error: unknown) => {
+    const typed = error as { code?: string; status?: number; message?: string }
+    return typed.code
+      ? Response.json({ error: typed.message, code: typed.code }, { status: typed.status || 409 })
+      : null
+  },
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -39,10 +51,10 @@ vi.mock('resend', () => ({
 
 import { POST } from './route'
 
-function request(body: Record<string, unknown>): Request {
+function request(body: Record<string, unknown>, headers?: Record<string, string>): Request {
   return new Request('https://crm.savingkc.com/api/conversations/send', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   })
 }
@@ -64,9 +76,17 @@ describe('conversation sends', () => {
           }),
         }
       }
+      if (table === 'leads' || table === 'prospect_phones') {
+        return {
+          select: () => ({
+            eq: () => ({ maybeSingle: mocks.recipientMaybeSingle }),
+          }),
+        }
+      }
       return { insert: mocks.insert }
     })
     mocks.insert.mockResolvedValue({ error: null })
+    mocks.recipientMaybeSingle.mockResolvedValue({ data: { phone: '+19135550123' }, error: null })
     mocks.checkAutoAdvance.mockResolvedValue(undefined)
     mocks.sendLeadSms.mockResolvedValue({
       status: 'sent',
@@ -75,6 +95,7 @@ describe('conversation sends', () => {
       persisted: true,
       deliveryState: 'delivered_and_persisted',
     })
+    mocks.assertDialerControl.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -99,6 +120,54 @@ describe('conversation sends', () => {
       fromPhone: undefined,
       agent: 'Ernest Dodson',
     }))
+  })
+
+  it('blocks a stale heir-dialer send before any external delivery', async () => {
+    mocks.assertDialerControl.mockRejectedValue(Object.assign(new Error('Dialing control moved'), {
+      code: 'session_control_lost',
+      status: 409,
+    }))
+
+    const response = await POST(request({
+      mode: 'sms',
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Hello',
+      source: 'heir_dialer',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ code: 'session_control_lost' })
+    expect(mocks.sendLeadSms).not.toHaveBeenCalled()
+    expect(mocks.resendSend).not.toHaveBeenCalled()
+    expect(mocks.insert).not.toHaveBeenCalled()
+    expect(mocks.assertDialerControl).toHaveBeenCalledWith(expect.objectContaining({
+      required: true,
+      subject: { leadId: 'lead-1' },
+    }))
+  })
+
+  it('blocks a controlled SMS whose source phone belongs to another seller', async () => {
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.recipientMaybeSingle.mockResolvedValue({
+      data: { phone: '+19135550123', prospects: { lead_id: 'lead-2' } },
+      error: null,
+    })
+
+    const response = await POST(request({
+      mode: 'sms',
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      prospectPhoneId: 'phone-1',
+      body: 'Hello',
+      source: 'heir_dialer',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, { 'X-Dialer-Operation': 'operation-1' }))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ code: 'recipient_context_mismatch' })
+    expect(mocks.sendLeadSms).not.toHaveBeenCalled()
   })
 
   it('reports an SMS that was delivered but not persisted without inviting a resend', async () => {
@@ -126,6 +195,66 @@ describe('conversation sends', () => {
       persisted: false,
       deliveryState: 'delivered_not_persisted',
       warning: expect.stringContaining('Do not resend'),
+    })
+  })
+
+  it('passes protected cancellation and post-provider revalidation into the SMS sender', async () => {
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.sendLeadSms.mockImplementation(async (input: { beforePersistence?: () => Promise<void> }) => {
+      await input.beforePersistence?.()
+      return {
+        status: 'sent',
+        sid: 'SM123',
+        from: '+18166088559',
+        persisted: true,
+        deliveryState: 'delivered_and_persisted',
+      }
+    })
+
+    const response = await POST(request({
+      mode: 'sms',
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Hello',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, { 'X-Dialer-Operation': 'operation-1' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.sendLeadSms).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      beforePersistence: expect.any(Function),
+    }))
+    expect(mocks.assertDialerControl).toHaveBeenCalledTimes(2)
+    expect(mocks.assertDialerControl).toHaveBeenLastCalledWith(expect.objectContaining({
+      sessionId: '11111111-1111-4111-8111-111111111111',
+      required: true,
+    }))
+  })
+
+  it('marks an uncertain protected SMS result so the client retains the operation hold', async () => {
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.sendLeadSms.mockResolvedValue({
+      status: 'failed',
+      deliveryState: 'delivery_unknown',
+      error: 'Twilio did not return a confirmed delivery result. Do not resend this message.',
+    })
+
+    const response = await POST(request({
+      mode: 'sms',
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Hello',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, { 'X-Dialer-Operation': 'operation-1' }))
+
+    expect(response.status).toBe(504)
+    expect(response.headers.get('x-dialer-operation-uncertain')).toBe('true')
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      sent: null,
+      code: 'delivery_unknown',
+      deliveryState: 'delivery_unknown',
+      error: expect.stringContaining('Do not resend'),
     })
   })
 
@@ -217,6 +346,119 @@ describe('conversation sends', () => {
       agent: 'Ernest Dodson',
       metadata: expect.objectContaining({ sent: true }),
     }))
+  })
+
+  it('bounds a protected Resend call and reasserts before email CRM mutations', async () => {
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.resendSend.mockResolvedValue({ data: { id: 'email-1' }, error: null })
+    mocks.checkAutoAdvance.mockImplementation(async (
+      _leadId: string,
+      _trigger: string,
+      options?: { beforeMutation?: () => Promise<void> },
+    ) => {
+      await options?.beforeMutation?.()
+      return { advanced: false }
+    })
+
+    const response = await POST(request({
+      mode: 'email',
+      leadId: 'lead-1',
+      to: 'seller@example.com',
+      body: 'Hello',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, { 'X-Dialer-Operation': 'operation-1' }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.resendSend).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      idempotencyKey: 'operation-1',
+    }))
+    expect(mocks.assertDialerControl).toHaveBeenCalledTimes(3)
+    expect(mocks.assertDialerControl.mock.invocationCallOrder[1]).toBeLessThan(mocks.insert.mock.invocationCallOrder[0])
+    expect(mocks.assertDialerControl.mock.invocationCallOrder[2]).toBeGreaterThan(mocks.checkAutoAdvance.mock.invocationCallOrder[0])
+  })
+
+  it('marks a protected Resend transport timeout as delivery-unknown', async () => {
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.resendSend.mockRejectedValue(new DOMException('The operation timed out', 'TimeoutError'))
+
+    const response = await POST(request({
+      mode: 'email',
+      leadId: 'lead-1',
+      to: 'seller@example.com',
+      body: 'Hello',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, { 'X-Dialer-Operation': 'operation-1' }))
+
+    expect(response.status).toBe(504)
+    expect(response.headers.get('x-dialer-operation-uncertain')).toBe('true')
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      sent: null,
+      code: 'delivery_unknown',
+      deliveryState: 'delivery_unknown',
+      error: expect.stringContaining('Do not resend'),
+    })
+    expect(mocks.insert).not.toHaveBeenCalled()
+    expect(mocks.checkAutoAdvance).not.toHaveBeenCalled()
+  })
+
+  it('recognizes the Resend SDK transport-error result as delivery-unknown', async () => {
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.resendSend.mockResolvedValue({
+      data: null,
+      error: {
+        name: 'application_error',
+        statusCode: null,
+        message: 'Unable to fetch data. The request could not be resolved.',
+      },
+    })
+
+    const response = await POST(request({
+      mode: 'email',
+      leadId: 'lead-1',
+      to: 'seller@example.com',
+      body: 'Hello',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, { 'X-Dialer-Operation': 'operation-1' }))
+
+    expect(response.status).toBe(504)
+    expect(response.headers.get('x-dialer-operation-uncertain')).toBe('true')
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'delivery_unknown',
+      deliveryState: 'delivery_unknown',
+      error: expect.stringContaining('Do not resend'),
+    })
+    expect(mocks.insert).not.toHaveBeenCalled()
+    expect(mocks.checkAutoAdvance).not.toHaveBeenCalled()
+  })
+
+  it('awaits protected email auto-advance work before returning', async () => {
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.resendSend.mockResolvedValue({ data: { id: 'email-1' }, error: null })
+    let releaseAutoAdvance!: () => void
+    mocks.checkAutoAdvance.mockImplementation(() => new Promise((resolve) => {
+      releaseAutoAdvance = () => resolve({ advanced: false })
+    }))
+    const settled = vi.fn()
+
+    const posting = POST(request({
+      mode: 'email',
+      leadId: 'lead-1',
+      to: 'seller@example.com',
+      body: 'Hello',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, { 'X-Dialer-Operation': 'operation-1' })).then(settled)
+
+    await vi.waitFor(() => expect(mocks.checkAutoAdvance).toHaveBeenCalledOnce())
+    expect(settled).not.toHaveBeenCalled()
+    releaseAutoAdvance()
+    await posting
+    expect(settled).toHaveBeenCalledOnce()
   })
 
   it('reports delivered-but-not-persisted without turning delivery into a retryable failure', async () => {

@@ -46,6 +46,8 @@ export interface ProspectingOccupancy {
 }
 
 export interface ProspectingSmsTarget {
+  leadId: string
+  subjectKey: string
   heirName: string
   relation: string
   phone: string

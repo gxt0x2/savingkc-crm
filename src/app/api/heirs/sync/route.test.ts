@@ -16,9 +16,19 @@ const mocks = vi.hoisted(() => ({
     is_deceased: true,
   },
   rpc: vi.fn(),
+  assertDialerControl: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
+vi.mock('@/lib/api/dialer-mutation-control', () => ({
+  assertDialerMutationControl: mocks.assertDialerControl,
+  dialerMutationControlErrorResponse: (error: unknown) => {
+    const typed = error as { code?: string; status?: number; message?: string }
+    return typed.code
+      ? Response.json({ error: typed.message, code: typed.code }, { status: typed.status || 409 })
+      : null
+  },
+}))
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: {
     rpc: mocks.rpc,
@@ -49,11 +59,12 @@ vi.mock('@/lib/supabase-lazy', () => ({
 
 import { POST } from './route'
 
-function request(body: Record<string, unknown>) {
+function request(body: Record<string, unknown>, signal?: AbortSignal) {
   return new NextRequest('https://crm.savingkc.com/api/heirs/sync', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
 }
 
@@ -69,6 +80,7 @@ describe('heir sync trust and containment', () => {
     vi.clearAllMocks()
     vi.unstubAllGlobals()
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+    mocks.assertDialerControl.mockResolvedValue(null)
     mocks.rpc.mockResolvedValue({ data: 1, error: null })
     process.env.SKIPTRACE_SERVICE_URL = 'https://skiptrace.example.com'
   })
@@ -97,6 +109,21 @@ describe('heir sync trust and containment', () => {
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
+  it('blocks a stale dialing window before calling the skip-trace provider', async () => {
+    const provider = vi.fn()
+    vi.stubGlobal('fetch', provider)
+    mocks.assertDialerControl.mockRejectedValue(Object.assign(new Error('Use the controlling dialer window'), {
+      code: 'dialer_session_control_required',
+      status: 409,
+    }))
+
+    const response = await POST(request({ lead_id: 'lead-1' }))
+
+    expect(response.status).toBe(409)
+    expect(provider).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it('attributes successful sync evidence to the authenticated actor', async () => {
     upstream([{
       name: 'Jamie Heir',
@@ -117,6 +144,54 @@ describe('heir sync trust and containment', () => {
         relationship: 'child',
       })],
     })
+  })
+
+  it('reasserts a leased dialer operation after the provider responds and before saving', async () => {
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    upstream([{
+      name: 'Jamie Heir',
+      relationship: 'Child',
+      phones: [{ number: '+18165550100', type: 'mobile', is_connected: true }],
+    }])
+
+    const response = await POST(request({
+      lead_id: 'lead-1',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.assertDialerControl).toHaveBeenCalledTimes(2)
+    expect(mocks.assertDialerControl).toHaveBeenLastCalledWith(expect.objectContaining({
+      sessionId: '11111111-1111-4111-8111-111111111111',
+      required: true,
+    }))
+    expect(fetch).toHaveBeenCalledWith('https://skiptrace.example.com/skip-trace', expect.objectContaining({
+      signal: expect.any(AbortSignal),
+    }))
+    expect(vi.mocked(fetch).mock.invocationCallOrder[0]).toBeLessThan(mocks.assertDialerControl.mock.invocationCallOrder[1])
+    expect(mocks.assertDialerControl.mock.invocationCallOrder[1]).toBeLessThan(mocks.rpc.mock.invocationCallOrder[0])
+  })
+
+  it('cancels a protected provider request and marks the operation outcome uncertain', async () => {
+    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
+    const controller = new AbortController()
+    const provider = vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+    }))
+    vi.stubGlobal('fetch', provider)
+    const posting = POST(request({
+      lead_id: 'lead-1',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }, controller.signal))
+
+    await vi.waitFor(() => expect(provider).toHaveBeenCalledOnce())
+    controller.abort(new DOMException('Client disconnected', 'AbortError'))
+    const response = await posting
+
+    expect(response.status).toBe(499)
+    expect(response.headers.get('x-dialer-operation-uncertain')).toBe('true')
+    await expect(response.json()).resolves.toEqual({ error: 'Skip-trace request was cancelled' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it('fails without claiming success when the atomic replacement rolls back', async () => {

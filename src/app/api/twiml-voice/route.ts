@@ -90,6 +90,13 @@ function outboundRecordingCallback(input: {
   return callback.toString().replaceAll('&', '&amp;')
 }
 
+function outboundStatusCallback(identity: string, clientAttemptId: string | null): string {
+  const callback = new URL('/api/twilio-call-status', BASE_URL)
+  callback.searchParams.set('identity', identity)
+  if (clientAttemptId) callback.searchParams.set('clientAttemptId', clientAttemptId)
+  return callback.toString().replaceAll('&', '&amp;')
+}
+
 function legacySdkIntentCompatibilityEnabled(now = new Date()): boolean {
   return process.env.DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS === 'true'
     && now.getTime() < LEGACY_SDK_INTENT_SUNSET
@@ -319,7 +326,7 @@ export async function POST(req: Request) {
         return blockOutboundCall(decision, policyInput)
       }
 
-      const statusCallback = `${BASE_URL}/api/twilio-call-status?identity=${encodeURIComponent(identity)}`
+      const statusCallback = outboundStatusCallback(identity, clientAttemptId)
       const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
       const dialTimeout = parseDialTimeout(getFormString(body, ['RingCount', 'ringCount', 'ring_count']))
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>

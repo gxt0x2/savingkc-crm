@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   qualification: vi.fn(),
   qualifiedConversion: vi.fn(),
   appointmentConversion: vi.fn(),
+  assertDialerControl: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
@@ -22,6 +23,15 @@ vi.mock('@/lib/qualification-policy', () => ({
 }))
 vi.mock('@/lib/ppc/qualified-lead-conversion', () => ({ queuePpcQualifiedLeadConversion: mocks.qualifiedConversion }))
 vi.mock('@/lib/ppc/appointment-booked-conversion', () => ({ queuePpcAppointmentBookedConversion: mocks.appointmentConversion }))
+vi.mock('@/lib/api/dialer-mutation-control', () => ({
+  assertDialerMutationControl: mocks.assertDialerControl,
+  dialerMutationControlErrorResponse: (error: unknown, extra?: Record<string, unknown>) => {
+    const typed = error as { code?: string; status?: number; message?: string }
+    return typed.code
+      ? Response.json({ ...extra, error: typed.message, code: typed.code }, { status: typed.status || 409 })
+      : null
+  },
+}))
 
 import { POST } from './route'
 
@@ -42,6 +52,7 @@ describe('lead lifecycle command route', () => {
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
     mocks.qualification.mockResolvedValue({ qualified: true, missing: [] })
     mocks.appointment.mockResolvedValue(true)
+    mocks.assertDialerControl.mockResolvedValue(null)
     mocks.qualifiedConversion.mockResolvedValue({ queued: true })
     mocks.appointmentConversion.mockResolvedValue({ queued: true })
     mocks.apply.mockResolvedValue({
@@ -80,6 +91,31 @@ describe('lead lifecycle command route', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ requiresDeadReason: true })
     expect(mocks.apply).not.toHaveBeenCalled()
+  })
+
+  it('requires the active dialer operation before a Prospecting Mark Dead write', async () => {
+    const controlError = Object.assign(new Error('Use the controlling dialer window'), {
+      code: 'dialer_session_control_required',
+      status: 409,
+    })
+    mocks.assertDialerControl.mockRejectedValue(controlError)
+
+    const response = await POST(request({
+      action: 'transition',
+      stage: 'dead',
+      deadReason: 'not_selling',
+      dialerSessionId: '22222222-2222-4222-8222-222222222222',
+    }), routeParams)
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ code: 'dialer_session_control_required' })
+    expect(mocks.apply).not.toHaveBeenCalled()
+    expect(mocks.assertDialerControl).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId: '22222222-2222-4222-8222-222222222222',
+      subject: { leadId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+      protectMatchingOpenSession: true,
+    }))
   })
 
   it('rejects arbitrary owner labels outside the operating roster', async () => {

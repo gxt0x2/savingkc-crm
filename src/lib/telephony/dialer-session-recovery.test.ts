@@ -40,6 +40,7 @@ function attempt(status: DurableDialerAttempt['status']): DurableDialerAttempt {
     connected_at: null,
     ended_at: status === 'awaiting_disposition' ? '2026-08-25T20:00:42.000Z' : null,
     dispositioned_at: null,
+    advanced_at: null,
     created_at: '2026-08-25T20:00:00.000Z',
     updated_at: '2026-08-25T20:00:42.000Z',
     leadName: 'Guinn O Allen & Kathy K',

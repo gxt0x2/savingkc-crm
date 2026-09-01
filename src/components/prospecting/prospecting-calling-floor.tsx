@@ -6,17 +6,15 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { useWorkspaceCallRailOpen } from '@/components/conversations/workspace-frame'
 import { formatPhone } from '@/lib/format'
-import { formatOwnerDisplayName, joinOwnerAddress, resolveMailingDisplay, resolveSitusDisplay } from '@/lib/owner-display'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { loadDialerSubjectActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
 import { DialerSessionCommand } from '@/components/dialer/dialer-session-command'
 import { ProspectingCallingContextRail } from '@/components/prospecting/prospecting-calling-context-rail'
 import { ProspectingMarkDeadDialog } from '@/components/prospecting/prospecting-mark-dead-dialog'
+import { resolveProspectingCallingSellerContext } from '@/components/prospecting/prospecting-calling-seller-context'
+import { ProspectingSessionTakeoverDialog } from '@/components/prospecting/prospecting-session-takeover-dialog'
 import {
-  loadDurableDialerSession,
-  requestPauseDurableDialerSession,
-  transitionDurableDialerSession,
   type DurableDialerSession,
   type DurableDialerQueueSubject,
 } from '@/lib/dialer-session-client'
@@ -25,7 +23,6 @@ import type {
   ProspectingCallingProspect as ProspectSummary,
   ProspectingCallingQueueState as QueueState,
   ProspectingCallingTab,
-  ProspectingOccupancy,
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
@@ -34,6 +31,11 @@ import {
   useDialerPauseAndLeave,
 } from '@/components/prospecting/use-dialer-pause-and-leave'
 import { useDialerTodayMetrics } from '@/components/prospecting/use-dialer-today-metrics'
+import { useProspectingSessionControl } from '@/components/prospecting/use-prospecting-session-control'
+import {
+  DialerOperationHoldRetainedError,
+  withDialerSessionControlOperation,
+} from '@/lib/telephony/dialer-control-operation-client'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
@@ -58,16 +60,13 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   const [resolveError, setResolveError] = useState<string | null>(null)
 
   // Activity feed for the current Lead or unpromoted source Prospect.
-  const [activities, setActivities] = useState<Activity[]>([])
+  const [activitySnapshot, setActivitySnapshot] = useState<{ subjectKey: string; items: Activity[] } | null>(null)
   const [leftTab, setLeftTab] = useState<ProspectingCallingTab>('texts')
   const currentActivitySubjectRef = useRef<string | null>(null)
 
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
   const [autoQueueSubjectKey, setAutoQueueSubjectKey] = useState<string | null>(null)
-  const [durableSession, setDurableSession] = useState<DurableDialerSession | null>(null)
-  const [sessionActionPending, setSessionActionPending] = useState(false)
-  const [sessionError, setSessionError] = useState<string | null>(null)
   const campaignPreview = useCampaignPreviewQueue(readOnlyPreview ? previewCampaignId : null)
 
   // SMS compose state
@@ -83,11 +82,64 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
   const currentSubject = subjects[currentIndex] ?? null
   const currentSubjectKey = currentSubject ? `${currentSubject.kind}:${currentSubject.id}` : null
+  const currentDialerSubjectKeyRef = useRef(currentSubjectKey)
   const currentLeadId: string | null = currentSubject?.leadId ?? null
   const currentProspectId: string | null = currentSubject?.prospectId ?? null
   const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? null : null
   const currentProspect: ProspectSummary | null = currentSubjectKey ? prospects[currentSubjectKey] ?? null : null
+  const smsOriginLead: LeadSummary | null = smsTarget ? leads[smsTarget.leadId] ?? null : null
+  const activities = activitySnapshot?.subjectKey === currentSubjectKey ? activitySnapshot.items : []
   const durableSessionId = params.get('session_id')?.trim() || ''
+
+  const applySessionQueue = useCallback((session: DurableDialerSession, armAutoStart: boolean) => {
+    const nextSubjectKey = `${session.currentSubjectKind}:${session.currentSubjectId}`
+    currentDialerSubjectKeyRef.current = nextSubjectKey
+    setSmsTarget((target) => target && target.subjectKey !== nextSubjectKey ? null : target)
+    setSubjects(session.queueItems.length > 0
+      ? session.queueItems
+      : session.leadIds.map((id) => ({ kind: 'lead' as const, id, leadId: id, prospectId: null, campaignMemberId: null })))
+    setCurrentIndex(session.currentIndex)
+    if (armAutoStart) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
+    if (session.stopRequestedAt || ['completed', 'stopped', 'paused'].includes(session.status)) {
+      setAutoQueueSubjectKey(null)
+    }
+  }, [])
+
+  const handleControlLost = useCallback(() => {
+    setAutoQueueSubjectKey(null)
+    setSmsTarget(null)
+    setShowMarkDead(false)
+  }, [])
+
+  const {
+    session: durableSession,
+    applySession: applyDurableSession,
+    clearSession: clearDurableSession,
+    initializeSession,
+    actionPending: sessionActionPending,
+    setActionPending: setSessionActionPending,
+    sessionError,
+    setSessionError,
+    controlLocked,
+    controlSummary,
+    controlBusy,
+    controlError,
+    autoStartEpoch,
+    heirsAutoStart,
+    transitionSession: transitionCurrentSession,
+    requestPause,
+    finishUnadvancedAttempt,
+    confirmTakeover: confirmControlTakeover,
+  } = useProspectingSessionControl({
+    readOnlyPreview,
+    sessionId: durableSessionId,
+    currentSubject,
+    currentSubjectKey,
+    autoQueueSubjectKey,
+    onApplySession: applySessionQueue,
+    onControlLost: handleControlLost,
+  })
+
   const requestedCallerId = params.get('caller_id')?.trim() || ''
   const sessionCallerId = durableSession?.callerId || campaignPreview.callerId || requestedCallerId
   const sessionCallerModeParam = params.get('caller_mode')
@@ -140,7 +192,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       setLoading(true)
       setResolveError(null)
       if (readOnlyPreview) {
-        setDurableSession(null)
+        clearDurableSession()
         setSubjects(campaignPreview.subjects)
         setCurrentIndex(0)
         setResolveError(campaignPreview.error)
@@ -149,16 +201,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       }
       if (durableSessionId) {
         try {
-          const session = await loadDurableDialerSession(durableSessionId)
-          setDurableSession(session)
-          setSubjects(session.queueItems.length > 0
-            ? session.queueItems
-            : session.leadIds.map((id) => ({ kind: 'lead' as const, id, leadId: id, prospectId: null, campaignMemberId: null })))
-          setCurrentIndex(session.currentIndex)
-          const autoStartKey = `savingkc:dialer-autostart:${session.id}`
-          const autoStartRequested = window.sessionStorage.getItem(autoStartKey) === '1'
-          if (autoStartRequested) window.sessionStorage.removeItem(autoStartKey)
-          if (session.status === 'active' && !session.stopRequestedAt) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
+          await initializeSession()
           setLoading(false)
           return
         } catch (sessionError) {
@@ -168,7 +211,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           return
         }
       }
-      setDurableSession(null)
+      clearDurableSession()
       const explicit = params.get('lead_ids')
       if (explicit) {
         const ids = explicit.split(',').map((s) => s.trim()).filter(Boolean)
@@ -196,7 +239,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       setLoading(false)
     }
     resolveIds()
-  }, [campaignPreview.error, campaignPreview.loading, campaignPreview.subjects, durableSessionId, params, readOnlyPreview])
+  }, [campaignPreview.error, campaignPreview.loading, campaignPreview.subjects, clearDurableSession, durableSessionId, initializeSession, params, readOnlyPreview])
 
   useEffect(() => {
     if (durableSessionId) return
@@ -263,27 +306,26 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   // Prospect. Source Prospects intentionally have no Lead row, so their
   // per-contact notes are read through the Prospect-scoped endpoint.
   useEffect(() => {
-    if (!currentSubjectKey || (!currentLeadId && !currentProspectId)) {
-      setActivities([])
-      return
-    }
+    if (!currentSubjectKey || (!currentLeadId && !currentProspectId)) return
     const requestedSubjectKey = currentSubjectKey
     let cancelled = false
     void loadDialerSubjectActivities({ leadId: currentLeadId, prospectId: currentProspectId })
       .then((nextActivities) => {
         if (cancelled || currentActivitySubjectRef.current !== requestedSubjectKey) return
-        setActivities(nextActivities)
+        setActivitySnapshot({ subjectKey: requestedSubjectKey, items: nextActivities })
       })
       .catch((error) => console.error('[Dialer] Could not load seller activity', error))
     return () => { cancelled = true }
-  }, [currentLeadId, currentProspectId, currentSubjectKey])
+  }, [autoStartEpoch, currentLeadId, currentProspectId, currentSubjectKey])
 
   const refreshActivities = useCallback(async () => {
     if (!currentSubjectKey || (!currentLeadId && !currentProspectId)) return
     const requestedSubjectKey = currentSubjectKey
     try {
       const nextActivities = await loadDialerSubjectActivities({ leadId: currentLeadId, prospectId: currentProspectId })
-      if (currentActivitySubjectRef.current === requestedSubjectKey) setActivities(nextActivities)
+      if (currentActivitySubjectRef.current === requestedSubjectKey) {
+        setActivitySnapshot({ subjectKey: requestedSubjectKey, items: nextActivities })
+      }
     } catch (error) {
       console.error('[Dialer] Could not refresh seller activity', error)
     }
@@ -316,56 +358,19 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     return () => window.removeEventListener('heir-queue-state', onState)
   }, [])
 
-  const applyDurableSession = useCallback((session: DurableDialerSession) => {
-    setDurableSession(session)
-    setSubjects(session.queueItems.length > 0
-      ? session.queueItems
-      : session.leadIds.map((id) => ({ kind: 'lead' as const, id, leadId: id, prospectId: null, campaignMemberId: null })))
-    setCurrentIndex(session.currentIndex)
-    if (session.status === 'active' && !session.stopRequestedAt) setAutoQueueSubjectKey(`${session.currentSubjectKind}:${session.currentSubjectId}`)
-    if (session.stopRequestedAt) setAutoQueueSubjectKey(null)
-    if (session.status === 'completed' || session.status === 'stopped') setAutoQueueSubjectKey(null)
-  }, [])
-
-  useEffect(() => {
-    function onSessionState(event: Event) {
-      const session = (event as CustomEvent).detail as DurableDialerSession | null
-      if (session?.id === durableSessionId) applyDurableSession(session)
-    }
-    window.addEventListener('dialer-session-state', onSessionState)
-    return () => window.removeEventListener('dialer-session-state', onSessionState)
-  }, [applyDurableSession, durableSessionId])
-
   const advance = useCallback((autoQueueNextLead = false) => {
     const next = Math.min(currentIndex + 1, subjects.length - 1)
-    setCurrentIndex(next)
     const nextSubject = subjects[next]
+    const nextSubjectKey = nextSubject ? `${nextSubject.kind}:${nextSubject.id}` : null
+    currentDialerSubjectKeyRef.current = nextSubjectKey
+    setSmsTarget((target) => target && target.subjectKey !== nextSubjectKey ? null : target)
+    setCurrentIndex(next)
     if (autoQueueNextLead && next !== currentIndex && nextSubject) setAutoQueueSubjectKey(`${nextSubject.kind}:${nextSubject.id}`)
   }, [currentIndex, subjects])
 
   const back = useCallback(() => {
     setCurrentIndex((i) => Math.max(i - 1, 0))
   }, [])
-
-  const transitionCurrentSession = useCallback(async (
-    action: 'pause' | 'resume' | 'request_stop' | 'stop' | 'skip',
-    reason?: string,
-  ) => {
-    if (!durableSessionId) return null
-    setSessionActionPending(true)
-    setSessionError(null)
-    try {
-      const session = await transitionDurableDialerSession(durableSessionId, action, reason)
-      applyDurableSession(session)
-      window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: session }))
-      return session
-    } catch (error) {
-      setSessionError(error instanceof Error ? error.message : 'Could not update the dialer session.')
-      return null
-    } finally {
-      setSessionActionPending(false)
-    }
-  }, [applyDurableSession, durableSessionId])
 
   const skipCurrentLead = useCallback(async () => {
     if (readOnlyPreview) {
@@ -376,19 +381,14 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       advance(true)
       return
     }
+    if (markDeadBusy || controlLocked) return
     await transitionCurrentSession('skip', 'Agent skipped this contact')
-  }, [advance, durableSessionId, readOnlyPreview, transitionCurrentSession])
+  }, [advance, controlLocked, durableSessionId, markDeadBusy, readOnlyPreview, transitionCurrentSession])
 
   const handleAutoStartEmpty = useCallback(() => {
-    // A record with no callable heirs (never skip-traced, or already fully
-    // worked) used to auto-advance here — which cascaded through every such
-    // record in a burst and blew past deceased owners the agent still needs to
-    // skip-trace. Instead, stop the auto-queue and rest on this record so the
-    // agent stays in control (run skip trace, re-call, or press → to move on).
-    // Auto-advance to the next record only happens after a record's heirs have
-    // actually been called (the heir-queue-complete handler).
     setAutoQueueSubjectKey(null)
-  }, [])
+    void finishUnadvancedAttempt()
+  }, [finishUnadvancedAttempt])
 
   const navigateAwayFromSession = useCallback(() => {
     const returnTo = params.get('return_to')
@@ -413,6 +413,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       navigateAwayFromSession()
       return
     }
+    if (controlLocked) return
     const session = await transitionCurrentSession('request_stop')
     if (!session) return
     if (session.status === 'stopped') {
@@ -420,22 +421,12 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       return
     }
     window.dispatchEvent(new CustomEvent('dialer-session-stop-requested', { detail: session }))
-  }, [durableSessionId, navigateAwayFromSession, transitionCurrentSession])
+  }, [controlLocked, durableSessionId, navigateAwayFromSession, transitionCurrentSession])
 
   const pauseSession = useCallback(async () => {
-    if (!durableSessionId || durableSession?.status !== 'active') return
-    setSessionActionPending(true)
-    setSessionError(null)
-    try {
-      const result = await requestPauseDurableDialerSession(durableSessionId, 'Agent paused the calling session')
-      applyDurableSession(result.session)
-      dispatchDialerPauseRequested(result, false)
-    } catch (error) {
-      setSessionError(error instanceof Error ? error.message : 'Could not pause the dialer session.')
-    } finally {
-      setSessionActionPending(false)
-    }
-  }, [applyDurableSession, durableSession?.status, durableSessionId])
+    const result = await requestPause()
+    if (result) dispatchDialerPauseRequested(result, false)
+  }, [requestPause])
 
   useEffect(() => {
     if (durableSession?.status === 'stopped' && durableSession.stopRequestedAt) {
@@ -460,8 +451,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement | null)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const target = e.target instanceof Element ? e.target : null
+      if (target?.closest('input, textarea, select, button, a, [contenteditable="true"], [role="dialog"]')) return
       if (e.key === 'j' || e.key === 'ArrowRight') { e.preventDefault(); void skipCurrentLead() }
       if (!durableSessionId && (e.key === 'k' || e.key === 'ArrowLeft')) { e.preventDefault(); back() }
     }
@@ -470,24 +461,43 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   }, [back, durableSessionId, skipCurrentLead])
 
   const markLeadDead = useCallback(async () => {
-    if (!currentLeadId || !markDeadReason) return
+    if (!currentLeadId || !markDeadReason || controlLocked) return
     if (markDeadReason === 'other' && !markDeadNotes.trim()) {
       setMarkDeadError('Add a note when Other is selected.')
       return
     }
     setMarkDeadBusy(true)
     setMarkDeadError(null)
+    const markDeadSubjectKey = currentSubjectKey
     try {
-      const res = await fetch(`/api/leads/${currentLeadId}/lifecycle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'transition',
-          stage: 'dead',
-          deadReason: markDeadReason,
-          deadReasonNotes: markDeadNotes.trim() || null,
-          reason: markDeadNotes.trim() || `Marked dead from dialer — ${markDeadReason.replace(/_/g, ' ')}`,
-        }),
+      const res = await withDialerSessionControlOperation(durableSessionId, 'Marking lead dead', async (controlHeaders, signal) => {
+        const lifecycleResponse = await fetch(`/api/leads/${currentLeadId}/lifecycle`, {
+          method: 'POST',
+          signal,
+          headers: { 'Content-Type': 'application/json', ...controlHeaders },
+          body: JSON.stringify({
+            action: 'transition',
+            stage: 'dead',
+            dialerSessionId: durableSessionId || null,
+            deadReason: markDeadReason,
+            deadReasonNotes: markDeadNotes.trim() || null,
+            reason: markDeadNotes.trim() || `Marked dead from dialer — ${markDeadReason.replace(/_/g, ' ')}`,
+          }),
+        })
+        if (!lifecycleResponse.ok || !durableSessionId) return lifecycleResponse
+
+        // The lifecycle request is asynchronous. A skip that won immediately
+        // before this workflow locked the controls may already have advanced
+        // the queue; never apply this lead's follow-up skip to that next seller.
+        if (currentDialerSubjectKeyRef.current !== markDeadSubjectKey) return lifecycleResponse
+
+        const skippedSession = await transitionCurrentSession('skip', `Lead marked dead: ${markDeadReason}`)
+        if (!skippedSession) {
+          throw new DialerOperationHoldRetainedError(
+            'The lead was marked dead, but the dialer could not safely advance. Reload after the CRM change hold expires.',
+          )
+        }
+        return lifecycleResponse
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -497,9 +507,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       setMarkDeadReason('')
       setMarkDeadNotes('')
       refreshActivities()
-      if (durableSessionId) {
-        await transitionCurrentSession('skip', `Lead marked dead: ${markDeadReason}`)
-      } else {
+      if (!durableSessionId) {
         advance(true)
       }
     } catch (e) {
@@ -507,39 +515,13 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     } finally {
       setMarkDeadBusy(false)
     }
-  }, [currentLeadId, durableSessionId, markDeadReason, markDeadNotes, advance, refreshActivities, transitionCurrentSession])
-
-  const ownerName = useMemo(
-    () => formatOwnerDisplayName(currentProspect, currentLead?.full_name) || 'Unknown',
+  }, [currentLeadId, currentSubjectKey, durableSessionId, markDeadReason, markDeadNotes, advance, controlLocked, refreshActivities, transitionCurrentSession])
+  const { ownerName, situsAddress, occupancy, delinquentYears } = useMemo(
+    () => resolveProspectingCallingSellerContext(currentProspect, currentLead),
     [currentProspect, currentLead],
   )
 
-  const situsAddress = joinOwnerAddress(resolveSitusDisplay(currentProspect, {
-    street: currentLead?.property_address,
-    city: currentLead?.city,
-    state: currentLead?.state,
-    zip: currentLead?.zip,
-  }))
-  // Occupancy is a source-backed prospect fact. Mailing-vs-situs remains a
-  // deterministic fallback for older county rows that predate the column.
-  const occupancy: ProspectingOccupancy | null = (() => {
-    const sourceStatus = currentProspect?.occupancy_status?.trim().toLowerCase()
-    if (sourceStatus === 'vacant') return { label: 'Vacant', tone: 'warn' }
-    if (sourceStatus === 'absentee' || sourceStatus === 'non_owner_occupied') return { label: 'Absentee', tone: 'amber' }
-    if (sourceStatus === 'owner_occupied' || sourceStatus === 'occupied') return { label: 'Owner occupied', tone: 'neutral' }
-    const mailing = joinOwnerAddress(resolveMailingDisplay(currentProspect))
-    if (!mailing) return null
-    if (mailing !== situsAddress) return { label: 'Absentee', tone: 'amber' }
-    return { label: 'Owner occupied', tone: 'neutral' }
-  })()
-
   const currentCoOwners = currentLeadId ? coOwners[currentLeadId] ?? [] : []
-
-  const delinquentYears = currentProspect?.delinquent_years_category === '3yr_plus'
-    ? '3+ yr'
-    : currentProspect?.delinquent_years_category === '2yr'
-    ? '2 yr'
-    : null
 
   const inferredQueueLabel = sessionQueueLabelParam || campaignPreview.name ||
     (params.get('cohort') === 'deceased-2-3yr'
@@ -590,6 +572,15 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
   return (
     <div className="mx-auto max-w-[1700px] px-3 pb-24 pt-3 sm:px-5 lg:px-6">
+      {controlSummary ? <ProspectingSessionTakeoverDialog
+        summary={controlSummary}
+        selectedCampaignId={controlSummary.campaignId}
+        selectedCampaignName={controlSummary.campaignName}
+        busy={controlBusy}
+        error={controlError}
+        onCancel={navigateAwayFromSession}
+        onContinue={() => { void confirmControlTakeover() }}
+      /> : null}
       <DialerSessionCommand
         queueLabel={inferredQueueLabel}
         currentIndex={currentIndex}
@@ -602,11 +593,12 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         todayMetrics={todayMetrics}
         queueState={queueState}
         controlsDocked={callRailOpen}
-        actionPending={sessionActionPending}
+        actionPending={sessionActionPending || markDeadBusy}
         currentLeadId={currentLeadId}
         error={sessionError}
         readOnlyPreview={readOnlyPreview}
-        onClose={() => { void closeSession() }}
+        controlUnavailable={controlLocked}
+        onClose={() => { if (controlLocked) navigateAwayFromSession(); else void closeSession() }}
         onPause={() => { void pauseSession() }}
         onResume={() => { void transitionCurrentSession('resume') }}
         onEndSession={() => { void stopSession() }}
@@ -621,7 +613,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         <main className="order-1 col-span-12 lg:col-span-8">
           {currentSubject && (
             <HeirsSection
-              key={currentSubjectKey}
+              key={`${currentSubjectKey}:${autoStartEpoch}`}
               leadId={currentLeadId}
               prospectId={currentProspectId}
               campaignMemberId={currentSubject.campaignMemberId}
@@ -632,14 +624,16 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
               callHammerEnabled={sessionUseCallHammer}
               ringCount={sessionRingCount}
               dialerSessionId={durableSessionId || null}
-              readOnlyPreview={readOnlyPreview}
-              autoStart={readOnlyPreview || autoQueueSubjectKey === currentSubjectKey}
+              readOnlyPreview={readOnlyPreview || controlLocked}
+              {...heirsAutoStart}
               onAutoStartHandled={() => setAutoQueueSubjectKey(null)}
               onAutoStartEmpty={handleAutoStartEmpty}
               defaultExpanded
               collapsible={false}
               showAllPhones
-              onSmsPhone={!readOnlyPreview && currentLeadId ? setSmsTarget : undefined}
+              onSmsPhone={!readOnlyPreview && !controlLocked && currentLeadId && currentSubjectKey
+                ? (target) => setSmsTarget({ ...target, leadId: currentLeadId, subjectKey: currentSubjectKey })
+                : undefined}
               onContactNoteSaved={() => { void refreshActivities() }}
             />
           )}
@@ -660,25 +654,26 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           activities={activities}
           activeTab={leftTab}
           callerId={sessionCallerId}
-          readOnlyPreview={readOnlyPreview}
+          readOnlyPreview={readOnlyPreview || controlLocked}
           onTabChange={setLeftTab}
           onRefreshActivities={() => { void refreshActivities() }}
         />
       </div>
 
       {/* SMS composer — pinned to the property lead so the SMS logs there. */}
-      {smsTarget && currentLeadId && currentLead && (
+      {smsTarget && smsOriginLead && currentSubjectKey === smsTarget.subjectKey && (
         <SmsComposeModal
+          key={smsTarget.subjectKey}
           lead={{
-            id: currentLead.id,
+            id: smsOriginLead.id,
             full_name: smsTarget.heirName,
             phone: smsTarget.phone,
             email: null,
             property_address: situsAddress,
             assigned_agent: null,
-            city: currentLead.city,
-            state: currentLead.state,
-            zip: currentLead.zip,
+            city: smsOriginLead.city,
+            state: smsOriginLead.state,
+            zip: smsOriginLead.zip,
           }}
           initialTab="sms"
           conversationSource="heir_dialer"
@@ -687,6 +682,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           heirRelation={smsTarget.relation}
           prospectOwnerName={smsTarget.deceasedOwnerName}
           defaultFromPhone={sessionCallerId || null}
+          dialerSessionId={durableSessionId || null}
           onClose={() => setSmsTarget(null)}
           onSent={() => { setSmsTarget(null); refreshActivities() }}
         />

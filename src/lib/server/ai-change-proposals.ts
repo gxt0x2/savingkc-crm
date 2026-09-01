@@ -7,7 +7,7 @@ import {
   type AiLeadField,
 } from '@/lib/ai-change-proposal'
 import { MOJO_CALL_ANALYZER_MODEL, type CallAnalysisResult } from '@/lib/mojo-call-analyzer'
-import { DialerSessionError, getDialerSession } from '@/lib/server/dialer-session-engine'
+import { DialerSessionError, getDialerSession, getDialerSessionControlSummary } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
 
 const PROPOSAL_SELECT = 'id,status,summary,proposed_changes,base_snapshot,decided_by,decision_note,decided_at,applied_at,error_code'
@@ -20,6 +20,8 @@ function errorText(error: { message?: string; code?: string } | null | undefined
 function proposalError(error: { message?: string; code?: string } | null | undefined): DialerSessionError {
   const raw = errorText(error)
   if (raw.includes('not_found')) return new DialerSessionError('ai_change_proposal_not_found', 404, 'AI change proposal not found')
+  if (raw.includes('session_control_lost')) return new DialerSessionError('session_control_lost', 409, 'This dialing session was continued in another browser')
+  if (raw.includes('session_control_conflict')) return new DialerSessionError('session_control_conflict', 409, 'Another browser is controlling this dialing session')
   if (raw.includes('already_decided')) return new DialerSessionError('ai_change_proposal_already_decided', 409, 'These AI changes were already reviewed')
   if (raw.includes('invalid_')) return new DialerSessionError('invalid_ai_change_decision', 400, 'The AI change decision is invalid')
   return new DialerSessionError('ai_change_proposal_unavailable', 503, 'AI change review is unavailable')
@@ -184,30 +186,32 @@ export async function decideAiChangeProposal(input: {
   actor: AuthenticatedActor
   sessionId: string
   clientAttemptId: string
+  controllerToken: string
   decision: 'approved' | 'rejected'
   decisionKey: string
   note?: string | null
 }): Promise<AiChangeProposal> {
-  const session = await getDialerSession(input.actor, input.sessionId)
-  const { data: attempt, error: attemptError } = await supabase
-    .from('dialer_session_attempts')
-    .select('id')
-    .eq('session_id', session.id)
-    .eq('client_attempt_id', input.clientAttemptId.trim())
-    .maybeSingle()
-  if (attemptError) throw proposalError(attemptError)
-  if (!attempt?.id) throw new DialerSessionError('attempt_not_found', 404, 'Call attempt not found')
-
-  const proposal = await getAiChangeProposalForAttemptId(attempt.id)
-  if (!proposal) throw new DialerSessionError('ai_change_proposal_not_found', 404, 'AI change proposal not found')
-  const { data, error } = await supabase.rpc('decide_ai_change_proposal_v1', {
-    p_proposal_id: proposal.id,
+  const { data, error } = await supabase.rpc('decide_dialer_ai_change_proposal_v2', {
+    p_session_id: input.sessionId,
+    p_actor_email: input.actor.email,
+    p_controller_token: input.controllerToken,
+    p_client_attempt_id: input.clientAttemptId.trim(),
     p_decision: input.decision,
     p_decision_key: input.decisionKey.trim(),
     p_decided_by: input.actor.email,
     p_note: input.note?.trim() || null,
   })
-  if (error) throw proposalError(error)
+  if (error) {
+    const mapped = proposalError(error)
+    if (mapped.code === 'session_control_lost' || mapped.code === 'session_control_conflict') {
+      try {
+        throw new DialerSessionError(mapped.code, mapped.status, mapped.message, await getDialerSessionControlSummary(input.actor, input.sessionId))
+      } catch (summaryError) {
+        if (summaryError instanceof DialerSessionError && summaryError.details) throw summaryError
+      }
+    }
+    throw mapped
+  }
   const decided = parseAiChangeProposal(data)
   if (!decided) throw new DialerSessionError('ai_change_proposal_unavailable', 503, 'AI change review is unavailable')
   return decided
