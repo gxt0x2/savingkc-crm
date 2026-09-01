@@ -371,12 +371,12 @@
     },
     {
       "id": "andon_assistant_write",
-      "name": "Andon-only Google Chat assistant write",
+      "name": "Google Chat assistant write (ops except money)",
       "owner": "Operations",
       "status": "active",
       "routes": [],
       "apiRoutes": ["/api/assistant/write"],
-      "tables": ["feedback_submissions", "assistant_query_audit"],
+      "tables": ["feedback_submissions", "assistant_query_audit", "leads", "lead_activities", "appointments", "work_items", "tc_files", "dispo_deals"],
       "environment": ["CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_ALLOWED_EMAILS", "CRM_ASSISTANT_OWNER_EMAILS", "CHAT_ANDON_SPACE", "CHAT_ANDON_WEBHOOK_URL", "NEXT_PUBLIC_APP_URL"]
     },
     {

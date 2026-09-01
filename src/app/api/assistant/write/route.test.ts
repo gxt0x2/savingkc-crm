@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   updateAndonStatus: vi.fn(),
   setAndonAssignee: vi.fn(),
   addAndonNote: vi.fn(),
+  setAndonChatThread: vi.fn(),
+  linkAndonRecord: vi.fn(),
+  addLeadNote: vi.fn(),
+  updateLeadStage: vi.fn(),
   auditInsert: vi.fn(),
 }))
 
@@ -25,6 +29,17 @@ vi.mock('@/lib/assistant/andon-write', async (importOriginal) => {
     updateAndonStatus: mocks.updateAndonStatus,
     setAndonAssignee: mocks.setAndonAssignee,
     addAndonNote: mocks.addAndonNote,
+    setAndonChatThread: mocks.setAndonChatThread,
+    linkAndonRecord: mocks.linkAndonRecord,
+  }
+})
+
+vi.mock('@/lib/assistant/ops-write', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/assistant/ops-write')>()
+  return {
+    ...actual,
+    addLeadNote: mocks.addLeadNote,
+    updateLeadStage: mocks.updateLeadStage,
   }
 })
 
@@ -42,6 +57,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 import { POST } from './route'
 
 const ANDON_ID = '00000000-0000-4000-8000-000000000001'
+const LEAD_ID = '00000000-0000-4000-8000-000000000002'
 
 function request(body: Record<string, unknown>, headers: Record<string, string> = {}) {
   return new Request('https://crm.savingkc.com/api/assistant/write', {
@@ -56,7 +72,7 @@ function request(body: Record<string, unknown>, headers: Record<string, string> 
   })
 }
 
-describe('assistant Andon write API', () => {
+describe('assistant ops write API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('CRM_ASSISTANT_API_SECRET', 'assistant-secret')
@@ -70,8 +86,14 @@ describe('assistant Andon write API', () => {
     })
     mocks.updateAndonStatus.mockResolvedValue({
       action: 'update_andon_status',
-      writeScope: 'andon_only',
+      writeScope: 'ops_except_money',
       andon: { id: ANDON_ID, status: 'acknowledged' },
+    })
+    mocks.addLeadNote.mockResolvedValue({
+      action: 'add_lead_note',
+      writeScope: 'ops_except_money',
+      leadId: LEAD_ID,
+      note: { id: 'note-1', description: 'Call Casey' },
     })
   })
 
@@ -107,20 +129,28 @@ describe('assistant Andon write API', () => {
     }))
 
     expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ error: 'Andon write requires an owner or admin profile' })
+    expect(await response.json()).toMatchObject({ error: 'Assistant write requires an owner or admin profile' })
     expect(mocks.listOpenAndons).not.toHaveBeenCalled()
   })
 
   it('rejects unknown actions', async () => {
-    const response = await POST(request({ action: 'update_lead_stage', leadId: ANDON_ID }))
+    const response = await POST(request({ action: 'drain_mojo_call_queue' }))
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: 'Invalid request' })
     expect(mocks.updateAndonStatus).not.toHaveBeenCalled()
-    expect(mocks.setAndonAssignee).not.toHaveBeenCalled()
   })
 
-  it('allows an owner to update Andon status only', async () => {
+  it('rejects money writes without executing', async () => {
+    const response = await POST(request({ action: 'update_assignment_fee', leadId: LEAD_ID, assignmentFee: 25000 }))
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: 'Money writes are not allowed', writeScope: 'ops_except_money' })
+    expect(mocks.addLeadNote).not.toHaveBeenCalled()
+    expect(mocks.updateLeadStage).not.toHaveBeenCalled()
+  })
+
+  it('allows an owner to update Andon status', async () => {
     const response = await POST(request({
       action: 'update_andon_status',
       andonId: ANDON_ID,
@@ -132,22 +162,40 @@ describe('assistant Andon write API', () => {
     expect(response.status).toBe(200)
     expect(payload).toMatchObject({
       requestId: 'req-andon-1',
-      writeScope: 'andon_only',
+      writeScope: 'ops_except_money',
       action: 'update_andon_status',
       andon: { id: ANDON_ID, status: 'acknowledged' },
     })
     expect(mocks.updateAndonStatus).toHaveBeenCalledWith(expect.anything(), ANDON_ID, 'acknowledged')
   })
 
-  it('never names lead, dialer, or money tables in the write surface', () => {
-    const route = readFileSync('src/app/api/assistant/write/route.ts', 'utf8')
-    const writes = readFileSync('src/lib/assistant/andon-write.ts', 'utf8')
-    for (const source of [route, writes]) {
-      expect(source).not.toMatch(/\.from\(['"]leads['"]\)/)
-      expect(source).not.toMatch(/\.from\(['"]dispo_deals['"]\)/)
+  it('allows an operational lead note', async () => {
+    const response = await POST(request({
+      action: 'add_lead_note',
+      leadId: LEAD_ID,
+      note: 'Casey will recap the call.',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      writeScope: 'ops_except_money',
+      action: 'add_lead_note',
+      leadId: LEAD_ID,
+    })
+    expect(mocks.addLeadNote).toHaveBeenCalled()
+  })
+
+  it('never names money, dialer queue, or treasury tables', () => {
+    const sources = [
+      readFileSync('src/app/api/assistant/write/route.ts', 'utf8'),
+      readFileSync('src/lib/assistant/andon-write.ts', 'utf8'),
+      readFileSync('src/lib/assistant/ops-write.ts', 'utf8'),
+    ]
+    for (const source of sources) {
+      expect(source).not.toMatch(/\.from\(['"]crm_deal_ledger_lines['"]\)/)
+      expect(source).not.toMatch(/\.from\(['"]revenue_transactions['"]\)/)
+      expect(source).not.toMatch(/\.from\(['"]financial_summary['"]\)/)
       expect(source).not.toMatch(/\.from\(['"]mojo_call_queue['"]\)/)
-      expect(source).not.toMatch(/\.from\(['"]dialer_sessions['"]\)/)
     }
-    expect(writes).toContain("export const ANDON_TABLE = 'feedback_submissions'")
   })
 })

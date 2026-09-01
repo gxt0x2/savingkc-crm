@@ -75,6 +75,8 @@ export function assistantActorCanReadCompanyWide(actor: AssistantActor): boolean
   return actor.access === 'owner' || actor.access === 'admin'
 }
 
-export function assistantActorCanWriteAndon(actor: AssistantActor): boolean {
+export function assistantActorCanWriteOps(actor: AssistantActor): boolean {
   return actor.access === 'owner' || actor.access === 'admin'
 }
+
+export const assistantActorCanWriteAndon = assistantActorCanWriteOps
