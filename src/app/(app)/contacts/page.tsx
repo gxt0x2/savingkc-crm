@@ -21,7 +21,7 @@ import { DEAD_REASONS, deadReasonLabel, isNotLeadOutcome } from '@/lib/lead-outc
 import { useAuth } from '@/hooks/use-auth'
 import { useMobileViewport } from '@/hooks/use-mobile-viewport'
 import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
-import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, canonicalContactSmartList, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId } from '@/lib/contact-smart-lists'
+import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, DEFAULT_CONTACT_SORT, canonicalContactSmartList, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId, type ContactSort } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
 import { campaignAudienceReturnHref, MAX_PROSPECTING_QUERY_AUDIENCE, prospectingCampaignId, PROSPECTING_AUDIENCE_STORAGE_KEY, serializeProspectingAudienceSelection, type ProspectingAudienceQuery } from '@/lib/prospecting/audience-handoff'
 
@@ -154,7 +154,7 @@ type ContactWorkspacePayload = {
 interface ContactWorkspaceQuery {
   smartList: ContactSmartList
   cursor: string | null
-  sort: 'priority' | 'recent' | 'name'
+  sort: ContactSort
   search: string
   owner: string
   stage: string
@@ -227,7 +227,7 @@ export default function ContactsPage() {
   const [attentionFilter, setAttentionFilter] = useState('')
   const [outreachFilter, setOutreachFilter] = useState('')
   const [dataGapFilter, setDataGapFilter] = useState<DataGap>('')
-  const [sortBy, setSortBy] = useState<'priority' | 'recent' | 'name'>('priority')
+  const [sortBy, setSortBy] = useState<ContactSort>(DEFAULT_CONTACT_SORT)
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([null])
   const [pageIndex, setPageIndex] = useState(0)
   const [dialog, setDialog] = useState<ContactDialog>(null)
@@ -498,8 +498,7 @@ export default function ContactsPage() {
     setBulkAction('')
     setBulkMessage(null)
     const params = new URLSearchParams(window.location.search)
-    if (nextSmartList === 'all') params.delete('list')
-    else params.set('list', nextSmartList)
+    params.set('list', nextSmartList)
     const query = params.toString()
     window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
   }

@@ -19,6 +19,11 @@ export type ContactSmartList =
   | 'prospects'
   | 'not_leads'
 
+export type ContactSort = 'priority' | 'recent' | 'name'
+
+export const DEFAULT_CONTACT_SMART_LIST: ContactSmartList = 'contacted'
+export const DEFAULT_CONTACT_SORT: ContactSort = 'recent'
+
 export interface SmartListContact {
   station: DealStage
   classification: 'lead' | 'opportunity' | 'dead' | null
@@ -49,7 +54,7 @@ export function canonicalContactSmartList(value: string | null | undefined): Con
   if (value === 'hot') return 'qualified'
   return value && Object.prototype.hasOwnProperty.call(CONTACT_SMART_LIST_COPY, value)
     ? value as ContactSmartList
-    : 'new'
+    : DEFAULT_CONTACT_SMART_LIST
 }
 
 export function normalizeContactSmartListOrder(value: unknown): ContactSmartListNavigationId[] {

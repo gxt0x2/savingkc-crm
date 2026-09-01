@@ -8,6 +8,7 @@ import { getContactSignal, type ContactSignal, type OutreachStatus } from '@/lib
 import { communicationActivitySummary } from '@/lib/operating-model/conversation-presentation'
 import type { ConversationHubActivity, ConversationHubThread } from '@/lib/operating-model/conversation-hub'
 import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
+import { DEFAULT_CONTACT_SMART_LIST, DEFAULT_CONTACT_SORT } from '@/lib/contact-smart-lists'
 import type { DealStage } from '@/types/pipeline'
 
 /**
@@ -73,8 +74,8 @@ export async function GET(request: NextRequest) {
     if (rawCursor && !cursor) {
       return NextResponse.json({ error: 'Invalid contact page cursor' }, { status: 400 })
     }
-    const smartList = params.get('list') ?? 'new'
-    const sort = params.get('sort') ?? 'priority'
+    const smartList = params.get('list') ?? DEFAULT_CONTACT_SMART_LIST
+    const sort = params.get('sort') ?? DEFAULT_CONTACT_SORT
     if (!CONTACT_SMART_LISTS.has(smartList) || !CONTACT_SORTS.has(sort)) {
       return NextResponse.json({ error: 'Invalid contact directory query' }, { status: 400 })
     }

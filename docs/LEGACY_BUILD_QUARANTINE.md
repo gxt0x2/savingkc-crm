@@ -7,11 +7,11 @@ The only deployable SavingKC CRM is defined by `.crm-canonical.json`.
 - Repository: `gxt0x2/savingkc-crm`
 - Production branch: `main`
 - Vercel project: `savingkc-crm` (`prj_NOdFDJ328LIAGbIdQ7wwZnMFQTq2`)
-- Pipeline: `/contacts?list=new`
+- Pipeline: `/contacts?list=contacted`
 
 ## Quarantined behavior
 
-- `/pipeline` is a retired route and must redirect to `/contacts?list=new`.
+- `/pipeline` is a retired route and must redirect to `/contacts?list=contacted`.
 - The retired `Stage Management` interface must not be deployable.
 - A production deployment from any branch other than `main` must fail.
 - A checkout linked to another repository or Vercel project must fail its build.
