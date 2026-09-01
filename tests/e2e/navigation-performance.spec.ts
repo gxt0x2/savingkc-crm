@@ -335,7 +335,7 @@ async function ensureAuthenticated(page: Page) {
 }
 
 const transitions = [
-  { label: 'Pipeline', href: '/contacts?list=new' },
+  { label: 'Pipeline', href: '/contacts?list=contacted' },
   { label: 'Prospecting', href: '/prospecting' },
   { label: 'Task', href: '/tasks' },
   { label: 'Dashboard', href: '/dashboard' },
@@ -351,7 +351,7 @@ test.afterEach(async ({ page }) => {
   expect(forbiddenRequests.get(page) ?? [], 'Performance runs may not prefetch unselected lead details or external Google fonts').toEqual([])
 })
 
-for (const route of ['/dashboard', '/contacts?list=new', '/prospecting', '/conversations', '/tasks', '/calendar?department=acquisitions']) {
+for (const route of ['/dashboard', '/contacts?list=contacted', '/prospecting', '/conversations', '/tasks', '/calendar?department=acquisitions']) {
   test(`cold authenticated route is useful in under 1000ms on ${route}`, async ({ page }, testInfo) => {
     test.setTimeout(60_000)
     let startedAt = Date.now()
@@ -411,8 +411,8 @@ test('Pipeline and Task tab changes respond within 500ms', async ({ page }, test
   await ensureAuthenticated(page)
   await expectRouteReady(page, '/dashboard')
 
-  await page.goto('/contacts?list=new', { waitUntil: 'domcontentloaded' })
-  await expectRouteReady(page, '/contacts?list=new')
+  await page.goto('/contacts?list=contacted', { waitUntil: 'domcontentloaded' })
+  await expectRouteReady(page, '/contacts?list=contacted')
   const pipelineLists = page.getByRole('navigation', { name: 'Pipeline smart lists' })
   const pipelineTimings: Array<{ tab: string; milliseconds: number }> = []
   for (const label of ['Leads', 'Opportunities', 'Appointment Set', 'Offer Made', 'In Closing', 'All', 'New']) {
@@ -460,7 +460,7 @@ test.describe('real iPhone navigation', () => {
     await expectRouteReady(page, '/dashboard')
     const mobileNavigation = page.getByRole('navigation', { name: 'Primary CRM navigation' })
     const mobileTransitions = [
-      { label: 'Pipeline', href: '/contacts?list=new' },
+      { label: 'Pipeline', href: '/contacts?list=contacted' },
       { label: 'Prospecting', href: '/prospecting' },
       { label: 'Conversations', href: '/conversations' },
       { label: 'Dashboard', href: '/dashboard' },

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CONTACT_SMART_LISTS,
+  DEFAULT_CONTACT_SMART_LIST,
+  DEFAULT_CONTACT_SORT,
   canonicalContactSmartList,
   contactMatchesSmartList,
   contactPipelineStatusLabel,
@@ -49,6 +51,9 @@ describe('contact smart lists', () => {
     ])
     expect(normalizeContactSmartListOrder(null)).toEqual(CONTACT_SMART_LISTS.map(({ id }) => id))
     expect(canonicalContactSmartList('hot')).toBe('qualified')
+    expect(canonicalContactSmartList(null)).toBe(DEFAULT_CONTACT_SMART_LIST)
+    expect(DEFAULT_CONTACT_SMART_LIST).toBe('contacted')
+    expect(DEFAULT_CONTACT_SORT).toBe('recent')
   })
 
   it('keeps Not Leads out of every active pipeline list', () => {

@@ -115,6 +115,23 @@ describe('contacts GET', () => {
     )
   })
 
+  it('defaults the Pipeline contract to Leads ordered by newest activity', async () => {
+    mocks.readDirectoryPage.mockResolvedValue({
+      items: [], totalCount: 0, hasMore: false, nextCursor: null,
+      scopeCounts: { active: 0, prospects: 0, not_leads: 0 },
+      smartListCounts: {},
+      facets: { owners: [], sources: [], tags: [] },
+    })
+
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/contacts?mode=page'))
+
+    expect(response.status).toBe(200)
+    expect(mocks.readDirectoryPage).toHaveBeenCalledWith(
+      expect.objectContaining({ smartList: 'contacted', sort: 'recent' }),
+      expect.anything(),
+    )
+  })
+
   it('rejects malformed page cursors before any database work', async () => {
     const response = await GET(new NextRequest('https://crm.savingkc.com/api/contacts?mode=page&cursor=broken'))
     expect(response.status).toBe(400)

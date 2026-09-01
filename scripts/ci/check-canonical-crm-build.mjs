@@ -36,20 +36,20 @@ if (manifest.repository !== 'gxt0x2/savingkc-crm') fail('Canonical repository id
 if (manifest.canonicalBranch !== 'main') fail('Canonical production branch must be main.')
 if (manifest.vercelProjectId !== 'prj_NOdFDJ328LIAGbIdQ7wwZnMFQTq2') fail('Canonical Vercel project ID is incorrect.')
 if (manifest.vercelProjectName !== 'savingkc-crm') fail('Canonical Vercel project name is incorrect.')
-if (manifest.routes?.pipeline !== '/contacts?list=new') fail('Canonical Pipeline route must be /contacts?list=new.')
+if (manifest.routes?.pipeline !== '/contacts?list=contacted') fail('Canonical Pipeline route must be /contacts?list=contacted.')
 
 const pipelineRoute = 'src/app/(app)/pipeline/page.tsx'
 if (!existsSync(path.join(root, pipelineRoute))) {
   fail(`Missing legacy-route quarantine at ${pipelineRoute}.`)
 } else {
   const source = read(pipelineRoute)
-  if (!source.includes("redirect('/contacts?list=new')")) fail('Legacy /pipeline must redirect to /contacts?list=new.')
+  if (!source.includes("redirect('/contacts?list=contacted')")) fail('Legacy /pipeline must redirect to /contacts?list=contacted.')
   if (source.includes('Stage Management')) fail('Retired Stage Management interface is still deployable.')
 }
 
 const workspaceNav = 'src/components/conversations/workspace-nav.tsx'
-if (!existsSync(path.join(root, workspaceNav)) || !read(workspaceNav).includes("href: '/contacts?list=new'")) {
-  fail('Workspace Pipeline navigation is not pinned to /contacts?list=new.')
+if (!existsSync(path.join(root, workspaceNav)) || !read(workspaceNav).includes("href: '/contacts?list=contacted'")) {
+  fail('Workspace Pipeline navigation is not pinned to /contacts?list=contacted.')
 }
 
 const vercelProjectPath = path.join(root, '.vercel/project.json')

@@ -86,7 +86,7 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
   const expectedLinks = new Map([
     ['Dashboard', '/dashboard'],
     ['Issue Log', '/reports/andon'],
-    ['Pipeline', '/contacts?list=new'],
+    ['Pipeline', '/contacts?list=contacted'],
     ['Prospecting', '/prospecting'],
     ['Calendar', '/calendar?department=acquisitions'],
     ['Task', '/tasks'],

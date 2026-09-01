@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ContactsPage from '../page'
-import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY, contactMatchesSmartList, contactSmartListCounts, type ContactSmartList } from '@/lib/contact-smart-lists'
+import { CONTACT_SMART_LIST_ORDER_STORAGE_KEY, DEFAULT_CONTACT_SMART_LIST, DEFAULT_CONTACT_SORT, contactMatchesSmartList, contactSmartListCounts, type ContactSmartList } from '@/lib/contact-smart-lists'
 
 const { useQueryMock, useQueryClientMock, pushMock, searchParamsMock } = vi.hoisted(() => ({ useQueryMock: vi.fn(), useQueryClientMock: vi.fn(), pushMock: vi.fn(), searchParamsMock: vi.fn() }))
 
@@ -60,7 +60,7 @@ describe('ContactsPage smart-list workspace', () => {
     useQueryClientMock.mockReturnValue({ fetchQuery: vi.fn(), invalidateQueries: vi.fn(), setQueryData: vi.fn() })
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
       const query = queryKey?.[1] as { smartList?: ContactSmartList } | undefined
-      const smartList = query?.smartList ?? 'new'
+      const smartList = query?.smartList ?? DEFAULT_CONTACT_SMART_LIST
       const scopedContacts = contacts.filter((contact) => contactMatchesSmartList(contact, smartList))
       return {
         data: {
@@ -84,7 +84,7 @@ describe('ContactsPage smart-list workspace', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the approved smart-list labels and active-list description', () => {
+  it('opens the Leads lane by default and requests newest activity first', () => {
     render(<ContactsPage />)
 
     const navigation = screen.getByRole('navigation', { name: 'Pipeline smart lists' })
@@ -98,11 +98,15 @@ describe('ContactsPage smart-list workspace', () => {
       'In Closing',
       'All',
     ])
-    expect(screen.getByRole('heading', { name: 'New' })).toBeInTheDocument()
-    expect(screen.getByText('Unreviewed seller inquiries from approved intent sources. Communication alone never enters Pipeline.')).toBeInTheDocument()
-    expect(screen.getAllByText('New Intake')).toHaveLength(2)
-    expect(screen.queryByText('Active Lead')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Leads' })).toBeInTheDocument()
+    expect(screen.getByText('Seller records an agent explicitly confirmed as leads.')).toBeInTheDocument()
+    expect(screen.getAllByText('Active Lead')).toHaveLength(2)
+    expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
     expect(screen.queryByText('Dead Record')).not.toBeInTheDocument()
+    expect(useQueryMock.mock.calls.at(-1)?.[0].queryKey[1]).toMatchObject({
+      smartList: DEFAULT_CONTACT_SMART_LIST,
+      sort: DEFAULT_CONTACT_SORT,
+    })
   })
 
   it('places context, search, and actions together in the requested header order', () => {
@@ -188,13 +192,14 @@ describe('ContactsPage smart-list workspace', () => {
     expect(screen.queryByText('New Intake')).not.toBeInTheDocument()
   })
 
-  it('offers the three sort choices without reserving a permanent select row', () => {
+  it('defaults to recent activity while retaining the three explicit sort choices', () => {
     render(<ContactsPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Sort' }))
     const sortMenu = screen.getByRole('dialog', { name: 'Sort contacts' })
     expect(within(sortMenu).getByRole('button', { name: /Priority first/ })).toBeInTheDocument()
-    fireEvent.click(within(sortMenu).getByRole('button', { name: 'Recently active' }))
+    expect(within(sortMenu).getByRole('button', { name: 'Recently active' })).toHaveClass('bg-[var(--crm-brand-soft)]')
+    fireEvent.click(within(sortMenu).getByRole('button', { name: 'Priority first' }))
     expect(screen.queryByRole('dialog', { name: 'Sort contacts' })).not.toBeInTheDocument()
   })
 
@@ -221,7 +226,7 @@ describe('ContactsPage smart-list workspace', () => {
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Assign contact owner' }), { target: { value: 'Ernest' } })
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/leads/new-intake/lifecycle', expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith('/api/leads/active-lead/lifecycle', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({
         action: 'assign',
@@ -295,6 +300,8 @@ describe('ContactsPage smart-list workspace', () => {
   })
 
   it('moves through server-owned cursor pages without offering a global client selection', () => {
+    window.history.replaceState(null, '', '/contacts?list=new')
+    searchParamsMock.mockReturnValue(new URLSearchParams('list=new'))
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: readonly unknown[] }) => {
       const query = queryKey[1] as { cursor: string | null }
       return {
@@ -328,6 +335,8 @@ describe('ContactsPage smart-list workspace', () => {
   })
 
   it('hands all matching filtered contacts to the campaign for server-side resolution', () => {
+    window.history.replaceState(null, '', '/contacts?list=new')
+    searchParamsMock.mockReturnValue(new URLSearchParams('list=new'))
     useQueryMock.mockReturnValue({
       data: {
         items: [contacts[0]],
@@ -350,7 +359,7 @@ describe('ContactsPage smart-list workspace', () => {
       version: 2,
       mode: 'query',
       count: 11,
-      query: { smartList: 'new', sort: 'priority' },
+      query: { smartList: 'new', sort: 'recent' },
     })
     expect(pushMock).toHaveBeenCalledWith('/prospecting?new=1')
   })

@@ -6,7 +6,7 @@
   "vercelProjectId": "prj_NOdFDJ328LIAGbIdQ7wwZnMFQTq2",
   "vercelProjectName": "savingkc-crm",
   "routes": {
-    "pipeline": "/contacts?list=new",
+    "pipeline": "/contacts?list=contacted",
     "legacyPipeline": "/pipeline"
   }
 }

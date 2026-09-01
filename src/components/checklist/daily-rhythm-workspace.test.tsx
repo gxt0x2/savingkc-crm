@@ -37,7 +37,7 @@ describe('DailyRhythmWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /Review Priority Sellers/ }))
     expect(screen.getByText('Top 2 priority actions')).toBeVisible()
     expect(screen.getByText('Jordan Seller')).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Open Pipeline' })).toHaveAttribute('href', '/contacts?list=new')
+    expect(screen.getByRole('link', { name: 'Open Pipeline' })).toHaveAttribute('href', '/contacts?list=contacted')
   })
 
   it('submits a meaningful morning launch and advances to closeout', async () => {
