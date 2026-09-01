@@ -4,14 +4,16 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   rpc: vi.fn(),
   getDialerSession: vi.fn(),
+  getDialerSessionControlSummary: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { from: mocks.from, rpc: mocks.rpc } }))
 vi.mock('@/lib/server/dialer-session-engine', () => ({
   DialerSessionError: class DialerSessionError extends Error {
-    constructor(public code: string, public status: number, message: string) { super(message) }
+    constructor(public code: string, public status: number, message: string, public details?: unknown) { super(message) }
   },
   getDialerSession: mocks.getDialerSession,
+  getDialerSessionControlSummary: mocks.getDialerSessionControlSummary,
 }))
 
 import { createCallAnalysisLeadProposal, decideAiChangeProposal } from './ai-change-proposals'
@@ -102,14 +104,14 @@ describe('server AI change proposals', () => {
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
       sessionId: 'session-1',
       clientAttemptId: 'attempt-1',
+      controllerToken: '10000000-0000-4000-8000-000000000001',
       decision: 'approved',
       decisionKey: 'dialer-ai:proposal-1:approved',
     })
 
-    expect(mocks.getDialerSession).toHaveBeenCalledWith({ email: 'casey@savingkc.com', name: 'Casey' }, 'session-1')
-    expect(attempt.eq).toHaveBeenCalledWith('session_id', 'session-1')
-    expect(mocks.rpc).toHaveBeenCalledWith('decide_ai_change_proposal_v1', expect.objectContaining({
-      p_proposal_id: 'proposal-1',
+    expect(mocks.rpc).toHaveBeenCalledWith('decide_dialer_ai_change_proposal_v2', expect.objectContaining({
+      p_session_id: 'session-1',
+      p_controller_token: '10000000-0000-4000-8000-000000000001',
       p_decision: 'approved',
       p_decided_by: 'casey@savingkc.com',
     }))
@@ -142,17 +144,19 @@ describe('server AI change proposals', () => {
     }))
   })
 
-  it('does not query attempts or proposals when session ownership fails', async () => {
-    mocks.getDialerSession.mockRejectedValue(new Error('session_not_found'))
+  it('fails without querying records when the atomic decision reports lost control', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'session_control_lost' } })
+    mocks.getDialerSessionControlSummary.mockResolvedValue({ sessionId: 'casey-session', generation: 2 })
 
     await expect(decideAiChangeProposal({
       actor: { email: 'ernest@savingkc.com', name: 'Ernest' },
       sessionId: 'casey-session',
       clientAttemptId: 'attempt-1',
+      controllerToken: '10000000-0000-4000-8000-000000000001',
       decision: 'rejected',
       decisionKey: 'dialer-ai:proposal-1:rejected',
-    })).rejects.toThrow('session_not_found')
+    })).rejects.toMatchObject({ code: 'session_control_lost', details: { sessionId: 'casey-session' } })
     expect(mocks.from).not.toHaveBeenCalled()
-    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.rpc).toHaveBeenCalledWith('decide_dialer_ai_change_proposal_v2', expect.any(Object))
   })
 })

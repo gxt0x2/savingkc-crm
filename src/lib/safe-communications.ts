@@ -13,6 +13,7 @@ import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { isAllowedSmsSender, normalizeTwilioNumber, type SmsSenderUse } from '@/lib/twilio-numbers'
 
 const TEST_MODE = externalSideEffectsDisabled()
+export const TWILIO_SMS_PROVIDER_TIMEOUT_MS = 30_000
 
 function cleanTwilioEnv(name: string): string {
   return process.env[name]
@@ -39,12 +40,15 @@ function initTwilioClient(): ReturnType<typeof twilio> | null {
 
   if (accountSid && apiKey && apiSecret) {
     twilioInitError = null
-    return twilio(apiKey, apiSecret, { accountSid })
+    return twilio(apiKey, apiSecret, {
+      accountSid,
+      timeout: TWILIO_SMS_PROVIDER_TIMEOUT_MS,
+    })
   }
 
   if (accountSid && authToken) {
     twilioInitError = null
-    return twilio(accountSid, authToken)
+    return twilio(accountSid, authToken, { timeout: TWILIO_SMS_PROVIDER_TIMEOUT_MS })
   }
 
   twilioInitError = 'Twilio SMS is not configured: missing TWILIO_API_KEY/TWILIO_API_SECRET or TWILIO_AUTH_TOKEN'
@@ -72,6 +76,10 @@ interface SMSParams {
   body: string
   senderUse?: SmsSenderUse
   statusCallback?: string
+  /** Cancels before provider submission when the protected request has already ended. */
+  signal?: AbortSignal
+  /** Revalidates protected dialing control before recording a provider outcome. */
+  beforePostProviderWrite?: () => Promise<void>
 }
 
 export interface SMSResult {
@@ -84,6 +92,29 @@ export interface SMSResult {
   body: string
   requestedFrom?: string
   senderMismatch?: boolean
+  /** The provider request ended without proving whether Twilio accepted it. */
+  deliveryUnknown?: boolean
+  /** Twilio accepted the message, but protected CRM persistence was no longer allowed. */
+  postProviderPersistenceBlocked?: boolean
+}
+
+function protectedDeliveryIsUnknown(error: unknown, signal: AbortSignal | undefined): boolean {
+  if (!signal) return false
+  // Once messages.create starts, only a numeric HTTP response proves Twilio
+  // rejected the request. Timeout, TLS, socket, and other local exceptions may
+  // occur after Twilio accepted it, so protected callers must not invite retry.
+  return typeof getTwilioErrorField(error, 'status') !== 'number'
+}
+
+async function protectedProviderOutcomeMayPersist(params: SMSParams): Promise<boolean> {
+  if (!params.beforePostProviderWrite) return true
+  try {
+    await params.beforePostProviderWrite()
+    return true
+  } catch (error) {
+    console.error('[SMS-SENDER] Provider returned, but dialing control could not be revalidated:', error)
+    return false
+  }
 }
 
 /**
@@ -140,6 +171,14 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
     return { success: false, error, ...sendParams }
   }
 
+  if (params.signal?.aborted) {
+    return {
+      success: false,
+      error: 'SMS delivery was cancelled before provider submission',
+      ...sendParams,
+    }
+  }
+
   try {
     const messagingServiceSid = cleanTwilioEnv('TWILIO_MESSAGING_SERVICE')
     const message = await client.messages.create({
@@ -163,13 +202,16 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
       })
     }
 
-    await logSMSAttempt({
-      ...sendParams,
-      from: actualFrom,
-      success: true,
-      sid: message.sid,
-      status: message.status,
-    })
+    const persistenceAllowed = await protectedProviderOutcomeMayPersist(params)
+    if (persistenceAllowed) {
+      await logSMSAttempt({
+        ...sendParams,
+        from: actualFrom,
+        success: true,
+        sid: message.sid,
+        status: message.status,
+      })
+    }
 
     return {
       success: true,
@@ -180,6 +222,7 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
       requestedFrom: sendParams.from,
       senderMismatch,
       body: sendParams.body,
+      postProviderPersistenceBlocked: !persistenceAllowed,
     }
   } catch (error: unknown) {
     const duration = Date.now() - startTime
@@ -195,17 +238,24 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
     if (twilioCode) console.error(`  Twilio Code: ${twilioCode}`)
     if (twilioStatus) console.error(`  HTTP Status: ${twilioStatus}`)
 
-    await logSMSAttempt({
-      ...sendParams,
-      success: false,
-      error: errorMsg,
-      twilioCode,
-      twilioStatus,
-    })
+    const deliveryUnknown = protectedDeliveryIsUnknown(error, params.signal)
+    const persistenceAllowed = await protectedProviderOutcomeMayPersist(params)
+    if (persistenceAllowed) {
+      await logSMSAttempt({
+        ...sendParams,
+        success: false,
+        error: errorMsg,
+        twilioCode,
+        twilioStatus,
+      })
+    }
 
     return {
       success: false,
-      error: errorMsg,
+      error: deliveryUnknown
+        ? 'Twilio did not return a confirmed delivery result. Do not resend this message.'
+        : errorMsg,
+      deliveryUnknown,
       to: sendParams.to,
       from: sendParams.from,
       body: sendParams.body,

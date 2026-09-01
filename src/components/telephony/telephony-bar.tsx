@@ -1,5 +1,5 @@
 'use client'
-
+/* eslint-disable react-hooks/set-state-in-effect -- legacy event-driven dialer state is synchronized by effects */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
@@ -25,7 +25,10 @@ import { ActiveCallCard, IncomingCallCard } from './dialer-call-state-cards'
 import { DialerQueueHeader } from './dialer-queue-header'
 import { DialerPanelHeader } from './dialer-panel-header'
 import { useDialerStartCountdown } from './use-dialer-start-countdown'
-import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
+import { useDialerControlLoss } from './use-dialer-control-loss'
+import { useCallTimer } from './use-call-timer'
+import type { CallStatus, DialerPanelProps, HeirQueueItem, TwilioDevice, TwilioErrorLike } from './telephony-bar-types'
+export type { CallStatus, HeirQueueItem } from './telephony-bar-types'
 import {
   createClientAttemptId,
   requestDialerCallIntent,
@@ -54,54 +57,6 @@ import {
   stationColors,
   stripDialFormatting,
 } from './telephony-bar-support'
-
-export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TwilioDevice = any
-type TwilioErrorLike = {
-  code?: number
-  message?: string
-  explanation?: string
-  name?: string
-  causes?: unknown[]
-  originalError?: unknown
-}
-
-// A single entry in the heir-dialer queue. The property stays pinned (leadId +
-// propertyAddress + deceasedOwnerName) while heirName/relation/phone rotate per
-// item.
-export type HeirQueueItem = HeirDialerQueueItem
-
-interface DialerPanelProps {
-  open: boolean
-  onClose: () => void
-  onStatusChange?: (status: CallStatus) => void
-  pendingDial?: { phone: string; name: string; leadId: string; callerId?: string | null } | null
-  pendingQueue?: HeirQueueItem[] | null
-  pendingQueueCallerId?: string | null
-  pendingQueueCallerPlan?: DialerCallerPlan | null
-  pendingQueueAutoDial?: boolean
-  pendingSessionId?: string | null
-  /** How many rings to allow before giving up; maps to the Twilio Dial timeout. */
-  pendingQueueRingCount?: number | null
-  presentation?: 'modal' | 'dock' | 'workspace'
-  signedInEmail?: string | null
-}
-
-function useCallTimer(active: boolean) {
-  const [seconds, setSeconds] = useState(0)
-  useEffect(() => {
-    const reset = window.setTimeout(() => setSeconds(0), 0)
-    if (!active) return () => window.clearTimeout(reset)
-    const id = window.setInterval(() => setSeconds((value) => value + 1), 1000)
-    return () => {
-      window.clearTimeout(reset)
-      window.clearInterval(id)
-    }
-  }, [active])
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-}
-
 
 export function DialerPanel({
   open,
@@ -192,7 +147,7 @@ export function DialerPanel({
   const [workspaceSessionStatus, setWorkspaceSessionStatus] = useState<'active' | 'paused' | 'completed' | 'stopped' | null>(null)
   const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
-  const { arm: armAutoStart, cancel: cancelAutoStart, finish: finishAutoStart, remainingSeconds: autoStartCountdownSeconds } = useDialerStartCountdown(pendingAutoDialRef)
+  const { arm: armAutoStart, cancel: cancelAutoStart, finish: finishAutoStart, remainingSeconds: autoStartCountdownSeconds } = useDialerStartCountdown(pendingAutoDialRef, pendingSessionId)
   const callIntentPendingRef = useRef(false)
   const makeCallRef = useRef<() => Promise<void> | void>(() => {})
   const postCallReview = useDialerPostCallReview({ open: outcomeRequired, sessionId: reviewContext?.sessionId || null, clientAttemptId: reviewContext?.clientAttemptId || null })
@@ -214,6 +169,7 @@ export function DialerPanel({
     setDialNumber('')
     clearDispositionRequirement()
   }, [cancelAutoStart, clearDispositionRequirement])
+  const workspaceControlsUnavailable = useDialerControlLoss(pendingSessionId, cancelAutoStart, endQueue, callRef, callIntentPendingRef, status)
 
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
@@ -642,6 +598,46 @@ export function DialerPanel({
         })
       }
 
+      // Pause/stop can win while call authorization or the durable `started`
+      // transition is in flight. Do not submit that already-authorized intent
+      // to Twilio after the operator's durable command has completed.
+      const stopBeforeProviderConnect = dialerStopIsPending(
+        activeSessionIdRef.current,
+        stopRequestedSessionIdRef.current,
+      )
+      const pauseBeforeProviderConnect = dialerPauseIsPending(
+        activeSessionIdRef.current,
+        pausedSessionIdRef.current,
+      )
+      if (activeSessionIdRef.current && (stopBeforeProviderConnect || pauseBeforeProviderConnect)) {
+        const interruptedSessionId = activeSessionIdRef.current
+        const leaveAfterPause = pauseLeaveAfterOutcomeRef.current
+        await transitionDurableDialerAttempt({
+          sessionId: interruptedSessionId,
+          clientAttemptId: authorized.clientAttemptId,
+          action: 'cancelled',
+        })
+        activeSessionIdRef.current = null
+        activeAttemptIdRef.current = null
+        setReviewContext(null)
+        setRecoveryPending(null)
+        pendingAutoDialRef.current = false
+        clearDispositionRequirement()
+
+        if (stopBeforeProviderConnect) {
+          const stoppedSession = await transitionDurableDialerSession(interruptedSessionId, 'stop')
+          stopRequestedSessionIdRef.current = null
+          window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: stoppedSession }))
+          endQueue()
+        } else {
+          pauseLeaveAfterOutcomeRef.current = false
+          window.dispatchEvent(new CustomEvent('dialer-session-pause-completed', {
+            detail: { sessionId: interruptedSessionId, leaveAfterPause },
+          }))
+        }
+        return
+      }
+
       setStatusLogged('calling')
       setLastCallDuration(null)
       lastCallDurationSecondsRef.current = 0
@@ -777,7 +773,10 @@ export function DialerPanel({
         }
         requireDisposition()
       })
-      if (dialerStopIsPending(activeSessionIdRef.current, stopRequestedSessionIdRef.current)) {
+      if (
+        dialerStopIsPending(activeSessionIdRef.current, stopRequestedSessionIdRef.current)
+        || dialerPauseIsPending(activeSessionIdRef.current, pausedSessionIdRef.current)
+      ) {
         call.disconnect()
       }
     } catch (err) {
@@ -961,6 +960,101 @@ export function DialerPanel({
       dialerStopIsPending(durableSessionId, stopRequestedSessionIdRef.current),
       dialerPauseIsPending(durableSessionId, pausedSessionIdRef.current),
     )
+    const activeItem = activeQueueItemRef.current
+    const isManualDisposition = !selectedLead && !activeItem
+    if (isManualDisposition) {
+      // Manual calls still need durable final evidence. This is a distinct
+      // event from the provisional call-ended row, and failures keep the
+      // wrap-up open instead of pretending the outcome saved.
+      try {
+        await saveManualCallDisposition({
+          phone: lastCallPhoneRef.current,
+          disposition,
+          callerId: activeCallerId || null,
+          durationSeconds: lastCallDurationSecondsRef.current,
+          clientAttemptId: durableAttemptId,
+          notes,
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not save call outcome.')
+        return false
+      }
+    } else {
+      try {
+        if (activeItem?.prospect_phone_id) {
+          // Heir-dialer path: log to prospect_phones + activity feed via our own
+          // endpoint (which handles verification + dead-lead rollup in one call).
+          const response = await fetch('/api/heirs/attempt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prospect_phone_id: activeItem.prospect_phone_id,
+              disposition,
+              notes,
+              lead_id: activeItem.leadId,
+              prospect_id: activeItem.prospectId,
+              campaign_member_id: activeItem.campaignMemberId,
+              agent: activeAgentName,
+              duration: lastCallDurationSecondsRef.current || null,
+              mark_as_lead: Boolean(options?.markAsLead),
+              verified: options?.verified,
+              dead_reason: options?.deadReason ?? null,
+              clientAttemptId: durableAttemptId,
+              appointmentAt: options?.appointmentAt ?? null,
+            }),
+          })
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null)
+            throw new Error(payload?.error || 'Could not save heir disposition.')
+          }
+          window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
+            detail: {
+              leadId: activeItem.leadId,
+              prospectId: activeItem.prospectId,
+              prospectPhoneId: activeItem.prospect_phone_id,
+            },
+          }))
+        } else {
+          const dispositionLeadId = activeItem?.leadId ?? selectedLead?.id ?? null
+          if (!dispositionLeadId) throw new Error('Lead context is required to save this disposition.')
+          if (markedDead) {
+            await transitionLeadLifecycle(dispositionLeadId, {
+              stage: 'dead', deadReason: options?.deadReason ?? null,
+              deadReasonNotes: notes || null, reason: notes || 'Marked dead from call disposition',
+              dialerSessionId: durableSessionId,
+            })
+          }
+          const response = await fetch(`/api/leads/${dispositionLeadId}/disposition`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              disposition,
+              notes,
+              phone: lastCallPhoneRef.current,
+              appointmentAt: options?.appointmentAt ?? null,
+              clientAttemptId: durableAttemptId,
+            }),
+          })
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null)
+            throw new Error(payload?.error || 'Could not save call disposition.')
+          }
+        }
+        window.dispatchEvent(new CustomEvent('crm:disposition-logged', {
+          detail: {
+            leadId: activeItem?.leadId ?? selectedLead?.id ?? null,
+            prospectId: activeItem?.prospectId ?? null,
+            disposition,
+            reached: isReachedDisposition(disposition),
+            dead: markedDead,
+          },
+        }))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not save disposition.')
+        return false
+      }
+    }
+
     if (durableSessionId && durableAttemptId) {
       try {
         await transitionDurableDialerAttempt({
@@ -975,100 +1069,10 @@ export function DialerPanel({
         return false
       }
     }
-    const activeItem = activeQueueItemRef.current
-    if (!selectedLead && !activeItem) {
-      // Manual calls still need durable final evidence. This is a distinct
-      // event from the provisional call-ended row, and failures keep the
-      // wrap-up open instead of pretending the outcome saved.
-      try {
-        await saveManualCallDisposition({
-          phone: lastCallPhoneRef.current,
-          disposition,
-          callerId: activeCallerId || null,
-          durationSeconds: lastCallDurationSecondsRef.current,
-          clientAttemptId: durableAttemptId,
-          notes,
-        })
-        clearDispositionRequirement()
-        return true
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not save call outcome.')
-        return false
-      }
+    if (isManualDisposition) {
+      clearDispositionRequirement()
+      return true
     }
-    try {
-      if (activeItem?.prospect_phone_id) {
-        // Heir-dialer path: log to prospect_phones + activity feed via our own
-        // endpoint (which handles verification + dead-lead rollup in one call).
-        const response = await fetch('/api/heirs/attempt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prospect_phone_id: activeItem.prospect_phone_id,
-            disposition,
-            notes,
-            lead_id: activeItem.leadId,
-            prospect_id: activeItem.prospectId,
-            campaign_member_id: activeItem.campaignMemberId,
-            agent: activeAgentName,
-            duration: lastCallDurationSecondsRef.current || null,
-            mark_as_lead: Boolean(options?.markAsLead),
-            verified: options?.verified,
-            dead_reason: options?.deadReason ?? null,
-            clientAttemptId: durableAttemptId,
-            appointmentAt: options?.appointmentAt ?? null,
-          }),
-        })
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null)
-          throw new Error(payload?.error || 'Could not save heir disposition.')
-        }
-        window.dispatchEvent(new CustomEvent('heir-attempt-logged', {
-          detail: {
-            leadId: activeItem.leadId,
-            prospectId: activeItem.prospectId,
-            prospectPhoneId: activeItem.prospect_phone_id,
-          },
-        }))
-      } else {
-        const dispositionLeadId = activeItem?.leadId ?? selectedLead?.id ?? null
-        if (!dispositionLeadId) throw new Error('Lead context is required to save this disposition.')
-        if (markedDead) {
-          await transitionLeadLifecycle(dispositionLeadId, {
-            stage: 'dead', deadReason: options?.deadReason ?? null,
-            deadReasonNotes: notes || null, reason: notes || 'Marked dead from call disposition',
-          })
-        }
-        const response = await fetch(`/api/leads/${dispositionLeadId}/disposition`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            disposition,
-            notes,
-            phone: lastCallPhoneRef.current,
-            appointmentAt: options?.appointmentAt ?? null,
-            clientAttemptId: durableAttemptId,
-          }),
-        })
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null)
-          throw new Error(payload?.error || 'Could not save call disposition.')
-        }
-      }
-      window.dispatchEvent(new CustomEvent('crm:disposition-logged', {
-        detail: {
-          leadId: activeItem?.leadId ?? selectedLead?.id ?? null,
-          prospectId: activeItem?.prospectId ?? null,
-          disposition,
-          reached: isReachedDisposition(disposition),
-          dead: markedDead,
-        },
-      }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save disposition.')
-      return false
-    }
-
     if (durableSessionId && durableAttemptId && postDisposition === 'stop_session') {
       try {
         const session = await transitionDurableDialerSession(durableSessionId, 'stop')
@@ -1663,7 +1667,7 @@ export function DialerPanel({
           )}
         </div>
         {isWorkspace && pendingSessionId ? <div className="shrink-0 bg-[var(--skc-surface-1)] px-5 pb-4">
-          <WorkspaceSessionControls status={workspaceSessionStatus} callBusy={isOnCall}
+          <WorkspaceSessionControls status={workspaceSessionStatus} callBusy={isOnCall} controlUnavailable={workspaceControlsUnavailable}
             outcomeRequired={outcomeRequired || Boolean(recoveryPending)} onAction={(action) => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action } }))} />
         </div> : null}
         </div>

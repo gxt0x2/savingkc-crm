@@ -8,6 +8,7 @@ import {
 } from '@/lib/server/dialer-session-engine'
 import { getDialerPostCallReview } from '@/lib/server/dialer-post-call-review'
 import { decideAiChangeProposal } from '@/lib/server/ai-change-proposals'
+import { dialerControllerFromRequest, invalidDialerControllerResponse } from '@/lib/api/dialer-controller'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -15,7 +16,7 @@ export const revalidate = 0
 const NO_STORE = { 'Cache-Control': 'private, no-store', Vary: 'Cookie' }
 
 function response(error: unknown) {
-  if (error instanceof DialerSessionError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: NO_STORE })
+  if (error instanceof DialerSessionError) return NextResponse.json({ error: error.message, code: error.code, details: error.details }, { status: error.status, headers: NO_STORE })
   console.error('[dialer/session-attempt] Unexpected attempt failure', error)
   return NextResponse.json({ error: 'Call attempt state could not be saved', code: 'session_engine_unavailable' }, { status: 503, headers: NO_STORE })
 }
@@ -34,6 +35,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 export async function POST(request: Request, context: { params: Promise<{ id: string; attemptId: string }> }) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
+  const controller = dialerControllerFromRequest(request)
+  if (!controller) return invalidDialerControllerResponse()
   let body: Record<string, unknown>
   try {
     body = await request.json() as Record<string, unknown>
@@ -50,6 +53,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const proposal = await decideAiChangeProposal({
       actor,
       sessionId: id,
+      controllerToken: controller.token,
       clientAttemptId: attemptId,
       decision,
       decisionKey,
@@ -64,6 +68,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; attemptId: string }> }) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
+  const controller = dialerControllerFromRequest(request)
+  if (!controller) return invalidDialerControllerResponse()
   let body: Record<string, unknown>
   try {
     body = await request.json() as Record<string, unknown>
@@ -74,7 +80,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { id, attemptId } = await context.params
   try {
     if (action === 'advance') {
-      return NextResponse.json({ session: await advanceDialerSessionAfterDisposition({ actor, sessionId: id, clientAttemptId: attemptId }) }, { headers: NO_STORE })
+      return NextResponse.json({ session: await advanceDialerSessionAfterDisposition({ actor, sessionId: id, controllerToken: controller.token, clientAttemptId: attemptId }) }, { headers: NO_STORE })
     }
     if (!['started', 'connected', 'ended', 'failed', 'cancelled', 'disposition'].includes(action)) {
       return NextResponse.json({ error: 'Invalid attempt action' }, { status: 400, headers: NO_STORE })
@@ -84,6 +90,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const attempt = await transitionDialerAttempt({
       actor,
       sessionId: id,
+      controllerToken: controller.token,
       clientAttemptId: attemptId,
       action: action as 'started' | 'connected' | 'ended' | 'failed' | 'cancelled' | 'disposition',
       disposition,

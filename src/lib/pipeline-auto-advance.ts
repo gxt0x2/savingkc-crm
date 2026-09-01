@@ -33,6 +33,7 @@ function targetStage(current: string, trigger: AutoTrigger): CrmLifecycleStage |
 export async function checkAutoAdvance(
   leadId: string,
   trigger: AutoTrigger,
+  options?: { beforeMutation?: () => Promise<void> },
 ): Promise<{ advanced: boolean; from?: string; to?: string }> {
   const { data: lead, error } = await supabaseAdmin()
     .from('leads')
@@ -54,6 +55,8 @@ export async function checkAutoAdvance(
     const qualification = await getLeadQualificationStatus(leadId)
     if (!qualification.qualified) return { advanced: false }
   }
+
+  await options?.beforeMutation?.()
 
   const result = await applyCrmLifecycleCommand({
     leadId,

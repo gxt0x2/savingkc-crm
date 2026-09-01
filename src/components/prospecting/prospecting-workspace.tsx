@@ -6,17 +6,32 @@ import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { CampaignAudienceReview } from '@/components/prospecting/campaign-audience-review'
 import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
+import { ProspectingSessionTakeoverDialog } from '@/components/prospecting/prospecting-session-takeover-dialog'
 import { Icon } from '@/components/ui/icon'
+import {
+  DialerSessionClientError,
+  takeOverDurableDialerSession,
+  type DialerSessionControlSummary,
+} from '@/lib/dialer-session-client'
 import { parseStoredProspectingAudienceSelection, PROSPECTING_AUDIENCE_STORAGE_KEY, type ProspectingAudienceSelection } from '@/lib/prospecting/audience-handoff'
 import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, preferredProspectingDialerPickerCampaignId, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
+import {
+  dialerControllerHeaders,
+  newDialerControlRequestId,
+  publishDialerControlTaken,
+} from '@/lib/telephony/dialer-controller-client'
 
 type CampaignPage = { items: ProspectingCampaignSummary[]; pageInfo: { hasMore: boolean; nextCursor: string | null } }
 const CAMPAIGN_LIVE_REFRESH_MS = 15000
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
-  const body = await response.json().catch(() => ({})) as T & { error?: string }
-  if (!response.ok) throw new Error(body.error || 'Request failed')
+  const body = await response.json().catch(() => ({})) as T & {
+    error?: string
+    code?: string
+    details?: DialerSessionControlSummary
+  }
+  if (!response.ok) throw new DialerSessionClientError(body.error || 'Request failed', body.code, body.details)
   return body
 }
 
@@ -44,6 +59,12 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
   const [liveRefreshDelayed, setLiveRefreshDelayed] = useState(false)
   const [writesEnabled, setWritesEnabled] = useState(true)
+  const [takeoverPrompt, setTakeoverPrompt] = useState<{
+    summary: DialerSessionControlSummary
+    setup: ProspectingDialerSessionSetup
+  } | null>(null)
+  const [takeoverBusy, setTakeoverBusy] = useState(false)
+  const [takeoverError, setTakeoverError] = useState<string | null>(null)
   const selectedIdRef = useRef<string | null>(null)
 
   const loadCampaigns = useCallback(async () => {
@@ -266,6 +287,33 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     }
   }
 
+  function navigateToDialerSession(input: {
+    session: { id: string; status?: string; settingsSnapshot?: Record<string, unknown> }
+    campaignId: string
+    campaignName: string
+    setup: ProspectingDialerSessionSetup
+    continued?: boolean
+    controlGeneration?: number
+  }) {
+    const ringCount = typeof input.session.settingsSnapshot?.ringCount === 'number'
+      ? input.session.settingsSnapshot.ringCount
+      : input.setup.ringCount
+    const query = new URLSearchParams({
+      session_id: input.session.id,
+      campaign: input.campaignId,
+      queue_label: input.campaignName,
+      ring_count: String(ringCount),
+      return_to: `/prospecting?campaign=${encodeURIComponent(input.campaignId)}`,
+    })
+    if (input.session.status !== 'paused') {
+      window.sessionStorage.setItem(`savingkc:dialer-autostart:${input.session.id}`, '1')
+    }
+    if (input.continued && Number.isInteger(input.controlGeneration) && input.controlGeneration! >= 0) {
+      publishDialerControlTaken(input.session.id, input.controlGeneration!)
+    }
+    router.push(`/prospecting?${query.toString()}`)
+  }
+
   async function launchDialer(setup: ProspectingDialerSessionSetup) {
     if (!detail || actionPending) return
     if (!writesEnabled) {
@@ -289,22 +337,68 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     setActionPending(true)
     setError(null)
     try {
-      const result = await jsonRequest<{ session: { id: string } }>(`/api/prospecting/campaigns/${detail.id}/launch`, {
+      const result = await jsonRequest<{ session: { id: string; status?: string; settingsSnapshot?: Record<string, unknown> } }>(`/api/prospecting/campaigns/${detail.id}/launch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
         body: JSON.stringify(setup),
       })
-      const query = new URLSearchParams({
-        session_id: result.session.id,
-        campaign: detail.id,
-        queue_label: detail.name,
-        ring_count: String(setup.ringCount),
-        return_to: `/prospecting?campaign=${encodeURIComponent(detail.id)}`,
+      setTakeoverPrompt(null)
+      navigateToDialerSession({
+        session: result.session,
+        campaignId: detail.id,
+        campaignName: detail.name,
+        setup,
+        continued: false,
       })
-      window.sessionStorage.setItem(`savingkc:dialer-autostart:${result.session.id}`, '1')
-      router.push(`/prospecting?${query.toString()}`)
     } catch (launchError) {
+      if (launchError instanceof DialerSessionClientError && launchError.details && [
+        'session_control_conflict',
+        'session_control_changed',
+        'session_takeover_live_call',
+        'session_takeover_disposition_required',
+        'another_dialer_session_open',
+      ].includes(launchError.code || '')) {
+        setTakeoverPrompt({ summary: launchError.details, setup })
+        setTakeoverError(
+          launchError.code === 'session_control_conflict' || launchError.code === 'another_dialer_session_open'
+            ? null
+            : launchError.message,
+        )
+        setActionPending(false)
+        return
+      }
       setError(launchError instanceof Error ? launchError.message : 'Dialer session could not start')
+      setActionPending(false)
+    }
+  }
+
+  async function confirmTakeover() {
+    if (!takeoverPrompt || !detail || takeoverBusy) return
+    setTakeoverBusy(true)
+    setTakeoverError(null)
+    const requestId = newDialerControlRequestId()
+    try {
+      const result = await takeOverDurableDialerSession({
+        sessionId: takeoverPrompt.summary.sessionId,
+        expectedGeneration: takeoverPrompt.summary.generation,
+        requestId,
+      })
+      setTakeoverPrompt(null)
+      navigateToDialerSession({
+        session: result.session,
+        campaignId: takeoverPrompt.summary.campaignId || detail.id,
+        campaignName: takeoverPrompt.summary.campaignName,
+        setup: takeoverPrompt.setup,
+        continued: true,
+        controlGeneration: Number(result.control.generation),
+      })
+    } catch (takeoverFailure) {
+      if (takeoverFailure instanceof DialerSessionClientError && takeoverFailure.details) {
+        setTakeoverPrompt((current) => current ? { ...current, summary: takeoverFailure.details! } : current)
+      }
+      setTakeoverError(takeoverFailure instanceof Error ? takeoverFailure.message : 'Dialing control could not be transferred.')
+    } finally {
+      setTakeoverBusy(false)
       setActionPending(false)
     }
   }
@@ -318,6 +412,19 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
 
   return <>
     <WorkspaceChrome commandBar={commandBar} />
+    {takeoverPrompt ? <ProspectingSessionTakeoverDialog
+      summary={takeoverPrompt.summary}
+      selectedCampaignId={detail?.id}
+      selectedCampaignName={detail?.name}
+      busy={takeoverBusy}
+      error={takeoverError}
+      onCancel={() => {
+        setTakeoverPrompt(null)
+        setTakeoverError(null)
+        setActionPending(false)
+      }}
+      onContinue={() => { void confirmTakeover() }}
+    /> : null}
     {error || notice ? <div className="bg-[var(--crm-canvas)] px-3 pt-3 sm:px-5 lg:px-7"><div className={`mx-auto max-w-[1540px] rounded-xl border px-4 py-3 text-sm font-bold ${error ? 'border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`} role={error ? 'alert' : 'status'}>{error || notice}</div></div> : null}
     {audienceReviewOpen ? <CampaignAudienceReview campaign={detail} pendingCount={pendingAudience?.count ?? 0} saving={actionPending} onConfirm={() => void enrollSelectedIntoCurrentCampaign()} onCancel={closeBuilder} /> : studioOpen ? <CampaignStudio
       form={form}

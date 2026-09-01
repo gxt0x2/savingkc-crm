@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
+  assertDialerSessionControl: vi.fn(),
   transitionDialerAttempt: vi.fn(),
   advanceDialerSessionAfterDisposition: vi.fn(),
   getDialerPostCallReview: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   DialerSessionError: class DialerSessionError extends Error {
     constructor(public code: string, public status: number, message: string) { super(message) }
   },
+  assertDialerSessionControl: mocks.assertDialerSessionControl,
   transitionDialerAttempt: mocks.transitionDialerAttempt,
   advanceDialerSessionAfterDisposition: mocks.advanceDialerSessionAfterDisposition,
 }))
@@ -22,19 +24,24 @@ vi.mock('@/lib/server/ai-change-proposals', () => ({ decideAiChangeProposal: moc
 import { GET, PATCH, POST } from './route'
 
 const context = { params: Promise.resolve({ id: 'session-1', attemptId: 'attempt-1' }) }
+const controllerToken = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-function request(body: Record<string, unknown>) {
+function request(body: Record<string, unknown>, withController = true) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (withController) headers['X-Dialer-Controller'] = controllerToken
   return new Request('https://crm.savingkc.com/api/dialer/sessions/session-1/attempts/attempt-1', {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   })
 }
 
-function decisionRequest(body: Record<string, unknown>) {
+function decisionRequest(body: Record<string, unknown>, withController = true) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (withController) headers['X-Dialer-Controller'] = controllerToken
   return new Request('https://crm.savingkc.com/api/dialer/sessions/session-1/attempts/attempt-1', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   })
 }
@@ -68,6 +75,7 @@ describe('dialer session attempt transitions', () => {
     expect(mocks.transitionDialerAttempt).toHaveBeenCalledWith(expect.objectContaining({
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
       sessionId: 'session-1',
+      controllerToken,
       clientAttemptId: 'attempt-1',
       disposition: 'spoke_with_owner',
       reached: true,
@@ -83,8 +91,21 @@ describe('dialer session attempt transitions', () => {
     expect(mocks.advanceDialerSessionAfterDisposition).toHaveBeenCalledWith({
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
       sessionId: 'session-1',
+      controllerToken,
       clientAttemptId: 'attempt-1',
     })
+    expect(mocks.transitionDialerAttempt).not.toHaveBeenCalled()
+  })
+
+  it('rejects attempt mutation without a browser controller before parsing', async () => {
+    const input = request({ action: 'started' }, false)
+    const parse = vi.spyOn(input, 'json')
+
+    const response = await PATCH(input, context)
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'invalid_dialer_controller' })
+    expect(parse).not.toHaveBeenCalled()
     expect(mocks.transitionDialerAttempt).not.toHaveBeenCalled()
   })
 
@@ -113,6 +134,7 @@ describe('dialer session attempt transitions', () => {
       actor: { email: 'casey@savingkc.com', name: 'Casey' },
       sessionId: 'session-1',
       clientAttemptId: 'attempt-1',
+      controllerToken,
       decision: 'approved',
       decisionKey: 'dialer-ai:proposal-1:approved',
       note: null,

@@ -55,6 +55,26 @@ describe('canonical pipeline auto advance', () => {
     }))
   })
 
+  it('revalidates protected control immediately before the lifecycle mutation', async () => {
+    leadQuery({ id: 'lead-1', station: 'new' })
+    const beforeMutation = vi.fn().mockResolvedValue(undefined)
+
+    await checkAutoAdvance('lead-1', 'outbound_contact', { beforeMutation })
+
+    expect(beforeMutation).toHaveBeenCalledOnce()
+    expect(beforeMutation.mock.invocationCallOrder[0]).toBeLessThan(mocks.apply.mock.invocationCallOrder[0])
+  })
+
+  it('suppresses the lifecycle mutation when protected control was lost', async () => {
+    leadQuery({ id: 'lead-1', station: 'new' })
+    const beforeMutation = vi.fn().mockRejectedValue(new Error('Dialing control moved'))
+
+    await expect(checkAutoAdvance('lead-1', 'outbound_contact', { beforeMutation }))
+      .rejects.toThrow('Dialing control moved')
+    expect(mocks.apply).not.toHaveBeenCalled()
+    expect(mocks.conversion).not.toHaveBeenCalled()
+  })
+
   it('does not qualify a lead without four human-verified pillars', async () => {
     leadQuery({ id: 'lead-1', station: 'contacted' })
     mocks.qualification.mockResolvedValue({ qualified: false, missing: ['PRICE'] })

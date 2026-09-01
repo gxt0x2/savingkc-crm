@@ -86,7 +86,10 @@ describe('safeSendSMS', () => {
       sid: 'SM123',
       status: 'queued',
     })
-    expect(mocks.twilio).toHaveBeenCalledWith('SK123', 'secret123', { accountSid: 'AC123' })
+    expect(mocks.twilio).toHaveBeenCalledWith('SK123', 'secret123', {
+      accountSid: 'AC123',
+      timeout: 30_000,
+    })
     expect(mocks.createMessage).toHaveBeenCalledWith({
       to: '+19135550123',
       from: '+18166088588',
@@ -111,6 +114,152 @@ describe('safeSendSMS', () => {
     expect(mocks.createMessage).toHaveBeenCalledWith(expect.objectContaining({
       statusCallback: 'https://crm.savingkc.com/api/twilio-message-status?action_id=campaign-action',
     }))
+  })
+
+  it('does not submit to Twilio after a protected request is aborted', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+    const controller = new AbortController()
+    controller.abort()
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Hello',
+      signal: controller.signal,
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'SMS delivery was cancelled before provider submission',
+    })
+    expect(mocks.createMessage).not.toHaveBeenCalled()
+  })
+
+  it('revalidates protected control after Twilio accepts and before delivery logging', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockResolvedValue({ sid: 'SM123', status: 'queued', from: '+18166088588' })
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+    const beforePostProviderWrite = vi.fn().mockResolvedValue(undefined)
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Hello',
+      beforePostProviderWrite,
+    })
+
+    expect(result).toMatchObject({ success: true, postProviderPersistenceBlocked: false })
+    expect(beforePostProviderWrite).toHaveBeenCalledOnce()
+    expect(beforePostProviderWrite.mock.invocationCallOrder[0]).toBeGreaterThan(mocks.createMessage.mock.invocationCallOrder[0])
+    expect(beforePostProviderWrite.mock.invocationCallOrder[0]).toBeLessThan(mocks.insert.mock.invocationCallOrder[0])
+  })
+
+  it('does not record a protected provider success after control revalidation fails', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockResolvedValue({ sid: 'SM123', status: 'queued', from: '+18166088588' })
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Hello',
+      beforePostProviderWrite: vi.fn().mockRejectedValue(new Error('Dialing control moved')),
+    })
+
+    expect(result).toMatchObject({
+      success: true,
+      sid: 'SM123',
+      postProviderPersistenceBlocked: true,
+    })
+    expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
+  it('marks a protected Twilio timeout as delivery-unknown instead of retryable failure', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockRejectedValue(Object.assign(new Error('socket timed out'), { code: 'ETIMEDOUT' }))
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Hello',
+      signal: new AbortController().signal,
+      beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      deliveryUnknown: true,
+      error: expect.stringContaining('Do not resend'),
+    })
+  })
+
+  it('treats a generic protected transport exception with no HTTP status as delivery-unknown', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockRejectedValue(new Error('TLS connection ended unexpectedly'))
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Hello',
+      signal: new AbortController().signal,
+      beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      deliveryUnknown: true,
+      error: expect.stringContaining('Do not resend'),
+    })
+  })
+
+  it('keeps a protected Twilio HTTP rejection as a confirmed failure', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockRejectedValue(Object.assign(new Error('Invalid destination'), {
+      code: 21_211,
+      status: 400,
+    }))
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Hello',
+      signal: new AbortController().signal,
+      beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      deliveryUnknown: false,
+      error: 'Invalid destination',
+    })
   })
 
   it('records the provider sender and exposes any mismatch with the requested identity', async () => {

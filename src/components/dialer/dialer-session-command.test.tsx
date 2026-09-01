@@ -226,6 +226,21 @@ describe('DialerSessionCommand', () => {
     expect(props.onSkip).toHaveBeenCalledOnce()
   })
 
+  it('keeps a displaced window visible but prevents it from changing the durable session', () => {
+    const props = renderCommand({ controlUnavailable: true })
+
+    expect(screen.getByText('Open elsewhere')).toBeVisible()
+    expect(screen.getByText(/Dialing control moved to another window/i)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Pause session' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Skip seller/ })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to campaigns' }))
+    window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))
+
+    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(props.onPause).not.toHaveBeenCalled()
+  })
+
   it('shows the preview session status across the top command center', () => {
     renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
 

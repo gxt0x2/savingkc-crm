@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon'
 import { createClient } from '@/lib/supabase/client'
 import { CONVERSATION_TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { formatPhone, toProperCase } from '@/lib/format'
+import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
 
 interface SmsActivity {
   id: string
@@ -23,6 +24,7 @@ interface SmsThreadPanelProps {
   activities: SmsActivity[]
   defaultFromPhone?: string | null
   agent?: string
+  dialerSessionId?: string | null
   onRefresh?: () => void
 }
 
@@ -84,11 +86,11 @@ export function SmsThreadPanel({
   activities,
   defaultFromPhone,
   agent = 'Team',
+  dialerSessionId = null,
   onRefresh,
 }: SmsThreadPanelProps) {
   const [message, setMessage] = useState('')
-  const [fromPhone, setFromPhone] = useState(defaultFromPhone || DEFAULT_FROM_PHONE)
-  const [fromPhoneTouched, setFromPhoneTouched] = useState(false)
+  const [fromPhoneOverride, setFromPhoneOverride] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
@@ -113,6 +115,7 @@ export function SmsThreadPanel({
   const replyFromPhone = sessionFromPhone || (lastInbound
     ? smsSystemPhone(lastInbound, DEFAULT_FROM_PHONE)
     : DEFAULT_FROM_PHONE)
+  const fromPhone = fromPhoneOverride || replyFromPhone || DEFAULT_FROM_PHONE
 
   const fromOptions = useMemo(() => {
     const numbers: Array<{ label: string; value: string }> = CONVERSATION_TWILIO_NUMBERS.map((number) => ({
@@ -127,17 +130,6 @@ export function SmsThreadPanel({
     }
     return numbers
   }, [replyFromPhone])
-
-  useEffect(() => {
-    setMessage('')
-    setError(null)
-    setSent(false)
-    setFromPhoneTouched(false)
-  }, [leadId])
-
-  useEffect(() => {
-    if (!fromPhoneTouched && replyFromPhone) setFromPhone(replyFromPhone)
-  }, [fromPhoneTouched, replyFromPhone])
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -173,9 +165,10 @@ export function SmsThreadPanel({
     setSent(false)
 
     try {
-      const response = await fetch('/api/conversations/send', {
+      const response = await withDialerSessionControlOperation(dialerSessionId, 'Sending text message', (controlHeaders, signal) => fetch('/api/conversations/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal,
+        headers: { 'Content-Type': 'application/json', ...controlHeaders },
         body: JSON.stringify({
           leadId,
           phone: recipientPhone,
@@ -183,8 +176,9 @@ export function SmsThreadPanel({
           mode: 'sms',
           fromPhone,
           agent,
+          dialerSessionId,
         }),
-      })
+      }))
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload?.error || 'SMS send failed')
 
@@ -271,8 +265,7 @@ export function SmsThreadPanel({
           <select
             value={fromPhone}
             onChange={(event) => {
-              setFromPhone(event.target.value)
-              setFromPhoneTouched(true)
+              setFromPhoneOverride(event.target.value)
             }}
             className="max-w-full flex-1 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2 py-1.5 text-xs font-semibold text-[var(--ck-text)] outline-none focus:border-[#E32E2E] sm:min-w-[190px]"
           >

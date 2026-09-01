@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { ContactNoteComposer } from '@/components/leads/contact-note-composer'
+import { useHeirsSectionData } from '@/components/leads/use-heirs-section-data'
 import { formatPhone, toProperCase } from '@/lib/format'
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
+import { excludeCompletedDialerPhones } from '@/lib/heir-dialer-resume'
+import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
 import {
   dispositionLabel as canonicalDispositionLabel,
 } from '@/lib/dialer-dispositions'
@@ -33,6 +36,12 @@ interface HeirsSectionProps {
   dialerCallerPlan?: Partial<DialerCallerPlan> | null
   callHammerEnabled?: boolean
   autoStart?: boolean
+  /** Changes whenever this window newly acquires dialing control. */
+  autoStartEpoch?: number
+  /** Phone rows already completed in this durable session; excluded only from automatic resume. */
+  autoStartSkipPhoneIds?: string[]
+  /** Number fallback for legacy lead-primary snapshots without source phone IDs. */
+  autoStartSkipPhones?: string[]
   onAutoStartHandled?: () => void
   onAutoStartEmpty?: () => void
   /** When provided, a chat-bubble button appears next to each phone and calls this with the heir phone context. */
@@ -77,6 +86,9 @@ export function HeirsSection({
   dialerCallerId = null,
   dialerCallerPlan = null,
   autoStart = false,
+  autoStartEpoch = 0,
+  autoStartSkipPhoneIds = [],
+  autoStartSkipPhones = [],
   onAutoStartHandled,
   onAutoStartEmpty,
   onSmsPhone,
@@ -85,14 +97,15 @@ export function HeirsSection({
   readOnlyPreview = false,
   onContactNoteSaved,
 }: HeirsSectionProps) {
-  const [heirs, setHeirs] = useState<Heir[]>([])
-  const [loading, setLoading] = useState(true)
-  const [lastTracedAt, setLastTracedAt] = useState<string | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(defaultExpanded)
   const autoStartedSubjectRef = useRef<string | null>(null)
-  const subjectKey = leadId ? `lead:${leadId}` : prospectId ? `prospect:${prospectId}` : null
+  const { heirs, loading, lastTracedAt, error, setError, load, subjectKey } = useHeirsSectionData({
+    leadId,
+    prospectId,
+    campaignMemberId,
+  })
+  const autoStartKey = subjectKey ? `${subjectKey}:${autoStartEpoch}` : null
 
   // Currently-dialing prospect_phone_id — populated from the telephony bar's
   // heir-queue-state event. The matching heir row auto-expands; the rest stay
@@ -106,31 +119,6 @@ export function HeirsSection({
     window.addEventListener('heir-queue-state', onState)
     return () => window.removeEventListener('heir-queue-state', onState)
   }, [])
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      if (!subjectKey) throw new Error('Lead or source Prospect context is required')
-      const query = leadId
-        ? `lead_id=${encodeURIComponent(leadId)}`
-        : `prospect_id=${encodeURIComponent(prospectId!)}`
-      const campaignQuery = campaignMemberId
-        ? `&campaign_member_id=${encodeURIComponent(campaignMemberId)}`
-        : ''
-      const res = await fetch(`/api/heirs?${query}${campaignQuery}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to load heirs')
-      setHeirs(data.heirs || [])
-      setLastTracedAt(data.last_skip_traced_at || null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load heirs')
-    } finally {
-      setLoading(false)
-    }
-  }, [campaignMemberId, leadId, prospectId, subjectKey])
-
-  useEffect(() => { load() }, [load])
 
   // Reload when the dialer reports an attempt was logged for this lead.
   useEffect(() => {
@@ -150,11 +138,18 @@ export function HeirsSection({
     setIsSyncing(true)
     setError(null)
     try {
-      const res = await fetch('/api/heirs/sync', {
+      const res = await withDialerSessionControlOperation(dialerSessionId, 'Syncing associated contacts', (controlHeaders, signal) => fetch('/api/heirs/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lead_id: leadId }),
-      })
+        signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...controlHeaders,
+        },
+        body: JSON.stringify({
+          lead_id: leadId,
+          ...(dialerSessionId ? { dialerSessionId } : {}),
+        }),
+      }))
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data.hint ? `${data.error} — ${data.hint}` : data.error || 'Sync failed')
@@ -183,16 +178,21 @@ export function HeirsSection({
     const prospectPhoneId = sourceProspectPhoneId(phone)
     if (!prospectPhoneId) return
     try {
-      const res = await fetch('/api/heirs/verify', {
+      const res = await withDialerSessionControlOperation(dialerSessionId, 'Updating phone verification', (controlHeaders, signal) => fetch('/api/heirs/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...controlHeaders,
+        },
         body: JSON.stringify({
           prospect_phone_id: prospectPhoneId,
           verified: nextVerified,
           lead_id: leadId,
           prospect_id: phone.prospect_id,
+          ...(dialerSessionId ? { dialerSessionId } : {}),
         }),
-      })
+      }))
       const data = await res.json().catch(() => null)
       if (!res.ok) {
         throw new Error(data?.error || 'Could not update verification')
@@ -203,7 +203,7 @@ export function HeirsSection({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update verification')
     }
-  }, [leadId, load])
+  }, [dialerSessionId, leadId, load, setError])
 
   const mapHeirPhones = useCallback((h: Heir, phones: HeirPhone[]): HeirDialerQueueItem[] => {
     return phones.map((p) => ({
@@ -251,9 +251,13 @@ export function HeirsSection({
   }
 
   const saveContactNote = useCallback(async (heir: Heir, description: string) => {
-    const response = await fetch('/api/prospecting/contact-notes', {
+    const response = await withDialerSessionControlOperation(dialerSessionId, 'Saving contact note', (controlHeaders, signal) => fetch('/api/prospecting/contact-notes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...controlHeaders,
+      },
       body: JSON.stringify({
         leadId,
         prospectId,
@@ -264,7 +268,7 @@ export function HeirsSection({
         relation: heir.relationship,
         description,
       }),
-    })
+    }))
     const data = await response.json().catch(() => null) as { error?: string } | null
     if (!response.ok) throw new Error(data?.error || 'Could not save contact note')
     onContactNoteSaved?.()
@@ -276,10 +280,14 @@ export function HeirsSection({
     // let the agent retry rather than silently auto-advancing to the next
     // deceased owner without calling anyone.
     if (error) return
-    if (!subjectKey || autoStartedSubjectRef.current === subjectKey) return
-    autoStartedSubjectRef.current = subjectKey
+    if (!autoStartKey || autoStartedSubjectRef.current === autoStartKey) return
+    autoStartedSubjectRef.current = autoStartKey
 
-    const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
+    const queue = excludeCompletedDialerPhones(
+      heirs.flatMap((heir) => buildQueueForHeir(heir)),
+      autoStartSkipPhoneIds,
+      autoStartSkipPhones,
+    )
 
     if (queue.length > 0) {
       if (readOnlyPreview) window.dispatchEvent(new CustomEvent('prospecting-preview-queue-ready', { detail: { queue } }))
@@ -288,7 +296,7 @@ export function HeirsSection({
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount, subjectKey])
+  }, [autoStart, autoStartKey, autoStartSkipPhoneIds, autoStartSkipPhones, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount])
 
   return (
     <section className={`ck-card overflow-hidden ${expanded ? (collapsible ? 'p-6' : 'p-0') : 'px-6 py-4'}`}>

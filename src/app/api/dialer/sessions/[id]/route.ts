@@ -7,6 +7,7 @@ import {
   requestPauseDialerSession,
   transitionDialerSession,
 } from '@/lib/server/dialer-session-engine'
+import { dialerControllerFromRequest, invalidDialerControllerResponse } from '@/lib/api/dialer-controller'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -14,7 +15,7 @@ export const revalidate = 0
 const NO_STORE = { 'Cache-Control': 'private, no-store', Vary: 'Cookie' }
 
 function response(error: unknown) {
-  if (error instanceof DialerSessionError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers: NO_STORE })
+  if (error instanceof DialerSessionError) return NextResponse.json({ error: error.message, code: error.code, details: error.details }, { status: error.status, headers: NO_STORE })
   console.error('[dialer/sessions/id] Unexpected session failure', error)
   return NextResponse.json({ error: 'Dialer session state is unavailable', code: 'session_engine_unavailable' }, { status: 503, headers: NO_STORE })
 }
@@ -40,6 +41,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE })
+  const controller = dialerControllerFromRequest(request)
+  if (!controller) return invalidDialerControllerResponse()
   let body: Record<string, unknown>
   try {
     body = await request.json() as Record<string, unknown>
@@ -56,12 +59,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return NextResponse.json(await requestPauseDialerSession({
         actor,
         sessionId: id,
+        controllerToken: controller.token,
         reason: typeof body.reason === 'string' ? body.reason : null,
       }), { headers: NO_STORE })
     }
     const session = await transitionDialerSession({
       actor,
       sessionId: id,
+      controllerToken: controller.token,
       action: action as 'pause' | 'resume' | 'request_stop' | 'stop' | 'skip',
       reason: typeof body.reason === 'string' ? body.reason : null,
     })

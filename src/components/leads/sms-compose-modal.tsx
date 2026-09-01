@@ -1,4 +1,5 @@
 'use client'
+/* eslint-disable react-hooks/set-state-in-effect -- legacy modal state is synchronized by effects */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
@@ -6,6 +7,7 @@ import { CONVERSATION_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numb
 import { toProperCase, formatPhone } from '@/lib/format'
 import { useAuth } from '@/hooks/use-auth'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
+import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
 
 // ── Agent → default Twilio number mapping ──
 const AGENT_DEFAULT_NUMBERS: Record<string, string> = {
@@ -103,6 +105,7 @@ interface ComposeModalProps {
   prospectOwnerName?: string | null
   /** Explicit sender selected by an active Dialer session. */
   defaultFromPhone?: string | null
+  dialerSessionId?: string | null
 }
 
 export function SmsComposeModal({
@@ -116,6 +119,7 @@ export function SmsComposeModal({
   heirRelation = null,
   prospectOwnerName = null,
   defaultFromPhone = null,
+  dialerSessionId = null,
 }: ComposeModalProps) {
   const { user } = useAuth()
   const agentName = getAgentFromEmail(user?.email)
@@ -233,9 +237,10 @@ export function SmsComposeModal({
     setSent(false)
 
     try {
-      const res = await fetch('/api/conversations/send', {
+      const res = await withDialerSessionControlOperation(dialerSessionId, 'Sending text message', (controlHeaders, signal) => fetch('/api/conversations/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal,
+        headers: { 'Content-Type': 'application/json', ...controlHeaders },
         body: JSON.stringify({
           leadId: lead.id,
           phone: lead.phone,
@@ -248,8 +253,9 @@ export function SmsComposeModal({
           heirName,
           heirRelation,
           prospectOwnerName,
+          dialerSessionId,
         }),
-      })
+      }))
 
       const data = await res.json()
 
@@ -283,9 +289,10 @@ export function SmsComposeModal({
     setSent(false)
 
     try {
-      const res = await fetch('/api/conversations/send', {
+      const res = await withDialerSessionControlOperation(dialerSessionId, 'Sending email', (controlHeaders, signal) => fetch('/api/conversations/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal,
+        headers: { 'Content-Type': 'application/json', ...controlHeaders },
         body: JSON.stringify({
           leadId: lead.id,
           to: emailTo,
@@ -293,8 +300,9 @@ export function SmsComposeModal({
           body: message.trim(),
           mode: 'email',
           agent: agentName,
+          dialerSessionId,
         }),
-      })
+      }))
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Send failed')

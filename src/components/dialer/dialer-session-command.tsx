@@ -35,6 +35,7 @@ interface DialerSessionCommandProps {
   currentLeadId: string | null
   error: string | null
   readOnlyPreview?: boolean
+  controlUnavailable?: boolean
   onClose: () => void
   onPause: () => void
   onResume: () => void
@@ -89,6 +90,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
     onSkip,
     readOnlyPreview,
   } = props
+  const mutationControlsLocked = Boolean(readOnlyPreview || props.controlUnavailable)
   const endSessionDialogRef = useDialogAccessibility<HTMLElement>(confirmEndOpen, () => setConfirmEndOpen(false))
   const isCalling = Boolean(props.queueState?.queueItem && ['calling', 'on_call'].includes(props.queueState.status))
   const isDurable = Boolean(props.durableSessionId)
@@ -105,7 +107,9 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       ? 'Paused — save outcome'
       : 'Resume session'
   const progress = Math.round(((props.currentIndex + 1) / Math.max(props.queueSize, 1)) * 100)
-  const statusLabel = props.readOnlyPreview
+  const statusLabel = props.controlUnavailable
+    ? 'Open elsewhere'
+    : props.readOnlyPreview
     ? previewStatus
     : props.queueState?.outcomeRequired
     ? 'Outcome required'
@@ -128,7 +132,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
 
   useEffect(() => {
     function onSessionCommand(event: Event) {
-      if (readOnlyPreview || actionPending) return
+      if (mutationControlsLocked || actionPending) return
       const detail = (event as CustomEvent).detail as { action?: string } | null
       if (detail?.action === 'pause') onPause()
       if (detail?.action === 'resume') onResume()
@@ -138,7 +142,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
     }
     window.addEventListener('prospecting-session-command', onSessionCommand)
     return () => window.removeEventListener('prospecting-session-command', onSessionCommand)
-  }, [actionPending, onMarkDead, onPause, onResume, onSkip, readOnlyPreview])
+  }, [actionPending, mutationControlsLocked, onMarkDead, onPause, onResume, onSkip])
 
   return <>
     <section aria-label="Calling floor command center" className="sticky top-0 z-50 mb-4 overflow-hidden rounded-2xl border border-[var(--ck-border-strong)] bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-[var(--crm-shadow-sm)]">
@@ -153,22 +157,23 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
 
           <div aria-label="Session actions" className="flex flex-wrap items-center gap-2 xl:max-w-[860px] xl:justify-end">
             {!props.controlsDocked ? <>
-              {!props.readOnlyPreview ? <button type="button" onClick={openCallControls} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black">
+              {!mutationControlsLocked ? <button type="button" onClick={openCallControls} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black">
                 <Icon name="phone_in_talk" size="text-sm" /> {isCalling ? 'Current call' : 'Call controls'}
               </button> : null}
               {isCalling ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'hangup' } }))} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-danger)] px-3 text-xs font-black text-white hover:opacity-90"><Icon name="call_end" size="text-sm" />Hang up</button> : null}
-              {isPaused ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'resume' } }))} disabled={props.actionPending || isCalling || props.queueState?.outcomeRequired} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-success)] px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50"><Icon name={isCalling || props.queueState?.outcomeRequired ? 'pause_circle' : 'play_arrow'} size="text-sm" />{pausedActionLabel}</button>
-                : !props.readOnlyPreview ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))} disabled={props.actionPending || props.stopRequested} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 text-xs font-black text-[var(--crm-on-warning)] hover:opacity-90 disabled:opacity-40"><Icon name="pause_circle" size="text-sm" />{pauseLabel}</button> : null}
-              {!props.readOnlyPreview ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId || props.stopRequested} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 text-xs font-bold text-[var(--crm-danger)] hover:border-[var(--crm-danger)] disabled:opacity-30" title="Mark this lead dead and record why"><Icon name="cancel" size="text-sm" />Dead</button> : null}
-              <button type="button" onClick={props.onPrevious} disabled={isDurable || props.currentIndex === 0} className="crm-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-30" title="Previous seller" aria-label="Previous seller"><Icon name="chevron_left" size="text-base" /></button>
-              <button type="button" onClick={props.onSkip} disabled={props.actionPending || props.stopRequested || isCalling || isPaused || (!isDurable && props.currentIndex >= props.queueSize - 1)} className="crm-primary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-30" title={isDurable ? 'Skip this seller with an audited outcome' : 'Next seller'}>{isDurable ? 'Skip seller' : 'Next'}<Icon name="chevron_right" size="text-sm" /></button>
-              {canEndSession ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'end' } }))} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--ck-surface)] px-3 text-xs font-black text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)] disabled:opacity-40"><Icon name="stop_circle" size="text-sm" />End session</button> : null}
+              {isPaused ? !mutationControlsLocked ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'resume' } }))} disabled={props.actionPending || isCalling || props.queueState?.outcomeRequired} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--crm-success)] px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50"><Icon name={isCalling || props.queueState?.outcomeRequired ? 'pause_circle' : 'play_arrow'} size="text-sm" />{pausedActionLabel}</button> : null
+                : !mutationControlsLocked ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))} disabled={props.actionPending || props.stopRequested} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 text-xs font-black text-[var(--crm-on-warning)] hover:opacity-90 disabled:opacity-40"><Icon name="pause_circle" size="text-sm" />{pauseLabel}</button> : null}
+              {!mutationControlsLocked ? <button type="button" onClick={props.onMarkDead} disabled={!props.currentLeadId || props.stopRequested} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 text-xs font-bold text-[var(--crm-danger)] hover:border-[var(--crm-danger)] disabled:opacity-30" title="Mark this lead dead and record why"><Icon name="cancel" size="text-sm" />Dead</button> : null}
+              <button type="button" onClick={props.onPrevious} disabled={props.controlUnavailable || isDurable || props.currentIndex === 0} className="crm-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-30" title="Previous seller" aria-label="Previous seller"><Icon name="chevron_left" size="text-base" /></button>
+              <button type="button" onClick={props.onSkip} disabled={props.controlUnavailable || props.actionPending || props.stopRequested || isCalling || isPaused || (!isDurable && props.currentIndex >= props.queueSize - 1)} className="crm-primary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-30" title={isDurable ? 'Skip this seller with an audited outcome' : 'Next seller'}>{isDurable ? 'Skip seller' : 'Next'}<Icon name="chevron_right" size="text-sm" /></button>
+              {canEndSession && !mutationControlsLocked ? <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'end' } }))} disabled={props.actionPending} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--ck-surface)] px-3 text-xs font-black text-[var(--crm-danger)] hover:bg-[var(--crm-danger-soft)] disabled:opacity-40"><Icon name="stop_circle" size="text-sm" />End session</button> : null}
             </> : null}
             <button type="button" onClick={props.onClose} disabled={props.actionPending || props.stopRequested} className="crm-secondary-button inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-black disabled:opacity-40" title="Return to campaigns; an active session is saved and paused"><Icon name="arrow_back" size="text-sm" />Back to campaigns</button>
           </div>
         </div>
 
-        {props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Preview only — calling controls are shown but disabled. In production, Resume calling restores the saved seller and loads every ready number.</div> : null}
+        {props.controlUnavailable ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Dialing control moved to another window. This seller remains visible, but calls and CRM changes are locked here.</div>
+          : props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Preview only — calling controls are shown but disabled. In production, Resume calling restores the saved seller and loads every ready number.</div> : null}
 
         <section aria-label="Today’s acquisition metrics" className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
           <SessionMetric icon="timer" label="Dialer time" value={formatDialerTime(props.todayMetrics?.dialing_seconds)} tone="info" />

@@ -1,4 +1,8 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import {
+  assertDialerMutationControl,
+  dialerMutationControlErrorResponse,
+} from '@/lib/api/dialer-mutation-control'
 import { prospectingError, prospectingJson } from '@/lib/api/prospecting-response'
 import {
   loadProspectingContactNotes,
@@ -26,8 +30,19 @@ export async function POST(request: Request) {
 
   try {
     const input = await request.json() as ProspectingContactNoteInput
+    await assertDialerMutationControl({
+      request,
+      actor,
+      sessionId: input.dialerSessionId,
+      subject: {
+        leadId: input.leadId,
+        prospectId: input.prospectId,
+        campaignMemberId: input.campaignMemberId,
+      },
+      protectMatchingOpenSession: true,
+    })
     return prospectingJson(await saveProspectingContactNote(actor, input), { status: 201 })
   } catch (error) {
-    return prospectingError(error)
+    return dialerMutationControlErrorResponse(error) ?? prospectingError(error)
   }
 }

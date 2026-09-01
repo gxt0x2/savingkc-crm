@@ -18,6 +18,7 @@ import {
   getDialerSession,
   isUuid,
 } from '@/lib/server/dialer-session-engine'
+import { dialerControllerFromRequest } from '@/lib/api/dialer-controller'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -104,12 +105,16 @@ export async function POST(request: Request) {
   const profile = resolveAgentTelephonyProfile(actor.email)
   const requestedCallerId = text(body.callerId)
   let session = null
+  const controller = sessionId ? dialerControllerFromRequest(request) : null
+  if (sessionId && !controller) {
+    return json({ allowed: false, error: 'This browser could not identify its dialing controls. Refresh and try again.', reason: 'invalid_dialer_controller' }, 400)
+  }
   if (sessionId) {
     try {
       session = await getDialerSession(actor, sessionId)
     } catch (error) {
       if (error instanceof DialerSessionError) {
-        return json({ allowed: false, error: error.message, reason: error.code }, error.status)
+        return json({ allowed: false, error: error.message, reason: error.code, details: error.details }, error.status)
       }
       console.error('[dialer/call-intents] Session lookup unavailable', error)
       return json({ allowed: false, error: 'Calling is paused because session authorization is unavailable', reason: 'session_engine_unavailable' }, 503)
@@ -169,6 +174,7 @@ export async function POST(request: Request) {
       await authorizeDialerSessionAttempt({
         actor,
         sessionId: session.id,
+        controllerToken: controller?.token || '',
         clientAttemptId,
         subjectKind: session.currentSubjectKind,
         subjectId: session.currentSubjectId,
@@ -197,7 +203,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     if (error instanceof DialerSessionError) {
-      return json({ allowed: false, error: error.message, reason: error.code }, error.status)
+      return json({ allowed: false, error: error.message, reason: error.code, details: error.details }, error.status)
     }
     console.error('[dialer/call-intents] Intent signing unavailable', error)
     await recordBlockedDialerCall(policyInput, {

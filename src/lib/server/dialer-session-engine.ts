@@ -6,6 +6,12 @@ import {
   type DialerPostCallRow,
 } from '@/lib/dialer-post-call-review'
 import { parseAiChangeProposal, type AiChangeProposal } from '@/lib/ai-change-proposal'
+import {
+  createDialerSessionControl,
+  type DialerSessionControlSummary,
+} from '@/lib/server/dialer-session-control.server'
+
+export type { DialerSessionControlSummary } from '@/lib/server/dialer-session-control.server'
 
 export type DialerSessionStatus = 'active' | 'paused' | 'completed' | 'stopped'
 
@@ -94,6 +100,7 @@ export class DialerSessionError extends Error {
     public readonly code: string,
     public readonly status: number,
     message: string,
+    public readonly details?: DialerSessionControlSummary,
   ) {
     super(message)
     this.name = 'DialerSessionError'
@@ -227,6 +234,16 @@ export function parseDialerSession(value: unknown): DialerSessionState {
 
 function mapDatabaseError(error: { message?: string; code?: string } | null | undefined): DialerSessionError {
   const raw = `${error?.message || ''} ${error?.code || ''}`.toLowerCase()
+  if (raw.includes('session_takeover_operation_in_progress')) return new DialerSessionError('session_takeover_operation_in_progress', 409, 'A CRM change is still saving in the other window. Wait for it to finish, then check again')
+  if (raw.includes('session_takeover_disposition_required')) return new DialerSessionError('session_takeover_disposition_required', 409, 'Save the required call outcome in the other window before continuing here')
+  if (raw.includes('session_takeover_live_call')) return new DialerSessionError('session_takeover_live_call', 409, 'Finish the active call in the other window before continuing here')
+  if (raw.includes('session_control_operation_in_progress')) return new DialerSessionError('session_control_operation_in_progress', 409, 'Another dialing-session change is still saving. Wait for it to finish and try again')
+  if (raw.includes('session_control_operation_lost')) return new DialerSessionError('session_control_operation_lost', 409, 'This dialing-session change is no longer authorized. Refresh and try again')
+  if (raw.includes('session_control_changed')) return new DialerSessionError('session_control_changed', 409, 'Dialing control changed while you were confirming. Review the current session and try again')
+  if (raw.includes('session_control_conflict')) return new DialerSessionError('session_control_conflict', 409, 'Another browser is controlling this dialing session')
+  if (raw.includes('session_control_lost')) return new DialerSessionError('session_control_lost', 409, 'This dialing session was continued in another browser')
+  if (raw.includes('invalid_dialer_controller')) return new DialerSessionError('invalid_dialer_controller', 400, 'This browser could not identify its dialing controls. Refresh and try again')
+  if (raw.includes('session_not_open')) return new DialerSessionError('session_not_open', 409, 'This dialing session is no longer open')
   if (raw.includes('session_not_found')) return new DialerSessionError('session_not_found', 404, 'Dialer session not found')
   if (raw.includes('call_in_progress') || raw.includes('attempt_in_progress')) return new DialerSessionError('call_in_progress', 409, 'Finish or disposition the current call first')
   if (raw.includes('session_stop_requested')) return new DialerSessionError('session_stop_requested', 409, 'This calling session is ending; finish the current call outcome')
@@ -242,37 +259,6 @@ function mapDatabaseError(error: { message?: string; code?: string } | null | un
     return new DialerSessionError('session_engine_unavailable', 503, 'Durable dialer sessions are not available in this environment')
   }
   return new DialerSessionError('session_engine_unavailable', 503, 'Dialer session state could not be saved')
-}
-
-export async function startDialerSession(input: {
-  actor: AuthenticatedActor
-  leadIds: string[]
-  queueKey: string
-  callerId: string
-  savedQueueId?: string | null
-  settings?: Record<string, unknown>
-}): Promise<{ created: boolean; session: DialerSessionState }> {
-  const leadIds = Array.from(new Set(input.leadIds.filter(isUuid).map((id) => id.trim())))
-  if (leadIds.length < 1 || leadIds.length > 100 || leadIds.length !== input.leadIds.length) {
-    throw new DialerSessionError('invalid_queue', 400, 'Select between 1 and 100 valid contacts')
-  }
-  if (input.savedQueueId && !isUuid(input.savedQueueId)) throw new DialerSessionError('invalid_saved_queue', 400, 'Saved queue is invalid')
-
-  const queueItems: DialerQueueSubject[] = leadIds.map((id) => ({
-    kind: 'lead', id, leadId: id, prospectId: null, campaignMemberId: null,
-  }))
-  const { data, error } = await supabase.rpc('start_dialer_session_v2', {
-    p_actor_email: input.actor.email,
-    p_agent_name: input.actor.name,
-    p_queue_key: input.queueKey.trim() || 'custom',
-    p_queue_items: queueItems,
-    p_caller_id: input.callerId.trim(),
-    p_saved_queue_id: input.savedQueueId || null,
-    p_settings_snapshot: input.settings || {},
-  })
-  if (error) throw mapDatabaseError(error)
-  const payload = data as { created?: unknown; session?: unknown } | null
-  return { created: payload?.created === true, session: parseDialerSession(payload?.session) }
 }
 
 type DialerSessionRow = {
@@ -526,35 +512,62 @@ export async function getOpenDialerSession(actor: AuthenticatedActor): Promise<D
   return data ? rowToSession(data as DialerSessionRow) : null
 }
 
+const dialerSessionControl = createDialerSessionControl({
+  DialerSessionError,
+  getDialerSession,
+  getOpenDialerSession,
+  isUuid,
+  mapDatabaseError,
+  objectRecord,
+  parseDialerSession,
+})
+
+export const {
+  assertDialerSessionControl,
+  assertDialerSessionControlOperation,
+  beginDialerSessionControlOperation,
+  claimDialerSessionControl,
+  endDialerSessionControlOperation,
+  getDialerSessionControlSummary,
+  heartbeatDialerSessionControl,
+  startDialerSession,
+} = dialerSessionControl
+
+const { controlErrorWithSummary } = dialerSessionControl
+
 export async function transitionDialerSession(input: {
   actor: AuthenticatedActor
   sessionId: string
+  controllerToken: string
   action: 'pause' | 'resume' | 'request_stop' | 'stop' | 'skip'
   reason?: string | null
 }): Promise<DialerSessionState> {
   if (!isUuid(input.sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')
-  const { data, error } = await supabase.rpc('transition_dialer_session_v1', {
+  const { data, error } = await supabase.rpc('transition_dialer_session_v2', {
     p_session_id: input.sessionId,
     p_actor_email: input.actor.email,
+    p_controller_token: input.controllerToken,
     p_action: input.action,
     p_reason: input.reason?.trim() || null,
   })
-  if (error) throw mapDatabaseError(error)
+  if (error) throw await controlErrorWithSummary(error, input.actor, input.sessionId)
   return parseDialerSession(data)
 }
 
 export async function requestPauseDialerSession(input: {
   actor: AuthenticatedActor
   sessionId: string
+  controllerToken: string
   reason?: string | null
 }): Promise<{ session: DialerSessionState; requiresDisposition: boolean }> {
   if (!isUuid(input.sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')
-  const { data, error } = await supabase.rpc('request_pause_dialer_session_v1', {
+  const { data, error } = await supabase.rpc('request_pause_dialer_session_v2', {
     p_session_id: input.sessionId,
     p_actor_email: input.actor.email,
+    p_controller_token: input.controllerToken,
     p_reason: input.reason?.trim() || null,
   })
-  if (error) throw mapDatabaseError(error)
+  if (error) throw await controlErrorWithSummary(error, input.actor, input.sessionId)
   const result = data as { session?: unknown; requiresDisposition?: unknown } | null
   return {
     session: parseDialerSession(result?.session),
@@ -565,6 +578,7 @@ export async function requestPauseDialerSession(input: {
 export async function authorizeDialerSessionAttempt(input: {
   actor: AuthenticatedActor
   sessionId: string
+  controllerToken: string
   clientAttemptId: string
   subjectKind: DialerQueueSubjectKind
   subjectId: string
@@ -583,9 +597,10 @@ export async function authorizeDialerSessionAttempt(input: {
     || (input.subjectKind === 'prospect' && (input.prospectId !== input.subjectId || input.leadId || !input.prospectPhoneId))) {
     throw new DialerSessionError('invalid_attempt_context', 400, 'Call context is invalid')
   }
-  const { data, error } = await supabase.rpc('authorize_dialer_attempt_v3', {
+  const { data, error } = await supabase.rpc('authorize_dialer_attempt_v4', {
     p_session_id: input.sessionId,
     p_actor_email: input.actor.email,
+    p_controller_token: input.controllerToken,
     p_client_attempt_id: input.clientAttemptId,
     p_subject_kind: input.subjectKind,
     p_subject_id: input.subjectId,
@@ -596,13 +611,14 @@ export async function authorizeDialerSessionAttempt(input: {
     p_phone: input.phone,
     p_caller_id: input.callerId,
   })
-  if (error) throw mapDatabaseError(error)
+  if (error) throw await controlErrorWithSummary(error, input.actor, input.sessionId)
   return data as DialerAttemptState
 }
 
 export async function transitionDialerAttempt(input: {
   actor: AuthenticatedActor
   sessionId: string
+  controllerToken: string
   clientAttemptId: string
   action: 'started' | 'connected' | 'ended' | 'failed' | 'cancelled' | 'disposition'
   disposition?: string | null
@@ -610,30 +626,33 @@ export async function transitionDialerAttempt(input: {
   reached?: boolean | null
 }): Promise<DialerAttemptState> {
   if (!isUuid(input.sessionId) || !input.clientAttemptId.trim()) throw new DialerSessionError('invalid_attempt_context', 400, 'Call attempt is invalid')
-  const { data, error } = await supabase.rpc('transition_dialer_attempt_v1', {
+  const { data, error } = await supabase.rpc('transition_dialer_attempt_v2', {
     p_session_id: input.sessionId,
     p_actor_email: input.actor.email,
+    p_controller_token: input.controllerToken,
     p_client_attempt_id: input.clientAttemptId,
     p_action: input.action,
     p_disposition: input.disposition?.trim() || null,
     p_duration_seconds: input.durationSeconds == null ? null : Math.max(0, Math.round(input.durationSeconds)),
     p_reached: input.reached ?? null,
   })
-  if (error) throw mapDatabaseError(error)
+  if (error) throw await controlErrorWithSummary(error, input.actor, input.sessionId)
   return data as DialerAttemptState
 }
 
 export async function advanceDialerSessionAfterDisposition(input: {
   actor: AuthenticatedActor
   sessionId: string
+  controllerToken: string
   clientAttemptId: string
 }): Promise<DialerSessionState> {
   if (!isUuid(input.sessionId) || !input.clientAttemptId.trim()) throw new DialerSessionError('invalid_attempt_context', 400, 'Call attempt is invalid')
-  const { data, error } = await supabase.rpc('advance_dialer_session_v1', {
+  const { data, error } = await supabase.rpc('advance_dialer_session_v2', {
     p_session_id: input.sessionId,
     p_actor_email: input.actor.email,
+    p_controller_token: input.controllerToken,
     p_client_attempt_id: input.clientAttemptId,
   })
-  if (error) throw mapDatabaseError(error)
+  if (error) throw await controlErrorWithSummary(error, input.actor, input.sessionId)
   return parseDialerSession(data)
 }

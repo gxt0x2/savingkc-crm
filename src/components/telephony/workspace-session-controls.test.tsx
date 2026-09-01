@@ -58,4 +58,22 @@ describe('WorkspaceSessionControls', () => {
     expect(screen.getByRole('button', { name: 'End session' })).toBeDisabled()
     expect(onAction).not.toHaveBeenCalled()
   })
+
+  it('keeps displaced-window controls visible but inert after takeover', () => {
+    const onAction = vi.fn()
+    render(<WorkspaceSessionControls status="active" callBusy={false} outcomeRequired={false} controlUnavailable onAction={onAction} />)
+
+    const pause = screen.getByRole('button', { name: 'Pause session' })
+    const skip = screen.getByRole('button', { name: 'Skip seller' })
+    const end = screen.getByRole('button', { name: 'End session' })
+    expect(pause).toBeDisabled()
+    expect(skip).toBeDisabled()
+    expect(end).toBeDisabled()
+    expect(pause).toHaveAttribute('title', 'Dialing control is active in another window')
+
+    fireEvent.click(pause)
+    fireEvent.click(skip)
+    fireEvent.click(end)
+    expect(onAction).not.toHaveBeenCalled()
+  })
 })

@@ -4,11 +4,13 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
   getOpenSession: vi.fn(),
+  getControlSummary: vi.fn(),
   parseSession: vi.fn(),
 }))
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }))
 vi.mock('@/lib/server/dialer-session-engine', () => ({
   getOpenDialerSession: mocks.getOpenSession,
+  getDialerSessionControlSummary: mocks.getControlSummary,
   parseDialerSession: mocks.parseSession,
 }))
 
@@ -23,6 +25,13 @@ const setup = {
   ringCount: 7 as const,
   notDialedHours: null,
   notContactedHours: null,
+}
+const control = {
+  token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  label: 'Chrome on Mac',
+  takeover: false,
+  expectedGeneration: null,
+  requestId: null,
 }
 const campaignRow = {
   id: campaignId,
@@ -66,14 +75,19 @@ describe('launchProspectingDialerCampaign', () => {
     mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
       ? Promise.resolve({ data: [], error: null })
       : Promise.resolve({ data: { created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 }, error: null }))
-    const result = await launchProspectingDialerCampaign(actor, campaignId, setup)
+    const result = await launchProspectingDialerCampaign(actor, campaignId, setup, control)
 
-    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v4', {
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v5', {
       p_campaign_id: campaignId,
       p_actor_email: actor.email,
       p_actor_name: actor.name,
       p_caller_id: '+18163100845',
       p_session_setup: setup,
+      p_controller_token: control.token,
+      p_controller_label: control.label,
+      p_takeover: false,
+      p_expected_generation: null,
+      p_request_id: null,
     })
     expect(result).toEqual({ created: true, session: { id: 'session-1' }, batchSize: 100, remaining: 42 })
   })
@@ -83,10 +97,19 @@ describe('launchProspectingDialerCampaign', () => {
       ? Promise.resolve({ data: [], error: null })
       : Promise.resolve({ data: { created: true, session: { id: 'session-1' }, batchSize: 80, remaining: 0 }, error: null }))
     const firstUnworkedSetup = { ...setup, startBehavior: 'first_unworked' as const }
-    await launchProspectingDialerCampaign(actor, campaignId, firstUnworkedSetup)
+    await launchProspectingDialerCampaign(actor, campaignId, firstUnworkedSetup, {
+      ...control,
+      takeover: true,
+      expectedGeneration: 3,
+      requestId: 'takeover-3',
+    })
 
-    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v4', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v5', expect.objectContaining({
       p_session_setup: firstUnworkedSetup,
+      p_controller_token: control.token,
+      p_takeover: true,
+      p_expected_generation: 3,
+      p_request_id: 'takeover-3',
     }))
   })
 
@@ -94,10 +117,49 @@ describe('launchProspectingDialerCampaign', () => {
     mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
       ? Promise.resolve({ data: [], error: null })
       : Promise.resolve({ data: null, error: { message: 'campaign_dialer_complete' } }))
-    await expect(launchProspectingDialerCampaign(actor, campaignId, setup)).rejects.toMatchObject({
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({
       code: 'campaign_dialer_complete',
       status: 409,
     })
+  })
+
+  it('returns safe session context when another browser already controls the open session', async () => {
+    const openSession = {
+      id: '398a33c0-c502-4de5-b2d8-8b0092849ddc',
+      currentIndex: 17,
+      queueSize: 166,
+      settingsSnapshot: { campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30' },
+    }
+    const details = {
+      sessionId: openSession.id,
+      campaignId,
+      campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      status: 'active',
+      currentIndex: 17,
+      queueSize: 166,
+      controllerLabel: 'Safari on Mac',
+      heartbeatAt: '2026-08-31T20:00:00.000Z',
+      leaseExpiresAt: '2026-08-31T20:00:45.000Z',
+      generation: 4,
+      stale: false,
+      attemptStatus: null,
+      operationActive: false,
+      operationLabel: null,
+      operationExpiresAt: null,
+      canTakeOver: true,
+    }
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: null, error: { message: 'session_control_conflict' } }))
+    mocks.getOpenSession.mockResolvedValue(openSession)
+    mocks.getControlSummary.mockResolvedValue(details)
+
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({
+      code: 'session_control_conflict',
+      status: 409,
+      details,
+    })
+    expect(mocks.getControlSummary).toHaveBeenCalledWith(actor, openSession.id)
   })
 
   it('identifies the open campaign, session, and seller when an unfinished call blocks launch changes', async () => {
@@ -111,7 +173,7 @@ describe('launchProspectingDialerCampaign', () => {
       settingsSnapshot: { campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30' },
     })
 
-    await expect(launchProspectingDialerCampaign(actor, campaignId, setup)).rejects.toMatchObject({
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({
       code: 'call_in_progress',
       status: 409,
       message: '“Jackson · Tax 3+ · 7 zips · Aug 30” · session 398a33c0 · seller 18 of 166 has an unfinished call. Resume it and save the outcome before changing the start position.',
@@ -124,7 +186,7 @@ describe('launchProspectingDialerCampaign', () => {
       : Promise.resolve({ data: null, error: { message: 'call_in_progress' } }))
     mocks.getOpenSession.mockRejectedValue(new Error('diagnostic unavailable'))
 
-    await expect(launchProspectingDialerCampaign(actor, campaignId, setup)).rejects.toMatchObject({
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({
       code: 'call_in_progress',
       status: 409,
       message: 'Finish and save the current call before changing where the session begins',

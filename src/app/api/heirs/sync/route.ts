@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import {
+  assertDialerMutationControl,
+  dialerMutationControlErrorResponse,
+} from '@/lib/api/dialer-mutation-control'
 import { parseHeirSyncRows } from '@/lib/server/heir-sync-payload'
+import {
+  dialerProviderDeadlineExceeded,
+  dialerProviderSignal,
+} from '@/lib/server/dialer-provider-boundary'
 import { supabase } from '@/lib/supabase-lazy'
+
+const DIALER_OPERATION_UNCERTAIN_HEADERS = {
+  'X-Dialer-Operation-Uncertain': 'true',
+}
 
 // POST /api/heirs/sync
 // body: { lead_id }
@@ -20,7 +32,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { lead_id } = await req.json()
+    const { lead_id, dialerSessionId } = await req.json()
     if (!lead_id) {
       return NextResponse.json({ error: 'lead_id required' }, { status: 400 })
     }
@@ -46,6 +58,21 @@ export async function POST(req: Request) {
       )
     }
 
+    let controlledSession = null
+    try {
+      controlledSession = await assertDialerMutationControl({
+        request: req,
+        actor,
+        sessionId: dialerSessionId,
+        subject: { leadId: lead_id, prospectId: prospect.id },
+        protectMatchingOpenSession: true,
+      })
+    } catch (error) {
+      const controlResponse = dialerMutationControlErrorResponse(error)
+      if (controlResponse) return controlResponse
+      throw error
+    }
+
     const serviceUrl = process.env.SKIPTRACE_SERVICE_URL
     if (!serviceUrl) {
       return NextResponse.json(
@@ -57,18 +84,35 @@ export async function POST(req: Request) {
       )
     }
 
-    const upstream = await fetch(`${serviceUrl}/skip-trace`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        first_name: prospect.owner_1_first,
-        last_name: prospect.owner_1_last,
-        address: prospect.situs_street,
-        city: prospect.situs_city,
-        state: prospect.situs_state,
-        zip_code: prospect.situs_zip,
-      }),
-    })
+    const providerSignal = dialerProviderSignal(req, controlledSession)
+    let upstream: Response
+    try {
+      upstream = await fetch(`${serviceUrl}/skip-trace`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: prospect.owner_1_first,
+          last_name: prospect.owner_1_last,
+          address: prospect.situs_street,
+          city: prospect.situs_city,
+          state: prospect.situs_state,
+          zip_code: prospect.situs_zip,
+        }),
+        ...(providerSignal ? { signal: providerSignal } : {}),
+      })
+    } catch (error) {
+      if (providerSignal?.aborted) {
+        return NextResponse.json({
+          error: dialerProviderDeadlineExceeded(providerSignal)
+            ? 'Skip-trace service timed out'
+            : 'Skip-trace request was cancelled',
+        }, {
+          status: dialerProviderDeadlineExceeded(providerSignal) ? 504 : 499,
+          headers: DIALER_OPERATION_UNCERTAIN_HEADERS,
+        })
+      }
+      throw error
+    }
 
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => '')
@@ -82,6 +126,16 @@ export async function POST(req: Request) {
     try {
       rows = parseHeirSyncRows(await upstream.json())
     } catch (error) {
+      if (providerSignal?.aborted) {
+        return NextResponse.json({
+          error: dialerProviderDeadlineExceeded(providerSignal)
+            ? 'Skip-trace service timed out'
+            : 'Skip-trace request was cancelled',
+        }, {
+          status: dialerProviderDeadlineExceeded(providerSignal) ? 504 : 499,
+          headers: DIALER_OPERATION_UNCERTAIN_HEADERS,
+        })
+      }
       return NextResponse.json(
         { error: error instanceof Error ? error.message : 'Skip trace returned an invalid response' },
         { status: 502 },
@@ -93,6 +147,22 @@ export async function POST(req: Request) {
         { error: 'Skip trace returned no usable phone records; existing heirs were preserved.' },
         { status: 422 },
       )
+    }
+
+    if (controlledSession) {
+      try {
+        await assertDialerMutationControl({
+          request: req,
+          actor,
+          sessionId: controlledSession.id,
+          subject: { leadId: lead_id, prospectId: prospect.id },
+          required: true,
+        })
+      } catch (error) {
+        const controlResponse = dialerMutationControlErrorResponse(error)
+        if (controlResponse) return controlResponse
+        throw error
+      }
     }
 
     const { data: syncedCount, error: syncError } = await supabase.rpc(

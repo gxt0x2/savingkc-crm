@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 const compatibilityPage = readFileSync('src/app/(app)/dialer/page.tsx', 'utf8')
 const prospectingPage = readFileSync('src/app/(app)/prospecting/page.tsx', 'utf8')
 const callingFloor = readFileSync('src/components/prospecting/prospecting-calling-floor.tsx', 'utf8')
+const sessionControl = readFileSync('src/components/prospecting/use-prospecting-session-control.ts', 'utf8')
 const sessionCommand = readFileSync('src/components/dialer/dialer-session-command.tsx', 'utf8')
 const contextRail = readFileSync('src/components/prospecting/prospecting-calling-context-rail.tsx', 'utf8')
 
@@ -18,8 +19,8 @@ describe('Prospecting calling-floor truth contract', () => {
 
   it('owns the live durable session inside Prospecting', () => {
     expect(prospectingPage).toContain('ProspectingCallingFloor')
-    expect(callingFloor).toContain('loadDurableDialerSession')
-    expect(callingFloor).toContain('transitionDurableDialerSession')
+    expect(sessionControl).toContain('loadDurableDialerSession')
+    expect(sessionControl).toContain('transitionDurableDialerSession')
     expect(callingFloor).toContain('durableSession?.callerId || campaignPreview.callerId || requestedCallerId')
     expect(callingFloor).toContain('<DialerSessionCommand')
     expect(callingFloor).toContain('<HeirsSection')

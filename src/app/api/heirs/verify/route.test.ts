@@ -23,9 +23,19 @@ const mocks = vi.hoisted(() => ({
   activityError: null as { message: string } | null,
   updates: [] as Array<Record<string, unknown>>,
   activities: [] as Array<Record<string, unknown>>,
+  assertDialerControl: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
+vi.mock('@/lib/api/dialer-mutation-control', () => ({
+  assertDialerMutationControl: mocks.assertDialerControl,
+  dialerMutationControlErrorResponse: (error: unknown) => {
+    const typed = error as { code?: string; status?: number; message?: string }
+    return typed.code
+      ? Response.json({ error: typed.message, code: typed.code }, { status: typed.status || 409 })
+      : null
+  },
+}))
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: {
     from(table: string) {
@@ -90,6 +100,7 @@ describe('heir verification mutation trust', () => {
     mocks.updateError = null
     mocks.activityError = null
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+    mocks.assertDialerControl.mockResolvedValue(null)
   })
 
   it('rejects anonymous requests before parsing or touching CRM data', async () => {
@@ -126,6 +137,25 @@ describe('heir verification mutation trust', () => {
         action: 'verify_contact',
       }),
     })])
+  })
+
+  it('rejects lost dialer authority before changing verification', async () => {
+    mocks.assertDialerControl.mockRejectedValue(Object.assign(new Error('This session moved'), {
+      code: 'session_control_lost',
+      status: 409,
+    }))
+
+    const response = await POST(request({
+      prospect_phone_id: 'phone-1',
+      verified: true,
+      lead_id: 'lead-1',
+      dialerSessionId: '11111111-1111-4111-8111-111111111111',
+    }))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ code: 'session_control_lost' })
+    expect(mocks.updates).toHaveLength(0)
+    expect(mocks.activities).toHaveLength(0)
   })
 
   it('rejects a mismatched lead before updating the heir phone', async () => {

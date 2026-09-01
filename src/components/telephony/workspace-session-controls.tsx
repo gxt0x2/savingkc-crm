@@ -9,6 +9,7 @@ type WorkspaceSessionControlsProps = {
   callBusy: boolean
   outcomeRequired: boolean
   previewOnly?: boolean
+  controlUnavailable?: boolean
   onAction: (action: WorkspaceSessionAction) => void
 }
 
@@ -17,11 +18,17 @@ export function WorkspaceSessionControls({
   callBusy,
   outcomeRequired,
   previewOnly = false,
+  controlUnavailable = false,
   onAction,
 }: WorkspaceSessionControlsProps) {
   const finished = status === 'completed' || status === 'stopped'
   const paused = status === 'paused'
-  const previewTitle = previewOnly ? 'Available in a live calling session' : undefined
+  const controlsLocked = previewOnly || controlUnavailable
+  const lockedTitle = controlUnavailable
+    ? 'Dialing control is active in another window'
+    : previewOnly
+      ? 'Available in a live calling session'
+      : undefined
   const pauseLabel = callBusy
     ? 'Pause & hang up'
     : outcomeRequired
@@ -38,8 +45,8 @@ export function WorkspaceSessionControls({
       <button
         type="button"
         onClick={() => onAction(paused ? 'resume' : 'pause')}
-        disabled={previewOnly || finished || (paused && (callBusy || outcomeRequired))}
-        title={previewTitle}
+        disabled={controlsLocked || finished || (paused && (callBusy || outcomeRequired))}
+        title={lockedTitle}
         className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-4 text-sm font-black text-[var(--crm-on-warning)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <Icon name={paused && !callBusy && !outcomeRequired ? 'play_arrow' : 'pause_circle'} size="text-lg" />
@@ -49,8 +56,8 @@ export function WorkspaceSessionControls({
         <button
           type="button"
           onClick={() => onAction('skip')}
-          disabled={previewOnly || callBusy || outcomeRequired || status !== 'active'}
-          title={previewTitle}
+          disabled={controlsLocked || callBusy || outcomeRequired || status !== 'active'}
+          title={lockedTitle}
           className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-2 text-xs font-bold text-[var(--skc-text-primary)] hover:bg-[var(--skc-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Icon name="skip_next" size="text-base" /> Skip seller
@@ -58,8 +65,8 @@ export function WorkspaceSessionControls({
         <button
           type="button"
           onClick={() => onAction('end')}
-          disabled={previewOnly || finished}
-          title={previewTitle}
+          disabled={controlsLocked || finished}
+          title={lockedTitle}
           className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[#7D2626] bg-[#E32E2E]/10 px-2 text-xs font-bold text-[#FF7A7A] hover:bg-[#E32E2E]/20 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Icon name="stop_circle" size="text-base" /> End session
