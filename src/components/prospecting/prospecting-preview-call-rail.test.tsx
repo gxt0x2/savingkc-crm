@@ -10,7 +10,6 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 const props = {
   campaignId: 'campaign-1',
-  queueLabel: 'County Tax Delinquent 2-Year — Pilot',
   callerId: '+18163100845',
   callerMode: 'static',
   rotationNumbers: '+18163100845',
@@ -35,6 +34,7 @@ describe('ProspectingPreviewCallRail', () => {
     expect(screen.getByText('Helen Seller')).toBeVisible()
     expect(screen.getByText('(816) 555-0123')).toBeVisible()
     expect(screen.getByText('Call outcome')).toBeVisible()
+    expect(screen.queryByText(/This rail mirrors the production workflow/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Session policy')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Skip seller' })).toBeDisabled()

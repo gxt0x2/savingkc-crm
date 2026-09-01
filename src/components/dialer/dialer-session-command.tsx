@@ -80,6 +80,7 @@ function formatDialerTime(value: number | null | undefined) {
 
 export function DialerSessionCommand(props: DialerSessionCommandProps) {
   const [confirmEndOpen, setConfirmEndOpen] = useState(false)
+  const [previewStatus, setPreviewStatus] = useState('Ready')
   const {
     actionPending,
     onMarkDead,
@@ -105,7 +106,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       : 'Resume session'
   const progress = Math.round(((props.currentIndex + 1) / Math.max(props.queueSize, 1)) * 100)
   const statusLabel = props.readOnlyPreview
-    ? 'Read-only'
+    ? previewStatus
     : props.queueState?.outcomeRequired
     ? 'Outcome required'
     : props.queueState?.status === 'on_call'
@@ -114,6 +115,16 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       ? 'Dialing now'
       : props.stopRequested ? 'Ending after outcome'
         : isPaused ? 'Session paused' : 'Ready'
+
+  useEffect(() => {
+    if (!readOnlyPreview) return
+    function onPreviewStatus(event: Event) {
+      const status = (event as CustomEvent).detail?.status
+      if (status === 'Ready' || status === 'Paused' || status === 'Outcome required') setPreviewStatus(status)
+    }
+    window.addEventListener('prospecting-preview-status', onPreviewStatus)
+    return () => window.removeEventListener('prospecting-preview-status', onPreviewStatus)
+  }, [readOnlyPreview])
 
   useEffect(() => {
     function onSessionCommand(event: Event) {

@@ -25,6 +25,8 @@ describe('WorkspaceDispositionControls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Disconnected' }))
     expect(onDisposition).toHaveBeenCalledWith('disconnected')
+    expect(screen.getByRole('button', { name: 'Disconnected' })).toHaveClass('w-full', 'min-w-0')
+    expect(screen.getByText('Disconnected')).toHaveClass('whitespace-normal', 'break-words')
   })
 
   it('shows the same controls without enabling writes in preview', () => {

@@ -360,7 +360,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     || (dialerMounted && (activeCallKeepsDialerMounted || dialerOwnerRoute === currentRouteKey))
   const dialerPanel = isProspectingPreviewFloor ? <ProspectingPreviewCallRail
     campaignId={searchParams.get('preview_campaign') || ''}
-    queueLabel={searchParams.get('queue_label') || 'Prospecting session'}
     callerId={searchParams.get('caller_id') || ''}
     callerMode={searchParams.get('caller_mode') || 'static'}
     rotationNumbers={searchParams.get('rotation_numbers') || ''}

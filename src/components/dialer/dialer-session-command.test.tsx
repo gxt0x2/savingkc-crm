@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { DialerSessionCommand } from './dialer-session-command'
 
@@ -224,5 +224,15 @@ describe('DialerSessionCommand', () => {
     expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
     expect(props.onSkip).toHaveBeenCalledOnce()
+  })
+
+  it('shows the preview session status across the top command center', () => {
+    renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
+
+    expect(screen.getByText('Ready')).toBeVisible()
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-preview-status', { detail: { status: 'Paused' } })))
+    expect(screen.getByText('Paused')).toBeVisible()
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-preview-status', { detail: { status: 'Outcome required' } })))
+    expect(screen.getByText('Outcome required')).toBeVisible()
   })
 })

@@ -55,16 +55,16 @@ export function WorkspaceDispositionControls({
       const groupDispositions = dispositions.filter((item) => item.group === group)
       return <fieldset key={group}>
         <legend className="mb-1.5 text-[9px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">{GROUP_LABELS[group]}</legend>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-1.5">
           {groupDispositions.map((item) => <button
             key={item.id}
             type="button"
             disabled={disabled}
             onClick={() => onDisposition?.(item.id)}
-            className={`flex min-h-10 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[11px] font-bold leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${GROUP_STYLES[group]}`}
+            className={`flex min-h-10 w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[11px] font-bold leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${GROUP_STYLES[group]}`}
           >
-            <Icon name={savingDisposition === item.id ? 'progress_activity' : item.icon} size="text-sm" className={savingDisposition === item.id ? 'animate-spin' : ''} />
-            <span>{item.label}</span>
+            <Icon name={savingDisposition === item.id ? 'progress_activity' : item.icon} size="text-sm" className={`shrink-0 ${savingDisposition === item.id ? 'animate-spin' : ''}`} />
+            <span className="min-w-0 whitespace-normal break-words">{item.label}</span>
           </button>)}
         </div>
       </fieldset>
