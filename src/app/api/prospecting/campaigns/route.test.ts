@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
   create: vi.fn(),
   list: vi.fn(),
+  hardStop: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
@@ -12,6 +13,9 @@ vi.mock('@/lib/server/prospecting-campaigns', () => ({
   createProspectingCampaign: mocks.create,
   listProspectingCampaigns: mocks.list,
 }))
+vi.mock('@/lib/server/stale-paused-dialer-session', () => ({
+  findStalePausedDialerHardStop: mocks.hardStop,
+}))
 
 import { GET, POST } from './route'
 
@@ -19,6 +23,7 @@ describe('prospecting campaigns route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+    mocks.hardStop.mockResolvedValue(null)
   })
 
   it('rejects anonymous writes before parsing the request body', async () => {
@@ -59,5 +64,6 @@ describe('prospecting campaigns route', () => {
       { limit: 10, cursor: 'opaque' },
     )
     expect(response.headers.get('cache-control')).toContain('no-store')
+    await expect(response.json()).resolves.toMatchObject({ hardStop: null })
   })
 })

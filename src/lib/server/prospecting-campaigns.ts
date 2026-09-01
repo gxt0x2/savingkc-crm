@@ -17,11 +17,19 @@ import {
   type ProspectingFactoryErrorCode,
 } from '@/lib/prospecting/campaign-contract'
 import { getDialerSessionControlSummary, getOpenDialerSession, parseDialerSession, type DialerSessionControlSummary, type DialerSessionState } from '@/lib/server/dialer-session-engine'
+import { findStalePausedDialerHardStop, stalePausedHardStopMessage } from '@/lib/server/stale-paused-dialer-session'
+import type { StalePausedDialerHardStop } from '@/lib/dialer-stale-paused-session'
 import { supabase } from '@/lib/supabase-lazy'
 import type { CountyDeceasedFilter, CountyPropertyClassFilter, CountySavedViewDefinition } from '@/lib/prospecting/county-saved-views'
 
 export class ProspectingCampaignError extends Error {
-  constructor(public code: string, public status: number, message: string, public details?: DialerSessionControlSummary) {
+  constructor(
+    public code: string,
+    public status: number,
+    message: string,
+    public details?: DialerSessionControlSummary,
+    public hardStop?: StalePausedDialerHardStop,
+  ) {
     super(message)
   }
 }
@@ -88,6 +96,7 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('session_control_conflict')) return new ProspectingCampaignError('session_control_conflict', 409, 'Another browser is controlling this dialing session')
   if (detail.includes('session_control_lost')) return new ProspectingCampaignError('session_control_lost', 409, 'This dialing session was continued in another browser')
   if (detail.includes('invalid_dialer_controller')) return new ProspectingCampaignError('invalid_dialer_controller', 400, 'This browser could not identify its dialing controls. Refresh and try again')
+  if (detail.includes('stale_paused_session_blocks_start')) return new ProspectingCampaignError('stale_paused_session_blocks_start', 409, 'A paused calling session is wedged. Clear it before starting a new session')
   if (detail.includes('another_dialer_session_open')) return new ProspectingCampaignError('another_dialer_session_open', 409, 'Finish or pause the other open calling session before switching campaigns')
   if (detail.includes('call_in_progress')) return new ProspectingCampaignError('call_in_progress', 409, 'Finish and save the current call before changing where the session begins')
   if (detail.includes('session_stop_requested')) return new ProspectingCampaignError('session_stop_requested', 409, 'This calling session is already ending; finish the current call outcome')
@@ -132,8 +141,21 @@ async function contextualLaunchError(
   const detail = `${error.message || ''} ${error.code || ''}`.toLowerCase()
   const controlCodes = ['session_control_conflict', 'session_control_changed', 'session_takeover_live_call', 'session_takeover_disposition_required']
   if (!detail.includes('call_in_progress') && !detail.includes('another_dialer_session_open') && !detail.includes('session_stop_requested')
+    && !detail.includes('stale_paused_session_blocks_start')
     && !controlCodes.some((code) => detail.includes(code))) {
     return databaseError(error)
+  }
+
+  if (detail.includes('stale_paused_session_blocks_start')) {
+    try {
+      const hardStop = await findStalePausedDialerHardStop({ actor })
+      if (hardStop) {
+        return new ProspectingCampaignError('stale_paused_session_blocks_start', 409, stalePausedHardStopMessage(hardStop), undefined, hardStop)
+      }
+    } catch {
+      // Keep the closed start path even when the diagnostic read fails.
+    }
+    return new ProspectingCampaignError('stale_paused_session_blocks_start', 409, 'A paused calling session is wedged. Clear it before starting a new session')
   }
 
   let openSession: DialerSessionState | null = null

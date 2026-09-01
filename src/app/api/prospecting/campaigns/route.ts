@@ -2,6 +2,7 @@ import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingError, prospectingJson } from '@/lib/api/prospecting-response'
 import { parseCreateProspectingCampaignInput } from '@/lib/prospecting/campaign-contract'
 import { createProspectingCampaign, listProspectingCampaigns } from '@/lib/server/prospecting-campaigns'
+import { findStalePausedDialerHardStop } from '@/lib/server/stale-paused-dialer-session'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -12,10 +13,17 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams
     const rawLimit = params.get('limit')
-    return prospectingJson(await listProspectingCampaigns(actor, {
-      limit: rawLimit == null ? undefined : Number(rawLimit),
-      cursor: params.get('cursor'),
-    }))
+    const [page, hardStop] = await Promise.all([
+      listProspectingCampaigns(actor, {
+        limit: rawLimit == null ? undefined : Number(rawLimit),
+        cursor: params.get('cursor'),
+      }),
+      findStalePausedDialerHardStop({ actor }).catch(() => null),
+    ])
+    return prospectingJson({
+      ...page,
+      hardStop,
+    })
   } catch (error) {
     return prospectingError(error)
   }

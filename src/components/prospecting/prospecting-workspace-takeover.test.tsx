@@ -200,4 +200,43 @@ describe('ProspectingWorkspace session takeover', () => {
     ))
     expect(window.sessionStorage.getItem(`savingkc:dialer-autostart:${existingSessionId}`)).toBe('1')
   })
+
+  it('does not offer Resume/takeover when a stale paused session is the hard stop', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/prospecting/campaigns?limit=50') {
+        return response({ items: [selectedCampaign], pageInfo: { hasMore: false, nextCursor: null }, hardStop: {
+          code: 'stale_paused_session_blocks_start',
+          sessionId: existingSessionId,
+          cannotStartNew: true,
+        } })
+      }
+      if (url === `/api/prospecting/campaigns/${selectedCampaign.id}` && !init?.method) {
+        return response({ campaign: selectedCampaign, capabilities: { writesEnabled: true }, hardStop: {
+          code: 'stale_paused_session_blocks_start',
+          sessionId: existingSessionId,
+          campaignName: conflictDetails.campaignName,
+          reasons: ['zero_attempts_today'],
+          attemptCountToday: 0,
+          cannotStartNew: true,
+        } })
+      }
+      if (url === `/api/prospecting/campaigns/${selectedCampaign.id}/launch`) {
+        return response({
+          error: '“Jackson · Tax 3+ · 7 zips · Aug 30” · session 11355a3b is paused with 0 attempts today. Clear it before starting a new calling session.',
+          code: 'stale_paused_session_blocks_start',
+          hardStop: { code: 'stale_paused_session_blocks_start', sessionId: existingSessionId, cannotStartNew: true },
+        }, 409)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+
+    render(<ProspectingWorkspace />)
+    const start = await screen.findByRole('button', { name: 'Start calling' })
+    await waitFor(() => expect(start).toBeEnabled())
+    fireEvent.click(start)
+    expect(await screen.findByRole('alert')).toHaveTextContent('0 attempts today')
+    expect(screen.queryByRole('alertdialog', { name: 'Disconnect the other session and call here?' })).not.toBeInTheDocument()
+    expect(mocks.routerPush).not.toHaveBeenCalled()
+  })
 })

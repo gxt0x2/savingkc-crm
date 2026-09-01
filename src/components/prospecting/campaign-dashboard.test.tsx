@@ -202,6 +202,48 @@ describe('CampaignDashboard', () => {
     expect(screen.getByRole('combobox', { name: 'Not dialed time frame' })).toHaveValue('')
   })
 
+  it('blocks live start and shows an Andon-capable hard stop for a stale paused session', () => {
+    const launch = vi.fn()
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
+    render(<CampaignDashboard
+      campaigns={[dialerDetail]}
+      selectedId={dialerDetail.id}
+      detail={dialerDetail}
+      loading={false}
+      detailLoading={false}
+      actionPending={false}
+      writesEnabled
+      hardStop={{
+        code: 'stale_paused_session_blocks_start',
+        sessionId: '11355a3b-e5fa-4ecf-8cff-7720fa2428cb',
+        campaignId: dialerDetail.id,
+        campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+        actorEmail: 'ernest@savingkc.com',
+        actorName: 'Ernest',
+        status: 'paused',
+        pausedAt: '2026-09-01T16:55:40.491Z',
+        startedAt: '2026-08-31T12:53:54.838Z',
+        attemptCountToday: 0,
+        reasons: ['zero_attempts_today'],
+        cannotStartNew: true,
+        andonCapable: true,
+      }}
+      canClearStalePaused
+      onClearStalePaused={vi.fn()}
+      onSelect={vi.fn()}
+      onCreate={vi.fn()}
+      onDuplicate={vi.fn()}
+      onTransition={vi.fn()}
+      onLaunchDialer={launch}
+    />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Cannot start a new session')
+    expect(screen.getByRole('button', { name: 'Cannot start' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Raise Andon' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Clear stuck session' })).toBeVisible()
+    expect(launch).not.toHaveBeenCalled()
+  })
+
   it('keeps the complete session builder available in a safe read-only workflow preview', () => {
     const launch = vi.fn()
     const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }

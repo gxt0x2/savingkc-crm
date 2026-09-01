@@ -6,7 +6,9 @@ import { CampaignAudienceWorkbench } from '@/components/prospecting/campaign-aud
 import { CampaignDeliveryPulse } from '@/components/prospecting/campaign-delivery-pulse'
 import { CampaignLaunchReadiness } from '@/components/prospecting/campaign-launch-readiness'
 import { ProspectingSessionSetup } from '@/components/prospecting/prospecting-session-setup'
+import { StalePausedDialerHardStopBanner } from '@/components/prospecting/stale-paused-dialer-hard-stop'
 import { Icon } from '@/components/ui/icon'
+import type { StalePausedDialerHardStop } from '@/lib/dialer-stale-paused-session'
 import { isProspectingDialerPickerCampaign, prospectingDialerPickerLabel, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 
 function percent(part: number, total: number) {
@@ -53,6 +55,10 @@ type CampaignDashboardProps = {
   onTransition: (status: 'active' | 'paused' | 'archived') => void
   onLaunchDialer: (setup: ProspectingDialerSessionSetup) => void
   onAudienceChanged?: () => void | Promise<void>
+  hardStop?: StalePausedDialerHardStop | null
+  canClearStalePaused?: boolean
+  clearingStalePaused?: boolean
+  onClearStalePaused?: () => void
 }
 
 export function CampaignDashboard({
@@ -72,6 +78,10 @@ export function CampaignDashboard({
   onTransition,
   onLaunchDialer,
   onAudienceChanged,
+  hardStop = null,
+  canClearStalePaused = false,
+  clearingStalePaused = false,
+  onClearStalePaused,
 }: CampaignDashboardProps) {
   const [managementOpen, setManagementOpen] = useState(false)
 
@@ -139,7 +149,7 @@ export function CampaignDashboard({
                     <p className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white/60">ready to call</p>
                     <p className="mt-5 max-w-2xl text-sm leading-6 text-white/70">Review one seller, see every associated person and phone number, place a call, then save the outcome before moving to the next seller. Your progress is preserved if you stop.</p>
                   </div>
-                  {detail.status === 'active' ? <ProspectingSessionSetup key={detail.id} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} /> : null}
+                  {detail.status === 'active' ? <ProspectingSessionSetup key={detail.id} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} writesEnabled={writesEnabled} cannotStartNew={Boolean(hardStop && writesEnabled)} onLaunch={onLaunchDialer} /> : null}
                 </div> : <div className="mt-7"><p className="text-sm font-bold text-white/70">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p><p className="mt-2 text-xs text-white/50">Replies and opt-outs stop the sequence automatically.</p></div>}
 
                 <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 border-t border-white/10 pt-5 text-xs font-bold text-white/65">
@@ -150,6 +160,8 @@ export function CampaignDashboard({
               </div>
             </div>
           </article>
+
+          {hardStop ? <StalePausedDialerHardStopBanner hardStop={hardStop} canClear={canClearStalePaused} clearing={clearingStalePaused} onClear={onClearStalePaused} /> : null}
 
           {detail.status === 'draft' || detail.status === 'paused' ? <CampaignLaunchReadiness key={`launch:${detail.id}`} campaign={detail} actionPending={actionPending} onActivate={() => onTransition('active')} /> : null}
 

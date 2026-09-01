@@ -10,7 +10,7 @@ export function prospectingJson(body: unknown, init?: ResponseInit) {
 
 export function prospectingError(error: unknown) {
   if (error instanceof ProspectingCampaignInputError) return prospectingJson({ error: error.message, code: error.code }, { status: 400 })
-  if (error instanceof ProspectingCampaignError) return prospectingJson({ error: error.message, code: error.code, details: error.details }, { status: error.status })
+  if (error instanceof ProspectingCampaignError) return prospectingJson({ error: error.message, code: error.code, details: error.details, hardStop: error.hardStop }, { status: error.status })
   if (error instanceof SyntaxError) return prospectingJson({ error: 'Request body must be valid JSON', code: 'invalid_json' }, { status: 400 })
   console.error('[prospecting] Unexpected campaign failure', error)
   return prospectingJson({ error: 'Prospecting campaign state is unavailable', code: 'campaign_engine_unavailable' }, { status: 503 })

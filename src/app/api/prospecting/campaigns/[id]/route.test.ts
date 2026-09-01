@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), get: vi.fn(), preset: vi.fn(), transition: vi.fn(), update: vi.fn() }))
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), get: vi.fn(), preset: vi.fn(), transition: vi.fn(), update: vi.fn(), hardStop: vi.fn() }))
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/server/prospecting-campaigns', () => ({
   ProspectingCampaignError: class ProspectingCampaignError extends Error {},
@@ -8,6 +8,9 @@ vi.mock('@/lib/server/prospecting-campaigns', () => ({
   saveProspectingDialerPreset: mocks.preset,
   setProspectingCampaignStatus: mocks.transition,
   updateProspectingCampaignDraft: mocks.update,
+}))
+vi.mock('@/lib/server/stale-paused-dialer-session', () => ({
+  findStalePausedDialerHardStop: mocks.hardStop,
 }))
 
 import { GET, PATCH } from './route'
@@ -22,6 +25,7 @@ describe('prospecting campaign transition route', () => {
     mocks.transition.mockResolvedValue({ id: 'campaign-1', status: 'active' })
     mocks.preset.mockImplementation(async (_actor, _campaignId, setup) => setup)
     mocks.update.mockResolvedValue({ id: 'campaign-1', status: 'draft' })
+    mocks.hardStop.mockResolvedValue(null)
   })
 
   it('tells the client when a preview may only open the read-only calling workflow', async () => {
@@ -36,7 +40,21 @@ describe('prospecting campaign transition route', () => {
     vi.stubEnv('VERCEL_ENV', 'production')
     mocks.get.mockResolvedValue({ id: 'campaign-1', status: 'active' })
     const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x'), params)
-    await expect(response.json()).resolves.toMatchObject({ capabilities: { writesEnabled: true } })
+    await expect(response.json()).resolves.toMatchObject({ capabilities: { writesEnabled: true, canClearStalePausedSession: true }, hardStop: null })
+  })
+
+  it('surfaces a stale paused hard stop on the selected campaign', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    mocks.get.mockResolvedValue({ id: 'campaign-1', status: 'active' })
+    mocks.hardStop.mockResolvedValue({
+      code: 'stale_paused_session_blocks_start',
+      sessionId: '11355a3b-e5fa-4ecf-8cff-7720fa2428cb',
+      cannotStartNew: true,
+    })
+    const response = await GET(new Request('https://crm.savingkc.com/api/prospecting/campaigns/x'), params)
+    await expect(response.json()).resolves.toMatchObject({
+      hardStop: { cannotStartNew: true, sessionId: '11355a3b-e5fa-4ecf-8cff-7720fa2428cb' },
+    })
   })
 
   it('rejects anonymous transitions before parsing the body', async () => {

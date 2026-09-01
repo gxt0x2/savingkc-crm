@@ -14,6 +14,7 @@ import { ProspectingCallingContextRail } from '@/components/prospecting/prospect
 import { ProspectingMarkDeadDialog } from '@/components/prospecting/prospecting-mark-dead-dialog'
 import { resolveProspectingCallingSellerContext } from '@/components/prospecting/prospecting-calling-seller-context'
 import { ProspectingSessionTakeoverDialog } from '@/components/prospecting/prospecting-session-takeover-dialog'
+import { StalePausedDialerHardStopBanner } from '@/components/prospecting/stale-paused-dialer-hard-stop'
 import {
   type DurableDialerSession,
   type DurableDialerQueueSubject,
@@ -572,6 +573,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
   return (
     <div className="mx-auto max-w-[1700px] px-3 pb-24 pt-3 sm:px-5 lg:px-6">
+      {readOnlyPreview && campaignPreview.hardStop ? <div className="mb-4"><StalePausedDialerHardStopBanner hardStop={campaignPreview.hardStop} canClear={false} /></div> : null}
       {controlSummary ? <ProspectingSessionTakeoverDialog
         summary={controlSummary}
         selectedCampaignId={controlSummary.campaignId}

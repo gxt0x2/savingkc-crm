@@ -6,12 +6,18 @@ const mocks = vi.hoisted(() => ({
   getOpenSession: vi.fn(),
   getControlSummary: vi.fn(),
   parseSession: vi.fn(),
+  findHardStop: vi.fn(),
 }))
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }))
 vi.mock('@/lib/server/dialer-session-engine', () => ({
   getOpenDialerSession: mocks.getOpenSession,
   getDialerSessionControlSummary: mocks.getControlSummary,
   parseDialerSession: mocks.parseSession,
+}))
+vi.mock('@/lib/server/stale-paused-dialer-session', () => ({
+  findStalePausedDialerHardStop: mocks.findHardStop,
+  stalePausedHardStopMessage: (stop: { campaignName: string; sessionId: string }) =>
+    `${stop.campaignName} · ${stop.sessionId.slice(0, 8)} is a stale paused hard stop`,
 }))
 
 import { launchProspectingDialerCampaign } from '@/lib/server/prospecting-campaigns'
@@ -69,6 +75,7 @@ describe('launchProspectingDialerCampaign', () => {
     mocks.from.mockImplementation((table: string) => table === 'prospecting_campaigns' ? query(campaignRow) : query())
     mocks.getOpenSession.mockResolvedValue(null)
     mocks.parseSession.mockReturnValue({ id: 'session-1' })
+    mocks.findHardStop.mockResolvedValue(null)
   })
 
   it('delegates batch claiming and session creation to one server transaction', async () => {
@@ -177,6 +184,63 @@ describe('launchProspectingDialerCampaign', () => {
       code: 'call_in_progress',
       status: 409,
       message: '“Jackson · Tax 3+ · 7 zips · Aug 30” · session 398a33c0 · seller 18 of 166 has an unfinished call. Resume it and save the outcome before changing the start position.',
+    })
+  })
+
+  it('verifies a paused open session still blocks switching campaigns', async () => {
+    const openSession = {
+      id: '11355a3b-e5fa-4ecf-8cff-7720fa2428cb',
+      currentIndex: 0,
+      queueSize: 100,
+      settingsSnapshot: { campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30' },
+    }
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: null, error: { message: 'another_dialer_session_open' } }))
+    mocks.getOpenSession.mockResolvedValue(openSession)
+    mocks.getControlSummary.mockResolvedValue({
+      sessionId: openSession.id,
+      campaignId: campaignId,
+      campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      status: 'paused',
+      currentIndex: 0,
+      queueSize: 100,
+      canTakeOver: true,
+    })
+
+    await expect(launchProspectingDialerCampaign(actor, '22222222-2222-4222-8222-222222222222', setup, control)).rejects.toMatchObject({
+      code: 'another_dialer_session_open',
+      status: 409,
+      message: expect.stringContaining('still open'),
+    })
+  })
+
+  it('blocks a new start while a stale paused session is the hard stop', async () => {
+    const hardStop = {
+      code: 'stale_paused_session_blocks_start' as const,
+      sessionId: '11355a3b-e5fa-4ecf-8cff-7720fa2428cb',
+      campaignId,
+      campaignName: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      actorEmail: actor.email,
+      actorName: actor.name,
+      status: 'paused' as const,
+      pausedAt: '2026-09-01T16:55:40.491Z',
+      startedAt: '2026-08-31T12:53:54.838Z',
+      attemptCountToday: 0,
+      reasons: ['zero_attempts_today' as const],
+      cannotStartNew: true as const,
+      andonCapable: true as const,
+    }
+    mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: null, error: { message: 'stale_paused_session_blocks_start' } }))
+    mocks.findHardStop.mockResolvedValue(hardStop)
+
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({
+      code: 'stale_paused_session_blocks_start',
+      status: 409,
+      hardStop,
+      message: expect.stringContaining('stale paused hard stop'),
     })
   })
 

@@ -13,6 +13,7 @@ import {
   takeOverDurableDialerSession,
   type DialerSessionControlSummary,
 } from '@/lib/dialer-session-client'
+import type { StalePausedDialerHardStop } from '@/lib/dialer-stale-paused-session'
 import { parseStoredProspectingAudienceSelection, PROSPECTING_AUDIENCE_STORAGE_KEY, type ProspectingAudienceSelection } from '@/lib/prospecting/audience-handoff'
 import { copyProspectingCampaignSetup, editableProspectingCampaignSetup, preferredProspectingDialerPickerCampaignId, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 import {
@@ -30,8 +31,13 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
     error?: string
     code?: string
     details?: DialerSessionControlSummary
+    hardStop?: StalePausedDialerHardStop
   }
-  if (!response.ok) throw new DialerSessionClientError(body.error || 'Request failed', body.code, body.details)
+  if (!response.ok) {
+    const failure = new DialerSessionClientError(body.error || 'Request failed', body.code, body.details)
+    if (body.hardStop) Object.assign(failure, { hardStop: body.hardStop })
+    throw failure
+  }
   return body
 }
 
@@ -65,21 +71,25 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   } | null>(null)
   const [takeoverBusy, setTakeoverBusy] = useState(false)
   const [takeoverError, setTakeoverError] = useState<string | null>(null)
+  const [hardStop, setHardStop] = useState<StalePausedDialerHardStop | null>(null)
+  const [clearingStalePaused, setClearingStalePaused] = useState(false)
   const selectedIdRef = useRef<string | null>(null)
 
   const loadCampaigns = useCallback(async () => {
-    const page = await jsonRequest<CampaignPage>('/api/prospecting/campaigns?limit=50')
+    const page = await jsonRequest<CampaignPage & { hardStop?: StalePausedDialerHardStop | null }>('/api/prospecting/campaigns?limit=50')
     setCampaigns(page.items)
+    if (page.hardStop) setHardStop(page.hardStop)
     setSelectedId((current) => preferredProspectingDialerPickerCampaignId(page.items, current, initialCampaignId))
   }, [initialCampaignId])
 
   const loadDetail = useCallback(async (id: string, background = false) => {
     if (!background) setDetailLoading(true)
     try {
-      const payload = await jsonRequest<{ campaign: ProspectingCampaignDetail; capabilities?: { writesEnabled?: boolean } }>(`/api/prospecting/campaigns/${id}`)
+      const payload = await jsonRequest<{ campaign: ProspectingCampaignDetail; capabilities?: { writesEnabled?: boolean; canClearStalePausedSession?: boolean }; hardStop?: StalePausedDialerHardStop | null }>(`/api/prospecting/campaigns/${id}`)
       if (selectedIdRef.current !== id) return null
       setDetail(payload.campaign)
       setWritesEnabled(payload.capabilities?.writesEnabled !== false)
+      setHardStop(payload.hardStop ?? null)
       setCampaigns((current) => current.map((campaign) => campaign.id === id ? payload.campaign : campaign))
       setLastRefreshedAt(new Date().toISOString())
       setLiveRefreshDelayed(false)
@@ -351,6 +361,13 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
         continued: false,
       })
     } catch (launchError) {
+      if (launchError instanceof DialerSessionClientError && launchError.code === 'stale_paused_session_blocks_start') {
+        const nextHardStop = (launchError as DialerSessionClientError & { hardStop?: StalePausedDialerHardStop }).hardStop
+        if (nextHardStop) setHardStop(nextHardStop)
+        setError(launchError.message)
+        setActionPending(false)
+        return
+      }
       if (launchError instanceof DialerSessionClientError && launchError.details && [
         'session_control_conflict',
         'session_control_changed',
@@ -368,6 +385,26 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       }
       setError(launchError instanceof Error ? launchError.message : 'Dialer session could not start')
       setActionPending(false)
+    }
+  }
+
+  async function clearStalePausedSession() {
+    if (!hardStop || clearingStalePaused || !writesEnabled) return
+    setClearingStalePaused(true)
+    setError(null)
+    try {
+      await jsonRequest(`/api/admin/stale-paused-dialer-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: hardStop.sessionId }),
+      })
+      setHardStop(null)
+      setNotice('Stuck paused session cleared. Start calling when you are ready.')
+      if (selectedId) await loadDetail(selectedId)
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : 'The stuck paused session could not be cleared')
+    } finally {
+      setClearingStalePaused(false)
     }
   }
 
@@ -448,6 +485,10 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       lastRefreshedAt={lastRefreshedAt}
       liveRefreshDelayed={liveRefreshDelayed}
       writesEnabled={writesEnabled}
+      hardStop={hardStop}
+      canClearStalePaused={writesEnabled}
+      clearingStalePaused={clearingStalePaused}
+      onClearStalePaused={() => { void clearStalePausedSession() }}
       onSelect={setSelectedId}
       onCreate={openStudio}
       onDuplicate={duplicateCampaign}

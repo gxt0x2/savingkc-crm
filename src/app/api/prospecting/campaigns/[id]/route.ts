@@ -3,6 +3,7 @@ import { prospectingError, prospectingJson } from '@/lib/api/prospecting-respons
 import { parseCreateProspectingCampaignInput, parseProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 import { previewWriteBlocked } from '@/lib/preview-safety'
 import { getProspectingCampaign, saveProspectingDialerPreset, setProspectingCampaignStatus, updateProspectingCampaignDraft } from '@/lib/server/prospecting-campaigns'
+import { findStalePausedDialerHardStop } from '@/lib/server/stale-paused-dialer-session'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -12,11 +13,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!actor) return prospectingJson({ error: 'Unauthorized' }, { status: 401 })
   try {
     const campaignId = (await params).id
+    const writesEnabled = !previewWriteBlocked('POST', `/api/prospecting/campaigns/${campaignId}/launch`)
+    const [campaign, hardStop] = await Promise.all([
+      getProspectingCampaign(actor, campaignId),
+      findStalePausedDialerHardStop({ actor, campaignId }).catch(() => null),
+    ])
     return prospectingJson({
-      campaign: await getProspectingCampaign(actor, campaignId),
+      campaign,
       capabilities: {
-        writesEnabled: !previewWriteBlocked('POST', `/api/prospecting/campaigns/${campaignId}/launch`),
+        writesEnabled,
+        canClearStalePausedSession: writesEnabled,
       },
+      hardStop,
     })
   } catch (error) {
     return prospectingError(error)
