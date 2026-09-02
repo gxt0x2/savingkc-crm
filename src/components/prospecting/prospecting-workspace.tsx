@@ -38,12 +38,35 @@ function freshCampaignForm(): CampaignForm {
   return { ...EMPTY_CAMPAIGN_FORM, steps: EMPTY_CAMPAIGN_FORM.steps.map((step) => ({ ...step })) }
 }
 
-export function ProspectingWorkspace({ openCreate = false, initialCampaignId = null, audienceMode = false }: { openCreate?: boolean; initialCampaignId?: string | null; audienceMode?: boolean }) {
+type ProspectingWorkspaceProps = {
+  openCreate?: boolean
+  initialCampaignId?: string | null
+  audienceMode?: boolean
+  initialCampaigns?: ProspectingCampaignSummary[]
+  initialSelectedId?: string | null
+  initialDetail?: ProspectingCampaignDetail | null
+  initialWritesEnabled?: boolean
+  initialRefreshedAt?: string | null
+  initialError?: string | null
+}
+
+export function ProspectingWorkspace({
+  openCreate = false,
+  initialCampaignId = null,
+  audienceMode = false,
+  initialCampaigns,
+  initialSelectedId = null,
+  initialDetail = null,
+  initialWritesEnabled = true,
+  initialRefreshedAt = null,
+  initialError = null,
+}: ProspectingWorkspaceProps) {
   const router = useRouter()
-  const [campaigns, setCampaigns] = useState<ProspectingCampaignSummary[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ProspectingCampaignDetail | null>(null)
-  const [loading, setLoading] = useState(true)
+  const hasInitialSnapshot = initialCampaigns !== undefined
+  const [campaigns, setCampaigns] = useState<ProspectingCampaignSummary[]>(initialCampaigns ?? [])
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId)
+  const [detail, setDetail] = useState<ProspectingCampaignDetail | null>(initialDetail)
+  const [loading, setLoading] = useState(!hasInitialSnapshot)
   const [detailLoading, setDetailLoading] = useState(false)
   const [studioOpen, setStudioOpen] = useState(openCreate)
   const [audienceReviewOpen, setAudienceReviewOpen] = useState(audienceMode)
@@ -53,12 +76,15 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
   const [form, setForm] = useState<CampaignForm>(freshCampaignForm)
   const [saving, setSaving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [notice, setNotice] = useState<string | null>(null)
-  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(initialRefreshedAt)
   const [liveRefreshDelayed, setLiveRefreshDelayed] = useState(false)
-  const [writesEnabled, setWritesEnabled] = useState(true)
-  const selectedIdRef = useRef<string | null>(null)
+  const [writesEnabled, setWritesEnabled] = useState(initialWritesEnabled)
+  const selectedIdRef = useRef<string | null>(initialSelectedId)
+  const skipInitialCampaignLoadRef = useRef(hasInitialSnapshot)
+  const skipInitialDetailLoadRef = useRef(Boolean(initialDetail && initialSelectedId === initialDetail.id))
+  const initialDetailIdRef = useRef(initialDetail?.id ?? null)
 
   const loadCampaigns = useCallback(async () => {
     const page = await jsonRequest<CampaignPage>('/api/prospecting/campaigns?limit=50')
@@ -92,6 +118,10 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
     try {
       setPendingAudience(parseStoredProspectingAudienceSelection(window.sessionStorage.getItem(PROSPECTING_AUDIENCE_STORAGE_KEY)))
     } catch { /* a blocked session store simply means no preselected audience */ }
+    if (skipInitialCampaignLoadRef.current) {
+      skipInitialCampaignLoadRef.current = false
+      return
+    }
     void loadCampaigns()
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Campaigns could not be loaded'))
       .finally(() => setLoading(false))
@@ -104,6 +134,10 @@ export function ProspectingWorkspace({ openCreate = false, initialCampaignId = n
       setWritesEnabled(true)
       setLastRefreshedAt(null)
       setLiveRefreshDelayed(false)
+      return
+    }
+    if (skipInitialDetailLoadRef.current && initialDetailIdRef.current === selectedId) {
+      skipInitialDetailLoadRef.current = false
       return
     }
     void loadDetail(selectedId).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Campaign details could not be loaded'))
