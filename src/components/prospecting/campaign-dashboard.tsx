@@ -17,7 +17,7 @@ function timeLabel(value: string | null) {
   if (!value) return 'Connecting'
   const date = new Date(value)
   return Number.isFinite(date.getTime())
-    ? `Synced ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date)}`
+    ? `Synced ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' }).format(date)}`
     : 'Sync time unavailable'
 }
 
