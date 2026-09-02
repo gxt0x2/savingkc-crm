@@ -6,7 +6,6 @@ import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { CampaignAudienceReview } from '@/components/prospecting/campaign-audience-review'
 import { CampaignDashboard } from '@/components/prospecting/campaign-dashboard'
 import { CampaignStudio, EMPTY_CAMPAIGN_FORM, type CampaignForm } from '@/components/prospecting/campaign-studio'
-import { ProspectingSessionTakeoverDialog } from '@/components/prospecting/prospecting-session-takeover-dialog'
 import { Icon } from '@/components/ui/icon'
 import {
   DialerSessionClientError,
@@ -82,12 +81,6 @@ export function ProspectingWorkspace({
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(initialRefreshedAt)
   const [liveRefreshDelayed, setLiveRefreshDelayed] = useState(false)
   const [writesEnabled, setWritesEnabled] = useState(initialWritesEnabled)
-  const [takeoverPrompt, setTakeoverPrompt] = useState<{
-    summary: DialerSessionControlSummary
-    setup: ProspectingDialerSessionSetup
-  } | null>(null)
-  const [takeoverBusy, setTakeoverBusy] = useState(false)
-  const [takeoverError, setTakeoverError] = useState<string | null>(null)
   const selectedIdRef = useRef<string | null>(initialSelectedId)
   const skipInitialCampaignLoadRef = useRef(hasInitialSnapshot)
   const skipInitialDetailLoadRef = useRef(Boolean(initialDetail && initialSelectedId === initialDetail.id))
@@ -376,7 +369,6 @@ export function ProspectingWorkspace({
         headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
         body: JSON.stringify(setup),
       })
-      setTakeoverPrompt(null)
       navigateToDialerSession({
         session: result.session,
         campaignId: detail.id,
@@ -391,47 +383,28 @@ export function ProspectingWorkspace({
         'session_takeover_operation_in_progress',
         'another_dialer_session_open',
       ].includes(launchError.code || '')) {
-        setTakeoverPrompt({ summary: launchError.details, setup })
-        setTakeoverError(
-          launchError.code === 'session_control_conflict' || launchError.code === 'another_dialer_session_open'
-            ? null
-            : launchError.message,
-        )
-        setActionPending(false)
+        const existingSession = launchError.details
+        try {
+          const takeover = await takeOverDurableDialerSession({
+            sessionId: existingSession.sessionId,
+            expectedGeneration: existingSession.generation,
+            requestId: newDialerControlRequestId(),
+          })
+          navigateToDialerSession({
+            session: takeover.session,
+            campaignId: existingSession.campaignId || detail.id,
+            campaignName: existingSession.campaignName,
+            setup,
+            continued: true,
+            controlGeneration: Number(takeover.control.generation),
+          })
+        } catch (takeoverFailure) {
+          setError(takeoverFailure instanceof Error ? takeoverFailure.message : 'Dialing control could not be transferred.')
+          setActionPending(false)
+        }
         return
       }
       setError(launchError instanceof Error ? launchError.message : 'Dialer session could not start')
-      setActionPending(false)
-    }
-  }
-
-  async function confirmTakeover() {
-    if (!takeoverPrompt || !detail || takeoverBusy) return
-    setTakeoverBusy(true)
-    setTakeoverError(null)
-    const requestId = newDialerControlRequestId()
-    try {
-      const result = await takeOverDurableDialerSession({
-        sessionId: takeoverPrompt.summary.sessionId,
-        expectedGeneration: takeoverPrompt.summary.generation,
-        requestId,
-      })
-      setTakeoverPrompt(null)
-      navigateToDialerSession({
-        session: result.session,
-        campaignId: takeoverPrompt.summary.campaignId || detail.id,
-        campaignName: takeoverPrompt.summary.campaignName,
-        setup: takeoverPrompt.setup,
-        continued: true,
-        controlGeneration: Number(result.control.generation),
-      })
-    } catch (takeoverFailure) {
-      if (takeoverFailure instanceof DialerSessionClientError && takeoverFailure.details) {
-        setTakeoverPrompt((current) => current ? { ...current, summary: takeoverFailure.details! } : current)
-      }
-      setTakeoverError(takeoverFailure instanceof Error ? takeoverFailure.message : 'Dialing control could not be transferred.')
-    } finally {
-      setTakeoverBusy(false)
       setActionPending(false)
     }
   }
@@ -445,19 +418,6 @@ export function ProspectingWorkspace({
 
   return <>
     <WorkspaceChrome commandBar={commandBar} />
-    {takeoverPrompt ? <ProspectingSessionTakeoverDialog
-      summary={takeoverPrompt.summary}
-      selectedCampaignId={detail?.id}
-      selectedCampaignName={detail?.name}
-      busy={takeoverBusy}
-      error={takeoverError}
-      onCancel={() => {
-        setTakeoverPrompt(null)
-        setTakeoverError(null)
-        setActionPending(false)
-      }}
-      onContinue={() => { void confirmTakeover() }}
-    /> : null}
     {error || notice ? <div className="bg-[var(--crm-canvas)] px-3 pt-3 sm:px-5 lg:px-7"><div className={`mx-auto max-w-[1540px] rounded-xl border px-4 py-3 text-sm font-bold ${error ? 'border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : 'border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] text-[var(--crm-success)]'}`} role={error ? 'alert' : 'status'}>{error || notice}</div></div> : null}
     {audienceReviewOpen ? <CampaignAudienceReview campaign={detail} pendingCount={pendingAudience?.count ?? 0} saving={actionPending} onConfirm={() => void enrollSelectedIntoCurrentCampaign()} onCancel={closeBuilder} /> : studioOpen ? <CampaignStudio
       form={form}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import {
   DialerSessionClientError,
   heartbeatDurableDialerSessionControl,
@@ -20,6 +20,7 @@ interface MutableValue<T> {
 interface UseDialerControlPresenceArgs {
   readOnlyPreview: boolean
   sessionId: string
+  idleExpiresAt: string | null
   controlOwned: boolean
   controlOwnedRef: MutableValue<boolean>
   controlGenerationRef: MutableValue<number>
@@ -29,11 +30,13 @@ interface UseDialerControlPresenceArgs {
   showControlConflict: (error: DialerSessionClientError, expectedRevision?: number) => boolean
   setSessionError: Dispatch<SetStateAction<string | null>>
   applySession: (session: DurableDialerSession, armAutoStart?: boolean) => void
+  onUserActivity: (at: Date) => void
 }
 
 export function useDialerControlPresence({
   readOnlyPreview,
   sessionId,
+  idleExpiresAt,
   controlOwned,
   controlOwnedRef,
   controlGenerationRef,
@@ -43,14 +46,34 @@ export function useDialerControlPresence({
   showControlConflict,
   setSessionError,
   applySession,
+  onUserActivity,
 }: UseDialerControlPresenceArgs) {
+  const activityRevisionRef = useRef(0)
+  const acknowledgedActivityRevisionRef = useRef(0)
+
   useEffect(() => {
     if (readOnlyPreview || !sessionId || !controlOwned) return
     let cancelled = false
     const verifyControl = async () => {
       const heartbeatRevision = controlRevisionRef.current
+      const activityRevision = activityRevisionRef.current
+      const userActive = activityRevision > acknowledgedActivityRevisionRef.current
       try {
-        await heartbeatDurableDialerSessionControl(sessionId)
+        const result = await heartbeatDurableDialerSessionControl(sessionId, userActive)
+        if (cancelled || heartbeatRevision !== controlRevisionRef.current) return
+        if (userActive) {
+          acknowledgedActivityRevisionRef.current = Math.max(
+            acknowledgedActivityRevisionRef.current,
+            activityRevision,
+          )
+        }
+        const terminalOrIdle = ['completed', 'stopped'].includes(result.session.status) || Boolean(result.session.idleTimedOutAt)
+        if (userActive || result.control.operationActive === true || terminalOrIdle) {
+          acceptVerifiedControl(result, false, heartbeatRevision)
+        }
+        if (terminalOrIdle) {
+          window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: result.session }))
+        }
       } catch (error) {
         if (cancelled || heartbeatRevision !== controlRevisionRef.current) return
         if (isDialerControlLossError(error)) {
@@ -60,17 +83,43 @@ export function useDialerControlPresence({
         setSessionError(error instanceof Error ? error.message : 'Dialing control could not be verified.')
       }
     }
+    const markUserActivity = () => {
+      if (document.visibilityState === 'hidden') return
+      activityRevisionRef.current += 1
+      onUserActivity(new Date())
+    }
     const interval = window.setInterval(() => { void verifyControl() }, CONTROL_HEARTBEAT_MS)
-    const onVisible = () => { if (document.visibilityState === 'visible') void verifyControl() }
+    const deadlineMs = idleExpiresAt ? Date.parse(idleExpiresAt) : Number.NaN
+    const idleDeadline = Number.isFinite(deadlineMs)
+      ? window.setTimeout(() => { void verifyControl() }, Math.max(0, deadlineMs - Date.now() + 50))
+      : null
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      markUserActivity()
+      void verifyControl()
+    }
+    const onFocus = () => {
+      markUserActivity()
+      void verifyControl()
+    }
     document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('focus', onVisible)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pointerdown', markUserActivity, { passive: true })
+    window.addEventListener('keydown', markUserActivity)
+    window.addEventListener('wheel', markUserActivity, { passive: true })
+    window.addEventListener('touchstart', markUserActivity, { passive: true })
     return () => {
       cancelled = true
       window.clearInterval(interval)
+      if (idleDeadline !== null) window.clearTimeout(idleDeadline)
       document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('focus', onVisible)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pointerdown', markUserActivity)
+      window.removeEventListener('keydown', markUserActivity)
+      window.removeEventListener('wheel', markUserActivity)
+      window.removeEventListener('touchstart', markUserActivity)
     }
-  }, [controlOwned, controlRevisionRef, readOnlyPreview, sessionId, setSessionError, showControlConflict])
+  }, [acceptVerifiedControl, controlOwned, controlRevisionRef, idleExpiresAt, onUserActivity, readOnlyPreview, sessionId, setSessionError, showControlConflict])
 
   useEffect(() => {
     if (readOnlyPreview || !sessionId) return

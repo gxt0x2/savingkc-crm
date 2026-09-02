@@ -52,6 +52,9 @@ function session(overrides: Record<string, unknown> = {}) {
     pausedAt: null,
     stopRequestedAt: null,
     endedAt: null,
+    lastInteractionAt: '2026-08-20T12:00:00.000Z',
+    idleExpiresAt: '2026-08-20T12:05:00.000Z',
+    idleTimedOutAt: null,
     updatedAt: '2026-08-20T12:00:00.000Z',
     stateVersion: 1,
     ...overrides,
@@ -173,10 +176,11 @@ describe('durable dialer session engine', () => {
       p_expected_generation: 1,
       p_request_id: 'takeover-1',
     })
-    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'heartbeat_dialer_session_control_v1', {
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'heartbeat_dialer_session_control_v2', {
       p_session_id: sessionId,
       p_actor_email: 'casey@savingkc.com',
       p_controller_token: controllerToken,
+      p_user_active: false,
     })
   })
 
@@ -312,6 +316,9 @@ describe('durable dialer session engine', () => {
       paused_at: item.pausedAt,
       stop_requested_at: item.stopRequestedAt,
       ended_at: item.endedAt,
+      last_interaction_at: item.lastInteractionAt,
+      idle_timeout_seconds: 300,
+      idle_timed_out_at: item.idleTimedOutAt,
       updated_at: item.updatedAt,
       state_version: item.stateVersion,
     }))

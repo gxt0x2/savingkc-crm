@@ -101,7 +101,7 @@ function response(body: unknown, status = 200) {
   })
 }
 
-function installFetch() {
+function installFetch(takeoverStatus = 200) {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input)
     if (url === '/api/prospecting/campaigns?limit=50') {
@@ -118,6 +118,9 @@ function installFetch() {
       }, 409)
     }
     if (url === `/api/dialer/sessions/${existingSessionId}/control`) {
+      if (takeoverStatus !== 200) {
+        return response({ error: 'Dialing control changed before it could be transferred', code: 'session_control_changed' }, takeoverStatus)
+      }
       return response({
         session: {
           id: existingSessionId,
@@ -132,12 +135,11 @@ function installFetch() {
   })
 }
 
-async function openConflict() {
+async function startCalling() {
   render(<ProspectingWorkspace />)
   const start = await screen.findByRole('button', { name: 'Start calling' })
   await waitFor(() => expect(start).toBeEnabled())
   fireEvent.click(start)
-  return screen.findByRole('alertdialog', { name: 'Disconnect the other session and call here?' })
 }
 
 describe('ProspectingWorkspace session takeover', () => {
@@ -151,32 +153,14 @@ describe('ProspectingWorkspace session takeover', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the conflicting session context and Cancel performs no takeover mutation', async () => {
+  it('disconnects the prior controller and starts the saved session with one click', async () => {
     const fetchMock = installFetch()
     vi.stubGlobal('fetch', fetchMock)
 
-    await openConflict()
-
-    expect(screen.getAllByText(conflictDetails.campaignName).length).toBeGreaterThan(0)
-    expect(screen.getByText('Seller 18 of 166')).toBeVisible()
-    expect(screen.getByText('Chrome on Casey’s PC')).toBeVisible()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/control'))).toBe(false)
-    expect(mocks.routerPush).not.toHaveBeenCalled()
-    expect(mocks.publishDialerControlTaken).not.toHaveBeenCalled()
-  })
-
-  it('disconnects the prior controller, resumes the preserved session, and arms the countdown', async () => {
-    const fetchMock = installFetch()
-    vi.stubGlobal('fetch', fetchMock)
-
-    await openConflict()
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect & start here' }))
+    await startCalling()
 
     await waitFor(() => expect(mocks.routerPush).toHaveBeenCalledOnce())
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     const controlCall = fetchMock.mock.calls.find(([input]) => String(input) === `/api/dialer/sessions/${existingSessionId}/control`)
     expect(controlCall).toBeDefined()
     const controlInit = controlCall?.[1]
@@ -199,5 +183,18 @@ describe('ProspectingWorkspace session takeover', () => {
       new RegExp(`^/prospecting\\?session_id=${existingSessionId}&campaign=${existingCampaignId}`),
     ))
     expect(window.sessionStorage.getItem(`savingkc:dialer-autostart:${existingSessionId}`)).toBe('1')
+  })
+
+  it('stays on the campaign and shows the transfer error when the automatic takeover fails', async () => {
+    const fetchMock = installFetch(409)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await startCalling()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Dialing control changed before it could be transferred')
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(mocks.routerPush).not.toHaveBeenCalled()
+    expect(mocks.publishDialerControlTaken).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Start calling' })).toBeEnabled()
   })
 })

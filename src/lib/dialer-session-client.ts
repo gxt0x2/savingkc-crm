@@ -35,6 +35,9 @@ export interface DurableDialerSession {
   pausedAt: string | null
   stopRequestedAt: string | null
   endedAt: string | null
+  lastInteractionAt: string
+  idleExpiresAt: string
+  idleTimedOutAt: string | null
   updatedAt: string
 }
 
@@ -307,11 +310,15 @@ export async function transitionDurableDialerAttempt(input: {
   return payload(response, 'Call session state could not be saved') as Promise<{ attempt?: unknown; session?: DurableDialerSession }>
 }
 
-export async function heartbeatDurableDialerSessionControl(sessionId: string): Promise<DialerSessionControlResult> {
+export async function heartbeatDurableDialerSessionControl(
+  sessionId: string,
+  userActive = false,
+): Promise<DialerSessionControlResult> {
   const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(sessionId)}/control`, {
     method: 'PATCH',
     cache: 'no-store',
-    headers: await dialerControllerHeaders(),
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
+    body: JSON.stringify({ userActive }),
   })
   return payload(response, 'Dialing control could not be verified.') as unknown as Promise<DialerSessionControlResult>
 }

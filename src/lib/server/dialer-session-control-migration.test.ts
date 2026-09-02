@@ -13,16 +13,20 @@ const forceTakeoverMigration = readFileSync(
   'supabase/migrations/20261027123000_force_dialer_session_takeover.sql',
   'utf8',
 )
-const migration = `${controllerMigration}\n${operationMigration}\n${forceTakeoverMigration}`
+const idleTimeoutMigration = readFileSync(
+  'supabase/migrations/20261027124500_dialer_idle_timeout.sql',
+  'utf8',
+)
+const migration = `${controllerMigration}\n${operationMigration}\n${forceTakeoverMigration}\n${idleTimeoutMigration}`
 
 describe('dialer session browser control lease migration', () => {
   it('stores only a hashed controller identity with a bounded renewable lease', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS controller_token_hash text')
     expect(migration).toContain("extensions.digest(trim(p_controller_token), 'sha256')")
     expect(migration).toContain("controller_lease_expires_at = now() + interval '45 seconds'")
-    const publicControlJson = operationMigration.slice(
-      operationMigration.indexOf('CREATE OR REPLACE FUNCTION public.dialer_session_control_json_v1'),
-      operationMigration.indexOf('CREATE OR REPLACE FUNCTION public.claim_dialer_session_control_v1'),
+    const publicControlJson = idleTimeoutMigration.slice(
+      idleTimeoutMigration.indexOf('CREATE OR REPLACE FUNCTION public.dialer_session_control_json_v1'),
+      idleTimeoutMigration.indexOf('CREATE OR REPLACE FUNCTION public.expire_dialer_session_if_idle_v1'),
     )
     expect(publicControlJson).not.toContain("'controllerToken'")
     expect(publicControlJson).not.toContain("'controllerTokenHash'")
@@ -132,10 +136,11 @@ describe('dialer session browser control lease migration', () => {
     const assertion = migration.slice(assertionStart, migration.indexOf('$$;', assertionStart) + 3)
     expect(assertion).toMatch(/controller_token_hash IS NULL[\s\S]*RAISE EXCEPTION 'session_control_conflict'/)
 
-    const heartbeatStart = migration.indexOf('CREATE OR REPLACE FUNCTION public.heartbeat_dialer_session_control_v1')
-    const heartbeat = migration.slice(heartbeatStart, migration.indexOf('$$;', heartbeatStart) + 3)
-    expect(heartbeat).toContain('public.assert_dialer_session_control_v1(')
-    expect(heartbeat).not.toContain('public.claim_dialer_session_control_v1(')
+    const heartbeatStart = idleTimeoutMigration.indexOf('CREATE OR REPLACE FUNCTION public.heartbeat_dialer_session_control_v1')
+    const heartbeat = idleTimeoutMigration.slice(heartbeatStart, idleTimeoutMigration.indexOf('$$;', heartbeatStart) + 3)
+    expect(heartbeat).toContain('public.heartbeat_dialer_session_control_v2(')
+    expect(heartbeat).toContain('p_session_id, p_actor_email, p_controller_token, false')
+    expect(heartbeat).not.toContain('public.assert_dialer_session_control_v1(')
 
     const genericStart = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.start_dialer_session_v3'),
@@ -148,6 +153,19 @@ describe('dialer session browser control lease migration', () => {
       migration.indexOf('CREATE OR REPLACE FUNCTION public.transition_dialer_session_v2'),
     )
     expect(prospectingStart).toMatch(/controller_token_hash IS NULL AND NOT p_takeover[\s\S]*RAISE EXCEPTION 'session_control_conflict'/)
+  })
+
+  it('expires unattended sessions after exactly five minutes without treating browser heartbeats as work', () => {
+    expect(idleTimeoutMigration).toContain('ADD COLUMN IF NOT EXISTS last_interaction_at timestamptz')
+    expect(idleTimeoutMigration).toContain('CHECK (idle_timeout_seconds = 300)')
+    expect(idleTimeoutMigration).toContain('CREATE OR REPLACE FUNCTION public.expire_dialer_session_if_idle_v1')
+    expect(idleTimeoutMigration).toContain("'session_idle_timeout'")
+    expect(idleTimeoutMigration).toContain("'session_idle_stop_requested'")
+    expect(idleTimeoutMigration).toMatch(/open_attempt_status = 'connected'[\s\S]*RETURN public\.dialer_session_json_v1/)
+    const heartbeatStart = idleTimeoutMigration.indexOf('CREATE OR REPLACE FUNCTION public.heartbeat_dialer_session_control_v2')
+    const heartbeat = idleTimeoutMigration.slice(heartbeatStart, idleTimeoutMigration.indexOf('$$;', heartbeatStart) + 3)
+    expect(heartbeat).toContain('p_user_active boolean DEFAULT false')
+    expect(heartbeat).toMatch(/last_interaction_at = CASE WHEN coalesce\(p_user_active, false\)[\s\S]*ELSE last_interaction_at END/)
   })
 
   it('keeps all lease and controlled mutation functions service-role only', () => {

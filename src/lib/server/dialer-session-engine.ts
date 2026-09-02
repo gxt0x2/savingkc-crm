@@ -51,6 +51,9 @@ export interface DialerSessionState {
   pausedAt: string | null
   stopRequestedAt: string | null
   endedAt: string | null
+  lastInteractionAt: string
+  idleExpiresAt: string
+  idleTimedOutAt: string | null
   updatedAt: string
   stateVersion: number
 }
@@ -179,8 +182,10 @@ export function parseDialerSession(value: unknown): DialerSessionState {
   const agentName = textValue(row.agentName)
   const queueKey = textValue(row.queueKey)
   const startedAt = textValue(row.startedAt)
+  const lastInteractionAt = textValue(row.lastInteractionAt)
+  const idleExpiresAt = textValue(row.idleExpiresAt)
   const updatedAt = textValue(row.updatedAt)
-  if (!id || !isUuid(id) || !actorEmail || !agentName || !queueKey || !startedAt || !updatedAt || !status || !['active', 'paused', 'completed', 'stopped'].includes(status)) {
+  if (!id || !isUuid(id) || !actorEmail || !agentName || !queueKey || !startedAt || !lastInteractionAt || !idleExpiresAt || !updatedAt || !status || !['active', 'paused', 'completed', 'stopped'].includes(status)) {
     throw new DialerSessionError('invalid_session_payload', 503, 'Dialer session data is unavailable')
   }
   const legacyLeadIds = normalizeLeadIds(row.leadIds)
@@ -227,6 +232,9 @@ export function parseDialerSession(value: unknown): DialerSessionState {
     pausedAt: textValue(row.pausedAt),
     stopRequestedAt: textValue(row.stopRequestedAt),
     endedAt: textValue(row.endedAt),
+    lastInteractionAt,
+    idleExpiresAt,
+    idleTimedOutAt: textValue(row.idleTimedOutAt),
     updatedAt,
     stateVersion: numberValue(row.stateVersion, 1),
   }
@@ -244,6 +252,7 @@ function mapDatabaseError(error: { message?: string; code?: string } | null | un
   if (raw.includes('session_control_lost')) return new DialerSessionError('session_control_lost', 409, 'This dialing session was continued in another browser')
   if (raw.includes('invalid_dialer_controller')) return new DialerSessionError('invalid_dialer_controller', 400, 'This browser could not identify its dialing controls. Refresh and try again')
   if (raw.includes('session_not_open')) return new DialerSessionError('session_not_open', 409, 'This dialing session is no longer open')
+  if (raw.includes('session_idle_expired')) return new DialerSessionError('session_idle_expired', 409, 'This calling session ended after five minutes without activity')
   if (raw.includes('session_not_found')) return new DialerSessionError('session_not_found', 404, 'Dialer session not found')
   if (raw.includes('call_in_progress') || raw.includes('attempt_in_progress')) return new DialerSessionError('call_in_progress', 409, 'Finish or disposition the current call first')
   if (raw.includes('session_stop_requested')) return new DialerSessionError('session_stop_requested', 409, 'This calling session is ending; finish the current call outcome')
@@ -286,6 +295,9 @@ type DialerSessionRow = {
   paused_at: string | null
   stop_requested_at: string | null
   ended_at: string | null
+  last_interaction_at: string
+  idle_timeout_seconds: number
+  idle_timed_out_at: string | null
   updated_at: string
   state_version: number
 }
@@ -317,12 +329,15 @@ function rowToSession(row: DialerSessionRow): DialerSessionState {
     pausedAt: row.paused_at,
     stopRequestedAt: row.stop_requested_at,
     endedAt: row.ended_at,
+    lastInteractionAt: row.last_interaction_at,
+    idleExpiresAt: new Date(new Date(row.last_interaction_at).getTime() + row.idle_timeout_seconds * 1_000).toISOString(),
+    idleTimedOutAt: row.idle_timed_out_at,
     updatedAt: row.updated_at,
     stateVersion: row.state_version,
   })
 }
 
-const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,current_prospect_id,current_subject_kind,current_subject_id,current_campaign_member_id,caller_id,settings_snapshot,dials_completed,contacts,skips,outcomes,started_at,paused_at,stop_requested_at,ended_at,updated_at,state_version'
+const SESSION_SELECT = 'id,status,actor_email,agent_name,queue_key,saved_queue_id,queue_snapshot,queue_size,current_index,current_lead_id,current_prospect_id,current_subject_kind,current_subject_id,current_campaign_member_id,caller_id,settings_snapshot,dials_completed,contacts,skips,outcomes,started_at,paused_at,stop_requested_at,ended_at,last_interaction_at,idle_timeout_seconds,idle_timed_out_at,updated_at,state_version'
 
 type HistoryCursor = { timestamp: string; id: string }
 
@@ -488,6 +503,11 @@ export async function getDialerAttemptHistory(
 
 export async function getDialerSession(actor: AuthenticatedActor, sessionId: string): Promise<DialerSessionState> {
   if (!isUuid(sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')
+  const { error: expirationError } = await supabase.rpc('expire_dialer_session_if_idle_v1', {
+    p_session_id: sessionId,
+    p_actor_email: actor.email,
+  })
+  if (expirationError) throw mapDatabaseError(expirationError)
   const { data, error } = await supabase
     .from('dialer_sessions')
     .select(SESSION_SELECT)
@@ -500,6 +520,10 @@ export async function getDialerSession(actor: AuthenticatedActor, sessionId: str
 }
 
 export async function getOpenDialerSession(actor: AuthenticatedActor): Promise<DialerSessionState | null> {
+  const { error: expirationError } = await supabase.rpc('expire_idle_dialer_sessions_for_actor_v1', {
+    p_actor_email: actor.email,
+  })
+  if (expirationError) throw mapDatabaseError(expirationError)
   const { data, error } = await supabase
     .from('dialer_sessions')
     .select(SESSION_SELECT)

@@ -104,6 +104,15 @@ export function useProspectingSessionControl({
     )
   }, [onApplySession])
 
+  const markUserActivity = useCallback((at: Date) => {
+    const lastInteractionAt = at.toISOString()
+    const idleExpiresAt = new Date(at.getTime() + 5 * 60 * 1_000).toISOString()
+    setSession((current) => {
+      if (!current || at.getTime() - Date.parse(current.lastInteractionAt) < 1_000) return current
+      return { ...current, lastInteractionAt, idleExpiresAt }
+    })
+  }, [])
+
   const clearSession = useCallback(() => { setSession(null) }, [])
 
   const acceptVerifiedControl = useCallback((result: DialerSessionControlResult, armAutoStart = true, expectedRevision?: number) => {
@@ -148,6 +157,7 @@ export function useProspectingSessionControl({
     setControlError(null)
     const loadedSession = await loadDurableDialerSession(sessionId)
     applySession(loadedSession, false)
+    if (['completed', 'stopped'].includes(loadedSession.status)) return loadedSession
     const autoStartKey = `savingkc:dialer-autostart:${loadedSession.id}`
     if (window.sessionStorage.getItem(autoStartKey) === '1') window.sessionStorage.removeItem(autoStartKey)
     const heartbeatRevision = controlRevisionRef.current
@@ -200,6 +210,7 @@ export function useProspectingSessionControl({
   useDialerControlPresence({
     readOnlyPreview,
     sessionId,
+    idleExpiresAt: session?.idleExpiresAt || null,
     controlOwned,
     controlOwnedRef,
     controlGenerationRef,
@@ -209,6 +220,7 @@ export function useProspectingSessionControl({
     showControlConflict,
     setSessionError,
     applySession,
+    onUserActivity: markUserActivity,
   })
 
   const transitionSession = useCallback(async (

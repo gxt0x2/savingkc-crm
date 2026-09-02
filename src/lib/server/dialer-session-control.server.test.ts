@@ -43,6 +43,9 @@ function session(): DialerSessionState {
     pausedAt: null,
     stopRequestedAt: null,
     endedAt: null,
+    lastInteractionAt: new Date(now).toISOString(),
+    idleExpiresAt: new Date(now + 300_000).toISOString(),
+    idleTimedOutAt: null,
     updatedAt: new Date(now).toISOString(),
     stateVersion: 1,
   }
