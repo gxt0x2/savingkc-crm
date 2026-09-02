@@ -232,12 +232,14 @@ export function createDialerSessionControl(dependencies: DialerSessionControlDep
     actor: AuthenticatedActor
     sessionId: string
     controllerToken: string
+    userActive?: boolean
   }): Promise<{ session: DialerSessionState; control: Record<string, unknown> }> {
     if (!isUuid(input.sessionId)) throw new DialerSessionError('invalid_session_id', 400, 'Dialer session is invalid')
-    const { data, error } = await supabase.rpc('heartbeat_dialer_session_control_v1', {
+    const { data, error } = await supabase.rpc('heartbeat_dialer_session_control_v2', {
       p_session_id: input.sessionId,
       p_actor_email: input.actor.email,
       p_controller_token: input.controllerToken,
+      p_user_active: input.userActive === true,
     })
     if (error) throw await controlErrorWithSummary(error, input.actor, input.sessionId)
     const result = data as { session?: unknown; control?: unknown } | null

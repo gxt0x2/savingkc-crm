@@ -28,6 +28,8 @@ interface DialerSessionCommandProps {
   durableSessionId: string
   durableStatus?: SessionStatus
   stopRequested?: boolean
+  idleExpiresAt?: string | null
+  idleTimedOutAt?: string | null
   todayMetrics: DialerTodayMetrics | null
   queueState: SessionQueueState | null
   controlsDocked?: boolean
@@ -79,9 +81,15 @@ function formatDialerTime(value: number | null | undefined) {
   return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
+function formatIdleCountdown(value: number) {
+  const seconds = Math.max(0, Math.ceil(value))
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 export function DialerSessionCommand(props: DialerSessionCommandProps) {
   const [confirmEndOpen, setConfirmEndOpen] = useState(false)
   const [previewStatus, setPreviewStatus] = useState('Ready')
+  const [clockMs, setClockMs] = useState(() => Date.now())
   const {
     actionPending,
     onMarkDead,
@@ -107,6 +115,10 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       ? 'Paused — save outcome'
       : 'Resume session'
   const progress = Math.round(((props.currentIndex + 1) / Math.max(props.queueSize, 1)) * 100)
+  const idleDeadlineMs = props.idleExpiresAt ? Date.parse(props.idleExpiresAt) : Number.NaN
+  const idleSecondsRemaining = Number.isFinite(idleDeadlineMs)
+    ? Math.max(0, (idleDeadlineMs - clockMs) / 1_000)
+    : null
   const statusLabel = props.controlUnavailable
     ? 'Open elsewhere'
     : props.readOnlyPreview
@@ -119,6 +131,12 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       ? 'Dialing now'
       : props.stopRequested ? 'Ending after outcome'
         : isPaused ? 'Session paused' : 'Ready'
+
+  useEffect(() => {
+    if (readOnlyPreview || !isDurable || !props.durableStatus || !['active', 'paused'].includes(props.durableStatus)) return
+    const interval = window.setInterval(() => setClockMs(Date.now()), 1_000)
+    return () => window.clearInterval(interval)
+  }, [isDurable, props.durableStatus, readOnlyPreview])
 
   useEffect(() => {
     if (!readOnlyPreview) return
@@ -174,6 +192,11 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
 
         {props.controlUnavailable ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Dialing control moved to another window. This seller remains visible, but calls and CRM changes are locked here.</div>
           : props.readOnlyPreview ? <div role="status" className="mt-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Preview only — calling controls are shown but disabled. In production, Resume calling restores the saved seller and loads every ready number.</div> : null}
+
+        {!props.readOnlyPreview && isDurable && idleSecondsRemaining !== null ? <div role="timer" aria-live="polite" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs text-[var(--crm-on-warning)]">
+          <span className="inline-flex items-center gap-2 font-bold"><Icon name="timer" size="text-sm" />{props.idleTimedOutAt ? 'Inactivity limit reached — save the pending outcome to close safely' : isCalling ? 'Five-minute inactivity cutoff is paused during the active call' : 'Session closes automatically after five minutes without activity'}</span>
+          {!isCalling && !props.idleTimedOutAt ? <strong className="rounded-lg bg-[var(--ck-surface)] px-2.5 py-1 font-black tabular-nums text-[var(--crm-warning)]">{formatIdleCountdown(idleSecondsRemaining)} remaining</strong> : null}
+        </div> : null}
 
         <section aria-label="Today’s acquisition metrics" className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
           <SessionMetric icon="timer" label="Dialer time" value={formatDialerTime(props.todayMetrics?.dialing_seconds)} tone="info" />

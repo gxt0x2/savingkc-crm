@@ -26,7 +26,11 @@ const session = {
   outcomes: {},
   startedAt: '2026-08-20T12:00:00.000Z',
   pausedAt: '2026-08-20T12:05:00.000Z',
+  stopRequestedAt: null,
   endedAt: null,
+  lastInteractionAt: '2026-08-20T12:05:00.000Z',
+  idleExpiresAt: '2026-08-20T12:10:00.000Z',
+  idleTimedOutAt: null,
   updatedAt: '2026-08-20T12:00:00.000Z',
 }
 
