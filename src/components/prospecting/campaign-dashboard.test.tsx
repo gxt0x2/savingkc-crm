@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { hydrateRoot, type Root } from 'react-dom/client'
+import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProspectingCampaignDetail, ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 import { CampaignDashboard } from './campaign-dashboard'
@@ -74,7 +76,7 @@ describe('CampaignDashboard', () => {
     expect(screen.getByRole('button', { name: /Campaign details/ })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('Protected at every action')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Audience workbench' })).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(/Live · Synced/)
+    expect(screen.getByRole('status')).toHaveTextContent('Live · Synced 3:15 PM')
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -140,6 +142,35 @@ describe('CampaignDashboard', () => {
     expect(screen.queryByText('Audience health')).not.toBeInTheDocument()
   })
 
+  it('hydrates the server campaign without browser preset or time-zone drift', async () => {
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, id: 'hydration-campaign', kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
+    const props = { campaigns: [dialerDetail], selectedId: dialerDetail.id, detail: dialerDetail, loading: false, detailLoading: false, actionPending: false, lastRefreshedAt: '2026-08-21T20:15:00.000Z', onSelect: vi.fn(), onCreate: vi.fn(), onDuplicate: vi.fn(), onTransition: vi.fn(), onLaunchDialer: vi.fn() }
+    const container = document.createElement('div')
+    window.localStorage.clear()
+    container.innerHTML = renderToString(<CampaignDashboard {...props} />)
+    window.localStorage.setItem('savingkc:prospecting-session-preset:v1:hydration-campaign', JSON.stringify({
+      startBehavior: 'resume', callerMode: 'static', callerIds: ['+18163100845'], ringCount: 4, notDialedHours: null, notContactedHours: null,
+    }))
+    document.body.appendChild(container)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    let root: Root | null = null
+
+    await act(async () => {
+      root = hydrateRoot(container, <CampaignDashboard {...props} />)
+      await Promise.resolve()
+    })
+
+    try {
+      expect(container.textContent).toContain('Live · Synced 3:15 PM')
+      expect(container.textContent).toContain('7 rings')
+      expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/hydration|did not match/i)
+    } finally {
+      await act(async () => root?.unmount())
+      container.remove()
+      consoleError.mockRestore()
+    }
+  })
+
   it('keeps the same start action after calls have already been worked', () => {
     const dialerDetail: ProspectingCampaignDetail = {
       ...detail,
@@ -185,8 +216,9 @@ describe('CampaignDashboard', () => {
 
     first.unmount()
     render(<CampaignDashboard {...props} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('4 rings'))
+    expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('7 rings')
     fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
+    expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('4 rings')
     expect(screen.getByRole('combobox', { name: 'Not dialed time frame' })).toHaveValue('72')
   })
 

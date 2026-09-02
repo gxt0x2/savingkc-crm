@@ -28,15 +28,14 @@ export function prospectingSessionPresetStorageKey(campaignId: string) {
   return `${PRESET_STORAGE_PREFIX}${campaignId}`
 }
 
-function savedSetup(campaignId: string, campaignCallerId: string | null, initialPreset?: ProspectingDialerSessionSetup | null) {
-  const fallback = initialPreset || initialSetup(campaignCallerId)
-  if (typeof window === 'undefined') return fallback
+function storedSetup(campaignId: string): ProspectingDialerSessionSetup | null {
+  if (typeof window === 'undefined') return null
   try {
     const stored = window.localStorage.getItem(prospectingSessionPresetStorageKey(campaignId))
-    return stored ? parseProspectingDialerSessionSetup(JSON.parse(stored)) : fallback
+    return stored ? parseProspectingDialerSessionSetup(JSON.parse(stored)) : null
   } catch {
     window.localStorage.removeItem(prospectingSessionPresetStorageKey(campaignId))
-    return fallback
+    return null
   }
 }
 
@@ -68,14 +67,19 @@ export function ProspectingSessionSetup({
   writesEnabled,
   onLaunch,
 }: ProspectingSessionSetupProps) {
-  const [applied, setApplied] = useState(() => savedSetup(campaignId, campaignCallerId, initialPreset))
+  const [applied, setApplied] = useState(() => initialPreset || initialSetup(campaignCallerId))
   const [draft, setDraft] = useState(applied)
   const [open, setOpen] = useState(false)
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [presetState, setPresetState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   function openSetup() {
-    setDraft(applied)
+    // Account state remains authoritative for the first paint and launch action.
+    // An older browser-only fallback is restored only when the agent opens setup.
+    const stored = initialPreset ? null : storedSetup(campaignId)
+    const setup = stored || applied
+    if (stored) setApplied(stored)
+    setDraft(setup)
     setSelectionError(null)
     setOpen(true)
   }
