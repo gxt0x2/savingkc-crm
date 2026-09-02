@@ -40,6 +40,24 @@ describe('ProspectingWorkspace live campaign refresh', () => {
     vi.unstubAllGlobals()
   })
 
+  it('paints the server campaign snapshot immediately without a legacy loading pass', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<ProspectingWorkspace
+      initialCampaigns={[baseCampaign]}
+      initialSelectedId={baseCampaign.id}
+      initialDetail={baseCampaign}
+      initialRefreshedAt="2026-09-02T12:00:00.000Z"
+    />)
+
+    expect(screen.getByText('Sent 1')).toBeVisible()
+    expect(screen.getByText('ready')).toBeVisible()
+    expect(screen.queryByText('loading')).not.toBeInTheDocument()
+    await flushEffects()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('quietly refreshes only the selected active campaign while the page is visible', async () => {
     let detailLoads = 0
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
