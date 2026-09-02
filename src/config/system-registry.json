@@ -25,6 +25,11 @@
         "reason": "Update the visible in-call elapsed-time counter once per second; this timer does not poll the network."
       },
       {
+        "path": "src/components/dialer/dialer-session-command.tsx",
+        "minimumIntervalMs": 1000,
+        "reason": "Update the visible five-minute session inactivity countdown once per second while a durable calling session is open; this timer does not poll the CRM or a network API."
+      },
+      {
         "path": "src/components/feedback/feedback-form.tsx",
         "minimumIntervalMs": 1000,
         "reason": "Update the visible voice-memo elapsed-time counter once per second only while the signed-in agent is actively recording; this timer does not poll the network."

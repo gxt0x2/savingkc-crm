@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DialerSessionCommand } from './dialer-session-command'
 
 function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSessionCommand>> = {}) {
@@ -45,6 +45,8 @@ function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSess
 }
 
 describe('DialerSessionCommand', () => {
+  afterEach(() => vi.useRealTimers())
+
   it('keeps session status compact without duplicating the seller or phone workspace', () => {
     renderCommand()
 
@@ -140,6 +142,17 @@ describe('DialerSessionCommand', () => {
     const props = renderCommand({ durableStatus: 'paused' })
     fireEvent.click(screen.getByRole('button', { name: 'Resume session' }))
     expect(props.onResume).toHaveBeenCalledOnce()
+  })
+
+  it('shows a live five-minute inactivity countdown without changing dialer time', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-01T16:00:00.000Z'))
+    renderCommand({ idleExpiresAt: '2026-09-01T16:05:00.000Z' })
+
+    expect(screen.getByRole('timer')).toHaveTextContent('5:00 remaining')
+    await act(async () => { await vi.advanceTimersByTimeAsync(61_000) })
+    expect(screen.getByRole('timer')).toHaveTextContent('3:59 remaining')
+    expect(screen.getByText('1:07:05')).toBeVisible()
   })
 
   it('blocks resume while a paused call still needs to hang up and save its outcome', () => {

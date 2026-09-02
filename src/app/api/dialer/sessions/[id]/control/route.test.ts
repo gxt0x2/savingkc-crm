@@ -64,8 +64,26 @@ describe('dialer session controller lease route', () => {
       actor,
       sessionId,
       controllerToken,
+      userActive: false,
     })
     expect(response.headers.get('cache-control')).toBe('private, no-store')
+  })
+
+  it('distinguishes real agent activity from a passive controller heartbeat', async () => {
+    mocks.heartbeatDialerSessionControl.mockResolvedValue({
+      session: { id: sessionId, status: 'active' },
+      control: { generation: 2 },
+    })
+
+    const response = await PATCH(controlRequest('PATCH', { userActive: true }), context)
+
+    expect(response.status).toBe(200)
+    expect(mocks.heartbeatDialerSessionControl).toHaveBeenCalledWith({
+      actor,
+      sessionId,
+      controllerToken,
+      userActive: true,
+    })
   })
 
   it('atomically transfers control with the observed generation and request id', async () => {

@@ -27,6 +27,8 @@ interface DialerSessionRow {
   started_at: string
   ended_at: string | null
   paused_at: string | null
+  last_interaction_at: string
+  idle_timeout_seconds: number
   status: string
 }
 
@@ -37,7 +39,12 @@ interface DialerSessionEventRow {
 }
 
 interface DialerSessionAttemptRow {
+  session_id: string
+  created_at: string
   started_at: string | null
+  connected_at: string | null
+  ended_at: string | null
+  dispositioned_at: string | null
   reached: boolean | null
 }
 
@@ -154,44 +161,79 @@ export function summarizeDialerPerformance(input: SummarizeDialerPerformanceInpu
     values.push(event)
     eventsBySession.set(event.session_id, values)
   }
+  const attemptsBySession = new Map<string, DialerSessionAttemptRow[]>()
+  for (const attempt of input.attempts) {
+    const values = attemptsBySession.get(attempt.session_id) ?? []
+    values.push(attempt)
+    attemptsBySession.set(attempt.session_id, values)
+  }
 
   for (const session of input.sessions) {
     const sessionStart = validTime(session.started_at)
     if (sessionStart === null || sessionStart >= summaryEnd) continue
     const sessionEnd = Math.min(validTime(session.ended_at) ?? summaryEnd, summaryEnd)
     if (sessionEnd <= rangeStart) continue
-    const timeline = [...(eventsBySession.get(session.id) ?? [])]
-      .flatMap((event) => {
-        const at = validTime(event.created_at)
-        return at === null ? [] : [{ at, type: event.event_type }]
-      })
+    const idleTimeoutMs = Math.max(1, session.idle_timeout_seconds || 300) * 1_000
+    const timeline: Array<{ at: number; type: 'activity' | 'call_start' | 'call_end' | 'pause' | 'resume' | 'stop' }> = []
+    for (const event of eventsBySession.get(session.id) ?? []) {
+      const at = validTime(event.created_at)
+      if (at === null) continue
+      if (['session_pause', 'session_pause_requested', 'session_idle_stop_requested'].includes(event.event_type)) timeline.push({ at, type: 'pause' })
+      else if (['session_stop', 'session_idle_timeout'].includes(event.event_type)) timeline.push({ at, type: 'stop' })
+      else if (['session_resume', 'session_started'].includes(event.event_type)) timeline.push({ at, type: 'resume' })
+      else timeline.push({ at, type: 'activity' })
+    }
+    for (const attempt of attemptsBySession.get(session.id) ?? []) {
+      for (const value of [attempt.created_at, attempt.started_at, attempt.dispositioned_at]) {
+        const at = validTime(value)
+        if (at !== null) timeline.push({ at, type: 'activity' })
+      }
+      const connectedAt = validTime(attempt.connected_at)
+      const endedAt = validTime(attempt.ended_at)
+      if (connectedAt !== null) timeline.push({ at: connectedAt, type: 'call_start' })
+      if (endedAt !== null) timeline.push({ at: endedAt, type: 'call_end' })
+    }
     if (session.status === 'paused' && session.paused_at) {
       const pausedAt = validTime(session.paused_at)
-      if (pausedAt !== null && !timeline.some((event) => event.type === 'session_pause' && event.at === pausedAt)) {
-        timeline.push({ at: pausedAt, type: 'session_pause' })
+      if (pausedAt !== null && !timeline.some((event) => event.type === 'pause' && event.at === pausedAt)) {
+        timeline.push({ at: pausedAt, type: 'pause' })
       }
     }
     timeline.sort((left, right) => left.at - right.at)
 
-    let active = true
-    let cursor = Math.max(sessionStart, rangeStart)
+    let sessionOpen = true
+    let callActive = false
+    let cursor = sessionStart
+    let idleDeadline = sessionStart + idleTimeoutMs
+    const accrueUntil = (at: number) => {
+      if (!sessionOpen || at <= cursor) return
+      const activeEnd = callActive ? at : Math.min(at, idleDeadline)
+      if (cursor < activeEnd) addActiveInterval(rows, cursor, activeEnd)
+      cursor = at
+    }
     for (const event of timeline) {
-      if (event.at <= sessionStart) continue
-      if (event.at < rangeStart) {
-        if (event.type === 'session_pause' || event.type === 'session_stop') active = false
-        if (event.type === 'session_resume' || event.type === 'session_started') active = true
-        continue
-      }
+      if (event.at < sessionStart) continue
       if (event.at >= sessionEnd) break
-      if ((event.type === 'session_pause' || event.type === 'session_stop') && active) {
-        addActiveInterval(rows, cursor, event.at)
-        active = false
-      } else if ((event.type === 'session_resume' || event.type === 'session_started') && !active) {
-        active = true
+      accrueUntil(event.at)
+      if (event.type === 'pause' || event.type === 'stop') {
+        sessionOpen = false
+        callActive = false
+      } else if (event.type === 'resume') {
+        sessionOpen = true
+        callActive = false
         cursor = event.at
+        idleDeadline = event.at + idleTimeoutMs
+      } else if (event.type === 'call_start' && sessionOpen) {
+        callActive = true
+        idleDeadline = Math.max(idleDeadline, event.at + idleTimeoutMs)
+      } else if (event.type === 'call_end' && sessionOpen) {
+        callActive = false
+        idleDeadline = event.at + idleTimeoutMs
+      } else if (event.type === 'activity' && sessionOpen) {
+        idleDeadline = event.at + idleTimeoutMs
       }
     }
-    if (active && cursor < sessionEnd) addActiveInterval(rows, cursor, sessionEnd)
+    accrueUntil(sessionEnd)
   }
 
   for (const attempt of input.attempts) {
@@ -232,7 +274,7 @@ export async function loadDialerDailyPerformance(input: {
   const db = supabaseAdmin()
   const sessionQuery = db
     .from('dialer_sessions')
-    .select('id, started_at, ended_at, paused_at, status')
+    .select('id, started_at, ended_at, paused_at, last_interaction_at, idle_timeout_seconds, status')
     .ilike('actor_email', input.actorEmail.trim().toLowerCase())
     .lt('started_at', rangeEnd)
     .or(`ended_at.is.null,ended_at.gte.${rangeStart}`)
@@ -265,7 +307,7 @@ export async function loadDialerDailyPerformance(input: {
         .order('created_at', { ascending: true })
         .limit(MAX_ACTIVITY_ROWS),
       db.from('dialer_session_attempts')
-        .select('started_at, reached')
+        .select('session_id, created_at, started_at, connected_at, ended_at, dispositioned_at, reached')
         .in('session_id', sessionIds)
         .gte('started_at', rangeStart)
         .lt('started_at', rangeEnd)
