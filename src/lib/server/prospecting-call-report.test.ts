@@ -13,14 +13,26 @@ function reportPayload() {
   return {
     campaign: { id: campaignId, name: 'Jackson · Tax 3+ · Sep 2', status: 'completed', currentRunNumber: 2 },
     runNumber: 2,
+    filters: {
+      agentEmail: 'casey@savingkc.com',
+      callerId: '+18163100845',
+      search: null,
+      agents: [{ email: 'casey@savingkc.com', name: 'Casey' }],
+      callerIds: ['+18163100845'],
+    },
     metrics: { sessions: 1, agents: 1, attempts: 3, providerConnected: 2, reached: 1, resultsSaved: 2, failed: 1, uniqueNumbers: 3, durationSeconds: 88, skips: 0 },
     outcomes: { spoke_with_owner: 1, no_answer: 1 },
     runs: [{ runNumber: 2, sessions: 1, resultsSaved: 2, reached: 1, skips: 0, startedAt: '2026-09-02T18:00:00.000Z', lastActivityAt: '2026-09-02T19:00:00.000Z' }],
     agents: [{ email: 'casey@savingkc.com', name: 'Casey', sessions: 1, resultsSaved: 2, reached: 1, skips: 0 }],
-    sessions: [{ id: sessionId, campaignId, campaignName: 'Jackson · Tax 3+ · Sep 2', runNumber: 2, agentName: 'Casey', agentEmail: 'casey@savingkc.com', status: 'completed', queueSize: 3, resultsSaved: 2, reached: 1, skips: 0, outcomes: { spoke_with_owner: 1, no_answer: 1 }, startedAt: '2026-09-02T18:00:00.000Z', endedAt: '2026-09-02T19:00:00.000Z', updatedAt: '2026-09-02T19:00:00.000Z' }],
+    sessions: [{ id: sessionId, campaignId, campaignName: 'Jackson · Tax 3+ · Sep 2', runNumber: 2, agentName: 'Casey', agentEmail: 'casey@savingkc.com', status: 'completed', queueSize: 3, calls: 3, connected: 2, uniqueNumbers: 3, resultsSaved: 2, reached: 1, skips: 0, durationSeconds: 88, sessionDurationSeconds: 3600, outcomes: { spoke_with_owner: 1, no_answer: 1 }, startedAt: '2026-09-02T18:00:00.000Z', endedAt: '2026-09-02T19:00:00.000Z', updatedAt: '2026-09-02T19:00:00.000Z' }],
     attempts: {
-      items: [{ id: attemptId, sessionId, campaignId, campaignName: 'Jackson · Tax 3+ · Sep 2', runNumber: 2, agentName: 'Casey', agentEmail: 'casey@savingkc.com', sellerName: 'Helen Seller', propertyAddress: '123 Main St, Kansas City MO 64131', phone: '+18165550123', callerId: '+18163100845', status: 'dispositioned', disposition: 'spoke_with_owner', reached: true, durationSeconds: 88, createdAt: '2026-09-02T18:01:00.000Z', startedAt: '2026-09-02T18:01:01.000Z', connectedAt: '2026-09-02T18:01:05.000Z', endedAt: '2026-09-02T18:02:29.000Z' }],
+      items: [{ id: attemptId, sessionId, campaignId, campaignName: 'Jackson · Tax 3+ · Sep 2', runNumber: 2, agentName: 'Casey', agentEmail: 'casey@savingkc.com', sellerName: 'Helen Seller', propertyAddress: '123 Main St, Kansas City MO 64131', phone: '+18165550123', callerId: '+18163100845', status: 'dispositioned', disposition: 'spoke_with_owner', reached: true, durationSeconds: 88, recordingSid: 'RE111', postCallStatus: 'ready', createdAt: '2026-09-02T18:01:00.000Z', startedAt: '2026-09-02T18:01:01.000Z', connectedAt: '2026-09-02T18:01:05.000Z', endedAt: '2026-09-02T18:02:29.000Z' }],
       pageInfo: { limit: 50, offset: 50, total: 3, hasMore: false },
+    },
+    selectedSessionCalls: [],
+    recordings: {
+      items: [{ id: attemptId, sessionId, campaignId, campaignName: 'Jackson · Tax 3+ · Sep 2', runNumber: 2, agentName: 'Casey', agentEmail: 'casey@savingkc.com', sellerName: 'Helen Seller', propertyAddress: '123 Main St, Kansas City MO 64131', phone: '+18165550123', callerId: '+18163100845', status: 'dispositioned', disposition: 'spoke_with_owner', reached: true, durationSeconds: 88, recordingSid: 'RE111', postCallStatus: 'ready', createdAt: '2026-09-02T18:01:00.000Z', startedAt: '2026-09-02T18:01:01.000Z', connectedAt: '2026-09-02T18:01:05.000Z', endedAt: '2026-09-02T18:02:29.000Z' }],
+      total: 1,
     },
   }
 }
@@ -47,12 +59,16 @@ describe('Prospecting call report', () => {
       { runNumber: 2, page: 2, limit: 50 },
     )
 
-    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v1', {
+    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v2', {
       p_campaign_id: campaignId,
       p_actor_email: 'casey@savingkc.com',
       p_run_number: 2,
       p_from: null,
       p_to_exclusive: null,
+      p_agent_email: null,
+      p_caller_id: null,
+      p_search: null,
+      p_session_id: null,
       p_limit: 50,
       p_offset: 50,
     })
@@ -64,11 +80,28 @@ describe('Prospecting call report', () => {
 
     await getProspectingCallReport({ email: 'casey@savingkc.com', name: 'Casey' }, null, { from: '2026-09-03', to: '2026-09-03' })
 
-    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v1', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v2', expect.objectContaining({
       p_campaign_id: null,
       p_run_number: null,
       p_from: '2026-09-03T05:00:00.000Z',
       p_to_exclusive: '2026-09-04T05:00:00.000Z',
+    }))
+  })
+
+  it('passes bounded agent, caller, search, and session drill-down filters', async () => {
+    mocks.rpc.mockResolvedValue({ data: reportPayload(), error: null })
+
+    await getProspectingCallReport(
+      { email: 'casey@savingkc.com', name: 'Casey' },
+      campaignId,
+      { agentEmail: 'casey@savingkc.com', callerId: '+18163100845', search: 'Main St', sessionId },
+    )
+
+    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v2', expect.objectContaining({
+      p_agent_email: 'casey@savingkc.com',
+      p_caller_id: '+18163100845',
+      p_search: 'Main St',
+      p_session_id: sessionId,
     }))
   })
 

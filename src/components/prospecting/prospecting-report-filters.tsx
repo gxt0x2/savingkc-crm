@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useRef, useState, useTransition } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { formatPhone } from '@/lib/format'
 import { resolveMyDayDateRange, type MyDayDateRange, type MyDayRangePreset, type MyDayRangeRequest } from '@/lib/my-day-range'
 import { cn } from '@/lib/utils'
 
@@ -26,9 +27,12 @@ function compactDates(range: MyDayDateRange) {
   return `${format.format(new Date(`${range.from}T12:00:00Z`))} – ${format.format(new Date(`${range.to}T12:00:00Z`))}`
 }
 
-function reportUrl(campaignId: string, runNumber: string, range: MyDayDateRange) {
+function reportUrl(campaignId: string, runNumber: string, range: MyDayDateRange, agentEmail: string, callerId: string, view: string) {
   const query = new URLSearchParams({ campaign: campaignId, range: range.preset })
   if (campaignId !== 'all' && runNumber) query.set('run', runNumber)
+  if (agentEmail) query.set('agent', agentEmail)
+  if (callerId) query.set('caller', callerId)
+  if (view !== 'calls') query.set('view', view)
   if (range.preset === 'custom') {
     query.set('from', range.from)
     query.set('to', range.to)
@@ -41,19 +45,31 @@ export function ProspectingReportFilters({
   campaignId,
   runNumber,
   runs,
+  agents,
+  callerIds,
+  agentEmail,
+  callerId,
   range,
   today,
+  view,
 }: {
   campaigns: CampaignOption[]
   campaignId: string | null
   runNumber: number | null
   runs: RunOption[]
+  agents: Array<{ email: string; name: string }>
+  callerIds: string[]
+  agentEmail: string | null
+  callerId: string | null
   range: MyDayDateRange
   today: string
+  view: string
 }) {
   const router = useRouter()
   const [selectedCampaign, setSelectedCampaign] = useState(campaignId || 'all')
   const [selectedRun, setSelectedRun] = useState(runNumber ? String(runNumber) : '')
+  const [selectedAgent, setSelectedAgent] = useState(agentEmail || '')
+  const [selectedCallerId, setSelectedCallerId] = useState(callerId || '')
   const [selectedRange, setSelectedRange] = useState(range)
   const [rangeOpen, setRangeOpen] = useState(false)
   const [customFrom, setCustomFrom] = useState(range.from)
@@ -78,7 +94,7 @@ export function ProspectingReportFilters({
   }, [rangeOpen])
 
   function navigate(nextRange = selectedRange) {
-    startTransition(() => router.push(reportUrl(selectedCampaign, selectedRun, nextRange)))
+    startTransition(() => router.push(reportUrl(selectedCampaign, selectedRun, nextRange, selectedAgent, selectedCallerId, view)))
   }
 
   function applyRange(request: MyDayRangeRequest) {
@@ -96,9 +112,9 @@ export function ProspectingReportFilters({
   const customInvalid = !customFrom || !customTo || customFrom > customTo || customTo > today
 
   return (
-    <form onSubmit={submit} className="crm-panel grid gap-3 rounded-2xl p-4 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_minmax(10rem,auto)_minmax(13rem,auto)_auto] xl:items-end">
+    <form onSubmit={submit} className="crm-panel grid gap-3 rounded-2xl p-4 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,1.2fr)_minmax(9rem,0.65fr)_minmax(11rem,0.9fr)_minmax(11rem,0.9fr)_minmax(13rem,1fr)_auto] xl:items-end">
       <label className="text-xs font-black text-[var(--crm-ink)]">Campaign
-        <select name="campaign" aria-label="Report campaign" value={selectedCampaign} onChange={(event) => { setSelectedCampaign(event.target.value); if (event.target.value === 'all') setSelectedRun('') }} className="crm-field mt-1.5 h-12 w-full rounded-xl px-3 text-sm font-bold">
+        <select name="campaign" aria-label="Report campaign" value={selectedCampaign} onChange={(event) => { setSelectedCampaign(event.target.value); setSelectedRun(''); setSelectedAgent(''); setSelectedCallerId('') }} className="crm-field mt-1.5 h-12 w-full rounded-xl px-3 text-sm font-bold">
           <option value="all">All campaigns</option>
           {campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}
         </select>
@@ -107,6 +123,18 @@ export function ProspectingReportFilters({
         <select name="run" aria-label="Campaign run" value={selectedRun} onChange={(event) => setSelectedRun(event.target.value)} disabled={selectedCampaign === 'all'} className="crm-field mt-1.5 h-12 w-full rounded-xl px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-55">
           <option value="">All runs</option>
           {runs.map((run) => <option key={run.runNumber} value={run.runNumber}>Run {run.runNumber}</option>)}
+        </select>
+      </label>
+      <label className="text-xs font-black text-[var(--crm-ink)]">Agent
+        <select name="agent" aria-label="Report agent" value={selectedAgent} onChange={(event) => setSelectedAgent(event.target.value)} className="crm-field mt-1.5 h-12 w-full rounded-xl px-3 text-sm font-bold">
+          <option value="">All agents</option>
+          {agents.map((agent) => <option key={agent.email} value={agent.email}>{agent.name}</option>)}
+        </select>
+      </label>
+      <label className="text-xs font-black text-[var(--crm-ink)]">Caller ID
+        <select name="caller" aria-label="Report caller ID" value={selectedCallerId} onChange={(event) => setSelectedCallerId(event.target.value)} className="crm-field mt-1.5 h-12 w-full rounded-xl px-3 text-sm font-bold">
+          <option value="">All caller IDs</option>
+          {callerIds.map((number) => <option key={number} value={number}>{formatPhone(number)}</option>)}
         </select>
       </label>
       <div ref={rangeContainer} className="relative">
