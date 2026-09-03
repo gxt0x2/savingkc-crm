@@ -81,6 +81,18 @@ export interface ProspectingCallReportAttempt {
   endedAt: string | null
 }
 
+export const PROSPECTING_CALL_SORTS = ['called', 'campaign', 'seller', 'number', 'result', 'agent', 'run', 'duration', 'caller'] as const
+export type ProspectingCallSort = typeof PROSPECTING_CALL_SORTS[number]
+export type ProspectingCallSortDirection = 'asc' | 'desc'
+
+export function prospectingCallSort(value: string | null | undefined): ProspectingCallSort {
+  return PROSPECTING_CALL_SORTS.includes(value as ProspectingCallSort) ? value as ProspectingCallSort : 'called'
+}
+
+export function prospectingCallSortDirection(value: string | null | undefined): ProspectingCallSortDirection {
+  return value === 'asc' ? 'asc' : 'desc'
+}
+
 export interface ProspectingCallReport {
   campaign: {
     id: string | null
@@ -337,6 +349,8 @@ export async function getProspectingCallReport(
     callerId?: string | null
     search?: string | null
     sessionId?: string | null
+    sort?: ProspectingCallSort
+    direction?: ProspectingCallSortDirection
   } = {},
 ): Promise<ProspectingCallReport> {
   if (campaignId !== null && !UUID_PATTERN.test(campaignId)) throw new ProspectingCallReportError('invalid_campaign_id', 400, 'Campaign id is invalid')
@@ -349,6 +363,8 @@ export async function getProspectingCallReport(
   const callerId = options.callerId?.trim() || null
   const search = options.search?.trim() || null
   const sessionId = options.sessionId?.trim() || null
+  const sort = options.sort ?? 'called'
+  const direction = options.direction ?? 'desc'
   if ((runNumber !== null && (!Number.isInteger(runNumber) || runNumber < 1))
     || (campaignId === null && runNumber !== null)
     || !Number.isInteger(page) || page < 1
@@ -360,11 +376,13 @@ export async function getProspectingCallReport(
     || (agentEmail !== null && agentEmail.length > 320)
     || (callerId !== null && callerId.length > 32)
     || (search !== null && search.length > 120)
-    || (sessionId !== null && !UUID_PATTERN.test(sessionId))) {
+    || (sessionId !== null && !UUID_PATTERN.test(sessionId))
+    || !PROSPECTING_CALL_SORTS.includes(sort)
+    || !['asc', 'desc'].includes(direction)) {
     throw new ProspectingCallReportError('invalid_report_request', 400, 'Campaign report filters are invalid')
   }
 
-  const { data, error } = await supabase.rpc('prospecting_campaign_call_report_v2', {
+  const { data, error } = await supabase.rpc('prospecting_campaign_call_report_v3', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_run_number: runNumber,
@@ -374,6 +392,8 @@ export async function getProspectingCallReport(
     p_caller_id: callerId,
     p_search: search,
     p_session_id: sessionId,
+    p_sort: sort,
+    p_direction: direction,
     p_limit: limit,
     p_offset: (page - 1) * limit,
   })

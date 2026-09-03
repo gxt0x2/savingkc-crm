@@ -56,10 +56,10 @@ describe('Prospecting call report', () => {
     const report = await getProspectingCallReport(
       { email: 'casey@savingkc.com', name: 'Casey' },
       campaignId,
-      { runNumber: 2, page: 2, limit: 50 },
+      { runNumber: 2, page: 2, limit: 50, sort: 'result', direction: 'asc' },
     )
 
-    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v2', {
+    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v3', {
       p_campaign_id: campaignId,
       p_actor_email: 'casey@savingkc.com',
       p_run_number: 2,
@@ -69,6 +69,8 @@ describe('Prospecting call report', () => {
       p_caller_id: null,
       p_search: null,
       p_session_id: null,
+      p_sort: 'result',
+      p_direction: 'asc',
       p_limit: 50,
       p_offset: 50,
     })
@@ -80,7 +82,7 @@ describe('Prospecting call report', () => {
 
     await getProspectingCallReport({ email: 'casey@savingkc.com', name: 'Casey' }, null, { from: '2026-09-03', to: '2026-09-03' })
 
-    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v2', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v3', expect.objectContaining({
       p_campaign_id: null,
       p_run_number: null,
       p_from: '2026-09-03T05:00:00.000Z',
@@ -97,7 +99,7 @@ describe('Prospecting call report', () => {
       { agentEmail: 'casey@savingkc.com', callerId: '+18163100845', search: 'Main St', sessionId },
     )
 
-    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v2', expect.objectContaining({
+    expect(mocks.rpc).toHaveBeenCalledWith('prospecting_campaign_call_report_v3', expect.objectContaining({
       p_agent_email: 'casey@savingkc.com',
       p_caller_id: '+18163100845',
       p_search: 'Main St',
