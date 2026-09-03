@@ -150,7 +150,7 @@ export function ProspectingSessionSetup({
   }
 
   return (
-    <div className="min-w-0 space-y-3 text-left lg:w-[38rem]">
+    <div className={`min-w-0 space-y-3 text-left ${showLaunchAction ? 'lg:w-[38rem]' : 'flex-1'}`}>
       <div className="flex flex-col gap-2 sm:flex-row">
         <button type="button" aria-expanded={open} onClick={open ? () => setOpen(false) : openSetup} className="inline-flex min-h-12 flex-1 items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/15 px-4 text-left text-xs font-black text-white hover:bg-white/10">
           <span className="min-w-0"><span className="block text-[9px] uppercase tracking-[0.15em] text-white/45">Session setup</span><span className="mt-1 block truncate">{summary(applied)}</span></span>

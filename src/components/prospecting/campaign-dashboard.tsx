@@ -149,7 +149,7 @@ export function CampaignDashboard({
                   </div>
                   <div className="space-y-3">
                     {detail.status === 'active' ? <ProspectingSessionSetup key={`${detail.id}:${freshRerun ? 'fresh' : 'existing'}`} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} freshRun={freshRerun} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} /> : null}
-                    {detail.status === 'completed' ? <div className="flex flex-col gap-2 sm:flex-row">
+                    {detail.status === 'completed' ? <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-[38rem]">
                       <ProspectingSessionSetup key={`${detail.id}:completed`} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} showLaunchAction={false} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} />
                       {writesEnabled && onRerun ? <button type="button" onClick={onRerun} disabled={actionPending} className="crm-primary-button inline-flex min-h-12 min-w-48 items-center justify-center gap-2 rounded-xl px-5 text-xs font-black disabled:opacity-50"><Icon name="refresh" className="text-lg" />Run list again</button> : null}
                     </div> : null}
