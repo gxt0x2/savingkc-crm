@@ -76,6 +76,7 @@ export function ProspectingWorkspace({
   const [form, setForm] = useState<CampaignForm>(freshCampaignForm)
   const [saving, setSaving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
+  const [freshRerunCampaignId, setFreshRerunCampaignId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(initialError)
   const [notice, setNotice] = useState<string | null>(null)
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(initialRefreshedAt)
@@ -298,9 +299,8 @@ export function ProspectingWorkspace({
     try {
       const result = await jsonRequest<{ campaign: { runNumber: number; resetMembers: number } }>(`/api/prospecting/campaigns/${detail.id}/rerun`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmed: true }),
       })
+      setFreshRerunCampaignId(detail.id)
       setNotice(`Run ${result.campaign.runNumber} is ready. ${result.campaign.resetMembers} callable seller${result.campaign.resetMembers === 1 ? '' : 's'} reopened; prior call results were preserved.`)
       await Promise.all([loadCampaigns(), loadDetail(detail.id)])
     } catch (rerunError) {
@@ -462,13 +462,14 @@ export function ProspectingWorkspace({
       lastRefreshedAt={lastRefreshedAt}
       liveRefreshDelayed={liveRefreshDelayed}
       writesEnabled={writesEnabled}
-      onSelect={setSelectedId}
+      onSelect={(id) => { setFreshRerunCampaignId((current) => current === id ? current : null); setSelectedId(id) }}
       onCreate={openStudio}
       onDuplicate={duplicateCampaign}
       onEdit={editCampaign}
       onTransition={(status) => void transition(status)}
       onLaunchDialer={(setup) => void launchDialer(setup)}
       onRerun={() => void rerunCampaign()}
+      freshRerun={detail?.id === freshRerunCampaignId}
       onAudienceChanged={detail ? async () => { await loadDetail(detail.id) } : undefined}
     />}
   </>

@@ -36,7 +36,9 @@ describe('prospecting call reporting and rerun migration', () => {
   it('reports from campaign sessions and the durable attempt ledger', () => {
     expect(migration).toContain('CREATE OR REPLACE FUNCTION public.prospecting_campaign_call_report_v1')
     expect(migration).toContain('FROM public.dialer_session_attempts attempt')
-    expect(migration).toContain('JOIN session_scope session ON session.id = attempt.session_id')
+    expect(migration).toContain('JOIN session_candidates session ON session.id = attempt.session_id')
+    expect(migration).toContain("'name', CASE WHEN p_campaign_id IS NULL THEN 'All campaigns'")
+    expect(migration).toContain('attempt.created_at >= p_from')
     expect(migration).toContain("'uniqueNumbers'")
     expect(migration).toContain("'outcomes'")
     expect(migration).toContain("'agents'")

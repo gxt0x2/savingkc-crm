@@ -186,7 +186,7 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText(/Your progress is preserved if you stop/i)).toBeVisible()
   })
 
-  it('turns a completed zero state into reporting and an explicit safe rerun', () => {
+  it('shows session setup and immediately prepares a completed list to run again', () => {
     const rerun = vi.fn()
     const dialerDetail: ProspectingCampaignDetail = {
       ...detail,
@@ -201,12 +201,20 @@ describe('CampaignDashboard', () => {
 
     expect(screen.getByText('0', { selector: 'p' })).toBeVisible()
     expect(screen.getByText(/This run is complete/i)).toBeVisible()
-    expect(screen.getByRole('link', { name: 'View call report' })).toHaveAttribute('href', `/prospecting/reports?campaign=${dialerDetail.id}`)
+    expect(screen.getByRole('button', { name: /Session setup/ })).toBeVisible()
+    expect(screen.queryByRole('link', { name: 'View call report' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Run list again' }))
-    expect(screen.getByRole('dialog', { name: 'Run this list again?' })).toBeVisible()
-    expect(screen.getByText(/DNCs, disconnected numbers, and suppressions stay unchanged/i)).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm new run' }))
     expect(rerun).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog', { name: 'Run this list again?' })).not.toBeInTheDocument()
+  })
+
+  it('turns a freshly rerun campaign into Start calling', () => {
+    const launch = vi.fn()
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} freshRerun onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={launch} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start calling' }))
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ startBehavior: 'first_unworked' }))
   })
 
   it('lets the agent deliberately restart from the first remaining unworked seller', () => {

@@ -1,4 +1,5 @@
 import type { AuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { centralMidnightUtc, shiftMyDayDate } from '@/lib/my-day-range'
 import { supabase } from '@/lib/supabase-lazy'
 
 export interface ProspectingCallReportMetrics {
@@ -35,6 +36,8 @@ export interface ProspectingCallReportAgent {
 
 export interface ProspectingCallReportSession {
   id: string
+  campaignId: string
+  campaignName: string
   runNumber: number
   agentName: string
   agentEmail: string
@@ -52,6 +55,8 @@ export interface ProspectingCallReportSession {
 export interface ProspectingCallReportAttempt {
   id: string
   sessionId: string
+  campaignId: string
+  campaignName: string
   runNumber: number
   agentName: string
   agentEmail: string
@@ -71,10 +76,10 @@ export interface ProspectingCallReportAttempt {
 
 export interface ProspectingCallReport {
   campaign: {
-    id: string
+    id: string | null
     name: string
     status: string
-    currentRunNumber: number
+    currentRunNumber: number | null
   }
   runNumber: number | null
   metrics: ProspectingCallReportMetrics
@@ -101,6 +106,7 @@ export class ProspectingCallReportError extends Error {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 function record(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -161,10 +167,10 @@ export function parseProspectingCallReport(value: unknown): ProspectingCallRepor
 
   return {
     campaign: {
-      id: text(campaign.id, 'Campaign id'),
+      id: optionalText(campaign.id),
       name: text(campaign.name, 'Campaign name'),
       status: text(campaign.status, 'Campaign status'),
-      currentRunNumber: positiveInteger(campaign.currentRunNumber, 'Current run'),
+      currentRunNumber: campaign.currentRunNumber == null ? null : positiveInteger(campaign.currentRunNumber, 'Current run'),
     },
     runNumber: root.runNumber == null ? null : positiveInteger(root.runNumber, 'Run'),
     metrics: {
@@ -207,6 +213,8 @@ export function parseProspectingCallReport(value: unknown): ProspectingCallRepor
       const row = record(value, 'Session')
       return {
         id: text(row.id, 'Session id'),
+        campaignId: text(row.campaignId, 'Session campaign id'),
+        campaignName: text(row.campaignName, 'Session campaign name'),
         runNumber: positiveInteger(row.runNumber, 'Session run'),
         agentName: text(row.agentName, 'Session agent'),
         agentEmail: text(row.agentEmail, 'Session agent email'),
@@ -227,6 +235,8 @@ export function parseProspectingCallReport(value: unknown): ProspectingCallRepor
         return {
           id: text(row.id, 'Attempt id'),
           sessionId: text(row.sessionId, 'Attempt session'),
+          campaignId: text(row.campaignId, 'Attempt campaign id'),
+          campaignName: text(row.campaignName, 'Attempt campaign name'),
           runNumber: positiveInteger(row.runNumber, 'Attempt run'),
           agentName: text(row.agentName, 'Attempt agent'),
           agentEmail: text(row.agentEmail, 'Attempt agent email'),
@@ -267,16 +277,23 @@ function reportDatabaseError(error: { message?: string; code?: string } | null |
 
 export async function getProspectingCallReport(
   actor: AuthenticatedActor,
-  campaignId: string,
-  options: { runNumber?: number | null; page?: number; limit?: number } = {},
+  campaignId: string | null,
+  options: { runNumber?: number | null; page?: number; limit?: number; from?: string | null; to?: string | null } = {},
 ): Promise<ProspectingCallReport> {
-  if (!UUID_PATTERN.test(campaignId)) throw new ProspectingCallReportError('invalid_campaign_id', 400, 'Campaign id is invalid')
+  if (campaignId !== null && !UUID_PATTERN.test(campaignId)) throw new ProspectingCallReportError('invalid_campaign_id', 400, 'Campaign id is invalid')
   const runNumber = options.runNumber ?? null
   const page = options.page ?? 1
   const limit = options.limit ?? 50
+  const from = options.from ?? null
+  const to = options.to ?? null
   if ((runNumber !== null && (!Number.isInteger(runNumber) || runNumber < 1))
+    || (campaignId === null && runNumber !== null)
     || !Number.isInteger(page) || page < 1
-    || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    || !Number.isInteger(limit) || limit < 1 || limit > 100
+    || ((from === null) !== (to === null))
+    || (from !== null && to !== null && (
+      !DATE_KEY_PATTERN.test(from) || !DATE_KEY_PATTERN.test(to) || from > to || shiftMyDayDate(from, 89) < to
+    ))) {
     throw new ProspectingCallReportError('invalid_report_request', 400, 'Campaign report filters are invalid')
   }
 
@@ -284,6 +301,8 @@ export async function getProspectingCallReport(
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_run_number: runNumber,
+    p_from: from === null ? null : centralMidnightUtc(from).toISOString(),
+    p_to_exclusive: to === null ? null : centralMidnightUtc(shiftMyDayDate(to, 1)).toISOString(),
     p_limit: limit,
     p_offset: (page - 1) * limit,
   })

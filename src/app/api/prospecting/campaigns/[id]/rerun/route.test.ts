@@ -29,16 +29,8 @@ describe('prospecting campaign rerun route', () => {
     mocks.rerun.mockResolvedValue({ id: campaignId, status: 'active', runNumber: 2, resetMembers: 61 })
   })
 
-  it('requires an explicit confirmation before reopening completed members', async () => {
-    const response = await POST(request({}), context)
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ code: 'rerun_confirmation_required' })
-    expect(mocks.rerun).not.toHaveBeenCalled()
-  })
-
   it('starts a new run under the authenticated actor', async () => {
-    const response = await POST(request({ confirmed: true }), context)
+    const response = await POST(request({}), context)
 
     expect(response.status).toBe(200)
     expect(mocks.rerun).toHaveBeenCalledWith(
@@ -50,7 +42,7 @@ describe('prospecting campaign rerun route', () => {
     })
   })
 
-  it('rejects anonymous reruns before reading the request body', async () => {
+  it('rejects anonymous reruns without touching the request body', async () => {
     mocks.actor.mockResolvedValue(null)
     const input = request({ confirmed: true })
     const read = vi.spyOn(input, 'text')

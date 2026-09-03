@@ -179,6 +179,8 @@ CREATE OR REPLACE FUNCTION public.prospecting_campaign_call_report_v1(
   p_campaign_id uuid,
   p_actor_email text,
   p_run_number integer DEFAULT NULL,
+  p_from timestamptz DEFAULT NULL,
+  p_to_exclusive timestamptz DEFAULT NULL,
   p_limit integer DEFAULT 50,
   p_offset integer DEFAULT 0
 )
@@ -194,30 +196,55 @@ DECLARE
 BEGIN
   IF actor_key = '' THEN RAISE EXCEPTION 'invalid_actor'; END IF;
   IF p_run_number IS NOT NULL AND p_run_number < 1 THEN RAISE EXCEPTION 'invalid_run_number'; END IF;
+  IF p_campaign_id IS NULL AND p_run_number IS NOT NULL THEN RAISE EXCEPTION 'run_requires_campaign'; END IF;
+  IF (p_from IS NULL) <> (p_to_exclusive IS NULL)
+    OR (p_from IS NOT NULL AND (p_from >= p_to_exclusive OR p_to_exclusive - p_from > interval '90 days')) THEN
+    RAISE EXCEPTION 'invalid_report_range';
+  END IF;
   IF p_limit < 1 OR p_limit > 100 OR p_offset < 0 OR p_offset > 100000 THEN
     RAISE EXCEPTION 'invalid_report_page';
   END IF;
 
-  SELECT * INTO campaign_row
-  FROM public.prospecting_campaigns campaign
-  WHERE campaign.id = p_campaign_id
-    AND (
-      lower(campaign.owner_email) = actor_key
-      OR (campaign.kind = 'dialer' AND campaign.status = 'active')
-      OR EXISTS (
-        SELECT 1
-        FROM public.dialer_sessions prior_session
-        WHERE prior_session.prospecting_campaign_id = campaign.id
-          AND lower(prior_session.actor_email) = actor_key
-      )
-    );
-  IF NOT FOUND THEN RAISE EXCEPTION 'campaign_not_found'; END IF;
-  IF campaign_row.kind <> 'dialer' THEN RAISE EXCEPTION 'invalid_campaign_kind'; END IF;
+  IF p_campaign_id IS NOT NULL THEN
+    SELECT * INTO campaign_row
+    FROM public.prospecting_campaigns campaign
+    WHERE campaign.id = p_campaign_id
+      AND (
+        lower(campaign.owner_email) = actor_key
+        OR (campaign.kind = 'dialer' AND campaign.status = 'active')
+        OR EXISTS (
+          SELECT 1
+          FROM public.dialer_sessions prior_session
+          WHERE prior_session.prospecting_campaign_id = campaign.id
+            AND lower(prior_session.actor_email) = actor_key
+        )
+      );
+    IF NOT FOUND THEN RAISE EXCEPTION 'campaign_not_found'; END IF;
+    IF campaign_row.kind <> 'dialer' THEN RAISE EXCEPTION 'invalid_campaign_kind'; END IF;
+  END IF;
 
   RETURN (
-    WITH all_session_scope AS MATERIALIZED (
+    WITH campaign_scope AS MATERIALIZED (
+      SELECT campaign.id, campaign.name, campaign.status, campaign.dialer_run_number
+      FROM public.prospecting_campaigns campaign
+      WHERE campaign.kind = 'dialer'
+        AND (p_campaign_id IS NULL OR campaign.id = p_campaign_id)
+        AND (
+          lower(campaign.owner_email) = actor_key
+          OR campaign.status = 'active'
+          OR EXISTS (
+            SELECT 1
+            FROM public.dialer_sessions prior_session
+            WHERE prior_session.prospecting_campaign_id = campaign.id
+              AND lower(prior_session.actor_email) = actor_key
+          )
+        )
+    ),
+    session_candidates AS MATERIALIZED (
       SELECT
         session.id,
+        campaign.id AS campaign_id,
+        campaign.name AS campaign_name,
         session.actor_email,
         session.agent_name,
         session.status,
@@ -231,11 +258,7 @@ BEGIN
         session.updated_at,
         session.campaign_run_number
       FROM public.dialer_sessions session
-      WHERE session.prospecting_campaign_id = p_campaign_id
-    ),
-    session_scope AS MATERIALIZED (
-      SELECT *
-      FROM all_session_scope session
+      JOIN campaign_scope campaign ON campaign.id = session.prospecting_campaign_id
       WHERE p_run_number IS NULL OR session.campaign_run_number = p_run_number
     ),
     attempt_scope AS MATERIALIZED (
@@ -243,9 +266,18 @@ BEGIN
         attempt.*,
         session.actor_email,
         session.agent_name,
-        session.campaign_run_number
+        session.campaign_run_number,
+        session.campaign_id,
+        session.campaign_name
       FROM public.dialer_session_attempts attempt
-      JOIN session_scope session ON session.id = attempt.session_id
+      JOIN session_candidates session ON session.id = attempt.session_id
+      WHERE (p_from IS NULL OR attempt.created_at >= p_from)
+        AND (p_to_exclusive IS NULL OR attempt.created_at < p_to_exclusive)
+    ),
+    session_scope AS MATERIALIZED (
+      SELECT session.*
+      FROM session_candidates session
+      WHERE EXISTS (SELECT 1 FROM attempt_scope attempt WHERE attempt.session_id = session.id)
     ),
     outcome_rows AS (
       SELECT attempt.disposition, count(*)::integer AS total
@@ -256,37 +288,53 @@ BEGIN
     ),
     run_rows AS (
       SELECT
-        session.campaign_run_number,
-        count(*)::integer AS sessions,
-        sum(session.dials_completed)::integer AS results_saved,
-        sum(session.contacts)::integer AS reached,
-        sum(session.skips)::integer AS skips,
-        min(session.started_at) AS started_at,
-        max(coalesce(session.ended_at, session.updated_at)) AS last_activity_at
-      FROM all_session_scope session
-      GROUP BY session.campaign_run_number
+        attempt.campaign_run_number,
+        count(DISTINCT attempt.session_id)::integer AS sessions,
+        count(*) FILTER (WHERE attempt.status = 'dispositioned')::integer AS results_saved,
+        count(*) FILTER (WHERE attempt.reached = true)::integer AS reached,
+        (SELECT coalesce(sum(session.skips), 0)::integer FROM session_scope session WHERE session.campaign_run_number = attempt.campaign_run_number) AS skips,
+        min(attempt.created_at) AS started_at,
+        max(coalesce(attempt.ended_at, attempt.created_at)) AS last_activity_at
+      FROM attempt_scope attempt
+      GROUP BY attempt.campaign_run_number
     ),
     agent_rows AS (
       SELECT
-        session.actor_email,
-        max(session.agent_name) AS agent_name,
-        count(*)::integer AS sessions,
-        sum(session.dials_completed)::integer AS results_saved,
-        sum(session.contacts)::integer AS reached,
-        sum(session.skips)::integer AS skips
-      FROM session_scope session
-      GROUP BY session.actor_email
+        attempt.actor_email,
+        max(attempt.agent_name) AS agent_name,
+        count(DISTINCT attempt.session_id)::integer AS sessions,
+        count(*) FILTER (WHERE attempt.status = 'dispositioned')::integer AS results_saved,
+        count(*) FILTER (WHERE attempt.reached = true)::integer AS reached,
+        (SELECT coalesce(sum(session.skips), 0)::integer FROM session_scope session WHERE session.actor_email = attempt.actor_email) AS skips
+      FROM attempt_scope attempt
+      GROUP BY attempt.actor_email
     ),
     session_rows AS (
-      SELECT *
-      FROM session_scope
-      ORDER BY started_at DESC, id DESC
+      SELECT
+        session.*,
+        (SELECT count(*)::integer FROM attempt_scope attempt WHERE attempt.session_id = session.id AND attempt.status = 'dispositioned') AS filtered_results_saved,
+        (SELECT count(*)::integer FROM attempt_scope attempt WHERE attempt.session_id = session.id AND attempt.reached = true) AS filtered_reached,
+        coalesce((
+          SELECT jsonb_object_agg(outcome.disposition, outcome.total)
+          FROM (
+            SELECT attempt.disposition, count(*)::integer AS total
+            FROM attempt_scope attempt
+            WHERE attempt.session_id = session.id
+              AND attempt.status = 'dispositioned'
+              AND nullif(trim(attempt.disposition), '') IS NOT NULL
+            GROUP BY attempt.disposition
+          ) outcome
+        ), '{}'::jsonb) AS filtered_outcomes
+      FROM session_scope session
+      ORDER BY session.started_at DESC, session.id DESC
       LIMIT 50
     ),
     attempt_rows AS (
       SELECT
         attempt.id,
         attempt.session_id,
+        attempt.campaign_id,
+        attempt.campaign_name,
         attempt.campaign_run_number,
         attempt.agent_name,
         attempt.actor_email,
@@ -321,10 +369,10 @@ BEGIN
     )
     SELECT jsonb_build_object(
       'campaign', jsonb_build_object(
-        'id', campaign_row.id,
-        'name', campaign_row.name,
-        'status', campaign_row.status,
-        'currentRunNumber', campaign_row.dialer_run_number
+        'id', CASE WHEN p_campaign_id IS NULL THEN NULL ELSE campaign_row.id END,
+        'name', CASE WHEN p_campaign_id IS NULL THEN 'All campaigns' ELSE campaign_row.name END,
+        'status', CASE WHEN p_campaign_id IS NULL THEN 'all' ELSE campaign_row.status END,
+        'currentRunNumber', CASE WHEN p_campaign_id IS NULL THEN NULL ELSE campaign_row.dialer_run_number END
       ),
       'runNumber', p_run_number,
       'metrics', jsonb_build_object(
@@ -373,15 +421,17 @@ BEGIN
       'sessions', coalesce((
         SELECT jsonb_agg(jsonb_build_object(
           'id', session.id,
+          'campaignId', session.campaign_id,
+          'campaignName', session.campaign_name,
           'runNumber', session.campaign_run_number,
           'agentName', session.agent_name,
           'agentEmail', session.actor_email,
           'status', session.status,
           'queueSize', session.queue_size,
-          'resultsSaved', session.dials_completed,
-          'reached', session.contacts,
+          'resultsSaved', session.filtered_results_saved,
+          'reached', session.filtered_reached,
           'skips', session.skips,
-          'outcomes', session.outcomes,
+          'outcomes', session.filtered_outcomes,
           'startedAt', session.started_at,
           'endedAt', session.ended_at,
           'updatedAt', session.updated_at
@@ -393,6 +443,8 @@ BEGIN
           SELECT jsonb_agg(jsonb_build_object(
             'id', attempt.id,
             'sessionId', attempt.session_id,
+            'campaignId', attempt.campaign_id,
+            'campaignName', attempt.campaign_name,
             'runNumber', attempt.campaign_run_number,
             'agentName', attempt.agent_name,
             'agentEmail', attempt.actor_email,
@@ -423,12 +475,12 @@ BEGIN
 END
 $$;
 
-REVOKE ALL ON FUNCTION public.prospecting_campaign_call_report_v1(uuid, text, integer, integer, integer)
+REVOKE ALL ON FUNCTION public.prospecting_campaign_call_report_v1(uuid, text, integer, timestamptz, timestamptz, integer, integer)
   FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.prospecting_campaign_call_report_v1(uuid, text, integer, integer, integer)
+GRANT EXECUTE ON FUNCTION public.prospecting_campaign_call_report_v1(uuid, text, integer, timestamptz, timestamptz, integer, integer)
   TO service_role;
 
 COMMENT ON FUNCTION public.rerun_prospecting_dialer_campaign_v1(uuid, text, text)
   IS 'Reopens callable completed members for the next campaign run while preserving all prior sessions, attempts, outcomes, DNCs, and suppressions.';
-COMMENT ON FUNCTION public.prospecting_campaign_call_report_v1(uuid, text, integer, integer, integer)
-  IS 'Returns authorized campaign, run, agent, session, disposition, and phone-level call reporting from the durable dialer attempt ledger.';
+COMMENT ON FUNCTION public.prospecting_campaign_call_report_v1(uuid, text, integer, timestamptz, timestamptz, integer, integer)
+  IS 'Returns authorized all-campaign or single-campaign call reporting with optional run and date filters from the durable dialer attempt ledger.';

@@ -36,6 +36,16 @@ const DATE_KEY = new Intl.DateTimeFormat('en-CA', {
   month: '2-digit',
   day: '2-digit',
 })
+const CENTRAL_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: MY_DAY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
 
 function centralDateKey(value: Date): string {
   return DATE_KEY.format(value)
@@ -45,6 +55,20 @@ function validDateKey(value: string | null | undefined): value is string {
   if (!value || !DATE_KEY_PATTERN.test(value)) return false
   const parsed = new Date(`${value}T12:00:00Z`)
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+/** Convert an America/Chicago calendar date at midnight to its exact UTC instant. */
+export function centralMidnightUtc(value: string): Date {
+  if (!validDateKey(value)) throw new Error('Invalid Central date key')
+  const [year, month, day] = value.split('-').map(Number)
+  const wallClockUtc = Date.UTC(year, month - 1, day)
+  let instant = wallClockUtc
+  for (let index = 0; index < 3; index += 1) {
+    const parts = Object.fromEntries(CENTRAL_PARTS.formatToParts(new Date(instant)).map((part) => [part.type, part.value]))
+    const representedAsUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second))
+    instant = wallClockUtc - (representedAsUtc - instant)
+  }
+  return new Date(instant)
 }
 
 export function shiftMyDayDate(value: string, days: number): string {

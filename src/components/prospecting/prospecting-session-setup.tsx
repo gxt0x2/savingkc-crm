@@ -18,6 +18,8 @@ type ProspectingSessionSetupProps = {
   campaignId: string
   campaignCallerId: string | null
   initialPreset?: ProspectingDialerSessionSetup | null
+  freshRun?: boolean
+  showLaunchAction?: boolean
   writesEnabled: boolean
   onLaunch: (setup: ProspectingDialerSessionSetup) => void
 }
@@ -64,10 +66,15 @@ export function ProspectingSessionSetup({
   campaignId,
   campaignCallerId,
   initialPreset,
+  freshRun = false,
+  showLaunchAction = true,
   writesEnabled,
   onLaunch,
 }: ProspectingSessionSetupProps) {
-  const [applied, setApplied] = useState(() => initialPreset || initialSetup(campaignCallerId))
+  const [applied, setApplied] = useState(() => {
+    const setup = initialPreset || initialSetup(campaignCallerId)
+    return freshRun ? { ...setup, startBehavior: 'first_unworked' as const } : setup
+  })
   const [draft, setDraft] = useState(applied)
   const [open, setOpen] = useState(false)
   const [selectionError, setSelectionError] = useState<string | null>(null)
@@ -149,7 +156,7 @@ export function ProspectingSessionSetup({
           <span className="min-w-0"><span className="block text-[9px] uppercase tracking-[0.15em] text-white/45">Session setup</span><span className="mt-1 block truncate">{summary(applied)}</span></span>
           <Icon name={open ? 'expand_less' : 'tune'} className="shrink-0 text-xl text-white/65" />
         </button>
-        <button type="button" onClick={() => onLaunch(applied)} disabled={actionPending || activeCount === 0} className="crm-primary-button inline-flex min-h-12 min-w-48 items-center justify-center gap-2 rounded-xl px-6 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={writesEnabled ? applied.startBehavior === 'resume' ? 'resume' : 'first_page' : 'preview'} className="text-xl" />{writesEnabled ? applied.startBehavior === 'resume' ? 'Resume calling' : 'Start calling' : 'Preview call session'}</button>
+        {showLaunchAction ? <button type="button" onClick={() => onLaunch(applied)} disabled={actionPending || activeCount === 0} className="crm-primary-button inline-flex min-h-12 min-w-48 items-center justify-center gap-2 rounded-xl px-6 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={writesEnabled ? applied.startBehavior === 'resume' ? 'resume' : 'first_page' : 'preview'} className="text-xl" />{writesEnabled ? applied.startBehavior === 'resume' ? 'Resume calling' : 'Start calling' : 'Preview call session'}</button> : null}
       </div>
 
       {!writesEnabled ? <p className="text-xs font-bold leading-5 text-white/60">Preview mode: setup changes stay in this browser. The calling floor and 15-second start sequence are interactive, but no call or CRM write can occur.</p> : null}
