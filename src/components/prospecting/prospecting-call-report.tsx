@@ -7,7 +7,7 @@ import { dispositionLabel, normalizeDisposition, PROSPECTING_DIALER_DISPOSITIONS
 import { formatPhone } from '@/lib/format'
 import type { MyDayDateRange } from '@/lib/my-day-range'
 import type { ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
-import type { ProspectingCallReport, ProspectingCallReportAttempt } from '@/lib/server/prospecting-call-report'
+import type { ProspectingCallReport, ProspectingCallReportAttempt, ProspectingCallSort, ProspectingCallSortDirection } from '@/lib/server/prospecting-call-report'
 
 type ReportView = 'calls' | 'sessions' | 'recordings'
 
@@ -15,6 +15,20 @@ const CHICAGO_DATE_TIME = new Intl.DateTimeFormat('en-US', {
   month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago',
 })
 const PROSPECTING_RESULT_LABELS = new Map(PROSPECTING_DIALER_DISPOSITIONS.map((item) => [item.id, item.label]))
+const RESULT_COLORS: Record<string, { badge: string; bar: string }> = {
+  spoke_with_owner: { badge: 'bg-emerald-100 text-emerald-800', bar: '#45a35a' },
+  callback_requested: { badge: 'bg-sky-100 text-sky-800', bar: '#3984c6' },
+  appointment_set: { badge: 'bg-violet-100 text-violet-800', bar: '#7966c2' },
+  deal_potential: { badge: 'bg-teal-100 text-teal-800', bar: '#4b9c9a' },
+  not_interested: { badge: 'bg-orange-100 text-orange-800', bar: '#d9822b' },
+  no_answer: { badge: 'bg-[#d9dee6] text-[#354052]', bar: '#a5abb5' },
+  left_voicemail: { badge: 'bg-indigo-100 text-indigo-800', bar: '#5879c7' },
+  busy: { badge: 'bg-amber-100 text-amber-800', bar: '#d6a128' },
+  wrong_number: { badge: 'bg-rose-100 text-rose-800', bar: '#c4515c' },
+  disconnected: { badge: 'bg-red-100 text-red-800', bar: '#ba3d49' },
+  dnc: { badge: 'bg-red-200 text-red-950', bar: '#882f3a' },
+  dead: { badge: 'bg-[#cbc7cc] text-[#312f33]', bar: '#57545a' },
+}
 
 function dateTime(value: string | null) {
   if (!value) return '—'
@@ -49,20 +63,29 @@ function resultLabel(status: string, disposition: string | null) {
   return status.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
-function resultTone(status: string, reached: boolean | null) {
+function resultTone(status: string, reached: boolean | null, disposition: string | null) {
+  const normalized = normalizeDisposition(disposition)
+  if (normalized && RESULT_COLORS[normalized]) return RESULT_COLORS[normalized].badge
   if (reached) return 'bg-[var(--crm-success-soft)] text-[var(--crm-success)]'
   if (status === 'failed' || status === 'cancelled') return 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]'
   if (status === 'awaiting_disposition') return 'bg-amber-100 text-amber-800'
   return 'bg-[var(--crm-surface-subtle)] text-[var(--crm-text-muted)]'
 }
 
-function reportHref({ report, range, view, page, query, sessionId }: {
+function resultBarColor(disposition: string) {
+  const normalized = normalizeDisposition(disposition)
+  return normalized && RESULT_COLORS[normalized] ? RESULT_COLORS[normalized].bar : '#737b86'
+}
+
+function reportHref({ report, range, view, page, query, sessionId, sort, direction }: {
   report: ProspectingCallReport
   range: MyDayDateRange
   view: ReportView
   page?: number
   query?: string | null
   sessionId?: string | null
+  sort: ProspectingCallSort
+  direction: ProspectingCallSortDirection
 }) {
   const params = new URLSearchParams({ campaign: report.campaign.id || 'all', range: range.preset })
   if (report.runNumber !== null) params.set('run', String(report.runNumber))
@@ -73,10 +96,12 @@ function reportHref({ report, range, view, page, query, sessionId }: {
   if (view === 'calls' && query) params.set('q', query)
   if (view === 'sessions' && sessionId) params.set('session', sessionId)
   if (view === 'calls' && page && page > 1) params.set('page', String(page))
+  if (sort !== 'called') params.set('sort', sort)
+  if (direction !== 'desc') params.set('dir', direction)
   return `/prospecting/reports?${params.toString()}`
 }
 
-function HiddenReportFields({ report, range, view }: { report: ProspectingCallReport; range: MyDayDateRange; view: ReportView }) {
+function HiddenReportFields({ report, range, view, sort, direction }: { report: ProspectingCallReport; range: MyDayDateRange; view: ReportView; sort: ProspectingCallSort; direction: ProspectingCallSortDirection }) {
   return <>
     <input type="hidden" name="campaign" value={report.campaign.id || 'all'} />
     <input type="hidden" name="range" value={range.preset} />
@@ -85,6 +110,8 @@ function HiddenReportFields({ report, range, view }: { report: ProspectingCallRe
     {report.filters.agentEmail ? <input type="hidden" name="agent" value={report.filters.agentEmail} /> : null}
     {report.filters.callerId ? <input type="hidden" name="caller" value={report.filters.callerId} /> : null}
     {view !== 'calls' ? <input type="hidden" name="view" value={view} /> : null}
+    {sort !== 'called' ? <input type="hidden" name="sort" value={sort} /> : null}
+    {direction !== 'desc' ? <input type="hidden" name="dir" value={direction} /> : null}
   </>
 }
 
@@ -103,7 +130,7 @@ function CallRows({ attempts, showCampaign }: { attempts: ProspectingCallReportA
     {showCampaign ? <td className="max-w-56 px-4 py-4 font-black text-[var(--crm-ink)]">{attempt.campaignName}</td> : null}
     <td className="max-w-sm px-4 py-4"><p className="font-black text-[var(--crm-ink)]">{attempt.sellerName || 'Unknown seller'}</p><p className="mt-1 truncate text-[10px] text-[var(--crm-text-muted)]">{attempt.propertyAddress || 'Property not linked'}</p></td>
     <td className="whitespace-nowrap px-4 py-4 font-mono font-black text-[var(--crm-ink)]">{formatPhone(attempt.phone)}</td>
-    <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${resultTone(attempt.status, attempt.reached)}`}>{resultLabel(attempt.status, attempt.disposition)}</span></td>
+    <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${resultTone(attempt.status, attempt.reached, attempt.disposition)}`}>{resultLabel(attempt.status, attempt.disposition)}</span></td>
     <td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-ink)]">{attempt.agentName}</td>
     <td className="px-4 py-4 font-black text-[var(--crm-text-muted)]">#{attempt.runNumber}</td>
     <td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-text-muted)]">{duration(attempt.durationSeconds)}</td>
@@ -111,7 +138,7 @@ function CallRows({ attempts, showCampaign }: { attempts: ProspectingCallReportA
   </tr>)}</>
 }
 
-export function ProspectingCallReportView({ report, campaigns, page, range, today, view, selectedSessionId }: {
+export function ProspectingCallReportView({ report, campaigns, page, range, today, view, selectedSessionId, sort, direction }: {
   report: ProspectingCallReport
   campaigns: Array<Pick<ProspectingCampaignSummary, 'id' | 'kind' | 'name'>>
   page: number
@@ -119,6 +146,8 @@ export function ProspectingCallReportView({ report, campaigns, page, range, toda
   today: string
   view: ReportView
   selectedSessionId: string | null
+  sort: ProspectingCallSort
+  direction: ProspectingCallSortDirection
 }) {
   const { metrics } = report
   const totalOutcomeCount = Object.values(report.outcomes).reduce((sum, value) => sum + value, 0)
@@ -140,53 +169,56 @@ export function ProspectingCallReportView({ report, campaigns, page, range, toda
         key={`${report.campaign.id || 'all'}:${report.runNumber || 'all'}:${report.filters.agentEmail || 'all'}:${report.filters.callerId || 'all'}:${range.preset}:${range.from}:${range.to}`}
         campaigns={campaignOptions} campaignId={report.campaign.id} runNumber={report.runNumber} runs={report.runs}
         agents={report.filters.agents} callerIds={report.filters.callerIds} agentEmail={report.filters.agentEmail} callerId={report.filters.callerId}
-        range={range} today={today} view={view}
+        range={range} today={today} view={view} sort={sort} direction={direction}
       />
     </div>
 
-    <section className="overflow-hidden rounded-3xl bg-[linear-gradient(135deg,#121a26_0%,#16243a_58%,#3a202b_100%)] p-5 text-white shadow-[0_24px_70px_rgba(5,13,25,0.2)] sm:p-7">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"><div>
-        <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-white/12 px-2.5 py-1 text-[9px] font-black uppercase">{range.label}</span>{report.runNumber ? <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">Run {report.runNumber}</span> : <span className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">All runs</span>}</div>
-        <h2 className="mt-3 text-2xl font-black sm:text-3xl">{report.campaign.name}</h2>
-      </div>{report.campaign.currentRunNumber ? <p className="text-xs font-bold text-white/55">Current campaign run: {report.campaign.currentRunNumber}</p> : <p className="text-xs font-bold text-white/55">{range.from === range.to ? range.from : `${range.from} through ${range.to}`}</p>}</div>
-      <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">{[
-        ['phone_in_talk', metrics.attempts, 'Attempts'], ['person', metrics.uniqueNumbers, 'Numbers'], ['phone_callback', metrics.providerConnected, 'Connected'], ['record_voice_over', metrics.reached, 'Reached person'], ['fact_check', metrics.resultsSaved, 'Results saved'], ['analytics', `${rate(metrics.reached, metrics.uniqueNumbers)}%`, 'Contact rate'], ['schedule', duration(metrics.durationSeconds), 'Call time'], ['groups', metrics.agents, 'Agents'],
-      ].map(([icon, value, label]) => <div key={String(label)} className="rounded-2xl border border-white/10 bg-white/6 p-3"><Icon name={String(icon)} className="text-xl text-white/45" /><p className="mt-3 text-xl font-black">{value}</p><p className="mt-1 text-[9px] font-black uppercase tracking-wider text-white/50">{label}</p></div>)}</div>
-      <p className="mt-3 text-[10px] font-semibold text-white/45">Contact rate = reached people ÷ unique numbers called.</p>
+    <section className="crm-panel rounded-2xl p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[var(--crm-brand-soft)] px-2.5 py-1 text-[9px] font-black uppercase text-[var(--crm-brand)]">{range.label}</span><span className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--crm-text-muted)]">{report.runNumber ? `Run ${report.runNumber}` : 'All runs'}</span></div><h2 className="mt-2 truncate text-lg font-black text-[var(--crm-ink)]">{report.campaign.name}</h2></div><p className="text-[10px] font-bold text-[var(--crm-text-muted)]">{range.from === range.to ? range.from : `${range.from} through ${range.to}`}</p></div>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">{[
+        [metrics.attempts, 'Total calls'], [metrics.uniqueNumbers, 'People called'], [metrics.sessions, 'Sessions'], [metrics.providerConnected, 'Connected'], [metrics.reached, 'Reached'], [`${rate(metrics.reached, metrics.uniqueNumbers)}%`, 'Contact rate'], [duration(metrics.durationSeconds), 'Call time'], [metrics.agents, 'Agents'],
+      ].map(([value, label]) => <div key={String(label)} className="rounded-lg bg-[var(--crm-surface-subtle)] px-3 py-2.5"><p className="text-lg font-black leading-none text-[var(--crm-ink)]">{value}</p><p className="mt-1.5 text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{label}</p></div>)}</div>
+      <div className="mt-4"><div className="flex items-center justify-between gap-3 text-[10px]"><strong className="font-black text-[var(--crm-ink)]">Call results · {totalOutcomeCount} saved</strong><span className="font-semibold text-[var(--crm-text-muted)]">Contact rate = reached ÷ people called</span></div>
+        {outcomes.length > 0 ? <><div aria-label="Call result distribution" className="mt-2 flex h-5 overflow-hidden rounded-md bg-[var(--crm-surface-subtle)]">{outcomes.map(([outcome, value]) => <span key={outcome} title={`${resultLabel('dispositioned', outcome)}: ${value}`} className="min-w-1" style={{ backgroundColor: resultBarColor(outcome), width: `${(value / totalOutcomeCount) * 100}%` }} />)}</div><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">{outcomes.map(([outcome, value]) => <span key={outcome} className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-[var(--crm-text-muted)]"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: resultBarColor(outcome) }} />{resultLabel('dispositioned', outcome)} <strong className="text-[var(--crm-ink)]">{value}</strong></span>)}</div></> : <p className="mt-2 text-xs text-[var(--crm-text-muted)]">No final outcomes have been saved in this view.</p>}
+      </div>
+      {report.agents.length > 0 ? <details className="mt-3 border-t border-[var(--crm-border)] pt-3"><summary className="cursor-pointer text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Agent performance ({report.agents.length})</summary><div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{report.agents.map((agent) => <div key={agent.email} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--crm-surface-subtle)] px-3 py-2"><div className="min-w-0"><p className="truncate text-xs font-black text-[var(--crm-ink)]">{agent.name}</p><p className="truncate text-[9px] text-[var(--crm-text-muted)]">{agent.email}</p></div><dl className="flex shrink-0 gap-3 text-right"><Metric label="Results" value={agent.resultsSaved} /><Metric label="Reached" value={agent.reached} /><Metric label="Rate" value={`${rate(agent.reached, agent.resultsSaved)}%`} /></dl></div>)}</div></details> : null}
     </section>
 
     {metrics.attempts === 0 ? <EmptyReport campaignId={report.campaign.id} /> : <>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,0.75fr)]">
-        <section className="crm-panel rounded-2xl p-5 sm:p-6"><div className="flex items-center justify-between gap-4"><div><p className="crm-eyebrow">Call results</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Disposition breakdown</h2></div><span className="text-xs font-black text-[var(--crm-text-muted)]">{totalOutcomeCount} saved</span></div>
-          {outcomes.length > 0 ? <div className="mt-5 space-y-3">{outcomes.map(([outcome, value]) => <div key={outcome}><div className="flex items-center justify-between gap-3 text-xs"><span className="font-bold text-[var(--crm-ink)]">{resultLabel('dispositioned', outcome)}</span><span className="font-black text-[var(--crm-text-muted)]">{value} · {rate(value, totalOutcomeCount)}%</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--crm-surface-subtle)]"><div className="h-full rounded-full bg-[var(--crm-brand)]" style={{ width: `${rate(value, totalOutcomeCount)}%` }} /></div></div>)}</div> : <p className="mt-5 text-sm text-[var(--crm-text-muted)]">No final outcomes have been saved in this view.</p>}
-        </section>
-        <section className="crm-panel rounded-2xl p-5 sm:p-6"><p className="crm-eyebrow">Agent results</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Calling team</h2><div className="mt-4 space-y-3">{report.agents.map((agent) => <div key={agent.email} className="rounded-xl bg-[var(--crm-surface-subtle)] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-[var(--crm-ink)]">{agent.name}</p><p className="mt-0.5 text-[10px] text-[var(--crm-text-muted)]">{agent.email}</p></div><span className="rounded-full bg-[var(--crm-surface)] px-2.5 py-1 text-[10px] font-black text-[var(--crm-text-muted)]">{agent.sessions} session{agent.sessions === 1 ? '' : 's'}</span></div><dl className="mt-3 grid grid-cols-3 gap-2 text-center"><Metric label="Results" value={agent.resultsSaved} /><Metric label="Reached" value={agent.reached} /><Metric label="Reached/results" value={`${rate(agent.reached, agent.resultsSaved)}%`} /></dl></div>)}</div></section>
-      </div>
-
       <section className="crm-panel overflow-hidden rounded-2xl">
         <nav aria-label="Call report views" className="flex flex-wrap items-center gap-1 border-b border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] p-2">{([
           ['calls', `Call Detail (${report.attempts.pageInfo.total})`], ['sessions', `Sessions (${metrics.sessions})`], ['recordings', `Recordings (${report.recordings.total})`],
-        ] as Array<[ReportView, string]>).map(([tab, label]) => <Link key={tab} href={reportHref({ report, range, view: tab })} aria-current={view === tab ? 'page' : undefined} className={`rounded-xl px-4 py-2.5 text-xs font-black transition ${view === tab ? 'bg-[var(--crm-brand)] text-white shadow-sm' : 'text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface)] hover:text-[var(--crm-ink)]'}`}>{label}</Link>)}</nav>
-        {view === 'calls' ? <CallDetail report={report} range={range} page={page} query={query} /> : null}
-        {view === 'sessions' ? <Sessions report={report} range={range} selectedSessionId={selectedSessionId} /> : null}
+        ] as Array<[ReportView, string]>).map(([tab, label]) => <Link key={tab} href={reportHref({ report, range, view: tab, sort, direction })} scroll={false} aria-current={view === tab ? 'page' : undefined} className={`rounded-xl px-4 py-2.5 text-xs font-black transition ${view === tab ? 'bg-[var(--crm-brand)] text-white shadow-sm' : 'text-[var(--crm-text-muted)] hover:bg-[var(--crm-surface)] hover:text-[var(--crm-ink)]'}`}>{label}</Link>)}</nav>
+        {view === 'calls' ? <CallDetail report={report} range={range} page={page} query={query} sort={sort} direction={direction} /> : null}
+        {view === 'sessions' ? <Sessions report={report} range={range} selectedSessionId={selectedSessionId} sort={sort} direction={direction} /> : null}
         {view === 'recordings' ? <Recordings report={report} /> : null}
       </section>
     </>}
   </div></main>
 }
 
-function CallDetail({ report, range, page, query }: { report: ProspectingCallReport; range: MyDayDateRange; page: number; query: string }) {
+function SortHeader({ label, sortKey, activeSort, direction, href, edge = false }: { label: string; sortKey: ProspectingCallSort; activeSort: ProspectingCallSort; direction: ProspectingCallSortDirection; href: string; edge?: boolean }) {
+  const active = activeSort === sortKey
+  return <th aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'} className={`${edge ? 'px-5' : 'px-4'} py-3`}><Link href={href} scroll={false} className="inline-flex items-center gap-1.5 whitespace-nowrap hover:text-[var(--crm-ink)]" aria-label={`Sort by ${label}${active ? ` ${direction === 'asc' ? 'descending' : 'ascending'}` : ''}`}>{label}<Icon name={active ? (direction === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'sort'} className={`text-[14px] ${active ? 'text-[var(--crm-brand)]' : 'text-[var(--crm-text-dim)]'}`} /></Link></th>
+}
+
+function CallDetail({ report, range, page, query, sort, direction }: { report: ProspectingCallReport; range: MyDayDateRange; page: number; query: string; sort: ProspectingCallSort; direction: ProspectingCallSortDirection }) {
+  function sortHref(sortKey: ProspectingCallSort) {
+    const nextDirection = sort === sortKey ? (direction === 'asc' ? 'desc' : 'asc') : sortKey === 'called' || sortKey === 'duration' ? 'desc' : 'asc'
+    return reportHref({ report, range, view: 'calls', query, sort: sortKey, direction: nextDirection })
+  }
+
   return <>
-    <div className="flex flex-col gap-3 border-b border-[var(--crm-border)] p-5 sm:flex-row sm:items-end sm:justify-between sm:px-6"><div><p className="crm-eyebrow">Call detail</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Every number and result</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Newest attempts first · times shown in Central Time</p></div><form action="/prospecting/reports" className="flex w-full max-w-md gap-2"><HiddenReportFields report={report} range={range} view="calls" /><label className="sr-only" htmlFor="prospecting-call-search">Search call details</label><input id="prospecting-call-search" name="q" defaultValue={query} placeholder="Search seller, property, phone, result…" className="crm-field h-11 min-w-0 flex-1 rounded-xl px-3 text-sm" /><button type="submit" className="crm-secondary-button inline-flex h-11 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="search" className="text-[18px]" />Search</button></form></div>
-    {report.attempts.items.length > 0 ? <div className="overflow-x-auto"><table className="w-full min-w-[72rem] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]"><tr><th className="px-5 py-3">Called</th>{report.campaign.id === null ? <th className="px-4 py-3">Campaign</th> : null}<th className="px-4 py-3">Seller / property</th><th className="px-4 py-3">Number</th><th className="px-4 py-3">Result</th><th className="px-4 py-3">Agent</th><th className="px-4 py-3">Run</th><th className="px-4 py-3">Duration</th><th className="px-5 py-3">Caller ID</th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]"><CallRows attempts={report.attempts.items} showCampaign={report.campaign.id === null} /></tbody></table></div> : <div className="grid min-h-48 place-items-center p-8 text-center"><div><Icon name="search_off" className="text-3xl text-[var(--crm-text-dim)]" /><h3 className="mt-2 font-black text-[var(--crm-ink)]">No matching calls</h3><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Clear the search or adjust the report filters.</p></div></div>}
-    <div className="flex items-center justify-between gap-3 border-t border-[var(--crm-border)] p-4 sm:px-6"><p className="text-xs font-bold text-[var(--crm-text-muted)]">Page {page}</p><div className="flex gap-2">{page > 1 ? <Link href={reportHref({ report, range, view: 'calls', page: page - 1, query })} className="crm-secondary-button inline-flex min-h-10 items-center gap-1 rounded-xl px-4 text-xs font-black"><Icon name="chevron_left" />Previous</Link> : <span className="crm-secondary-button inline-flex min-h-10 cursor-not-allowed items-center gap-1 rounded-xl px-4 text-xs font-black opacity-40"><Icon name="chevron_left" />Previous</span>}{report.attempts.pageInfo.hasMore ? <Link href={reportHref({ report, range, view: 'calls', page: page + 1, query })} className="crm-secondary-button inline-flex min-h-10 items-center gap-1 rounded-xl px-4 text-xs font-black">Next<Icon name="chevron_right" /></Link> : <span className="crm-secondary-button inline-flex min-h-10 cursor-not-allowed items-center gap-1 rounded-xl px-4 text-xs font-black opacity-40">Next<Icon name="chevron_right" /></span>}</div></div>
+    <div className="flex flex-col gap-3 border-b border-[var(--crm-border)] p-4 sm:flex-row sm:items-end sm:justify-between sm:px-5"><div><p className="crm-eyebrow">Call detail</p><h2 className="mt-1 text-base font-black text-[var(--crm-ink)]">Every number and result</h2><p className="mt-1 text-[10px] text-[var(--crm-text-muted)]">Select any column heading to sort all matching calls · Central Time</p></div><form action="/prospecting/reports" className="flex w-full max-w-md gap-2"><HiddenReportFields report={report} range={range} view="calls" sort={sort} direction={direction} /><label className="sr-only" htmlFor="prospecting-call-search">Search call details</label><input id="prospecting-call-search" name="q" defaultValue={query} placeholder="Search seller, property, phone, result…" className="crm-field h-10 min-w-0 flex-1 rounded-lg px-3 text-xs" /><button type="submit" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-3 text-xs font-black"><Icon name="search" className="text-[16px]" />Search</button></form></div>
+    {report.attempts.items.length > 0 ? <div className="overflow-x-auto"><table className="w-full min-w-[72rem] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]"><tr><SortHeader label="Called" sortKey="called" activeSort={sort} direction={direction} href={sortHref('called')} edge />{report.campaign.id === null ? <SortHeader label="Campaign" sortKey="campaign" activeSort={sort} direction={direction} href={sortHref('campaign')} /> : null}<SortHeader label="Seller / property" sortKey="seller" activeSort={sort} direction={direction} href={sortHref('seller')} /><SortHeader label="Number" sortKey="number" activeSort={sort} direction={direction} href={sortHref('number')} /><SortHeader label="Result" sortKey="result" activeSort={sort} direction={direction} href={sortHref('result')} /><SortHeader label="Agent" sortKey="agent" activeSort={sort} direction={direction} href={sortHref('agent')} /><SortHeader label="Run" sortKey="run" activeSort={sort} direction={direction} href={sortHref('run')} /><SortHeader label="Duration" sortKey="duration" activeSort={sort} direction={direction} href={sortHref('duration')} /><SortHeader label="Caller ID" sortKey="caller" activeSort={sort} direction={direction} href={sortHref('caller')} edge /></tr></thead><tbody className="divide-y divide-[var(--crm-border)]"><CallRows attempts={report.attempts.items} showCampaign={report.campaign.id === null} /></tbody></table></div> : <div className="grid min-h-48 place-items-center p-8 text-center"><div><Icon name="search_off" className="text-3xl text-[var(--crm-text-dim)]" /><h3 className="mt-2 font-black text-[var(--crm-ink)]">No matching calls</h3><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Clear the search or adjust the report filters.</p></div></div>}
+    <div className="flex items-center justify-between gap-3 border-t border-[var(--crm-border)] p-4 sm:px-6"><p className="text-xs font-bold text-[var(--crm-text-muted)]">Page {page}</p><div className="flex gap-2">{page > 1 ? <Link href={reportHref({ report, range, view: 'calls', page: page - 1, query, sort, direction })} scroll={false} className="crm-secondary-button inline-flex min-h-10 items-center gap-1 rounded-xl px-4 text-xs font-black"><Icon name="chevron_left" />Previous</Link> : <span className="crm-secondary-button inline-flex min-h-10 cursor-not-allowed items-center gap-1 rounded-xl px-4 text-xs font-black opacity-40"><Icon name="chevron_left" />Previous</span>}{report.attempts.pageInfo.hasMore ? <Link href={reportHref({ report, range, view: 'calls', page: page + 1, query, sort, direction })} scroll={false} className="crm-secondary-button inline-flex min-h-10 items-center gap-1 rounded-xl px-4 text-xs font-black">Next<Icon name="chevron_right" /></Link> : <span className="crm-secondary-button inline-flex min-h-10 cursor-not-allowed items-center gap-1 rounded-xl px-4 text-xs font-black opacity-40">Next<Icon name="chevron_right" /></span>}</div></div>
   </>
 }
 
-function Sessions({ report, range, selectedSessionId }: { report: ProspectingCallReport; range: MyDayDateRange; selectedSessionId: string | null }) {
+function Sessions({ report, range, selectedSessionId, sort, direction }: { report: ProspectingCallReport; range: MyDayDateRange; selectedSessionId: string | null; sort: ProspectingCallSort; direction: ProspectingCallSortDirection }) {
   return <><div className="border-b border-[var(--crm-border)] p-5 sm:px-6"><p className="crm-eyebrow">Session history</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">List batches and performance</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Open a session to reconcile its calls, outcomes, and timing.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[76rem] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]"><tr><th className="px-5 py-3">Started</th>{report.campaign.id === null ? <th className="px-4 py-3">Campaign</th> : null}<th className="px-4 py-3">Agent</th><th className="px-4 py-3">Run</th><th className="px-4 py-3">Calls</th><th className="px-4 py-3">Numbers</th><th className="px-4 py-3">Results</th><th className="px-4 py-3">Reached</th><th className="px-4 py-3">Call time</th><th className="px-4 py-3">Session time</th><th className="px-4 py-3">Status</th><th className="px-5 py-3"><span className="sr-only">Details</span></th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]">{report.sessions.map((session) => {
     const open = selectedSessionId === session.id
-    return <Fragment key={session.id}><tr className={open ? 'bg-[var(--crm-brand-soft)]' : undefined}><td className="whitespace-nowrap px-5 py-4 font-bold text-[var(--crm-text-muted)]">{dateTime(session.startedAt)}</td>{report.campaign.id === null ? <td className="max-w-56 px-4 py-4 font-black text-[var(--crm-ink)]">{session.campaignName}</td> : null}<td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.agentName}</td><td className="px-4 py-4 font-black text-[var(--crm-text-muted)]">#{session.runNumber}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.calls}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.uniqueNumbers}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.resultsSaved}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.reached}</td><td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-text-muted)]">{duration(session.durationSeconds)}</td><td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-text-muted)]">{duration(session.sessionDurationSeconds)}</td><td className="px-4 py-4"><span className="rounded-full bg-[var(--crm-surface-subtle)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--crm-text-muted)]">{session.status}</span></td><td className="px-5 py-4"><Link href={reportHref({ report, range, view: 'sessions', sessionId: open ? null : session.id })} className="font-black text-[var(--crm-brand)]">{open ? 'Hide' : 'View details'}</Link></td></tr>{open ? <tr><td colSpan={report.campaign.id === null ? 12 : 11} className="bg-[var(--crm-surface-subtle)] p-5"><SessionDetails session={session} calls={report.selectedSessionCalls} /></td></tr> : null}</Fragment>
+    return <Fragment key={session.id}><tr className={open ? 'bg-[var(--crm-brand-soft)]' : undefined}><td className="whitespace-nowrap px-5 py-4 font-bold text-[var(--crm-text-muted)]">{dateTime(session.startedAt)}</td>{report.campaign.id === null ? <td className="max-w-56 px-4 py-4 font-black text-[var(--crm-ink)]">{session.campaignName}</td> : null}<td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.agentName}</td><td className="px-4 py-4 font-black text-[var(--crm-text-muted)]">#{session.runNumber}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.calls}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.uniqueNumbers}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.resultsSaved}</td><td className="px-4 py-4 font-black text-[var(--crm-ink)]">{session.reached}</td><td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-text-muted)]">{duration(session.durationSeconds)}</td><td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-text-muted)]">{duration(session.sessionDurationSeconds)}</td><td className="px-4 py-4"><span className="rounded-full bg-[var(--crm-surface-subtle)] px-2.5 py-1 text-[10px] font-black uppercase text-[var(--crm-text-muted)]">{session.status}</span></td><td className="px-5 py-4"><Link href={reportHref({ report, range, view: 'sessions', sessionId: open ? null : session.id, sort, direction })} scroll={false} className="font-black text-[var(--crm-brand)]">{open ? 'Hide' : 'View details'}</Link></td></tr>{open ? <tr><td colSpan={report.campaign.id === null ? 12 : 11} className="bg-[var(--crm-surface-subtle)] p-5"><SessionDetails session={session} calls={report.selectedSessionCalls} /></td></tr> : null}</Fragment>
   })}</tbody></table></div></>
 }
 
@@ -196,7 +228,7 @@ function SessionDetails({ session, calls }: { session: ProspectingCallReport['se
 }
 
 function Recordings({ report }: { report: ProspectingCallReport }) {
-  return <><div className="border-b border-[var(--crm-border)] p-5 sm:px-6"><p className="crm-eyebrow">Call recordings</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Recorded prospecting conversations</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Playback stays inside the authenticated CRM; Twilio credentials are never sent to the browser.</p></div>{report.recordings.items.length > 0 ? <div className="overflow-x-auto"><table className="w-full min-w-[66rem] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]"><tr><th className="px-5 py-3">Play</th><th className="px-4 py-3">Called</th><th className="px-4 py-3">Seller / property</th><th className="px-4 py-3">Agent</th><th className="px-4 py-3">Duration</th><th className="px-4 py-3">Result</th><th className="px-5 py-3">Campaign</th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]">{report.recordings.items.map((attempt) => <tr key={attempt.id}><td className="min-w-64 px-5 py-3"><audio controls preload="metadata" src={`/api/recordings/${encodeURIComponent(attempt.recordingSid || '')}`} className="h-9 w-60" /></td><td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-text-muted)]">{dateTime(attempt.startedAt || attempt.createdAt)}</td><td className="max-w-sm px-4 py-4"><p className="font-black text-[var(--crm-ink)]">{attempt.sellerName || 'Unknown seller'}</p><p className="mt-1 truncate text-[10px] text-[var(--crm-text-muted)]">{attempt.propertyAddress || formatPhone(attempt.phone)}</p></td><td className="px-4 py-4 font-bold text-[var(--crm-ink)]">{attempt.agentName}</td><td className="px-4 py-4 font-bold text-[var(--crm-text-muted)]">{duration(attempt.durationSeconds)}</td><td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${resultTone(attempt.status, attempt.reached)}`}>{resultLabel(attempt.status, attempt.disposition)}</span></td><td className="max-w-56 px-5 py-4 font-black text-[var(--crm-ink)]">{attempt.campaignName}</td></tr>)}</tbody></table></div> : <div className="grid min-h-56 place-items-center p-8 text-center"><div><Icon name="mic_off" className="text-3xl text-[var(--crm-text-dim)]" /><h3 className="mt-2 font-black text-[var(--crm-ink)]">No recordings in this view</h3><p className="mt-1 max-w-md text-xs leading-5 text-[var(--crm-text-muted)]">Only completed Twilio recordings linked to durable Prospecting attempts appear here.</p></div></div>}</>
+  return <><div className="border-b border-[var(--crm-border)] p-5 sm:px-6"><p className="crm-eyebrow">Call recordings</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Recorded prospecting conversations</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Playback stays inside the authenticated CRM; Twilio credentials are never sent to the browser.</p></div>{report.recordings.items.length > 0 ? <div className="overflow-x-auto"><table className="w-full min-w-[66rem] text-left text-xs"><thead className="bg-[var(--crm-surface-subtle)] text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]"><tr><th className="px-5 py-3">Play</th><th className="px-4 py-3">Called</th><th className="px-4 py-3">Seller / property</th><th className="px-4 py-3">Agent</th><th className="px-4 py-3">Duration</th><th className="px-4 py-3">Result</th><th className="px-5 py-3">Campaign</th></tr></thead><tbody className="divide-y divide-[var(--crm-border)]">{report.recordings.items.map((attempt) => <tr key={attempt.id}><td className="min-w-64 px-5 py-3"><audio controls preload="metadata" src={`/api/recordings/${encodeURIComponent(attempt.recordingSid || '')}`} className="h-9 w-60" /></td><td className="whitespace-nowrap px-4 py-4 font-bold text-[var(--crm-text-muted)]">{dateTime(attempt.startedAt || attempt.createdAt)}</td><td className="max-w-sm px-4 py-4"><p className="font-black text-[var(--crm-ink)]">{attempt.sellerName || 'Unknown seller'}</p><p className="mt-1 truncate text-[10px] text-[var(--crm-text-muted)]">{attempt.propertyAddress || formatPhone(attempt.phone)}</p></td><td className="px-4 py-4 font-bold text-[var(--crm-ink)]">{attempt.agentName}</td><td className="px-4 py-4 font-bold text-[var(--crm-text-muted)]">{duration(attempt.durationSeconds)}</td><td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${resultTone(attempt.status, attempt.reached, attempt.disposition)}`}>{resultLabel(attempt.status, attempt.disposition)}</span></td><td className="max-w-56 px-5 py-4 font-black text-[var(--crm-ink)]">{attempt.campaignName}</td></tr>)}</tbody></table></div> : <div className="grid min-h-56 place-items-center p-8 text-center"><div><Icon name="mic_off" className="text-3xl text-[var(--crm-text-dim)]" /><h3 className="mt-2 font-black text-[var(--crm-ink)]">No recordings in this view</h3><p className="mt-1 max-w-md text-xs leading-5 text-[var(--crm-text-muted)]">Only completed Twilio recordings linked to durable Prospecting attempts appear here.</p></div></div>}</>
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

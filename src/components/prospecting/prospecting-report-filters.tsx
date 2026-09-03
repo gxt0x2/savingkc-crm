@@ -27,12 +27,14 @@ function compactDates(range: MyDayDateRange) {
   return `${format.format(new Date(`${range.from}T12:00:00Z`))} – ${format.format(new Date(`${range.to}T12:00:00Z`))}`
 }
 
-function reportUrl(campaignId: string, runNumber: string, range: MyDayDateRange, agentEmail: string, callerId: string, view: string) {
+function reportUrl(campaignId: string, runNumber: string, range: MyDayDateRange, agentEmail: string, callerId: string, view: string, sort: string, direction: string) {
   const query = new URLSearchParams({ campaign: campaignId, range: range.preset })
   if (campaignId !== 'all' && runNumber) query.set('run', runNumber)
   if (agentEmail) query.set('agent', agentEmail)
   if (callerId) query.set('caller', callerId)
   if (view !== 'calls') query.set('view', view)
+  if (sort !== 'called') query.set('sort', sort)
+  if (direction !== 'desc') query.set('dir', direction)
   if (range.preset === 'custom') {
     query.set('from', range.from)
     query.set('to', range.to)
@@ -52,6 +54,8 @@ export function ProspectingReportFilters({
   range,
   today,
   view,
+  sort,
+  direction,
 }: {
   campaigns: CampaignOption[]
   campaignId: string | null
@@ -64,6 +68,8 @@ export function ProspectingReportFilters({
   range: MyDayDateRange
   today: string
   view: string
+  sort: string
+  direction: string
 }) {
   const router = useRouter()
   const [selectedCampaign, setSelectedCampaign] = useState(campaignId || 'all')
@@ -94,7 +100,7 @@ export function ProspectingReportFilters({
   }, [rangeOpen])
 
   function navigate(nextRange = selectedRange) {
-    startTransition(() => router.push(reportUrl(selectedCampaign, selectedRun, nextRange, selectedAgent, selectedCallerId, view)))
+    startTransition(() => router.push(reportUrl(selectedCampaign, selectedRun, nextRange, selectedAgent, selectedCallerId, view, sort, direction), { scroll: false }))
   }
 
   function applyRange(request: MyDayRangeRequest) {

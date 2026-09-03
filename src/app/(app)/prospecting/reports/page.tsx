@@ -5,7 +5,7 @@ import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingCampaignId } from '@/lib/prospecting/audience-handoff'
 import { isProspectingDialerPickerCampaign, type ProspectingCampaignSummary } from '@/lib/prospecting/campaign-contract'
 import { resolveMyDayDateRange } from '@/lib/my-day-range'
-import { getProspectingCallReport, type ProspectingCallReport } from '@/lib/server/prospecting-call-report'
+import { getProspectingCallReport, prospectingCallSort, prospectingCallSortDirection, type ProspectingCallReport } from '@/lib/server/prospecting-call-report'
 import { listProspectingCampaigns } from '@/lib/server/prospecting-campaigns'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +37,7 @@ function ReportMessage({ title, message }: { title: string; message: string }) {
 export default async function ProspectingReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ campaign?: string; run?: string; page?: string; range?: string; from?: string; to?: string; agent?: string; caller?: string; q?: string; view?: string; session?: string }>
+  searchParams: Promise<{ campaign?: string; run?: string; page?: string; range?: string; from?: string; to?: string; agent?: string; caller?: string; q?: string; view?: string; session?: string; sort?: string; dir?: string }>
 }) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return <ReportMessage title="Sign in required" message="Sign in to the CRM to view Prospecting call reports." />
@@ -47,6 +47,8 @@ export default async function ProspectingReportsPage({
   const range = resolveMyDayDateRange({ preset: params.range, from: params.from, to: params.to }, now)
   const today = resolveMyDayDateRange({ preset: 'today' }, now).from
   const view = reportView(params.view)
+  const sort = prospectingCallSort(params.sort)
+  const direction = prospectingCallSortDirection(params.dir)
   let campaigns: ProspectingCampaignSummary[] = []
   let report: ProspectingCallReport | null = null
   let page = 1
@@ -67,6 +69,8 @@ export default async function ProspectingReportsPage({
       callerId: params.caller,
       search: params.q,
       sessionId: params.session,
+      sort,
+      direction,
     })
   } catch (error) {
     reportError = error instanceof Error ? error.message : 'The Prospecting call report could not be loaded.'
@@ -74,5 +78,5 @@ export default async function ProspectingReportsPage({
 
   if (reportError) return <ReportMessage title="Report unavailable" message={reportError} />
   if (!report) return <ReportMessage title="No calling campaigns" message="Build and activate a Prospecting calling campaign before opening call reporting." />
-  return <ProspectingCallReportView report={report} campaigns={campaigns} page={page} range={range} today={today} view={view} selectedSessionId={params.session || null} />
+  return <ProspectingCallReportView report={report} campaigns={campaigns} page={page} range={range} today={today} view={view} selectedSessionId={params.session || null} sort={sort} direction={direction} />
 }
