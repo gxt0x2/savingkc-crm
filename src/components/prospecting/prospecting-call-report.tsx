@@ -127,11 +127,11 @@ export function ProspectingCallReportView({
         <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           {[
             ['phone_in_talk', metrics.attempts, 'Attempts'],
-            ['dialpad', metrics.uniqueNumbers, 'Numbers'],
+            ['phone_in_talk', metrics.uniqueNumbers, 'Numbers'],
             ['phone_callback', metrics.providerConnected, 'Connected'],
             ['record_voice_over', metrics.reached, 'Reached person'],
             ['fact_check', metrics.resultsSaved, 'Results saved'],
-            ['percent', `${rate(metrics.reached, metrics.attempts)}%`, 'Reach rate'],
+            ['analytics', `${rate(metrics.reached, metrics.attempts)}%`, 'Reach rate'],
             ['schedule', duration(metrics.durationSeconds), 'Call time'],
             ['groups', metrics.agents, 'Agents'],
           ].map(([icon, value, label]) => <div key={String(label)} className="rounded-2xl border border-white/10 bg-white/6 p-3"><Icon name={String(icon)} className="text-xl text-white/45" /><p className="mt-3 text-xl font-black">{value}</p><p className="mt-1 text-[9px] font-black uppercase tracking-wider text-white/50">{label}</p></div>)}

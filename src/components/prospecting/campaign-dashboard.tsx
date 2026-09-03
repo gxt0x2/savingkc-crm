@@ -150,7 +150,7 @@ export function CampaignDashboard({
                     {detail.status === 'active' ? <ProspectingSessionSetup key={detail.id} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} /> : null}
                     <div className="flex flex-wrap justify-end gap-2">
                       <Link href={`/prospecting/reports?campaign=${encodeURIComponent(detail.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-xs font-black text-white hover:bg-white/15"><Icon name="analytics" className="text-lg" />View call report</Link>
-                      {detail.status === 'completed' && writesEnabled && onRerun ? <button type="button" onClick={() => setRerunConfirmOpen(true)} disabled={actionPending} className="crm-primary-button inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 text-xs font-black disabled:opacity-50"><Icon name="replay" className="text-lg" />Run list again</button> : null}
+                      {detail.status === 'completed' && writesEnabled && onRerun ? <button type="button" onClick={() => setRerunConfirmOpen(true)} disabled={actionPending} className="crm-primary-button inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 text-xs font-black disabled:opacity-50"><Icon name="refresh" className="text-lg" />Run list again</button> : null}
                     </div>
                   </div>
                 </div> : <div className="mt-7"><p className="text-sm font-bold text-white/70">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p><p className="mt-2 text-xs text-white/50">Replies and opt-outs stop the sequence automatically.</p></div>}
@@ -166,12 +166,12 @@ export function CampaignDashboard({
 
           {rerunConfirmOpen && detail.kind === 'dialer' && detail.status === 'completed' ? <section role="dialog" aria-modal="true" aria-labelledby="rerun-campaign-title" className="crm-panel rounded-2xl border border-[var(--crm-brand-border)] p-5 sm:p-6">
             <div className="flex items-start gap-4">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="replay" className="text-2xl" /></span>
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="refresh" className="text-2xl" /></span>
               <div className="min-w-0 flex-1">
                 <h2 id="rerun-campaign-title" className="text-lg font-black text-[var(--crm-ink)]">Run this list again?</h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--crm-text-muted)]">This starts a new campaign run and reopens only completed sellers that still have a callable number. Prior attempts, results, DNCs, disconnected numbers, and suppressions stay unchanged in reporting.</p>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => { setRerunConfirmOpen(false); onRerun?.() }} disabled={actionPending} className="crm-primary-button inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-sm font-black disabled:opacity-50"><Icon name="replay" />Confirm new run</button>
+                  <button type="button" onClick={() => { setRerunConfirmOpen(false); onRerun?.() }} disabled={actionPending} className="crm-primary-button inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-sm font-black disabled:opacity-50"><Icon name="refresh" />Confirm new run</button>
                   <button type="button" onClick={() => setRerunConfirmOpen(false)} disabled={actionPending} className="crm-secondary-button min-h-11 rounded-xl px-5 text-sm font-black">Cancel</button>
                 </div>
               </div>
