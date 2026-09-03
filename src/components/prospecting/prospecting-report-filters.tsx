@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useEffect, useRef, useState, useTransition } from 'react'
-import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
 import { resolveMyDayDateRange, type MyDayDateRange, type MyDayRangePreset, type MyDayRangeRequest } from '@/lib/my-day-range'
 import { cn } from '@/lib/utils'
@@ -146,16 +145,15 @@ export function ProspectingReportFilters({
       <div ref={rangeContainer} className="relative">
         <span className="text-xs font-black text-[var(--crm-ink)]">Time range</span>
         <button type="button" aria-haspopup="dialog" aria-expanded={rangeOpen} aria-label={`Date range: ${selectedRange.label}`} onClick={() => { setCustomFrom(selectedRange.from); setCustomTo(selectedRange.to); setRangeOpen((open) => !open) }} className="crm-field mt-1.5 flex h-12 w-full min-w-[210px] items-center gap-3 rounded-xl px-3 text-left">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]"><Icon name="date_range" className="text-[19px]" /></span>
           <span className="min-w-0 flex-1"><strong className="block truncate text-[12px] font-black">{selectedRange.label}</strong><span className="block truncate text-[10px] font-semibold text-[var(--crm-text-muted)]">{compactDates(selectedRange)}</span></span>
-          <Icon name={rangeOpen ? 'expand_less' : 'expand_more'} className="text-[18px] text-[var(--crm-text-muted)]" />
+          <span aria-hidden="true" className="text-base leading-none text-[var(--crm-text-muted)]">{rangeOpen ? '⌃' : '⌄'}</span>
         </button>
         {rangeOpen ? <div role="dialog" aria-label="Choose reporting date range" className="absolute right-0 z-50 mt-2 grid w-[min(640px,calc(100vw-2rem))] gap-4 rounded-2xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-4 shadow-2xl sm:grid-cols-[1.1fr_0.9fr]">
           <section aria-labelledby="prospecting-quick-ranges-title">
             <h2 id="prospecting-quick-ranges-title" className="px-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--crm-text-muted)]">Quick ranges</h2>
             <div className="mt-2 grid grid-cols-2 gap-1">{RANGE_CHOICES.map((choice) => {
               const active = selectedRange.preset === choice.preset
-              return <button key={choice.preset} type="button" aria-pressed={active} onClick={() => applyRange({ preset: choice.preset })} className={cn('rounded-xl border px-3 py-2.5 text-left transition', active ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-transparent hover:border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)]')}><span className="flex items-center justify-between gap-2 text-[12px] font-black">{choice.label}{active ? <Icon name="check" className="text-[16px]" /> : null}</span><span className="mt-0.5 block text-[9px] font-semibold text-[var(--crm-text-muted)]">{choice.description}</span></button>
+              return <button key={choice.preset} type="button" aria-pressed={active} onClick={() => applyRange({ preset: choice.preset })} className={cn('rounded-xl border px-3 py-2.5 text-left transition', active ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-transparent hover:border-[var(--crm-border)] hover:bg-[var(--crm-surface-subtle)]')}><span className="flex items-center justify-between gap-2 text-[12px] font-black">{choice.label}{active ? <span aria-hidden="true">✓</span> : null}</span><span className="mt-0.5 block text-[9px] font-semibold text-[var(--crm-text-muted)]">{choice.description}</span></button>
             })}</div>
           </section>
           <section aria-labelledby="prospecting-custom-range-title" className="rounded-xl bg-[var(--crm-surface-subtle)] p-3">
@@ -165,7 +163,7 @@ export function ProspectingReportFilters({
               <label className="grid gap-1 text-[10px] font-black text-[var(--crm-text-muted)]">From<input aria-label="Custom range start" type="date" value={customFrom} max={today} onChange={(event) => setCustomFrom(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-xs font-bold" /></label>
               <label className="grid gap-1 text-[10px] font-black text-[var(--crm-text-muted)]">To<input aria-label="Custom range end" type="date" value={customTo} min={customFrom || undefined} max={today} onChange={(event) => setCustomTo(event.target.value)} className="crm-field h-10 rounded-lg px-3 text-xs font-bold" /></label>
             </div>
-            <button type="button" disabled={customInvalid} onClick={() => applyRange({ preset: 'custom', from: customFrom, to: customTo })} className="crm-primary-button mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45"><Icon name="check" className="text-[16px]" />Apply custom range</button>
+            <button type="button" disabled={customInvalid} onClick={() => applyRange({ preset: 'custom', from: customFrom, to: customTo })} className="crm-primary-button mt-4 inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45">Apply custom range</button>
           </section>
         </div> : null}
       </div>
