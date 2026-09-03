@@ -1,5 +1,7 @@
-import { MY_DAY_TIME_ZONE, shiftMyDayDate } from '@/lib/my-day-range'
+import { centralMidnightUtc, MY_DAY_TIME_ZONE, shiftMyDayDate } from '@/lib/my-day-range'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+
+export { centralMidnightUtc } from '@/lib/my-day-range'
 
 const MAX_RANGE_DAYS = 90
 const MAX_SESSIONS = 1_000
@@ -10,16 +12,6 @@ const CENTRAL_DATE_KEY = new Intl.DateTimeFormat('en-CA', {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
-})
-const CENTRAL_PARTS = new Intl.DateTimeFormat('en-US', {
-  timeZone: MY_DAY_TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23',
 })
 
 interface DialerSessionRow {
@@ -83,32 +75,6 @@ function dateKey(value: Date): string {
 function validDateKey(value: string): boolean {
   if (!DATE_KEY_PATTERN.test(value)) return false
   return new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value
-}
-
-function partsAt(value: Date) {
-  const parts = Object.fromEntries(CENTRAL_PARTS.formatToParts(value).map((part) => [part.type, part.value]))
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    second: Number(parts.second),
-  }
-}
-
-/** Convert a Central wall-clock time to UTC without assuming CST versus CDT. */
-export function centralMidnightUtc(value: string): Date {
-  if (!validDateKey(value)) throw new Error('Invalid Central date key')
-  const [year, month, day] = value.split('-').map(Number)
-  const wallClockUtc = Date.UTC(year, month - 1, day)
-  let instant = wallClockUtc
-  for (let index = 0; index < 3; index += 1) {
-    const parts = partsAt(new Date(instant))
-    const representedAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
-    instant = wallClockUtc - (representedAsUtc - instant)
-  }
-  return new Date(instant)
 }
 
 function rangeDateKeys(from: string, to: string): string[] {

@@ -81,6 +81,8 @@ function databaseError(error: { message?: string; code?: string } | null | undef
   if (detail.includes('campaign_has_no_eligible_members')) return new ProspectingCampaignError('campaign_empty', 409, 'Add at least one eligible contact before activating')
   if (detail.includes('campaign_has_no_steps')) return new ProspectingCampaignError('campaign_steps_required', 409, 'Add at least one message step before activating')
   if (detail.includes('campaign_dialer_complete')) return new ProspectingCampaignError('campaign_dialer_complete', 409, 'Every ready contact has been worked. Review skipped or suppressed contacts before starting another batch')
+  if (detail.includes('campaign_not_complete')) return new ProspectingCampaignError('campaign_not_complete', 409, 'Finish the current campaign run before starting it again')
+  if (detail.includes('campaign_has_no_callable_completed_members')) return new ProspectingCampaignError('campaign_has_no_callable_completed_members', 409, 'No completed seller still has a callable number. Review suppressed and disconnected numbers in the report')
   if (detail.includes('campaign_session_filters_empty')) return new ProspectingCampaignError('campaign_session_filters_empty', 409, 'No ready number matches this session setup. Widen the recency filters or review completed attempts')
   if (detail.includes('session_takeover_disposition_required')) return new ProspectingCampaignError('session_takeover_disposition_required', 409, 'Save the required call outcome in the other window before continuing here')
   if (detail.includes('session_takeover_live_call')) return new ProspectingCampaignError('session_takeover_live_call', 409, 'Finish the active call in the other window before continuing here')
@@ -659,5 +661,29 @@ export async function launchProspectingDialerCampaign(
     session: parseDialerSession(payload?.session),
     batchSize: Number(payload?.batchSize) || 0,
     remaining: Number(payload?.remaining) || 0,
+  }
+}
+
+export async function rerunProspectingDialerCampaign(actor: AuthenticatedActor, campaignId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(campaignId)) {
+    throw new ProspectingCampaignError('invalid_campaign_id', 400, 'Campaign id is invalid')
+  }
+  const { data, error } = await supabase.rpc('rerun_prospecting_dialer_campaign_v1', {
+    p_campaign_id: campaignId,
+    p_actor_email: actor.email,
+    p_actor_name: actor.name,
+  })
+  if (error) throw databaseError(error)
+  const result = data as { id?: unknown; status?: unknown; runNumber?: unknown; resetMembers?: unknown } | null
+  if (result?.id !== campaignId || result.status !== 'active'
+    || !Number.isInteger(Number(result.runNumber)) || Number(result.runNumber) < 2
+    || !Number.isInteger(Number(result.resetMembers)) || Number(result.resetMembers) < 1) {
+    throw new ProspectingCampaignError('invalid_campaign_payload', 503, 'The restarted campaign could not be verified')
+  }
+  return {
+    id: campaignId,
+    status: 'active' as const,
+    runNumber: Number(result.runNumber),
+    resetMembers: Number(result.resetMembers),
   }
 }

@@ -6,6 +6,7 @@ import { CampaignAudienceWorkbench } from '@/components/prospecting/campaign-aud
 import { CampaignDeliveryPulse } from '@/components/prospecting/campaign-delivery-pulse'
 import { CampaignLaunchReadiness } from '@/components/prospecting/campaign-launch-readiness'
 import { ProspectingSessionSetup } from '@/components/prospecting/prospecting-session-setup'
+import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
 import { Icon } from '@/components/ui/icon'
 import { isProspectingDialerPickerCampaign, prospectingDialerPickerLabel, type ProspectingCampaignDetail, type ProspectingCampaignSummary, type ProspectingDialerSessionSetup } from '@/lib/prospecting/campaign-contract'
 
@@ -52,6 +53,8 @@ type CampaignDashboardProps = {
   onEdit?: (campaign: ProspectingCampaignDetail) => void
   onTransition: (status: 'active' | 'paused' | 'archived') => void
   onLaunchDialer: (setup: ProspectingDialerSessionSetup) => void
+  onRerun?: () => void
+  freshRerun?: boolean
   onAudienceChanged?: () => void | Promise<void>
 }
 
@@ -71,6 +74,8 @@ export function CampaignDashboard({
   onEdit,
   onTransition,
   onLaunchDialer,
+  onRerun,
+  freshRerun = false,
   onAudienceChanged,
 }: CampaignDashboardProps) {
   const [managementOpen, setManagementOpen] = useState(false)
@@ -101,6 +106,7 @@ export function CampaignDashboard({
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--crm-canvas)] p-3 sm:p-5 lg:p-7">
       <div className="mx-auto max-w-5xl space-y-4">
+        <ProspectingSectionNav current="campaigns" />
         <section className="crm-panel rounded-2xl p-4 sm:p-5" aria-labelledby="campaign-picker-label">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -137,9 +143,17 @@ export function CampaignDashboard({
                   <div>
                     <p className="text-5xl font-black tracking-tight sm:text-6xl">{detail.stats.active}</p>
                     <p className="mt-1 text-sm font-black uppercase tracking-[0.14em] text-white/60">ready to call</p>
-                    <p className="mt-5 max-w-2xl text-sm leading-6 text-white/70">Review one seller, see every associated person and phone number, place a call, then save the outcome before moving to the next seller. Your progress is preserved if you stop.</p>
+                    <p className="mt-5 max-w-2xl text-sm leading-6 text-white/70">{detail.status === 'completed'
+                      ? 'This run is complete. Every prior phone attempt and result remains available in the call report. Start another run only when you are ready to work the callable numbers again.'
+                      : 'Review one seller, see every associated person and phone number, place a call, then save the outcome before moving to the next seller. Your progress is preserved if you stop.'}</p>
                   </div>
-                  {detail.status === 'active' ? <ProspectingSessionSetup key={detail.id} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} /> : null}
+                  <div className="space-y-3">
+                    {detail.status === 'active' ? <ProspectingSessionSetup key={`${detail.id}:${freshRerun ? 'fresh' : 'existing'}`} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} freshRun={freshRerun} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} /> : null}
+                    {detail.status === 'completed' ? <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-[38rem]">
+                      <ProspectingSessionSetup key={`${detail.id}:completed`} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} showLaunchAction={false} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} />
+                      {writesEnabled && onRerun ? <button type="button" onClick={onRerun} disabled={actionPending} className="crm-primary-button inline-flex min-h-12 min-w-48 items-center justify-center gap-2 rounded-xl px-5 text-xs font-black disabled:opacity-50"><Icon name="refresh" className="text-lg" />Run list again</button> : null}
+                    </div> : null}
+                  </div>
                 </div> : <div className="mt-7"><p className="text-sm font-bold text-white/70">Sends {sendDayLabel(detail.sendDays)} · {detail.sendWindowStart}–{detail.sendWindowEnd} in each seller&apos;s local time</p><p className="mt-2 text-xs text-white/50">Replies and opt-outs stop the sequence automatically.</p></div>}
 
                 <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 border-t border-white/10 pt-5 text-xs font-bold text-white/65">
