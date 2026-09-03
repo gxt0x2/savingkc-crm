@@ -186,6 +186,29 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText(/Your progress is preserved if you stop/i)).toBeVisible()
   })
 
+  it('turns a completed zero state into reporting and an explicit safe rerun', () => {
+    const rerun = vi.fn()
+    const dialerDetail: ProspectingCampaignDetail = {
+      ...detail,
+      kind: 'dialer',
+      status: 'completed',
+      callerId: '+18165550199',
+      fromPhone: null,
+      steps: [],
+      stats: { ...detail.stats, completed: 166, active: 0, total: 166 },
+    }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} onRerun={rerun} />)
+
+    expect(screen.getByText('0', { selector: 'p' })).toBeVisible()
+    expect(screen.getByText(/This run is complete/i)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'View call report' })).toHaveAttribute('href', `/prospecting/reports?campaign=${dialerDetail.id}`)
+    fireEvent.click(screen.getByRole('button', { name: 'Run list again' }))
+    expect(screen.getByRole('dialog', { name: 'Run this list again?' })).toBeVisible()
+    expect(screen.getByText(/DNCs, disconnected numbers, and suppressions stay unchanged/i)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm new run' }))
+    expect(rerun).toHaveBeenCalledOnce()
+  })
+
   it('lets the agent deliberately restart from the first remaining unworked seller', () => {
     const launch = vi.fn()
     const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }

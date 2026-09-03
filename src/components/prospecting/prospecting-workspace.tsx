@@ -290,6 +290,26 @@ export function ProspectingWorkspace({
     }
   }
 
+  async function rerunCampaign() {
+    if (!detail || detail.kind !== 'dialer' || detail.status !== 'completed' || actionPending) return
+    setActionPending(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const result = await jsonRequest<{ campaign: { runNumber: number; resetMembers: number } }>(`/api/prospecting/campaigns/${detail.id}/rerun`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: true }),
+      })
+      setNotice(`Run ${result.campaign.runNumber} is ready. ${result.campaign.resetMembers} callable seller${result.campaign.resetMembers === 1 ? '' : 's'} reopened; prior call results were preserved.`)
+      await Promise.all([loadCampaigns(), loadDetail(detail.id)])
+    } catch (rerunError) {
+      setError(rerunError instanceof Error ? rerunError.message : 'The completed list could not be started again')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
   async function enrollSelectedIntoCurrentCampaign() {
     if (!detail || !pendingAudience || actionPending) return
     setActionPending(true)
@@ -448,6 +468,7 @@ export function ProspectingWorkspace({
       onEdit={editCampaign}
       onTransition={(status) => void transition(status)}
       onLaunchDialer={(setup) => void launchDialer(setup)}
+      onRerun={() => void rerunCampaign()}
       onAudienceChanged={detail ? async () => { await loadDetail(detail.id) } : undefined}
     />}
   </>
