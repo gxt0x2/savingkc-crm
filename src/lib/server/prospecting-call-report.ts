@@ -43,9 +43,14 @@ export interface ProspectingCallReportSession {
   agentEmail: string
   status: string
   queueSize: number
+  calls: number
+  connected: number
+  uniqueNumbers: number
   resultsSaved: number
   reached: number
   skips: number
+  durationSeconds: number
+  sessionDurationSeconds: number
   outcomes: Record<string, number>
   startedAt: string
   endedAt: string | null
@@ -68,6 +73,8 @@ export interface ProspectingCallReportAttempt {
   disposition: string | null
   reached: boolean | null
   durationSeconds: number | null
+  recordingSid: string | null
+  postCallStatus: string | null
   createdAt: string
   startedAt: string | null
   connectedAt: string | null
@@ -82,6 +89,13 @@ export interface ProspectingCallReport {
     currentRunNumber: number | null
   }
   runNumber: number | null
+  filters: {
+    agentEmail: string | null
+    callerId: string | null
+    search: string | null
+    agents: Array<{ email: string; name: string }>
+    callerIds: string[]
+  }
   metrics: ProspectingCallReportMetrics
   outcomes: Record<string, number>
   runs: ProspectingCallReportRun[]
@@ -95,6 +109,11 @@ export interface ProspectingCallReport {
       total: number
       hasMore: boolean
     }
+  }
+  selectedSessionCalls: ProspectingCallReportAttempt[]
+  recordings: {
+    items: ProspectingCallReportAttempt[]
+    total: number
   }
 }
 
@@ -151,6 +170,10 @@ function numberRecord(value: unknown): Record<string, number> {
   return Object.fromEntries(Object.entries(source).map(([key, rawCount]) => [key, count(rawCount, 'Outcome')]))
 }
 
+function textArray(value: unknown, field: string): string[] {
+  return array(value, field).map((item) => text(item, field))
+}
+
 function array(value: unknown, field: string): unknown[] {
   if (!Array.isArray(value)) {
     throw new ProspectingCallReportError('invalid_report_payload', 503, `${field} report data is unavailable`)
@@ -158,12 +181,41 @@ function array(value: unknown, field: string): unknown[] {
   return value
 }
 
+function parseAttempt(value: unknown): ProspectingCallReportAttempt {
+  const row = record(value, 'Attempt')
+  return {
+    id: text(row.id, 'Attempt id'),
+    sessionId: text(row.sessionId, 'Attempt session'),
+    campaignId: text(row.campaignId, 'Attempt campaign id'),
+    campaignName: text(row.campaignName, 'Attempt campaign name'),
+    runNumber: positiveInteger(row.runNumber, 'Attempt run'),
+    agentName: text(row.agentName, 'Attempt agent'),
+    agentEmail: text(row.agentEmail, 'Attempt agent email'),
+    sellerName: optionalText(row.sellerName),
+    propertyAddress: optionalText(row.propertyAddress),
+    phone: text(row.phone, 'Attempt phone'),
+    callerId: text(row.callerId, 'Attempt caller id'),
+    status: text(row.status, 'Attempt status'),
+    disposition: optionalText(row.disposition),
+    reached: booleanOrNull(row.reached),
+    durationSeconds: row.durationSeconds == null ? null : count(row.durationSeconds, 'Attempt duration'),
+    recordingSid: optionalText(row.recordingSid),
+    postCallStatus: optionalText(row.postCallStatus),
+    createdAt: text(row.createdAt, 'Attempt created time'),
+    startedAt: optionalText(row.startedAt),
+    connectedAt: optionalText(row.connectedAt),
+    endedAt: optionalText(row.endedAt),
+  }
+}
+
 export function parseProspectingCallReport(value: unknown): ProspectingCallReport {
   const root = record(value, 'Campaign')
   const campaign = record(root.campaign, 'Campaign')
   const metrics = record(root.metrics, 'Metrics')
+  const filters = record(root.filters, 'Filter')
   const attempts = record(root.attempts, 'Attempt')
   const pageInfo = record(attempts.pageInfo, 'Page')
+  const recordings = record(root.recordings, 'Recording')
 
   return {
     campaign: {
@@ -173,6 +225,16 @@ export function parseProspectingCallReport(value: unknown): ProspectingCallRepor
       currentRunNumber: campaign.currentRunNumber == null ? null : positiveInteger(campaign.currentRunNumber, 'Current run'),
     },
     runNumber: root.runNumber == null ? null : positiveInteger(root.runNumber, 'Run'),
+    filters: {
+      agentEmail: optionalText(filters.agentEmail),
+      callerId: optionalText(filters.callerId),
+      search: optionalText(filters.search),
+      agents: array(filters.agents, 'Filter agent').map((value) => {
+        const row = record(value, 'Filter agent')
+        return { email: text(row.email, 'Filter agent email'), name: text(row.name, 'Filter agent name') }
+      }),
+      callerIds: textArray(filters.callerIds, 'Filter caller id'),
+    },
     metrics: {
       sessions: count(metrics.sessions, 'Sessions'),
       agents: count(metrics.agents, 'Agents'),
@@ -220,9 +282,14 @@ export function parseProspectingCallReport(value: unknown): ProspectingCallRepor
         agentEmail: text(row.agentEmail, 'Session agent email'),
         status: text(row.status, 'Session status'),
         queueSize: count(row.queueSize, 'Session queue'),
+        calls: count(row.calls, 'Session calls'),
+        connected: count(row.connected, 'Session connected'),
+        uniqueNumbers: count(row.uniqueNumbers, 'Session unique numbers'),
         resultsSaved: count(row.resultsSaved, 'Session results'),
         reached: count(row.reached, 'Session reached'),
         skips: count(row.skips, 'Session skips'),
+        durationSeconds: count(row.durationSeconds, 'Session call duration'),
+        sessionDurationSeconds: count(row.sessionDurationSeconds, 'Session duration'),
         outcomes: numberRecord(row.outcomes),
         startedAt: text(row.startedAt, 'Session start'),
         endedAt: optionalText(row.endedAt),
@@ -230,36 +297,18 @@ export function parseProspectingCallReport(value: unknown): ProspectingCallRepor
       }
     }),
     attempts: {
-      items: array(attempts.items, 'Attempt').map((value) => {
-        const row = record(value, 'Attempt')
-        return {
-          id: text(row.id, 'Attempt id'),
-          sessionId: text(row.sessionId, 'Attempt session'),
-          campaignId: text(row.campaignId, 'Attempt campaign id'),
-          campaignName: text(row.campaignName, 'Attempt campaign name'),
-          runNumber: positiveInteger(row.runNumber, 'Attempt run'),
-          agentName: text(row.agentName, 'Attempt agent'),
-          agentEmail: text(row.agentEmail, 'Attempt agent email'),
-          sellerName: optionalText(row.sellerName),
-          propertyAddress: optionalText(row.propertyAddress),
-          phone: text(row.phone, 'Attempt phone'),
-          callerId: text(row.callerId, 'Attempt caller id'),
-          status: text(row.status, 'Attempt status'),
-          disposition: optionalText(row.disposition),
-          reached: booleanOrNull(row.reached),
-          durationSeconds: row.durationSeconds == null ? null : count(row.durationSeconds, 'Attempt duration'),
-          createdAt: text(row.createdAt, 'Attempt created time'),
-          startedAt: optionalText(row.startedAt),
-          connectedAt: optionalText(row.connectedAt),
-          endedAt: optionalText(row.endedAt),
-        }
-      }),
+      items: array(attempts.items, 'Attempt').map(parseAttempt),
       pageInfo: {
         limit: positiveInteger(pageInfo.limit, 'Page limit'),
         offset: count(pageInfo.offset, 'Page offset'),
         total: count(pageInfo.total, 'Page total'),
         hasMore: pageInfo.hasMore === true,
       },
+    },
+    selectedSessionCalls: array(root.selectedSessionCalls, 'Session call').map(parseAttempt),
+    recordings: {
+      items: array(recordings.items, 'Recording').map(parseAttempt),
+      total: count(recordings.total, 'Recording total'),
     },
   }
 }
@@ -278,7 +327,17 @@ function reportDatabaseError(error: { message?: string; code?: string } | null |
 export async function getProspectingCallReport(
   actor: AuthenticatedActor,
   campaignId: string | null,
-  options: { runNumber?: number | null; page?: number; limit?: number; from?: string | null; to?: string | null } = {},
+  options: {
+    runNumber?: number | null
+    page?: number
+    limit?: number
+    from?: string | null
+    to?: string | null
+    agentEmail?: string | null
+    callerId?: string | null
+    search?: string | null
+    sessionId?: string | null
+  } = {},
 ): Promise<ProspectingCallReport> {
   if (campaignId !== null && !UUID_PATTERN.test(campaignId)) throw new ProspectingCallReportError('invalid_campaign_id', 400, 'Campaign id is invalid')
   const runNumber = options.runNumber ?? null
@@ -286,6 +345,10 @@ export async function getProspectingCallReport(
   const limit = options.limit ?? 50
   const from = options.from ?? null
   const to = options.to ?? null
+  const agentEmail = options.agentEmail?.trim() || null
+  const callerId = options.callerId?.trim() || null
+  const search = options.search?.trim() || null
+  const sessionId = options.sessionId?.trim() || null
   if ((runNumber !== null && (!Number.isInteger(runNumber) || runNumber < 1))
     || (campaignId === null && runNumber !== null)
     || !Number.isInteger(page) || page < 1
@@ -293,16 +356,24 @@ export async function getProspectingCallReport(
     || ((from === null) !== (to === null))
     || (from !== null && to !== null && (
       !DATE_KEY_PATTERN.test(from) || !DATE_KEY_PATTERN.test(to) || from > to || shiftMyDayDate(from, 89) < to
-    ))) {
+    ))
+    || (agentEmail !== null && agentEmail.length > 320)
+    || (callerId !== null && callerId.length > 32)
+    || (search !== null && search.length > 120)
+    || (sessionId !== null && !UUID_PATTERN.test(sessionId))) {
     throw new ProspectingCallReportError('invalid_report_request', 400, 'Campaign report filters are invalid')
   }
 
-  const { data, error } = await supabase.rpc('prospecting_campaign_call_report_v1', {
+  const { data, error } = await supabase.rpc('prospecting_campaign_call_report_v2', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_run_number: runNumber,
     p_from: from === null ? null : centralMidnightUtc(from).toISOString(),
     p_to_exclusive: to === null ? null : centralMidnightUtc(shiftMyDayDate(to, 1)).toISOString(),
+    p_agent_email: agentEmail,
+    p_caller_id: callerId,
+    p_search: search,
+    p_session_id: sessionId,
     p_limit: limit,
     p_offset: (page - 1) * limit,
   })
