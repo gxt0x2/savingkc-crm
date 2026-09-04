@@ -33,6 +33,7 @@ describe('assistant query safety helpers', () => {
 
   it('counts common result shapes for metadata-only audit rows', () => {
     expect(assistantResultCount({ records: [1, 2] })).toBe(2)
+    expect(assistantResultCount({ andons: [{ id: 'andon-1' }] })).toBe(1)
     expect(assistantResultCount({ record: { id: 'lead' } })).toBe(1)
     expect(assistantResultCount({ generatedAt: 'now' })).toBeNull()
   })
