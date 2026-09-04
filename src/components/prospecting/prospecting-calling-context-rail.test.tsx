@@ -61,9 +61,11 @@ describe('ProspectingCallingContextRail', () => {
     expect(screen.getAllByText('Daughter handles the estate calls.').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Saved by Ernest')).toBeVisible()
     expect(screen.getByText('1 items')).toBeVisible()
-    expect(screen.getByLabelText('Owner name cells')).toBeVisible()
-    expect(screen.getByLabelText('Situs address cells')).toBeVisible()
-    expect(screen.getByLabelText('Mailing address cells')).toBeVisible()
+    expect(screen.getByRole('complementary', { name: 'Seller workspace' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Subject property' })).toBeVisible()
+    expect(screen.getByLabelText('Owner of record')).toHaveTextContent('Mary Seller')
+    expect(screen.getByLabelText('Situs address')).toHaveTextContent('123 Main Street, Kansas City, MO 64108')
+    expect(screen.getByLabelText('Mailing address')).toHaveTextContent('Not on file')
   })
 
   it('shows swallowed MI and unit in their own cells without turning MO into Mo', () => {
@@ -105,13 +107,11 @@ describe('ProspectingCallingContextRail', () => {
       onRefreshActivities={vi.fn()}
     />)
 
-    expect(screen.getByText('Betty')).toBeVisible()
-    expect(screen.getByText('J')).toBeVisible()
-    expect(screen.getByText('Moore')).toBeVisible()
+    expect(screen.getByLabelText('Owner of record')).toHaveTextContent('Betty J Moore')
     expect(screen.getAllByText('303 E Partridge St').length).toBeGreaterThan(0)
-    expect(screen.getByText('Unit 38')).toBeVisible()
-    expect(screen.getByText('Unit B')).toBeVisible()
-    expect(screen.getAllByText((content) => content === 'MO').length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('Situs address')).toHaveTextContent('Unit 38')
+    expect(screen.getByLabelText('Mailing address')).toHaveTextContent('Unit B')
+    expect(screen.getByLabelText('Situs address')).toHaveTextContent('MO 64133')
   })
 
   it('keeps the Text Hub visible but removes its composer in read-only preview', () => {

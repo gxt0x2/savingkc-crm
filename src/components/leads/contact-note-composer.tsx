@@ -8,10 +8,12 @@ export function ContactNoteComposer({
   contactName,
   onSave,
   readOnlyPreview = false,
+  rows = 1,
 }: {
   contactName: string
   onSave: (description: string) => Promise<void>
   readOnlyPreview?: boolean
+  rows?: number
 }) {
   const [note, setNote] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -39,7 +41,7 @@ export function ContactNoteComposer({
         <textarea
           value={note}
           onChange={(event) => { setNote(event.target.value); setStatus('idle'); setError(null) }}
-          rows={1}
+          rows={rows}
           maxLength={2_000}
           disabled={readOnlyPreview}
           placeholder={`Add a note for ${contactName}…`}

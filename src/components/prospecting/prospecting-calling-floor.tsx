@@ -609,11 +609,10 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         onSkip={() => { void skipCurrentLead() }}
       />
 
-      {/* Calling floor: people and phone actions are primary; context remains bounded at the side. */}
+      {/* Calling floor: one balanced seller workspace without a separately scrolling context rail. */}
       <div className="grid grid-cols-12 gap-4 lg:gap-6">
-        {/* Primary workspace — the actual people and callable numbers. */}
-        <main className="order-1 col-span-12 lg:col-span-8">
-          {currentSubject && (
+        <ProspectingCallingContextRail
+          primaryWorkspace={currentSubject ? (
             <HeirsSection
               key={`${currentSubjectKey}:${autoStartEpoch}`}
               leadId={currentLeadId}
@@ -638,12 +637,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
                 : undefined}
               onContactNoteSaved={() => { void refreshActivities() }}
             />
-          )}
-        </main>
-
-        {/* Supporting rail — sticky, internally bounded, and limited to this seller. */}
-        <ProspectingCallingContextRail
-          fullWidth={false}
+          ) : null}
           leadId={currentLeadId}
           lead={currentLead}
           prospect={currentProspect}

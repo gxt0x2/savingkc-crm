@@ -66,7 +66,7 @@ export function ProspectingNotesPanel(props: ProspectingNotesPanelProps) {
       <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-muted)]">{props.notes.length} saved</span>
     </div>
 
-    <ContactNoteComposer contactName={props.sellerName || 'current seller'} onSave={save} readOnlyPreview={props.readOnly} />
+    <ContactNoteComposer contactName={props.sellerName || 'current seller'} onSave={save} readOnlyPreview={props.readOnly} rows={4} />
 
     {props.notes.length > 0 ? <div className="mt-3 space-y-2 border-t border-[var(--ck-border)] pt-3">
       {props.notes.slice(0, 3).map((note) => <article key={note.id} className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] p-3">

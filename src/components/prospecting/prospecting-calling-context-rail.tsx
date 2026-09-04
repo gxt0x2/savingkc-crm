@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { useMemo } from 'react'
+import { type ReactNode, useMemo } from 'react'
 
 import { CommsSummaryBar, CommsTimeline } from '@/components/leads/comms-timeline'
 import { Icon } from '@/components/ui/icon'
@@ -12,19 +12,18 @@ import type {
   ProspectingCallingTab,
   ProspectingOccupancy,
 } from '@/components/prospecting/prospecting-calling-types'
-import { ProspectAddressFields, ProspectOwnerNameFields } from '@/components/prospecting/prospect-display-fields'
 import { ProspectingNotesPanel } from '@/components/prospecting/prospecting-notes-panel'
 import { ProspectingWrapUpActions } from '@/components/prospecting/prospecting-wrap-up-actions'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
 import { toProperCase } from '@/lib/format'
 import type { DialerActivity } from '@/lib/dialer-lead-activity'
-import { resolveMailingDisplay, resolveOwnerDisplay, resolveSitusDisplay } from '@/lib/owner-display'
+import { joinOwnerAddress, resolveMailingDisplay, resolveOwnerDisplay, resolveSitusDisplay } from '@/lib/owner-display'
 
 const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assist').then((module) => module.DialerAiAssist))
 const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
 
 interface ProspectingCallingContextRailProps {
-  fullWidth?: boolean
+  primaryWorkspace?: ReactNode
   leadId: string | null
   lead: ProspectingCallingLead | null
   prospect: ProspectingCallingProspect | null
@@ -83,72 +82,10 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
     zip: props.lead?.zip,
   }), [props.prospect, props.lead])
   const mailing = useMemo(() => resolveMailingDisplay(props.prospect), [props.prospect])
+  const situsLine = useMemo(() => joinOwnerAddress(situs) || props.situsAddress || 'Address unavailable', [situs, props.situsAddress])
+  const mailingLine = useMemo(() => joinOwnerAddress(mailing), [mailing])
 
-  return <aside aria-label="Seller context" className={`order-2 col-span-12 space-y-3 lg:self-start ${props.fullWidth ? 'lg:col-span-12' : 'lg:sticky lg:top-[168px] lg:col-span-4 lg:max-h-[calc(100vh-184px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1'}`}>
-    <ProspectingNotesPanel
-      key={`notes:${props.prospect?.id || props.leadId || 'current'}`}
-      leadId={props.leadId}
-      prospectId={props.prospect?.id || null}
-      campaignMemberId={props.campaignMemberId || null}
-      dialerSessionId={props.durableSessionId}
-      sellerName={props.ownerName}
-      notes={contactNotes}
-      readOnly={Boolean(props.readOnlyPreview)}
-      onSaved={props.onRefreshActivities}
-    />
-
-    <section className="ck-card p-4">
-      <div className="mb-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Subject property</p>
-            <h1 className="truncate text-xl font-black leading-tight text-[var(--ck-text)]">{situs.street || '—'}</h1>
-          </div>
-          {props.leadId ? <Link href={`/leads/${props.leadId}`} prefetch={false} target="_blank" title="Open full lead profile in a new tab" className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Profile <Icon name="open_in_new" size="text-xs" /></Link>
-            : <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">Source Prospect</span>}
-        </div>
-        <ProspectAddressFields label="Situs address cells" address={situs} />
-        <div className="mt-3">
-          <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mailing</p>
-          <ProspectAddressFields label="Mailing address cells" address={mailing} />
-        </div>
-      </div>
-
-      <div className="mb-3 rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-3">
-        <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[#E32E2E]">Owner of record</p>
-        <p className="text-sm font-bold text-[var(--ck-text)]">{owner.fullName || props.ownerName}</p>
-        <div className="mt-2"><ProspectOwnerNameFields owner={owner} /></div>
-        <p className="mt-2 text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">{props.prospect?.is_deceased === true ? 'Deceased owner · contact the associated people below' : 'Owner record · contact the associated people below'}</p>
-        {props.coOwners.length > 0 ? <div className="mt-3 border-t border-[#E32E2E]/20 pt-3"><p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Co-owners on title</p><ul className="space-y-0.5">{props.coOwners.map((name) => <li key={name} className="flex items-center gap-1.5 text-xs text-[var(--ck-text)]"><Icon name="person" size="text-xs" className="text-[var(--ck-text-dim)]" />{toProperCase(name)}</li>)}</ul></div> : null}
-      </div>
-
-      <div className="mb-3 flex flex-wrap gap-2">
-        {props.occupancy ? <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${props.occupancy.tone === 'warn' ? 'border-[#E32E2E]/40 bg-[#E32E2E]/15 text-[#E32E2E]' : props.occupancy.tone === 'amber' ? 'border-amber-500/30 bg-amber-500/15 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400'}`}>{props.occupancy.label}</span> : null}
-        {props.prospect?.county ? <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{props.prospect.county} county</span> : null}
-        {props.delinquentYears ? <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400">{props.delinquentYears} delinquent</span> : null}
-        {props.prospect?.earliest_delinquent_year ? <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">since {props.prospect.earliest_delinquent_year}</span> : null}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2">
-        {[['Taxes owed', compactDollars(props.prospect?.cumulative_due), 'text-[#E32E2E]'], ['Zestimate', compactDollars(props.prospect?.zestimate), 'text-[var(--ck-text)]'], ['Market', compactDollars(props.prospect?.total_market_value), 'text-[var(--ck-text)]']].map(([label, value, tone]) => <div key={label} className="ck-card-elev p-3"><p className="mb-1 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{label}</p><p className={`text-lg font-black tabular-nums ${tone}`}>{value}</p></div>)}
-      </div>
-    </section>
-
-    {props.lead ? <DialerAiAssist key={`${props.durableSessionId || 'legacy'}:${props.lead.id}`} sessionId={props.durableSessionId} leadId={props.lead.id} /> : null}
-
-    <ProspectingWrapUpActions
-      leadId={props.leadId}
-      prospectId={props.prospect?.id || null}
-      campaignMemberId={props.campaignMemberId || null}
-      dialerSessionId={props.durableSessionId}
-      sellerName={props.ownerName}
-      propertyAddress={props.situsAddress}
-      activities={props.activities}
-      readOnly={Boolean(props.readOnlyPreview)}
-      onRefresh={props.onRefreshActivities}
-    />
-
-    <section aria-label="Seller communication workspace" className="ck-card p-4">
+  const communicationWorkspace = <section aria-label="Seller communication workspace" className="ck-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="inline-flex rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-0.5">{([['texts', 'Text Hub'], ['activity', 'History']] as const).map(([tab, label]) => <button key={tab} type="button" onClick={() => props.onTabChange(tab)} className={`rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${props.activeTab === tab ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'}`}>{label}</button>)}</div>
         <span className="text-[10px] text-[var(--ck-text-dim)]">{props.activeTab === 'texts' ? `${commsSummary.sms} texts` : `${historyCount} items`}</span>
@@ -180,5 +117,74 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
       {props.leadId ? <Link href={`/conversations?lead=${encodeURIComponent(props.leadId)}`} prefetch={false} className="mt-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)] hover:underline">Open full conversation <Icon name="arrow_forward" size="text-xs" /></Link> : null}
     </section>
 
+  return <aside aria-label="Seller workspace" className="order-2 col-span-12 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(22rem,0.9fr)] lg:gap-5 lg:self-start">
+    <div className="min-w-0 space-y-4">
+      {props.primaryWorkspace}
+      {props.lead ? <DialerAiAssist key={`${props.durableSessionId || 'legacy'}:${props.lead.id}`} sessionId={props.durableSessionId} leadId={props.lead.id} /> : null}
+      {communicationWorkspace}
+    </div>
+
+    <div className="min-w-0 space-y-4">
+      <ProspectingNotesPanel
+        key={`notes:${props.prospect?.id || props.leadId || 'current'}`}
+        leadId={props.leadId}
+        prospectId={props.prospect?.id || null}
+        campaignMemberId={props.campaignMemberId || null}
+        dialerSessionId={props.durableSessionId}
+        sellerName={props.ownerName}
+        notes={contactNotes}
+        readOnly={Boolean(props.readOnlyPreview)}
+        onSaved={props.onRefreshActivities}
+      />
+
+      <section aria-label="Subject property" className="ck-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Subject property</p>
+            <h1 className="mt-1 text-lg font-black leading-tight text-[var(--ck-text)]">{situs.street || 'Address unavailable'}</h1>
+            <p aria-label="Situs address" className="mt-1 text-xs leading-5 text-[var(--ck-text-muted)]">{situsLine}</p>
+          </div>
+          {props.leadId ? <Link href={`/leads/${props.leadId}`} prefetch={false} target="_blank" title="Open full lead profile in a new tab" className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Profile <Icon name="open_in_new" size="text-xs" /></Link>
+            : <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">Source Prospect</span>}
+        </div>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-[#E32E2E]">Owner of record</p>
+            <p aria-label="Owner of record" className="mt-1 text-sm font-black text-[var(--ck-text)]">{owner.fullName || props.ownerName}</p>
+            <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">{props.prospect?.is_deceased === true ? 'Deceased owner' : 'County owner record'}</p>
+          </div>
+          <div className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mailing address</p>
+            <p aria-label="Mailing address" className="mt-1 text-xs font-bold leading-5 text-[var(--ck-text)]">{mailingLine || 'Not on file'}</p>
+          </div>
+        </div>
+
+        {props.coOwners.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Co-owners</span>{props.coOwners.map((name) => <span key={name} className="inline-flex items-center gap-1 rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold text-[var(--ck-text)]"><Icon name="person" size="text-xs" className="text-[var(--ck-text-dim)]" />{toProperCase(name)}</span>)}</div> : null}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {props.occupancy ? <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${props.occupancy.tone === 'warn' ? 'border-[#E32E2E]/40 bg-[#E32E2E]/15 text-[#E32E2E]' : props.occupancy.tone === 'amber' ? 'border-amber-500/30 bg-amber-500/15 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400'}`}>{props.occupancy.label}</span> : null}
+          {props.prospect?.county ? <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{props.prospect.county} county</span> : null}
+          {props.delinquentYears ? <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400">{props.delinquentYears} delinquent</span> : null}
+          {props.prospect?.earliest_delinquent_year ? <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">since {props.prospect.earliest_delinquent_year}</span> : null}
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {[['Taxes owed', compactDollars(props.prospect?.cumulative_due), 'text-[#E32E2E]'], ['Zestimate', compactDollars(props.prospect?.zestimate), 'text-[var(--ck-text)]'], ['Market', compactDollars(props.prospect?.total_market_value), 'text-[var(--ck-text)]']].map(([label, value, tone]) => <div key={label} className="ck-card-elev p-2.5"><p className="text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{label}</p><p className={`mt-1 text-base font-black tabular-nums ${tone}`}>{value}</p></div>)}
+        </div>
+      </section>
+
+      <ProspectingWrapUpActions
+        leadId={props.leadId}
+        prospectId={props.prospect?.id || null}
+        campaignMemberId={props.campaignMemberId || null}
+        dialerSessionId={props.durableSessionId}
+        sellerName={props.ownerName}
+        propertyAddress={props.situsAddress}
+        activities={props.activities}
+        readOnly={Boolean(props.readOnlyPreview)}
+        onRefresh={props.onRefreshActivities}
+      />
+    </div>
   </aside>
 }
