@@ -61,6 +61,12 @@ describe('Mojo supervised recovery contract', () => {
     expect(installer).toContain('/# mojo-eod-sweep$/')
     expect(installer).toContain('/# mojo-session-refresh$/')
     expect(installer).toContain('launchctl bootstrap')
+    expect(installer).toContain('.local/share/savingkc-mojo-supervisor')
+    expect(installer).toContain('mojo-cron-runner.mjs')
+    expect(installer).toContain('mojo-extract-session.mjs')
+    expect(installer).toContain('playwright-core@1.60.0')
+    expect(installer).toContain("import('playwright-core')")
+    expect(installer).toContain('mojo-supervisor-runtime-')
   })
 
   it('keeps the June 10 reconciliation unable to write production data', () => {

@@ -206,6 +206,23 @@ describe('Casey My Day model', () => {
     expect(report.funnel[1].value).toBeNull()
   })
 
+  it('withholds a stale current-day Mojo snapshot while retaining historical weekly evidence', () => {
+    const report = buildMyDay(input({
+      sourceFreshness: {
+        status: 'stale',
+        message: 'Mojo provider performance has not updated in 180 minutes',
+        lastSuccessfulSyncAt: '2026-08-05T15:00:00.000Z',
+        ageMinutes: 180,
+      },
+    }))
+
+    expect(report.performance.status).toBe('partial')
+    expect(report.funnel.find((metric) => metric.key === 'calls')?.value).toBeNull()
+    expect(report.funnel.find((metric) => metric.key === 'leads')?.value).toBeNull()
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, null, null, null])
+    expect(report.performance.freshness.status).toBe('stale')
+  })
+
   it('turns Casey-assigned work into real commitments and call-list candidates', () => {
     const report = buildMyDay(input())
     expect(report.queue).toHaveLength(1)

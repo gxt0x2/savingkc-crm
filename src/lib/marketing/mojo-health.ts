@@ -16,6 +16,11 @@ export type MojoHealth = {
   latestQueuedAt: string | null
   latestCompletedAt: string | null
   latestQueueError: string | null
+  performance: {
+    latestMetricDate: string | null
+    latestFetchedAt: string | null
+    ageMinutes: number | null
+  }
   queue: {
     pending: number
     processing: number
@@ -57,6 +62,11 @@ type MojoLeadRow = {
   id: string
   station?: string | null
   created_at?: string | null
+}
+
+type MojoPerformanceRow = {
+  metric_date?: string | null
+  source_fetched_at?: string | null
 }
 
 const SYSTEM_CONFIG_KEYS = [
@@ -124,6 +134,17 @@ function centralBusinessHours(now: Date): boolean {
   return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 18
 }
 
+function centralDateKey(now: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
+
 function countByStatus(rows: MojoQueueRow[], status: string): number {
   return rows.filter((row) => text(row.status).toLowerCase() === status).length
 }
@@ -143,6 +164,11 @@ function buildFallbackHealth(error: string, now: Date): MojoHealth {
     latestQueuedAt: null,
     latestCompletedAt: null,
     latestQueueError: error,
+    performance: {
+      latestMetricDate: null,
+      latestFetchedAt: null,
+      ageMinutes: null,
+    },
     queue: {
       pending: 0,
       processing: 0,
@@ -192,6 +218,7 @@ export async function getMojoHealth(
       { data: queueRows, error: queueError },
       { data: periodLeadRows, error: periodLeadError },
       { data: recentLeadRows, error: recentLeadError },
+      { data: performanceRows, error: performanceError },
     ] = await Promise.all([
       supabase
         .from('system_config')
@@ -216,9 +243,15 @@ export async function getMojoHealth(
         .eq('source', 'mojo_call')
         .gte('created_at', since24h)
         .limit(500),
+      supabase
+        .from('mojo_agent_daily_performance')
+        .select('metric_date,source_fetched_at')
+        .eq('agent_key', 'casey')
+        .order('metric_date', { ascending: false })
+        .limit(1),
     ])
 
-    const firstError = configError || queueError || periodLeadError || recentLeadError
+    const firstError = configError || queueError || periodLeadError || recentLeadError || performanceError
     if (firstError) return buildFallbackHealth(firstError.message, now)
 
     const configByKey = new Map<string, SystemConfigRow>(
@@ -270,6 +303,11 @@ export async function getMojoHealth(
     const processing = countByStatus(queue, 'processing')
     const qualifiedPeriod = leads.filter((lead) => QUALIFIED_STATIONS.has(text(lead.station).toLowerCase())).length
     const appointmentPeriod = leads.filter((lead) => text(lead.station).toLowerCase() === 'appointment_set').length
+    const latestPerformance = ((performanceRows ?? []) as MojoPerformanceRow[])[0]
+    const latestMetricDate = text(latestPerformance?.metric_date) || null
+    const latestFetchedAt = isoOrNull(latestPerformance?.source_fetched_at)
+    const performanceAgeMinutes = ageMinutes(latestFetchedAt, now)
+    const today = centralDateKey(now)
 
     let status: MojoHealthStatus = 'clean'
     let message = 'Mojo sync is healthy'
@@ -285,9 +323,21 @@ export async function getMojoHealth(
     } else if (businessHours && !lastSyncAt) {
       status = 'attention'
       message = 'Mojo sync has no successful timestamp during business hours'
+    } else if (businessHours && latestMetricDate !== today) {
+      status = 'attention'
+      message = `Mojo has no provider performance snapshot for ${today}`
+    } else if (businessHours && !latestFetchedAt) {
+      status = 'attention'
+      message = `Mojo provider performance for ${today} has no fetch timestamp`
+    } else if (businessHours && (performanceAgeMinutes ?? 0) >= 120) {
+      status = 'attention'
+      message = `Mojo provider performance has not updated in ${performanceAgeMinutes} minutes during business hours`
     } else if (businessHours && (lastSyncAgeMinutes ?? 0) >= 120) {
       status = 'attention'
       message = `Mojo sync has not completed in ${lastSyncAgeMinutes} minutes during business hours`
+    } else if (businessHours && (performanceAgeMinutes ?? 0) >= 60) {
+      status = 'watch'
+      message = `Mojo provider performance is delayed by ${performanceAgeMinutes} minutes`
     } else if (businessHours && (lastSyncAgeMinutes ?? 0) >= 60) {
       status = 'watch'
       message = `Mojo sync is stale by ${lastSyncAgeMinutes} minutes`
@@ -310,6 +360,11 @@ export async function getMojoHealth(
       latestQueuedAt,
       latestCompletedAt,
       latestQueueError,
+      performance: {
+        latestMetricDate,
+        latestFetchedAt,
+        ageMinutes: performanceAgeMinutes,
+      },
       queue: {
         pending,
         processing,

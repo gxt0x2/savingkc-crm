@@ -323,6 +323,36 @@ function FunnelCard({ data }: { data: MyDayData }) {
   )
 }
 
+export function MojoFreshnessAlert({ data }: { data: MyDayData }) {
+  const freshness = data.performance.freshness
+  if (freshness.status === 'current') return null
+
+  const delayed = freshness.status === 'delayed'
+  const lastSync = freshness.lastSuccessfulSyncAt ? sourceFreshness(freshness.lastSuccessfulSyncAt) : 'No successful sync recorded'
+  return (
+    <section
+      role="alert"
+      aria-label="Mojo data freshness"
+      className={cn(
+        'flex items-start gap-3 rounded-xl border px-4 py-3 text-xs',
+        delayed
+          ? 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
+          : 'border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
+      )}
+    >
+      <Icon name={delayed ? 'schedule' : 'sync_problem'} className="mt-0.5 text-[19px]" />
+      <div>
+        <p className="font-black">Mojo data {delayed ? 'is delayed' : 'is not current'}</p>
+        <p className="mt-0.5 font-semibold leading-relaxed">
+          {freshness.message}. {lastSync}. {delayed
+            ? 'The latest available totals are labeled as partial.'
+            : 'Today’s provider totals are withheld until a healthy sync completes.'}
+        </p>
+      </div>
+    </section>
+  )
+}
+
 export function ReconciliationAttention({ data, onReviewed }: { data: MyDayData; onReviewed: (id: string) => void }) {
   const [reviewingId, setReviewingId] = useState<string | null>(null)
   const [reviewError, setReviewError] = useState<string | null>(null)
@@ -581,6 +611,7 @@ export function MyDayWorkspace({ initialData, canReviewCalls = false }: { initia
         </div>
       </header>
       {error ? <div role="alert" className="flex items-center justify-between rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-2 text-xs font-bold text-[var(--crm-danger)]"><span>{error}</span><button type="button" onClick={() => void loadRange(rangeRequest(data.range))} className="underline">Retry</button></div> : null}
+      <MojoFreshnessAlert data={data} />
       <FunnelCard data={data} />
       <ReconciliationAttention data={data} onReviewed={removeReviewedAttention} />
       <WeeklySnapshot data={data} />
