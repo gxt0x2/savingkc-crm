@@ -18,6 +18,7 @@ interface ProspectingWrapUpActionsProps {
   propertyAddress: string
   activities: DialerActivity[]
   readOnly: boolean
+  variant?: 'panel' | 'toolbar'
   onRefresh: () => void
 }
 
@@ -43,6 +44,7 @@ export function ProspectingWrapUpActions(props: ProspectingWrapUpActionsProps) {
   const recentWork = useMemo(() => props.activities.filter((activity) => (
     ['task', 'appointment', 'follow_up', 'callback', 'mail'].includes(activity.activity_type)
   )).slice(0, 3), [props.activities])
+  const toolbar = props.variant === 'toolbar'
 
   function created(message: string) {
     setTaskChoice(null)
@@ -60,19 +62,20 @@ export function ProspectingWrapUpActions(props: ProspectingWrapUpActionsProps) {
   }
 
   return <>
-    <section aria-label="Wrap-up and next actions" className="ck-card p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Wrap-up</p><h2 className="mt-0.5 text-sm font-black text-[var(--ck-text)]">What happens next?</h2></div>
+    <section aria-label="Wrap-up and next actions" className={toolbar ? 'min-w-0' : 'ck-card p-4'}>
+      <div className={`${toolbar ? 'mb-2' : 'mb-3'} flex items-start justify-between gap-3`}>
+        <div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Next move</p><h2 className={`${toolbar ? 'mt-0.5 text-xs' : 'mt-0.5 text-sm'} font-black text-[var(--ck-text)]`}>{toolbar ? 'Capture the commitment while it is fresh' : 'What happens next?'}</h2></div>
         <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wider ${props.leadId ? 'border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] text-[var(--crm-info)]' : 'border-amber-400/30 bg-amber-400/10 text-amber-500'}`}>{props.leadId ? 'Lead' : 'Source Prospect'}</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <button type="button" disabled={props.readOnly} onClick={() => setTaskChoice('follow_up')} className="min-h-[68px] rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-2 text-center text-[10px] font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="event_repeat" size="text-lg" className="mx-auto mb-1 text-[var(--crm-brand)]" />Follow-up</button>
-        <button type="button" disabled={props.readOnly} onClick={() => setTaskChoice('appointment')} className="min-h-[68px] rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-2 text-center text-[10px] font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="calendar_month" size="text-lg" className="mx-auto mb-1 text-[var(--crm-brand)]" />Appointment</button>
-        <button type="button" disabled={props.readOnly} onClick={() => setMailOpen(true)} className="min-h-[68px] rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-2 text-center text-[10px] font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-45"><Icon name="mail" size="text-lg" className="mx-auto mb-1 text-[var(--crm-brand)]" />Mail</button>
+        <button type="button" disabled={props.readOnly} onClick={() => setTaskChoice('follow_up')} className={`${toolbar ? 'min-h-11 px-2 py-2' : 'min-h-[68px] px-2 py-2 text-center'} rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[10px] font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-45`}><Icon name="event_repeat" size={toolbar ? 'text-base' : 'text-lg'} className={toolbar ? 'mr-1.5 inline text-[var(--crm-brand)]' : 'mx-auto mb-1 text-[var(--crm-brand)]'} />Follow-up</button>
+        <button type="button" disabled={props.readOnly} onClick={() => setTaskChoice('appointment')} className={`${toolbar ? 'min-h-11 px-2 py-2' : 'min-h-[68px] px-2 py-2 text-center'} rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[10px] font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-45`}><Icon name="calendar_month" size={toolbar ? 'text-base' : 'text-lg'} className={toolbar ? 'mr-1.5 inline text-[var(--crm-brand)]' : 'mx-auto mb-1 text-[var(--crm-brand)]'} />Appointment</button>
+        <button type="button" disabled={props.readOnly} onClick={() => setMailOpen(true)} className={`${toolbar ? 'min-h-11 px-2 py-2' : 'min-h-[68px] px-2 py-2 text-center'} rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[10px] font-black uppercase tracking-wider text-[var(--ck-text)] transition-colors hover:border-[var(--crm-brand)] disabled:cursor-not-allowed disabled:opacity-45`}><Icon name="mail" size={toolbar ? 'text-base' : 'text-lg'} className={toolbar ? 'mr-1.5 inline text-[var(--crm-brand)]' : 'mx-auto mb-1 text-[var(--crm-brand)]'} />Mail</button>
       </div>
-      {props.readOnly ? <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[10px] leading-4 text-[var(--ck-text-muted)]">Next actions are visible but locked until this window owns the live dialing session.</p> : null}
-      {recentWork.length > 0 ? <div className="mt-3 border-t border-[var(--ck-border)] pt-3"><p className="mb-2 text-[9px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Recent work</p><div className="space-y-1.5">{recentWork.map((activity) => { const item = activityText(activity); return <div key={activity.id} className="rounded-lg bg-[var(--ck-surface-elev)] px-3 py-2"><p className="truncate text-xs font-bold text-[var(--ck-text)]">{item.title}</p><p className="mt-0.5 text-[9px] uppercase tracking-wider text-[var(--ck-text-dim)]">{item.detail}</p></div> })}</div></div> : null}
-      <p aria-live="polite" className="mt-2 min-h-4 text-[10px] font-bold text-emerald-500">{announcement}</p>
+      {props.readOnly ? <p className={`${toolbar ? 'mt-2' : 'mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2'} text-[10px] leading-4 text-[var(--ck-text-muted)]`}>Next actions are visible but locked until this window owns the live dialing session.</p> : null}
+      {!toolbar && recentWork.length > 0 ? <div className="mt-3 border-t border-[var(--ck-border)] pt-3"><p className="mb-2 text-[9px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Recent work</p><div className="space-y-1.5">{recentWork.map((activity) => { const item = activityText(activity); return <div key={activity.id} className="rounded-lg bg-[var(--ck-surface-elev)] px-3 py-2"><p className="truncate text-xs font-bold text-[var(--ck-text)]">{item.title}</p><p className="mt-0.5 text-[9px] uppercase tracking-wider text-[var(--ck-text-dim)]">{item.detail}</p></div> })}</div></div> : null}
+      {toolbar && recentWork.length > 0 ? <p className="mt-2 truncate text-[10px] font-bold text-[var(--ck-text-muted)]">Latest: {activityText(recentWork[0]).title} · {activityText(recentWork[0]).detail}</p> : null}
+      <p aria-live="polite" className={`${toolbar && !announcement ? 'sr-only' : 'mt-2 min-h-4'} text-[10px] font-bold text-emerald-500`}>{announcement}</p>
     </section>
 
     {taskChoice ? <NewTaskModal

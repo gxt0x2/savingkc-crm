@@ -8,6 +8,8 @@ import { ProspectingCallingContextRail } from './prospecting-calling-context-rai
 describe('ProspectingCallingContextRail', () => {
   it('keeps source-Prospect contact notes visible in seller history', () => {
     render(<ProspectingCallingContextRail
+      campaignId="campaign-1"
+      queueLabel="Jackson Tax 3+"
       leadId={null}
       lead={null}
       prospect={{
@@ -61,7 +63,12 @@ describe('ProspectingCallingContextRail', () => {
     expect(screen.getAllByText('Daughter handles the estate calls.').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Saved by Ernest')).toBeVisible()
     expect(screen.getByText('1 items')).toBeVisible()
-    expect(screen.getByRole('complementary', { name: 'Seller workspace' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Seller answer workspace' })).toBeVisible()
+    expect(screen.getByText('Answer workspace')).toBeVisible()
+    expect(screen.getByText('Jackson Tax 3+')).toBeVisible()
+    expect(screen.getByRole('link', { name: /Review list/i })).toHaveAttribute('href', '/prospecting?campaign=campaign-1')
+    expect(screen.getByRole('link', { name: /Call report/i })).toHaveAttribute('href', '/prospecting/reports?campaign=campaign-1')
+    expect(screen.getByRole('link', { name: /Recordings/i })).toHaveAttribute('href', '/prospecting/reports?campaign=campaign-1&view=recordings')
     expect(screen.getByRole('region', { name: 'Subject property' })).toBeVisible()
     expect(screen.getByLabelText('Owner of record')).toHaveTextContent('Mary Seller')
     expect(screen.getByLabelText('Situs address')).toHaveTextContent('123 Main Street, Kansas City, MO 64108')

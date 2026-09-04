@@ -638,6 +638,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
               onContactNoteSaved={() => { void refreshActivities() }}
             />
           ) : null}
+          campaignId={previewCampaignId || params.get('campaign')}
+          queueLabel={inferredQueueLabel}
           leadId={currentLeadId}
           lead={currentLead}
           prospect={currentProspect}

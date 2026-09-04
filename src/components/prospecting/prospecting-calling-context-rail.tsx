@@ -24,6 +24,8 @@ const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel
 
 interface ProspectingCallingContextRailProps {
   primaryWorkspace?: ReactNode
+  campaignId?: string | null
+  queueLabel?: string
   leadId: string | null
   lead: ProspectingCallingLead | null
   prospect: ProspectingCallingProspect | null
@@ -84,6 +86,9 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
   const mailing = useMemo(() => resolveMailingDisplay(props.prospect), [props.prospect])
   const situsLine = useMemo(() => joinOwnerAddress(situs) || props.situsAddress || 'Address unavailable', [situs, props.situsAddress])
   const mailingLine = useMemo(() => joinOwnerAddress(mailing), [mailing])
+  const campaignQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}` : ''
+  const reportsQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}` : ''
+  const recordingsQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}&view=recordings` : '?view=recordings'
 
   const communicationWorkspace = <section aria-label="Seller communication workspace" className="ck-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -117,27 +122,64 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
       {props.leadId ? <Link href={`/conversations?lead=${encodeURIComponent(props.leadId)}`} prefetch={false} className="mt-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)] hover:underline">Open full conversation <Icon name="arrow_forward" size="text-xs" /></Link> : null}
     </section>
 
-  return <aside aria-label="Seller workspace" className="order-2 col-span-12 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(22rem,0.9fr)] lg:gap-5 lg:self-start">
-    <div className="min-w-0 space-y-4">
-      {props.primaryWorkspace}
-      {props.lead ? <DialerAiAssist key={`${props.durableSessionId || 'legacy'}:${props.lead.id}`} sessionId={props.durableSessionId} leadId={props.lead.id} /> : null}
-      {communicationWorkspace}
-    </div>
+  return <section aria-label="Seller answer workspace" className="order-2 col-span-12 min-w-0 overflow-hidden rounded-[26px] border border-[var(--ck-border-strong)] bg-[var(--ck-surface)] shadow-[0_24px_80px_rgba(0,0,0,0.24)] lg:self-start">
+    <header className="relative overflow-hidden border-b border-[var(--ck-border)] bg-[linear-gradient(115deg,var(--ck-surface-elev),var(--ck-surface))] px-4 py-4 sm:px-5">
+      <div aria-hidden="true" className="pointer-events-none absolute -left-16 -top-24 h-48 w-48 rounded-full bg-[var(--crm-brand-soft)] blur-3xl" />
+      <div className="relative grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(32rem,0.9fr)] xl:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[var(--crm-success)]"><span className="h-1.5 w-1.5 rounded-full bg-current" />Answer workspace</span>
+            <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${commsSummary.lastReachedAt ? 'border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] text-[var(--crm-success)]' : 'border-[var(--ck-border)] bg-[var(--ck-surface)] text-[var(--ck-text-muted)]'}`}>{commsSummary.lastReachedAt ? 'Reached seller' : 'Not reached yet'}</span>
+          </div>
+          <h1 className="mt-2 truncate text-2xl font-black tracking-[-0.035em] text-[var(--ck-text)]">{owner.fullName || props.ownerName}</h1>
+          <p className="mt-1 truncate text-xs font-semibold text-[var(--ck-text-muted)]">{situsLine}</p>
+          <p className="mt-2 truncate text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ck-text-dim)]">{props.queueLabel || 'Prospecting campaign'}</p>
+          <nav aria-label="Seller workspace links" className="mt-3 flex flex-wrap gap-2">
+            <Link href={`/prospecting${campaignQuery}`} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2.5 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-muted)] hover:border-[var(--crm-brand)] hover:text-[var(--ck-text)]"><Icon name="view_list" size="text-sm" />Review list</Link>
+            <Link href={`/prospecting/reports${reportsQuery}`} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2.5 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-muted)] hover:border-[var(--crm-brand)] hover:text-[var(--ck-text)]"><Icon name="analytics" size="text-sm" />Call report</Link>
+            <Link href={`/prospecting/reports${recordingsQuery}`} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface)] px-2.5 text-[10px] font-black uppercase tracking-wider text-[var(--ck-text-muted)] hover:border-[var(--crm-brand)] hover:text-[var(--ck-text)]"><Icon name="graphic_eq" size="text-sm" />Recordings</Link>
+          </nav>
+        </div>
+        <ProspectingWrapUpActions
+          variant="toolbar"
+          leadId={props.leadId}
+          prospectId={props.prospect?.id || null}
+          campaignMemberId={props.campaignMemberId || null}
+          dialerSessionId={props.durableSessionId}
+          sellerName={props.ownerName}
+          propertyAddress={props.situsAddress}
+          activities={props.activities}
+          readOnly={Boolean(props.readOnlyPreview)}
+          onRefresh={props.onRefreshActivities}
+        />
+      </div>
+    </header>
 
-    <div className="min-w-0 space-y-4">
-      <ProspectingNotesPanel
-        key={`notes:${props.prospect?.id || props.leadId || 'current'}`}
-        leadId={props.leadId}
-        prospectId={props.prospect?.id || null}
-        campaignMemberId={props.campaignMemberId || null}
-        dialerSessionId={props.durableSessionId}
-        sellerName={props.ownerName}
-        notes={contactNotes}
-        readOnly={Boolean(props.readOnlyPreview)}
-        onSaved={props.onRefreshActivities}
-      />
+    <div className="grid min-w-0 lg:grid-cols-[minmax(0,1.48fr)_minmax(22rem,0.82fr)]">
+      <main className="min-w-0 space-y-4 p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <div><p className="text-[9px] font-black uppercase tracking-[0.16em] text-[var(--crm-brand)]">Contact deck</p><h2 className="mt-0.5 text-sm font-black text-[var(--ck-text)]">People, phones and conversation</h2></div>
+          <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-muted)]">Seller {props.leadId ? 'lead' : 'prospect'}</span>
+        </div>
+        {props.primaryWorkspace}
+        {props.lead ? <DialerAiAssist key={`${props.durableSessionId || 'legacy'}:${props.lead.id}`} sessionId={props.durableSessionId} leadId={props.lead.id} /> : null}
+        {communicationWorkspace}
+      </main>
 
-      <section aria-label="Subject property" className="ck-card p-4">
+      <aside aria-label="Seller intelligence" className="min-w-0 space-y-4 border-t border-[var(--ck-border)] bg-[color-mix(in_srgb,var(--ck-surface-elev)_68%,transparent)] p-4 sm:p-5 lg:border-l lg:border-t-0">
+        <ProspectingNotesPanel
+          key={`notes:${props.prospect?.id || props.leadId || 'current'}`}
+          leadId={props.leadId}
+          prospectId={props.prospect?.id || null}
+          campaignMemberId={props.campaignMemberId || null}
+          dialerSessionId={props.durableSessionId}
+          sellerName={props.ownerName}
+          notes={contactNotes}
+          readOnly={Boolean(props.readOnlyPreview)}
+          onSaved={props.onRefreshActivities}
+        />
+
+        <section aria-label="Subject property" className="ck-card p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Subject property</p>
@@ -174,17 +216,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
         </div>
       </section>
 
-      <ProspectingWrapUpActions
-        leadId={props.leadId}
-        prospectId={props.prospect?.id || null}
-        campaignMemberId={props.campaignMemberId || null}
-        dialerSessionId={props.durableSessionId}
-        sellerName={props.ownerName}
-        propertyAddress={props.situsAddress}
-        activities={props.activities}
-        readOnly={Boolean(props.readOnlyPreview)}
-        onRefresh={props.onRefreshActivities}
-      />
+      </aside>
     </div>
-  </aside>
+  </section>
 }
