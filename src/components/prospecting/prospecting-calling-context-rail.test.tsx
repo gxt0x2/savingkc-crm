@@ -55,8 +55,10 @@ describe('ProspectingCallingContextRail', () => {
     />)
 
     expect(screen.getByRole('region', { name: 'Contact notes' })).toBeVisible()
-    expect(screen.getByText('Helen Seller')).toBeVisible()
-    expect(screen.getByText('Daughter handles the estate calls.')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Notes' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'Note for Mary Seller' })).toBeVisible()
+    expect(screen.getAllByText('Helen Seller').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('Daughter handles the estate calls.').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Saved by Ernest')).toBeVisible()
     expect(screen.getByText('1 items')).toBeVisible()
     expect(screen.getByLabelText('Owner name cells')).toBeVisible()

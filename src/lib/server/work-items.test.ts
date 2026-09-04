@@ -23,6 +23,7 @@ const row = {
   source_kind: 'activity',
   source_id: '10000000-0000-0000-0000-000000000001',
   lead_id: '00000000-0000-0000-0000-000000000001',
+  prospect_id: null,
   tc_file_id: null,
   kind: 'follow_up',
   title: 'Call seller',
@@ -55,6 +56,28 @@ describe('canonical work-item server service', () => {
     expect(normalizeWorkItemKind('research')).toBe('task')
     expect(normalizeWorkItemKind('general')).toBe('task')
     expect(normalizeWorkItemKind('callback')).toBe('callback')
+    expect(normalizeWorkItemKind('mail')).toBe('mail')
+  })
+
+  it('creates source Prospect work through the subject-aware boundary', async () => {
+    mocks.rpc.mockResolvedValue({ data: { created: true, workItem: { ...row, lead_id: null, prospect_id: '20000000-0000-0000-0000-000000000001' } }, error: null })
+    const result = await createWorkItem({
+      actor: 'Casey',
+      idempotencyKey: 'prospect-work-key-0001',
+      prospectId: '20000000-0000-0000-0000-000000000001',
+      kind: 'mail',
+      title: 'Thank-you letter for seller',
+      assignedTo: 'Casey',
+      department: 'acquisitions',
+    })
+
+    expect(result.workItem.prospectId).toBe('20000000-0000-0000-0000-000000000001')
+    expect(mocks.rpc).toHaveBeenCalledWith('create_work_item_v3', expect.objectContaining({
+      p_lead_id: null,
+      p_prospect_id: '20000000-0000-0000-0000-000000000001',
+      p_kind: 'mail',
+      p_provenance: {},
+    }))
   })
 
   it('creates through the idempotent database boundary', async () => {

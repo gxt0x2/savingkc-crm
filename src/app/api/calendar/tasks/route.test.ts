@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   resolveAuthenticatedActor: vi.fn(),
+  assertDialerMutationControl: vi.fn(),
   createWorkItem: vi.fn(),
   WorkItemError: class WorkItemError extends Error {
     constructor(message: string, readonly code: string) {
@@ -13,6 +14,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/api/authenticated-actor', () => ({
   resolveAuthenticatedActor: mocks.resolveAuthenticatedActor,
+}))
+vi.mock('@/lib/api/dialer-mutation-control', () => ({
+  assertDialerMutationControl: mocks.assertDialerMutationControl,
+  dialerMutationControlErrorResponse: () => null,
 }))
 vi.mock('@/lib/server/work-items', () => ({
   createWorkItem: mocks.createWorkItem,
@@ -56,6 +61,32 @@ describe('calendar canonical task mutation trust', () => {
 
     expect(response.status).toBe(200)
     expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({ assignedTo: 'Ernest' }))
+  })
+
+  it('keeps source Prospect work attached to the prospecting subject', async () => {
+    const response = await POST(request({
+      title: 'Follow up with source Prospect',
+      prospectId: 'prospect-1',
+      campaignMemberId: 'member-1',
+      dialerSessionId: '10000000-0000-4000-8000-000000000001',
+      primaryNextAction: true,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.assertDialerMutationControl).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: '10000000-0000-4000-8000-000000000001',
+      subject: { leadId: null, prospectId: 'prospect-1', campaignMemberId: 'member-1' },
+    }))
+    expect(mocks.createWorkItem).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: null,
+      prospectId: 'prospect-1',
+      primaryNextAction: false,
+      provenance: expect.objectContaining({
+        origin: 'prospecting_wrap_up',
+        prospect_id: 'prospect-1',
+        campaign_member_id: 'member-1',
+      }),
+    }))
   })
 
   it('rejects an unrecognized assignee before canonical mutation', async () => {

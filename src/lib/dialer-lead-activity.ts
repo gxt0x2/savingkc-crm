@@ -16,7 +16,7 @@ export async function loadDialerActivities(leadId: string): Promise<DialerActivi
 
 export async function loadProspectingContactNoteActivities(prospectId: string): Promise<DialerActivity[]> {
   const response = await fetch(`/api/prospecting/contact-notes?prospect_id=${encodeURIComponent(prospectId)}`, { cache: 'no-store' })
-  if (!response.ok) throw new Error('Prospecting contact notes are unavailable')
+  if (!response.ok) throw new Error('Prospecting history is unavailable')
   const payload = await response.json() as { activities?: DialerActivity[] }
   return Array.isArray(payload.activities) ? payload.activities : []
 }

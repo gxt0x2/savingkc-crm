@@ -11,7 +11,7 @@ export type TaskWorklistQuery = {
   status?: 'all' | 'active' | 'completed'
   assignee?: string
   due?: 'any' | 'no_due' | 'seven_days' | 'thirty_days'
-  type?: 'any' | 'follow_up' | 'callback' | 'appointment' | 'research' | 'offer' | 'general'
+  type?: 'any' | 'follow_up' | 'callback' | 'appointment' | 'mail' | 'research' | 'offer' | 'general'
   query?: string
   sort?: 'due_asc' | 'due_desc' | 'newest' | 'title'
   limit?: number

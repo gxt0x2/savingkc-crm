@@ -103,6 +103,13 @@ export function CampaignDashboard({
     onSelect(id)
   }
 
+  function reviewSellerList() {
+    setManagementOpen(true)
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      document.getElementById('campaign-audience-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }))
+  }
+
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--crm-canvas)] p-3 sm:p-5 lg:p-7">
       <div className="mx-auto max-w-5xl space-y-4">
@@ -148,6 +155,7 @@ export function CampaignDashboard({
                       : 'Review one seller, see every associated person and phone number, place a call, then save the outcome before moving to the next seller. Your progress is preserved if you stop.'}</p>
                   </div>
                   <div className="space-y-3">
+                    <button type="button" onClick={reviewSellerList} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-5 text-xs font-black text-white transition-colors hover:bg-white/15"><Icon name="manage_search" className="text-lg" />Review seller list</button>
                     {detail.status === 'active' ? <ProspectingSessionSetup key={`${detail.id}:${freshRerun ? 'fresh' : 'existing'}`} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} freshRun={freshRerun} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} /> : null}
                     {detail.status === 'completed' ? <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-[38rem]">
                       <ProspectingSessionSetup key={`${detail.id}:completed`} actionPending={actionPending} activeCount={detail.stats.active} campaignId={detail.id} campaignCallerId={detail.callerId} initialPreset={detail.dialerPreset} showLaunchAction={false} writesEnabled={writesEnabled} onLaunch={onLaunchDialer} />
@@ -193,7 +201,7 @@ export function CampaignDashboard({
               {detail.kind === 'sms' ? <article className="rounded-2xl border border-[var(--crm-border)] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="crm-eyebrow">Sequence</p><h2 className="mt-1 text-lg font-black text-[var(--crm-ink)]">Messages sellers receive</h2></div><p className="text-xs font-black text-[var(--crm-ink)]">{detail.perHour}/hour · {detail.perDay}/day</p></div><div className="mt-4 space-y-3">{detail.steps.map((step) => <div key={step.id} className="rounded-xl bg-[var(--crm-surface-subtle)] p-4"><p className="text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)]">{delayLabel(step.delayMinutes)}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--crm-ink)]">{step.bodyTemplate}</p></div>)}</div></article> : null}
               {detail.kind === 'sms' && detail.status !== 'draft' ? <CampaignDeliveryPulse campaign={detail} /> : null}
               <CampaignActivityFeed key={detail.id} campaignId={detail.id} />
-              <CampaignAudienceWorkbench key={`audience:${detail.id}`} campaignId={detail.id} campaignName={detail.name} campaignKind={detail.kind} total={detail.stats.total} canEditAudience={canEditAudience} onAudienceChanged={onAudienceChanged} />
+              <div id="campaign-audience-workbench" className="scroll-mt-24"><CampaignAudienceWorkbench key={`audience:${detail.id}`} campaignId={detail.id} campaignName={detail.name} campaignKind={detail.kind} total={detail.stats.total} canEditAudience={canEditAudience} onAudienceChanged={onAudienceChanged} /></div>
             </div> : null}
           </section>
         </>}

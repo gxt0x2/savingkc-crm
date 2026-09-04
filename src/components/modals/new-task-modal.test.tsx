@@ -50,4 +50,29 @@ describe('NewTaskModal call follow-up', () => {
     })
     await waitFor(() => expect(onCreated).toHaveBeenCalled())
   })
+
+  it('attaches a next action to a source Prospect without promoting it', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: true, taskId: 'work-item-2' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+
+    render(<NewTaskModal
+      prospectId="prospect-1"
+      campaignMemberId="member-1"
+      leadName="Mojo Contact"
+      initialTitle="Follow up with Mojo Contact"
+      primaryNextAction
+      onClose={() => {}}
+      onCreated={() => {}}
+    />)
+
+    expect(screen.getByText('Attached to source Prospect:')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Save Next Action' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const [, request] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      leadId: null,
+      prospectId: 'prospect-1',
+      campaignMemberId: 'member-1',
+      primaryNextAction: false,
+    })
+  })
 })

@@ -2,6 +2,10 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import {
+  assertDialerMutationControl,
+  dialerMutationControlErrorResponse,
+} from '@/lib/api/dialer-mutation-control'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import { createWorkItem, listWorkItems, normalizeWorkItemKind, WorkItemError, type WorkItem } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -19,6 +23,15 @@ interface LeadRow {
   zip: string | null
   station: string | null
   created_at: string
+}
+
+interface ProspectRow {
+  id: string
+  owner_1: string | null
+  situs_street: string | null
+  situs_city: string | null
+  situs_state: string | null
+  situs_zip: string | null
 }
 
 interface TcFileRow {
@@ -101,8 +114,42 @@ async function loadLeadMap(db: ReturnType<typeof supabaseAdmin>, leadIds: string
   }, {} as Record<string, Contact>)
 }
 
-function workItemToTask(item: WorkItem, leadsMap: Record<string, Contact>): Task {
-  const contact = item.leadId ? leadsMap[item.leadId] : undefined
+async function loadProspectMap(db: ReturnType<typeof supabaseAdmin>, prospectIds: string[]) {
+  const uniqueProspectIds = Array.from(new Set(prospectIds.filter(Boolean)))
+  if (uniqueProspectIds.length === 0) return {}
+
+  const { data: prospects, error } = await db
+    .from('prospects')
+    .select('id, owner_1, situs_street, situs_city, situs_state, situs_zip')
+    .in('id', uniqueProspectIds)
+  if (error) throw new Error(error.message)
+
+  return ((prospects || []) as ProspectRow[]).reduce((acc, row) => {
+    const parts = (row.owner_1 || 'Unknown').split(' ')
+    acc[row.id] = {
+      id: row.id,
+      first_name: parts[0] || 'Unknown',
+      last_name: parts.slice(1).join(' ') || '',
+      email: null,
+      phone: null,
+      address: row.situs_street,
+      city: row.situs_city,
+      state: row.situs_state,
+      zip: row.situs_zip,
+      personality_type: null,
+      lead_score: null,
+      lead_owner: null,
+      smart_tags: [],
+      current_stage: null,
+      created_at: '',
+      updated_at: '',
+    }
+    return acc
+  }, {} as Record<string, Contact>)
+}
+
+function workItemToTask(item: WorkItem, leadsMap: Record<string, Contact>, prospectsMap: Record<string, Contact>): Task {
+  const contact = item.leadId ? leadsMap[item.leadId] : item.prospectId ? prospectsMap[item.prospectId] : undefined
   return {
     id: item.key,
     type: item.kind as Task['type'],
@@ -295,8 +342,11 @@ export async function GET(req: NextRequest) {
       statuses: ['pending', 'blocked', 'completed'],
       limit: 500,
     })
-    const leadsMap = await loadLeadMap(db, items.flatMap((item) => item.leadId ? [item.leadId] : []))
-    const activityTasks = items.map((item) => workItemToTask(item, leadsMap))
+    const [leadsMap, prospectsMap] = await Promise.all([
+      loadLeadMap(db, items.flatMap((item) => item.leadId ? [item.leadId] : [])),
+      loadProspectMap(db, items.flatMap((item) => item.prospectId ? [item.prospectId] : [])),
+    ])
+    const activityTasks = items.map((item) => workItemToTask(item, leadsMap, prospectsMap))
 
     const departmentTasks = department === 'tc'
       ? (await loadTcCalendarTasks(db)).filter((task) => task.id.startsWith('tc-file-'))
@@ -326,6 +376,10 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     const title = typeof body.title === 'string' ? body.title.trim() : ''
+    const leadId = typeof body.leadId === 'string' && body.leadId.trim() ? body.leadId.trim() : null
+    const prospectId = typeof body.prospectId === 'string' && body.prospectId.trim() ? body.prospectId.trim() : null
+    const campaignMemberId = typeof body.campaignMemberId === 'string' && body.campaignMemberId.trim() ? body.campaignMemberId.trim() : null
+    const dialerSessionId = typeof body.dialerSessionId === 'string' && body.dialerSessionId.trim() ? body.dialerSessionId.trim() : null
 
     if (!title) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 })
@@ -343,13 +397,22 @@ export async function POST(req: NextRequest) {
     }
     const assignedTo = assignment.assignedTo
 
+    await assertDialerMutationControl({
+      request: req,
+      actor: authenticatedActor,
+      sessionId: dialerSessionId,
+      subject: { leadId, prospectId, campaignMemberId },
+      protectMatchingOpenSession: Boolean(prospectId || campaignMemberId || dialerSessionId),
+    })
+
     const idempotencyKey = req.headers.get('idempotency-key')?.trim()
       || (typeof body.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '')
       || crypto.randomUUID()
     const result = await createWorkItem({
       actor: authenticatedActor.name,
       idempotencyKey,
-      leadId: typeof body.leadId === 'string' ? body.leadId : null,
+      leadId,
+      prospectId,
       kind: normalizeWorkItemKind(body.taskType),
       title,
       notes: typeof body.notes === 'string' ? body.notes.trim() : null,
@@ -358,11 +421,22 @@ export async function POST(req: NextRequest) {
       department,
       role: typeof body.role === 'string' ? body.role : 'setter',
       priority: 'normal',
-      primaryNextAction: body.primaryNextAction === true,
+      primaryNextAction: body.primaryNextAction === true && Boolean(leadId),
+      ...((prospectId || campaignMemberId || dialerSessionId) ? {
+        provenance: {
+          origin: 'prospecting_wrap_up',
+          subject_kind: prospectId ? 'prospect' : 'lead',
+          prospect_id: prospectId,
+          campaign_member_id: campaignMemberId,
+          dialer_session_id: dialerSessionId,
+        },
+      } : {}),
     })
 
     return NextResponse.json({ success: true, created: result.created, taskId: result.workItem.key })
   } catch (err) {
+    const controlResponse = dialerMutationControlErrorResponse(err)
+    if (controlResponse) return controlResponse
     if (err instanceof WorkItemError) {
       const status = err.code === 'not_found' ? 404 : err.code === 'conflict' ? 409 : err.code === 'invalid' ? 400 : 503
       return NextResponse.json({ success: false, error: err.message }, { status })

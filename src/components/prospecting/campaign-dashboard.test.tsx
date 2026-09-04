@@ -128,6 +128,7 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText('1', { selector: 'p' })).toBeVisible()
     expect(screen.getByText('ready to call')).toBeVisible()
     expect(screen.getByText('All associated contacts stay visible')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Review seller list' })).toBeVisible()
     expect(screen.getByRole('button', { name: /Session setup/ })).toHaveTextContent('7 rings')
     const start = screen.getByRole('button', { name: 'Resume calling' })
     expect(start).toBeVisible()
@@ -140,6 +141,14 @@ describe('CampaignDashboard', () => {
     }))
     expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
     expect(screen.queryByText('Audience health')).not.toBeInTheDocument()
+  })
+
+  it('opens the full seller audience from the prominent review action', async () => {
+    const dialerDetail: ProspectingCampaignDetail = { ...detail, kind: 'dialer', callerId: '+18165550199', fromPhone: null, steps: [] }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review seller list' }))
+    expect(await screen.findByRole('heading', { name: 'Audience workbench' })).toBeVisible()
   })
 
   it('hydrates the server campaign without browser preset or time-zone drift', async () => {

@@ -63,6 +63,15 @@ function deferEffectUpdate(update: () => void) {
   return () => { cancelled = true }
 }
 
+interface NextActionSubject {
+  leadId: string | null
+  prospectId: string | null
+  campaignMemberId: string | null
+  dialerSessionId: string | null
+  name: string
+  propertyAddress: string | null
+}
+
 export function DialerPanel({
   open,
   onClose,
@@ -112,7 +121,7 @@ export function DialerPanel({
   const [workspaceDispositionSaving, setWorkspaceDispositionSaving] = useState<DispositionType | null>(null)
   const [reviewContext, setReviewContext] = useState<{ sessionId: string; clientAttemptId: string } | null>(null)
   const [recoveryPending, setRecoveryPending] = useState<RecoverableDialerAttempt | null>(null)
-  const [showNewTaskFor, setShowNewTaskFor] = useState<SearchResult | null>(null)
+  const [showNewTaskFor, setShowNewTaskFor] = useState<NextActionSubject | null>(null)
   const lastCallPhoneRef = useRef<string>('')
   const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
   const lastCallDurationSecondsRef = useRef(0)
@@ -1707,12 +1716,26 @@ export function DialerPanel({
         onDispositionChange={workspaceDispositionPreset ? setWorkspaceDispositionPreset : undefined}
         primaryActionLabel={dispositionQueueItem ? 'Save & Next Number' : 'Save Call'}
         showSecondaryAction={Boolean(dispositionQueueItem)}
-        nextActions={selectedLead && (!dispositionQueueItem || dispositionQueueItem.leadId) ? [
+        nextActions={selectedLead ? [
           { id: 'set_next_activity', label: 'Set Next Activity', icon: 'event_note' },
         ] : []}
         onNextActionPick={(actionId) => {
           if (actionId === 'set_next_activity') {
-            setShowNewTaskFor(selectedLead || null)
+            setShowNewTaskFor(dispositionQueueItem ? {
+              leadId: dispositionQueueItem.leadId,
+              prospectId: dispositionQueueItem.prospectId,
+              campaignMemberId: dispositionQueueItem.campaignMemberId,
+              dialerSessionId: pendingSessionId,
+              name: dispositionQueueItem.heirName,
+              propertyAddress: dispositionQueueItem.propertyAddress,
+            } : selectedLead ? {
+              leadId: selectedLead.id,
+              prospectId: null,
+              campaignMemberId: null,
+              dialerSessionId: null,
+              name: selectedLead.full_name,
+              propertyAddress: selectedLead.property_address,
+            } : null)
           }
         }}
       />
@@ -1720,15 +1743,22 @@ export function DialerPanel({
       {/* New Task modal — triggered by Set Next Activity from disposition */}
       {showNewTaskFor && (
         <NewTaskModal
-          leadId={showNewTaskFor.id}
-          leadName={showNewTaskFor.full_name || undefined}
-          initialTitle={`Follow up with ${showNewTaskFor.full_name || 'seller'}`}
-          primaryNextAction
+          leadId={showNewTaskFor.leadId || undefined}
+          prospectId={showNewTaskFor.prospectId || undefined}
+          campaignMemberId={showNewTaskFor.campaignMemberId || undefined}
+          dialerSessionId={showNewTaskFor.dialerSessionId || undefined}
+          leadName={showNewTaskFor.name || undefined}
+          initialTitle={`Follow up with ${showNewTaskFor.name || 'seller'}`}
+          primaryNextAction={Boolean(showNewTaskFor.leadId)}
           onClose={() => setShowNewTaskFor(null)}
           onCreated={() => {
             setShowNewTaskFor(null)
             window.dispatchEvent(new CustomEvent('crm:task-created', {
-              detail: { leadId: showNewTaskFor.id },
+              detail: {
+                leadId: showNewTaskFor.leadId,
+                prospectId: showNewTaskFor.prospectId,
+                campaignMemberId: showNewTaskFor.campaignMemberId,
+              },
             }))
           }}
         />

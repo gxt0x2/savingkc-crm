@@ -45,12 +45,9 @@ export async function loadProspectingContactNotes(
   const prospectId = requiredText(rawProspectId, 'Source Prospect', 80)
   const { data, error } = await database
     .from('lead_activities')
-    .select('id,lead_id,activity_type,description,agent,metadata,created_at')
-    .eq('activity_type', 'note')
-    .contains('metadata', {
-      source: 'prospecting_contact_note',
-      prospect_id: prospectId,
-    })
+    .select('id,lead_id,prospect_id,activity_type,description,agent,metadata,created_at')
+    .eq('prospect_id', prospectId)
+    .in('activity_type', ['note', 'task', 'appointment', 'follow_up', 'callback', 'mail'])
     .order('created_at', { ascending: false })
     .limit(50)
   if (error) databaseFailure('activity list failed', error, 'Contact notes are temporarily unavailable')
@@ -124,12 +121,13 @@ export async function saveProspectingContactNote(
     .from('lead_activities')
     .insert({
       lead_id: leadId,
+      prospect_id: prospectId,
       activity_type: 'note',
       description,
       agent: actor.name,
       metadata,
     })
-    .select('id,lead_id,activity_type,description,agent,metadata,created_at')
+    .select('id,lead_id,prospect_id,activity_type,description,agent,metadata,created_at')
     .single()
   if (error) databaseFailure('activity insert failed', error)
 

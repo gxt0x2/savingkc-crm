@@ -653,6 +653,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           occupancy={occupancy}
           delinquentYears={delinquentYears}
           durableSessionId={durableSessionId}
+          campaignMemberId={currentSubject?.campaignMemberId || null}
           activities={activities}
           activeTab={leftTab}
           callerId={sessionCallerId}

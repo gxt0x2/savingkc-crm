@@ -164,6 +164,7 @@ describe('TasksPage operating workspace', () => {
       'Follow-up',
       'Callback',
       'Appointment',
+      'Mail',
       'Send Offer',
       'General',
     ])
