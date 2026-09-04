@@ -90,6 +90,7 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
     ['Prospecting', '/prospecting'],
     ['Calendar', '/calendar?department=acquisitions'],
     ['Task', '/tasks'],
+    ['Dispositions', '/dispo/pipeline'],
     ['Reports', '/reports/acquisitions'],
     ['Settings', '/settings'],
   ]);
