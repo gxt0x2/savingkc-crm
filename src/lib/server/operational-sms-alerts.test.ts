@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ safeSendSMS: vi.fn() }))
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/safe-communications', () => ({ safeSendSMS: mocks.safeSendSMS }))
 
-import { sendAndonRaisedSmsAlert, sendCallReviewSubmittedSmsAlert } from './operational-sms-alerts'
+import { sendAndonRaisedSmsAlert, sendCallReviewSubmittedSmsAlert, sendMojoIngestionFailureSmsAlert } from './operational-sms-alerts'
 
 describe('operational SMS alerts', () => {
   beforeEach(() => {
@@ -64,5 +64,18 @@ describe('operational SMS alerts', () => {
 
     expect(alert.attempted).toBe(false)
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+  })
+
+  it('texts Ernest when Mojo ingestion fails', async () => {
+    await sendMojoIngestionFailureSmsAlert({
+      incidentId: 'mojo:2026-09-04',
+      message: 'No provider performance snapshot for today',
+      source: 'vercel-mojo-health',
+    })
+
+    expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+18160000001',
+      body: expect.stringContaining('Mojo ingestion failure (vercel-mojo-health)'),
+    }))
   })
 })

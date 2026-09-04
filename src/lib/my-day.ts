@@ -155,6 +155,7 @@ export interface MyDayData {
     status: 'available' | 'partial' | 'unavailable'
     dialingSeconds: number | null
     sourceFetchedAt: string | null
+    freshness: MyDaySourceFreshness
   }
   funnel: MyDayMetric[]
   week: {
@@ -181,12 +182,20 @@ export interface MyDayData {
   }
 }
 
+export interface MyDaySourceFreshness {
+  status: 'current' | 'delayed' | 'stale' | 'unavailable'
+  message: string
+  lastSuccessfulSyncAt: string | null
+  ageMinutes: number | null
+}
+
 export interface BuildMyDayInput {
   month: string
   range: MyDayDateRange
   now: Date
   stats: MyDayAgentStat[]
   performance: MyDayPerformanceRow[]
+  sourceFreshness?: MyDaySourceFreshness
   dialerPerformance?: MyDayNativeDialerPerformanceRow[]
   leads: MyDayLead[]
   activities: MyDayActivity[]
@@ -417,8 +426,22 @@ function callReviewReason(activity: MyDayActivity): string {
 
 export function buildMyDay(input: BuildMyDayInput): MyDayData {
   const stats = input.stats.filter((row) => row.date >= input.range.from && row.date <= input.range.to)
-  const performanceRows = input.performance.filter((row) => row.metric_date >= input.range.from && row.metric_date <= input.range.to)
-  const performanceByDate = new Map(input.performance.map((row) => [row.metric_date, row]))
+  const sourceFreshness: MyDaySourceFreshness = input.sourceFreshness ?? {
+    status: 'current',
+    message: 'Mojo performance is current',
+    lastSuccessfulSyncAt: null,
+    ageMinutes: null,
+  }
+  const today = dateKey(input.now)
+  const withholdCurrentProvider = Boolean(
+    today
+    && input.range.from <= today
+    && input.range.to >= today
+    && ['stale', 'unavailable'].includes(sourceFreshness.status),
+  )
+  const trustedPerformance = input.performance.filter((row) => !(withholdCurrentProvider && row.metric_date === today))
+  const performanceRows = trustedPerformance.filter((row) => row.metric_date >= input.range.from && row.metric_date <= input.range.to)
+  const performanceByDate = new Map(trustedPerformance.map((row) => [row.metric_date, row]))
   const requiredDates = requiredPerformanceDates(input.range, input.now)
   const mojoPerformanceStatus: MyDayData['performance']['status'] = !input.availability.mojoPerformance
     ? 'unavailable'
@@ -483,7 +506,6 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
 
   const days = weekDateKeys(input)
   const weekRange = { from: days[0], to: days.at(-1)! }
-  const today = dateKey(input.now)
   const weeklyNativeDialerActivities = allNativeDialerActivities.filter((activity) => isWithinRange(activity.created_at, weekRange))
   const legacyNativeCallsByDay = valuesByDay(weeklyNativeDialerActivities.map((activity) => activity.created_at), days)
   const legacyNativeConversationsByDay = valuesByDay(weeklyNativeDialerActivities.filter(isMeaningfulActivity).map((activity) => activity.created_at), days)
@@ -638,6 +660,7 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
       status: performanceStatus,
       dialingSeconds,
       sourceFetchedAt,
+      freshness: sourceFreshness,
     },
     funnel,
     week: {

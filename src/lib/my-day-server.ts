@@ -13,7 +13,9 @@ import {
   type MyDayNativeDialerPerformanceRow,
   type MyDayPerformanceRow,
   type MyDayRangeRequest,
+  type MyDaySourceFreshness,
 } from '@/lib/my-day'
+import { getMojoHealth } from '@/lib/marketing/mojo-health'
 import {
   buildMojoAttentionItems,
   type MyDayAttentionLead,
@@ -68,7 +70,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
   activityEnd.setUTCDate(activityEnd.getUTCDate() + 1)
   const commitmentEnd = new Date(now.getTime() + 14 * 86_400_000).toISOString()
 
-  const [statsResult, performanceResult, leadsResult, rolesResult, dialerPerformanceResult, mojoEventsResult] = await Promise.all([
+  const [statsResult, performanceResult, leadsResult, rolesResult, dialerPerformanceResult, mojoEventsResult, mojoHealth] = await Promise.all([
     db
       .from('agent_daily_stats')
       .select('date, calls_made, meaningful_conversations, followups_completed, followups_missed, metadata')
@@ -110,6 +112,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .lte('call_at', activityEnd.toISOString())
       .order('call_at', { ascending: true })
       .limit(1000),
+    getMojoHealth(db, { now }),
   ])
 
   if (leadsResult.error) throw new Error(`Casey's pipeline could not load: ${leadsResult.error.message}`)
@@ -219,6 +222,26 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       range,
     })
     : []
+  const sourceFreshness: MyDaySourceFreshness = mojoHealth.status === 'clean'
+    ? {
+        status: 'current',
+        message: mojoHealth.message,
+        lastSuccessfulSyncAt: mojoHealth.performance.latestFetchedAt ?? mojoHealth.lastSyncAt,
+        ageMinutes: mojoHealth.performance.ageMinutes ?? mojoHealth.lastSyncAgeMinutes,
+      }
+    : mojoHealth.status === 'watch'
+      ? {
+          status: 'delayed',
+          message: mojoHealth.message,
+          lastSuccessfulSyncAt: mojoHealth.performance.latestFetchedAt ?? mojoHealth.lastSyncAt,
+          ageMinutes: mojoHealth.performance.ageMinutes ?? mojoHealth.lastSyncAgeMinutes,
+        }
+      : {
+          status: mojoHealth.lastSyncAt ? 'stale' : 'unavailable',
+          message: mojoHealth.message,
+          lastSuccessfulSyncAt: mojoHealth.performance.latestFetchedAt ?? mojoHealth.lastSyncAt,
+          ageMinutes: mojoHealth.performance.ageMinutes ?? mojoHealth.lastSyncAgeMinutes,
+        }
 
   return buildMyDay({
     month,
@@ -226,6 +249,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
     now,
     stats: statsResult.error ? [] : (statsResult.data ?? []) as MyDayAgentStat[],
     performance: performanceResult.error ? [] : (performanceResult.data ?? []) as MyDayPerformanceRow[],
+    sourceFreshness,
     dialerPerformance: (dialerPerformanceResult.data?.rows ?? []) as MyDayNativeDialerPerformanceRow[],
     leads,
     activities: dedupeActivities([

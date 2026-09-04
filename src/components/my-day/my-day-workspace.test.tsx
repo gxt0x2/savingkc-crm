@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { MyDayData, MyDayDateRange } from '@/lib/my-day'
 
-import { MyDayDateRangeSelector, ReconciliationAttention } from './my-day-workspace'
+import { MojoFreshnessAlert, MyDayDateRangeSelector, ReconciliationAttention } from './my-day-workspace'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -85,5 +85,25 @@ describe('My Day reconciliation attention', () => {
       method: 'POST',
       body: JSON.stringify({ recordId: 'mojo-record' }),
     }))
+  })
+})
+
+describe('My Day Mojo freshness alert', () => {
+  it('states that stale current-day provider totals are withheld', () => {
+    const data = {
+      performance: {
+        freshness: {
+          status: 'stale',
+          message: 'Mojo has no provider performance snapshot for 2026-09-04',
+          lastSuccessfulSyncAt: '2026-09-03T15:37:00.000Z',
+          ageMinutes: 1_400,
+        },
+      },
+    } as MyDayData
+
+    render(<MojoFreshnessAlert data={data} />)
+
+    expect(screen.getByRole('alert', { name: 'Mojo data freshness' })).toHaveTextContent('Today’s provider totals are withheld')
+    expect(screen.getByText(/Mojo has no provider performance snapshot/)).toBeInTheDocument()
   })
 })

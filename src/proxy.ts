@@ -56,6 +56,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   // operational caller are reviewed. These four routes are used by the
   // supervised Mojo runner and retain their own admin-or-secret checks.
   '/api/admin/mojo-health',
+  '/api/admin/mojo-incident',
   '/api/admin/mojo-performance',
   '/api/admin/mojo-session',
   '/api/admin/system-config',

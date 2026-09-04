@@ -22,7 +22,7 @@ function crmUrl(path: string): string {
 }
 
 async function sendOperationalSmsAlert(input: {
-  event: 'andon_raised' | 'call_review_submitted'
+  event: 'andon_raised' | 'call_review_submitted' | 'mojo_ingestion_failure'
   recipient: string
   body: string
   referenceId: string
@@ -46,6 +46,19 @@ async function sendOperationalSmsAlert(input: {
   else console.error(JSON.stringify(log))
 
   return { attempted: true, recipient: input.recipient, result }
+}
+
+export async function sendMojoIngestionFailureSmsAlert(input: {
+  incidentId: string
+  message: string
+  source: string
+}): Promise<OperationalSmsAlertResult> {
+  return sendOperationalSmsAlert({
+    event: 'mojo_ingestion_failure',
+    recipient: ernestPhone(),
+    referenceId: input.incidentId,
+    body: `Mojo ingestion failure (${input.source}): ${input.message}. Casey's current Mojo totals are withheld until recovery. Open: ${crmUrl('/settings/system-health')}`,
+  })
 }
 
 export async function sendAndonRaisedSmsAlert(input: {
