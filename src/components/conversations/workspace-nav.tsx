@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Scorecard', icon: 'fact_check', href: '/scorecard', activeOn: ['/scorecard'] },
   { label: 'Task', icon: 'checklist', href: '/tasks', activeOn: ['/tasks'] },
+  { label: 'Dispositions', icon: 'sell', href: '/dispo/pipeline', activeOn: ['/dispo'] },
   { label: 'Reports', icon: 'bar_chart', href: '/reports/acquisitions', activeOn: ['/reports/acquisitions', '/reports/dispositions', '/reports/marketing', '/reports/finance', '/reports/call-sms'] },
   { label: 'Settings', icon: 'settings', href: '/settings', activeOn: ['/settings'] },
 ]
@@ -31,7 +32,7 @@ const CASEY_NAV_ITEMS: NavItem[] = [
   ...NAV_ITEMS.filter((item) => ['Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Task', 'Settings'].includes(item.label)),
 ]
 
-const WARM_NAV_LABELS = new Set(['Dashboard', 'My Day', 'Pipeline', 'Prospecting', 'Conversations', 'Task'])
+const WARM_NAV_LABELS = new Set(['Dashboard', 'My Day', 'Pipeline', 'Prospecting', 'Conversations', 'Task', 'Dispositions'])
 
 function workspaceItemsFor(userEmail?: string | null, canReviewCalls = false) {
   const isCasey = isCaseyCrmUser(userEmail)

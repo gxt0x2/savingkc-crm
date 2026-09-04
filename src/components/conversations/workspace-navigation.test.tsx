@@ -33,13 +33,14 @@ describe('workspace navigation', () => {
   })
 
   it('uses the consolidated reviewer order and keeps the unified inbox first class', () => {
-    render(<WorkspaceNav needsReply={3} canReviewCalls />)
+    render(<WorkspaceNav needsReply={3} userEmail="ernest@savingkc.com" canReviewCalls />)
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
-    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Scorecard', 'Task', 'Reports', 'Settings'])
+    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Scorecard', 'Task', 'Dispositions', 'Reports', 'Settings'])
     expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=contacted')
     expect(within(navigationRegion).getByRole('link', { name: 'Issue Log' })).toHaveAttribute('href', '/reports/andon')
+    expect(within(navigationRegion).getByRole('link', { name: 'Dispositions' })).toHaveAttribute('href', '/dispo/pipeline')
     expect(within(navigationRegion).queryByRole('link', { name: 'Bottlenecks' })).not.toBeInTheDocument()
     expect(within(navigationRegion).queryByRole('link', { name: 'Bingo Board' })).not.toBeInTheDocument()
     expect(within(navigationRegion).queryByRole('link', { name: 'AI Assistant' })).not.toBeInTheDocument()
@@ -79,6 +80,16 @@ describe('workspace navigation', () => {
     const more = screen.getByRole('dialog', { name: 'More navigation' })
     expect(within(more).getByRole('link', { name: /Daily Rhythm/ })).toBeVisible()
     expect(within(more).queryByRole('link', { name: /Scorecard/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps Dispositions available from Ernest\'s mobile menu', () => {
+    render(<WorkspaceMobileNav needsReply={0} userEmail="ernest@savingkc.com" canReviewCalls />)
+
+    const primary = screen.getByRole('navigation', { name: 'Primary CRM navigation' })
+    fireEvent.click(within(primary).getByRole('button', { name: /More/ }))
+
+    const more = screen.getByRole('dialog', { name: 'More navigation' })
+    expect(within(more).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/dispo/pipeline')
   })
 
   it('keeps the system Andon available from the shared CRM navigation', async () => {
