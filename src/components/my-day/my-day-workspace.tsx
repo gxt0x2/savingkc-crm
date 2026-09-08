@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CaseyAndonQueue } from '@/components/my-day/casey-andon-queue'
 import { MyDayCallReview } from '@/components/my-day/my-day-call-review'
+import { openSystemAndon } from '@/lib/andon-events'
+import { savingKcHoliday } from '@/lib/company-calendar'
 import {
   MY_DAY_TIME_ZONE,
   type MyDayData,
@@ -263,6 +265,31 @@ function sourceFreshness(value: string | null) {
   }).format(date)}`
 }
 
+function freshnessDismissed(key: string) {
+  try {
+    return window.localStorage?.getItem?.(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function persistFreshnessDismissal(key: string) {
+  try {
+    window.localStorage?.setItem?.(key, '1')
+  } catch {
+    // Clearing still works for this page load when browser storage is unavailable.
+  }
+}
+
+function freshnessDismissalKey(freshness: MyDayData['performance']['freshness']) {
+  const noticeKind = freshness.message.replace(/\d+/g, '#')
+  let noticeHash = 0
+  for (let index = 0; index < noticeKind.length; index += 1) {
+    noticeHash = (Math.imul(31, noticeHash) + noticeKind.charCodeAt(index)) | 0
+  }
+  return `savingkc:mojo-freshness-dismissed:v1:${freshness.status}:${freshness.lastSuccessfulSyncAt ?? 'never'}:${(noticeHash >>> 0).toString(36)}`
+}
+
 function ordinalDay(day: number) {
   const remainder = day % 100
   if (remainder >= 11 && remainder <= 13) return `${day}th`
@@ -325,29 +352,62 @@ function FunnelCard({ data }: { data: MyDayData }) {
 
 export function MojoFreshnessAlert({ data }: { data: MyDayData }) {
   const freshness = data.performance.freshness
-  if (freshness.status === 'current') return null
-
   const delayed = freshness.status === 'delayed'
   const lastSync = freshness.lastSuccessfulSyncAt ? sourceFreshness(freshness.lastSuccessfulSyncAt) : 'No successful sync recorded'
+  const dismissalKey = freshnessDismissalKey(freshness)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    setDismissed(freshnessDismissed(dismissalKey))
+  }, [dismissalKey])
+
+  if (freshness.status === 'current' || dismissed) return null
+
+  const message = freshness.message.startsWith('Mojo provider performance was last updated')
+    ? freshness.message
+    : `${freshness.message}. ${lastSync}`
+
+  function clearNotification() {
+    persistFreshnessDismissal(dismissalKey)
+    setDismissed(true)
+  }
+
+  function reportAndon() {
+    openSystemAndon({
+      defaultSection: 'Reports',
+      description: `My Day shows a Mojo freshness alert: ${message}.`,
+    })
+  }
+
   return (
     <section
       role="alert"
       aria-label="Mojo data freshness"
       className={cn(
-        'flex items-start gap-3 rounded-xl border px-4 py-3 text-xs',
+        'flex flex-col gap-3 rounded-xl border px-4 py-3 text-xs sm:flex-row sm:items-start',
         delayed
           ? 'border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] text-[var(--crm-warning)]'
           : 'border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]',
       )}
     >
-      <Icon name={delayed ? 'schedule' : 'sync_problem'} className="mt-0.5 text-[19px]" />
-      <div>
-        <p className="font-black">Mojo data {delayed ? 'is delayed' : 'is not current'}</p>
-        <p className="mt-0.5 font-semibold leading-relaxed">
-          {freshness.message}. {lastSync}. {delayed
-            ? 'The latest available totals are labeled as partial.'
-            : 'Today’s provider totals are withheld until a healthy sync completes.'}
-        </p>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <Icon name={delayed ? 'schedule' : 'sync_problem'} className="mt-0.5 shrink-0 text-[19px]" />
+        <div>
+          <p className="font-black">Mojo data {delayed ? 'is delayed' : 'is not current'}</p>
+          <p className="mt-0.5 font-semibold leading-relaxed">
+            {message}. {delayed
+              ? 'The latest available totals are labeled as partial.'
+              : 'Today’s provider totals are withheld until a healthy sync completes.'}
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+        <button type="button" onClick={reportAndon} className="rounded-lg border border-current/30 bg-[var(--crm-surface)] px-3 py-2 font-black shadow-sm hover:bg-[var(--crm-surface-subtle)]">
+          Report Andon issue
+        </button>
+        <button type="button" onClick={clearNotification} className="rounded-lg border border-current/30 px-3 py-2 font-black hover:bg-black/5">
+          Clear notification
+        </button>
       </div>
     </section>
   )
@@ -418,7 +478,14 @@ export function ReconciliationAttention({ data, onReviewed }: { data: MyDayData;
   )
 }
 
-function WeeklySnapshot({ data }: { data: MyDayData }) {
+export function WeeklySnapshot({ data }: { data: MyDayData }) {
+  const calendarDays = data.week.dayLabels.map((label, index) => {
+    const date = new Date(`${data.week.start}T12:00:00Z`)
+    date.setUTCDate(date.getUTCDate() + index)
+    const dateKey = date.toISOString().slice(0, 10)
+    return { label, holiday: savingKcHoliday(dateKey) }
+  })
+
   return (
     <section aria-labelledby="weekly-snapshot-title" className="crm-panel overflow-hidden rounded-xl">
       <div className="flex items-baseline justify-between gap-3">
@@ -430,7 +497,7 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
           <thead>
             <tr className="bg-[var(--crm-surface-subtle)] text-[11px] font-black uppercase tracking-[0.05em] text-[var(--crm-text-muted)]">
               <th className="w-[220px] border border-[var(--crm-border)] px-4 py-3 text-left">Metric</th>
-              {data.week.dayLabels.map((day) => <th key={day} className="border border-[var(--crm-border)] px-3 py-3 text-center">{day}</th>)}
+              {calendarDays.map(({ label, holiday }) => <th key={label} aria-label={holiday ? `${label} ${holiday.name}` : label} className={cn('border border-[var(--crm-border)] px-3 py-3 text-center', holiday && 'bg-[var(--crm-warning-soft)]')}><span>{label}</span>{holiday ? <span className="mt-1 block text-[9px] normal-case tracking-normal text-[var(--crm-warning)]">{holiday.name}</span> : null}</th>)}
               <th className="border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-3 text-center text-[var(--crm-brand)]">Week Total</th>
             </tr>
           </thead>
@@ -440,7 +507,10 @@ function WeeklySnapshot({ data }: { data: MyDayData }) {
               return (
                 <tr key={row.key} className="hover:bg-[var(--crm-surface-subtle)]">
                   <th className="border border-[var(--crm-border)] px-4 py-3 text-left font-extrabold"><span className="inline-flex items-center gap-2.5"><Icon name={row.icon} className={cn('text-[18px]', tone.icon)} />{row.label}</span></th>
-                  {row.days.map((value, index) => <td key={`${row.key}-${index}`} className="border border-[var(--crm-border)] px-3 py-3 text-center font-bold">{metricValue(value)}</td>)}
+                  {row.days.map((value, index) => {
+                    const holiday = calendarDays[index]?.holiday
+                    return <td key={`${row.key}-${index}`} aria-label={holiday && value === null ? `${holiday.name} — not a workday` : undefined} className={cn('border border-[var(--crm-border)] px-3 py-3 text-center font-bold', holiday && 'bg-[var(--crm-warning-soft)]/45 text-[var(--crm-text-muted)]')}>{metricValue(value)}</td>
+                  })}
                   <td className={cn('border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-3 py-3 text-center text-[15px] font-black', tone.text)}>{metricValue(row.total)}</td>
                 </tr>
               )
