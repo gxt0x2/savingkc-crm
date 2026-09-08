@@ -8,6 +8,7 @@ import { formatPhone, toProperCase } from '@/lib/format'
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { excludeCompletedDialerPhones } from '@/lib/heir-dialer-resume'
 import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
+import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 import {
   dispositionLabel as canonicalDispositionLabel,
 } from '@/lib/dialer-dispositions'
@@ -49,6 +50,7 @@ interface HeirsSectionProps {
   /** Rings to allow before giving up; flows to the Twilio Dial timeout. */
   ringCount?: number | null
   dialerSessionId?: string | null
+  dialerSurface?: InteractiveDialerSurface
   /** Read-only campaign review: show every associated number without exposing mutations or telephony actions. */
   readOnlyPreview?: boolean
   /** Refreshes any surrounding activity timeline after a per-contact note is persisted. */
@@ -94,6 +96,7 @@ export function HeirsSection({
   onSmsPhone,
   ringCount = null,
   dialerSessionId = null,
+  dialerSurface = 'crm',
   readOnlyPreview = false,
   onContactNoteSaved,
 }: HeirsSectionProps) {
@@ -229,13 +232,13 @@ export function HeirsSection({
 
   function queueAll() {
     const queue: HeirDialerQueueItem[] = heirs.flatMap((heir) => buildQueueForHeir(heir))
-    dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId)
+    dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId, dialerSurface)
   }
 
   // Explicit recalls may include attempted/verified numbers, but hard-stop
   // outcomes are never reintroduced into a dial queue.
   function queueHeir(heir: Heir) {
-    dispatchHeirQueue(mapHeirPhones(heir, callablePhonesForHeir(heir)), dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId)
+    dispatchHeirQueue(mapHeirPhones(heir, callablePhonesForHeir(heir)), dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId, dialerSurface)
   }
 
   function queueOne(heir: Heir, phone: HeirPhone) {
@@ -247,7 +250,7 @@ export function HeirsSection({
     const remaining = heirs
       .flatMap((h) => buildQueueForHeir(h))
       .filter((item) => item.prospect_phone_id !== phone.id)
-    dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId)
+    dispatchHeirQueue([clicked, ...remaining], dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId, dialerSurface)
   }
 
   const saveContactNote = useCallback(async (heir: Heir, description: string) => {
@@ -291,12 +294,12 @@ export function HeirsSection({
 
     if (queue.length > 0) {
       if (readOnlyPreview) window.dispatchEvent(new CustomEvent('prospecting-preview-queue-ready', { detail: { queue } }))
-      else dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount }, dialerSessionId)
+      else dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount }, dialerSessionId, dialerSurface)
       onAutoStartHandled?.()
       return
     }
     onAutoStartEmpty?.()
-  }, [autoStart, autoStartKey, autoStartSkipPhoneIds, autoStartSkipPhones, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount])
+  }, [autoStart, autoStartKey, autoStartSkipPhoneIds, autoStartSkipPhones, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, dialerSurface, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount])
 
   return (
     <section className={`ck-card overflow-hidden ${expanded ? (collapsible ? 'p-6' : 'p-0') : 'px-6 py-4'}`}>

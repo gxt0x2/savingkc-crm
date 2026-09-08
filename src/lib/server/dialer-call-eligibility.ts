@@ -8,12 +8,14 @@ import {
   type DialerCallDecision,
 } from '@/lib/dialer-call-policy'
 import { normalizeDisposition } from '@/lib/dialer-dispositions'
+import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { supabase } from '@/lib/supabase-lazy'
 import { stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 import { isDialerCallerIdNumber, TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import type { DialerSurface } from '@/lib/telephony/dialer-surface'
 
-export const DIALER_POLICY_VERSION = 'dialer_safety_v1' as const
+export const DIALER_POLICY_VERSION = 'dialer_safety_v2' as const
 
 export type OutboundDialerCallSource =
   | 'web_manual'
@@ -29,6 +31,7 @@ export type OutboundDialerCallSource =
 
 export interface OutboundDialerCallInput {
   phone: string
+  surface: DialerSurface
   leadId?: string | null
   prospectId?: string | null
   prospectPhoneId?: string | null
@@ -54,6 +57,7 @@ type LeadRow = {
   phone: string | null
   station: string | null
   classification: string | null
+  dead_reason: string | null
 }
 
 type ProspectPhoneRow = {
@@ -67,6 +71,7 @@ type ProspectPhoneRow = {
 
 type ActivityRow = { lead_id: string | null; activity_type: string; metadata: unknown; created_at: string }
 type SuppressionRow = { phone: string | null; reason: string | null }
+type ResolvedActivityPolicyFact = DialerActivityPolicyFact & { leadId: string | null }
 
 const VALID_SOURCES = new Set<OutboundDialerCallSource>([
   'web_manual',
@@ -128,17 +133,21 @@ function decision(
   }
 }
 
-function policyUnavailable(input: OutboundDialerCallInput, checkedAt: string): OutboundDialerCallDecision {
+function policyUnavailable(
+  input: OutboundDialerCallInput,
+  checkedAt: string,
+  reasonSource = 'policy_runtime',
+): OutboundDialerCallDecision {
   return decision(dialerCallBlock('policy_unavailable', normalizePhoneToE164(input.phone)), {
     checkedAt,
     leadId: input.leadId,
     prospectId: input.prospectId,
     prospectPhoneId: input.prospectPhoneId,
-    reasonSource: 'policy_runtime',
+    reasonSource,
   })
 }
 
-function activityFact(row: ActivityRow, target: string, prospectPhoneId: string | null): DialerActivityPolicyFact | null {
+function activityFact(row: ActivityRow, target: string, prospectPhoneId: string | null): ResolvedActivityPolicyFact | null {
   if (!isRecord(row.metadata)) return null
   const metadataProspectPhoneId = stringValue(row.metadata.prospect_phone_id)
   const phoneValues = [row.metadata.phone, row.metadata.to, row.metadata.destination]
@@ -149,10 +158,25 @@ function activityFact(row: ActivityRow, target: string, prospectPhoneId: string 
   if (!matches) return null
 
   return {
+    leadId: row.lead_id,
     disposition: stringValue(row.metadata.disposition),
     outcome: stringValue(row.metadata.outcome),
     phone_status: stringValue(row.metadata.phone_status),
   }
+}
+
+function globalCrmActivityBlock(fact: ResolvedActivityPolicyFact): ResolvedActivityPolicyFact | null {
+  if (dispositionReason(fact.disposition) === 'do_not_call') {
+    return { leadId: fact.leadId, disposition: 'dnc' }
+  }
+  if (dispositionReason(fact.outcome) === 'do_not_call') {
+    return { leadId: fact.leadId, outcome: 'dnc' }
+  }
+  const statusReason = phoneStatusReason(fact.phone_status)
+  if (statusReason === 'do_not_call' || statusReason === 'blocked_number') {
+    return { leadId: fact.leadId, phone_status: statusReason === 'do_not_call' ? 'dnc' : 'blocked' }
+  }
+  return null
 }
 
 function dispositionReason(raw: string | null | undefined): DialerCallBlockReason | null {
@@ -189,6 +213,13 @@ function exactReasonSource(input: {
     if (input.leads.some((lead) => ['dead', 'closed_lost'].includes(lead.station?.toLowerCase() ?? ''))) return 'leads.station'
     if (input.leads.some((lead) => lead.classification?.toLowerCase() === 'dead')) return 'leads.classification'
   }
+
+  const deadReasonLead = input.leads.find((lead) => {
+    const deadReason = canonicalDeadReason(lead.dead_reason)
+    return (reason === 'do_not_call' && deadReason === 'dnc_refused')
+      || (reason === 'disconnected' && deadReason === 'wrong_or_disconnected')
+  })
+  if (deadReasonLead) return 'leads.dead_reason'
 
   const stoppedProspect = input.prospectPhones.find((row) => {
     const connection = String(row.phone_connected ?? '').toLowerCase()
@@ -242,13 +273,13 @@ async function evaluateOutboundDialerCallUnchecked(
   if (!normalizedPhone) {
     return decision(dialerCallBlock('invalid_phone'), { checkedAt, reasonSource: 'phone' })
   }
-  if (!VALID_SOURCES.has(input.source)) return policyUnavailable(input, checkedAt)
+  if (!VALID_SOURCES.has(input.source)) return policyUnavailable(input, checkedAt, 'source')
 
   const db = options.db ?? supabase
   const variants = phoneLookupVariants(input.phone)
   try {
     const exactLeadPromise = input.leadId
-      ? db.from('leads').select('id, phone, station, classification').eq('id', input.leadId).maybeSingle()
+      ? db.from('leads').select('id, phone, station, classification, dead_reason').eq('id', input.leadId).maybeSingle()
       : Promise.resolve({ data: null, error: null })
     const exactProspectPhonePromise = input.prospectPhoneId
       ? db.from('prospect_phones')
@@ -260,18 +291,20 @@ async function evaluateOutboundDialerCallUnchecked(
     const [exactLeadResult, exactProspectPhoneResult, matchedLeads, matchedProspectPhones, suppressions] = await Promise.all([
       exactLeadPromise,
       exactProspectPhonePromise,
-      matchingRows<LeadRow>(db, 'leads', 'id, phone, station, classification', variants),
+      matchingRows<LeadRow>(db, 'leads', 'id, phone, station, classification, dead_reason', variants),
       matchingRows<ProspectPhoneRow>(db, 'prospect_phones', 'id, phone, prospect_id, phone_connected, last_disposition, prospects(lead_id)', variants),
-      (async () => {
-        const { data, error } = await db
-          .from('sms_opt_outs')
-          .select('phone, reason')
-          .in('phone', variants)
-          .eq('is_opted_out', true)
-          .limit(1000)
-        if (error) throw new Error('dialer policy suppression lookup failed')
-        return (data ?? []) as unknown as SuppressionRow[]
-      })(),
+      input.surface === 'crm'
+        ? Promise.resolve([] as SuppressionRow[])
+        : (async () => {
+            const { data, error } = await db
+              .from('sms_opt_outs')
+              .select('phone, reason')
+              .in('phone', variants)
+              .eq('is_opted_out', true)
+              .limit(1000)
+            if (error) throw new Error('dialer policy suppression lookup failed')
+            return (data ?? []) as unknown as SuppressionRow[]
+          })(),
     ])
 
     if (exactLeadResult.error || exactProspectPhoneResult.error) throw new Error('dialer policy context lookup failed')
@@ -354,17 +387,53 @@ async function evaluateOutboundDialerCallUnchecked(
 
     const activityFacts = activityRows
       .map((row) => activityFact(row, normalizedPhone, input.prospectPhoneId ?? null))
-      .filter((fact): fact is DialerActivityPolicyFact => Boolean(fact))
+      .filter((fact): fact is ResolvedActivityPolicyFact => Boolean(fact))
+
+    const selectedLeadIds = new Set([
+      input.leadId ?? null,
+      exactProspectPhone ? linkedLeadId(exactProspectPhone) : null,
+    ].filter((value): value is string => Boolean(value)))
+    const selectedLead = (lead: LeadRow) => selectedLeadIds.has(lead.id)
+    const selectedProspectPhone = (phone: ProspectPhoneRow) => (
+      phone.id === input.prospectPhoneId
+      || Boolean(input.prospectId && phone.prospect_id === input.prospectId)
+      || Boolean(input.leadId && linkedLeadId(phone) === input.leadId)
+    )
+    const policySuppressions = suppressions
+    const policyLeads = input.surface === 'crm'
+      ? leads.flatMap((lead) => {
+          if (selectedLead(lead)) return [lead]
+          return canonicalDeadReason(lead.dead_reason) === 'dnc_refused'
+            ? [{ ...lead, station: null, classification: null, dead_reason: 'dnc_refused' }]
+            : []
+        })
+      : leads
+    const policyProspectPhones = input.surface === 'crm'
+      ? prospectPhones.flatMap((phone) => {
+          if (selectedProspectPhone(phone)) return [phone]
+          return dispositionReason(phone.last_disposition) === 'do_not_call'
+            ? [{ ...phone, phone_connected: null, last_disposition: 'dnc' }]
+            : []
+        })
+      : prospectPhones
+    const policyActivities = input.surface === 'crm'
+      ? activityFacts.flatMap((fact) => {
+          if (fact.leadId && selectedLeadIds.has(fact.leadId)) return [fact]
+          const globalBlock = globalCrmActivityBlock(fact)
+          return globalBlock ? [globalBlock] : []
+        })
+      : activityFacts
 
     const policyDecision = evaluateDialerCallPolicy({
       phone: normalizedPhone,
+      surface: input.surface,
       now: input.now,
-      leads,
-      suppressionReasons: suppressions.map((row) => row.reason),
-      prospectPhones,
-      activities: activityFacts,
-      internalNumbers: [
-        ...TWILIO_NUMBERS.map((number) => number.value),
+      leads: policyLeads,
+      suppressionReasons: policySuppressions.map((row) => row.reason),
+      prospectPhones: policyProspectPhones,
+      activities: policyActivities,
+      companyOwnedNumbers: TWILIO_NUMBERS.map((number) => number.value),
+      teamNumbers: [
         process.env.ERNEST_PHONE || '+18162262552',
         process.env.CASEY_PHONE || '+18167564943',
       ],
@@ -381,10 +450,10 @@ async function evaluateOutboundDialerCallUnchecked(
       prospectPhoneId: input.prospectPhoneId ?? exactProspectPhone?.id ?? null,
       reasonSource: exactReasonSource({
         result: policyDecision,
-        suppressions,
-        leads,
-        prospectPhones,
-        activities: activityFacts,
+        suppressions: policySuppressions,
+        leads: policyLeads,
+        prospectPhones: policyProspectPhones,
+        activities: policyActivities,
       }),
     })
   } catch (error) {
@@ -398,22 +467,26 @@ export async function evaluateOutboundDialerCall(
   options: { db?: SupabaseClient; timeoutMs?: number } = {},
 ): Promise<OutboundDialerCallDecision> {
   const timeoutMs = Math.min(Math.max(options.timeoutMs ?? 2500, 1), 10_000)
-  let timeoutId: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<OutboundDialerCallDecision>((resolve) => {
-    timeoutId = setTimeout(() => {
-      console.error('[dialer-call-policy] Safety evaluation timed out')
-      resolve(policyUnavailable(input, (input.now ?? new Date()).toISOString()))
-    }, timeoutMs)
-  })
-
-  try {
-    return await Promise.race([
-      evaluateOutboundDialerCallUnchecked(input, { db: options.db }),
-      timeout,
-    ])
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId)
+  let latest = policyUnavailable(input, (input.now ?? new Date()).toISOString())
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<OutboundDialerCallDecision>((resolve) => {
+      timeoutId = setTimeout(() => {
+        console.error('[dialer-call-policy] Safety evaluation timed out')
+        resolve(policyUnavailable(input, (input.now ?? new Date()).toISOString()))
+      }, timeoutMs)
+    })
+    try {
+      latest = await Promise.race([
+        evaluateOutboundDialerCallUnchecked(input, { db: options.db }),
+        timeout,
+      ])
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+    if (latest.allowed || latest.reason !== 'policy_unavailable' || latest.reasonSource !== 'policy_runtime') return latest
   }
+  return latest
 }
 
 export async function recordBlockedDialerCall(
@@ -444,6 +517,7 @@ export async function recordBlockedDialerCall(
       prospect_id: result.prospectId,
       prospect_phone_id: result.prospectPhoneId,
       dial_source: input.source,
+      dial_surface: input.surface,
       identity: input.identity ?? null,
       caller_id: normalizePhoneToE164(input.callerId),
       call_sid: input.callSid ?? null,

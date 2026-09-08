@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DialerSessionCommand } from './dialer-session-command'
+import { PROSPECTING_DIALER_CONTROLS_EVENT } from '@/lib/telephony/dialer-events'
 
 function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSessionCommand>> = {}) {
   const props: React.ComponentProps<typeof DialerSessionCommand> = {
@@ -135,7 +136,7 @@ describe('DialerSessionCommand', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Call controls' }))
 
-    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'show-dialer-controls' }))
+    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: PROSPECTING_DIALER_CONTROLS_EVENT }))
   })
 
   it('offers an explicit resume action for paused durable sessions', () => {

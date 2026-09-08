@@ -15,6 +15,7 @@ import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
 import { formatPhone } from '@/lib/format'
+import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
 import {
   getCallOutcomePresentation,
   getCallParties,
@@ -539,7 +540,7 @@ export default function ConversationsPage() {
 
   function openActiveDialer() {
     if (!activeThread?.phone) return
-    window.dispatchEvent(new CustomEvent('open-dialer', {
+    window.dispatchEvent(new CustomEvent(CRM_DIALER_OPEN_EVENT, {
       detail: {
         leadId: activeThread.kind === 'lead' ? activeThread.id : null,
         phone: activeThread.phone,

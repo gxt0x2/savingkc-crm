@@ -1,5 +1,7 @@
 import { dispositionStopsNumber, normalizeDisposition } from '@/lib/dialer-dispositions'
+import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import type { DialerSurface } from '@/lib/telephony/dialer-surface'
 
 export const DIALER_CALLING_TIME_ZONE = 'America/Chicago'
 export const DIALER_CALLING_WINDOW_LABEL = 'Monday-Saturday, 9:00 AM-7:00 PM Central'
@@ -48,12 +50,14 @@ export interface DialerActivityPolicyFact {
 
 export interface DialerCallPolicyInput {
   phone: string | number | null | undefined
+  surface: DialerSurface
   now?: Date
   leads: readonly DialerLeadPolicyFact[]
   suppressionReasons: readonly (string | null | undefined)[]
   prospectPhones: readonly DialerProspectPhonePolicyFact[]
   activities: readonly DialerActivityPolicyFact[]
-  internalNumbers: readonly string[]
+  companyOwnedNumbers: readonly string[]
+  teamNumbers: readonly string[]
   callingHoursExempt?: boolean
 }
 
@@ -65,7 +69,7 @@ const BLOCK_MESSAGES: Record<DialerCallBlockReason, string> = {
   wrong_number: 'This number is marked as a wrong number.',
   disconnected: 'This number is marked disconnected.',
   blocked_number: 'This number is blocked from outbound calling.',
-  internal_destination: 'Company and team phone numbers cannot be called from the prospecting dialer.',
+  internal_destination: 'Company-owned phone numbers cannot be called from this dialer.',
   destination_mismatch: 'The selected contact does not match this phone number.',
   policy_unavailable: 'Calling is paused because the safety check is unavailable.',
 }
@@ -73,8 +77,9 @@ const BLOCK_MESSAGES: Record<DialerCallBlockReason, string> = {
 export function dialerCallBlock(
   reason: DialerCallBlockReason,
   normalizedPhone: string | null = null,
+  message = BLOCK_MESSAGES[reason],
 ): DialerCallDecision {
-  return { allowed: false, normalizedPhone, reason, message: BLOCK_MESSAGES[reason] }
+  return { allowed: false, normalizedPhone, reason, message }
 }
 
 function centralClockParts(now: Date): { weekday: string; hour: number; minute: number } {
@@ -139,21 +144,45 @@ function suppressionReason(raw: string | null | undefined): DialerCallBlockReaso
   return 'do_not_call'
 }
 
+function deadReasonBlock(raw: string | null | undefined): DialerCallBlockReason | null {
+  const reason = canonicalDeadReason(raw)
+  if (reason === 'dnc_refused') return 'do_not_call'
+  if (reason === 'wrong_or_disconnected') return 'disconnected'
+  return null
+}
+
 export function evaluateDialerCallPolicy(input: DialerCallPolicyInput): DialerCallDecision {
   const normalizedPhone = normalizePhoneToE164(input.phone)
   if (!normalizedPhone) return dialerCallBlock('invalid_phone')
 
-  if (input.internalNumbers.some((number) => normalizePhoneToE164(number) === normalizedPhone)) {
+  if (input.companyOwnedNumbers.some((number) => normalizePhoneToE164(number) === normalizedPhone)) {
     return dialerCallBlock('internal_destination', normalizedPhone)
   }
 
-  for (const reason of input.suppressionReasons) {
-    const blocked = suppressionReason(reason)
-    if (blocked) return dialerCallBlock(blocked, normalizedPhone)
+  if (
+    input.surface !== 'crm'
+    && input.teamNumbers.some((number) => normalizePhoneToE164(number) === normalizedPhone)
+  ) {
+    const message = input.surface === 'prospecting'
+      ? 'Team phone numbers cannot be called from the prospecting dialer.'
+      : 'Team phone numbers cannot be called from this automated dialer.'
+    return dialerCallBlock('internal_destination', normalizedPhone, message)
+  }
+
+  if (input.surface !== 'crm') {
+    for (const reason of input.suppressionReasons) {
+      const blocked = suppressionReason(reason)
+      if (blocked) return dialerCallBlock(blocked, normalizedPhone)
+    }
   }
 
   for (const lead of input.leads) {
-    if (['dead', 'closed_lost'].includes(lead.station?.toLowerCase() ?? '') || lead.classification?.toLowerCase() === 'dead') {
+    const numberBlock = deadReasonBlock(lead.dead_reason)
+    if (numberBlock) return dialerCallBlock(numberBlock, normalizedPhone)
+    if (input.surface !== 'crm' && (
+      ['dead', 'closed_lost'].includes(lead.station?.toLowerCase() ?? '')
+      || lead.classification?.toLowerCase() === 'dead'
+    )) {
       return dialerCallBlock('dead_lead', normalizedPhone)
     }
     const blocked = stopReason(lead.call_result)
@@ -177,7 +206,7 @@ export function evaluateDialerCallPolicy(input: DialerCallPolicyInput): DialerCa
     if (blocked) return dialerCallBlock(blocked, normalizedPhone)
   }
 
-  if (!input.callingHoursExempt && !isWithinDialerCallingHours(input.now)) {
+  if (input.surface !== 'crm' && !input.callingHoursExempt && !isWithinDialerCallingHours(input.now)) {
     return dialerCallBlock('outside_calling_hours', normalizedPhone)
   }
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { PROSPECTING_DIALER_CONTROLS_EVENT } from '@/lib/telephony/dialer-events'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { formatPhone } from '@/lib/format'
 import type { DialerTodayMetrics } from '@/lib/dialer-session-client'
@@ -48,7 +49,7 @@ interface DialerSessionCommandProps {
 }
 
 function openCallControls() {
-  window.dispatchEvent(new Event('show-dialer-controls'))
+  window.dispatchEvent(new Event(PROSPECTING_DIALER_CONTROLS_EVENT))
 }
 
 type SessionMetricTone = 'info' | 'brand' | 'success' | 'warning'

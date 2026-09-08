@@ -12,6 +12,7 @@ import { applyCanonicalHousingToLead, leadHousingDetails } from '@/lib/lead-hous
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
+import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
 
 const PropertyHero = dynamic(() => import('@/components/leads/property-hero').then((module) => module.PropertyHero))
 const ActivityFeed = dynamic(() => import('@/components/leads/activity-feed').then((module) => module.ActivityFeed))
@@ -489,7 +490,7 @@ export default function LeadDetailPage() {
   function openLeadDialer() {
     const dialLead = lead
     if (!dialLead?.phone) return
-    window.dispatchEvent(new CustomEvent('open-dialer', {
+    window.dispatchEvent(new CustomEvent(CRM_DIALER_OPEN_EVENT, {
       detail: {
         phone: dialLead.phone,
         name: formattedName,

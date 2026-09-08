@@ -1,6 +1,8 @@
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 import { dispositionStopsNumber, isReachedDisposition } from '@/lib/dialer-dispositions'
+import { CRM_DIALER_QUEUE_EVENT, PROSPECTING_DIALER_QUEUE_EVENT } from '@/lib/telephony/dialer-events'
+import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 
 // A queue subject can be either a CRM Lead or an unpromoted source Prospect.
 // Campaign enrollment never creates a shadow Lead.
@@ -49,6 +51,7 @@ export function dispatchHeirQueue(
   callerPlan?: Partial<DialerCallerPlan> | null,
   options?: { autoDial?: boolean; ringCount?: number | null },
   sessionId?: string | null,
+  surface: InteractiveDialerSurface = 'crm',
 ) {
   if (queue.length === 0) return
   const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean; ringCount?: number; sessionId?: string } = { queue }
@@ -57,7 +60,8 @@ export function dispatchHeirQueue(
   if (options?.autoDial) detail.autoDial = true
   if (options?.ringCount && options.ringCount > 0) detail.ringCount = options.ringCount
   if (sessionId) detail.sessionId = sessionId
-  window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail }))
+  const eventName = surface === 'prospecting' ? PROSPECTING_DIALER_QUEUE_EVENT : CRM_DIALER_QUEUE_EVENT
+  window.dispatchEvent(new CustomEvent(eventName, { detail }))
 }
 
 export function isVerifiedPhone(phone: HeirPhone): boolean {

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import type { CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar'
+import type { CallStatus, HeirQueueItem } from '@/components/telephony/telephony-bar-types'
 import { useAuth } from '@/hooks/use-auth'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useThemePreference } from '@/hooks/use-theme-preference'
@@ -14,14 +14,20 @@ import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button
 import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 import { isCallReviewer } from '@/lib/call-review-reviewers'
+import {
+  CRM_DIALER_OPEN_EVENT,
+  CRM_DIALER_QUEUE_EVENT,
+  PROSPECTING_DIALER_CONTROLS_EVENT,
+  PROSPECTING_DIALER_QUEUE_EVENT,
+} from '@/lib/telephony/dialer-events'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
 const CommandPalette = dynamic(() => import('./command-palette').then((mod) => mod.CommandPalette), { ssr: false })
 const NotificationBell = dynamic(() => import('./notification-bell').then((mod) => mod.NotificationBell), { ssr: false })
 const SystemAndon = dynamic(() => import('@/components/feedback/system-andon').then((mod) => mod.SystemAndon), { ssr: false })
-const DialerPanel = dynamic(
-  () => import('@/components/telephony/telephony-bar').then((mod) => mod.DialerPanel),
+const DialerEntry = dynamic(
+  () => import('@/components/telephony/dialer-entry').then((mod) => mod.DialerEntry),
   {
     ssr: false,
     loading: () => <div role="status" className="fixed bottom-5 right-5 z-[70] rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-xs font-black shadow-[var(--crm-shadow-lg)]">Opening phone…</div>,
@@ -127,11 +133,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
     searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort') || isProspectingPreviewFloor,
   )
-  const dialerPresentation = pathname?.startsWith('/dialer')
-    ? 'dock'
-    : isProspectingCallingFloor
-      ? 'workspace'
-      : 'modal'
+  const isProspectingCallingFloorRef = useRef(Boolean(isProspectingCallingFloor))
+  isProspectingCallingFloorRef.current = Boolean(isProspectingCallingFloor)
   const signedInEmail = user?.email?.toLowerCase() ?? null
   // My Day is Casey's purpose-built workspace. Scorecard is reviewer-owned and
   // must always preserve the authenticated reviewer instead of inheriting a
@@ -188,7 +191,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Listen for open-dialer custom events (from ARI page click-to-call)
   const [pendingDialLead, setPendingDialLead] = useState<{ phone: string; name: string; leadId: string; callerId?: string | null } | null>(null)
   const [pendingQueue, setPendingQueue] = useState<HeirQueueItem[] | null>(null)
   const [pendingQueueCallerId, setPendingQueueCallerId] = useState<string | null>(null)
@@ -207,7 +209,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    function handleOpenDialer(e: Event) {
+    function handleOpenCrmDialer(e: Event) {
+      if (isProspectingCallingFloorRef.current) return
       const detail = (e as CustomEvent).detail
       if (detail?.phone) {
         setPendingDialLead({
@@ -225,9 +228,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setDialerOwnerRoute(currentRouteKeyRef.current)
         setDialerMounted(true)
         setShowDialer(true)
+        return
       }
-    }
-    function handleOpenGlobalDialer() {
       setPendingDialLead(null)
       setPendingQueue(null)
       setPendingQueueCallerId(null)
@@ -239,12 +241,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setDialerMounted(true)
       setShowDialer(true)
     }
-    function handleShowDialerControls() {
+    function handleShowProspectingDialerControls() {
+      if (!isProspectingCallingFloorRef.current) return
       setDialerOwnerRoute(currentRouteKeyRef.current)
       setDialerMounted(true)
       setShowDialer(true)
     }
-    function handleOpenDialerQueue(e: Event) {
+    function handleOpenDialerQueue(e: Event, surface: 'crm' | 'prospecting') {
+      if ((surface === 'prospecting') !== isProspectingCallingFloorRef.current) return
       const detail = (e as CustomEvent).detail
       if (Array.isArray(detail?.queue) && detail.queue.length > 0) {
         setPendingQueue(detail.queue)
@@ -253,22 +257,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueueCallerPlan(normalizeDialerCallerPlan(detail.callerPlan, callerId || ''))
         setPendingQueueAutoDial(Boolean(detail.autoDial))
         setPendingQueueRingCount(typeof detail.ringCount === 'number' ? detail.ringCount : null)
-        setPendingSessionId(typeof detail.sessionId === 'string' ? detail.sessionId : null)
+        setPendingSessionId(surface === 'prospecting' && typeof detail.sessionId === 'string' ? detail.sessionId : null)
         setPendingDialLead(null)
         setDialerOwnerRoute(currentRouteKeyRef.current)
         setDialerMounted(true)
         setShowDialer(true)
       }
     }
-    window.addEventListener('open-dialer', handleOpenDialer)
-    window.addEventListener('open-global-dialer', handleOpenGlobalDialer)
-    window.addEventListener('show-dialer-controls', handleShowDialerControls)
-    window.addEventListener('open-dialer-queue', handleOpenDialerQueue)
+    const handleOpenCrmDialerQueue = (event: Event) => handleOpenDialerQueue(event, 'crm')
+    const handleOpenProspectingDialerQueue = (event: Event) => handleOpenDialerQueue(event, 'prospecting')
+    window.addEventListener(CRM_DIALER_OPEN_EVENT, handleOpenCrmDialer)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, handleOpenCrmDialerQueue)
+    window.addEventListener(PROSPECTING_DIALER_CONTROLS_EVENT, handleShowProspectingDialerControls)
+    window.addEventListener(PROSPECTING_DIALER_QUEUE_EVENT, handleOpenProspectingDialerQueue)
     return () => {
-      window.removeEventListener('open-dialer', handleOpenDialer)
-      window.removeEventListener('open-global-dialer', handleOpenGlobalDialer)
-      window.removeEventListener('show-dialer-controls', handleShowDialerControls)
-      window.removeEventListener('open-dialer-queue', handleOpenDialerQueue)
+      window.removeEventListener(CRM_DIALER_OPEN_EVENT, handleOpenCrmDialer)
+      window.removeEventListener(CRM_DIALER_QUEUE_EVENT, handleOpenCrmDialerQueue)
+      window.removeEventListener(PROSPECTING_DIALER_CONTROLS_EVENT, handleShowProspectingDialerControls)
+      window.removeEventListener(PROSPECTING_DIALER_QUEUE_EVENT, handleOpenProspectingDialerQueue)
     }
   }, [])
 
@@ -363,8 +369,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     callerId={searchParams.get('caller_id') || ''}
     callerMode={searchParams.get('caller_mode') || 'static'}
     rotationNumbers={searchParams.get('rotation_numbers') || ''}
-  /> : shouldRenderDialer ? <DialerPanel
+  /> : shouldRenderDialer ? <DialerEntry
     key={isProspectingCallingFloor ? `prospecting:${activeFloorSessionId || 'preview'}` : 'global'}
+    surface={isProspectingCallingFloor ? 'prospecting' : 'crm'}
     open={isProspectingCallingFloor ? true : showDialer}
     onClose={() => {
       if (isProspectingCallingFloor) return
@@ -385,7 +392,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pendingQueueAutoDial={floorQueueMatchesSession && pendingQueueAutoDial}
     pendingQueueRingCount={floorQueueMatchesSession ? pendingQueueRingCount : null}
     pendingSessionId={isProspectingCallingFloor ? activeFloorSessionId : pendingSessionId}
-    presentation={dialerPresentation}
     signedInEmail={user?.email}
   /> : null
 

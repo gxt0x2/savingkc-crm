@@ -1,6 +1,7 @@
 'use client'
 
 import { Icon } from '@/components/ui/icon'
+import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
 
 export function preloadGlobalDialer() {
   return import('./telephony-bar')
@@ -8,7 +9,7 @@ export function preloadGlobalDialer() {
 
 export function GlobalDialerButton({ compact = false }: { compact?: boolean }) {
   function openDialer() {
-    window.dispatchEvent(new Event('open-global-dialer'))
+    window.dispatchEvent(new Event(CRM_DIALER_OPEN_EVENT))
   }
 
   return (
