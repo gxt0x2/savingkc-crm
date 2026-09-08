@@ -46,8 +46,27 @@ describe('Mojo health data watermark', () => {
     ]) as never, { now: new Date('2026-09-04T19:05:00.000Z') })
 
     expect(health.status).toBe('attention')
-    expect(health.message).toContain('no provider performance snapshot for 2026-09-04')
+    expect(health.message).toBe('Mojo provider performance was last updated Sep 3, 2:00 PM')
     expect(health.performance.latestMetricDate).toBe('2026-09-03')
+  })
+
+  it('uses the last update time instead of exposing a raw date key', async () => {
+    const health = await getMojoHealth(database([
+      { metric_date: '2026-09-04', source_fetched_at: '2026-09-07T22:59:00.000Z' },
+    ]) as never, { now: new Date('2026-09-08T16:30:00.000Z') })
+
+    expect(health.status).toBe('attention')
+    expect(health.message).toBe('Mojo provider performance was last updated Sep 7, 5:59 PM')
+    expect(health.message).not.toContain('2026-09-08')
+  })
+
+  it('does not expect provider snapshots during the Labor Day closure', async () => {
+    const health = await getMojoHealth(database([
+      { metric_date: '2026-09-04', source_fetched_at: '2026-09-04T22:00:00.000Z' },
+    ]) as never, { now: new Date('2026-09-07T16:30:00.000Z') })
+
+    expect(health.businessHours).toBe(false)
+    expect(health.status).toBe('clean')
   })
 
   it('marks an aging current-day provider snapshot as delayed', async () => {

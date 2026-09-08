@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 
 import { Icon } from '@/components/ui/icon'
+import { OPEN_SYSTEM_ANDON_EVENT, type OpenSystemAndonDetail } from '@/lib/andon-events'
 import { cn } from '@/lib/utils'
 
 const FeedbackForm = dynamic(
@@ -36,11 +37,22 @@ function sectionForPath(pathname: string) {
 export function SystemAndon({ collapsed = false, floating = false }: { collapsed?: boolean; floating?: boolean }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const [request, setRequest] = useState<OpenSystemAndonDetail | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const dismissTimer = useRef<number | null>(null)
 
   useEffect(() => () => {
     if (dismissTimer.current) window.clearTimeout(dismissTimer.current)
+  }, [])
+
+  useEffect(() => {
+    const handleOpen = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail as OpenSystemAndonDetail : {}
+      setRequest(detail)
+      setOpen(true)
+    }
+    window.addEventListener(OPEN_SYSTEM_ANDON_EVENT, handleOpen)
+    return () => window.removeEventListener(OPEN_SYSTEM_ANDON_EVENT, handleOpen)
   }, [])
 
   function handleSubmit() {
@@ -53,7 +65,10 @@ export function SystemAndon({ collapsed = false, floating = false }: { collapsed
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setRequest(null)
+          setOpen(true)
+        }}
         aria-label="Raise an Andon and report an issue"
         title={collapsed ? 'Raise Andon' : undefined}
         className={cn(
@@ -66,7 +81,7 @@ export function SystemAndon({ collapsed = false, floating = false }: { collapsed
         {collapsed ? null : <span className="min-w-0"><strong className="block text-[11px] font-black uppercase tracking-[0.08em]">Andon Cord</strong><span className="block text-[10px] font-semibold text-[var(--crm-text-muted)]">Report an issue</span></span>}
       </button>
 
-      {open ? <FeedbackForm defaultSection={sectionForPath(pathname)} onClose={() => setOpen(false)} onSubmit={handleSubmit} /> : null}
+      {open ? <FeedbackForm defaultSection={request?.defaultSection ?? sectionForPath(pathname)} initialDescription={request?.description} onClose={() => setOpen(false)} onSubmit={handleSubmit} /> : null}
       {submitted ? <div role="status" className="fixed bottom-5 right-5 z-[110] flex items-center gap-2 rounded-xl bg-[var(--crm-success)] px-4 py-3 text-sm font-bold text-white shadow-xl"><Icon name="check_circle" />Andon received</div> : null}
     </>
   )

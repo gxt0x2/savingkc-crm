@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { openSystemAndon } from '@/lib/andon-events'
 
 import { WorkspaceContextNav } from './workspace-context-nav'
 import { WorkspaceMobileNav, WorkspaceNav } from './workspace-nav'
@@ -101,6 +103,18 @@ describe('workspace navigation', () => {
     expect(screen.getByRole('button', { name: /AI Glitch/ })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'What happened' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Why 5' })).toBeVisible()
+  })
+
+  it('opens and prefills the Andon form from an in-page alert', async () => {
+    render(<WorkspaceNav needsReply={0} />)
+
+    act(() => openSystemAndon({
+      defaultSection: 'Reports',
+      description: 'My Day shows a Mojo freshness alert.',
+    }))
+
+    expect(await screen.findByRole('dialog', { name: 'Report an issue' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'What happened' })).toHaveValue('My Day shows a Mojo freshness alert.')
   })
 
   it('shows Marketing in the dashboard context bar instead of the retired Bottlenecks board', () => {

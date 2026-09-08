@@ -2,13 +2,29 @@
 
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MyDayData, MyDayDateRange } from '@/lib/my-day'
 
-import { MojoFreshnessAlert, MyDayDateRangeSelector, ReconciliationAttention } from './my-day-workspace'
+import { MojoFreshnessAlert, MyDayDateRangeSelector, ReconciliationAttention, WeeklySnapshot } from './my-day-workspace'
 
-afterEach(() => vi.unstubAllGlobals())
+beforeEach(() => {
+  const values = new Map<string, string>()
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  })
+})
+
+afterEach(() => {
+  window.localStorage.clear()
+  vi.unstubAllGlobals()
+})
 
 const todayRange: MyDayDateRange = {
   preset: 'today',
@@ -89,13 +105,13 @@ describe('My Day reconciliation attention', () => {
 })
 
 describe('My Day Mojo freshness alert', () => {
-  it('states that stale current-day provider totals are withheld', () => {
+  it('shows a friendly last-update time with clear and report actions', () => {
     const data = {
       performance: {
         freshness: {
           status: 'stale',
-          message: 'Mojo has no provider performance snapshot for 2026-09-04',
-          lastSuccessfulSyncAt: '2026-09-03T15:37:00.000Z',
+          message: 'Mojo provider performance was last updated Sep 7, 5:59 PM',
+          lastSuccessfulSyncAt: '2026-09-07T22:59:00.000Z',
           ageMinutes: 1_400,
         },
       },
@@ -104,6 +120,54 @@ describe('My Day Mojo freshness alert', () => {
     render(<MojoFreshnessAlert data={data} />)
 
     expect(screen.getByRole('alert', { name: 'Mojo data freshness' })).toHaveTextContent('Today’s provider totals are withheld')
-    expect(screen.getByText(/Mojo has no provider performance snapshot/)).toBeInTheDocument()
+    expect(screen.getByText(/last updated Sep 7, 5:59 PM/)).toBeInTheDocument()
+    expect(screen.queryByText(/2026-09-08/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Report Andon issue' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Clear notification' })).toBeVisible()
+  })
+
+  it('keeps the current alert cleared across a remount', async () => {
+    const data = {
+      performance: {
+        freshness: {
+          status: 'delayed',
+          message: 'Mojo sync is stale by 60 minutes',
+          lastSuccessfulSyncAt: '2026-09-07T22:59:00.000Z',
+          ageMinutes: 60,
+        },
+      },
+    } as MyDayData
+
+    const first = render(<MojoFreshnessAlert data={data} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear notification' }))
+    expect(screen.queryByRole('alert', { name: 'Mojo data freshness' })).not.toBeInTheDocument()
+
+    first.unmount()
+    render(<MojoFreshnessAlert data={{
+      ...data,
+      performance: {
+        ...data.performance,
+        freshness: { ...data.performance.freshness, message: 'Mojo sync is stale by 61 minutes', ageMinutes: 61 },
+      },
+    }} />)
+    await waitFor(() => expect(screen.queryByRole('alert', { name: 'Mojo data freshness' })).not.toBeInTheDocument())
+  })
+})
+
+describe('My Day workweek calendar', () => {
+  it('labels the Labor Day column as a non-workday', () => {
+    const data = {
+      week: {
+        start: '2026-09-07',
+        end: '2026-09-11',
+        dayLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        rows: [{ key: 'calls', label: 'Calls', icon: 'call', tone: 'blue', days: [null, 5, null, null, null], total: 5 }],
+      },
+    } as MyDayData
+
+    render(<WeeklySnapshot data={data} />)
+
+    expect(screen.getByRole('columnheader', { name: 'Mon Labor Day' })).toBeVisible()
+    expect(screen.getByRole('cell', { name: 'Labor Day — not a workday' })).toHaveTextContent('—')
   })
 })

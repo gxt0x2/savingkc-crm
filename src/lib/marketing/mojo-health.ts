@@ -1,4 +1,5 @@
 import type { supabaseAdmin } from '@/lib/supabase/admin'
+import { isSavingKcWorkday } from '@/lib/company-calendar'
 
 export type MojoHealthStatus = 'clean' | 'watch' | 'attention'
 
@@ -125,13 +126,11 @@ function latestIso(values: Array<string | null | undefined>): string | null {
 function centralBusinessHours(now: Date): boolean {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago',
-    weekday: 'short',
     hour: 'numeric',
     hour12: false,
   }).formatToParts(now)
-  const weekday = parts.find((part) => part.type === 'weekday')?.value ?? ''
   const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
-  return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 18
+  return isSavingKcWorkday(centralDateKey(now)) && hour >= 8 && hour < 18
 }
 
 function centralDateKey(now: Date): string {
@@ -143,6 +142,16 @@ function centralDateKey(now: Date): string {
   }).formatToParts(now)
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
   return `${value('year')}-${value('month')}-${value('day')}`
+}
+
+function centralTimestamp(value: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
 function countByStatus(rows: MojoQueueRow[], status: string): number {
@@ -325,7 +334,9 @@ export async function getMojoHealth(
       message = 'Mojo sync has no successful timestamp during business hours'
     } else if (businessHours && latestMetricDate !== today) {
       status = 'attention'
-      message = `Mojo has no provider performance snapshot for ${today}`
+      message = latestFetchedAt
+        ? `Mojo provider performance was last updated ${centralTimestamp(latestFetchedAt)}`
+        : 'Mojo has no current provider performance snapshot'
     } else if (businessHours && !latestFetchedAt) {
       status = 'attention'
       message = `Mojo provider performance for ${today} has no fetch timestamp`
