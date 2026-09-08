@@ -13,6 +13,7 @@
 
 import { chromium } from 'playwright-core'
 import fs from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import {
   clearMojoSessionIssue,
@@ -31,7 +32,7 @@ const MOJO_LOGIN_URL = process.env.MOJO_LOGIN_URL || 'https://lb11.mojosells.com
 const MOJO_LOGIN_ORIGIN = new URL(MOJO_LOGIN_URL).origin
 const USER_DATA_DIR =
   process.env.MOJO_CHROME_PROFILE ||
-  '/Users/ernestdodson/.openclaw/workspace/.ari/mojo-bot/chrome-profile'
+  path.join(homedir(), '.openclaw/workspace/.ari/mojo-bot/chrome-profile')
 const CHROME_PATH =
   process.env.CHROME_PATH ||
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'

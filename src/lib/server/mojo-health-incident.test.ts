@@ -9,8 +9,8 @@ vi.mock('@/lib/server/operational-sms-alerts', () => ({
 
 import { recordMojoHealthIncident } from './mojo-health-incident'
 
-function database(recent: unknown[]) {
-  const insert = vi.fn().mockResolvedValue({ error: null })
+function database(recent: unknown[], insertErrors: Array<{ message: string } | null> = [null]) {
+  const insert = vi.fn().mockImplementation(() => Promise.resolve({ error: insertErrors.shift() ?? null }))
   const builder = {
     select: () => builder,
     eq: () => builder,
@@ -56,5 +56,22 @@ describe('Mojo health incident', () => {
     expect(result).toEqual({ created: false, alerted: false })
     expect(insert).not.toHaveBeenCalled()
     expect(mocks.sendAlert).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the legacy event shape when production lacks metadata', async () => {
+    const { db, insert } = database([], [
+      { message: 'column ari_briefing_events.metadata does not exist' },
+      null,
+    ])
+    const result = await recordMojoHealthIncident(db as never, {
+      message: 'Provider snapshot is missing',
+      reason: 'provider_unavailable',
+      source: 'vercel-mojo-performance',
+    })
+
+    expect(result).toEqual({ created: true, alerted: true })
+    expect(insert).toHaveBeenCalledTimes(2)
+    expect(insert.mock.calls[0][0]).toHaveProperty('metadata')
+    expect(insert.mock.calls[1][0]).not.toHaveProperty('metadata')
   })
 })

@@ -222,23 +222,23 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       range,
     })
     : []
-  const sourceFreshness: MyDaySourceFreshness = mojoHealth.status === 'clean'
+  const sourceFreshness: MyDaySourceFreshness = mojoHealth.performance.status === 'current'
     ? {
         status: 'current',
-        message: mojoHealth.message,
+        message: mojoHealth.performance.message,
         lastSuccessfulSyncAt: mojoHealth.performance.latestFetchedAt ?? mojoHealth.lastSyncAt,
         ageMinutes: mojoHealth.performance.ageMinutes ?? mojoHealth.lastSyncAgeMinutes,
       }
-    : mojoHealth.status === 'watch'
+    : mojoHealth.performance.status === 'delayed'
       ? {
           status: 'delayed',
-          message: mojoHealth.message,
+          message: mojoHealth.performance.message,
           lastSuccessfulSyncAt: mojoHealth.performance.latestFetchedAt ?? mojoHealth.lastSyncAt,
           ageMinutes: mojoHealth.performance.ageMinutes ?? mojoHealth.lastSyncAgeMinutes,
         }
       : {
-          status: mojoHealth.lastSyncAt ? 'stale' : 'unavailable',
-          message: mojoHealth.message,
+          status: mojoHealth.performance.status,
+          message: mojoHealth.performance.message,
           lastSuccessfulSyncAt: mojoHealth.performance.latestFetchedAt ?? mojoHealth.lastSyncAt,
           ageMinutes: mojoHealth.performance.ageMinutes ?? mojoHealth.lastSyncAgeMinutes,
         }

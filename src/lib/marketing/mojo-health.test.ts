@@ -18,16 +18,16 @@ function query(response: Response) {
   return builder
 }
 
-function database(performance: unknown[]) {
+function database(performance: unknown[], config = [
+  { key: 'mojo_session_status', value: 'healthy' },
+  { key: 'mojo_sync_health', value: 'healthy' },
+  { key: 'mojo_sync_last_ok_at', value: '2026-09-04T19:00:00.000Z' },
+]) {
   let leadQuery = 0
   return {
     from: (table: string) => {
       if (table === 'system_config') {
-        return query({ data: [
-          { key: 'mojo_session_status', value: 'healthy' },
-          { key: 'mojo_sync_health', value: 'healthy' },
-          { key: 'mojo_sync_last_ok_at', value: '2026-09-04T19:00:00.000Z' },
-        ], error: null })
+        return query({ data: config, error: null })
       }
       if (table === 'mojo_call_queue') return query({ data: [], error: null })
       if (table === 'leads') {
@@ -75,6 +75,21 @@ describe('Mojo health data watermark', () => {
     ]) as never, { now: new Date('2026-09-04T19:05:00.000Z') })
 
     expect(health.status).toBe('watch')
+    expect(health.performance.status).toBe('delayed')
     expect(health.performance.ageMinutes).toBe(90)
+  })
+
+  it('keeps current provider totals available when an unrelated event sync is down', async () => {
+    const health = await getMojoHealth(database([
+      { metric_date: '2026-09-08', source_fetched_at: '2026-09-08T19:55:00.000Z' },
+    ], [
+      { key: 'mojo_session_status', value: 'healthy' },
+      { key: 'mojo_sync_health', value: 'down' },
+      { key: 'mojo_sync_last_error', value: 'Contact event sync is delayed' },
+    ]) as never, { now: new Date('2026-09-08T20:00:00.000Z') })
+
+    expect(health.status).toBe('attention')
+    expect(health.performance.status).toBe('current')
+    expect(health.performance.message).toBe('Mojo provider performance is current')
   })
 })

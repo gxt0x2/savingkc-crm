@@ -1,18 +1,22 @@
 import fs from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 
-const HOME = process.env.HOME || '/Users/ernestdodson'
+const HOME = homedir()
 const DEFAULT_SESSION_FILE = path.join(HOME, '.openclaw/workspace/memory/mojo-session.json')
 const DEFAULT_ALERT_STATE_FILE = path.join(HOME, '.openclaw/workspace/memory/mojo-session-alert.json')
 const DEFAULT_LOG_DIR = path.join(HOME, '.openclaw/workspace/memory/logs')
 
 const ENV_CANDIDATES = [
+  process.env.MOJO_ENV_FILE,
   '.env.local',
   '.env.live',
+  '.env.production.local',
   '.env',
+  path.join(HOME, 'savingkc-crm/.env.production.local'),
   path.join(HOME, 'savingkc-crm/.env.live'),
   path.join(HOME, 'savingkc-crm/.env.local'),
-]
+].filter(Boolean)
 
 function parseEnvLine(line) {
   const trimmed = line.trim()

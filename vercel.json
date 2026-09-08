@@ -46,8 +46,12 @@
       "schedule": "*/15 13-22 * * 1-5"
     },
     {
+      "path": "/api/cron/sync-mojo-performance",
+      "schedule": "*/15 13-23 * * 1-5"
+    },
+    {
       "path": "/api/admin/mojo-health",
-      "schedule": "*/15 13-22 * * 1-5"
+      "schedule": "5,20,35,50 13-23 * * 1-5"
     },
     {
       "path": "/api/cron/data-retention",

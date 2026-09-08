@@ -37,6 +37,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$STAGING_DIR/scripts"
+mkdir -p "$STAGING_DIR/src/lib/server"
 RUNTIME_SCRIPTS=(
   mojo-supervised-runner.mjs
   mojo-cron-runner.mjs
@@ -49,6 +50,7 @@ RUNTIME_SCRIPTS=(
 for script_name in "${RUNTIME_SCRIPTS[@]}"; do
   install -m 700 "$REPO_ROOT/scripts/$script_name" "$STAGING_DIR/scripts/$script_name"
 done
+install -m 700 "$REPO_ROOT/src/lib/server/mojo-kpi-provider.mjs" "$STAGING_DIR/src/lib/server/mojo-kpi-provider.mjs"
 
 "$NPM_PATH" install --prefix "$STAGING_DIR" --no-package-lock --no-save --omit=dev playwright-core@1.60.0
 (
@@ -58,9 +60,26 @@ done
   "$NODE_PATH" --check scripts/mojo-cron-runner.mjs
 )
 
-if [[ -f "$RUNTIME_ROOT/.env.local" ]]; then
-  install -m 600 "$RUNTIME_ROOT/.env.local" "$STAGING_DIR/.env.local"
+ENV_SOURCE=""
+ENV_CANDIDATES=(
+  "${MOJO_ENV_FILE:-}"
+  "$RUNTIME_ROOT/.env.local"
+  "$REPO_ROOT/.env.production.local"
+  "$REPO_ROOT/.env.live"
+  "$REPO_ROOT/.env.local"
+)
+for env_candidate in "${ENV_CANDIDATES[@]}"; do
+  if [[ -n "$env_candidate" && -f "$env_candidate" ]]; then
+    ENV_SOURCE="$env_candidate"
+    break
+  fi
+done
+if [[ -z "$ENV_SOURCE" ]]; then
+  echo "No Mojo environment file found. Set MOJO_ENV_FILE or add .env.production.local before installing." >&2
+  exit 1
 fi
+install -m 600 "$ENV_SOURCE" "$STAGING_DIR/.env.local"
+echo "Environment: $ENV_SOURCE"
 
 crontab -l > "$CURRENT_CRON" 2>/dev/null || true
 BACKUP_PATH="$BACKUP_DIR/crontab-before-mojo-supervisor-$(date +%Y%m%dT%H%M%S).txt"
@@ -68,7 +87,11 @@ cp "$CURRENT_CRON" "$BACKUP_PATH"
 awk '!/# mojo-crm-sync$/ && !/# mojo-eod-sweep$/ && !/# mojo-session-refresh$/' "$CURRENT_CRON" > "$FILTERED_CRON"
 crontab "$FILTERED_CRON"
 
-sed -e "s|__REPO_ROOT__|$RUNTIME_ROOT|g" -e "s|__NODE_PATH__|$NODE_PATH|g" "$PLIST_TEMPLATE" > "$RENDERED_PLIST"
+sed \
+  -e "s|__REPO_ROOT__|$RUNTIME_ROOT|g" \
+  -e "s|__NODE_PATH__|$NODE_PATH|g" \
+  -e "s|__LOG_PATH__|$LOG_DIR/mojo-supervised-runner.log|g" \
+  "$PLIST_TEMPLATE" > "$RENDERED_PLIST"
 plutil -lint "$RENDERED_PLIST"
 launchctl bootout "gui/$(id -u)/com.savingkc.mojo-supervised-sync" >/dev/null 2>&1 || true
 
@@ -91,7 +114,6 @@ if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_TARGET"; then
   fi
   exit 1
 fi
-launchctl kickstart -k "gui/$(id -u)/com.savingkc.mojo-supervised-sync"
 
 echo "Installed one self-contained supervised Mojo runner. Crontab backup: $BACKUP_PATH"
 [[ -z "$RUNTIME_BACKUP" ]] || echo "Previous runtime backup: $RUNTIME_BACKUP"
