@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { applyCrmLifecycleCommand, type CrmLifecycleStage } from '@/lib/server/crm-lifecycle'
+import { archiveCanonicalMojoRecording, archivePendingMojoRecordings } from '@/lib/server/mojo-recording-archive'
 import { createWorkItem } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -73,6 +74,7 @@ type ProcessDependencies = {
   createAppointment: typeof createMojoAppointment
   createFollowUp: typeof createMojoFollowUp
   transitionLifecycle: typeof transitionMojoLifecycle
+  archiveRecording: typeof archiveCanonicalMojoRecording
 }
 
 function stringField(value: unknown, max: number): string {
@@ -84,6 +86,19 @@ function requiredString(value: unknown, field: string, max: number): string {
   const result = value.trim()
   if (!result || result.length > max) throw new Error(`invalid_${field}`)
   return result
+}
+
+function mojoRecordingUrl(value: unknown): string {
+  const raw = stringField(value, 2000)
+  if (!raw) return ''
+  try {
+    const parsed = new URL(raw)
+    const trustedHost = parsed.hostname === 'mojosells.com' || parsed.hostname.endsWith('.mojosells.com')
+    if (parsed.protocol !== 'https:' || !trustedHost) throw new Error('invalid_recording_url')
+    return parsed.toString()
+  } catch {
+    throw new Error('invalid_recording_url')
+  }
 }
 
 function parseDate(value: unknown, field: string, required: boolean): string | null {
@@ -102,6 +117,7 @@ export function normalizeMojoCallRecord(value: unknown): MojoCallRecord {
   const duration = Number(raw.call_duration || 0)
   if (!Number.isFinite(duration) || duration < 0 || duration > 86400) throw new Error('invalid_call_duration')
   const followUpDate = parseDate(raw.follow_up_date, 'follow_up_date', false)
+  const recordingUrl = mojoRecordingUrl(raw.recording_url)
   return {
     record_id: requiredString(raw.record_id, 'record_id', 160),
     contact_name: stringField(raw.contact_name, 250),
@@ -117,7 +133,7 @@ export function normalizeMojoCallRecord(value: unknown): MojoCallRecord {
     ...(stringField(raw.notes, 10000) ? { notes: stringField(raw.notes, 10000) } : {}),
     ...(stringField(raw.list_name, 250) ? { list_name: stringField(raw.list_name, 250) } : {}),
     ...(stringField(raw.campaign_name, 250) ? { campaign_name: stringField(raw.campaign_name, 250) } : {}),
-    ...(stringField(raw.recording_url, 2000) ? { recording_url: stringField(raw.recording_url, 2000) } : {}),
+    ...(recordingUrl ? { recording_url: recordingUrl } : {}),
     ...(followUpDate ? { follow_up_date: followUpDate } : {}),
     ...(stringField(raw.email, 320) ? { email: stringField(raw.email, 320).toLowerCase() } : {}),
   }
@@ -338,6 +354,7 @@ export async function processCanonicalMojoCall(
     createAppointment: createMojoAppointment,
     createFollowUp: createMojoFollowUp,
     transitionLifecycle: transitionMojoLifecycle,
+    archiveRecording: archiveCanonicalMojoRecording,
   },
 ): Promise<MojoCallIngestResult> {
   const normalized = normalizeMojoCallRecord(call)
@@ -346,14 +363,19 @@ export async function processCanonicalMojoCall(
   if (result.outcome === 'dnc' && result.normalizedPhone) {
     await dependencies.suppressDnc(result.normalizedPhone)
   }
-  if (!result.leadId) return result
-
-  if (result.outcome === 'appointment_set' && result.followUpAt) {
-    await dependencies.createAppointment(result, normalized)
-  } else if (result.followUpAt && ['callback_scheduled', 'meaningful_conversation'].includes(result.outcome)) {
-    await dependencies.createFollowUp(result, normalized)
+  if (result.leadId) {
+    if (result.outcome === 'appointment_set' && result.followUpAt) {
+      await dependencies.createAppointment(result, normalized)
+    } else if (result.followUpAt && ['callback_scheduled', 'meaningful_conversation'].includes(result.outcome)) {
+      await dependencies.createFollowUp(result, normalized)
+    }
+    await dependencies.transitionLifecycle(result, normalized)
   }
-  await dependencies.transitionLifecycle(result, normalized)
+
+  // Archive provider media last so safety/lifecycle effects are never delayed
+  // by a transient audio download. Queue retries are safe because both the
+  // canonical event and archive path are idempotent.
+  if (normalized.recording_url) await dependencies.archiveRecording(result, normalized)
   return result
 }
 
@@ -362,10 +384,12 @@ export async function runCanonicalMojoQueueWorker(input: {
   claim?: typeof claimMojoCallQueue
   process?: typeof processCanonicalMojoCall
   finish?: typeof finishMojoCallQueue
+  archiveBacklog?: typeof archivePendingMojoRecordings
 } = {}) {
   const claim = input.claim || claimMojoCallQueue
   const process = input.process || processCanonicalMojoCall
   const finish = input.finish || finishMojoCallQueue
+  const archiveBacklog = input.archiveBacklog || archivePendingMojoRecordings
   const claims = await claim(input.limit || 5)
   const results: Array<{ recordId: string; status: string; leadId?: string | null; error?: string }> = []
 
@@ -391,12 +415,21 @@ export async function runCanonicalMojoQueueWorker(input: {
     }
   }
 
+  let recordingArchive = { inspected: 0, archived: 0, failed: 0 }
+  try {
+    recordingArchive = await archiveBacklog(Math.min(input.limit || 5, 5))
+  } catch (error) {
+    recordingArchive.failed = 1
+    console.error('[mojo-queue] recording backlog unavailable', error)
+  }
+
   return {
     claimed: claims.length,
     completed: results.filter((result) => result.status === 'completed').length,
     pending: results.filter((result) => result.status === 'pending').length,
     deadLetter: results.filter((result) => result.status === 'dead_letter').length,
     failed: results.filter((result) => result.status === 'claim_release_failed').length,
+    recordingArchive,
     results,
   }
 }

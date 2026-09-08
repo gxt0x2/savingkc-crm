@@ -53,6 +53,7 @@ describe('canonical Mojo call import', () => {
     })
     expect(() => normalizeMojoCallRecord({ ...call, record_id: '' })).toThrow('invalid_record_id')
     expect(() => normalizeMojoCallRecord({ ...call, call_date: 'not-a-date' })).toThrow('invalid_call_date')
+    expect(() => normalizeMojoCallRecord({ ...call, recording_url: 'http://127.0.0.1/private' })).toThrow('invalid_recording_url')
   })
 
   it.each([
@@ -73,6 +74,7 @@ describe('canonical Mojo call import', () => {
       createAppointment: vi.fn(),
       createFollowUp: vi.fn(),
       transitionLifecycle: vi.fn(),
+      archiveRecording: vi.fn(),
     }
     await expect(processCanonicalMojoCall(call, dependencies)).resolves.toMatchObject({
       outcome: 'callback_scheduled',
@@ -92,10 +94,34 @@ describe('canonical Mojo call import', () => {
       createAppointment: vi.fn(),
       createFollowUp: vi.fn(),
       transitionLifecycle: vi.fn(),
+      archiveRecording: vi.fn(),
     }
     await processCanonicalMojoCall({ ...call, disposition: 'DNC request' }, dependencies)
     expect(dependencies.suppressDnc).toHaveBeenCalledWith('+19135550123')
     expect(dependencies.transitionLifecycle).not.toHaveBeenCalled()
+  })
+
+  it('archives a provider recording after canonical call effects complete', async () => {
+    const dependencies = {
+      ingest: vi.fn().mockResolvedValue(result()),
+      suppressDnc: vi.fn(),
+      createAppointment: vi.fn(),
+      createFollowUp: vi.fn(),
+      transitionLifecycle: vi.fn().mockResolvedValue(undefined),
+      archiveRecording: vi.fn().mockResolvedValue('/api/recordings/mojo/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+    }
+    const recordedCall = {
+      ...call,
+      recording_url: 'https://app71.mojosells.com/v2/rest/reports/call-recording-get-audio/?record_id=123',
+    }
+
+    await processCanonicalMojoCall(recordedCall, dependencies)
+
+    expect(dependencies.transitionLifecycle).toHaveBeenCalledOnce()
+    expect(dependencies.archiveRecording).toHaveBeenCalledWith(result(), expect.objectContaining({
+      record_id: 'mojo-123',
+      recording_url: recordedCall.recording_url,
+    }))
   })
 
   it('finishes successes and durably releases failures for retry', async () => {
@@ -112,8 +138,16 @@ describe('canonical Mojo call import', () => {
         .mockResolvedValueOnce(result())
         .mockRejectedValueOnce(new Error('temporary failure')),
       finish,
+      archiveBacklog: vi.fn().mockResolvedValue({ inspected: 2, archived: 2, failed: 0 }),
     })
-    expect(worker).toMatchObject({ claimed: 2, completed: 1, pending: 1, deadLetter: 0, failed: 0 })
+    expect(worker).toMatchObject({
+      claimed: 2,
+      completed: 1,
+      pending: 1,
+      deadLetter: 0,
+      failed: 0,
+      recordingArchive: { inspected: 2, archived: 2, failed: 0 },
+    })
     expect(finish).toHaveBeenNthCalledWith(1, expect.objectContaining({ queueId: 'queue-1', success: true }))
     expect(finish).toHaveBeenNthCalledWith(2, { queueId: 'queue-2', success: false, error: 'temporary failure' })
   })

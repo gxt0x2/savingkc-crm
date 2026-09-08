@@ -27,6 +27,7 @@ import {
   mojoSessionFile,
   recordMojoSessionIssue,
 } from './mojo-session-health.mjs'
+import { buildRecordingCandidateMap, selectRecordingCandidate } from './mojo-recording-candidates.mjs'
 
 loadMojoEnv()
 
@@ -267,7 +268,7 @@ async function fetchContactDetails(sessionId, contactId) {
 }
 
 async function fetchRecordingsForDate(sessionId, targetDate) {
-  const recordingMap = new Map()
+  let recordingMap = new Map()
   try {
     const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${targetDate}&to=${targetDate}`
     const response = await fetch(url, {
@@ -277,21 +278,9 @@ async function fetchRecordingsForDate(sessionId, targetDate) {
     if (!response.ok) return recordingMap
     const data = await response.json()
     const recordings = data.recordings || []
-    log(`Fetched ${recordings.length} recordings for ${targetDate}`)
-
-    for (const rec of recordings) {
-      const contactId = rec.contact?.id
-      if (contactId && rec.audio) {
-        const existing = recordingMap.get(contactId)
-        const durParts = (rec.duration || '0:00').split(':').map(Number)
-        const durSec = durParts.length === 3
-          ? durParts[0] * 3600 + durParts[1] * 60 + durParts[2]
-          : durParts[0] * 60 + (durParts[1] || 0)
-        if (!existing || durSec > existing.duration) {
-          recordingMap.set(contactId, { audio: rec.audio, duration: durSec, recordId: rec.record_id })
-        }
-      }
-    }
+    const filtered = buildRecordingCandidateMap(recordings, targetDate)
+    recordingMap = filtered.map
+    log(`Recording API returned ${recordings.length}; accepted ${filtered.accepted} for ${targetDate}`)
   } catch (err) {
     logError('Failed to fetch recordings', err)
   }
@@ -447,22 +436,22 @@ async function buildCallRecordsForDate(activities, sessionId, recordingMap, targ
     log(`  Fetching contact details for ${entry.contactName} (${contactId})...`)
     const contactDetails = await fetchContactDetails(sessionId, contactId)
 
-    const recording = recordingMap?.get(Number(contactId))
+    const recording = selectRecordingCandidate(recordingMap, contactId, entry.timestamp)
     const followUpDate = entry.followUpDate || contactDetails.followUpDate || ''
     const canonicalActivityId = Math.max(...entry.activityIds)
 
     const call = {
-      record_id: `mojo-activity-${contactId}-${canonicalActivityId}`,
+      record_id: recording?.recordId || `mojo-activity-${contactId}-${canonicalActivityId}`,
       contact_name: entry.contactName,
       phone_number: entry.phone || contactDetails.phone,
       property_address: contactDetails.address,
       city: contactDetails.city,
       state: contactDetails.state,
       zip: contactDetails.zip,
-      call_date: parseMojoTimestamp(entry.timestamp),
+      call_date: parseMojoTimestamp(recording?.date || entry.timestamp),
       call_duration: recording?.duration || 0,
       disposition,
-      agent_name: entry.agentName,
+      agent_name: recording?.agentName || entry.agentName,
       notes: cleanNotes || contactDetails.notes,
       list_name: '',
       campaign_name: '',
