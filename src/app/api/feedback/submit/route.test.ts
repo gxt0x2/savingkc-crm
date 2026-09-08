@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
   after: vi.fn(),
   sendAndonRaisedSmsAlert: vi.fn(),
+  nominateAndonGoogleChatThread: vi.fn(),
 }))
 
 vi.mock('next/server', async (importOriginal) => ({
@@ -26,6 +27,10 @@ vi.mock('@/lib/supabase-lazy', () => ({
 
 vi.mock('@/lib/server/operational-sms-alerts', () => ({
   sendAndonRaisedSmsAlert: mocks.sendAndonRaisedSmsAlert,
+}))
+
+vi.mock('@/lib/server/andon-chat-nomination', () => ({
+  nominateAndonGoogleChatThread: mocks.nominateAndonGoogleChatThread,
 }))
 
 import { POST } from './route'
@@ -56,6 +61,7 @@ describe('system Andon submission', () => {
     vi.clearAllMocks()
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'user-ernest', email: 'ernest@savingkc.com' } } })
     mocks.sendAndonRaisedSmsAlert.mockResolvedValue({ attempted: true })
+    mocks.nominateAndonGoogleChatThread.mockResolvedValue({ attempted: false, posted: false })
     mocks.from.mockReturnValue({
       insert: (payload: unknown) => {
         mocks.insert(payload)
@@ -95,6 +101,27 @@ describe('system Andon submission', () => {
       priority: 'high',
       raisedBy: 'Ernest',
     })
+    expect(mocks.nominateAndonGoogleChatThread).toHaveBeenCalledWith({
+      issueId: 'andon-1',
+      issueKind: 'process',
+      department: 'Acquisitions',
+      category: 'AI Text Bot Sequence',
+      priority: 'high',
+      raisedBy: 'Ernest',
+      reporterEmail: 'ernest@savingkc.com',
+    })
+  })
+
+  it('still records the Andon when Google Chat nomination fails', async () => {
+    mocks.nominateAndonGoogleChatThread.mockRejectedValue(new Error('chat unavailable'))
+
+    const response = await POST(request() as never)
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.feedback_id).toBe('andon-1')
+    expect(mocks.insert).toHaveBeenCalled()
+    expect(mocks.sendAndonRaisedSmsAlert).toHaveBeenCalled()
   })
 
   it('requires an authenticated CRM user', async () => {

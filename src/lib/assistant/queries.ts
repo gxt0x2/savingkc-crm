@@ -389,7 +389,7 @@ export async function readAssistantMarketingSummary(db: Db, days: number) {
 export function assistantResultCount(value: unknown): number | null {
   if (!value || typeof value !== 'object') return null
   const record = value as JsonRecord
-  for (const key of ['records', 'tasks', 'staleLeads']) {
+  for (const key of ['records', 'tasks', 'staleLeads', 'andons', 'notes']) {
     if (Array.isArray(record[key])) return record[key].length
   }
   if (record.record) return 1
