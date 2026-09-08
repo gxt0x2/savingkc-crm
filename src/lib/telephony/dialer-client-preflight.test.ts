@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { dialerDenialMessage } from './dialer-client-preflight'
 
 const webDialerSource = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf8')
 const webPreflightSource = readFileSync('src/lib/telephony/dialer-client-preflight.ts', 'utf8')
@@ -8,6 +9,12 @@ const mobileApiSource = readFileSync('apps/mobile/src/lib/api.ts', 'utf8')
 const mobileAppSource = readFileSync('apps/mobile/App.tsx', 'utf8')
 
 describe('outbound dialer client preflight', () => {
+  it('shows the exact durable source behind a policy denial', () => {
+    expect(dialerDenialMessage('This number is disconnected.', 'prospect_phones.phone_connected'))
+      .toBe('This number is disconnected. Source: prospect_phones.phone_connected.')
+    expect(dialerDenialMessage('Calling is unavailable.')).toBe('Calling is unavailable.')
+  })
+
   it('posts the full mobile call context through the bearer-authenticated API helper', () => {
     const helperStart = mobileApiSource.indexOf('export async function requestMobileCallIntent')
     const helper = mobileApiSource.slice(helperStart)
@@ -24,7 +31,7 @@ describe('outbound dialer client preflight', () => {
   })
 
   it('authorizes web and mobile calls before connecting or entering calling state', () => {
-    expect(webPreflightSource).toContain("fetch('/api/dialer/call-intents'")
+    expect(webPreflightSource).toContain('fetch(dialerCallIntentEndpoint(input.surface)')
     expect(webPreflightSource).toContain('campaignMemberId: string | null')
     const webPreflight = webDialerSource.indexOf('const authorized = await requestDialerCallIntent({')
     const webCalling = webDialerSource.indexOf("setStatusLogged('calling')", webPreflight)
@@ -40,6 +47,7 @@ describe('outbound dialer client preflight', () => {
     expect(webDialerSource).toContain(": 'prospect'")
     expect(webDialerSource).toContain('prospectId: kind === \'prospect\' ? prospectIdAtStart : null')
     expect(webDialerSource).toContain('campaignMemberId: queueItemAtStart?.campaignMemberId ?? null')
+    expect(webDialerSource).toContain('surface,')
     expect(webDialerSource).toContain('const dispositionLeadId = activeItem?.leadId ?? selectedLead?.id ?? null')
     expect(webDialerSource).toContain('if (campaignCallerIdRef.current) return campaignCallerIdRef.current')
     expect(webDialerSource).toContain("setError('Choose and save a call outcome before closing the call summary.')")

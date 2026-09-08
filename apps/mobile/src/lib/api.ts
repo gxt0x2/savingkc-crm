@@ -248,7 +248,10 @@ export async function requestMobileCallIntent(input: {
       clientAttemptId: input.clientAttemptId,
     },
   })
-  if (!payload.allowed) throw new CrmApiError(payload.error || payload.reason || 'This call is not allowed.')
+  if (!payload.allowed) {
+    const message = payload.error || payload.reason || 'This call is not allowed.'
+    throw new CrmApiError(payload.reasonSource ? `${message} Source: ${payload.reasonSource}.` : message)
+  }
   if (!payload.intent || !payload.to || !payload.callerId || !payload.clientAttemptId) {
     throw new CrmApiError('Call authorization returned an incomplete response.')
   }

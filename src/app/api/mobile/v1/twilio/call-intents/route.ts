@@ -45,11 +45,12 @@ export async function POST(request: NextRequest) {
     const requestedCallerId = text(body.callerId)
     const callerId = requestedCallerId ?? profile.defaultCallerId
     if (!isAllowedDialerCallerId(callerId)) {
-      return json({ allowed: false, error: 'Select an approved prospecting caller ID', reason: 'invalid_caller_id' }, 409)
+      return json({ allowed: false, error: 'Select an approved CRM caller ID', reason: 'invalid_caller_id' }, 409)
     }
 
     const policyInput = {
       phone,
+      surface: 'crm' as const,
       leadId,
       prospectPhoneId: null,
       source: leadId ? 'mobile_lead' as const : 'mobile_manual' as const,
@@ -60,7 +61,12 @@ export async function POST(request: NextRequest) {
     const policy = await evaluateOutboundDialerCall(policyInput)
     if (!policy.allowed) {
       await recordBlockedDialerCall(policyInput, policy)
-      return json({ allowed: false, error: policy.message, reason: policy.reason }, dialerBlockStatus(policy.reason))
+      return json({
+        allowed: false,
+        error: policy.message,
+        reason: policy.reason,
+        reasonSource: policy.reasonSource,
+      }, dialerBlockStatus(policy.reason))
     }
 
     try {
@@ -70,6 +76,7 @@ export async function POST(request: NextRequest) {
         callerId,
         kind,
         source: policyInput.source,
+        surface: policyInput.surface,
         leadId: policy.leadId,
         clientAttemptId,
       })
@@ -79,6 +86,8 @@ export async function POST(request: NextRequest) {
         to: issued.claims.to,
         callerId: issued.claims.callerId,
         kind: issued.claims.kind,
+        source: issued.claims.source,
+        surface: issued.claims.surface,
         leadId: issued.claims.leadId,
         prospectPhoneId: null,
         clientAttemptId: issued.claims.clientAttemptId,
@@ -98,7 +107,12 @@ export async function POST(request: NextRequest) {
         prospectPhoneId: policy.prospectPhoneId,
         reasonSource: 'intent_signing',
       })
-      return json({ allowed: false, error: 'Calling is paused because authorization is unavailable', reason: 'policy_unavailable' }, 503)
+      return json({
+        allowed: false,
+        error: 'Calling is paused because authorization is unavailable',
+        reason: 'policy_unavailable',
+        reasonSource: 'intent_signing',
+      }, 503)
     }
   } catch (error) {
     const status = error instanceof MobileAuthError ? error.status : 500

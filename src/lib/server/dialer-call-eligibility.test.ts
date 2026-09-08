@@ -70,6 +70,7 @@ function database(rows: Record<string, Row[]> = {}, errors: string[] = []) {
 
 const baseInput: OutboundDialerCallInput = {
   phone: '+19135550123',
+  surface: 'prospecting',
   leadId: 'lead-1',
   prospectPhoneId: null,
   source: 'web_power_dialer',
@@ -85,6 +86,7 @@ function goodLead(extra: Row = {}): Row {
     phone: '+19135550123',
     station: 'new',
     classification: 'lead',
+    dead_reason: null,
     ...extra,
   }
 }
@@ -111,6 +113,25 @@ describe('server dialer call eligibility', () => {
     expect(result).toMatchObject({ allowed: false, reason: 'policy_unavailable', reasonSource: 'policy_runtime' })
   })
 
+  it('retries one transient policy failure before failing closed', async () => {
+    const db = database({ leads: [goodLead()] })
+    let firstQuery = true
+    const client = {
+      from: vi.fn((table: string) => {
+        if (firstQuery) {
+          firstQuery = false
+          throw new Error('temporary database failure')
+        }
+        return new Query(table, db.state)
+      }),
+    } as unknown as SupabaseClient
+
+    const result = await evaluateOutboundDialerCall(baseInput, { db: client })
+
+    expect(result).toMatchObject({ allowed: true, normalizedPhone: '+19135550123' })
+    expect(client.from).toHaveBeenCalled()
+  })
+
   it('fails closed on a bounded timeout instead of hanging the provider request', async () => {
     const never = new Promise<never>(() => {})
     const chain: Record<string, unknown> = {}
@@ -132,7 +153,7 @@ describe('server dialer call eligibility', () => {
     expect(result).toMatchObject({ allowed: false, reason: 'destination_mismatch', reasonSource: 'lead_context' })
   })
 
-  it('lets any matching duplicate terminal record win', async () => {
+  it('lets any matching duplicate terminal record stop Prospecting', async () => {
     const db = database({
       leads: [goodLead(), goodLead({ id: 'lead-2', classification: 'dead' })],
     })
@@ -140,6 +161,118 @@ describe('server dialer call eligibility', () => {
     const result = await evaluateOutboundDialerCall(baseInput, { db: db.client })
 
     expect(result).toMatchObject({ allowed: false, reason: 'dead_lead', reasonSource: 'leads.classification' })
+  })
+
+  it('allows CRM re-engagement of a lifecycle-dead record', async () => {
+    const db = database({
+      leads: [goodLead({ station: 'dead', classification: 'dead', dead_reason: 'not_selling' })],
+    })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_click_to_call',
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: true, normalizedPhone: '+19135550123' })
+  })
+
+  it('keeps a dead-record DNC reason blocked in CRM', async () => {
+    const db = database({
+      leads: [goodLead({ station: 'dead', classification: 'dead', dead_reason: 'dnc_refused' })],
+    })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_click_to_call',
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: false, reason: 'do_not_call', reasonSource: 'leads.dead_reason' })
+  })
+
+  it('keeps explicit voice DNC global across duplicate CRM records', async () => {
+    const db = database({
+      leads: [goodLead(), goodLead({ id: 'lead-2', dead_reason: 'dnc_refused' })],
+    })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_click_to_call',
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: false, reason: 'do_not_call', reasonSource: 'leads.dead_reason' })
+  })
+
+  it('does not query or enforce SMS-only opt-outs for a CRM voice call', async () => {
+    const db = database({
+      leads: [goodLead()],
+      sms_opt_outs: [{ phone: '+19135550123', reason: 'STOP', is_opted_out: true }],
+    }, ['sms_opt_outs'])
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_click_to_call',
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: true, normalizedPhone: '+19135550123' })
+    expect(db.client.from).not.toHaveBeenCalledWith('sms_opt_outs')
+  })
+
+  it('ignores stale disconnected evidence from a duplicate CRM record', async () => {
+    const db = database({
+      leads: [goodLead(), goodLead({ id: 'lead-2' })],
+      prospect_phones: [{
+        id: 'phone-2',
+        phone: '+19135550123',
+        prospect_id: 'prospect-2',
+        phone_connected: false,
+        last_disposition: 'wrong_number',
+        prospects: { lead_id: 'lead-2' },
+      }],
+      lead_activities: [{
+        lead_id: 'lead-2',
+        activity_type: 'call',
+        metadata: { phone: '+19135550123', outcome: 'bad_number' },
+        created_at: '2026-08-17T16:00:00Z',
+      }],
+    })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_click_to_call',
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: true, normalizedPhone: '+19135550123' })
+  })
+
+  it('keeps selected-record disconnected evidence effective in CRM', async () => {
+    const db = database({
+      leads: [goodLead()],
+      prospect_phones: [{
+        id: 'phone-1',
+        phone: '+19135550123',
+        prospect_id: 'prospect-1',
+        phone_connected: false,
+        last_disposition: null,
+        prospects: { lead_id: 'lead-1' },
+      }],
+    })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_click_to_call',
+    }, { db: db.client })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      reason: 'disconnected',
+      reasonSource: 'prospect_phones.phone_connected',
+    })
   })
 
   it('blocks the known team destinations even when phone overrides are absent', async () => {
@@ -157,7 +290,24 @@ describe('server dialer call eligibility', () => {
       allowed: false,
       reason: 'internal_destination',
       reasonSource: 'internal_numbers',
+      message: 'Team phone numbers cannot be called from the prospecting dialer.',
     })
+  })
+
+  it('allows a CRM call to a team destination', async () => {
+    vi.stubEnv('ERNEST_PHONE', '')
+    vi.stubEnv('CASEY_PHONE', '')
+    const db = database()
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_manual',
+      phone: '+18162262552',
+      leadId: null,
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: true, normalizedPhone: '+18162262552' })
   })
 
   it('only applies activity stop outcomes to the target phone', async () => {
@@ -254,7 +404,7 @@ describe('server dialer call eligibility', () => {
       normalizedPhone: '+19135550123',
       reason: 'do_not_call',
       message: 'This number is on the do-not-call list.',
-      policyVersion: 'dialer_safety_v1',
+      policyVersion: 'dialer_safety_v2',
       checkedAt: '2026-08-17T17:00:00.000Z',
       leadId: 'lead-1',
       prospectId: null,
@@ -274,9 +424,10 @@ describe('server dialer call eligibility', () => {
         agent: 'casey',
         metadata: {
           source: 'outbound_call_policy',
-          policy_version: 'dialer_safety_v1',
+          policy_version: 'dialer_safety_v2',
           reason_code: 'do_not_call',
           reason_source: 'sms_opt_outs.reason',
+          dial_surface: 'prospecting',
           client_attempt_id: 'attempt-1',
           call_sid: 'CA_provider',
         },

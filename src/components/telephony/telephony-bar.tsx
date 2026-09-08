@@ -62,9 +62,7 @@ function deferEffectUpdate(update: () => void) {
   queueMicrotask(() => { if (!cancelled) update() })
   return () => { cancelled = true }
 }
-
-export function DialerPanel({
-  open,
+export function SoftphoneCore({ surface, open,
   onClose,
   onStatusChange,
   pendingDial,
@@ -580,6 +578,7 @@ export function DialerPanel({
         : leadIdAtStart ? 'lead' : 'manual'
       const authorized = await requestDialerCallIntent({
         phone: number,
+        surface,
         callerId: callerIdForThisCall,
         kind,
         leadId: kind === 'lead' || kind === 'heir' ? leadIdAtStart : null,
@@ -712,6 +711,8 @@ export function DialerPanel({
           agent: activeAgentName,
           agent_identity: agentIdentity,
           from_number: authorized.callerId,
+          dial_source: authorized.source,
+          dial_surface: authorized.surface,
           lead_id: authorized.leadId,
           clientAttemptId: authorized.clientAttemptId,
           ...heirMeta,
@@ -741,6 +742,8 @@ export function DialerPanel({
             agent: activeAgentName,
             agent_identity: agentIdentity,
             from_number: authorized.callerId,
+            dial_source: authorized.source,
+            dial_surface: authorized.surface,
             lead_id: authorized.leadId,
             clientAttemptId: authorized.clientAttemptId,
             ...heirMeta,
@@ -1297,12 +1300,12 @@ export function DialerPanel({
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
               <Icon name="error" className="text-red-400" size="text-sm" />
               <span className="text-xs text-red-300 flex-1">{error}</span>
-              <button
+              {(recoveryPending || status === 'offline') && <button
                 onClick={() => recoveryPending ? void finishRecoveredAttempt() : (setError(null), void initDevice())}
                 className="text-[10px] font-bold text-red-300 hover:text-white uppercase"
               >
-                {recoveryPending ? 'Finish outcome' : 'Retry'}
-              </button>
+                {recoveryPending ? 'Finish outcome' : 'Reconnect'}
+              </button>}
             </div>
           )}
 
@@ -1736,6 +1739,3 @@ export function DialerPanel({
     </>
   )
 }
-
-// Re-export for backwards compat if anything imported TelephonyBar
-export { DialerPanel as TelephonyBar }

@@ -119,6 +119,7 @@ export type CallIntentDeniedResponse = {
   allowed: false
   error: string
   reason?: string
+  reasonSource?: string
 }
 
 export type CallIntentResponse = CallIntentAllowedResponse | CallIntentDeniedResponse

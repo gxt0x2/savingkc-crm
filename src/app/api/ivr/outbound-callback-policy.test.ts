@@ -31,7 +31,7 @@ const blocked = {
   normalizedPhone: '+19135550123',
   reason: 'do_not_call',
   message: 'This number is on the do-not-call list.',
-  policyVersion: 'dialer_safety_v1',
+  policyVersion: 'dialer_safety_v2',
   checkedAt: '2026-08-19T17:00:00.000Z',
   leadId: 'lead-1',
   prospectPhoneId: null,
@@ -40,7 +40,7 @@ const blocked = {
 const allowed = {
   allowed: true,
   normalizedPhone: '+19135550123',
-  policyVersion: 'dialer_safety_v1',
+  policyVersion: 'dialer_safety_v2',
   checkedAt: '2026-08-19T17:00:00.000Z',
   leadId: 'lead-1',
   prospectPhoneId: null,

@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 
 export type DialerCallIntentKind = 'manual' | 'lead' | 'heir' | 'prospect'
 export type DialerCallIntentSource =
@@ -17,6 +18,7 @@ export interface DialerCallIntentClaims {
   callerId: string
   kind: DialerCallIntentKind
   source: DialerCallIntentSource
+  surface: InteractiveDialerSurface
   leadId: string | null
   prospectId: string | null
   prospectPhoneId: string | null
@@ -51,6 +53,7 @@ export function createDialerCallIntent(
     callerId: string
     kind: DialerCallIntentKind
     source: DialerCallIntentSource
+    surface: InteractiveDialerSurface
     leadId?: string | null
     prospectId?: string | null
     prospectPhoneId?: string | null
@@ -72,6 +75,7 @@ export function createDialerCallIntent(
     callerId,
     kind: input.kind,
     source: input.source,
+    surface: input.surface,
     leadId: input.leadId?.trim() || null,
     prospectId: input.prospectId?.trim() || null,
     prospectPhoneId: input.prospectPhoneId?.trim() || null,
@@ -101,12 +105,23 @@ function isClaims(value: unknown): value is DialerCallIntentClaims {
     'mobile_manual',
     'mobile_lead',
   ].includes(String(claims.source))) return false
-  const sourceMatchesKind = (
-    (claims.kind === 'manual' && ['web_manual', 'mobile_manual'].includes(String(claims.source)))
-    || (claims.kind === 'lead' && ['web_click_to_call', 'web_power_dialer', 'mobile_lead'].includes(String(claims.source)))
-    || (claims.kind === 'heir' && claims.source === 'web_heir_dialer')
-    || (claims.kind === 'prospect' && claims.source === 'web_heir_dialer')
-  )
+  const legacySurface: InteractiveDialerSurface = ['web_power_dialer', 'web_heir_dialer'].includes(String(claims.source))
+    ? 'prospecting'
+    : 'crm'
+  const surface = claims.surface ?? legacySurface
+  if (!['crm', 'prospecting'].includes(surface)) return false
+  claims.surface = surface
+  const sourceMatchesKind = surface === 'prospecting'
+    ? (
+        (claims.kind === 'lead' && claims.source === 'web_power_dialer')
+        || (claims.kind === 'heir' && claims.source === 'web_heir_dialer')
+        || (claims.kind === 'prospect' && claims.source === 'web_heir_dialer')
+      )
+    : (
+        (claims.kind === 'manual' && ['web_manual', 'mobile_manual'].includes(String(claims.source)))
+        || (claims.kind === 'lead' && ['web_click_to_call', 'mobile_lead'].includes(String(claims.source)))
+        || (['heir', 'prospect'].includes(String(claims.kind)) && claims.source === 'web_click_to_call')
+      )
   if (!sourceMatchesKind) return false
   if (typeof claims.clientAttemptId !== 'string' || !claims.clientAttemptId) return false
   if (typeof claims.nonce !== 'string' || !claims.nonce) return false

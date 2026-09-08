@@ -4,6 +4,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from './app-shell'
+import {
+  CRM_DIALER_OPEN_EVENT,
+  PROSPECTING_DIALER_CONTROLS_EVENT,
+  PROSPECTING_DIALER_QUEUE_EVENT,
+} from '@/lib/telephony/dialer-events'
 
 const navigation = vi.hoisted(() => ({ pathname: '/dashboard', search: '', replace: vi.fn() }))
 
@@ -14,10 +19,10 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('next/dynamic', () => ({
-  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; pendingSessionId?: string | null; presentation?: string; campaignId?: string }) {
+  default: () => function DynamicComponent(props: { open?: boolean; onClose?: () => void; pendingSessionId?: string | null; surface?: string; campaignId?: string }) {
     if (props.campaignId) return <section aria-label="Preview prospecting call controls"><span>Read-only preview</span></section>
     if (typeof props.open !== 'boolean') return null
-    return <div data-testid="lazy-dialer" data-open={String(props.open)} data-presentation={props.presentation} data-session-id={props.pendingSessionId ?? ''}><button type="button" onClick={props.onClose}>Close phone</button></div>
+    return <div data-testid="lazy-dialer" data-open={String(props.open)} data-surface={props.surface} data-presentation={props.surface === 'prospecting' ? 'workspace' : 'modal'} data-session-id={props.pendingSessionId ?? ''}><button type="button" onClick={props.onClose}>Close phone</button></div>
   },
 }))
 
@@ -61,9 +66,21 @@ describe('AppShell first-load work', () => {
   it('loads the softphone only after the global phone control is used', () => {
     render(<AppShell><main>Dashboard content</main></AppShell>)
 
-    act(() => window.dispatchEvent(new Event('open-global-dialer')))
+    act(() => window.dispatchEvent(new Event(CRM_DIALER_OPEN_EVENT)))
 
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-surface', 'crm')
+  })
+
+  it('ignores Prospecting queue events outside the calling floor', () => {
+    render(<AppShell><main>Dashboard content</main></AppShell>)
+
+    act(() => window.dispatchEvent(new CustomEvent(PROSPECTING_DIALER_QUEUE_EVENT, { detail: {
+      queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],
+      sessionId: 'session-1',
+    } })))
+
+    expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
   })
 
   it('keeps one softphone persistently embedded during a Prospecting session', () => {
@@ -73,10 +90,15 @@ describe('AppShell first-load work', () => {
 
     expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-focused-calling', 'true')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-surface', 'prospecting')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-session-id', 'session-1')
 
-    act(() => window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: {
+    act(() => window.dispatchEvent(new Event(CRM_DIALER_OPEN_EVENT)))
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-surface', 'prospecting')
+    expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-session-id', 'session-1')
+
+    act(() => window.dispatchEvent(new CustomEvent(PROSPECTING_DIALER_QUEUE_EVENT, { detail: {
       queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],
       sessionId: 'session-1',
     } })))
@@ -84,7 +106,7 @@ describe('AppShell first-load work', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close phone' }))
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
 
-    act(() => window.dispatchEvent(new Event('show-dialer-controls')))
+    act(() => window.dispatchEvent(new Event(PROSPECTING_DIALER_CONTROLS_EVENT)))
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-presentation', 'workspace')
     expect(screen.getByTestId('lazy-dialer')).toHaveAttribute('data-open', 'true')
   })
@@ -105,7 +127,7 @@ describe('AppShell first-load work', () => {
     navigation.search = 'session_id=session-1&campaign=campaign-1'
     const { rerender } = render(<AppShell><main>Calling floor</main></AppShell>)
 
-    act(() => window.dispatchEvent(new CustomEvent('open-dialer-queue', { detail: {
+    act(() => window.dispatchEvent(new CustomEvent(PROSPECTING_DIALER_QUEUE_EVENT, { detail: {
       queue: [{ phone: '+18165550100', heirName: 'Helen Seller' }],
       sessionId: 'session-1',
     } })))
@@ -153,6 +175,6 @@ describe('AppShell first-load work', () => {
     expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-user-email', 'ernest@savingkc.com')
     expect(screen.getByText('Scorecard content')).toBeVisible()
     expect(navigation.replace).not.toHaveBeenCalled()
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings?email=ernest%40savingkc.com'))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings?email=ernest%40savingkc.com'), { timeout: 2_500 })
   })
 })

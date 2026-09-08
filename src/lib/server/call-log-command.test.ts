@@ -9,6 +9,8 @@ describe('call log commands', () => {
       event: 'started',
       lead_id: 'lead-1',
       clientAttemptId: ' attempt-1 ',
+      dial_source: 'web_click_to_call',
+      dial_surface: 'crm',
     })).toEqual({
       ok: true,
       command: expect.objectContaining({
@@ -16,6 +18,8 @@ describe('call log commands', () => {
         phone: '+18165550100',
         leadId: 'lead-1',
         clientAttemptId: 'attempt-1',
+        dialSource: 'web_click_to_call',
+        dialSurface: 'crm',
       }),
     })
   })

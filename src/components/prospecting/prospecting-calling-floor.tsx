@@ -626,6 +626,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
               callHammerEnabled={sessionUseCallHammer}
               ringCount={sessionRingCount}
               dialerSessionId={durableSessionId || null}
+              dialerSurface="prospecting"
               readOnlyPreview={readOnlyPreview || controlLocked}
               {...heirsAutoStart}
               onAutoStartHandled={() => setAutoQueueSubjectKey(null)}

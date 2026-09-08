@@ -24,6 +24,7 @@ import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
 import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, DEFAULT_CONTACT_SORT, canonicalContactSmartList, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId, type ContactSort } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
 import { campaignAudienceReturnHref, MAX_PROSPECTING_QUERY_AUDIENCE, prospectingCampaignId, PROSPECTING_AUDIENCE_STORAGE_KEY, serializeProspectingAudienceSelection, type ProspectingAudienceQuery } from '@/lib/prospecting/audience-handoff'
+import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
 
 interface ContactRow {
   id: string
@@ -516,7 +517,7 @@ export default function ContactsPage() {
 
   function openDialer(contact: ContactWorkspaceRow) {
     if (!contact.phone) return
-    window.dispatchEvent(new CustomEvent('open-dialer', { detail: { leadId: contact.id, phone: contact.phone, name: getDisplayLeadName(contact.fullName, contact.phone) } }))
+    window.dispatchEvent(new CustomEvent(CRM_DIALER_OPEN_EVENT, { detail: { leadId: contact.id, phone: contact.phone, name: getDisplayLeadName(contact.fullName, contact.phone) } }))
   }
 
   function openCampaignBuilder() {

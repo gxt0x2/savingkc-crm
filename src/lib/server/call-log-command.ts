@@ -1,4 +1,6 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import type { DialerCallIntentSource } from '@/lib/telephony/dialer-call-intent'
+import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 
 export interface CallLogCommand {
   event: 'started' | 'ended' | 'dispositioned'
@@ -12,6 +14,8 @@ export interface CallLogCommand {
   disposition: string | null
   fromNumber: string | null
   notes: string | null
+  dialSource: DialerCallIntentSource | null
+  dialSurface: InteractiveDialerSurface | null
 }
 
 export type CallLogCommandResult =
@@ -44,6 +48,9 @@ export function buildCallLogCommand(input: unknown): CallLogCommandResult {
     ? body.duration
     : typeof body.duration_seconds === 'number' ? body.duration_seconds : 0
 
+  const dialSource = text(body.dial_source) as DialerCallIntentSource | null
+  const dialSurface = text(body.dial_surface) as InteractiveDialerSurface | null
+
   return {
     ok: true,
     command: {
@@ -58,6 +65,15 @@ export function buildCallLogCommand(input: unknown): CallLogCommandResult {
       disposition: text(body.disposition),
       fromNumber: normalizePhoneToE164(text(body.from_number) || ''),
       notes: text(body.notes, 5_000),
+      dialSource: dialSource && [
+        'web_manual',
+        'web_click_to_call',
+        'web_power_dialer',
+        'web_heir_dialer',
+        'mobile_manual',
+        'mobile_lead',
+      ].includes(dialSource) ? dialSource : null,
+      dialSurface: dialSurface && ['crm', 'prospecting'].includes(dialSurface) ? dialSurface : null,
     },
   }
 }

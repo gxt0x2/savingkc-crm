@@ -1,5 +1,7 @@
 import { dialerControllerHeaders } from '@/lib/telephony/dialer-controller-client'
 import { DialerSessionClientError, type DialerSessionControlSummary } from '@/lib/dialer-session-client'
+import { dialerCallIntentEndpoint, type InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
+import type { DialerCallIntentSource } from '@/lib/telephony/dialer-call-intent'
 
 export type DialerCallIntentKind = 'manual' | 'lead' | 'heir' | 'prospect'
 
@@ -9,6 +11,8 @@ export type DialerCallIntentAllowedResponse = {
   to: string
   callerId: string
   kind: DialerCallIntentKind
+  source: DialerCallIntentSource
+  surface: InteractiveDialerSurface
   leadId: string | null
   prospectId: string | null
   prospectPhoneId: string | null
@@ -22,6 +26,7 @@ type DialerCallIntentDeniedResponse = {
   allowed: false
   error?: string
   reason?: string
+  reasonSource?: string
   details?: DialerSessionControlSummary
 }
 
@@ -32,8 +37,13 @@ export function createClientAttemptId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+export function dialerDenialMessage(message: string, reasonSource?: string): string {
+  return reasonSource ? `${message} Source: ${reasonSource}.` : message
+}
+
 export async function requestDialerCallIntent(input: {
   phone: string
+  surface: InteractiveDialerSurface
   callerId: string
   kind: DialerCallIntentKind
   leadId: string | null
@@ -43,7 +53,7 @@ export async function requestDialerCallIntent(input: {
   clientAttemptId: string
   sessionId?: string | null
 }): Promise<DialerCallIntentAllowedResponse> {
-  const response = await fetch('/api/dialer/call-intents', {
+  const response = await fetch(dialerCallIntentEndpoint(input.surface), {
     method: 'POST',
     cache: 'no-store',
     headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
@@ -55,13 +65,14 @@ export async function requestDialerCallIntent(input: {
     if (input.sessionId && denial && ['session_control_lost', 'session_control_conflict', 'session_control_changed'].includes(denial.reason || '')) {
       window.dispatchEvent(new CustomEvent('dialer-control-lost', { detail: { sessionId: input.sessionId } }))
     }
+    const message = denial?.error || denial?.reason || 'This call is not allowed. Review the number and try again.'
     throw new DialerSessionClientError(
-      denial?.error || denial?.reason || 'This call is not allowed. Review the number and try again.',
+      dialerDenialMessage(message, denial?.reasonSource),
       denial?.reason,
       denial?.details,
     )
   }
-  if (!payload.intent || !payload.to || !payload.callerId || !payload.kind || !payload.clientAttemptId) {
+  if (!payload.intent || !payload.to || !payload.callerId || !payload.kind || !payload.source || !payload.surface || !payload.clientAttemptId) {
     throw new Error('Call authorization returned an incomplete response. Try again.')
   }
   return {
@@ -70,6 +81,8 @@ export async function requestDialerCallIntent(input: {
     to: payload.to,
     callerId: payload.callerId,
     kind: payload.kind,
+    source: payload.source,
+    surface: payload.surface,
     leadId: payload.leadId ?? null,
     prospectId: payload.prospectId ?? null,
     prospectPhoneId: payload.prospectPhoneId ?? null,
