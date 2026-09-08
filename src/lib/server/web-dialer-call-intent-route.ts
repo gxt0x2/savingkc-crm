@@ -15,6 +15,7 @@ import {
 } from '@/lib/server/dialer-session-engine'
 import {
   createDialerCallIntent,
+  dialerCallIntentFailureSource,
   type DialerCallIntentKind,
   type DialerCallIntentSource,
 } from '@/lib/telephony/dialer-call-intent'
@@ -179,9 +180,9 @@ export async function handleWebDialerCallIntent(request: Request, surface: Inter
       kind,
       source: policyInput.source,
       surface,
-      leadId: policy.leadId,
-      prospectId: policy.prospectId,
-      prospectPhoneId: policy.prospectPhoneId,
+      leadId: kind === 'lead' || kind === 'heir' ? policy.leadId : null,
+      prospectId: kind === 'prospect' ? policy.prospectId : null,
+      prospectPhoneId: kind === 'heir' || kind === 'prospect' ? policy.prospectPhoneId : null,
       campaignMemberId,
       clientAttemptId,
     })
@@ -225,6 +226,7 @@ export async function handleWebDialerCallIntent(request: Request, surface: Inter
     if (error instanceof DialerSessionError) {
       return json({ allowed: false, error: error.message, reason: error.code, details: error.details }, error.status)
     }
+    const reasonSource = dialerCallIntentFailureSource(error)
     console.error(`[${surface}/call-intents] Intent signing unavailable`, error)
     await recordBlockedDialerCall(policyInput, {
       allowed: false,
@@ -236,13 +238,13 @@ export async function handleWebDialerCallIntent(request: Request, surface: Inter
       leadId: policy.leadId,
       prospectId: policy.prospectId,
       prospectPhoneId: policy.prospectPhoneId,
-      reasonSource: 'intent_signing',
+      reasonSource,
     })
     return json({
       allowed: false,
       error: 'Calling is paused because authorization is unavailable',
       reason: 'policy_unavailable',
-      reasonSource: 'intent_signing',
+      reasonSource,
     }, 503)
   }
 }
