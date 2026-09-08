@@ -37,7 +37,9 @@ const INTENT_TTL_SECONDS = 90
 const MAX_CLOCK_SKEW_SECONDS = 30
 
 export function getDialerCallIntentSecret(): string {
-  const secret = process.env.DIALER_CALL_INTENT_SECRET?.trim() || process.env.TWILIO_AUTH_TOKEN?.trim()
+  const secret = process.env.DIALER_CALL_INTENT_SECRET?.trim()
+    || process.env.TWILIO_AUTH_TOKEN?.trim()
+    || process.env.TWILIO_API_SECRET?.trim()
   if (!secret || secret.length < 16) throw new Error('Dialer call intent signing is not configured')
   return secret
 }
