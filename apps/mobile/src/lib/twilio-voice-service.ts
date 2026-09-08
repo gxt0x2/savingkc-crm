@@ -1,4 +1,5 @@
 import type { Call, CallInvite, Voice } from '@twilio/voice-react-native-sdk'
+import { Platform } from 'react-native'
 
 import { fetchVoiceToken, requestMobileCallIntent } from './api'
 
@@ -17,9 +18,24 @@ export type NativeVoiceCall = {
 }
 
 let voice: Voice | null = null
+let pushRegistryInitialization: Promise<void> | null = null
 let token: string | null = null
 let callerId: string | null = null
 let outboundCallPending = false
+
+export async function initializeTwilioVoice(): Promise<void> {
+  const sdk = await import('@twilio/voice-react-native-sdk')
+  if (!voice) voice = new sdk.Voice()
+  if (Platform.OS !== 'ios') return
+
+  if (!pushRegistryInitialization) {
+    pushRegistryInitialization = voice.initializePushRegistry().catch((error) => {
+      pushRegistryInitialization = null
+      throw error
+    })
+  }
+  await pushRegistryInitialization
+}
 
 function wrapCall(call: Call, sdk: typeof import('@twilio/voice-react-native-sdk'), onState?: (state: VoiceState) => void): NativeVoiceCall {
   const endedCallbacks = new Set<() => void>()
@@ -57,7 +73,8 @@ export async function registerTwilioVoice(input: {
   token = credentials.token
   callerId = credentials.callerId
 
-  if (!voice) voice = new sdk.Voice()
+  await initializeTwilioVoice()
+  if (!voice) throw new Error('Phone initialization failed.')
   voice.removeAllListeners()
   voice.addListener(sdk.Voice.Event.Registered, () => input.onState('ready'))
   voice.addListener(sdk.Voice.Event.Unregistered, () => input.onState('offline'))

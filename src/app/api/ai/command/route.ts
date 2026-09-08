@@ -20,7 +20,7 @@ export const maxDuration = 60
 
 type CommandMessage = { role: 'user' | 'assistant'; content: string }
 type CommandAttachment = { name: string; mediaType: string; dataUrl: string; base64: string; size: number }
-const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie' }
+const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie, Authorization' }
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/json', 'application/pdf', 'image/heic', 'image/jpeg', 'image/png',
   'image/webp', 'text/csv', 'text/markdown', 'text/plain', 'text/xml',
@@ -125,7 +125,7 @@ function failure(error: unknown) {
 }
 
 export async function POST(request: Request) {
-  const authenticated = await resolveAuthenticatedActor()
+  const authenticated = await resolveAuthenticatedActor(request)
   if (!authenticated) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
   const actor = await resolveAssistantActor(authenticated.email)
   if (!actor) return NextResponse.json({ error: 'CRM profile not authorized' }, { status: 403, headers: HEADERS })

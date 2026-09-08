@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase-lazy'
 import { hasVerifiedSubject } from '@/lib/auth/verified-claims'
+import { requireMobileActor } from '@/lib/mobile-api/auth'
 import { createClient } from '@/lib/supabase/server'
 
 export interface AuthenticatedActor {
@@ -8,7 +9,17 @@ export interface AuthenticatedActor {
 }
 
 /** Resolve the request's verified CRM user and server-owned activity label. */
-export async function resolveAuthenticatedActor(): Promise<AuthenticatedActor | null> {
+export async function resolveAuthenticatedActor(request?: Request): Promise<AuthenticatedActor | null> {
+  if (request?.headers.has('authorization')) {
+    try {
+      const { actor } = await requireMobileActor(request)
+      return { email: actor.email, name: actor.name }
+    } catch {
+      // An explicit bearer credential never falls back to a browser cookie.
+      return null
+    }
+  }
+
   const authClient = await createClient()
   const claimsResult = await authClient.auth.getClaims()
   if (!hasVerifiedSubject(claimsResult)) return null

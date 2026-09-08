@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
           workQueue: true,
           ownerAssignment: true,
           handoffAcceptance: true,
+          aiAssistantReadOnly: true,
         },
       },
       { headers: mobileNoStoreHeaders() },

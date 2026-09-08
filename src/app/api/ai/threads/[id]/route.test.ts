@@ -22,9 +22,12 @@ describe('assistant thread detail route', () => {
   })
 
   it('loads history through the verified actor scope', async () => {
-    const response = await GET(new Request('https://crm.savingkc.com/api/ai/threads/thread-1'), context)
+    const request = new Request('https://crm.savingkc.com/api/ai/threads/thread-1')
+    const response = await GET(request, context)
     expect(response.status).toBe(200)
+    expect(mocks.actor).toHaveBeenCalledWith(request)
     expect(mocks.load).toHaveBeenCalledWith('casey@savingkc.com', 'thread-1')
+    expect(response.headers.get('vary')).toContain('Authorization')
   })
 
   it('rejects invalid mutations without touching the thread', async () => {
