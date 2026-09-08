@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createDialerCallIntent, getDialerCallIntentSecret, verifyDialerCallIntent } from './dialer-call-intent'
+import {
+  createDialerCallIntent,
+  dialerCallIntentFailureSource,
+  getDialerCallIntentSecret,
+  verifyDialerCallIntent,
+} from './dialer-call-intent'
 
 const secret = 'test-only-secret-at-least-32-characters'
 const now = new Date('2026-08-17T17:00:00.000Z')
@@ -73,6 +78,12 @@ describe('dialer call intents', () => {
       source: 'web_power_dialer',
       surface: 'prospecting',
     }, { secret, now })).toThrow('context is invalid')
+  })
+
+  it('classifies intent failures without exposing claim values', () => {
+    expect(dialerCallIntentFailureSource(new Error('Dialer call intent context is invalid'))).toBe('intent_claims')
+    expect(dialerCallIntentFailureSource(new Error('Dialer call intent signing is not configured'))).toBe('intent_configuration')
+    expect(dialerCallIntentFailureSource(new Error('unexpected signing failure'))).toBe('intent_signing')
   })
 
   it('rejects a source that does not belong to the signed surface', () => {

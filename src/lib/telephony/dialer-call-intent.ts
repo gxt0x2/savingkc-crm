@@ -33,6 +33,8 @@ export type DialerCallIntentVerification =
   | { valid: true; claims: DialerCallIntentClaims }
   | { valid: false; reason: 'missing' | 'malformed' | 'invalid_signature' | 'expired' | 'invalid_claims' }
 
+export type DialerCallIntentFailureSource = 'intent_claims' | 'intent_configuration' | 'intent_signing'
+
 const INTENT_TTL_SECONDS = 90
 const MAX_CLOCK_SKEW_SECONDS = 30
 
@@ -42,6 +44,16 @@ export function getDialerCallIntentSecret(): string {
     || process.env.TWILIO_API_SECRET?.trim()
   if (!secret || secret.length < 16) throw new Error('Dialer call intent signing is not configured')
   return secret
+}
+
+export function dialerCallIntentFailureSource(error: unknown): DialerCallIntentFailureSource {
+  if (!(error instanceof Error)) return 'intent_signing'
+  if (error.message === 'Dialer call intent signing is not configured') return 'intent_configuration'
+  if (
+    error.message === 'Dialer call intent phone claims are invalid'
+    || error.message === 'Dialer call intent context is invalid'
+  ) return 'intent_claims'
+  return 'intent_signing'
 }
 
 function signature(payload: string, secret: string): string {

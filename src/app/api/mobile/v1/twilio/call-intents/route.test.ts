@@ -17,7 +17,12 @@ vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   isAllowedDialerCallerId: (value: string) => value === '+18167277667',
   dialerBlockStatus: (reason: string) => reason === 'policy_unavailable' ? 503 : 409,
 }))
-vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: mocks.createDialerCallIntent }))
+vi.mock('@/lib/telephony/dialer-call-intent', () => ({
+  createDialerCallIntent: mocks.createDialerCallIntent,
+  dialerCallIntentFailureSource: (error: unknown) => (
+    error instanceof Error && error.message.includes('context') ? 'intent_claims' : 'intent_signing'
+  ),
+}))
 
 import { POST } from './route'
 
@@ -80,6 +85,21 @@ describe('mobile dialer call intent authorization', () => {
       kind: 'lead',
       source: 'mobile_lead',
       leadId: 'lead-1',
+    }))
+  })
+
+  it('strips inferred lead context from a manual mobile intent', async () => {
+    const response = await POST(request({
+      phone: '+19135550123',
+      callerId: '+18167277667',
+      clientAttemptId: 'attempt-1',
+    }) as never)
+
+    expect(response.status).toBe(200)
+    expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'manual',
+      source: 'mobile_manual',
+      leadId: null,
     }))
   })
 

@@ -310,6 +310,23 @@ describe('server dialer call eligibility', () => {
     expect(result).toMatchObject({ allowed: true, normalizedPhone: '+18162262552' })
   })
 
+  it('does not attach a matching lead to a manual CRM call', async () => {
+    const db = database({ leads: [goodLead()] })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'web_manual',
+      leadId: null,
+    }, { db: db.client })
+
+    expect(result).toMatchObject({
+      allowed: true,
+      normalizedPhone: '+19135550123',
+      leadId: null,
+    })
+  })
+
   it('only applies activity stop outcomes to the target phone', async () => {
     const db = database({
       leads: [goodLead()],
