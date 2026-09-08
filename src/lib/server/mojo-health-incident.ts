@@ -20,6 +20,11 @@ export type MojoIncidentResult = {
 }
 
 const DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000
+const INCIDENT_TITLE = 'System failure: Mojo ingestion'
+
+function missingMetadataColumn(error: { message?: string } | null): boolean {
+  return Boolean(error?.message && /ari_briefing_events\.metadata|metadata.*column|column.*metadata/i.test(error.message))
+}
 
 export async function recordMojoHealthIncident(
   supabase: SupabaseLike,
@@ -31,7 +36,7 @@ export async function recordMojoHealthIncident(
     .from('ari_briefing_events')
     .select('id')
     .eq('event_type', 'system_failure')
-    .contains('metadata', { system: 'mojo_ingestion' })
+    .eq('title', INCIDENT_TITLE)
     .gte('created_at', since)
     .limit(1)
 
@@ -39,10 +44,10 @@ export async function recordMojoHealthIncident(
   if ((recent ?? []).length > 0) return { created: false, alerted: false }
 
   const incidentId = `mojo:${now.toISOString()}`
-  const { error: insertError } = await supabase.from('ari_briefing_events').insert({
+  const event = {
     event_type: 'system_failure',
     priority: 'critical',
-    title: 'System failure: Mojo ingestion',
+    title: INCIDENT_TITLE,
     description: input.message,
     metadata: {
       system: 'mojo_ingestion',
@@ -56,7 +61,25 @@ export async function recordMojoHealthIncident(
     },
     read: false,
     dismissed: false,
-  })
+  }
+
+  let { error: insertError } = await supabase.from('ari_briefing_events').insert(event)
+  if (missingMetadataColumn(insertError)) {
+    const legacyCompatibleEvent = {
+      event_type: event.event_type,
+      priority: event.priority,
+      title: event.title,
+      description: event.description,
+      read: event.read,
+      dismissed: event.dismissed,
+    }
+    ;({ error: insertError } = await supabase.from('ari_briefing_events').insert(legacyCompatibleEvent))
+    console.warn(JSON.stringify({
+      level: 'warn',
+      message: 'mojo_incident_legacy_schema_fallback',
+      incidentId,
+    }))
+  }
 
   if (insertError) throw new Error(`Mojo incident insert failed: ${insertError.message}`)
 

@@ -17,6 +17,7 @@
  */
 
 import fs from 'fs'
+import { homedir } from 'node:os'
 import path from 'path'
 import {
   clearMojoSessionIssue,
@@ -39,8 +40,10 @@ const CRM_QUEUE_URL = process.env.CRM_QUEUE_URL || `${CRM_BASE_URL}/api/cron/pro
 const CRM_PERFORMANCE_URL = process.env.CRM_PERFORMANCE_URL || `${CRM_BASE_URL}/api/admin/mojo-performance`
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = mojoSessionFile()
-const STATE_FILE = '/Users/ernestdodson/.openclaw/workspace/memory/mojo-sync-state.json'
-const LOG_DIR = '/Users/ernestdodson/.openclaw/workspace/memory/logs'
+const STATE_FILE = process.env.MOJO_SYNC_STATE_FILE
+  || path.join(homedir(), '.openclaw/workspace/memory/mojo-sync-state.json')
+const LOG_DIR = process.env.MOJO_LOG_DIR
+  || path.join(homedir(), '.openclaw/workspace/memory/logs')
 const LOG_FILE = path.join(LOG_DIR, 'mojo-sync.log')
 
 // Mojo activity type codes
