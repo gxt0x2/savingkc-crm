@@ -20,7 +20,7 @@ const NEGATIVE_PATTERNS = [
 
 const SELLER_INTEL_PATTERNS = [
   ['timeline', /\b(?:timeline|sell(?:ing)? within|close within|days?|weeks?|months?)\s*:/i],
-  ['motivation', /\b(?:motivation|reason for selling|wants? to sell|needs? to sell)\b/i],
+  ['motivation', /\b(?:motivation|reason for selling|wants? to sell|needs? to sell|plans? to sell|planning to sell|willing to sell|getting rid of|ready to part with)\b/i],
   ['price', /\b(?:asking price|price\s*:|offer\s*:|\$\s?\d|\d[\d,]*\s?k\b)/i],
   ['condition', /\b(?:condition|repairs?|renovat|foundation|roof|hvac|flood|fire damage)\b/i],
   ['property_situation', /\b(?:inherited|probate|foreclosure|tenant|vacant|rent back|equity|liens?)\b/i],
