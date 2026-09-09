@@ -26,6 +26,8 @@ export interface MojoQualificationInput {
   has_appointment?: unknown
   qualifiedByAgent?: unknown
   qualified_by_agent?: unknown
+  qualificationOverrideReason?: unknown
+  qualification_override_reason?: unknown
 }
 
 export function mojoSellerIntelSignals(notes: unknown): string[]

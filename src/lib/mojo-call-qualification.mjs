@@ -67,6 +67,10 @@ export function assessMojoCallQualification(call, options = {}) {
   const hasAppointment = boolean(call?.hasAppointment ?? call?.has_appointment)
     || outcome === 'appointment_set'
   const qualifiedByAgent = boolean(call?.qualifiedByAgent ?? call?.qualified_by_agent)
+  const qualificationOverrideReason = text(
+    call?.qualificationOverrideReason ?? call?.qualification_override_reason,
+  )
+  const explicitNegativeOverride = qualifiedByAgent && Boolean(qualificationOverrideReason)
   const minimumSeconds = Math.max(
     1,
     duration(options.minimumSeconds ?? MOJO_MINIMUM_MEANINGFUL_SECONDS),
@@ -87,7 +91,7 @@ export function assessMojoCallQualification(call, options = {}) {
     }
   }
 
-  if (negativeIntent.length > 0) {
+  if (negativeIntent.length > 0 && !explicitNegativeOverride) {
     return {
       eligible: false,
       status: 'ineligible',
@@ -163,6 +167,7 @@ export function assessMojoCallQualification(call, options = {}) {
   }
 
   reasons.push(qualifiedByAgent ? 'agent_qualified' : 'seller_intent_documented')
+  if (explicitNegativeOverride) reasons.push('negative_intent_overridden')
   reasons.push('minimum_duration_met')
   if (outcome === 'callback_scheduled') reasons.push('callback_scheduled')
 

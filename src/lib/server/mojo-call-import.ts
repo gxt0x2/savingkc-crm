@@ -46,6 +46,7 @@ export interface MojoCallRecord {
   provider_contact_id?: string
   provider_recording_id?: string
   qualified_by_agent?: boolean
+  qualification_override_reason?: string
   has_appointment?: boolean
   promotion_eligible?: boolean
   qualification_status?: MojoQualificationAssessment['status']
@@ -148,6 +149,9 @@ export function normalizeMojoCallRecord(value: unknown): MojoCallRecord {
     ...(stringField(raw.provider_contact_id, 160) ? { provider_contact_id: stringField(raw.provider_contact_id, 160) } : {}),
     ...(stringField(raw.provider_recording_id, 160) ? { provider_recording_id: stringField(raw.provider_recording_id, 160) } : {}),
     ...(booleanField(raw.qualified_by_agent) ? { qualified_by_agent: true } : {}),
+    ...(stringField(raw.qualification_override_reason, 500)
+      ? { qualification_override_reason: stringField(raw.qualification_override_reason, 500) }
+      : {}),
     ...(booleanField(raw.has_appointment) ? { has_appointment: true } : {}),
     ...(booleanField(raw.promotion_eligible) ? { promotion_eligible: true } : {}),
     ...(stringField(raw.qualification_status, 40) ? { qualification_status: stringField(raw.qualification_status, 40) as MojoQualificationAssessment['status'] } : {}),
@@ -222,13 +226,17 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
     provider_contact_id: fill(existing.provider_contact_id, incoming.provider_contact_id),
     provider_recording_id: fill(existing.provider_recording_id, incoming.provider_recording_id),
     qualified_by_agent: existing.qualified_by_agent || incoming.qualified_by_agent,
+    qualification_override_reason: fill(
+      existing.qualification_override_reason,
+      incoming.qualification_override_reason,
+    ),
     has_appointment: existing.has_appointment || incoming.has_appointment,
     call_duration: incomingDuration,
   }).call
 
   const materialFields: Array<keyof MojoCallRecord> = [
     'call_duration', 'recording_url', 'follow_up_date', 'notes', 'email',
-    'provider_recording_id', 'qualified_by_agent', 'has_appointment',
+    'provider_recording_id', 'qualified_by_agent', 'qualification_override_reason', 'has_appointment',
     'promotion_eligible', 'qualification_status',
   ]
   const improved = materialFields.some((field) => JSON.stringify(merged[field]) !== JSON.stringify(existing[field]))
@@ -399,8 +407,18 @@ export async function createMojoFollowUp(result: MojoCallIngestResult, call: Moj
   })
 }
 
-function lifecycleTarget(result: MojoCallIngestResult): { stage: CrmLifecycleStage; deadReason: string | null } | null {
+function hasGovernedQualificationOverride(call: MojoCallRecord): boolean {
+  return call.qualified_by_agent === true && Boolean(call.qualification_override_reason?.trim())
+}
+
+export function mojoLifecycleTarget(
+  result: MojoCallIngestResult,
+  call: MojoCallRecord,
+): { stage: CrmLifecycleStage; deadReason: string | null } | null {
   const current = result.station || 'new'
+  if (current === 'dead' && result.promotionEligible && hasGovernedQualificationOverride(call)) {
+    return { stage: 'contacted', deadReason: null }
+  }
   const terminal = ['offer_made', 'under_contract', 'closed_won', 'closed_lost', 'dead'].includes(current)
   if (terminal) return null
   if (result.outcome === 'not_interested') return { stage: 'dead', deadReason: 'not_selling' }
@@ -416,7 +434,8 @@ function lifecycleTarget(result: MojoCallIngestResult): { stage: CrmLifecycleSta
 export async function transitionMojoLifecycle(result: MojoCallIngestResult, call: MojoCallRecord): Promise<void> {
   if (!result.leadId || !result.latestForLead) return
   const terminal = ['under_contract', 'closed_won', 'closed_lost', 'dead'].includes(result.station || '')
-  if (!result.assignedAgent && !terminal) {
+  const governedOverride = result.promotionEligible && hasGovernedQualificationOverride(call)
+  if (!result.assignedAgent && (!terminal || governedOverride)) {
     await applyCrmLifecycleCommand({
       leadId: result.leadId,
       commandId: stableUuid('mojo-owner', call.record_id),
@@ -432,7 +451,7 @@ export async function transitionMojoLifecycle(result: MojoCallIngestResult, call
       actorName: 'Mojo Import',
     })
   }
-  const target = lifecycleTarget(result)
+  const target = mojoLifecycleTarget(result, call)
   if (!target) return
   await applyCrmLifecycleCommand({
     leadId: result.leadId,
@@ -442,7 +461,9 @@ export async function transitionMojoLifecycle(result: MojoCallIngestResult, call
     owner: null,
     deadReason: target.deadReason,
     deadReasonNotes: target.deadReason ? `Mojo disposition: ${call.disposition}` : null,
-    reason: `Verified Mojo disposition from call ${call.record_id}`,
+    reason: governedOverride
+      ? `CRM-owner Mojo qualification exception: ${call.qualification_override_reason}`
+      : `Verified Mojo disposition from call ${call.record_id}`,
     evidenceType: null,
     evidenceReference: `mojo:${call.record_id}`,
     actorEmail: 'system@crm.savingkc.com',
@@ -467,12 +488,15 @@ export async function processCanonicalMojoCall(
   if (result.outcome === 'dnc' && result.normalizedPhone) {
     await dependencies.suppressDnc(result.normalizedPhone)
   }
-  if (!result.leadId || !result.promotionEligible) return result
+  if (!result.leadId) return result
+
+  if (result.followUpAt && ['callback_scheduled', 'meaningful_conversation'].includes(result.outcome)) {
+    await dependencies.createFollowUp(result, normalized)
+  }
+  if (!result.promotionEligible) return result
 
   if (result.outcome === 'appointment_set' && result.followUpAt) {
     await dependencies.createAppointment(result, normalized)
-  } else if (result.followUpAt && ['callback_scheduled', 'meaningful_conversation'].includes(result.outcome)) {
-    await dependencies.createFollowUp(result, normalized)
   }
   await dependencies.transitionLifecycle(result, normalized)
   await dependencies.processRecordingEvidence(result, normalized)

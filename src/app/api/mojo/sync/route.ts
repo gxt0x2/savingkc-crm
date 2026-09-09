@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
-import { mergeMojoCallEvidence, qualifyMojoCallRecord, type MojoCallRecord } from '@/lib/server/mojo-call-import'
+import { mapMojoDisposition, mergeMojoCallEvidence, qualifyMojoCallRecord, type MojoCallRecord } from '@/lib/server/mojo-call-import'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export type { MojoCallRecord }
 
 const MAX_CALLS_PER_REQUEST = 500
+
+function hasActionableFollowUp(call: MojoCallRecord): boolean {
+  const followUpAt = Date.parse(call.follow_up_date || '')
+  return Number.isFinite(followUpAt)
+    && followUpAt >= Date.now() - 5 * 60 * 1000
+    && ['callback_scheduled', 'meaningful_conversation'].includes(mapMojoDisposition(call.disposition))
+}
 
 /**
  * Accept provider call facts into the durable queue and return immediately.
@@ -41,6 +48,7 @@ export async function POST(req: NextRequest) {
         const qualification = qualifyMojoCallRecord(raw as MojoCallRecord)
         call = qualification.call
         waitingForEvidence = qualification.assessment.status === 'evidence_pending'
+          && !hasActionableFollowUp(call)
         if (waitingForEvidence) {
           held++
           for (const reason of qualification.assessment.reasons) {
@@ -78,6 +86,7 @@ export async function POST(req: NextRequest) {
           continue
         }
         const mergedWaitingForEvidence = merged.call.qualification_status === 'evidence_pending'
+          && !hasActionableFollowUp(merged.call)
         const resetStatus = ['completed', 'dead_letter', 'failed', 'waiting_evidence'].includes(existing.status)
         const { error: updateError } = await db
           .from('mojo_call_queue')
