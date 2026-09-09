@@ -6,6 +6,7 @@ import { hasVerifiedSubject } from '@/lib/auth/verified-claims'
 
 // Routes that don't require authentication
 const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
+const PUBLIC_PAGE_EXACT = new Set(['/.well-known/oauth-protected-resource'])
 
 // API routes that must remain reachable without a CRM session.
 const PUBLIC_API_EXACT = new Set([
@@ -449,7 +450,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   // Skip auth for public routes
-  if (PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
+  if (PUBLIC_PAGE_EXACT.has(pathname) || PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
     return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
 

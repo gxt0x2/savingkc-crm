@@ -391,8 +391,8 @@
       "name": "SavingKC CRM MCP",
       "owner": "Operations",
       "status": "active",
-      "routes": [],
-      "apiRoutes": ["/api/mcp"],
+      "routes": ["/.well-known/oauth-protected-resource", "/oauth/consent"],
+      "apiRoutes": ["/api/mcp", "/api/oauth/decision"],
       "tables": ["assistant_query_audit"],
       "environment": ["CRM_MCP_TOKEN", "CRM_MCP_ACTOR_EMAIL", "CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_OWNER_EMAILS"]
     },

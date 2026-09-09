@@ -1,7 +1,9 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import { createClient } from '@supabase/supabase-js'
+import { getSupabasePublicKey, getSupabaseUrl } from '@/lib/supabase/env'
 
-const MCP_SCOPES = ['crm:read']
+const MCP_SCOPES = ['crm:read', 'email']
 
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left)
@@ -20,6 +22,10 @@ export function configuredCrmMcpActorEmail(): string {
   return configuredOwner || 'ernest@savingkc.com'
 }
 
+export function isConfiguredCrmMcpActorEmail(email: string | undefined): boolean {
+  return email?.trim().toLowerCase() === configuredCrmMcpActorEmail()
+}
+
 export function isValidCrmMcpToken(suppliedToken: string | undefined): boolean {
   const configuredToken = (
     process.env.CRM_MCP_TOKEN || process.env.CRM_ASSISTANT_API_SECRET
@@ -28,13 +34,42 @@ export function isValidCrmMcpToken(suppliedToken: string | undefined): boolean {
   return Boolean(configuredToken && supplied && safeEqual(configuredToken, supplied))
 }
 
-export function verifyCrmMcpToken(_request: Request, bearerToken?: string): AuthInfo | undefined {
-  if (!isValidCrmMcpToken(bearerToken)) return undefined
+export async function verifyCrmMcpToken(
+  _request: Request,
+  bearerToken?: string,
+): Promise<AuthInfo | undefined> {
+  if (!bearerToken?.trim()) return undefined
 
-  return {
-    token: bearerToken!,
-    clientId: 'savingkc-grok-build',
-    scopes: MCP_SCOPES,
-    extra: { email: configuredCrmMcpActorEmail() },
+  if (isValidCrmMcpToken(bearerToken)) {
+    return {
+      token: bearerToken,
+      clientId: 'savingkc-grok-build',
+      scopes: MCP_SCOPES,
+      extra: { email: configuredCrmMcpActorEmail() },
+    }
+  }
+
+  try {
+    const authClient = createClient(getSupabaseUrl(), getSupabasePublicKey(), {
+      auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false },
+    })
+    const { data, error } = await authClient.auth.getClaims(bearerToken)
+    if (error || !data?.claims) return undefined
+
+    const email = typeof data.claims.email === 'string' ? data.claims.email.trim().toLowerCase() : ''
+    const clientId = typeof data.claims.client_id === 'string' ? data.claims.client_id.trim() : ''
+    if (!clientId || !isConfiguredCrmMcpActorEmail(email)) return undefined
+
+    return {
+      token: bearerToken,
+      clientId,
+      // Supabase returns granted scopes alongside the token rather than in the
+      // access-token JWT. A verified OAuth client_id plus the exact email claim
+      // establishes the one supported identity scope for this resource.
+      scopes: ['email'],
+      extra: { email },
+    }
+  } catch {
+    return undefined
   }
 }

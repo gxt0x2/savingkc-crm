@@ -24,6 +24,8 @@ describe('/api/mcp proxy containment', () => {
     vi.stubEnv('PREVIEW_ALLOW_WRITES', 'false')
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://example.supabase.co')
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'test-anon-key')
+    mocks.getClaims.mockResolvedValue({ data: null, error: new Error('signed out') })
+    mocks.createServerClient.mockReturnValue({ auth: { getClaims: mocks.getClaims } })
   })
 
   it.each(['GET', 'POST'])('lets MCP %s reach the route-level bearer check', async (method) => {
@@ -33,5 +35,23 @@ describe('/api/mcp proxy containment', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-next')).toBe('1')
     expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
+  it('exposes the exact OAuth protected-resource discovery route', async () => {
+    const request = new NextRequest('https://crm.savingkc.com/.well-known/oauth-protected-resource')
+    const response = await proxy(request, event)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
+  it('does not expose lookalike OAuth discovery paths', async () => {
+    const request = new NextRequest('https://crm.savingkc.com/.well-known/oauth-protected-resource-copy')
+    const response = await proxy(request, event)
+
+    expect(response.status).toBe(307)
+    expect(response.headers.get('location')).toContain('/login?')
+    expect(mocks.createServerClient).toHaveBeenCalledOnce()
   })
 })
