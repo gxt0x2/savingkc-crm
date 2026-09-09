@@ -6,7 +6,13 @@ SavingKC CRM exposes an authenticated, read-only Streamable HTTP MCP server at:
 https://crm.savingkc.com/api/mcp
 ```
 
-The repository's `.grok/config.toml` registers the server as `savingkc-crm` and reads its bearer token from the existing `CRM_ASSISTANT_API_SECRET`. The MCP server also supports a dedicated `CRM_MCP_TOKEN`, which takes precedence when configured. `CRM_MCP_ACTOR_EMAIL` selects the permission-scoped CRM identity represented by that token and otherwise defaults to the configured owner.
+Register the server in Grok Build's user-scoped configuration so the connection is available from every project:
+
+```text
+grok mcp add --scope user --transport http savingkc-crm https://crm.savingkc.com/api/mcp --header "Authorization: Bearer <CRM_MCP_TOKEN>"
+```
+
+Use the same dedicated `CRM_MCP_TOKEN` as the sensitive Vercel environment variable. The server can fall back to the existing `CRM_ASSISTANT_API_SECRET` during rollout. `CRM_MCP_ACTOR_EMAIL` selects the permission-scoped CRM identity represented by the token and otherwise defaults to the configured owner.
 
 The server exposes live CRM contact, communication, task, workflow, website-funnel, and marketing reads. Every successful or failed data read writes metadata to `assistant_query_audit`; prompts, responses, seller PII, and tokens are not written to that audit table.
 

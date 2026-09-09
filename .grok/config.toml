@@ -1,4 +1,0 @@
-[mcp_servers.savingkc-crm]
-url = "https://crm.savingkc.com/api/mcp"
-enabled = true
-headers = { "Authorization" = "Bearer ${CRM_ASSISTANT_API_SECRET}" }
