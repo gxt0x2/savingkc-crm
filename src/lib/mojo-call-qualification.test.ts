@@ -22,6 +22,20 @@ describe('Mojo CRM qualification policy', () => {
     })).toMatchObject({ eligible: true, status: 'eligible' })
   })
 
+  it('recognizes natural seller-intent wording from real call notes', () => {
+    expect(assessMojoCallQualification({
+      outcome: 'meaningful_conversation',
+      call_duration: 649,
+      recording_url: 'https://app71.mojosells.com/audio/real-call',
+      notes: 'His daughter is moving in 60 days. He is getting rid of properties that are not close and is ready for retirement.',
+    })).toMatchObject({
+      eligible: true,
+      status: 'eligible',
+      reasons: ['seller_intent_documented', 'minimum_duration_met'],
+      sellerIntel: ['motivation'],
+    })
+  })
+
   it('does not treat a generic callback request as a lead', () => {
     expect(assessMojoCallQualification({
       outcome: 'callback_scheduled',
