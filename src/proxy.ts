@@ -17,6 +17,8 @@ const PUBLIC_API_EXACT = new Set([
   '/api/leads/ppc/track',
   '/api/ppc/track',
   '/api/google-maps-key',
+  // MCP performs its own dedicated bearer-token authorization in the route.
+  '/api/mcp',
   '/api/sell-edits',
   '/api/deals/image',
   '/api/docuseal/webhook',
