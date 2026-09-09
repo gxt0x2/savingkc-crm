@@ -19,8 +19,9 @@ const handler = createMcpHandler(
 
 const authenticatedHandler = withMcpAuth(handler, verifyCrmMcpToken, {
   required: true,
-  requiredScopes: ['crm:read'],
+  requiredScopes: ['email'],
   resourceMetadataPath: '/.well-known/oauth-protected-resource',
+  resourceUrl: 'https://crm.savingkc.com',
 })
 
 export { authenticatedHandler as GET, authenticatedHandler as POST }
