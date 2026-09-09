@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { AssistantSources } from '@/components/ai/assistant-sources'
+import { AssistantMessage } from '@/components/ai/assistant-message'
 import { Icon } from '@/components/ui/icon'
 import { useAssistantThread } from '@/hooks/use-assistant-thread'
 
@@ -101,7 +101,7 @@ export default function AiAssistantPage() {
             <div className="flex-1 space-y-4 overflow-y-auto bg-[var(--crm-surface-subtle)]/50 p-5">
               {loadingHistory ? <div className="text-sm text-[var(--crm-text-muted)]">Loading your conversation…</div> : null}
               {!loadingHistory && messages.length === 0 ? <div className="flex justify-start"><div className="max-w-[82%] rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-sm leading-6 text-[var(--crm-ink)] shadow-sm">Ask me to inspect the CRM, explain a phone or workflow path, analyze performance, find a contact, or draft an operating change. I use live read-only context; consequential changes require confirmation.</div></div> : null}
-              {messages.map((message) => <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}><p className="whitespace-pre-wrap">{message.content}</p>{message.role === 'assistant' ? <AssistantSources sources={message.sources} /> : null}</div></div>)}
+              {messages.map((message) => <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}>{message.role === 'assistant' ? <AssistantMessage content={message.content} sources={message.sources} /> : <p className="whitespace-pre-wrap">{message.content}</p>}</div></div>)}
               {sending ? <div className="flex justify-start"><div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-3 text-sm text-[var(--crm-text-muted)]"><span className="h-2 w-2 animate-pulse rounded-full bg-[var(--crm-violet)]" /><span>Reading the CRM and system registry…</span></div></div> : null}
               {error ? <div className="rounded-xl border border-[var(--crm-danger)]/25 bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]">{error}</div> : null}
             </div>

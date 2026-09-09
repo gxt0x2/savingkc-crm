@@ -7,17 +7,24 @@ import {
   readAssistantAttention,
   readAssistantCommunications,
   readAssistantLead360,
+  readAssistantMarketingSummary,
   readAssistantOperatingSnapshot,
   readAssistantPhoneSystem,
+  readAssistantSourceCatalog,
+  readAssistantWebsiteFunnel,
   readAssistantWorkflowRegistry,
   searchAssistantLeads,
 } from '@/lib/assistant/queries'
+import { getAiChangeProposalsForLead } from '@/lib/server/ai-change-proposals'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const instructions = `You are the SavingKC AI Assistant. You may answer any user request, but company and CRM questions must be answered first through SavingKC's recorded goals, current operating state, and approved workflow paths.
 
 Operating rules:
-- Start with a direct answer. Then state: (1) what the live evidence says, (2) whether the company is on or off its recorded goal or operating path, (3) the highest-leverage next action, and (4) what can be implemented now.
+- Start with a direct answer. For the default response, follow it with no more than three short bullets covering only the decision-relevant live evidence or goal status, the highest-leverage next action, and what can be implemented now.
+- Keep a default response at or below 160 words. Do not repeat the request, narrate your research, dump raw tool results, or enumerate everything you checked. If useful supporting material remains, offer to show it instead of including it automatically.
+- Expand only when the user explicitly asks for a detailed analysis, full report, audit, exhaustive list, or implementation plan, or when a consequential-change proposal needs validation and rollback detail. Even then, lead with a compact summary and keep the response below 300 words.
+- Do not force every response into every category. Omit sections that do not help the user decide or act.
 - Think proactively. Surface the next likely constraint, dependency, or follow-up before it becomes a missed lead, stalled contract, routing error, or incomplete closeout. Do not manufacture urgency or evidence.
 - The core path is Marketing intake -> New -> meaningful two-way contact and explicit classification -> Lead -> Opportunity -> Appointment -> Offer -> Under Contract -> Dispositions / Transaction Coordination -> Closed -> Debrief -> verified closeout and workflow improvement.
 - A newly entered contact stays in New until meaningful two-way contact and explicit classification. Outbound attempts alone update outreach status; they do not promote the contact.
@@ -57,6 +64,17 @@ function commandModel(provider: CommandAgentProvider) {
 export function createCommandAgent(actor: AssistantActor, provider: CommandAgentProvider = 'gateway') {
   const db = supabaseAdmin()
   const scopedTools = {
+    getConnectionStatus: tool({
+      description: 'Confirm this signed-in actor’s authenticated, read-only connection to the live SavingKC CRM.',
+      inputSchema: z.object({}),
+      execute: async () => ({
+        connected: true,
+        mode: 'read-only',
+        approvalBoundary: 'Consequential CRM changes remain subject to human review.',
+        actor: { access: actor.access, role: actor.role },
+        generatedAt: new Date().toISOString(),
+      }),
+    }),
     getMyAttention: tool({
       description: 'Read the signed-in actor’s current tasks, appointments, stale leads, transaction work, and disposition deadlines.',
       inputSchema: z.object({ limit: z.number().int().min(1).max(30).default(15) }),
@@ -77,10 +95,24 @@ export function createCommandAgent(actor: AssistantActor, provider: CommandAgent
       inputSchema: z.object({ leadId: z.string().uuid(), limit: z.number().int().min(1).max(100).default(50) }),
       execute: async ({ leadId, limit }) => readAssistantCommunications(db, actor, leadId, limit),
     }),
+    getPendingAiChangeReviews: tool({
+      description: 'List pending, human-reviewed AI change proposals for one authorized CRM contact without approving or applying them.',
+      inputSchema: z.object({ leadId: z.string().uuid() }),
+      execute: async ({ leadId }) => {
+        const lead = await readAssistantLead360(db, actor, leadId)
+        if (!lead.record) return { contactId: leadId, proposals: [] }
+        return { contactId: leadId, proposals: await getAiChangeProposalsForLead(leadId) }
+      },
+    }),
   }
 
   const agentTools: ToolSet = { ...scopedTools }
   if (assistantActorCanReadCompanyWide(actor)) Object.assign(agentTools, {
+    getSourceCatalog: tool({
+      description: 'List the business data sources available to the assistant and their current connection state.',
+      inputSchema: z.object({}),
+      execute: async () => readAssistantSourceCatalog(),
+    }),
     getOperatingSnapshot: tool({
       description: 'Read a live company-wide SavingKC operating snapshot for a period. Use for counts, pipeline, goals, owners, sources, tasks, deals, and debrief questions.',
       inputSchema: z.object({ days: z.number().int().min(1).max(365).default(30) }),
@@ -96,12 +128,23 @@ export function createCommandAgent(actor: AssistantActor, provider: CommandAgent
       inputSchema: z.object({ search: z.string().max(80).optional() }),
       execute: async ({ search }) => readAssistantWorkflowRegistry(db, search),
     }),
+    getWebsiteFunnel: tool({
+      description: 'Read live website lead and first-party attribution funnel metrics for a bounded period.',
+      inputSchema: z.object({ days: z.number().int().min(1).max(365).default(30) }),
+      execute: async ({ days }) => readAssistantWebsiteFunnel(db, days),
+    }),
+    getMarketingSummary: tool({
+      description: 'Read live CRM attribution, first-party events, and PPC conversion-outbox status for a bounded period without mutating conversions.',
+      inputSchema: z.object({ days: z.number().int().min(1).max(365).default(30) }),
+      execute: async ({ days }) => readAssistantMarketingSummary(db, days),
+    }),
   })
 
   return new ToolLoopAgent({
     id: 'savingkc-command-agent',
     model: commandModel(provider),
     instructions: `${instructions}\n\nSigned-in actor: ${actor.fullName} (${actor.access}). Only use tools exposed for this actor.`,
+    maxOutputTokens: 500,
     stopWhen: isStepCount(8),
     temperature: 0.2,
     tools: agentTools,
