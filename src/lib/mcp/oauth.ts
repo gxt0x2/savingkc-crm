@@ -22,6 +22,9 @@ export function crmMcpProtectedResourceMetadata() {
       scopes_supported: CRM_MCP_OAUTH_SCOPES,
       bearer_methods_supported: ['header'],
       resource_name: 'SavingKC CRM (read-only)',
+      // Grok Bot/Cursor honors this extension for OAuth providers that do not
+      // yet accept the RFC 8707 resource parameter during token exchange.
+      cursor_omit_resource_indicator: true,
     },
   })
 }
