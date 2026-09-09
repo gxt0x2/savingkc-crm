@@ -37,8 +37,25 @@ describe('/api/mcp proxy containment', () => {
     expect(mocks.createServerClient).not.toHaveBeenCalled()
   })
 
-  it('exposes the exact OAuth protected-resource discovery route', async () => {
-    const request = new NextRequest('https://crm.savingkc.com/.well-known/oauth-protected-resource')
+  it.each([
+    '/.well-known/oauth-protected-resource',
+    '/.well-known/oauth-authorization-server',
+  ])('exposes the exact OAuth discovery route %s', async (pathname) => {
+    const request = new NextRequest(`https://crm.savingkc.com${pathname}`)
+    const response = await proxy(request, event)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['GET', '/api/oauth/authorize'],
+    ['POST', '/api/oauth/register'],
+    ['POST', '/api/oauth/token'],
+  ])('lets the fixed OAuth bridge %s %s bypass CRM session auth', async (method, pathname) => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    const request = new NextRequest(`https://crm.savingkc.com${pathname}`, { method })
     const response = await proxy(request, event)
 
     expect(response.status).toBe(200)
@@ -52,6 +69,25 @@ describe('/api/mcp proxy containment', () => {
 
     expect(response.status).toBe(307)
     expect(response.headers.get('location')).toContain('/login?')
+    expect(mocks.createServerClient).toHaveBeenCalledOnce()
+  })
+
+  it('does not expose a lookalike authorization-server discovery path', async () => {
+    const pathname = '/.well-known/oauth-authorization-server-copy'
+    const request = new NextRequest(`https://crm.savingkc.com${pathname}`)
+    const response = await proxy(request, event)
+
+    expect(response.status).toBe(307)
+    expect(response.headers.get('location')).toContain('/login?')
+    expect(mocks.createServerClient).toHaveBeenCalledOnce()
+  })
+
+  it('does not expose a lookalike OAuth API path', async () => {
+    const request = new NextRequest('https://crm.savingkc.com/api/oauth/token-copy')
+    const response = await proxy(request, event)
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'Unauthorized' })
     expect(mocks.createServerClient).toHaveBeenCalledOnce()
   })
 })
