@@ -47,6 +47,12 @@
           "backgroundColor": "#FFFFFF"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "16f48d2e-418b-4c62-a287-5e16cbd79244"
+      }
+    },
+    "owner": "savingkc"
   }
 }
