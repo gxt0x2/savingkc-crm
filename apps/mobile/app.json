@@ -15,7 +15,8 @@
           "audio",
           "voip",
           "remote-notification"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
