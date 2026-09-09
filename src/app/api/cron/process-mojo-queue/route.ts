@@ -4,6 +4,8 @@ import { runCanonicalMojoQueueWorker } from '@/lib/server/mojo-call-import'
 import { isJwtIssuedAtFuture } from '@/lib/supabase/jwt-iat-skew'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 120
 
 /**
  * Process a bounded batch of canonical Mojo call facts. The database claim is
@@ -13,8 +15,8 @@ export async function GET(req: NextRequest) {
   const unauthorized = await requireAdminOrSecret(req)
   if (unauthorized) return unauthorized
 
-  const requestedLimit = Number(new URL(req.url).searchParams.get('limit') || 5)
-  const limit = Number.isFinite(requestedLimit) ? requestedLimit : 5
+  const requestedLimit = Number(new URL(req.url).searchParams.get('limit') || 1)
+  const limit = Number.isFinite(requestedLimit) ? requestedLimit : 1
 
   try {
     const result = await runWithJwtIatRetry(limit)

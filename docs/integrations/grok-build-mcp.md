@@ -17,3 +17,14 @@ Use the same dedicated `CRM_MCP_TOKEN` as the sensitive Vercel environment varia
 The server exposes live CRM contact, communication, task, workflow, website-funnel, and marketing reads. Every successful or failed data read writes metadata to `assistant_query_audit`; prompts, responses, seller PII, and tokens are not written to that audit table.
 
 All MCP tools are read-only. Consequential CRM mutations remain behind the existing human review and approval boundary.
+
+## Grok Bot / Cursor OAuth
+
+Grok Bot and Cursor cloud connectors can register the same URL without a static header. The MCP protected-resource metadata points them to the SavingKC Supabase OAuth 2.1 server, where the configured CRM actor signs in and explicitly approves read-only access.
+
+Supabase Authentication must have OAuth Server enabled with:
+
+- Authorization path: `/oauth/consent`
+- Dynamic client registration: enabled
+
+The consent screen accepts only the documented Cursor MCP callbacks and only the identity configured by `CRM_MCP_ACTOR_EMAIL`. The authorization request is limited to the `email` scope, and Supabase-issued OAuth access tokens must contain a `client_id` plus that exact email. The original static bearer credential remains supported for Grok Build CLI.

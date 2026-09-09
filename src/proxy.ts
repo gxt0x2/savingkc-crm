@@ -6,6 +6,10 @@ import { hasVerifiedSubject } from '@/lib/auth/verified-claims'
 
 // Routes that don't require authentication
 const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
+const PUBLIC_PAGE_EXACT = new Set([
+  '/.well-known/oauth-protected-resource',
+  '/.well-known/oauth-authorization-server',
+])
 
 // API routes that must remain reachable without a CRM session.
 const PUBLIC_API_EXACT = new Set([
@@ -19,6 +23,11 @@ const PUBLIC_API_EXACT = new Set([
   '/api/google-maps-key',
   // MCP performs its own dedicated bearer-token authorization in the route.
   '/api/mcp',
+  // These fixed-target OAuth bridge routes remove only the unsupported MCP
+  // resource indicator before forwarding to the configured Supabase issuer.
+  '/api/oauth/authorize',
+  '/api/oauth/register',
+  '/api/oauth/token',
   '/api/sell-edits',
   '/api/deals/image',
   '/api/docuseal/webhook',
@@ -449,7 +458,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   // Skip auth for public routes
-  if (PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
+  if (PUBLIC_PAGE_EXACT.has(pathname) || PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
     return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
 

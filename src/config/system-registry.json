@@ -391,8 +391,8 @@
       "name": "SavingKC CRM MCP",
       "owner": "Operations",
       "status": "active",
-      "routes": [],
-      "apiRoutes": ["/api/mcp"],
+      "routes": ["/.well-known/oauth-protected-resource", "/oauth/consent"],
+      "apiRoutes": ["/api/mcp", "/api/oauth/decision"],
       "tables": ["assistant_query_audit"],
       "environment": ["CRM_MCP_TOKEN", "CRM_MCP_ACTOR_EMAIL", "CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_OWNER_EMAILS"]
     },
@@ -482,9 +482,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/mojo/sync", "/api/mojo/reprocess", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/cron/sync-mojo-performance", "/api/admin/mojo-health", "/api/admin/mojo-incident", "/api/admin/mojo-performance"],
+      "apiRoutes": ["/api/mojo/sync", "/api/mojo/reprocess", "/api/recordings/mojo/[eventId]", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/cron/sync-mojo-performance", "/api/admin/mojo-health", "/api/admin/mojo-incident", "/api/admin/mojo-performance"],
       "tables": ["mojo_call_queue", "crm_mojo_call_events", "mojo_agent_daily_performance", "agent_daily_stats", "system_config", "leads", "lead_activities", "appointments", "work_items", "crm_lifecycle_events", "sms_opt_outs", "system_workers"],
-      "environment": ["MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SESSION_ID", "MOJO_PROVIDER_AGENT_ID", "MOJO_AGENT_KEY", "MOJO_ENV_FILE", "MOJO_LOG_DIR", "MOJO_SYNC_STATE_FILE", "MOJO_SUPERVISED_TIMEOUT_MS", "CRM_PERFORMANCE_URL", "CRON_SECRET", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+      "environment": ["MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SESSION_ID", "MOJO_PROVIDER_AGENT_ID", "MOJO_AGENT_KEY", "MOJO_ENV_FILE", "MOJO_LOG_DIR", "MOJO_SYNC_STATE_FILE", "MOJO_SUPERVISED_TIMEOUT_MS", "CRM_PERFORMANCE_URL", "CRON_SECRET", "GROQ_API_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
         { "path": "/api/cron/process-mojo-queue", "schedule": "*/15 * * * *" },
         { "path": "/api/cron/sync-mojo-emails", "schedule": "*/15 13-22 * * 1-5" },

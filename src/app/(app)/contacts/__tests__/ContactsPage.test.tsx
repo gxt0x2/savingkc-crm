@@ -386,6 +386,7 @@ describe('ContactsPage smart-list workspace', () => {
     render(<ContactsPage />)
 
     expect(screen.getByRole('button', { name: 'Prospects 0' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Not Leads 1' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Prospects 0' }))
     expect(screen.getByText('Prospecting')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Prospects' })).toBeInTheDocument()

@@ -102,7 +102,13 @@ export function numberValue(value: unknown): number | null {
 
 export function readRecordingDuration(metadata: unknown): number {
   const meta = record(metadata)
-  return Math.max(0, Math.round(numberValue(meta.duration) ?? numberValue(meta.recordingDuration) ?? numberValue(meta.RecordingDuration) ?? 0))
+  return Math.max(0, Math.round(
+    numberValue(meta.duration)
+      ?? numberValue(meta.duration_seconds)
+      ?? numberValue(meta.recordingDuration)
+      ?? numberValue(meta.RecordingDuration)
+      ?? 0,
+  ))
 }
 
 export function readRecordingSid(metadata: unknown): string {
@@ -117,6 +123,14 @@ export function playableRecordingUrl(metadata: unknown): string | null {
 
   const storedUrl = text(meta.recordingUrl) || text(meta.recording_url) || text(meta.RecordingUrl)
   if (storedUrl.startsWith('/api/recordings/')) return storedUrl
+
+  const provider = text(meta.provider).toLowerCase()
+  const source = text(meta.source).toLowerCase()
+  const eventId = text(meta.event_id) || text(meta.eventId)
+  const storagePath = text(meta.recording_storage_path) || text(meta.recordingStoragePath)
+  if ((provider === 'mojo' || source === 'mojo_call_event') && eventId && (storedUrl || storagePath)) {
+    return `/api/recordings/mojo/${encodeURIComponent(eventId)}`
+  }
 
   // Historical Twilio callbacks stored the protected API URL instead of the
   // in-app proxy URL. Recover the recording SID and keep credentials server-side.

@@ -37,6 +37,14 @@ export type MojoHealth = {
     queued24h: number
     total7d: number
   }
+  qualification: {
+    eligible24h: number
+    ineligible24h: number
+    evidencePending24h: number
+    recordingOutstanding24h: number
+    recordingFailed7d: number
+    analyzed24h: number
+  }
   leads: {
     last24h: number
     period: number
@@ -74,6 +82,13 @@ type MojoLeadRow = {
 type MojoPerformanceRow = {
   metric_date?: string | null
   source_fetched_at?: string | null
+}
+
+type MojoCallEventRow = {
+  call_at?: string | null
+  promotion_eligible?: boolean | null
+  qualification_status?: string | null
+  recording_processing_status?: string | null
 }
 
 const SYSTEM_CONFIG_KEYS = [
@@ -203,6 +218,14 @@ function buildFallbackHealth(error: string, now: Date): MojoHealth {
       queued24h: 0,
       total7d: 0,
     },
+    qualification: {
+      eligible24h: 0,
+      ineligible24h: 0,
+      evidencePending24h: 0,
+      recordingOutstanding24h: 0,
+      recordingFailed7d: 0,
+      analyzed24h: 0,
+    },
     leads: {
       last24h: 0,
       period: 0,
@@ -241,6 +264,7 @@ export async function getMojoHealth(
     const [
       { data: configRows, error: configError },
       { data: queueRows, error: queueError },
+      { data: callEventRows, error: callEventError },
       { data: periodLeadRows, error: periodLeadError },
       { data: recentLeadRows, error: recentLeadError },
       { data: performanceRows, error: performanceError },
@@ -255,6 +279,12 @@ export async function getMojoHealth(
         .gte('created_at', since7d)
         .order('created_at', { ascending: false })
         .limit(2000),
+      supabase
+        .from('crm_mojo_call_events')
+        .select('call_at,promotion_eligible,qualification_status,recording_processing_status')
+        .gte('call_at', since7d)
+        .order('call_at', { ascending: false })
+        .limit(5000),
       supabase
         .from('leads')
         .select('id,station,created_at')
@@ -276,7 +306,7 @@ export async function getMojoHealth(
         .limit(1),
     ])
 
-    const firstError = configError || queueError || periodLeadError || recentLeadError || performanceError
+    const firstError = configError || queueError || callEventError || periodLeadError || recentLeadError || performanceError
     if (firstError) return buildFallbackHealth(firstError.message, now)
 
     const configByKey = new Map<string, SystemConfigRow>(
@@ -306,6 +336,26 @@ export async function getMojoHealth(
     const queue = (queueRows ?? []) as MojoQueueRow[]
     const leads = (periodLeadRows ?? []) as MojoLeadRow[]
     const recentLeads = (recentLeadRows ?? []) as MojoLeadRow[]
+    const callEvents = (callEventRows ?? []) as MojoCallEventRow[]
+    const callEvents24h = callEvents.filter((event) => {
+      const callAt = isoOrNull(event.call_at)
+      return Boolean(callAt && callAt >= since24h)
+    })
+    const qualification = {
+      eligible24h: callEvents24h.filter((event) => event.promotion_eligible === true).length,
+      ineligible24h: callEvents24h.filter((event) => text(event.qualification_status) === 'ineligible').length,
+      evidencePending24h: callEvents24h.filter((event) => text(event.qualification_status) === 'evidence_pending').length
+        + queue.filter((row) => {
+          const created = isoOrNull(row.created_at)
+          return Boolean(created && created >= since24h && text(row.status).toLowerCase() === 'waiting_evidence')
+        }).length,
+      recordingOutstanding24h: callEvents24h.filter((event) => (
+        event.promotion_eligible === true
+        && !['analyzed', 'failed'].includes(text(event.recording_processing_status))
+      )).length,
+      recordingFailed7d: callEvents.filter((event) => text(event.recording_processing_status) === 'failed').length,
+      analyzed24h: callEvents24h.filter((event) => text(event.recording_processing_status) === 'analyzed').length,
+    }
     const queued24hRows = queue.filter((row) => {
       const created = isoOrNull(row.created_at)
       return created ? created >= since24h : false
@@ -379,9 +429,10 @@ export async function getMojoHealth(
     } else if (syncHealth.toLowerCase() === 'down') {
       status = 'attention'
       message = lastError || 'Mojo sync freshness is outside the supervised limit'
-    } else if (deadLetterRows.length > 0 || failed24hRows.length > 0) {
+    } else if (deadLetterRows.length > 0 || failed24hRows.length > 0 || qualification.recordingFailed7d > 0) {
       status = 'attention'
-      message = `Mojo queue has ${deadLetterRows.length + failed24hRows.length} failed item${deadLetterRows.length + failed24hRows.length === 1 ? '' : 's'}`
+      const failureCount = deadLetterRows.length + failed24hRows.length + qualification.recordingFailed7d
+      message = `Mojo ingestion has ${failureCount} failed item${failureCount === 1 ? '' : 's'}`
     } else if (businessHours && !lastSyncAt) {
       status = 'attention'
       message = 'Mojo sync has no successful timestamp during business hours'
@@ -403,9 +454,10 @@ export async function getMojoHealth(
     } else if (businessHours && (lastSyncAgeMinutes ?? 0) >= 60) {
       status = 'watch'
       message = `Mojo sync is stale by ${lastSyncAgeMinutes} minutes`
-    } else if (pending > 0 || processing > 0) {
+    } else if (pending > 0 || processing > 0 || qualification.recordingOutstanding24h > 0 || qualification.evidencePending24h > 0) {
       status = 'watch'
-      message = `Mojo queue has ${pending + processing} active item${pending + processing === 1 ? '' : 's'}`
+      const activeCount = pending + processing + qualification.recordingOutstanding24h + qualification.evidencePending24h
+      message = `Mojo ingestion has ${activeCount} active item${activeCount === 1 ? '' : 's'}`
     }
 
     return {
@@ -442,6 +494,7 @@ export async function getMojoHealth(
         queued24h: queued24hRows.length,
         total7d: queue.length,
       },
+      qualification,
       leads: {
         last24h: recentLeads.length,
         period: leads.length,

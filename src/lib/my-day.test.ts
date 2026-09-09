@@ -340,6 +340,31 @@ describe('Casey My Day model', () => {
     expect(items).toEqual([])
   })
 
+  it('surfaces legacy terminal records that have no lifecycle audit row', () => {
+    const items = buildMojoAttentionItems({
+      events: [{
+        record_id: 'mojo-howard',
+        lead_id: 'legacy-dead-lead',
+        contact_name: 'Howard Snitkoff',
+        property_address: '8032 W 80th St',
+        call_at: '2026-08-05T15:13:00.000Z',
+        disposition_raw: 'Interested',
+        outcome: 'meaningful_conversation',
+        follow_up_at: null,
+      }],
+      leads: [{ id: 'legacy-dead-lead', full_name: 'Howard Snitkoff', property_address: '8032 W 80th St', station: 'dead', classification: 'lead' }],
+      terminalEvents: [],
+      reviewedRecordIds: [],
+      range: input().range,
+    })
+
+    expect(items).toEqual([expect.objectContaining({
+      recordId: 'mojo-howard',
+      leadName: 'Howard Snitkoff',
+      kind: 'terminal_record_activity',
+    })])
+  })
+
   it('suppresses a Mojo reconciliation notice after its record was reviewed', () => {
     const items = buildMojoAttentionItems({
       events: [{
