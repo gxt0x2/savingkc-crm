@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
 
-import { AssistantSources } from '@/components/ai/assistant-sources'
+import { AssistantMessage } from '@/components/ai/assistant-message'
 import { Icon } from '@/components/ui/icon'
 import { useAssistantThread } from '@/hooks/use-assistant-thread'
 
@@ -184,9 +184,8 @@ export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolea
             {messages.map((message) => (
               <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-5 shadow-sm sm:max-w-[88%] sm:text-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}>
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  {message.role === 'assistant' ? <AssistantMessage content={message.content} sources={message.sources} /> : <p className="whitespace-pre-wrap">{message.content}</p>}
                   {message.attachments.length ? <div className="mt-2 flex flex-wrap gap-1">{message.attachments.map((attachment) => <span key={attachment.name} className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold">{attachment.name}</span>)}</div> : null}
-                  {message.role === 'assistant' ? <AssistantSources sources={message.sources} /> : null}
                 </div>
               </div>
             ))}
