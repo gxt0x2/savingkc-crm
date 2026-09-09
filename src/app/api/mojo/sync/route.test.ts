@@ -128,6 +128,34 @@ describe('/api/mojo/sync', () => {
     }))
   })
 
+  it('queues a real future follow-up even while qualification evidence is pending', async () => {
+    const followUpDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calls: [{
+        ...validCall,
+        call_duration: 0,
+        recording_url: undefined,
+        notes: 'Please call me tomorrow afternoon.',
+        follow_up_date: followUpDate,
+      }] }),
+    }) as never)
+    await expect(response.json()).resolves.toMatchObject({
+      queued: 1,
+      evidenceOnly: 1,
+      held: 0,
+    })
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending',
+      payload: expect.objectContaining({
+        follow_up_date: followUpDate,
+        promotion_eligible: false,
+        qualification_status: 'evidence_pending',
+      }),
+    }))
+  })
+
   it('releases persisted evidence to the worker when a recording arrives later', async () => {
     mocks.insert.mockResolvedValue({ error: { code: '23505', message: 'duplicate' } })
     mocks.maybeSingle.mockResolvedValue({

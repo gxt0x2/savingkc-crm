@@ -463,7 +463,8 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     // === MEANINGFUL CHECK ===
     const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
     const isMeaningfulNotes = mojoSellerIntelSignals(entry.notes).length > 0
-    const isMeaningful = entry.isQualifiedLead || entry.hasAppointment || isMeaningfulGroup || isMeaningfulNotes
+    const hasScheduledFollowUp = Boolean(entry.followUpDate)
+    const isMeaningful = entry.isQualifiedLead || entry.hasAppointment || hasScheduledFollowUp || isMeaningfulGroup || isMeaningfulNotes
 
     if (!isMeaningful) {
       skippedCount++
@@ -473,7 +474,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     // Map disposition
     let disposition = 'Interested'
     if (entry.hasAppointment || groupLower.includes('appointment')) disposition = 'Appointment Set'
-    else if (groupLower.includes('follow up')) disposition = 'Callback Requested'
+    else if (hasScheduledFollowUp || groupLower.includes('follow up')) disposition = 'Callback Requested'
 
     // Clean notes — strip phone from first line
     let cleanNotes = entry.notes

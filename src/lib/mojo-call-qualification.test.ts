@@ -59,6 +59,21 @@ describe('Mojo CRM qualification policy', () => {
     })).toMatchObject({ eligible: false, status: 'ineligible', reasons: ['negative_intent'] })
   })
 
+  it('allows a reasoned agent exception without weakening the ordinary negative-intent guard', () => {
+    expect(assessMojoCallQualification({
+      outcome: 'meaningful_conversation',
+      call_duration: 758,
+      recording_url: 'https://app71.mojosells.com/audio/3',
+      notes: 'He said no thank you and abruptly hung up, but the CRM owner approved this record as a special exception.',
+      qualified_by_agent: true,
+      qualification_override_reason: 'CRM owner approved Howard Snitkoff as a one-off exception on 2026-09-09.',
+    })).toMatchObject({
+      eligible: true,
+      status: 'eligible',
+      reasons: ['agent_qualified', 'negative_intent_overridden', 'minimum_duration_met'],
+    })
+  })
+
   it('holds missing recording evidence for a later retry', () => {
     expect(assessMojoCallQualification({
       outcome: 'meaningful_conversation',
