@@ -38,12 +38,12 @@ export async function POST(req: NextRequest) {
       let call: MojoCallRecord
       let waitingForEvidence = false
       try {
-        const qualified = qualifyMojoCallRecord(raw as MojoCallRecord)
-        call = qualified.call
-        waitingForEvidence = qualified.assessment.status === 'evidence_pending'
+        const qualification = qualifyMojoCallRecord(raw as MojoCallRecord)
+        call = qualification.call
+        waitingForEvidence = qualification.assessment.status === 'evidence_pending'
         if (waitingForEvidence) {
           held++
-          for (const reason of qualified.assessment.reasons) {
+          for (const reason of qualification.assessment.reasons) {
             heldReasons[reason] = (heldReasons[reason] || 0) + 1
           }
         }
