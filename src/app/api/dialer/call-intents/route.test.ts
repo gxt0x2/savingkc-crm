@@ -16,7 +16,12 @@ vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   isAllowedDialerCallerId: (value: string) => ['+18167277667', '+18163100845'].includes(value),
   dialerBlockStatus: (reason: string) => reason === 'policy_unavailable' ? 503 : 409,
 }))
-vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: mocks.createDialerCallIntent }))
+vi.mock('@/lib/telephony/dialer-call-intent', () => ({
+  createDialerCallIntent: mocks.createDialerCallIntent,
+  dialerCallIntentFailureSource: (error: unknown) => (
+    error instanceof Error && error.message.includes('context') ? 'intent_claims' : 'intent_signing'
+  ),
+}))
 vi.mock('@/lib/server/dialer-session-engine', () => ({
   authorizeDialerSessionAttempt: mocks.authorizeDialerSessionAttempt,
   getDialerSession: mocks.getDialerSession,
@@ -139,6 +144,49 @@ describe('web dialer call intent authorization', () => {
       clientAttemptId: 'attempt-1',
     })
     expect(await response.json()).toMatchObject({ allowed: true, intent: 'signed-intent' })
+  })
+
+  it('strips inferred lead context from a manual CRM intent', async () => {
+    const response = await postCrmCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'manual',
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'manual',
+      source: 'web_manual',
+      leadId: null,
+      prospectId: null,
+      prospectPhoneId: null,
+    }))
+  })
+
+  it('strips linked prospect context that is invalid for an heir intent', async () => {
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({
+      ...allowed,
+      prospectId: 'prospect-1',
+      prospectPhoneId: 'prospect-phone-1',
+    })
+
+    const response = await postProspectingCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'heir',
+      leadId: 'lead-1',
+      prospectPhoneId: 'prospect-phone-1',
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'heir',
+      leadId: 'lead-1',
+      prospectId: null,
+      prospectPhoneId: 'prospect-phone-1',
+    }))
   })
 
   it('keeps Prospecting source and policy context separate from CRM lead calls', async () => {

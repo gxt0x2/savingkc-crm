@@ -18,8 +18,8 @@
   <key>ThrottleInterval</key>
   <integer>60</integer>
   <key>StandardOutPath</key>
-  <string>/Users/ernestdodson/.openclaw/workspace/memory/logs/mojo-supervised-runner.log</string>
+  <string>__LOG_PATH__</string>
   <key>StandardErrorPath</key>
-  <string>/Users/ernestdodson/.openclaw/workspace/memory/logs/mojo-supervised-runner.log</string>
+  <string>__LOG_PATH__</string>
 </dict>
 </plist>

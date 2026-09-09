@@ -1,4 +1,5 @@
 import { formatLeadSource } from '@/lib/contact-display'
+import { isSavingKcWorkday } from '@/lib/company-calendar'
 import { isReachedDisposition } from '@/lib/dialer-dispositions'
 import { playableRecordingUrl, readCallReviewWorkflow, readRecordingReview } from '@/lib/marketing/call-recordings'
 import { stageLabel } from '@/lib/utils'
@@ -324,7 +325,8 @@ function requiredPerformanceDates(range: MyDayDateRange, now: Date): string[] {
   const final = new Date(`${end}T12:00:00Z`)
   const dates: string[] = []
   while (cursor <= final) {
-    dates.push(cursor.toISOString().slice(0, 10))
+    const value = cursor.toISOString().slice(0, 10)
+    if (isSavingKcWorkday(value)) dates.push(value)
     cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
   return dates
@@ -366,8 +368,7 @@ function workdaysInRange(range: Pick<MyDayDateRange, 'from' | 'to'>): number {
   const cursor = new Date(`${range.from}T12:00:00Z`)
   const end = new Date(`${range.to}T12:00:00Z`)
   while (cursor <= end) {
-    const weekday = cursor.getUTCDay()
-    if (weekday >= 1 && weekday <= 5) count += 1
+    if (isSavingKcWorkday(cursor.toISOString().slice(0, 10))) count += 1
     cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
   return count
@@ -536,7 +537,12 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     { key: 'offers', label: 'Offers Made', icon: 'sell', tone: 'green', days: valuesByDay(weeklyOfferEntries.values(), days), total: null },
     { key: 'contracts', label: 'Under Contract', icon: 'description', tone: 'indigo', days: valuesByDay(weeklyContractEntries.values(), days), total: null },
   ]
-  const weeklyRows = weeklyRowValues.map((row) => ({ ...row, total: total(row.days) }))
+  const weeklyRows = weeklyRowValues.map((row) => {
+    const holidayAwareDays = row.days.map((value, index) => (
+      !isSavingKcWorkday(days[index]) && value === 0 ? null : value
+    ))
+    return { ...row, days: holidayAwareDays, total: total(holidayAwareDays) }
+  })
 
   const followupsCompleted = stats.reduce((sum, row) => sum + number(row.followups_completed), 0)
   const followupsMissed = stats.reduce((sum, row) => sum + number(row.followups_missed), 0)

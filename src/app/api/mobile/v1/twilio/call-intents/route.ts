@@ -11,7 +11,7 @@ import {
   isAllowedDialerCallerId,
   recordBlockedDialerCall,
 } from '@/lib/server/dialer-call-eligibility'
-import { createDialerCallIntent } from '@/lib/telephony/dialer-call-intent'
+import { createDialerCallIntent, dialerCallIntentFailureSource } from '@/lib/telephony/dialer-call-intent'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 export const dynamic = 'force-dynamic'
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
         kind,
         source: policyInput.source,
         surface: policyInput.surface,
-        leadId: policy.leadId,
+        leadId: kind === 'lead' ? policy.leadId : null,
         clientAttemptId,
       })
       return json({
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
         expiresAt: issued.claims.expiresAt,
       })
     } catch (error) {
+      const reasonSource = dialerCallIntentFailureSource(error)
       console.error('[mobile/twilio/call-intents] Intent signing unavailable', error)
       await recordBlockedDialerCall(policyInput, {
         allowed: false,
@@ -105,13 +106,13 @@ export async function POST(request: NextRequest) {
         leadId: policy.leadId,
         prospectId: null,
         prospectPhoneId: policy.prospectPhoneId,
-        reasonSource: 'intent_signing',
+        reasonSource,
       })
       return json({
         allowed: false,
         error: 'Calling is paused because authorization is unavailable',
         reason: 'policy_unavailable',
-        reasonSource: 'intent_signing',
+        reasonSource,
       }, 503)
     }
   } catch (error) {

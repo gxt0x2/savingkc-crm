@@ -440,7 +440,8 @@ async function evaluateOutboundDialerCallUnchecked(
       callingHoursExempt: input.source === 'form_lead_callback' || input.source === 'google_ads_callback',
     })
 
-    const resolvedLeadId = input.prospectId
+    const manualSource = ['web_manual', 'web_recent_redial', 'mobile_manual'].includes(input.source)
+    const resolvedLeadId = manualSource || input.prospectId
       ? null
       : input.leadId ?? leads[0]?.id ?? prospectPhones.map(linkedLeadId).find(Boolean) ?? null
     return decision(policyDecision, {

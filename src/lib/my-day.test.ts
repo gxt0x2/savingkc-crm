@@ -125,6 +125,24 @@ describe('Casey My Day model', () => {
     expect(report.habits.find((habit) => habit.key === 'followup')?.value).toBe(80)
   })
 
+  it('marks Labor Day as closed and removes it from the calling target', () => {
+    const now = new Date('2026-09-08T16:30:00.000Z')
+    const report = buildMyDay(input({
+      month: '2026-09',
+      now,
+      range: { preset: 'this_week', from: '2026-09-07', to: '2026-09-08', label: 'This week' },
+      stats: [],
+      performance: [
+        { metric_date: '2026-09-07', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-09-07T22:59:00.000Z' },
+        { metric_date: '2026-09-08', dialing_seconds: 600, in_progress_seconds: 0, calls: 5, contacts: 1, leads: 0, appointments: 0, source_fetched_at: '2026-09-08T16:25:00.000Z' },
+      ],
+    }))
+
+    expect(report.performance.status).toBe('available')
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([null, 5, null, null, null])
+    expect(report.habits.find((habit) => habit.key === 'calling')?.value).toBe(100)
+  })
+
   it('defaults My Day to today while retaining the containing workweek breakdown', () => {
     const now = new Date('2026-08-05T18:00:00.000Z')
     const range = resolveMyDayDateRange({}, now)
@@ -200,7 +218,7 @@ describe('Casey My Day model', () => {
   })
 
   it('withholds aggregate totals when even one required provider day is missing', () => {
-    const report = buildMyDay(input({ performance: input().performance.filter((row) => row.metric_date !== '2026-08-02') }))
+    const report = buildMyDay(input({ performance: input().performance.filter((row) => row.metric_date !== '2026-08-04') }))
     expect(report.performance.status).toBe('partial')
     expect(report.funnel[0].value).toBeNull()
     expect(report.funnel[1].value).toBeNull()
