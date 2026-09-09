@@ -70,7 +70,11 @@ export function buildMojoAttentionItems(input: {
     const terminal = terminalStages.has((lead?.station || '').toLowerCase())
       || (lead?.classification || '').toLowerCase() === 'dead'
     const eventTime = new Date(event.call_at).getTime()
-    const wasTerminalAtEvent = input.terminalEvents.some((terminalEvent) => (
+    const leadTerminalEvents = input.terminalEvents.filter((terminalEvent) => (
+      terminalEvent.lead_id === event.lead_id
+      && terminalStages.has((terminalEvent.to_stage || '').toLowerCase())
+    ))
+    const wasTerminalAtEvent = leadTerminalEvents.length === 0 || leadTerminalEvents.some((terminalEvent) => (
       terminalEvent.lead_id === event.lead_id
       && terminalStages.has((terminalEvent.to_stage || '').toLowerCase())
       && new Date(terminalEvent.occurred_at).getTime() <= eventTime

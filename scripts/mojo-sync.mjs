@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Mojo Sync Script v3
- * Pulls call activity from Mojo's activity-stream API, syncs ONLY meaningful
- * conversations to canonical CRM call evidence.
+ * Pulls call activity from Mojo's activity-stream API into canonical evidence.
+ * Only calls that pass the governed qualification policy may create/promote a lead.
  *
  * MEANINGFUL = Casey had a real conversation and dispositioned to:
  *   - "Follow Up" (group 7)
@@ -29,6 +29,17 @@ import {
   recordMojoSessionIssue,
 } from './mojo-session-health.mjs'
 import { syncMojoPerformanceSnapshot } from './mojo-kpi-snapshot.mjs'
+import {
+  centralDateString,
+  indexMojoRecordings,
+  matchMojoRecording,
+  normalizeMojoDateTime,
+  parseMojoTimestamp,
+} from './mojo-call-evidence.mjs'
+import {
+  assessMojoCallQualification,
+  mojoSellerIntelSignals,
+} from '../src/lib/mojo-call-qualification.mjs'
 
 loadMojoEnv()
 
@@ -128,7 +139,8 @@ async function writeLastSyncTimestamp(timestamp) {
 
 async function processMojoQueue(reason = 'scheduled_sync') {
   try {
-    const res = await fetch(CRM_QUEUE_URL, {
+    const queueUrl = `${CRM_QUEUE_URL}${CRM_QUEUE_URL.includes('?') ? '&' : '?'}limit=1`
+    const res = await fetch(queueUrl, {
       headers: adminHeaders({ accept: 'application/json' }),
       signal: AbortSignal.timeout(120000),
     })
@@ -292,9 +304,9 @@ async function fetchContactDetails(sessionId, contactId) {
  * Returns a map of contactId → recording URL.
  */
 async function fetchTodayRecordings(sessionId) {
-  const recordingMap = new Map() // contactId → { audio, duration, recordId }
+  let recordingMap = new Map()
   try {
-    const today = new Date().toISOString().split('T')[0]
+    const today = centralDateString()
     const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${today}&to=${today}`
     const response = await fetch(url, {
       headers: mojoHeaders(sessionId),
@@ -308,25 +320,7 @@ async function fetchTodayRecordings(sessionId) {
     const recordings = data.recordings || []
     log(`Fetched ${recordings.length} recordings for ${today}`)
 
-    for (const rec of recordings) {
-      const contactId = rec.contact?.id
-      if (contactId && rec.audio) {
-        // Keep longest recording per contact
-        const existing = recordingMap.get(contactId)
-        const durParts = (rec.duration || '0:00').split(':').map(Number)
-        const durSec = durParts.length === 3
-          ? durParts[0] * 3600 + durParts[1] * 60 + durParts[2]
-          : durParts[0] * 60 + (durParts[1] || 0)
-
-        if (!existing || durSec > existing.duration) {
-          recordingMap.set(contactId, {
-            audio: rec.audio,
-            duration: durSec,
-            recordId: rec.record_id,
-          })
-        }
-      }
-    }
+    recordingMap = indexMojoRecordings(recordings)
   } catch (err) {
     logError('Failed to fetch recordings', err)
   }
@@ -378,47 +372,6 @@ function extractPhone(noteContent) {
  *   Price: 160-185k
  *   Motivation: wants a clean slate
  */
-function hasSellerIntel(noteContent) {
-  if (!noteContent) return false
-  const lower = noteContent.toLowerCase()
-
-  // Structured intel keywords Casey uses
-  if (lower.includes('timeline:') || lower.includes('motivation:') ||
-      lower.includes('price:') || lower.includes('condition:') ||
-      lower.includes('asking price') || lower.includes('wants to sell') ||
-      lower.includes('appointment set') || lower.includes('rent back') ||
-      lower.includes('equity') || lower.includes('foreclosure') ||
-      lower.includes('inherited') || lower.includes('probate')) {
-    return true
-  }
-
-  // Substantial free-form notes (not just "no contact 04/06")
-  const lines = noteContent.split('\n').filter(l => l.trim())
-  const textLength = noteContent.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim().length
-  if (lines.length >= 3 && textLength > 80) {
-    return true
-  }
-
-  return false
-}
-
-/**
- * Parse Mojo timestamp "04/06/2026 01:40 PM" to ISO string
- */
-function parseMojoTimestamp(ts) {
-  try {
-    const [datePart, timePart, ampm] = ts.split(' ')
-    const [month, day, year] = datePart.split('/')
-    let [hours, minutes] = timePart.split(':').map(Number)
-    if (ampm === 'PM' && hours !== 12) hours += 12
-    if (ampm === 'AM' && hours === 12) hours = 0
-    const d = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00-05:00`)
-    return d.toISOString()
-  } catch {
-    return new Date().toISOString()
-  }
-}
-
 /**
  * Process activities into MEANINGFUL call records only.
  * Now fetches contact details (address, phone) from Mojo for each meaningful contact.
@@ -509,7 +462,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
 
     // === MEANINGFUL CHECK ===
     const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
-    const isMeaningfulNotes = hasSellerIntel(entry.notes)
+    const isMeaningfulNotes = mojoSellerIntelSignals(entry.notes).length > 0
     const isMeaningful = entry.isQualifiedLead || entry.hasAppointment || isMeaningfulGroup || isMeaningfulNotes
 
     if (!isMeaningful) {
@@ -532,17 +485,27 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     log(`  Fetching contact details for provider contact ${contactId}...`)
     const contactDetails = await fetchContactDetails(sessionId, contactId)
 
-    // Check for recording from today's recording report
-    const recording = recordingMap?.get(Number(contactId))
+    const callAt = parseMojoTimestamp(entry.timestamp)
+    // Match the nearest unused recording for this contact. A contact can have
+    // multiple calls in one day, so longest-per-contact is not a safe identity.
+    const recording = matchMojoRecording(recordingMap, contactId, callAt)
     if (recording) {
       log(`  Found recording for contact ${contactId}: ${recording.duration}s (record_id: ${recording.recordId})`)
     }
 
     // Use follow-up date from activity stream or contact details
-    const followUpDate = entry.followUpDate || contactDetails.followUpDate || ''
+    const rawFollowUpDate = entry.followUpDate || contactDetails.followUpDate || ''
+    let followUpDate = ''
+    try {
+      followUpDate = normalizeMojoDateTime(rawFollowUpDate)
+    } catch (error) {
+      logError(`Ignoring invalid follow-up date for ${entry.contactName}`, error)
+    }
     const canonicalActivityId = Math.max(...entry.activityIds)
 
     const call = {
+      // Keep the historical provider-activity identity stable. The recording
+      // ID is supporting evidence and may arrive after the call event.
       record_id: `mojo-activity-${contactId}-${canonicalActivityId}`,
       contact_name: entry.contactName,
       phone_number: entry.phone || contactDetails.phone,
@@ -550,7 +513,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
       city: contactDetails.city,
       state: contactDetails.state,
       zip: contactDetails.zip,
-      call_date: parseMojoTimestamp(entry.timestamp),
+      call_date: callAt,
       call_duration: recording?.duration || 0,
       disposition,
       agent_name: entry.agentName,
@@ -558,10 +521,30 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
       list_name: '',
       campaign_name: '',
       recording_url: recording?.audio || '',
+      provider_contact_id: String(contactId),
+      provider_recording_id: recording?.recordId || '',
+      qualified_by_agent: entry.isQualifiedLead,
+      has_appointment: entry.hasAppointment,
       follow_up_date: followUpDate,
       email: contactDetails.email,
     }
 
+    const qualification = assessMojoCallQualification({
+      ...call,
+      outcome: disposition === 'Appointment Set'
+        ? 'appointment_set'
+        : disposition === 'Callback Requested'
+          ? 'callback_scheduled'
+          : 'meaningful_conversation',
+    })
+    call.promotion_eligible = qualification.eligible
+    call.qualification_status = qualification.status
+    call.qualification_reasons = qualification.reasons
+    if (qualification.status === 'evidence_pending') {
+      log(`  Persisting ${entry.contactName} for end-of-day evidence retry (${qualification.reasons.join(', ')})`)
+    } else if (!qualification.eligible) {
+      log(`  Recording provider evidence for ${entry.contactName} without CRM promotion (${qualification.reasons.join(', ')})`)
+    }
     calls.push(call)
   }
 
@@ -645,7 +628,7 @@ async function sync() {
 
     // Build MEANINGFUL call records only (filtered by both activityId and timestamp)
     const { calls, skippedCount, maxId, maxCallTimestamp } = await buildCallRecords(activities, state.lastActivityId, session.sessionId, recordingMap, lastSyncTimestamp)
-    log(`Built ${calls.length} meaningful calls, skipped ${skippedCount} non-meaningful`)
+    log(`Built ${calls.length} evidence records, skipped ${skippedCount} non-candidates`)
 
     if (calls.length === 0) {
       if (maxId > state.lastActivityId) {
@@ -664,7 +647,7 @@ async function sync() {
     for (const c of calls) log(`  -> ${c.record_id} — ${c.disposition}`)
 
     // POST to CRM
-    log(`Posting ${calls.length} meaningful calls to CRM...`)
+    log(`Posting ${calls.length} governed call evidence records to CRM...`)
     const crmResponse = await fetch(CRM_API_URL, {
       method: 'POST',
       headers: adminHeaders({ 'content-type': 'application/json' }),

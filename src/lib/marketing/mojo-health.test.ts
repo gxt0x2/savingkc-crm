@@ -22,14 +22,15 @@ function database(performance: unknown[], config = [
   { key: 'mojo_session_status', value: 'healthy' },
   { key: 'mojo_sync_health', value: 'healthy' },
   { key: 'mojo_sync_last_ok_at', value: '2026-09-04T19:00:00.000Z' },
-]) {
+], queueRows: unknown[] = [], eventRows: unknown[] = []) {
   let leadQuery = 0
   return {
     from: (table: string) => {
       if (table === 'system_config') {
         return query({ data: config, error: null })
       }
-      if (table === 'mojo_call_queue') return query({ data: [], error: null })
+      if (table === 'mojo_call_queue') return query({ data: queueRows, error: null })
+      if (table === 'crm_mojo_call_events') return query({ data: eventRows, error: null })
       if (table === 'leads') {
         leadQuery += 1
         return query({ data: leadQuery ? [] : [], error: null })
@@ -91,5 +92,21 @@ describe('Mojo health data watermark', () => {
     expect(health.status).toBe('attention')
     expect(health.performance.status).toBe('current')
     expect(health.performance.message).toBe('Mojo provider performance is current')
+  })
+
+  it('surfaces calls that are durably waiting for recording evidence', async () => {
+    const health = await getMojoHealth(database(
+      [{ metric_date: '2026-09-08', source_fetched_at: '2026-09-08T22:55:00.000Z' }],
+      [
+        { key: 'mojo_session_status', value: 'healthy' },
+        { key: 'mojo_sync_health', value: 'healthy' },
+        { key: 'mojo_sync_last_ok_at', value: '2026-09-08T22:55:00.000Z' },
+      ],
+      [{ status: 'waiting_evidence', created_at: '2026-09-08T22:30:00.000Z' }],
+    ) as never, { now: new Date('2026-09-08T23:00:00.000Z') })
+
+    expect(health.qualification.evidencePending24h).toBe(1)
+    expect(health.status).toBe('watch')
+    expect(health.message).toBe('Mojo ingestion has 1 active item')
   })
 })

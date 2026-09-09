@@ -23,14 +23,16 @@ describe('Mojo call analyzer model transport', () => {
 
     await expect(analyzeCallTranscript(
       'Seller: Please call me Friday.',
-      undefined,
+      { referenceDate: '2026-09-09T03:00:00.000Z' },
       requestMock as unknown as typeof fetch,
     )).resolves.toMatchObject({ aiSummary: 'The seller requested a Friday call.', motivationScore: 6 })
 
-    expect(JSON.parse(String((requestMock.mock.calls[0]?.[1] as RequestInit)?.body))).toMatchObject({
+    const requestBody = JSON.parse(String((requestMock.mock.calls[0]?.[1] as RequestInit)?.body))
+    expect(requestBody).toMatchObject({
       model: MOJO_CALL_ANALYZER_MODEL,
       response_format: { type: 'json_object' },
       max_completion_tokens: 4000,
     })
+    expect(requestBody.messages[0].content).toContain('(2026-09-08)')
   })
 })

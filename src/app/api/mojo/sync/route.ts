@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
-import { normalizeMojoCallRecord, type MojoCallRecord } from '@/lib/server/mojo-call-import'
+import { mergeMojoCallEvidence, qualifyMojoCallRecord, type MojoCallRecord } from '@/lib/server/mojo-call-import'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export type { MojoCallRecord }
@@ -29,11 +29,24 @@ export async function POST(req: NextRequest) {
     let queued = 0
     let skipped = 0
     let rejected = 0
+    let held = 0
+    let enriched = 0
+    let evidenceOnly = 0
+    const heldReasons: Record<string, number> = {}
 
     for (const raw of body.calls) {
       let call: MojoCallRecord
+      let waitingForEvidence = false
       try {
-        call = normalizeMojoCallRecord(raw)
+        const qualified = qualifyMojoCallRecord(raw as MojoCallRecord)
+        call = qualified.call
+        waitingForEvidence = qualified.assessment.status === 'evidence_pending'
+        if (waitingForEvidence) {
+          held++
+          for (const reason of qualified.assessment.reasons) {
+            heldReasons[reason] = (heldReasons[reason] || 0) + 1
+          }
+        }
       } catch {
         rejected++
         continue
@@ -42,19 +55,52 @@ export async function POST(req: NextRequest) {
       const { error } = await db.from('mojo_call_queue').insert({
         record_id: call.record_id,
         payload: call,
-        status: 'pending',
+        status: waitingForEvidence ? 'waiting_evidence' : 'pending',
       })
       if (!error) {
-        queued++
+        if (!waitingForEvidence) {
+          queued++
+          if (!call.promotion_eligible) evidenceOnly++
+        }
       } else if (error.code === '23505' || error.message?.toLowerCase().includes('duplicate')) {
-        skipped++
+        const { data: existing } = await db
+          .from('mojo_call_queue')
+          .select('payload,status')
+          .eq('record_id', call.record_id)
+          .maybeSingle()
+        if (!existing?.payload || existing.status === 'processing') {
+          skipped++
+          continue
+        }
+        const merged = mergeMojoCallEvidence(existing.payload, call)
+        if (!merged.improved) {
+          skipped++
+          continue
+        }
+        const mergedWaitingForEvidence = merged.call.qualification_status === 'evidence_pending'
+        const resetStatus = ['completed', 'dead_letter', 'failed', 'waiting_evidence'].includes(existing.status)
+        const { error: updateError } = await db
+          .from('mojo_call_queue')
+          .update({
+            payload: merged.call,
+            ...(resetStatus && {
+              status: mergedWaitingForEvidence ? 'waiting_evidence' : 'pending',
+              attempts: 0,
+              completed_at: null,
+              processing_started_at: null,
+              last_error: null,
+            }),
+          })
+          .eq('record_id', call.record_id)
+        if (updateError) rejected++
+        else enriched++
       } else {
         console.error('[mojo/sync] Queue insert failed:', error.message)
         rejected++
       }
     }
 
-    return NextResponse.json({ queued, skipped, rejected, total: body.calls.length })
+    return NextResponse.json({ queued, evidenceOnly, enriched, held, heldReasons, skipped, rejected, total: body.calls.length })
   } catch (error) {
     console.error('[mojo/sync] Queue request failed:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

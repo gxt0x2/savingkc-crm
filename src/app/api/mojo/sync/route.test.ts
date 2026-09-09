@@ -4,11 +4,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   requireAdminOrSecret: vi.fn(),
   insert: vi.fn(),
+  maybeSingle: vi.fn(),
+  update: vi.fn(),
+  updateEq: vi.fn(),
 }))
 
 vi.mock('@/lib/api/admin-auth', () => ({ requireAdminOrSecret: mocks.requireAdminOrSecret }))
 vi.mock('@/lib/supabase/admin', () => ({
-  supabaseAdmin: () => ({ from: () => ({ insert: mocks.insert }) }),
+  supabaseAdmin: () => ({
+    from: () => ({
+      insert: mocks.insert,
+      select: () => ({ eq: () => ({ maybeSingle: mocks.maybeSingle }) }),
+      update: mocks.update,
+    }),
+  }),
 }))
 
 import { POST } from './route'
@@ -22,9 +31,12 @@ const validCall = {
   state: 'MO',
   zip: '64111',
   call_date: '2026-08-24T12:00:00Z',
-  call_duration: 90,
+  call_duration: 180,
   disposition: 'Callback requested',
   agent_name: 'Casey',
+  notes: 'Motivation: retiring. Timeline: 60 days.',
+  recording_url: 'https://app71.mojosells.com/audio/1',
+  follow_up_date: '2026-08-25T15:00:00Z',
 }
 
 describe('/api/mojo/sync', () => {
@@ -32,6 +44,9 @@ describe('/api/mojo/sync', () => {
     vi.clearAllMocks()
     mocks.requireAdminOrSecret.mockResolvedValue(null)
     mocks.insert.mockResolvedValue({ error: null })
+    mocks.maybeSingle.mockResolvedValue({ data: null, error: null })
+    mocks.updateEq.mockResolvedValue({ error: null })
+    mocks.update.mockReturnValue({ eq: mocks.updateEq })
   })
 
   it('rejects an untrusted request before parsing or writing', async () => {
@@ -48,9 +63,113 @@ describe('/api/mojo/sync', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ calls: [validCall, { disposition: 'No answer' }] }),
     }) as never)
-    await expect(response.json()).resolves.toEqual({ queued: 1, skipped: 0, rejected: 1, total: 2 })
+    await expect(response.json()).resolves.toEqual({
+      queued: 1,
+      evidenceOnly: 0,
+      enriched: 0,
+      held: 0,
+      heldReasons: {},
+      skipped: 0,
+      rejected: 1,
+      total: 2,
+    })
     expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
       record_id: 'mojo-1', status: 'pending',
+    }))
+  })
+
+  it('records a callback label without a scheduled time as non-promoted evidence', async () => {
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calls: [{
+        ...validCall,
+        call_duration: 0,
+        recording_url: undefined,
+        notes: 'Bad time. Asked for a call back later.',
+        follow_up_date: undefined,
+      }] }),
+    }) as never)
+    await expect(response.json()).resolves.toMatchObject({
+      queued: 1,
+      evidenceOnly: 1,
+      held: 0,
+    })
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending',
+      payload: expect.objectContaining({
+        promotion_eligible: false,
+        qualification_status: 'ineligible',
+        qualification_reasons: ['callback_without_scheduled_time'],
+      }),
+    }))
+  })
+
+  it('persists a meaningful candidate while its recording evidence is pending', async () => {
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calls: [{
+        ...validCall,
+        disposition: 'Interested',
+        call_duration: 0,
+        recording_url: undefined,
+        follow_up_date: undefined,
+      }] }),
+    }) as never)
+    await expect(response.json()).resolves.toMatchObject({
+      queued: 0,
+      held: 1,
+      heldReasons: { recording_pending: 1 },
+    })
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'waiting_evidence',
+      payload: expect.objectContaining({ qualification_status: 'evidence_pending' }),
+    }))
+  })
+
+  it('releases persisted evidence to the worker when a recording arrives later', async () => {
+    mocks.insert.mockResolvedValue({ error: { code: '23505', message: 'duplicate' } })
+    mocks.maybeSingle.mockResolvedValue({
+      data: {
+        status: 'waiting_evidence',
+        payload: {
+          ...validCall,
+          call_duration: 0,
+          recording_url: undefined,
+        },
+      },
+      error: null,
+    })
+
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calls: [validCall] }),
+    }) as never)
+
+    await expect(response.json()).resolves.toMatchObject({ enriched: 1, held: 0 })
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending',
+      attempts: 0,
+      payload: expect.objectContaining({ promotion_eligible: true, qualification_status: 'eligible' }),
+    }))
+  })
+
+  it('queues known ineligible evidence without granting promotion authority', async () => {
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calls: [{
+        ...validCall,
+        call_duration: 45,
+        notes: 'Bad time. Asked for a call back later.',
+        follow_up_date: undefined,
+      }] }),
+    }) as never)
+    await expect(response.json()).resolves.toMatchObject({ queued: 1, evidenceOnly: 1, held: 0 })
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({ promotion_eligible: false, qualification_status: 'ineligible' }),
     }))
   })
 
