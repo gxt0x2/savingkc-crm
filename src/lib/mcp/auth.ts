@@ -21,7 +21,9 @@ export function configuredCrmMcpActorEmail(): string {
 }
 
 export function isValidCrmMcpToken(suppliedToken: string | undefined): boolean {
-  const configuredToken = process.env.CRM_MCP_TOKEN?.trim()
+  const configuredToken = (
+    process.env.CRM_MCP_TOKEN || process.env.CRM_ASSISTANT_API_SECRET
+  )?.trim()
   const supplied = suppliedToken?.trim()
   return Boolean(configuredToken && supplied && safeEqual(configuredToken, supplied))
 }

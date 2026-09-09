@@ -17,6 +17,12 @@ describe('CRM MCP authentication', () => {
     expect(isValidCrmMcpToken('wrong-secret')).toBe(false)
   })
 
+  it('accepts the existing assistant service credential during rollout', () => {
+    vi.stubEnv('CRM_MCP_TOKEN', '')
+    vi.stubEnv('CRM_ASSISTANT_API_SECRET', 'assistant-service-secret')
+    expect(isValidCrmMcpToken('assistant-service-secret')).toBe(true)
+  })
+
   it('maps a valid token to the configured CRM actor and read scope', () => {
     vi.stubEnv('CRM_MCP_TOKEN', 'configured-secret')
     vi.stubEnv('CRM_MCP_ACTOR_EMAIL', 'Owner@SavingKC.com ')
