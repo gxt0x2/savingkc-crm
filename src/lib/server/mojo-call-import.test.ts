@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   mapMojoDisposition,
+  mergeMojoCallEvidence,
   normalizeMojoCallRecord,
   processCanonicalMojoCall,
+  qualifyMojoCallRecord,
   runCanonicalMojoQueueWorker,
   type MojoCallIngestResult,
   type MojoCallRecord,
@@ -38,6 +40,9 @@ function result(overrides: Partial<MojoCallIngestResult> = {}): MojoCallIngestRe
     assignedAgent: 'Casey',
     latestForLead: true,
     replayed: false,
+    promotionEligible: true,
+    qualificationStatus: 'eligible',
+    qualificationReasons: ['minimum_duration_met'],
     ...overrides,
   }
 }
@@ -66,6 +71,35 @@ describe('canonical Mojo call import', () => {
     expect(mapMojoDisposition(disposition)).toBe(outcome)
   })
 
+  it('enforces the shared qualification policy before promotion', () => {
+    expect(qualifyMojoCallRecord({
+      ...call,
+      call_duration: 30,
+      recording_url: 'https://app71.mojosells.com/audio/short',
+    })).toMatchObject({ assessment: { eligible: false, reasons: ['below_minimum_duration'] } })
+  })
+
+  it('merges a late recording into the idempotent queue payload', () => {
+    const merged = mergeMojoCallEvidence(
+      { ...call, call_duration: 0, recording_url: undefined },
+      {
+        ...call,
+        call_duration: 180,
+        recording_url: 'https://app71.mojosells.com/audio/late',
+        notes: 'Motivation: retiring. Timeline: 60 days.',
+      },
+    )
+    expect(merged).toMatchObject({
+      improved: true,
+      call: {
+        call_duration: 180,
+        recording_url: 'https://app71.mojosells.com/audio/late',
+        promotion_eligible: true,
+      },
+    })
+    expect(mergeMojoCallEvidence(merged.call, merged.call).improved).toBe(false)
+  })
+
   it('creates only the event-backed callback and governed lifecycle command', async () => {
     const dependencies = {
       ingest: vi.fn().mockResolvedValue(result()),
@@ -73,6 +107,7 @@ describe('canonical Mojo call import', () => {
       createAppointment: vi.fn(),
       createFollowUp: vi.fn(),
       transitionLifecycle: vi.fn(),
+      processRecordingEvidence: vi.fn(),
     }
     await expect(processCanonicalMojoCall(call, dependencies)).resolves.toMatchObject({
       outcome: 'callback_scheduled',
@@ -82,6 +117,7 @@ describe('canonical Mojo call import', () => {
     expect(dependencies.createAppointment).not.toHaveBeenCalled()
     expect(dependencies.suppressDnc).not.toHaveBeenCalled()
     expect(dependencies.transitionLifecycle).toHaveBeenCalledOnce()
+    expect(dependencies.processRecordingEvidence).toHaveBeenCalledOnce()
   })
 
   it('persists DNC suppression even when the provider event cannot resolve a lead', async () => {
@@ -92,6 +128,7 @@ describe('canonical Mojo call import', () => {
       createAppointment: vi.fn(),
       createFollowUp: vi.fn(),
       transitionLifecycle: vi.fn(),
+      processRecordingEvidence: vi.fn(),
     }
     await processCanonicalMojoCall({ ...call, disposition: 'DNC request' }, dependencies)
     expect(dependencies.suppressDnc).toHaveBeenCalledWith('+19135550123')
