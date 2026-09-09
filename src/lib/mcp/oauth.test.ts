@@ -20,6 +20,7 @@ describe('CRM MCP OAuth metadata', () => {
       authorization_servers: ['https://project.supabase.co/auth/v1'],
       scopes_supported: ['email'],
       bearer_methods_supported: ['header'],
+      cursor_omit_resource_indicator: true,
     })
   })
 
