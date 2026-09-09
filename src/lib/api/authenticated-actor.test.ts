@@ -5,10 +5,12 @@ const mocks = vi.hoisted(() => ({
   getClaims: vi.fn(),
   from: vi.fn(),
   maybeSingle: vi.fn(),
+  requireMobileActor: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { from: mocks.from } }))
+vi.mock('@/lib/mobile-api/auth', () => ({ requireMobileActor: mocks.requireMobileActor }))
 
 import { resolveAuthenticatedActor } from './authenticated-actor'
 
@@ -21,6 +23,9 @@ describe('resolveAuthenticatedActor', () => {
       error: null,
     })
     mocks.maybeSingle.mockResolvedValue({ data: { full_name: 'Casey' }, error: null })
+    mocks.requireMobileActor.mockResolvedValue({
+      actor: { email: 'casey@savingkc.com', name: 'Casey Mobile' },
+    })
     mocks.from.mockReturnValue({
       select: () => ({
         eq: () => ({ maybeSingle: mocks.maybeSingle }),
@@ -51,5 +56,28 @@ describe('resolveAuthenticatedActor', () => {
       email: 'casey@savingkc.com',
       name: 'casey@savingkc.com',
     })
+  })
+
+  it('uses a verified mobile actor for an explicit bearer credential', async () => {
+    const request = new Request('https://crm.savingkc.com/api/ai/command', {
+      headers: { Authorization: 'Bearer mobile-token' },
+    })
+
+    await expect(resolveAuthenticatedActor(request)).resolves.toEqual({
+      email: 'casey@savingkc.com',
+      name: 'Casey Mobile',
+    })
+    expect(mocks.requireMobileActor).toHaveBeenCalledWith(request)
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
+  it('does not fall back to browser cookies when an explicit bearer credential is invalid', async () => {
+    mocks.requireMobileActor.mockRejectedValue(new Error('Invalid bearer token'))
+    const request = new Request('https://crm.savingkc.com/api/ai/command', {
+      headers: { Authorization: 'Bearer invalid' },
+    })
+
+    await expect(resolveAuthenticatedActor(request)).resolves.toBeNull()
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 })

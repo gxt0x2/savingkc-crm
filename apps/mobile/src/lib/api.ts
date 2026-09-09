@@ -1,5 +1,8 @@
 import { mobileConfig } from '../config'
 import type {
+  AssistantCommandResponse,
+  AssistantHistory,
+  AssistantThread,
   CallIntentAllowedResponse,
   CallIntentKind,
   CallIntentResponse,
@@ -30,7 +33,7 @@ export class CrmApiError extends Error {
   }
 }
 
-function clientRequestId(): string {
+export function createMobileRequestId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
     const value = Math.floor(Math.random() * 16)
@@ -200,7 +203,7 @@ export async function fetchMobileWork(input: {
 export async function assignMobileOwner(input: { accessToken: string; leadId: string; owner: string | null }) {
   return mobileRequest<{ success: true; owner: string | null }>(`/api/mobile/v1/leads/${encodeURIComponent(input.leadId)}/owner`, {
     accessToken: input.accessToken,
-    idempotencyKey: clientRequestId(),
+    idempotencyKey: createMobileRequestId(),
     method: 'POST',
     body: { owner: input.owner },
   })
@@ -209,7 +212,7 @@ export async function assignMobileOwner(input: { accessToken: string; leadId: st
 export async function completeMobileWorkItem(input: { accessToken: string; key: string; expectedVersion: number }) {
   return mobileRequest<{ success: true; changed: boolean; taskId: string; version: number }>(`/api/mobile/v1/work-items/${encodeURIComponent(input.key)}/complete`, {
     accessToken: input.accessToken,
-    idempotencyKey: clientRequestId(),
+    idempotencyKey: createMobileRequestId(),
     method: 'POST',
     body: { expectedVersion: input.expectedVersion },
   })
@@ -218,7 +221,7 @@ export async function completeMobileWorkItem(input: { accessToken: string; key: 
 export async function acceptMobileHandoff(input: { accessToken: string; handoffId: string }) {
   return mobileRequest<{ success: true }>(`/api/mobile/v1/handoffs/${encodeURIComponent(input.handoffId)}/accept`, {
     accessToken: input.accessToken,
-    idempotencyKey: clientRequestId(),
+    idempotencyKey: createMobileRequestId(),
     method: 'POST',
   })
 }
@@ -256,4 +259,32 @@ export async function requestMobileCallIntent(input: {
     throw new CrmApiError('Call authorization returned an incomplete response.')
   }
   return payload
+}
+
+export async function fetchLatestAssistantThread(options: ApiOptions = {}): Promise<AssistantHistory | null> {
+  const payload = await mobileRequest<{ threads: AssistantThread[] }>('/api/ai/threads?limit=20', options)
+  const active = Array.isArray(payload.threads)
+    ? payload.threads.find((thread) => thread.status === 'active')
+    : null
+  if (!active) return null
+  return mobileRequest<AssistantHistory>(`/api/ai/threads/${encodeURIComponent(active.id)}`, options)
+}
+
+export async function sendMobileAssistantMessage(input: {
+  accessToken: string
+  threadId: string | null
+  content: string
+  requestId: string
+}): Promise<AssistantCommandResponse> {
+  return mobileRequest<AssistantCommandResponse>('/api/ai/command', {
+    accessToken: input.accessToken,
+    method: 'POST',
+    body: {
+      threadId: input.threadId,
+      surface: 'api',
+      requestId: input.requestId,
+      messages: [{ role: 'user', content: input.content }],
+      attachments: [],
+    },
+  })
 }

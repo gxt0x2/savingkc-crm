@@ -21,11 +21,13 @@ export async function GET(req: NextRequest) {
     const accountSid = cleanTwilioEnv('TWILIO_ACCOUNT_SID')
     const apiKey = cleanTwilioEnv('TWILIO_API_KEY')
     const apiSecret = cleanTwilioEnv('TWILIO_API_SECRET')
+    const pushCredentialSid = cleanTwilioEnv('TWILIO_VOIP_PUSH_CREDENTIAL_SID')
 
     const missing = [
       !accountSid && 'TWILIO_ACCOUNT_SID',
       !apiKey && 'TWILIO_API_KEY',
       !apiSecret && 'TWILIO_API_SECRET',
+      !pushCredentialSid && 'TWILIO_VOIP_PUSH_CREDENTIAL_SID',
     ].filter(Boolean)
 
     if (missing.length > 0) {
@@ -46,7 +48,11 @@ export async function GET(req: NextRequest) {
     const profile = resolveAgentTelephonyProfile(user.email)
     const { identity } = profile
     const token = new AccessToken(accountSid, apiKey, apiSecret, { identity, ttl: 3600 })
-    token.addGrant(new VoiceGrant({ outgoingApplicationSid, incomingAllow: true }))
+    token.addGrant(new VoiceGrant({
+      outgoingApplicationSid,
+      incomingAllow: true,
+      pushCredentialSid,
+    }))
 
     return NextResponse.json(
       {

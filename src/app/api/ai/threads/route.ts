@@ -5,10 +5,10 @@ import { AssistantGenerationError, listAssistantThreads } from '@/lib/ai/generat
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie' }
+const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie, Authorization' }
 
 export async function GET(request: Request) {
-  const actor = await resolveAuthenticatedActor()
+  const actor = await resolveAuthenticatedActor(request)
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
   const rawLimit = Number(new URL(request.url).searchParams.get('limit') || 20)
   try {

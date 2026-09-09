@@ -85,11 +85,13 @@ describe('durable AI command route', () => {
   })
 
   it('uses the verified actor, persists before generation, and records provider accounting', async () => {
-    const response = await POST(request({
+    const input = request({
       actorEmail: 'spoofed@example.com', requestId: 'request-123', surface: 'giraffe',
       messages: [{ role: 'user', content: 'What needs attention?' }],
-    }))
+    })
+    const response = await POST(input)
     expect(response.status).toBe(200)
+    expect(mocks.authenticated).toHaveBeenCalledWith(input)
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
       actorEmail: 'casey@savingkc.com', actorName: 'Casey', requestId: 'request-123', surface: 'giraffe',
     }))
@@ -104,6 +106,7 @@ describe('durable AI command route', () => {
       reply: 'Grounded answer', threadId: 'thread-1', execution: 'read_only', grounded: false,
       approvalRequiredFor: expect.arrayContaining(['task creation', 'calls and messages']),
     })
+    expect(response.headers.get('vary')).toContain('Authorization')
   })
 
   it('prefers the configured Groq tool agent for text requests and records the direct provider', async () => {

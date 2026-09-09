@@ -26,9 +26,12 @@ describe('assistant thread list route', () => {
   })
 
   it('lists only the verified actor threads with a bounded limit', async () => {
-    const response = await GET(new Request('https://crm.savingkc.com/api/ai/threads?limit=500'))
+    const request = new Request('https://crm.savingkc.com/api/ai/threads?limit=500')
+    const response = await GET(request)
     expect(response.status).toBe(200)
+    expect(mocks.actor).toHaveBeenCalledWith(request)
     expect(mocks.list).toHaveBeenCalledWith('casey@savingkc.com', 500)
     expect(response.headers.get('cache-control')).toContain('no-store')
+    expect(response.headers.get('vary')).toContain('Authorization')
   })
 })

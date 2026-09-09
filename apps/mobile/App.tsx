@@ -17,14 +17,17 @@ import type { Session } from '@supabase/supabase-js'
 import { getMissingConfig } from './src/config'
 import { fetchConversationDetail, fetchConversations, fetchLeadDetail, fetchLeads, fetchMobileSession, logCallEvent, sendMobileMessage } from './src/lib/api'
 import { enqueueCallEvent, flushCallOutbox, getQueuedCallEvents } from './src/lib/call-outbox'
-import { registerTwilioVoice, startTwilioVoiceCall, type IncomingVoiceCall, type NativeVoiceCall, type VoiceState } from './src/lib/twilio-voice-service'
+import { initializeTwilioVoice, registerTwilioVoice, startTwilioVoiceCall, type IncomingVoiceCall, type NativeVoiceCall, type VoiceState } from './src/lib/twilio-voice-service'
 import { getSupabaseClient } from './src/lib/supabase'
 import type { CallOutcome, ConversationThread, CrmLead } from './src/types'
 import { LeadOperationsCard } from './src/components/lead-operations-card'
 import { WorkScreen } from './src/components/work-screen'
 import { ActivityRow } from './src/components/activity-row'
+import { AssistantScreen } from './src/components/assistant-screen'
 
 const queryClient = new QueryClient()
+
+void initializeTwilioVoice().catch(() => null)
 
 function phoneKey(value: string | null | undefined) {
   const digits = value?.replace(/\D/g, '') ?? ''
@@ -162,7 +165,7 @@ function LoginScreen() {
   )
 }
 
-type MobileTab = 'contacts' | 'work' | 'conversations' | 'phone'
+type MobileTab = 'contacts' | 'work' | 'conversations' | 'ari' | 'phone'
 
 function MobileWorkspace({ accessToken, email }: { accessToken: string; email: string }) {
   const supabase = getSupabaseClient()
@@ -178,6 +181,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
   const [voiceIdentity, setVoiceIdentity] = useState<{ callerId: string; displayName: string } | null>(null)
   const [incomingCall, setIncomingCall] = useState<IncomingVoiceCall | null>(null)
   const [activeVoiceCall, setActiveVoiceCall] = useState<NativeVoiceCall | null>(null)
+  const [assistantPrompt, setAssistantPrompt] = useState<string | null>(null)
   const leadsQuery = useQuery({
     queryKey: ['leads'],
     queryFn: ({ signal }) => fetchLeads({ accessToken, signal }),
@@ -248,12 +252,15 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
     queryClient.clear()
   }
 
+  function askAriAboutLead(lead: CrmLead) { setAssistantPrompt(`Brief me on CRM contact ${lead.full_name || 'Unnamed contact'} with leadId ${lead.id}. Use the contact 360 and recent communications. Tell me the highest-leverage next action, but do not change CRM data.`); setSelectedLeadId(null); setActiveTab('ari') }
+
   if (selectedLeadId) {
     return (
       <LeadDetailScreen
         accessToken={accessToken}
         leadId={selectedLeadId}
         onBack={() => setSelectedLeadId(null)}
+        onAskAri={askAriAboutLead}
         onOutboxChange={refreshOutboxCount}
       />
     )
@@ -300,7 +307,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
       {incomingCall ? <View style={styles.incomingBanner}><View style={{ flex: 1 }}><Text style={styles.incomingTitle}>Incoming call</Text><Text style={styles.incomingNumber}>{incomingCall.from}</Text></View><Pressable onPress={rejectIncomingCall} style={styles.declineButton}><Text style={styles.primaryButtonText}>Decline</Text></Pressable><Pressable onPress={acceptIncomingCall} style={styles.answerButton}><Text style={styles.primaryButtonText}>Answer</Text></Pressable></View> : null}
 
       <View style={styles.mobileTabs}>
-        {(['contacts', 'work', 'conversations', 'phone'] as MobileTab[]).map((tab) => <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.mobileTab, activeTab === tab && styles.mobileTabActive]}><Text style={[styles.mobileTabText, activeTab === tab && styles.mobileTabTextActive]}>{tab === 'contacts' ? 'Contacts' : tab === 'work' ? 'Work' : tab === 'conversations' ? 'Inbox' : 'Phone'}</Text></Pressable>)}
+        {(['contacts', 'work', 'conversations', 'ari', 'phone'] as MobileTab[]).map((tab) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: activeTab === tab }} key={tab} onPress={() => setActiveTab(tab)} style={[styles.mobileTab, activeTab === tab && styles.mobileTabActive]}><Text style={[styles.mobileTabText, activeTab === tab && styles.mobileTabTextActive]}>{tab === 'contacts' ? 'Contacts' : tab === 'work' ? 'Work' : tab === 'conversations' ? 'Inbox' : tab === 'ari' ? 'ARI' : 'Phone'}</Text></Pressable>)}
       </View>
 
       {queuedEvents > 0 ? (
@@ -338,7 +345,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
           refreshing={leadsQuery.isFetching}
           onRefresh={() => leadsQuery.refetch()}
         />
-      )}</> : activeTab === 'work' ? <WorkScreen accessToken={accessToken} onOpenLead={setSelectedLeadId} /> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
+      )}</> : activeTab === 'work' ? <WorkScreen accessToken={accessToken} onOpenLead={setSelectedLeadId} /> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : activeTab === 'ari' ? <AssistantScreen accessToken={accessToken} initialPrompt={assistantPrompt} onInitialPromptConsumed={() => setAssistantPrompt(null)} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
     </SafeAreaView>
   )
 }
@@ -483,11 +490,13 @@ function LeadDetailScreen({
   accessToken,
   leadId,
   onBack,
+  onAskAri,
   onOutboxChange,
 }: {
   accessToken: string
   leadId: string
   onBack: () => void
+  onAskAri: (lead: CrmLead) => void
   onOutboxChange: () => void
 }) {
   const queryClient = useQueryClient()
@@ -609,6 +618,7 @@ function LeadDetailScreen({
             <Text style={styles.eyebrow}>{lead.priority || lead.station || 'Lead'}</Text>
             <Text style={styles.title}>{lead.full_name || 'Unnamed lead'}</Text>
             <Text style={styles.body}>{lead.property_address || formatLocation(lead) || 'No address yet'}</Text>
+            <Pressable accessibilityRole="button" onPress={() => onAskAri(lead)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Ask ARI for a briefing</Text></Pressable>
           </View>
 
           {operations ? <LeadOperationsCard accessToken={accessToken} leadId={lead.id} operations={operations} onChanged={async () => {
@@ -872,7 +882,7 @@ const styles = StyleSheet.create({
   },
   mobileTabText: {
     color: '#64748B',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
   },
   mobileTabTextActive: {
