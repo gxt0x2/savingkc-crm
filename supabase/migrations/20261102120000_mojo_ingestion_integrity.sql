@@ -6,6 +6,8 @@ CREATE TABLE public.mojo_source_batches (
   payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
   accepted_at timestamptz,
   last_error text,
+  accepted_runtime_digest text,
+  accepted_runtime_revision text,
   record_ids jsonb NOT NULL DEFAULT '[]'::jsonb
 );
 CREATE INDEX mojo_source_batches_pending_idx ON public.mojo_source_batches(created_at)
@@ -13,7 +15,7 @@ CREATE INDEX mojo_source_batches_pending_idx ON public.mojo_source_batches(creat
 ALTER TABLE public.mojo_source_batches ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.mojo_source_batches FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT ON public.mojo_source_batches TO service_role;
-GRANT UPDATE(accepted_at, record_ids, last_error) ON public.mojo_source_batches TO service_role;
+GRANT UPDATE(accepted_at, record_ids, last_error, accepted_runtime_digest, accepted_runtime_revision) ON public.mojo_source_batches TO service_role;
 
 CREATE INDEX mojo_unresolved_evidence_idx ON public.crm_mojo_call_events(call_at, record_id)
   WHERE qualification_status = 'evidence_pending';

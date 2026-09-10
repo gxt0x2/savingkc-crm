@@ -1,3 +1,4 @@
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -74,6 +75,8 @@ describe('Mojo source integrity', () => {
   it('packages transitive dependencies and fails verification when a dependency is missing', () => {
     const dir = temporary()
     const manifest = stageRuntime(process.cwd(), dir)
+    // Any runtime code change must update the server's expected component digest.
+    expect(manifest.contentDigest).toBe(expectedRuntime.contentDigest)
     expect(manifest.files).toHaveProperty('src/lib/mojo-call-qualification.mjs')
     expect(manifest.files).toHaveProperty('scripts/mojo-call-evidence.mjs')
     expect(verifyRuntime(dir).contentDigest).toBe(manifest.contentDigest)

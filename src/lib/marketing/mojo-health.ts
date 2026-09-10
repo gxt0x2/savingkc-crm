@@ -1,3 +1,4 @@
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 import type { supabaseAdmin } from '@/lib/supabase/admin'
 import { isSavingKcWorkday } from '@/lib/company-calendar'
 
@@ -37,6 +38,7 @@ export type MojoHealth = {
   latestQueuedAt: string | null
   latestCompletedAt: string | null
   latestQueueError: string | null
+  runtime?: { expectedDigest: string; reportedDigest: string | null; reportedRevision: string | null; verified: boolean }
   performance: {
     status: 'current' | 'delayed' | 'stale' | 'unavailable'
     message: string
@@ -123,6 +125,8 @@ type MojoCallEventRow = {
 }
 
 const SYSTEM_CONFIG_KEYS = [
+  'mojo_runtime_content_digest',
+  'mojo_runtime_revision',
   'last_mojo_sync_timestamp',
   'mojo_session_last_error',
   'mojo_session_last_error_at',
@@ -533,6 +537,12 @@ export async function getMojoHealth(
       performanceMessage = `Mojo provider performance is delayed by ${performanceAgeMinutes} minutes`
     }
 
+    const runtime = {
+      expectedDigest: expectedRuntime.contentDigest,
+      reportedDigest: configValue('mojo_runtime_content_digest') || null,
+      reportedRevision: configValue('mojo_runtime_revision') || null,
+      verified: configValue('mojo_runtime_content_digest') === expectedRuntime.contentDigest,
+    }
     let status: MojoHealthStatus = 'clean'
     let message = 'Mojo sync is healthy'
     if (['expired', 'missing'].includes(sessionStatus.toLowerCase())) {
@@ -544,6 +554,9 @@ export async function getMojoHealth(
     } else if (syncHealth.toLowerCase() === 'down') {
       status = 'attention'
       message = lastError || 'Mojo sync freshness is outside the supervised limit'
+    } else if (!runtime.verified) {
+      status = 'attention'
+      message = 'The installed Mojo importer does not match the verified release'
     } else if (deadLetterRows.length > 0 || failed24hRows.length > 0 || qualification.recordingFailed7d > 0) {
       status = 'attention'
       const failureCount = deadLetterRows.length + failed24hRows.length + qualification.recordingFailed7d
@@ -581,6 +594,7 @@ export async function getMojoHealth(
     return {
       status,
       message,
+      runtime,
       sessionStatus,
       syncHealth,
       businessHours,

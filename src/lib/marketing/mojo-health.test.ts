@@ -1,3 +1,4 @@
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 import { describe, expect, it } from 'vitest'
 
 import { getMojoHealth } from './mojo-health'
@@ -36,7 +37,7 @@ function database(performance: unknown[], config = [
     rpc: () => Promise.resolve({ data: reconciliation, error: null }),
     from: (table: string) => {
       if (table === 'system_config') {
-        return query({ data: config, error: null })
+        return query({ data: [{ key: 'mojo_runtime_content_digest', value: expectedRuntime.contentDigest }, ...config], error: null })
       }
       if (table === 'mojo_call_queue') return query({ data: queueRows, error: null })
       if (table === 'crm_mojo_call_events') return query({ data: eventRows, error: null })
@@ -50,6 +51,14 @@ function database(performance: unknown[], config = [
 }
 
 describe('Mojo health data watermark', () => {
+  it('detects an importer that has fallen behind the deployed application', async () => {
+    const health = await getMojoHealth(database([
+      { metric_date: '2026-09-04', source_fetched_at: '2026-09-04T19:00:00Z' },
+    ], [{ key: 'mojo_runtime_content_digest', value: 'old-runtime' }]) as never, { now: new Date('2026-09-04T19:05:00Z') })
+    expect(health.status).toBe('attention')
+    expect(health.runtime?.verified).toBe(false)
+    expect(health.message).toContain('does not match')
+  })
   it('keeps unresolved old evidence visible after it leaves the recent event window', async () => {
     const health = await getMojoHealth(database([
       { metric_date: '2026-09-04', source_fetched_at: '2026-09-04T19:00:00.000Z' },

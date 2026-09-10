@@ -7,6 +7,7 @@
 
 import fs from 'fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runtimeIdentity } from './mojo-runtime-package.mjs'
 import { MOJO_INGESTION_VERSION, collectMojoActivities, assertMojoReceipts, spoolMojoSource, readMojoSpool } from './mojo-ingestion-integrity.mjs'
 import { homedir } from 'node:os'
 import path from 'path'
@@ -537,11 +538,17 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
 
 // --- Receipt-backed source intake and replay ---
 
+function currentRuntime() {
+  const manifestPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../runtime-manifest.json')
+  const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : runtimeIdentity(path.dirname(manifestPath))
+  return { revision: manifest.revision, contentDigest: manifest.contentDigest }
+}
+
 async function sourceRequest(method, body, after) {
   const url = after ? `${CRM_SOURCE_URL}?after=${encodeURIComponent(after)}` : CRM_SOURCE_URL
   const response = await fetch(url, {
     method, headers: adminHeaders({ 'content-type': 'application/json' }),
-    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000),
+    ...(body ? { body: JSON.stringify({ ...body, runtime: currentRuntime() }) } : {}), signal: AbortSignal.timeout(30000),
   })
   if (!response.ok) throw new Error(`Source archive ${method} failed (${response.status}); checkpoint retained`)
   return response.json()
@@ -603,10 +610,8 @@ export async function sync(options = {}) {
       { lastActivityId: historical ? 0 : state.lastActivityId, since },
     )
     const recordings = await fetchRecordings(session.sessionId, from, targetDate)
-    const manifestPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../runtime-manifest.json')
-    const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null
     const payload = {
-      runtime: manifest ? { revision: manifest.revision, contentDigest: manifest.contentDigest } : { revision: 'development' },
+      runtime: currentRuntime(),
       version: MOJO_INGESTION_VERSION, since, to: targetDate,
       activities: activities.filter(row => centralDateString(new Date(parseMojoTimestamp(row[3]))) <= targetDate),
       recordings,

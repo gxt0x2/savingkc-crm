@@ -22,15 +22,17 @@ export function runtimeFiles(root) {
   for (const entry of entries) visit(entry)
   return [...visited].sort()
 }
-export function stageRuntime(root, destination) {
-  const files = Object.fromEntries(runtimeFiles(root).map(relative => {
-    const contents = fs.readFileSync(path.join(root, relative))
-    fs.mkdirSync(path.dirname(path.join(destination, relative)), { recursive: true })
-    fs.writeFileSync(path.join(destination, relative), contents, { mode: 0o700 })
-    return [relative, hash(contents)]
-  }))
+export function runtimeIdentity(root) {
+  const files = Object.fromEntries(runtimeFiles(root).map(relative => [relative, hash(fs.readFileSync(path.join(root, relative)))]))
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
-  const manifest = { revision, contentDigest: hash(JSON.stringify(files)), files }
+  return { revision, contentDigest: hash(JSON.stringify(files)), files }
+}
+export function stageRuntime(root, destination) {
+  const manifest = runtimeIdentity(root)
+  for (const relative of Object.keys(manifest.files)) {
+    fs.mkdirSync(path.dirname(path.join(destination, relative)), { recursive: true })
+    fs.writeFileSync(path.join(destination, relative), fs.readFileSync(path.join(root, relative)), { mode: 0o700 })
+  }
   fs.writeFileSync(path.join(destination, 'runtime-manifest.json'), JSON.stringify(manifest, null, 2), { mode: 0o600 })
   return manifest
 }
@@ -45,6 +47,12 @@ export function verifyRuntime(root) {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  if (process.argv[2] === '--write-expected') {
+    const { revision, ...expected } = runtimeIdentity(root)
+    fs.writeFileSync(path.join(root, 'src/config/mojo-runtime-manifest.json'), `${JSON.stringify(expected, null, 2)}\n`)
+    console.log(`Expected Mojo runtime updated: ${expected.contentDigest} (${revision})`)
+    process.exit(0)
+  }
   const result = process.argv[2] === '--stage' ? stageRuntime(root, process.argv[3])
     : process.argv[2] === '--verify' ? verifyRuntime(process.argv[3] || root) : null
   if (!result) throw new Error('Use --stage DIRECTORY or --verify [DIRECTORY]')
