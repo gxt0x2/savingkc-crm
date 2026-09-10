@@ -1,0 +1,44 @@
+name: SavingKCDeviceHarness
+options:
+  bundleIdPrefix: com.savingkc
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  HarnessHost:
+    type: application
+    platform: iOS
+    sources:
+      - Host
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.savingkc.deviceharness
+  SavingKCUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: HarnessHost
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.savingkc.deviceharness.uitests
+        TEST_TARGET_NAME: HarnessHost
+schemes:
+  SavingKCDeviceHarness:
+    build:
+      targets:
+        HarnessHost: all
+        SavingKCUITests:
+          - test
+    test:
+      targets:
+        - SavingKCUITests

@@ -11,6 +11,7 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:ios:device": "node scripts/mobile/run-ios-device-smoke.mjs",
     "test:smoke:theme": "playwright test tests/smoke/theme-and-nav.spec.ts",
     "test:performance": "playwright test tests/e2e/navigation-performance.spec.ts",
     "mojo:sync": "node scripts/mojo-cron-runner.mjs sync",
