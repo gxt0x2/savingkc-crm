@@ -1,8 +1,8 @@
 'use client'
 
-import Image from 'next/image'
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
 
+import { AssistantMark } from '@/components/ai/assistant-mark'
 import { AssistantMessage } from '@/components/ai/assistant-message'
 import { Icon } from '@/components/ui/icon'
 import { useAssistantThread } from '@/hooks/use-assistant-thread'
@@ -37,7 +37,7 @@ const ACCEPTED_MEDIA_TYPES = new Set([
   'text/xml',
 ])
 
-const INTRO = "I start with SavingKC's recorded goals, current performance, and approved operating path. I'll identify what is off track, recommend the highest-leverage next action, and prepare safe implementation steps. Ask a question, dictate it, or attach evidence."
+const INTRO = "Ask one clear question. I'll lead with the answer, show the next move, and keep supporting detail tucked away until you need it."
 
 function mediaTypeFor(file: File) {
   if (file.type) return file.type.toLowerCase()
@@ -171,33 +171,49 @@ export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolea
   return (
     <div className={open ? 'fixed inset-0 z-[90] flex flex-col items-end lg:inset-auto lg:bottom-5 lg:right-5 lg:gap-3' : 'fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-3 z-[50] flex flex-col items-end gap-3 lg:bottom-5 lg:right-5 lg:z-[90]'}>
       {open ? (
-        <section role="dialog" aria-modal="true" aria-label="AI Assistant" className="crm-panel-raised flex h-[100dvh] w-full flex-col overflow-hidden rounded-none shadow-2xl lg:h-[min(660px,calc(100dvh-110px))] lg:w-[min(420px,calc(100vw-32px))] lg:rounded-2xl">
-          <header className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 pb-3 pt-[max(.75rem,env(safe-area-inset-top))] lg:py-3">
-            <Image src="/ai/giraffe-assistant.webp" alt="" width={48} height={48} className="h-11 w-11 rounded-full border-2 border-[var(--crm-warning-border)] object-cover" />
-            <div className="min-w-0 flex-1"><h2 className="font-black text-[var(--crm-ink)]">AI Assistant</h2><p className="text-[11px] font-semibold text-[var(--crm-success)]">Company goals + live CRM context</p></div>
+        <section role="dialog" aria-modal="true" aria-label="SavingKC Intelligence" className="crm-panel-raised flex h-[100dvh] w-full min-w-0 flex-col overflow-hidden rounded-none shadow-[0_24px_80px_rgba(13,15,13,.28)] lg:h-[min(760px,calc(100dvh-72px))] lg:w-[min(520px,calc(100vw-32px))] lg:rounded-[22px]">
+          <header className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 pb-3 pt-[max(.75rem,env(safe-area-inset-top))] lg:px-5 lg:py-4">
+            <AssistantMark live className="h-11 w-11 rounded-[14px]" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2"><h2 className="truncate text-sm font-black tracking-tight text-[var(--crm-ink)]">SavingKC Intelligence</h2><span className="rounded-full bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[8px] font-black uppercase tracking-[.14em] text-[var(--crm-brand)]">Live</span></div>
+              <p className="mt-0.5 truncate text-[10px] font-semibold text-[var(--crm-text-muted)]">Decisions grounded in your CRM</p>
+            </div>
             <button type="button" onClick={() => void clear()} disabled={sending || loadingHistory} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40" aria-label="Start a new AI conversation"><Icon name="edit_square" /></button>
-            <button type="button" onClick={() => setOpen(false)} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg" aria-label="Close AI Assistant"><Icon name="close" /></button>
+            <button type="button" onClick={() => setOpen(false)} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg" aria-label="Close SavingKC Intelligence"><Icon name="close" /></button>
           </header>
-          <div ref={transcriptRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[var(--crm-surface-subtle)] p-4">
-            {loadingHistory ? <p className="text-xs text-[var(--crm-text-muted)]">Loading your conversation…</p> : null}
-            {!loadingHistory && messages.length === 0 ? <div className="flex justify-start"><div className="max-w-[92%] rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3.5 py-2.5 text-[13px] leading-5 text-[var(--crm-ink)] shadow-sm sm:max-w-[88%] sm:text-sm">{INTRO}</div></div> : null}
-            {messages.map((message) => (
-              <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-5 shadow-sm sm:max-w-[88%] sm:text-sm ${message.role === 'user' ? 'rounded-br-md bg-[var(--crm-brand)] text-white' : 'rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-ink)]'}`}>
-                  {message.role === 'assistant' ? <AssistantMessage content={message.content} sources={message.sources} /> : <p className="whitespace-pre-wrap">{message.content}</p>}
-                  {message.attachments.length ? <div className="mt-2 flex flex-wrap gap-1">{message.attachments.map((attachment) => <span key={attachment.name} className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold">{attachment.name}</span>)}</div> : null}
-                </div>
+          <div ref={transcriptRef} className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto bg-[var(--crm-canvas)] px-4 py-5 lg:px-5">
+            {loadingHistory ? <div className="flex items-center gap-2 text-xs font-semibold text-[var(--crm-text-muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--crm-brand)]" />Loading this conversation…</div> : null}
+            {!loadingHistory && messages.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-4 shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-[.14em] text-[var(--crm-brand)]">Built for decisions</p>
+                <p className="mt-2 max-w-[44ch] text-sm font-semibold leading-6 text-[var(--crm-ink)]">{INTRO}</p>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-[10px] font-black text-[var(--crm-text-muted)]"><span className="rounded-lg bg-[var(--crm-surface-subtle)] px-2.5 py-2">Live CRM context</span><span className="rounded-lg bg-[var(--crm-surface-subtle)] px-2.5 py-2">Evidence on demand</span></div>
               </div>
+            ) : null}
+            {messages.map((message) => (
+              message.role === 'user' ? (
+                <div key={message.id} className="flex min-w-0 justify-end pl-8">
+                  <div className="min-w-0 max-w-[88%] rounded-2xl rounded-br-md bg-[#292d2a] px-3.5 py-2.5 text-[13px] leading-5 text-white shadow-sm ring-1 ring-white/10">
+                    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+                    {message.attachments.length ? <div className="mt-2 flex flex-wrap gap-1">{message.attachments.map((attachment) => <span key={attachment.name} className="max-w-full truncate rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold">{attachment.name}</span>)}</div> : null}
+                  </div>
+                </div>
+              ) : (
+                <article key={message.id} className="min-w-0 rounded-2xl border border-[var(--crm-border)] bg-[var(--crm-surface)] shadow-[0_8px_26px_rgba(18,21,18,.05)]">
+                  <div className="flex items-center gap-2 border-b border-[var(--crm-border)] px-4 py-2.5"><AssistantMark className="h-6 w-6 rounded-lg" /><span className="text-[9px] font-black uppercase tracking-[.14em] text-[var(--crm-text-muted)]">Intelligence brief</span></div>
+                  <div className="min-w-0 max-w-full px-4 py-3.5"><AssistantMessage content={message.content} sources={message.sources} /></div>
+                </article>
+              )
             ))}
-            {sending ? <div className="flex justify-start"><div className="rounded-2xl rounded-bl-md border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3.5 py-2.5 text-sm text-[var(--crm-text-muted)]">Checking goals, live CRM, and workflow path…</div></div> : null}
+            {sending ? <div className="flex items-center gap-2 rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] px-3.5 py-3 text-xs font-semibold text-[var(--crm-text-muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--crm-brand)]" />Reading the live CRM and deciding what matters…</div> : null}
             {error ? <p role="alert" className="rounded-xl border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-danger)]">{error}</p> : null}
           </div>
-          <form onSubmit={submit} className="border-t border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3">
+          <form onSubmit={submit} className="border-t border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 lg:px-4">
             {attachments.length ? <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Attached files">{attachments.map((attachment) => <span key={attachment.id} className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] py-1 pl-2.5 pr-1 text-[10px] font-bold"><span className="max-w-52 truncate">{attachment.name}</span><button type="button" onClick={() => setAttachments((current) => current.filter((entry) => entry.id !== attachment.id))} aria-label={`Remove ${attachment.name}`} className="grid h-5 w-5 place-items-center rounded-full hover:bg-[var(--crm-surface)]"><Icon name="close" className="text-[13px]" /></button></span>)}</div> : null}
-            <label htmlFor="giraffe-ai-request" className="sr-only">Ask the AI Assistant</label>
+            <label htmlFor="giraffe-ai-request" className="sr-only">Ask SavingKC Intelligence</label>
             <input ref={fileInputRef} type="file" multiple accept=".csv,.json,.md,.pdf,.txt,.xml,image/heic,image/jpeg,image/png,image/webp" onChange={(event) => void addAttachments(event)} className="sr-only" aria-label="Attach files to AI request" />
-            <div className="rounded-xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-2 focus-within:border-[var(--crm-violet)]">
-              <textarea id="giraffe-ai-request" rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendPrompt(input) } }} placeholder="Ask what is off track or what happens next…" className="min-h-12 w-full resize-none bg-transparent px-1 py-1 text-base text-[var(--crm-ink)] outline-none placeholder:text-[var(--crm-text-dim)]" />
+            <div className="rounded-2xl border border-[var(--crm-border-strong)] bg-[var(--crm-surface)] p-2 shadow-[0_8px_24px_rgba(18,21,18,.06)] focus-within:border-[var(--crm-brand)] focus-within:ring-2 focus-within:ring-[var(--crm-brand-soft)]">
+              <textarea id="giraffe-ai-request" rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendPrompt(input) } }} placeholder="Ask the next important question…" className="min-h-12 w-full resize-none bg-transparent px-1 py-1 text-base text-[var(--crm-ink)] outline-none placeholder:text-[var(--crm-text-dim)]" />
               <div className="mt-1 flex items-center gap-1.5 border-t border-[var(--crm-border)] pt-2">
                 <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || loadingHistory || attachments.length >= MAX_ATTACHMENTS} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40" aria-label="Attach evidence"><Icon name="attach_file" /></button>
                 <button type="button" onClick={toggleDictation} disabled={sending || loadingHistory || !dictationAvailable} className={`crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40 ${listening ? 'bg-[var(--crm-danger-soft)] text-[var(--crm-danger)]' : ''}`} aria-label={listening ? 'Stop voice dictation' : 'Start voice dictation'} aria-pressed={listening}><Icon name={listening ? 'mic_off' : 'mic'} /></button>
@@ -205,13 +221,12 @@ export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolea
                 <button type="submit" disabled={(!input.trim() && attachments.length === 0) || sending || loadingHistory} className="crm-primary-button grid h-10 w-10 shrink-0 place-items-center rounded-lg disabled:opacity-50" aria-label="Send AI request"><Icon name="arrow_upward" /></button>
               </div>
             </div>
-            <p className="mt-1.5 text-[9px] text-[var(--crm-text-muted)]">Goals and approved operating paths are checked first. Changes affecting people, data, routing, or spend require confirmation.</p>
+            <p className="mt-1.5 px-1 text-[9px] text-[var(--crm-text-muted)]">Live context first. Consequential changes always wait for your confirmation.</p>
           </form>
         </section>
       ) : null}
-      {!open ? <button type="button" onClick={() => setOpen(true)} aria-label="Open AI Assistant" aria-expanded={false} className="relative hidden h-16 w-16 place-items-center overflow-hidden rounded-full border-2 border-[var(--crm-warning-border)] bg-[#fffdf8] shadow-[0_10px_30px_rgba(32,33,36,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(32,33,36,.34)] focus:outline-none focus:ring-4 focus:ring-[var(--crm-violet-soft)] lg:grid">
-        <Image src="/ai/giraffe-assistant.webp" alt="AI Assistant giraffe" fill sizes="64px" className="object-cover" priority={false} />
-        <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[var(--crm-success)]" />
+      {!open ? <button type="button" onClick={() => setOpen(true)} aria-label="Open SavingKC Intelligence" aria-expanded={false} className="relative hidden h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-[#171916] shadow-[0_14px_36px_rgba(16,18,16,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_44px_rgba(16,18,16,.34)] focus:outline-none focus:ring-4 focus:ring-[var(--crm-brand-soft)] lg:grid">
+        <AssistantMark live className="h-full w-full rounded-2xl" />
       </button> : null}
     </div>
   )

@@ -18,11 +18,11 @@ describe('AssistantMessage progressive disclosure', () => {
     const remainder = 'Supporting audit detail that should not crowd the default answer.'
     const message = splitAssistantMessage(`${opening}${remainder}`)
 
-    expect(message.preview.length).toBeLessThanOrEqual(1_000)
+    expect(message.preview.length).toBeLessThanOrEqual(850)
     expect(message.details).toContain(remainder)
 
     render(<AssistantMessage content={`${opening}${remainder}`} sources={[]} />)
-    expect(screen.getByText('Show details')).toBeVisible()
+    expect(screen.getByText('Read the supporting detail')).toBeVisible()
     expect(screen.getByText(/Supporting audit detail/)).not.toBeVisible()
   })
 
@@ -32,7 +32,14 @@ describe('AssistantMessage progressive disclosure', () => {
       { name: 'Operating snapshot', url: '/reports' },
     ]} />)
 
-    expect(screen.getByText('Show 2 sources')).toBeVisible()
+    expect(screen.getByText('Evidence · 2 sources')).toBeVisible()
     expect(screen.getByRole('link', { name: 'Attention queue' })).not.toBeVisible()
+  })
+
+  it('renders Markdown as human-readable hierarchy instead of literal punctuation', () => {
+    const { container } = render(<AssistantMessage content="**Priority:** Call Howard today." sources={[]} />)
+
+    expect(screen.getByText('Priority:')).toBeVisible()
+    expect(container).not.toHaveTextContent('**')
   })
 })

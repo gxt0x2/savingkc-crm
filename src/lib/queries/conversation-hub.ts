@@ -4,9 +4,15 @@ export const conversationHubQueryKey = ['conversation-hub'] as const
 
 export type ConversationQueue = 'needs_reply' | 'mine' | 'unassigned' | 'all'
 export type ConversationKindFilter = 'all' | 'known' | 'unmatched'
+export type ConversationTimeframe = 'inbox' | 'recent' | 'all'
 
-export function conversationHubInfiniteQueryKey(queue: ConversationQueue, search: string, kind: ConversationKindFilter = 'all') {
-  return [...conversationHubQueryKey, queue, kind, search] as const
+export function conversationHubInfiniteQueryKey(
+  queue: ConversationQueue,
+  search: string,
+  kind: ConversationKindFilter = 'all',
+  timeframe: ConversationTimeframe = 'inbox',
+) {
+  return [...conversationHubQueryKey, timeframe, queue, kind, search] as const
 }
 
 export function conversationTimelineInfiniteQueryKey(threadKey: string) {
@@ -83,15 +89,17 @@ export async function fetchConversationHub<T>({
   cursor,
   search,
   kind = 'all',
+  timeframe = 'inbox',
   limit = 50,
 }: {
   queue: ConversationQueue
   cursor?: string | null
   search?: string
   kind?: ConversationKindFilter
+  timeframe?: ConversationTimeframe
   limit?: number
 }): Promise<ConversationPage<T>> {
-  const params = new URLSearchParams({ queue, limit: String(limit) })
+  const params = new URLSearchParams({ queue, timeframe, limit: String(limit) })
   if (cursor) params.set('cursor', cursor)
   if ((search?.trim().length ?? 0) >= 3) params.set('q', search!.trim())
   if (kind !== 'all') params.set('kind', kind)

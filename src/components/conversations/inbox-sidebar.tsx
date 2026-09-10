@@ -3,9 +3,9 @@
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { CallOutcomePresentation } from '@/lib/operating-model/conversation-presentation'
-import type { ConversationKindFilter, ConversationQueue } from '@/lib/queries/conversation-hub'
+import type { ConversationKindFilter, ConversationQueue, ConversationTimeframe } from '@/lib/queries/conversation-hub'
 
-export type { ConversationQueue } from '@/lib/queries/conversation-hub'
+export type { ConversationQueue, ConversationTimeframe } from '@/lib/queries/conversation-hub'
 
 export interface ThreadPreview {
   id: string
@@ -46,6 +46,7 @@ const CONTACT_TYPES: ReadonlyArray<{ key: ConversationKindFilter; label: string 
 ]
 
 const NOOP_KIND_FILTER_CHANGE = () => undefined
+const NOOP_TIMEFRAME_CHANGE = () => undefined
 
 const CHANNEL_META = {
   call: { icon: 'call', tone: 'text-[var(--crm-info)]' },
@@ -61,8 +62,9 @@ const OUTCOME_TONE = {
   neutral: 'text-[var(--crm-text-muted)]',
 } as const
 
-function emptyQueueMessage(queue: ConversationQueue, search: string) {
+function emptyQueueMessage(queue: ConversationQueue, search: string, timeframe: ConversationTimeframe) {
   if (search.trim().length >= 3) return `No conversations match “${search.trim()}”.`
+  if (timeframe === 'recent') return 'No older conversations in this queue.'
   if (queue === 'needs_reply') return 'Nothing needs a reply.'
   if (queue === 'mine') return 'No conversations are assigned to you.'
   if (queue === 'unassigned') return 'No conversations are waiting for an owner.'
@@ -89,12 +91,14 @@ export function InboxSidebar({
   threads,
   activeThreadKey,
   activeQueue,
+  activeTimeframe = 'inbox',
   kindFilter = 'all',
   search,
   loading = false,
   error = null,
   onSelectThread,
   onQueueChange,
+  onTimeframeChange = NOOP_TIMEFRAME_CHANGE,
   onKindFilterChange = NOOP_KIND_FILTER_CHANGE,
   onSearchChange,
   onRetry,
@@ -106,12 +110,14 @@ export function InboxSidebar({
   threads: ThreadPreview[]
   activeThreadKey: string
   activeQueue: ConversationQueue
+  activeTimeframe?: ConversationTimeframe
   kindFilter?: ConversationKindFilter
   search: string
   loading?: boolean
   error?: string | null
   onSelectThread: (threadKey: string) => void
   onQueueChange: (queue: ConversationQueue) => void
+  onTimeframeChange?: (timeframe: ConversationTimeframe) => void
   onKindFilterChange?: (kind: ConversationKindFilter) => void
   onSearchChange: (search: string) => void
   onRetry?: () => void
@@ -131,6 +137,28 @@ export function InboxSidebar({
           <button type="button" className="crm-primary-button flex h-9 items-center gap-1 rounded-lg px-3 text-xs font-bold" onClick={onNewMessage}>
             <Icon name="search" className="text-[18px]" /> Find
           </button>
+        </div>
+
+        <div aria-label="Conversation timeframe" role="tablist" className="mx-4 grid grid-cols-2 rounded-xl bg-[var(--crm-surface-subtle)] p-1">
+          {([['inbox', 'Inbox', 'Last 24 hours'], ['recent', 'Recent', 'Older than 24 hours']] as const).map(([timeframe, label, description]) => (
+            <button
+              key={timeframe}
+              type="button"
+              role="tab"
+              aria-selected={activeTimeframe === timeframe}
+              aria-label={`${label} · ${description}`}
+              onClick={() => onTimeframeChange(timeframe)}
+              className={cn(
+                'rounded-lg px-2 py-2 text-left transition',
+                activeTimeframe === timeframe
+                  ? 'bg-[var(--crm-surface)] text-[var(--crm-ink)] shadow-sm ring-1 ring-[var(--crm-border)]'
+                  : 'text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]',
+              )}
+            >
+              <span className="block text-[11px] font-black">{label}</span>
+              <span className="mt-0.5 block text-[8px] font-semibold opacity-70">{description}</span>
+            </button>
+          ))}
         </div>
 
         <div aria-label="Conversation queues" role="group" className="grid grid-cols-4 px-3 md:px-4">
@@ -201,8 +229,8 @@ export function InboxSidebar({
         {!loading && !error && threads.length === 0 ? (
           <div role="status" className="px-6 py-12 text-center">
             <span className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--crm-success-soft)] text-[var(--crm-success)]"><Icon name="inbox" /></span>
-            <p className="mt-3 text-sm font-black text-[var(--crm-ink)]">{emptyQueueMessage(activeQueue, search)}</p>
-            <p className="mt-1 text-xs font-medium leading-5 text-[var(--crm-text-muted)]">This queue is calculated by the CRM, not by this browser.</p>
+            <p className="mt-3 text-sm font-black text-[var(--crm-ink)]">{emptyQueueMessage(activeQueue, search, activeTimeframe)}</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-[var(--crm-text-muted)]">The CRM moves a thread to Recent when its last activity passes 24 hours.</p>
           </div>
         ) : null}
 
