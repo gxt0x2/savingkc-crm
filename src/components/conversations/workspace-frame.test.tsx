@@ -157,11 +157,11 @@ describe('WorkspaceFrame route persistence', () => {
 
     fireEvent.click(launcher)
 
-    expect(await screen.findByRole('dialog', { name: 'AI Assistant' })).toBeVisible()
-    expect(screen.getByLabelText('Ask the AI Assistant')).toBeVisible()
+    expect(await screen.findByRole('dialog', { name: 'SavingKC Intelligence' })).toBeVisible()
+    expect(screen.getByLabelText('Ask SavingKC Intelligence')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Attach evidence' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Start voice dictation' })).toBeInTheDocument()
-    expect(await screen.findByText(/SavingKC's recorded goals/)).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Close AI Assistant' })).toBeVisible()
+    expect(await screen.findByText(/Ask one clear question/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Close SavingKC Intelligence' })).toBeVisible()
   })
 })

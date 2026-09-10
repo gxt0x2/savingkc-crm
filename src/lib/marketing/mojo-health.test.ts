@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import { getMojoHealth } from './mojo-health'
 
-type Response = { data: unknown[]; error: { message: string } | null }
+type Response = { data: unknown; error: { message: string } | null }
+
+const cleanReconciliation = {
+  checkedAt: '2026-09-08T23:00:00.000Z',
+  windowSince: '2026-08-09T23:00:00.000Z',
+  counts: {},
+  samples: {},
+}
 
 function query(response: Response) {
   const builder = {
@@ -22,9 +29,10 @@ function database(performance: unknown[], config = [
   { key: 'mojo_session_status', value: 'healthy' },
   { key: 'mojo_sync_health', value: 'healthy' },
   { key: 'mojo_sync_last_ok_at', value: '2026-09-04T19:00:00.000Z' },
-], queueRows: unknown[] = [], eventRows: unknown[] = []) {
+], queueRows: unknown[] = [], eventRows: unknown[] = [], reconciliation: unknown = cleanReconciliation) {
   let leadQuery = 0
   return {
+    rpc: () => Promise.resolve({ data: reconciliation, error: null }),
     from: (table: string) => {
       if (table === 'system_config') {
         return query({ data: config, error: null })
@@ -108,5 +116,40 @@ describe('Mojo health data watermark', () => {
     expect(health.qualification.evidencePending24h).toBe(1)
     expect(health.status).toBe('watch')
     expect(health.message).toBe('Mojo ingestion has 1 active item')
+  })
+
+  it('raises attention when the reconciliation snapshot finds CRM drift', async () => {
+    const health = await getMojoHealth(database(
+      [{ metric_date: '2026-09-08', source_fetched_at: '2026-09-08T22:55:00.000Z' }],
+      [
+        { key: 'mojo_session_status', value: 'healthy' },
+        { key: 'mojo_sync_health', value: 'healthy' },
+        { key: 'mojo_sync_last_ok_at', value: '2026-09-08T22:55:00.000Z' },
+      ],
+      [],
+      [],
+      {
+        checkedAt: '2026-09-08T23:00:00.000Z',
+        windowSince: '2026-08-09T23:00:00.000Z',
+        counts: {
+          followupsMissingWorkItems: 1,
+          analyzedMissingSummary: 2,
+        },
+        samples: { followups: [{ record_id: 'mojo-1' }] },
+      },
+    ) as never, { now: new Date('2026-09-08T23:00:00.000Z') })
+
+    expect(health.status).toBe('attention')
+    expect(health.message).toBe('CRM reconciliation has 3 unresolved issues')
+    expect(health.reconciliation).toMatchObject({
+      status: 'attention',
+      issueCount: 3,
+      counts: {
+        followupsMissingWorkItems: 1,
+        analyzedMissingSummary: 2,
+        strongDuplicateRecordingPairs: 0,
+      },
+    })
+    expect(health.reconciliation.samples.followups).toEqual([{ record_id: 'mojo-1' }])
   })
 })
