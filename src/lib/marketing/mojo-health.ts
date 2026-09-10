@@ -3,6 +3,22 @@ import { isSavingKcWorkday } from '@/lib/company-calendar'
 
 export type MojoHealthStatus = 'clean' | 'watch' | 'attention'
 
+export type MojoReconciliationCounts = {
+  deadLetterQueue: number
+  lifecycleStationDeadConflict: number
+  lifecycleClassificationDeadConflict: number
+  deadActiveAppointments: number
+  staleActiveAppointments: number
+  cancelledOutcomeActiveAppointments: number
+  deadCurrentWorkItems: number
+  followupsMissingWorkItems: number
+  eligibleMissingRecordingUrl: number
+  recordingsNotAnalyzed: number
+  analyzedMissingTranscript: number
+  analyzedMissingSummary: number
+  strongDuplicateRecordingPairs: number
+}
+
 export type MojoHealth = {
   status: MojoHealthStatus
   message: string
@@ -51,6 +67,17 @@ export type MojoHealth = {
     qualifiedPeriod: number
     appointmentPeriod: number
   }
+  reconciliation: {
+    status: 'clean' | 'attention'
+    message: string
+    windowDays: number
+    checkedAt: string | null
+    windowSince: string | null
+    issueCount: number
+    counts: MojoReconciliationCounts
+    samples: Record<string, unknown[]>
+    error: string | null
+  }
   monitor: {
     path: string
     schedule: string
@@ -58,7 +85,7 @@ export type MojoHealth = {
   }
 }
 
-type SupabaseLike = Pick<ReturnType<typeof supabaseAdmin>, 'from'>
+type SupabaseLike = Pick<ReturnType<typeof supabaseAdmin>, 'from' | 'rpc'>
 
 type SystemConfigRow = {
   key: string
@@ -117,6 +144,63 @@ const QUALIFIED_STATIONS = new Set([
   'under_contract',
   'closed',
 ])
+
+const RECONCILIATION_COUNT_KEYS = [
+  'deadLetterQueue',
+  'lifecycleStationDeadConflict',
+  'lifecycleClassificationDeadConflict',
+  'deadActiveAppointments',
+  'staleActiveAppointments',
+  'cancelledOutcomeActiveAppointments',
+  'deadCurrentWorkItems',
+  'followupsMissingWorkItems',
+  'eligibleMissingRecordingUrl',
+  'recordingsNotAnalyzed',
+  'analyzedMissingTranscript',
+  'analyzedMissingSummary',
+  'strongDuplicateRecordingPairs',
+] as const satisfies readonly (keyof MojoReconciliationCounts)[]
+
+function emptyReconciliationCounts(): MojoReconciliationCounts {
+  return Object.fromEntries(RECONCILIATION_COUNT_KEYS.map((key) => [key, 0])) as MojoReconciliationCounts
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function nonNegativeCount(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0
+}
+
+function reconciliationHealth(value: unknown): MojoHealth['reconciliation'] {
+  const snapshot = record(value)
+  const rawCounts = record(snapshot.counts)
+  const counts = emptyReconciliationCounts()
+  for (const key of RECONCILIATION_COUNT_KEYS) counts[key] = nonNegativeCount(rawCounts[key])
+  const issueCount = RECONCILIATION_COUNT_KEYS.reduce((total, key) => total + counts[key], 0)
+  const rawSamples = record(snapshot.samples)
+  const samples = Object.fromEntries(
+    Object.entries(rawSamples).map(([key, sample]) => [key, Array.isArray(sample) ? sample : []]),
+  )
+
+  return {
+    status: issueCount === 0 ? 'clean' : 'attention',
+    message: issueCount === 0
+      ? 'CRM reconciliation is clean'
+      : `CRM reconciliation has ${issueCount} unresolved issue${issueCount === 1 ? '' : 's'}`,
+    windowDays: 30,
+    checkedAt: isoOrNull(snapshot.checkedAt),
+    windowSince: isoOrNull(snapshot.windowSince),
+    issueCount,
+    counts,
+    samples,
+    error: null,
+  }
+}
 
 function text(value: unknown): string {
   if (typeof value === 'string') return value.trim()
@@ -232,6 +316,17 @@ function buildFallbackHealth(error: string, now: Date): MojoHealth {
       qualifiedPeriod: 0,
       appointmentPeriod: 0,
     },
+    reconciliation: {
+      status: 'attention',
+      message: `CRM reconciliation failed: ${error}`,
+      windowDays: 30,
+      checkedAt: now.toISOString(),
+      windowSince: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      issueCount: 1,
+      counts: emptyReconciliationCounts(),
+      samples: {},
+      error,
+    },
     monitor: {
       path: '/api/admin/mojo-health',
       schedule: 'Every 15 minutes during Mojo business hours',
@@ -268,6 +363,7 @@ export async function getMojoHealth(
       { data: periodLeadRows, error: periodLeadError },
       { data: recentLeadRows, error: recentLeadError },
       { data: performanceRows, error: performanceError },
+      { data: reconciliationSnapshot, error: reconciliationError },
     ] = await Promise.all([
       supabase
         .from('system_config')
@@ -304,9 +400,13 @@ export async function getMojoHealth(
         .eq('agent_key', 'casey')
         .order('metric_date', { ascending: false })
         .limit(1),
+      supabase.rpc('crm_mojo_reconciliation_snapshot_v1', {
+        p_since: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
     ])
 
-    const firstError = configError || queueError || callEventError || periodLeadError || recentLeadError || performanceError
+    const firstError = configError || queueError || callEventError || periodLeadError || recentLeadError
+      || performanceError || reconciliationError
     if (firstError) return buildFallbackHealth(firstError.message, now)
 
     const configByKey = new Map<string, SystemConfigRow>(
@@ -356,6 +456,7 @@ export async function getMojoHealth(
       recordingFailed7d: callEvents.filter((event) => text(event.recording_processing_status) === 'failed').length,
       analyzed24h: callEvents24h.filter((event) => text(event.recording_processing_status) === 'analyzed').length,
     }
+    const reconciliation = reconciliationHealth(reconciliationSnapshot)
     const queued24hRows = queue.filter((row) => {
       const created = isoOrNull(row.created_at)
       return created ? created >= since24h : false
@@ -433,6 +534,9 @@ export async function getMojoHealth(
       status = 'attention'
       const failureCount = deadLetterRows.length + failed24hRows.length + qualification.recordingFailed7d
       message = `Mojo ingestion has ${failureCount} failed item${failureCount === 1 ? '' : 's'}`
+    } else if (reconciliation.status === 'attention') {
+      status = 'attention'
+      message = reconciliation.message
     } else if (businessHours && !lastSyncAt) {
       status = 'attention'
       message = 'Mojo sync has no successful timestamp during business hours'
@@ -501,6 +605,7 @@ export async function getMojoHealth(
         qualifiedPeriod,
         appointmentPeriod,
       },
+      reconciliation,
       monitor: {
         path: '/api/admin/mojo-health',
         schedule: 'Every 15 minutes during Mojo business hours',
