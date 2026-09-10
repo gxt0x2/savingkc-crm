@@ -12,6 +12,13 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard',
 }))
 
+vi.mock('@/hooks/use-auth', () => ({
+  useAuth: () => ({
+    user: { id: 'casey-user-id', email: 'casey@savingkc.com' },
+    loading: false,
+  }),
+}))
+
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...props}>{children}</a>

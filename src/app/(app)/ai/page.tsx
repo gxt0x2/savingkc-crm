@@ -35,7 +35,7 @@ const STARTERS = [
 export default function AiAssistantPage() {
   const params = useSearchParams()
   const initialPrompt = params.get('prompt')?.trim() || ''
-  const { messages, loadingHistory, sending, error, send, clear } = useAssistantThread('ai_page')
+  const { messages, loadingHistory, sending, error, send, clear, ownerEmail } = useAssistantThread('ai_page')
   const [input, setInput] = useState(initialPrompt)
   const [snapshot, setSnapshot] = useState<LiveSnapshot>(INITIAL_SNAPSHOT)
   const autoSent = useRef(false)
@@ -106,7 +106,7 @@ export default function AiAssistantPage() {
 
         <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_310px]">
           <div className="crm-panel flex min-h-[680px] min-w-0 flex-col overflow-hidden rounded-[22px]">
-            <div className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-4 py-3.5 sm:px-6"><div><h2 className="text-sm font-black tracking-tight">Current conversation</h2><p className="mt-0.5 text-[10px] font-semibold text-[var(--crm-text-muted)]">Private to your account · evidence appears only when useful</p></div><button type="button" onClick={() => void clear()} disabled={sending || loadingHistory} className="crm-secondary-button h-9 rounded-lg px-3 text-xs font-black disabled:opacity-50">Start fresh</button></div>
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--crm-border)] px-4 py-3.5 sm:px-6"><div className="min-w-0"><h2 className="text-sm font-black tracking-tight">Your private conversation</h2><p className="mt-0.5 truncate text-[10px] font-semibold text-[var(--crm-text-muted)]"><span className="text-[var(--crm-success)]">Private</span>{ownerEmail ? ` to ${ownerEmail}` : ' to your signed-in account'} · teammates cannot open this history</p></div><button type="button" onClick={() => void clear()} disabled={sending || loadingHistory} className="crm-secondary-button h-9 shrink-0 rounded-lg px-3 text-xs font-black disabled:opacity-50">Start fresh</button></div>
             <div className="min-w-0 flex-1 space-y-6 overflow-y-auto bg-[var(--crm-canvas)] px-4 py-5 sm:px-6 sm:py-7">
               {loadingHistory ? <div className="flex items-center gap-2 text-xs font-semibold text-[var(--crm-text-muted)]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--crm-brand)]" />Loading this conversation…</div> : null}
               {!loadingHistory && messages.length === 0 ? (

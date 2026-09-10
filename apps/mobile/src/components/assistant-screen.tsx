@@ -34,10 +34,12 @@ function optimisticMessage(content: string): AssistantMessage {
 
 export function AssistantScreen({
   accessToken,
+  ownerEmail,
   initialPrompt,
   onInitialPromptConsumed,
 }: {
   accessToken: string
+  ownerEmail: string
   initialPrompt: string | null
   onInitialPromptConsumed: () => void
 }) {
@@ -114,7 +116,7 @@ export function AssistantScreen({
           <View style={styles.avatar}><Text style={styles.avatarText}>ARI</Text></View>
           <View style={styles.titleCopy}>
             <Text style={styles.title}>AI Assistant</Text>
-            <Text style={styles.status}>Live CRM context · read-only</Text>
+            <Text style={styles.status}>Private to {ownerEmail} · live CRM context</Text>
           </View>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promptRow}>
