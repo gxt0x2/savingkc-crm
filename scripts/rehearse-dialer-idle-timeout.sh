@@ -90,6 +90,13 @@ CREATE TABLE public.dialer_session_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE public.prospecting_campaign_members (
+  id uuid PRIMARY KEY,
+  dialer_session_id uuid REFERENCES public.dialer_sessions(id),
+  status text NOT NULL DEFAULT 'active',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE FUNCTION public.dialer_session_queue_items_v2(value jsonb)
 RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT value $$;
 
@@ -100,6 +107,9 @@ SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261027124500_dialer_idle_timeout.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261027124500_dialer_idle_timeout.sql" >/dev/null
+# Exercise the actual reservation-release trigger with the inactivity policy.
+sed -n '/^CREATE OR REPLACE FUNCTION public.release_prospecting_dialer_batch_v1()/,$p' \
+  "$ROOT/supabase/migrations/20260904130000_prospecting_dialer_batches.sql" | "${PSQL[@]}" >/dev/null
 
 "${PSQL[@]}" <<'SQL'
 DO $test$
@@ -135,6 +145,11 @@ BEGIN
   END
   WHERE id IN (connected_session, outcome_session, stale_attempt_session);
 
+  INSERT INTO public.prospecting_campaign_members (id, dialer_session_id)
+  VALUES (idle_session, idle_session), (connected_session, connected_session),
+         (outcome_session, outcome_session), (heartbeat_session, heartbeat_session);
+  UPDATE public.dialer_sessions SET status = 'paused' WHERE id = idle_session;
+
   PERFORM public.expire_dialer_session_if_idle_v1(idle_session, actor_email);
   IF (SELECT status FROM public.dialer_sessions WHERE id = idle_session) <> 'stopped'
     OR abs(extract(epoch FROM (
@@ -142,6 +157,8 @@ BEGIN
       - (SELECT started_at FROM public.dialer_sessions WHERE id = idle_session)
     )) - 300) > 1
   THEN RAISE EXCEPTION 'idle session did not stop at the exact five-minute boundary'; END IF;
+  IF (SELECT dialer_session_id FROM public.prospecting_campaign_members WHERE id = idle_session) IS NOT NULL
+  THEN RAISE EXCEPTION 'abandoned paused session still reserves the remaining campaign sellers'; END IF;
 
   SELECT last_interaction_at INTO before_interaction
   FROM public.dialer_sessions WHERE id = heartbeat_session;
@@ -172,6 +189,11 @@ BEGIN
     OR (SELECT status FROM public.dialer_session_attempts WHERE session_id = outcome_session) <> 'awaiting_disposition'
   THEN RAISE EXCEPTION 'pending outcome was not preserved under an idle stop request'; END IF;
   PERFORM public.assert_dialer_session_control_v1(outcome_session, actor_email, controller_token);
+  IF EXISTS (
+    SELECT 1 FROM public.prospecting_campaign_members
+    WHERE id IN (connected_session, outcome_session, heartbeat_session)
+      AND dialer_session_id IS DISTINCT FROM id
+  ) THEN RAISE EXCEPTION 'active work or pending outcomes lost their campaign reservation'; END IF;
 
   PERFORM public.expire_dialer_session_if_idle_v1(stale_attempt_session, actor_email);
   IF (SELECT status FROM public.dialer_sessions WHERE id = stale_attempt_session) <> 'stopped'

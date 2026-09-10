@@ -55,10 +55,10 @@ const campaignRow = {
   completed_at: null,
 }
 
-function query(data: unknown = []) {
-  const result = Promise.resolve({ data, error: null, count: 0 })
+function query(data: unknown = [], options: { error?: { message: string }; count?: number } = {}) {
+  const result = Promise.resolve({ data, error: options.error || null, count: options.count || 0 })
   const chain: Record<string, unknown> = { then: result.then.bind(result) }
-  for (const method of ['select', 'eq', 'neq', 'in', 'not', 'contains', 'order', 'limit']) chain[method] = vi.fn(() => chain)
+  for (const method of ['select', 'eq', 'neq', 'in', 'is', 'not', 'contains', 'order', 'limit']) chain[method] = vi.fn(() => chain)
   chain.maybeSingle = vi.fn(() => Promise.resolve({ data, error: null }))
   return chain
 }
@@ -113,6 +113,63 @@ describe('launchProspectingDialerCampaign', () => {
     }))
   })
 
+  it('releases another operator’s idle reservation before Casey claims the campaign', async () => {
+    const sessions = query([{ id: 'ernest-paused-session', actor_email: actor.email }])
+    mocks.from.mockImplementation((table: string) => table === 'prospecting_campaigns'
+      ? query(campaignRow) : table === 'dialer_sessions' ? sessions : query())
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === 'prospecting_campaign_member_page_v3') return { data: [], error: null }
+      if (name === 'expire_dialer_session_if_idle_v1') return { data: { status: 'stopped' }, error: null }
+      return { data: { created: true, session: { id: 'casey-session' }, batchSize: 11, remaining: 0 }, error: null }
+    })
+    const casey = { email: 'casey@savingkc.com', name: 'Casey' }
+    await expect(launchProspectingDialerCampaign(casey, campaignId, setup, control)).resolves.toMatchObject({ batchSize: 11 })
+    expect(sessions.eq).toHaveBeenCalledWith('prospecting_campaign_id', campaignId)
+    expect(sessions.in).toHaveBeenCalledWith('status', ['active', 'paused'])
+    expect(mocks.rpc).toHaveBeenCalledWith('expire_dialer_session_if_idle_v1', {
+      p_session_id: 'ernest-paused-session', p_actor_email: actor.email,
+    })
+    const calls = mocks.rpc.mock.calls.map(([name]) => name)
+    expect(calls.indexOf('expire_dialer_session_if_idle_v1')).toBeLessThan(calls.indexOf('start_prospecting_dialer_session_v5'))
+    expect(mocks.rpc).toHaveBeenCalledWith('start_prospecting_dialer_session_v5', expect.objectContaining({ p_actor_email: casey.email }))
+  })
+
+  it.each(['read', 'expire'])('does not launch when reservation %s fails', async (failure) => {
+    mocks.from.mockImplementation((table: string) => table === 'prospecting_campaigns'
+      ? query(campaignRow) : table === 'dialer_sessions'
+        ? query([{ id: 'session-other', actor_email: actor.email }], failure === 'read' ? { error: { message: 'campaign_not_found' } } : {}) : query())
+    mocks.rpc.mockImplementation(async (name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? { data: [], error: null } : { data: null, error: { message: 'campaign_not_found' } })
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({ code: 'campaign_not_found' })
+    expect(mocks.rpc.mock.calls.some(([name]) => name === 'start_prospecting_dialer_session_v5')).toBe(false)
+  })
+
+  it('does not touch reservations for a campaign the operator cannot access', async () => {
+    mocks.from.mockImplementation((table: string) => table === 'prospecting_campaigns'
+      ? query({ ...campaignRow, status: 'paused' }) : query())
+    await expect(launchProspectingDialerCampaign({ email: 'casey@savingkc.com', name: 'Casey' }, campaignId, setup, control))
+      .rejects.toMatchObject({ code: 'campaign_not_found' })
+    expect(mocks.from).not.toHaveBeenCalledWith('dialer_sessions')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it.each([0, 2])('distinguishes a reserved queue from recency filters with %i unreserved members', async (unreserved) => {
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'prospecting_campaigns') return query(campaignRow)
+      const chain = query()
+      if (table === 'prospecting_campaign_members') {
+        chain.is = vi.fn(() => query([], { count: unreserved }))
+        chain.not = vi.fn(() => query([], { count: 11 }))
+      }
+      return chain
+    })
+    mocks.rpc.mockImplementation(async (name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? { data: [], error: null } : { data: null, error: { message: 'campaign_session_filters_empty' } })
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({
+      code: unreserved === 0 ? 'campaign_session_reserved' : 'campaign_session_filters_empty', status: 409,
+    })
+  })
+
   it('returns an actionable message after every ready contact is worked', async () => {
     mocks.rpc.mockImplementation((name: string) => name === 'prospecting_campaign_member_page_v3'
       ? Promise.resolve({ data: [], error: null })
@@ -121,6 +178,18 @@ describe('launchProspectingDialerCampaign', () => {
       code: 'campaign_dialer_complete',
       status: 409,
     })
+  })
+
+  it('preserves the launch error when the reservation diagnostic is unavailable', async () => {
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'prospecting_campaigns') return query(campaignRow)
+      const chain = query()
+      chain.is = vi.fn(() => { throw new Error('diagnostic unavailable') })
+      return chain
+    })
+    mocks.rpc.mockImplementation(async (name: string) => name === 'prospecting_campaign_member_page_v3'
+      ? { data: [], error: null } : { data: null, error: { message: 'campaign_session_filters_empty' } })
+    await expect(launchProspectingDialerCampaign(actor, campaignId, setup, control)).rejects.toMatchObject({ code: 'campaign_session_filters_empty' })
   })
 
   it('returns safe session context when another browser already controls the open session', async () => {

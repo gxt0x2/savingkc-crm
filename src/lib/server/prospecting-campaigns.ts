@@ -18,6 +18,7 @@ import {
 } from '@/lib/prospecting/campaign-contract'
 import { getDialerSessionControlSummary, getOpenDialerSession, parseDialerSession, type DialerSessionControlSummary, type DialerSessionState } from '@/lib/server/dialer-session-engine'
 import { supabase } from '@/lib/supabase-lazy'
+import { campaignDialerQueueIsReserved, expireIdleCampaignDialerSessions } from '@/lib/server/prospecting-dialer-reservations'
 import type { CountyDeceasedFilter, CountyPropertyClassFilter, CountySavedViewDefinition } from '@/lib/prospecting/county-saved-views'
 
 export class ProspectingCampaignError extends Error {
@@ -642,6 +643,8 @@ export async function launchProspectingDialerCampaign(
   if (campaign.status !== 'active') throw new ProspectingCampaignError('invalid_campaign_state', 409, 'Activate the campaign before starting calls')
   const callerId = normalizePhoneToE164(setup.callerIds[0] || '')
   if (!callerId) throw new ProspectingCampaignError('caller_id_required', 409, 'Choose a calling number before starting')
+  const expirationError = await expireIdleCampaignDialerSessions(campaignId)
+  if (expirationError) throw databaseError(expirationError)
   const { data, error } = await supabase.rpc('start_prospecting_dialer_session_v5', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
@@ -654,6 +657,9 @@ export async function launchProspectingDialerCampaign(
     p_expected_generation: control.expectedGeneration ?? null,
     p_request_id: control.requestId?.trim() || null,
   })
+  if (error?.message?.includes('campaign_session_filters_empty') && await campaignDialerQueueIsReserved(campaignId)) {
+    throw new ProspectingCampaignError('campaign_session_reserved', 409, 'The remaining sellers are reserved by another calling session. Finish that session or save its pending call outcome before continuing. Inactive sessions are released automatically.')
+  }
   if (error) throw await contextualLaunchError(error, actor)
   const payload = data as { created?: unknown; session?: unknown; batchSize?: unknown; remaining?: unknown } | null
   return {
