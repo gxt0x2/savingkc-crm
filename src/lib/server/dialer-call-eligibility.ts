@@ -360,7 +360,7 @@ async function evaluateOutboundDialerCallUnchecked(
       }
     }
 
-    const leads = uniqueById([
+    let leads = uniqueById([
       ...matchedLeads,
       ...(exactLead ? [exactLead] : []),
     ])
@@ -368,6 +368,21 @@ async function evaluateOutboundDialerCallUnchecked(
       ...matchedProspectPhones,
       ...(exactProspectPhone ? [exactProspectPhone] : []),
     ])
+    // A source prospect can already be linked to a CRM lead whose primary
+    // number differs from this reviewed phone. Phone matching alone misses
+    // that lead's dead/DNC state, even though history uses the linked ID.
+    const missingLinkedLeadIds = Array.from(new Set(prospectPhones.map(linkedLeadId)))
+      .filter((id): id is string => Boolean(id) && !leads.some((lead) => lead.id === id))
+    if (missingLinkedLeadIds.length > 0) {
+      const linkedResult = await db.from('leads')
+        .select('id, phone, station, classification, dead_reason')
+        .in('id', missingLinkedLeadIds)
+        .limit(missingLinkedLeadIds.length)
+      if (linkedResult.error || linkedResult.data?.length !== missingLinkedLeadIds.length) {
+        throw new Error('dialer policy linked lead lookup failed')
+      }
+      leads = uniqueById([...leads, ...linkedResult.data as LeadRow[]])
+    }
     const resolvedLeadIds = Array.from(new Set([
       ...leads.map((lead) => lead.id),
       ...prospectPhones.map(linkedLeadId),

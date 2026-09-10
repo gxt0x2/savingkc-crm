@@ -451,4 +451,55 @@ describe('server dialer call eligibility', () => {
       },
     })
   })
+
+  it('blocks a source prospect linked to a dead lead with a different primary phone', async () => {
+    const db = database({
+      leads: [goodLead({ station: 'dead', classification: 'dead' })],
+      prospect_phones: [{
+        id: 'linked-phone', phone: '+19135550777', prospect_id: 'source-prospect',
+        phone_connected: null, last_disposition: null, prospects: { lead_id: 'lead-1' },
+      }],
+    })
+    const input = {
+      ...baseInput, phone: '+19135550777', leadId: null,
+      prospectId: 'source-prospect', prospectPhoneId: 'linked-phone',
+    }
+    expect(await evaluateOutboundDialerCall(input, { db: db.client })).toMatchObject({
+      allowed: false, reason: 'dead_lead', reasonSource: 'leads.station',
+    })
+    db.state.rows.leads = [goodLead()]
+    expect(await evaluateOutboundDialerCall(input, { db: db.client })).toMatchObject({ allowed: true })
+  })
+
+  it('fails closed when a prospect-linked CRM lead cannot be loaded', async () => {
+    const db = database({
+      prospect_phones: [{
+        id: 'linked-phone', phone: '+19135550777', prospect_id: 'source-prospect',
+        phone_connected: null, last_disposition: null, prospects: { lead_id: 'missing-lead' },
+      }],
+    })
+    expect(await evaluateOutboundDialerCall({
+      ...baseInput, phone: '+19135550777', leadId: null,
+      prospectId: 'source-prospect', prospectPhoneId: 'linked-phone',
+    }, { db: db.client })).toMatchObject({ allowed: false, reason: 'policy_unavailable' })
+  })
+
+  it('preserves CRM re-engagement but enforces the linked lead voice DNC', async () => {
+    const db = database({
+      leads: [goodLead({ station: 'dead', classification: 'dead', dead_reason: 'not_selling' })],
+      prospect_phones: [{
+        id: 'linked-phone', phone: '+19135550777', prospect_id: 'source-prospect',
+        phone_connected: null, last_disposition: null, prospects: { lead_id: 'lead-1' },
+      }],
+    })
+    const input: OutboundDialerCallInput = {
+      ...baseInput, surface: 'crm', phone: '+19135550777', leadId: null,
+      prospectId: 'source-prospect', prospectPhoneId: 'linked-phone',
+    }
+    expect(await evaluateOutboundDialerCall(input, { db: db.client })).toMatchObject({ allowed: true })
+    db.state.rows.leads[0].dead_reason = 'dnc_refused'
+    expect(await evaluateOutboundDialerCall(input, { db: db.client })).toMatchObject({
+      allowed: false, reason: 'do_not_call', reasonSource: 'leads.dead_reason',
+    })
+  })
 })
