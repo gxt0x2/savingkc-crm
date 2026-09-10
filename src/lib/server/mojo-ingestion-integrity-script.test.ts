@@ -78,6 +78,15 @@ describe('Mojo source integrity', () => {
     await expect(buildCallRecords([activity(5, 6, { datetime: '09/14/2026 12:00 PM' })], 0, 'test', new Map(), '', async () => { throw new Error('lookup failed') }))
       .rejects.toThrow('lookup failed')
   })
+  it('keeps a callback identity and chronology when later notes arrive, and holds conflicting schedules', async () => {
+    const original = [activity(81, 6, { datetime: '09/14/2026 12:00 PM' })]
+    const before = await buildCallRecords(original, 0, 'test', new Map(), '', contact)
+    const later = [...original, activity(88, 3, { contents: 'Please call me back.' }, '09/10/2026 03:30 PM')]
+    const after = await buildCallRecords(later, 0, 'test', new Map(), '', contact)
+    expect(after.calls[0]).toMatchObject({ record_id: before.calls[0].record_id, call_date: before.calls[0].call_date, provider_action_id: '81', provider_activity_ids: ['81', '88'] })
+    const changed = [...later, activity(90, 6, { datetime: '09/15/2026 12:00 PM' })]
+    await expect(buildCallRecords(changed, 0, 'test', new Map(), '', contact)).rejects.toThrow('Conflicting scheduled actions')
+  })
   it('keeps separate days and uses the matched recording timestamp for call chronology', async () => {
     const recordings = indexMojoRecordings([{ contact_id: 7, record_id: 10, audio: 'https://example.com/a.mp3', duration_seconds: 180, call_date: '09/10/2026 09:50 AM' }])
     const rows = [activity(5, 3, { contents: 'Motivation: wants to sell' }), activity(4, 3, { contents: 'Timeline: 60 days' }, '09/09/2026 10:00 AM')]

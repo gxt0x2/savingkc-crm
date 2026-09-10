@@ -372,6 +372,8 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
         agentName,
         timestamp,
         activityIds: [],
+        actionId: activityId,
+        scheduledActions: [],
         phone: '',
         notes: '',
         groupName: '',
@@ -384,7 +386,6 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
 
     const entry = contactMap.get(groupKey)
     entry.activityIds.push(activityId)
-    entry.timestamp = timestamp
 
     switch (type) {
       case ACTIVITY_NOTE: {
@@ -394,12 +395,14 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
         break
       }
       case ACTIVITY_APPOINTMENT: {
+        entry.scheduledActions.push({ id: activityId, timestamp, date: details.datetime || '' })
         entry.hasAppointment = true
         entry.followUpDate = details.datetime || entry.followUpDate || ''
         log(`  Appointment evidence found for contact ${contactId}`)
         break
       }
       case ACTIVITY_FOLLOWUP: {
+        entry.scheduledActions.push({ id: activityId, timestamp, date: details.datetime || '' })
         // Casey set a follow-up call — details.datetime is the scheduled time
         entry.followUpDate = details.datetime || ''
         log(`  Follow-up evidence found for contact ${contactId}`)
@@ -426,6 +429,16 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
   for (const entry of contactMap.values()) {
     const contactId = entry.contactId
     try {
+      if (!entry.hasDnc && entry.scheduledActions.length) {
+        // A note edit cannot become the identity or date of a callback. Changed
+        // schedules need explicit reconciliation, not an additional CRM task.
+        if (new Set(entry.scheduledActions.map(action => normalizeMojoDateTime(action.date))).size > 1) {
+          throw new Error('Conflicting scheduled actions require review; source retained')
+        }
+        const action = entry.scheduledActions[0]
+        entry.actionId = action.id
+        entry.timestamp = action.timestamp
+      }
       const groupLower = entry.groupName.toLowerCase()
 
       // === MEANINGFUL CHECK ===
@@ -471,7 +484,7 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
       } catch (error) {
         throw new Error(`Invalid follow-up date for provider contact ${contactId}; source retained`, { cause: error })
       }
-      const canonicalActivityId = Math.max(...entry.activityIds)
+      const canonicalActivityId = entry.actionId
 
       const call = {
         // Keep the historical provider-activity identity stable. The recording
@@ -492,6 +505,8 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
         campaign_name: '',
         recording_url: recording?.audio || '',
         provider_contact_id: String(contactId),
+        provider_action_id: String(canonicalActivityId),
+        provider_activity_ids: entry.activityIds.map(String),
         provider_recording_id: recording?.recordId || '',
         qualified_by_agent: entry.isQualifiedLead,
         has_appointment: entry.hasAppointment,
@@ -554,20 +569,24 @@ async function sourceRequest(method, body, after) {
   return response.json()
 }
 
-export async function deliverMojoCalls(calls, fetchImpl = fetch) {
+export async function deliverMojoCalls(calls, fetchImpl = fetch, sourceBatchId = '') {
   const errors = []
+  const queueIds = []
   for (let offset = 0; offset < calls.length; offset += 100) {
     const chunk = calls.slice(offset, offset + 100)
     try {
       const response = await fetchImpl(CRM_API_URL, {
         method: 'POST', headers: adminHeaders({ 'content-type': 'application/json' }),
-        body: JSON.stringify({ calls: chunk }), signal: AbortSignal.timeout(120000),
+        body: JSON.stringify({ calls: chunk, sourceBatchId, runtime: currentRuntime() }), signal: AbortSignal.timeout(120000),
       })
       if (!response.ok) throw new Error(`CRM intake failed (${response.status}); checkpoint retained`)
-      assertMojoReceipts(chunk, await response.json())
+      const result = await response.json()
+      assertMojoReceipts(chunk, result)
+      queueIds.push(...result.receipts.map(receipt => receipt.queueRecordId || receipt.recordId))
     } catch (error) { errors.push(error) }
   }
   if (errors.length) throw errors[0]
+  return queueIds
 }
 
 async function projectSourceBatch(batch, sessionId, contactLoader = fetchContactDetails) {
@@ -585,9 +604,9 @@ async function projectSourceBatch(batch, sessionId, contactLoader = fetchContact
   const { calls, skippedCount, errors } = await buildCallRecords(
     activities, 0, sessionId, indexMojoRecordings(inRange), since, contactLoader, true,
   )
-  await deliverMojoCalls(calls)
+  const queueIds = await deliverMojoCalls(calls, fetch, batch.id)
   if (errors?.length) throw new Error(`${errors.length} contact projections failed; source retained. ${errors[0]}`)
-  await sourceRequest('PATCH', { id: batch.id, recordIds: calls.map(call => call.record_id) })
+  await sourceRequest('PATCH', { id: batch.id, recordIds: queueIds })
   // A durable remote receipt exists before the local spool can be removed.
   if (batch.filename) fs.unlinkSync(batch.filename)
   log(`Source batch ${batch.id.slice(0, 12)} accepted: calls=${calls.length}, archivedNonCandidates=${skippedCount}, sourceRecordings=${recordings.length}`)

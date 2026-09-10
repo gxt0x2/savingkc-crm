@@ -1,6 +1,17 @@
 import fs from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { runtimeIdentity } from './mojo-runtime-package.mjs'
+
+let runtimeDigest
+function importerDigest() {
+  if (runtimeDigest) return runtimeDigest
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  const manifest = path.join(root, 'runtime-manifest.json')
+  runtimeDigest = (fs.existsSync(manifest) ? JSON.parse(fs.readFileSync(manifest, 'utf8')) : runtimeIdentity(root)).contentDigest
+  return runtimeDigest
+}
 
 const HOME = homedir()
 const DEFAULT_SESSION_FILE = path.join(HOME, '.openclaw/workspace/memory/mojo-session.json')
@@ -72,7 +83,7 @@ export function ensureParentDir(filePath) {
 
 export function adminHeaders(base = {}) {
   const secret = cleanEnv('ADMIN_API_SECRET') || cleanEnv('CRON_SECRET') || cleanEnv('DEPLOY_SECRET')
-  return secret ? { ...base, authorization: `Bearer ${secret}` } : base
+  return secret ? { ...base, authorization: `Bearer ${secret}`, 'x-mojo-runtime-digest': importerDigest() } : base
 }
 
 export function crmBaseUrl() {

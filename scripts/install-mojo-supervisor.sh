@@ -109,6 +109,8 @@ if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_TARGET"; then
   exit 1
 fi
 
-crontab "$FILTERED_CRON"
+if ! cmp -s "$CURRENT_CRON" "$FILTERED_CRON"; then
+  crontab "$FILTERED_CRON"
+fi
 echo "Installed one self-contained supervised Mojo runner. Crontab backup: $BACKUP_PATH"
 [[ -z "$RUNTIME_BACKUP" ]] || echo "Previous runtime backup: $RUNTIME_BACKUP"

@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 
 
 
@@ -45,6 +46,10 @@ export async function POST(req: Request) {
 
     const unauthorized = await requireAdminOrSecret(req, [secret])
     if (unauthorized) return unauthorized
+
+    if (req.headers.get('x-mojo-runtime-digest') !== expectedRuntime.contentDigest) {
+      return NextResponse.json({ error: 'Mojo importer update required' }, { status: 409 })
+    }
 
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
