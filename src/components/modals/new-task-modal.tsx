@@ -5,6 +5,7 @@ import type { AppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
 
 interface Lead {
   id: string
@@ -16,6 +17,9 @@ interface NewTaskModalProps {
   onClose: () => void
   onCreated: () => void
   leadId?: string
+  prospectId?: string
+  campaignMemberId?: string
+  dialerSessionId?: string
   leadName?: string
   showLeadSelector?: boolean
   department?: AppMode
@@ -24,10 +28,17 @@ interface NewTaskModalProps {
   primaryNextAction?: boolean
 }
 
+function toLocalDateTimeInput(date: Date): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
 export function NewTaskModal({
   onClose,
   onCreated,
   leadId: initialLeadId,
+  prospectId,
+  campaignMemberId,
+  dialerSessionId,
   leadName,
   showLeadSelector = false,
   department = 'acquisitions',
@@ -42,7 +53,7 @@ export function NewTaskModal({
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date()
     d.setHours(d.getHours() + 1, 0, 0, 0)
-    return d.toISOString().slice(0, 16)
+    return toLocalDateTimeInput(d)
   })
   // `null` means "follow the authenticated actor". An empty string is an
   // intentional Unassigned choice and must not fall back to the viewed agent.
@@ -58,6 +69,7 @@ export function NewTaskModal({
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [leadSearch, setLeadSearch] = useState(leadName || '')
   const titleRef = useRef<HTMLInputElement>(null)
+  const idempotencyKeyRef = useRef(crypto.randomUUID())
   const titleId = useId()
   const fieldIdPrefix = useId()
   const dialogRef = useDialogAccessibility<HTMLFormElement>(true, onClose, titleRef)
@@ -101,21 +113,29 @@ export function NewTaskModal({
     setSaveError('')
 
     try {
-      const res = await fetch('/api/calendar/tasks', {
+      const res = await withDialerSessionControlOperation(dialerSessionId, 'Saving next action', (controlHeaders, signal) => fetch('/api/calendar/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKeyRef.current,
+          ...controlHeaders,
+        },
         body: JSON.stringify({
           title: title.trim(),
           taskType,
-          dueDate,
+          dueDate: dueDate ? new Date(dueDate).toISOString() : null,
           assignedTo: selectedAssignee,
           role,
           notes,
-          leadId,
+          leadId: leadId || null,
+          prospectId: prospectId || null,
+          campaignMemberId: campaignMemberId || null,
+          dialerSessionId: dialerSessionId || null,
           department,
-          primaryNextAction,
+          primaryNextAction: primaryNextAction && Boolean(leadId),
         }),
-      })
+      }))
       const data = await res.json()
       if (!res.ok || !data.success) {
         setSaveError(data.error || 'Task could not be created. Your entries are still here.')
@@ -208,9 +228,9 @@ export function NewTaskModal({
             </div>
           )}
 
-          {initialLeadId && leadName && (
+          {(initialLeadId || prospectId) && leadName && (
             <div className="rounded-lg bg-[var(--crm-info-soft)] px-3 py-2">
-              <p className="mb-0.5 text-xs text-[var(--crm-text-muted)]">Attached to:</p>
+              <p className="mb-0.5 text-xs text-[var(--crm-text-muted)]">Attached to {prospectId && !initialLeadId ? 'source Prospect' : 'Lead'}:</p>
               <p className="text-sm font-medium text-[var(--crm-info)]">{leadName}</p>
             </div>
           )}
