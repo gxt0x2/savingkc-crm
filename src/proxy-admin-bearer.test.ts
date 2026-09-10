@@ -74,7 +74,7 @@ describe('admin proxy bearer allowlist', () => {
     }), event)
     expect(authorized.headers.get('x-middleware-next')).toBe('1')
 
-    for (const headers of [{}, { authorization: 'Bearer invalid-secret' }]) {
+    for (const headers of [new Headers(), new Headers({ authorization: 'Bearer invalid-secret' })]) {
       const denied = await proxy(new NextRequest(pathname, { method, headers }), event)
       expect(denied.status).toBe(401)
     }
