@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { getMojoHealth, persistMojoHealth } from '@/lib/marketing/mojo-health'
+import { mojoAlertDecision } from '@/lib/marketing/mojo-alert-policy'
 import { recordMojoHealthIncident } from '@/lib/server/mojo-health-incident'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -24,12 +25,13 @@ async function handle(req: NextRequest) {
 
     const supabase = supabaseAdmin()
     const health = await getMojoHealth(supabase)
+    const alert = mojoAlertDecision(health)
     if (!dryRun) {
       await persistMojoHealth(supabase, health)
-      if (health.status === 'attention') {
+      if (alert.kind === 'operational_failure') {
         try {
           const incident = await recordMojoHealthIncident(supabase, {
-            message: health.message,
+            message: alert.message,
             reason: 'health_attention',
             source: 'vercel-mojo-health',
             sessionStatus: health.sessionStatus,
@@ -59,6 +61,7 @@ async function handle(req: NextRequest) {
         ok: health.status !== 'attention',
         dryRun,
         health,
+        alert,
       },
       {
         status: health.status === 'attention' ? 503 : 200,

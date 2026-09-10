@@ -13,14 +13,14 @@ function database(recent: unknown[], insertErrors: Array<{ message: string } | n
   const insert = vi.fn().mockImplementation(() => Promise.resolve({ error: insertErrors.shift() ?? null }))
   const builder = {
     select: () => builder,
-    eq: () => builder,
+    eq: vi.fn(() => builder),
     contains: () => builder,
     gte: () => builder,
     limit: () => builder,
     insert,
     then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve({ data: recent, error: null }).then(resolve, reject),
   }
-  return { db: { from: () => builder }, insert }
+  return { db: { from: () => builder }, insert, eq: builder.eq }
 }
 
 describe('Mojo health incident', () => {
@@ -30,7 +30,7 @@ describe('Mojo health incident', () => {
   })
 
   it('creates one durable event and sends one alert for a new incident', async () => {
-    const { db, insert } = database([])
+    const { db, insert, eq } = database([])
     const result = await recordMojoHealthIncident(db as never, {
       message: 'Provider snapshot is missing',
       reason: 'health_attention',
@@ -43,6 +43,7 @@ describe('Mojo health incident', () => {
       metadata: expect.objectContaining({ system: 'mojo_ingestion' }),
     }))
     expect(mocks.sendAlert).toHaveBeenCalledOnce()
+    expect(eq).toHaveBeenCalledWith('description', 'Provider snapshot is missing')
   })
 
   it('deduplicates repeated monitor failures within six hours', async () => {

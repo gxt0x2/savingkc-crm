@@ -75,7 +75,8 @@ describe('operational SMS alerts', () => {
 
     expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
       to: '+18160000001',
-      body: expect.stringContaining('Mojo ingestion failure (vercel-mojo-health)'),
+      body: 'Mojo needs technical attention: No provider performance snapshot for today. Check status and recovery steps: https://crm.savingkc.com/settings/system-health',
     }))
+    expect(mocks.safeSendSMS.mock.calls[0][0].body).not.toContain('totals are withheld')
   })
 })

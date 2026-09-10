@@ -37,6 +37,7 @@ export async function recordMojoHealthIncident(
     .select('id')
     .eq('event_type', 'system_failure')
     .eq('title', INCIDENT_TITLE)
+    .eq('description', input.message)
     .gte('created_at', since)
     .limit(1)
 
