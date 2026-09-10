@@ -15,7 +15,7 @@ import type { Task, TaskStatus } from '@/types'
 type TaskView = 'all' | 'due_today' | 'overdue' | 'upcoming' | 'completed'
 type TaskStatusFilter = 'all' | 'active' | 'completed'
 type TaskDueFilter = 'any' | 'no_due' | 'seven_days' | 'thirty_days'
-type TaskTypeFilter = 'any' | 'follow_up' | 'callback' | 'appointment' | 'offer' | 'general'
+type TaskTypeFilter = 'any' | 'follow_up' | 'callback' | 'appointment' | 'mail' | 'offer' | 'general'
 type TaskSort = 'due_asc' | 'due_desc' | 'newest' | 'title'
 type ToolbarMenu = 'filters' | 'sort' | null
 type BulkAction = '' | 'complete' | 'reopen' | 'cancel' | `assign:${string}`
@@ -28,6 +28,7 @@ const TASK_TYPE_FILTER_OPTIONS: Array<[Exclude<TaskTypeFilter, 'any'>, string]> 
   ['follow_up', 'Follow-up'],
   ['callback', 'Callback'],
   ['appointment', 'Appointment'],
+  ['mail', 'Mail'],
   ['offer', 'Send Offer'],
   ['general', 'General'],
 ]
@@ -445,7 +446,7 @@ export default function TasksPage() {
                 <button type="button" onClick={() => setSelectedTaskId(task.id)} className="min-w-0 flex-1 text-left">
                   <strong className={`block truncate text-sm ${completed ? 'text-[var(--crm-text-muted)] line-through' : 'text-[var(--crm-ink)]'}`}>{task.title}</strong>
                   <span className={`mt-1 flex items-center gap-1 text-xs font-semibold ${overdue ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-text-muted)]'}`}><Icon name="event" className="text-[15px]" />{dueLabel(task)}</span>
-                  {task.contact_id ? <span className="mt-1 block truncate text-xs text-[var(--crm-info)]">{contactName(task)}</span> : null}
+                  {task.contact ? <span className="mt-1 block truncate text-xs text-[var(--crm-info)]">{contactName(task)}</span> : null}
                 </button>
                 <Icon name="chevron_right" className="mt-2 shrink-0 text-[var(--crm-text-muted)]" />
               </article>

@@ -7,7 +7,7 @@ vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc,
 import { getTaskWorklist, TaskWorklistError } from './task-worklist'
 
 const item = {
-  key: 'activity:task-1', sourceKind: 'activity', sourceId: 'task-1', leadId: 'lead-1', tcFileId: null,
+  key: 'activity:task-1', sourceKind: 'activity', sourceId: 'task-1', leadId: 'lead-1', prospectId: null, tcFileId: null,
   kind: 'callback', title: 'Call seller', description: null, status: 'pending', priority: 'high',
   dueAt: '2026-08-21T15:00:00.000Z', assignedTo: 'Casey', department: 'acquisitions', role: null,
   primaryNextAction: true, version: 2, sourceCreatedAt: '2026-08-20T15:00:00.000Z', completedAt: null,
@@ -52,6 +52,32 @@ describe('task worklist read model', () => {
       p_today_start: '2026-11-01T05:00:00.000Z',
       p_tomorrow_start: '2026-11-02T06:00:00.000Z',
     }))
+  })
+
+  it('keeps a verified unpromoted source Prospect in current work with seller context', async () => {
+    const prospectItem = { ...item, leadId: null, prospectId: 'prospect-1', contact: null }
+    mocks.rpc.mockResolvedValueOnce({
+      data: { items: [prospectItem], hasMore: false, total: 1, counts: { all: 1 }, laneCounts: { current: 1, review: 0, all: 1 } },
+      error: null,
+    })
+    mocks.from.mockImplementation((table: string) => ({
+      select: vi.fn(() => ({
+        in: vi.fn(async () => ({
+          data: table === 'prospects' ? [{ id: 'prospect-1', lead_id: null, owner_1: 'Source Seller', situs_street: '2 Oak Ave', situs_city: 'Kansas City', situs_state: 'MO', situs_zip: '64101' }] : [],
+          error: null,
+        })),
+      })),
+    }))
+
+    const result = await getTaskWorklist({ type: 'mail' })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('task_worklist_page_v2', expect.objectContaining({ p_kinds: ['mail'] }))
+    expect(result.items[0]).toMatchObject({
+      prospectId: 'prospect-1',
+      operationalLane: 'current',
+      reviewReason: 'none',
+      contact: { id: 'prospect-1', fullName: 'Source Seller', propertyAddress: '2 Oak Ave' },
+    })
   })
 
   it('binds an opaque cursor to its sort order', async () => {
