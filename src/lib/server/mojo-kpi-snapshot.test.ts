@@ -28,6 +28,11 @@ const payload = {
 }
 
 describe('Mojo KPI snapshot adapter', () => {
+  it.each([null, undefined, '', false, -1, 'unknown'])('rejects invalid duration %s without coercing it to zero', (seconds) => {
+    const changed = structuredClone(payload)
+    changed.data_by_month['1'].data[0].seconds = seconds as never
+    expect(() => buildMojoPerformanceSnapshot(changed, { fetchedAt: '2026-08-24T22:42:00Z' })).toThrow('invalid dialing time')
+  })
   it('maps provider dashboard totals to one deterministic daily snapshot', () => {
     const snapshot = buildMojoPerformanceSnapshot(payload, {
       fetchedAt: '2026-08-24T22:42:00.000Z',

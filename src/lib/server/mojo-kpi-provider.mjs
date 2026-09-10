@@ -27,16 +27,23 @@ function normalizeTimezone(value) {
 
 function count(value, field) {
   const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 100_000) {
+  if (!['number', 'string'].includes(typeof value) || String(value).trim() === '' || !Number.isInteger(parsed) || parsed < 0 || parsed > 100_000) {
     throw new Error(`Mojo KPI returned an invalid ${field}`)
   }
   return parsed
 }
 
+function diagnosticValue(value) {
+  if (value == null) return value === null ? 'null' : 'missing'
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string' && /^[+\-0-9.eE\s]{1,64}$/.test(value)) return JSON.stringify(value)
+  return typeof value === 'string' ? `<text length=${value.length}>` : `<${typeof value}>`
+}
+
 function seconds(value, field) {
   const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 172_800) {
-    throw new Error(`Mojo KPI returned invalid ${field}`)
+  if (!['number', 'string'].includes(typeof value) || String(value).trim() === '' || !Number.isFinite(parsed) || parsed < 0 || parsed > 172_800) {
+    throw new Error(`Mojo KPI returned invalid ${field} (type=${typeof value}, value=${diagnosticValue(value)})`)
   }
   return Math.round(parsed * 1_000) / 1_000
 }

@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     let held = 0
     let enriched = 0
     let evidenceOnly = 0
+    const receipts: Array<{ recordId: string | null; status: 'accepted' | 'duplicate' | 'rejected'; reason?: string }> = []
     const heldReasons: Record<string, number> = {}
 
     for (const raw of body.calls) {
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
         }
       } catch {
         rejected++
+        receipts.push({ recordId: typeof raw?.record_id === 'string' ? raw.record_id : null, status: 'rejected', reason: 'invalid_record' })
         continue
       }
 
@@ -66,29 +68,43 @@ export async function POST(req: NextRequest) {
         status: waitingForEvidence ? 'waiting_evidence' : 'pending',
       })
       if (!error) {
+        receipts.push({ recordId: call.record_id, status: 'accepted' })
         if (!waitingForEvidence) {
           queued++
           if (!call.promotion_eligible) evidenceOnly++
         }
       } else if (error.code === '23505' || error.message?.toLowerCase().includes('duplicate')) {
-        const { data: existing } = await db
+        const { data: existing, error: readError } = await db
           .from('mojo_call_queue')
           .select('payload,status')
           .eq('record_id', call.record_id)
           .maybeSingle()
-        if (!existing?.payload || existing.status === 'processing') {
-          skipped++
+        if (readError || !existing?.payload) {
+          rejected++
+          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'queue_read_failed' })
           continue
         }
-        const merged = mergeMojoCallEvidence(existing.payload, call)
+        let merged: ReturnType<typeof mergeMojoCallEvidence>
+        try { merged = mergeMojoCallEvidence(existing.payload, call) }
+        catch {
+          rejected++
+          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'evidence_conflict' })
+          continue
+        }
         if (!merged.improved) {
           skipped++
+          receipts.push({ recordId: call.record_id, status: 'duplicate' })
+          continue
+        }
+        if (existing.status === 'processing') {
+          rejected++
+          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'processing_retry' })
           continue
         }
         const mergedWaitingForEvidence = merged.call.qualification_status === 'evidence_pending'
           && !hasActionableFollowUp(merged.call)
         const resetStatus = ['completed', 'dead_letter', 'failed', 'waiting_evidence'].includes(existing.status)
-        const { error: updateError } = await db
+        const { data: updated, error: updateError } = await db
           .from('mojo_call_queue')
           .update({
             payload: merged.call,
@@ -101,15 +117,24 @@ export async function POST(req: NextRequest) {
             }),
           })
           .eq('record_id', call.record_id)
-        if (updateError) rejected++
-        else enriched++
+          .eq('status', existing.status)
+          .eq('payload', JSON.stringify(existing.payload))
+          .select('record_id')
+        if (updateError || updated?.length !== 1) {
+          rejected++
+          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'queue_update_conflict' })
+        } else {
+          enriched++
+          receipts.push({ recordId: call.record_id, status: 'accepted' })
+        }
       } else {
         console.error('[mojo/sync] Queue insert failed:', error.message)
         rejected++
+        receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'queue_write_failed' })
       }
     }
 
-    return NextResponse.json({ queued, evidenceOnly, enriched, held, heldReasons, skipped, rejected, total: body.calls.length })
+    return NextResponse.json({ receipts, queued, evidenceOnly, enriched, held, heldReasons, skipped, rejected, total: body.calls.length })
   } catch (error) {
     console.error('[mojo/sync] Queue request failed:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

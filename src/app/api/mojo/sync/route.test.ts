@@ -45,7 +45,7 @@ describe('/api/mojo/sync', () => {
     mocks.requireAdminOrSecret.mockResolvedValue(null)
     mocks.insert.mockResolvedValue({ error: null })
     mocks.maybeSingle.mockResolvedValue({ data: null, error: null })
-    mocks.updateEq.mockResolvedValue({ error: null })
+    mocks.updateEq.mockReturnValue({ eq: mocks.updateEq, select: vi.fn().mockResolvedValue({ data: [{ record_id: 'mojo-1' }], error: null }) })
     mocks.update.mockReturnValue({ eq: mocks.updateEq })
   })
 
@@ -72,6 +72,7 @@ describe('/api/mojo/sync', () => {
       skipped: 0,
       rejected: 1,
       total: 2,
+      receipts: [{ recordId: 'mojo-1', status: 'accepted' }, { recordId: null, status: 'rejected', reason: 'invalid_record' }],
     })
     expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
       record_id: 'mojo-1', status: 'pending',
@@ -199,6 +200,17 @@ describe('/api/mojo/sync', () => {
     expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
       payload: expect.objectContaining({ promotion_eligible: false, qualification_status: 'ineligible' }),
     }))
+  })
+
+  it.each(['processing', 'read_error', 'update_race'])('does not acknowledge undelivered enrichment during %s', async failure => {
+    mocks.insert.mockResolvedValue({ error: { code: '23505' } })
+    mocks.maybeSingle.mockResolvedValue({
+      data: { status: failure === 'processing' ? 'processing' : 'waiting_evidence', payload: { ...validCall, call_duration: 0, recording_url: undefined } },
+      error: failure === 'read_error' ? { message: 'read failed' } : null,
+    })
+    if (failure === 'update_race') mocks.updateEq.mockReturnValue({ eq: mocks.updateEq, select: vi.fn().mockResolvedValue({ data: [], error: null }) })
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', { method: 'POST', body: JSON.stringify({ calls: [validCall] }) }) as never)
+    expect(await response.json()).toMatchObject({ rejected: 1, receipts: [{ recordId: 'mojo-1', status: 'rejected' }] })
   })
 
   it('contains no Manifest, scoring, enrichment, alert, or outbound-message work', () => {

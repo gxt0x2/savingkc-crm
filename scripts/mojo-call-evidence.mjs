@@ -77,7 +77,7 @@ export function parseMojoRecordingDuration(value) {
   return Math.max(0, Math.trunc(parts[0] || 0))
 }
 
-function recordingTimestamp(recording) {
+export function recordingTimestamp(recording) {
   const candidates = [
     recording?.call_at,
     recording?.call_date,
@@ -94,7 +94,7 @@ function recordingTimestamp(recording) {
       if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(String(candidate))) {
         return Date.parse(parseMojoTimestamp(candidate))
       }
-      const parsed = Date.parse(String(candidate))
+      const parsed = Date.parse(normalizeMojoDateTime(candidate))
       if (Number.isFinite(parsed)) return parsed
     } catch {
       // Try the next provider field.
@@ -134,13 +134,15 @@ export function matchMojoRecording(recordingIndex, contactId, callAt) {
       .filter(({ distance }) => distance <= RECORDING_MATCH_WINDOW_MS)
       .sort((left, right) => left.distance - right.distance || right.recording.duration - left.recording.duration)
     : []
-  const match = timed[0]?.recording
-    || (candidates.length === 1 ? candidates[0] : null)
+  // Contact identity alone is insufficient. Ambiguous or undated evidence
+  // remains unassociated for review; never choose an old sole candidate.
+  const match = timed.length === 1 ? timed[0].recording : null
   if (!match) return null
   match.consumed = true
   return {
     audio: match.audio,
     duration: match.duration,
     recordId: match.recordId,
+    callAt: new Date(match.timestamp).toISOString(),
   }
 }

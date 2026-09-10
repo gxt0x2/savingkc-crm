@@ -1,22 +1,13 @@
 #!/usr/bin/env node
 /**
- * Mojo Sync Script v3
- * Pulls call activity from Mojo's activity-stream API into canonical evidence.
- * Only calls that pass the governed qualification policy may create/promote a lead.
- *
- * MEANINGFUL = Casey had a real conversation and dispositioned to:
- *   - "Follow Up" (group 7)
- *   - "Appointment Set" (group 4)
- *   - Qualified as lead (type 30)
- *   - Notes with substantial seller intel (timeline, price, motivation, condition)
- *
- * NON-MEANINGFUL (skipped — no lead created):
- *   - No answer, voicemail, hung up, dead lead, not yet interested, trash, busy
- *
- * Runs every 15 minutes (8am-5pm M-F) via cron.
+ * Capture provider source before qualification, then deliver with per-record
+ * receipts. Scheduled sync replays seven days for late evidence. Server cron
+ * owns KPI snapshots; this runtime owns source intake and session refresh.
  */
 
 import fs from 'fs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { MOJO_INGESTION_VERSION, collectMojoActivities, assertMojoReceipts, spoolMojoSource, readMojoSpool } from './mojo-ingestion-integrity.mjs'
 import { homedir } from 'node:os'
 import path from 'path'
 import {
@@ -28,9 +19,10 @@ import {
   mojoSessionFile,
   recordMojoSessionIssue,
 } from './mojo-session-health.mjs'
-import { syncMojoPerformanceSnapshot } from './mojo-kpi-snapshot.mjs'
 import {
   centralDateString,
+  centralMidnightIso,
+  recordingTimestamp,
   indexMojoRecordings,
   matchMojoRecording,
   normalizeMojoDateTime,
@@ -48,7 +40,7 @@ const CRM_BASE_URL = (process.env.CRM_BASE_URL || process.env.NEXT_PUBLIC_APP_UR
 const CRM_API_URL = process.env.CRM_API_URL || `${CRM_BASE_URL}/api/mojo/sync`
 const CRM_CONFIG_URL = process.env.CRM_CONFIG_URL || `${CRM_BASE_URL}/api/admin/system-config`
 const CRM_QUEUE_URL = process.env.CRM_QUEUE_URL || `${CRM_BASE_URL}/api/cron/process-mojo-queue`
-const CRM_PERFORMANCE_URL = process.env.CRM_PERFORMANCE_URL || `${CRM_BASE_URL}/api/admin/mojo-performance`
+const CRM_SOURCE_URL = `${CRM_BASE_URL}/api/admin/mojo-source-batches`
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = mojoSessionFile()
 const STATE_FILE = process.env.MOJO_SYNC_STATE_FILE
@@ -56,6 +48,7 @@ const STATE_FILE = process.env.MOJO_SYNC_STATE_FILE
 const LOG_DIR = process.env.MOJO_LOG_DIR
   || path.join(homedir(), '.openclaw/workspace/memory/logs')
 const LOG_FILE = path.join(LOG_DIR, 'mojo-sync.log')
+const SPOOL_DIR = process.env.MOJO_SOURCE_SPOOL_DIR || path.join(path.dirname(STATE_FILE), 'mojo-source-spool')
 
 // Mojo activity type codes
 const ACTIVITY_NOTE = 3
@@ -99,32 +92,19 @@ function readState() {
   try {
     if (!fs.existsSync(STATE_FILE)) return { lastActivityId: 0 }
     return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))
-  } catch {
-    return { lastActivityId: 0 }
+  } catch (error) {
+    throw new Error('Mojo checkpoint is unreadable; refusing to reset it', { cause: error })
   }
 }
 
 function writeState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+  fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true, mode: 0o700 })
+  const temporary = `${STATE_FILE}.${process.pid}.tmp`
+  fs.writeFileSync(temporary, JSON.stringify(state, null, 2), { mode: 0o600 })
+  fs.renameSync(temporary, STATE_FILE)
 }
 
 // --- Delta timestamp management (stored in Supabase via CRM API) ---
-
-async function readLastSyncTimestamp() {
-  try {
-    const res = await fetch(`${CRM_CONFIG_URL}?key=last_mojo_sync_timestamp`, {
-      headers: adminHeaders(),
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) {
-      throw new Error(`Config read failed (${res.status}); refusing an unbounded fallback`)
-    }
-    const data = await res.json()
-    return data.value || new Date(0).toISOString()
-  } catch (err) {
-    throw new Error(`Failed to read last_mojo_sync_timestamp from CRM: ${err instanceof Error ? err.message : String(err)}`)
-  }
-}
 
 async function writeLastSyncTimestamp(timestamp) {
   const res = await fetch(CRM_CONFIG_URL, {
@@ -175,17 +155,12 @@ function markSessionExpired() {
 }
 
 async function pushSessionToCRM(sessionId) {
-  try {
-    await fetch(CRM_API_URL.replace('/mojo/sync', '/admin/mojo-session'), {
-      method: 'POST',
-      headers: adminHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ sessionId }),
-      signal: AbortSignal.timeout(10000),
-    })
-    log('Pushed Mojo session to CRM')
-  } catch {
-    // Best-effort
-  }
+  const response = await fetch(CRM_API_URL.replace('/mojo/sync', '/admin/mojo-session'), {
+    method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ sessionId }), signal: AbortSignal.timeout(10000),
+  })
+  if (!response.ok) throw new Error(`Mojo session handoff failed (${response.status}); source retained`)
+  log('Mojo session accepted by CRM')
 }
 
 // --- Mojo API ---
@@ -246,17 +221,15 @@ async function fetchContactDetails(sessionId, contactId) {
       signal: AbortSignal.timeout(10000),
     })
     if (!response.ok) {
-      log(`  Contact ${contactId} fetch failed: ${response.status}`)
-      return result
+      throw new Error(`Contact lookup returned ${response.status}`)
     }
 
     const contentType = response.headers.get('content-type') || ''
     if (!contentType.includes('json')) {
-      log(`  Contact ${contactId} returned non-JSON (${contentType}) — likely SPA redirect`)
-      return result
+      throw new Error('Contact lookup returned non-JSON')
     }
 
-    const data = await response.json()
+    const data = await readMojoJson(response, 'contact details')
 
     // Address fields
     result.address = data.address || data.full_address || ''
@@ -294,7 +267,7 @@ async function fetchContactDetails(sessionId, contactId) {
 
     log(`  Contact ${contactId} details fetched: phone=${Boolean(result.phone)}, email=${Boolean(result.email)}, addressEvidence=${Boolean(result.address)}, followUp=${Boolean(result.followUpDate)}`)
   } catch (err) {
-    logError(`Failed to fetch contact ${contactId}`, err)
+    throw new Error(`Contact ${contactId} lookup failed; source retained for retry`, { cause: err })
   }
   return result
 }
@@ -303,28 +276,15 @@ async function fetchContactDetails(sessionId, contactId) {
  * Fetch today's call recordings from Mojo.
  * Returns a map of contactId → recording URL.
  */
-async function fetchTodayRecordings(sessionId) {
-  let recordingMap = new Map()
-  try {
-    const today = centralDateString()
-    const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${today}&to=${today}`
-    const response = await fetch(url, {
-      headers: mojoHeaders(sessionId),
-      signal: AbortSignal.timeout(20000),
-    })
-    if (!response.ok) {
-      log(`Recording API returned ${response.status}`)
-      return recordingMap
-    }
-    const data = await response.json()
-    const recordings = data.recordings || []
-    log(`Fetched ${recordings.length} recordings for ${today}`)
-
-    recordingMap = indexMojoRecordings(recordings)
-  } catch (err) {
-    logError('Failed to fetch recordings', err)
-  }
-  return recordingMap
+async function fetchRecordings(sessionId, from, to) {
+  const url = `${MOJO_BASE_URL}/v2/rest/reports/call-recording-report-data/?agents=%5B-1%5D&date_range=custom&from=${from}&to=${to}`
+  const response = await fetch(url, { headers: mojoHeaders(sessionId), signal: AbortSignal.timeout(20000) })
+  if (!response.ok) throw new Error(`Recording API returned ${response.status}; checkpoint retained`)
+  const data = await readMojoJson(response, 'recordings')
+  if (!Array.isArray(data.recordings)) throw new Error('Invalid recording response; checkpoint retained')
+  // Archive the entire response; the provider has returned records outside its
+  // requested range. Local date filtering controls which records can be matched.
+  return data.recordings
 }
 
 async function fetchActivityStream(sessionId, page = 1) {
@@ -343,7 +303,8 @@ async function fetchActivityStream(sessionId, page = 1) {
   }
 
   const data = await readMojoJson(resp, 'activity-stream')
-  return data.activities || []
+  if (!Array.isArray(data.activities)) throw new Error('Invalid activity response; checkpoint retained')
+  return data.activities
 }
 
 // --- Parse helpers ---
@@ -376,7 +337,7 @@ function extractPhone(noteContent) {
  * Process activities into MEANINGFUL call records only.
  * Now fetches contact details (address, phone) from Mojo for each meaningful contact.
  */
-async function buildCallRecords(activities, lastActivityId, sessionId, recordingMap, lastSyncTimestamp) {
+export async function buildCallRecords(activities, lastActivityId, sessionId, recordingMap, lastSyncTimestamp, contactLoader = fetchContactDetails, continueOnError = false) {
   const lastSyncMs = new Date(lastSyncTimestamp || 0).getTime()
 
   const newActivities = activities
@@ -386,7 +347,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
       const [, , , timestamp] = a
       if (timestamp) {
         const activityMs = new Date(parseMojoTimestamp(timestamp)).getTime()
-        if (activityMs <= lastSyncMs) return false
+        if (activityMs < lastSyncMs) return false
       }
       return true
     })
@@ -402,8 +363,9 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     const contactId = details?.contact_id
     if (!contactId) continue
 
-    if (!contactMap.has(contactId)) {
-      contactMap.set(contactId, {
+    const groupKey = `${contactId}:${centralDateString(new Date(parseMojoTimestamp(timestamp)))}`
+    if (!contactMap.has(groupKey)) {
+      contactMap.set(groupKey, {
         contactId,
         contactName: details.contact_name || 'Unknown',
         agentName,
@@ -414,11 +376,12 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
         groupName: '',
         isQualifiedLead: false,
         hasAppointment: false,
+        hasDnc: false,
         followUpDate: '',
       })
     }
 
-    const entry = contactMap.get(contactId)
+    const entry = contactMap.get(groupKey)
     entry.activityIds.push(activityId)
     entry.timestamp = timestamp
 
@@ -443,6 +406,7 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
       }
       case ACTIVITY_GROUP: {
         entry.groupName = details.group_name || ''
+        if (/^(dnc|do not call|do-not-call)$/i.test(entry.groupName.trim())) entry.hasDnc = true
         break
       }
       case ACTIVITY_LEAD: {
@@ -456,97 +420,105 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
   // Filter to MEANINGFUL only, then convert to call records
   const calls = []
   let skippedCount = 0
+  const errors = []
 
-  for (const [contactId, entry] of contactMap) {
-    const groupLower = entry.groupName.toLowerCase()
-
-    // === MEANINGFUL CHECK ===
-    const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
-    const isMeaningfulNotes = mojoSellerIntelSignals(entry.notes).length > 0
-    const hasScheduledFollowUp = Boolean(entry.followUpDate)
-    const isMeaningful = entry.isQualifiedLead || entry.hasAppointment || hasScheduledFollowUp || isMeaningfulGroup || isMeaningfulNotes
-
-    if (!isMeaningful) {
-      skippedCount++
-      continue
-    }
-
-    // Map disposition
-    let disposition = 'Interested'
-    if (entry.hasAppointment || groupLower.includes('appointment')) disposition = 'Appointment Set'
-    else if (hasScheduledFollowUp || groupLower.includes('follow up')) disposition = 'Callback Requested'
-
-    // Clean notes — strip phone from first line
-    let cleanNotes = entry.notes
-    if (extractPhone(entry.notes)) {
-      cleanNotes = entry.notes.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim()
-    }
-
-    // Fetch full contact details from Mojo (address, phone, email)
-    log(`  Fetching contact details for provider contact ${contactId}...`)
-    const contactDetails = await fetchContactDetails(sessionId, contactId)
-
-    const callAt = parseMojoTimestamp(entry.timestamp)
-    // Match the nearest unused recording for this contact. A contact can have
-    // multiple calls in one day, so longest-per-contact is not a safe identity.
-    const recording = matchMojoRecording(recordingMap, contactId, callAt)
-    if (recording) {
-      log(`  Found recording for contact ${contactId}: ${recording.duration}s (record_id: ${recording.recordId})`)
-    }
-
-    // Use follow-up date from activity stream or contact details
-    const rawFollowUpDate = entry.followUpDate || contactDetails.followUpDate || ''
-    let followUpDate = ''
+  for (const entry of contactMap.values()) {
+    const contactId = entry.contactId
     try {
-      followUpDate = normalizeMojoDateTime(rawFollowUpDate)
+      const groupLower = entry.groupName.toLowerCase()
+
+      // === MEANINGFUL CHECK ===
+      const isMeaningfulGroup = MEANINGFUL_GROUPS.has(groupLower)
+      const isMeaningfulNotes = mojoSellerIntelSignals(entry.notes).length > 0
+      const hasScheduledFollowUp = Boolean(entry.followUpDate)
+      const isMeaningful = entry.hasDnc || entry.isQualifiedLead || entry.hasAppointment || hasScheduledFollowUp || isMeaningfulGroup || isMeaningfulNotes
+
+      if (!isMeaningful) {
+        skippedCount++
+        continue
+      }
+
+      // Map disposition
+      let disposition = 'Interested'
+      if (entry.hasDnc) disposition = 'Do Not Call'
+      else if (entry.hasAppointment || groupLower.includes('appointment')) disposition = 'Appointment Set'
+      else if (hasScheduledFollowUp || groupLower.includes('follow up')) disposition = 'Callback Requested'
+
+      // Clean notes — strip phone from first line
+      let cleanNotes = entry.notes
+      if (extractPhone(entry.notes)) {
+        cleanNotes = entry.notes.replace(/^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n?/, '').trim()
+      }
+
+      // Fetch full contact details from Mojo (address, phone, email)
+      log(`  Fetching contact details for provider contact ${contactId}...`)
+      const contactDetails = await contactLoader(sessionId, contactId)
+
+      const callAt = parseMojoTimestamp(entry.timestamp)
+      // Match the nearest unused recording for this contact. A contact can have
+      // multiple calls in one day, so longest-per-contact is not a safe identity.
+      const recording = matchMojoRecording(recordingMap, contactId, callAt)
+      if (recording) {
+        log(`  Found recording for contact ${contactId}: ${recording.duration}s (record_id: ${recording.recordId})`)
+      }
+
+      // Use follow-up date from activity stream or contact details
+      const rawFollowUpDate = entry.hasDnc ? '' : entry.followUpDate || ''
+      let followUpDate = ''
+      try {
+        followUpDate = normalizeMojoDateTime(rawFollowUpDate)
+      } catch (error) {
+        throw new Error(`Invalid follow-up date for provider contact ${contactId}; source retained`, { cause: error })
+      }
+      const canonicalActivityId = Math.max(...entry.activityIds)
+
+      const call = {
+        // Keep the historical provider-activity identity stable. The recording
+        // ID is supporting evidence and may arrive after the call event.
+        record_id: `mojo-activity-${contactId}-${canonicalActivityId}`,
+        contact_name: entry.contactName,
+        phone_number: entry.phone || contactDetails.phone,
+        property_address: contactDetails.address,
+        city: contactDetails.city,
+        state: contactDetails.state,
+        zip: contactDetails.zip,
+        call_date: recording?.callAt || callAt,
+        call_duration: recording?.duration || 0,
+        disposition,
+        agent_name: entry.agentName,
+        notes: cleanNotes,
+        list_name: '',
+        campaign_name: '',
+        recording_url: recording?.audio || '',
+        provider_contact_id: String(contactId),
+        provider_recording_id: recording?.recordId || '',
+        qualified_by_agent: entry.isQualifiedLead,
+        has_appointment: entry.hasAppointment,
+        follow_up_date: followUpDate,
+        email: contactDetails.email,
+      }
+
+      const qualification = assessMojoCallQualification({
+        ...call,
+        outcome: disposition === 'Do Not Call' ? 'dnc' : disposition === 'Appointment Set'
+          ? 'appointment_set'
+          : disposition === 'Callback Requested'
+            ? 'callback_scheduled'
+            : 'meaningful_conversation',
+      })
+      call.promotion_eligible = qualification.eligible
+      call.qualification_status = qualification.status
+      call.qualification_reasons = qualification.reasons
+      if (qualification.status === 'evidence_pending') {
+        log(`  Persisting ${entry.contactName} for end-of-day evidence retry (${qualification.reasons.join(', ')})`)
+      } else if (!qualification.eligible) {
+        log(`  Recording provider evidence for ${entry.contactName} without CRM promotion (${qualification.reasons.join(', ')})`)
+      }
+      calls.push(call)
     } catch (error) {
-      logError(`Ignoring invalid follow-up date for ${entry.contactName}`, error)
+      if (!continueOnError) throw error
+      errors.push(`Contact ${contactId}: ${error instanceof Error ? error.message : String(error)}`)
     }
-    const canonicalActivityId = Math.max(...entry.activityIds)
-
-    const call = {
-      // Keep the historical provider-activity identity stable. The recording
-      // ID is supporting evidence and may arrive after the call event.
-      record_id: `mojo-activity-${contactId}-${canonicalActivityId}`,
-      contact_name: entry.contactName,
-      phone_number: entry.phone || contactDetails.phone,
-      property_address: contactDetails.address,
-      city: contactDetails.city,
-      state: contactDetails.state,
-      zip: contactDetails.zip,
-      call_date: callAt,
-      call_duration: recording?.duration || 0,
-      disposition,
-      agent_name: entry.agentName,
-      notes: cleanNotes || contactDetails.notes,
-      list_name: '',
-      campaign_name: '',
-      recording_url: recording?.audio || '',
-      provider_contact_id: String(contactId),
-      provider_recording_id: recording?.recordId || '',
-      qualified_by_agent: entry.isQualifiedLead,
-      has_appointment: entry.hasAppointment,
-      follow_up_date: followUpDate,
-      email: contactDetails.email,
-    }
-
-    const qualification = assessMojoCallQualification({
-      ...call,
-      outcome: disposition === 'Appointment Set'
-        ? 'appointment_set'
-        : disposition === 'Callback Requested'
-          ? 'callback_scheduled'
-          : 'meaningful_conversation',
-    })
-    call.promotion_eligible = qualification.eligible
-    call.qualification_status = qualification.status
-    call.qualification_reasons = qualification.reasons
-    if (qualification.status === 'evidence_pending') {
-      log(`  Persisting ${entry.contactName} for end-of-day evidence retry (${qualification.reasons.join(', ')})`)
-    } else if (!qualification.eligible) {
-      log(`  Recording provider evidence for ${entry.contactName} without CRM promotion (${qualification.reasons.join(', ')})`)
-    }
-    calls.push(call)
   }
 
   const maxId = Math.max(...newActivities.map(a => a[0]), lastActivityId)
@@ -560,147 +532,139 @@ async function buildCallRecords(activities, lastActivityId, sessionId, recording
     }
   }
 
-  return { calls, skippedCount, maxId, maxCallTimestamp }
+  return { calls, skippedCount, maxId, maxCallTimestamp, errors }
 }
 
-// --- Main sync ---
+// --- Receipt-backed source intake and replay ---
 
-async function sync() {
-  log('Starting Mojo sync (v3 — meaningful only)...')
+async function sourceRequest(method, body, after) {
+  const url = after ? `${CRM_SOURCE_URL}?after=${encodeURIComponent(after)}` : CRM_SOURCE_URL
+  const response = await fetch(url, {
+    method, headers: adminHeaders({ 'content-type': 'application/json' }),
+    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000),
+  })
+  if (!response.ok) throw new Error(`Source archive ${method} failed (${response.status}); checkpoint retained`)
+  return response.json()
+}
 
+export async function deliverMojoCalls(calls, fetchImpl = fetch) {
+  const errors = []
+  for (let offset = 0; offset < calls.length; offset += 100) {
+    const chunk = calls.slice(offset, offset + 100)
+    try {
+      const response = await fetchImpl(CRM_API_URL, {
+        method: 'POST', headers: adminHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ calls: chunk }), signal: AbortSignal.timeout(120000),
+      })
+      if (!response.ok) throw new Error(`CRM intake failed (${response.status}); checkpoint retained`)
+      assertMojoReceipts(chunk, await response.json())
+    } catch (error) { errors.push(error) }
+  }
+  if (errors.length) throw errors[0]
+}
+
+async function projectSourceBatch(batch, sessionId, contactLoader = fetchContactDetails) {
+  const archive = await sourceRequest('POST', { id: batch.id, payload: batch.payload })
+  if (archive.accepted) {
+    if (batch.filename) fs.unlinkSync(batch.filename)
+    return
+  }
+  const { activities, recordings, since } = batch.payload
+  const inRange = recordings.filter(recording => {
+    const timestamp = recordingTimestamp(recording)
+    return timestamp != null && timestamp >= Date.parse(since)
+      && centralDateString(new Date(timestamp)) <= batch.payload.to
+  })
+  const { calls, skippedCount, errors } = await buildCallRecords(
+    activities, 0, sessionId, indexMojoRecordings(inRange), since, contactLoader, true,
+  )
+  await deliverMojoCalls(calls)
+  if (errors?.length) throw new Error(`${errors.length} contact projections failed; source retained. ${errors[0]}`)
+  await sourceRequest('PATCH', { id: batch.id, recordIds: calls.map(call => call.record_id) })
+  // A durable remote receipt exists before the local spool can be removed.
+  if (batch.filename) fs.unlinkSync(batch.filename)
+  log(`Source batch ${batch.id.slice(0, 12)} accepted: calls=${calls.length}, archivedNonCandidates=${skippedCount}, sourceRecordings=${recordings.length}`)
+}
+
+export async function sync(options = {}) {
+  const targetDate = options.date || centralDateString()
+  const historical = Boolean(options.date)
+  const dryRun = Boolean(options.dryRun)
+  log(`Starting Mojo source intake ${MOJO_INGESTION_VERSION}${dryRun ? ' (dry run)' : ''}`)
   try {
     const session = readSession()
-    if (!session?.sessionId) {
-      const message = 'Mojo session expired - manual refresh required'
-      log(message)
-      await recordMojoSessionIssue({
-        source: 'mojo-sync',
-        reason: 'no_session',
-        message,
-      })
-      return { ok: false, error: 'no_session' }
-    }
-
-    log('Using validated Mojo session')
-    await pushSessionToCRM(session.sessionId)
-
-    let performanceError = null
-    try {
-      const stored = await syncMojoPerformanceSnapshot({ sessionId: session.sessionId,
-        endpoint: CRM_PERFORMANCE_URL, headers: adminHeaders({ accept: 'application/json' }) })
-      log(`Mojo performance snapshot: date=${stored.snapshot.metricDate}, calls=${stored.snapshot.calls}, contacts=${stored.snapshot.contacts}, applied=${Boolean(stored.result.applied)}`)
-    } catch (error) {
-      performanceError = error instanceof Error ? error : new Error(String(error))
-      logError('Mojo performance snapshot failed; contact-event sync will continue', performanceError)
-    }
-
+    if (!session?.sessionId) throw new Error('session_expired: Mojo session missing')
     const state = readState()
-    log(`Last processed activity ID: ${state.lastActivityId}`)
-
-    // Read delta timestamp from Supabase via CRM
-    const lastSyncTimestamp = await readLastSyncTimestamp()
-    log(`Last sync timestamp: ${lastSyncTimestamp}`)
-
-    // Fetch activity stream
-    log('Fetching activity stream page 1...')
-    let activities = await fetchActivityStream(session.sessionId, 1)
-    log(`Got ${activities.length} activities from page 1`)
-
-    // Catch-up: if all page 1 activities are new, also fetch page 2
-    if (activities.length > 0 && state.lastActivityId > 0) {
-      const oldestOnPage = Math.min(...activities.map(a => a[0]))
-      if (oldestOnPage > state.lastActivityId) {
-        log('All page 1 activities are new — fetching page 2 for catch-up...')
-        try {
-          const page2 = await fetchActivityStream(session.sessionId, 2)
-          if (page2.length > 0) {
-            activities = [...activities, ...page2]
-            log(`Total activities after page 2: ${activities.length}`)
-          }
-        } catch (err) {
-          logError('Page 2 fetch failed (non-fatal)', err)
-        }
+    // Revisit seven Central calendar days every run for delayed evidence.
+    const from = historical ? targetDate : new Date(Date.parse(`${targetDate}T12:00:00Z`) - 7 * 86400000).toISOString().slice(0, 10)
+    const since = centralMidnightIso(from)
+    const activities = await collectMojoActivities(
+      page => fetchActivityStream(session.sessionId, page),
+      { lastActivityId: historical ? 0 : state.lastActivityId, since },
+    )
+    const recordings = await fetchRecordings(session.sessionId, from, targetDate)
+    const manifestPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../runtime-manifest.json')
+    const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null
+    const payload = {
+      runtime: manifest ? { revision: manifest.revision, contentDigest: manifest.contentDigest } : { revision: 'development' },
+      version: MOJO_INGESTION_VERSION, since, to: targetDate,
+      activities: activities.filter(row => centralDateString(new Date(parseMojoTimestamp(row[3]))) <= targetDate),
+      recordings,
+    }
+    if (dryRun) {
+      log(`Dry run: ${payload.activities.length} source activities and ${recordings.length} recording rows; no CRM writes or checkpoint changes`)
+      return { ok: true, dryRun: true, activities: payload.activities.length, recordings: recordings.length }
+    }
+    const batch = spoolMojoSource(SPOOL_DIR, payload)
+    await sourceRequest('POST', { id: batch.id, payload: batch.payload })
+    await pushSessionToCRM(session.sessionId)
+    // Capture new source before retrying old problems. A poison batch must not
+    // prevent capture or the delivery of unrelated callbacks and opt-outs.
+    const pending = new Map([[batch.id, batch]])
+    for (const retained of readMojoSpool(SPOOL_DIR)) pending.set(retained.id, retained)
+    let after
+    for (let page = 0; page < 10; page++) {
+      const remote = await sourceRequest('GET', undefined, after)
+      for (const retained of remote.batches || []) if (!pending.has(retained.id)) pending.set(retained.id, retained)
+      if (!remote.nextCursor) break
+      after = remote.nextCursor
+    }
+    const failures = []
+    const contacts = new Map()
+    const contactLoader = (sessionId, contactId) => {
+      if (!contacts.has(contactId)) contacts.set(contactId, fetchContactDetails(sessionId, contactId))
+      return contacts.get(contactId)
+    }
+    for (const retained of pending.values()) {
+      try { await projectSourceBatch(retained, session.sessionId, contactLoader) }
+      catch (error) {
+        failures.push(error)
+        logError(`Retained batch ${retained.id.slice(0, 12)}`, error)
+        await sourceRequest('PATCH', { id: retained.id, error: error instanceof Error ? error.message : String(error) }).catch(logError.bind(null, 'Could not record source failure'))
       }
     }
-
-    // Fetch today's recordings (for matching to contacts)
-    log('Fetching today\'s call recordings...')
-    const recordingMap = await fetchTodayRecordings(session.sessionId)
-
-    // Build MEANINGFUL call records only (filtered by both activityId and timestamp)
-    const { calls, skippedCount, maxId, maxCallTimestamp } = await buildCallRecords(activities, state.lastActivityId, session.sessionId, recordingMap, lastSyncTimestamp)
-    log(`Built ${calls.length} evidence records, skipped ${skippedCount} non-candidates`)
-
-    if (calls.length === 0) {
-      if (maxId > state.lastActivityId) {
-        writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
-        log(`Updated state: lastActivityId=${maxId}`)
-      }
-      await processMojoQueue('no_new_calls')
-      log(`No new calls since ${lastSyncTimestamp}`)
-      if (performanceError) throw performanceError
+    if (failures.length) throw new Error(`${failures.length} source batches remain unaccepted; checkpoint retained`, { cause: failures[0] })
+    if (!historical) {
+      const maxId = Math.max(state.lastActivityId || 0, ...activities.map(row => row[0]))
+      // Timestamp is an observation receipt, not a second filter that can drop
+      // an activity with a newer ID but an older provider timestamp.
+      await writeLastSyncTimestamp(new Date().toISOString())
+      writeState({ lastActivityId: maxId, lastSync: new Date().toISOString(), version: MOJO_INGESTION_VERSION })
       await clearMojoSessionIssue('mojo-sync')
       await clearMojoSyncIssue('mojo-sync')
-      return { ok: true, processed: 0 }
     }
-
-    // Log what we're syncing
-    for (const c of calls) log(`  -> ${c.record_id} — ${c.disposition}`)
-
-    // POST to CRM
-    log(`Posting ${calls.length} governed call evidence records to CRM...`)
-    const crmResponse = await fetch(CRM_API_URL, {
-      method: 'POST',
-      headers: adminHeaders({ 'content-type': 'application/json' }),
-      body: JSON.stringify({ calls }),
-      signal: AbortSignal.timeout(120000),
-    })
-
-    if (!crmResponse.ok) {
-      const errorText = await crmResponse.text()
-      throw new Error(`CRM API returned ${crmResponse.status}: ${errorText}`)
+    await processMojoQueue('accepted_source_batch')
+    return { ok: true, batchId: batch.id }
+  } catch (error) {
+    logError('Sync failed', error)
+    if (!dryRun && isMojoSessionError(error)) {
+      await recordMojoSessionIssue({ source: 'mojo-sync', reason: 'session_expired', message: 'Mojo session expired - manual refresh required' })
     }
-
-    const crmResult = await crmResponse.json()
-    log(`CRM sync: queued=${crmResult.queued}, skipped=${crmResult.skipped}, total=${crmResult.total}`)
-    await processMojoQueue('post_sync')
-
-    // Update local state
-    writeState({ lastActivityId: maxId, lastSync: new Date().toISOString() })
-    log(`Updated state: lastActivityId=${maxId}`)
-
-    // Update delta timestamp in Supabase
-    const newTimestamp = maxCallTimestamp || new Date().toISOString()
-    await writeLastSyncTimestamp(newTimestamp)
-    if (performanceError) throw performanceError
-    await clearMojoSessionIssue('mojo-sync')
-    await clearMojoSyncIssue('mojo-sync')
-
-    return { ok: true, ...crmResult }
-  } catch (err) {
-    logError('Sync failed', err)
-    if (isMojoSessionError(err)) {
-      await recordMojoSessionIssue({
-        source: 'mojo-sync',
-        reason: 'session_expired',
-        message: 'Mojo session expired - manual refresh required',
-      })
-    }
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
-sync()
-  .then((result) => {
-    if (result.ok) {
-      log('Sync completed successfully')
-      process.exit(0)
-    } else {
-      log(`Sync failed: ${result.error}`)
-      process.exit(1)
-    }
-  })
-  .catch((err) => {
-    logError('Unexpected error', err)
-    process.exit(1)
-  })
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  sync().then(result => { process.exitCode = result.ok ? 0 : 1 })
+    .catch(error => { logError('Unexpected error', error); process.exitCode = 1 })
+}

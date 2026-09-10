@@ -36,21 +36,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$STAGING_DIR/scripts"
-mkdir -p "$STAGING_DIR/src/lib/server"
-RUNTIME_SCRIPTS=(
-  mojo-supervised-runner.mjs
-  mojo-cron-runner.mjs
-  mojo-extract-session.mjs
-  mojo-session-health.mjs
-  mojo-sync.mjs
-  mojo-kpi-snapshot.mjs
-  mojo-eod-sweep.mjs
-)
-for script_name in "${RUNTIME_SCRIPTS[@]}"; do
-  install -m 700 "$REPO_ROOT/scripts/$script_name" "$STAGING_DIR/scripts/$script_name"
-done
-install -m 700 "$REPO_ROOT/src/lib/server/mojo-kpi-provider.mjs" "$STAGING_DIR/src/lib/server/mojo-kpi-provider.mjs"
+# Build the complete local import graph, with content hashes and git revision.
+"$NODE_PATH" "$REPO_ROOT/scripts/mojo-runtime-package.mjs" --stage "$STAGING_DIR"
+"$NODE_PATH" "$REPO_ROOT/scripts/mojo-runtime-package.mjs" --verify "$STAGING_DIR"
 
 "$NPM_PATH" install --prefix "$STAGING_DIR" --no-package-lock --no-save --omit=dev playwright-core@1.60.0
 (
@@ -85,7 +73,6 @@ crontab -l > "$CURRENT_CRON" 2>/dev/null || true
 BACKUP_PATH="$BACKUP_DIR/crontab-before-mojo-supervisor-$(date +%Y%m%dT%H%M%S).txt"
 cp "$CURRENT_CRON" "$BACKUP_PATH"
 awk '!/# mojo-crm-sync$/ && !/# mojo-eod-sweep$/ && !/# mojo-session-refresh$/' "$CURRENT_CRON" > "$FILTERED_CRON"
-crontab "$FILTERED_CRON"
 
 sed \
   -e "s|__REPO_ROOT__|$RUNTIME_ROOT|g" \
@@ -93,6 +80,8 @@ sed \
   -e "s|__LOG_PATH__|$LOG_DIR/mojo-supervised-runner.log|g" \
   "$PLIST_TEMPLATE" > "$RENDERED_PLIST"
 plutil -lint "$RENDERED_PLIST"
+PLIST_BACKUP="$BACKUP_DIR/mojo-supervisor-plist-$(date +%Y%m%dT%H%M%S)"
+[[ ! -f "$PLIST_TARGET" ]] || cp "$PLIST_TARGET" "$PLIST_BACKUP"
 launchctl bootout "gui/$(id -u)/com.savingkc.mojo-supervised-sync" >/dev/null 2>&1 || true
 
 RUNTIME_BACKUP=""
@@ -104,16 +93,22 @@ mv "$STAGING_DIR" "$RUNTIME_ROOT"
 STAGING_DIR=""
 install -m 600 "$RENDERED_PLIST" "$PLIST_TARGET"
 if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_TARGET"; then
-  echo "LaunchAgent activation failed; restoring the prior runtime." >&2
+  echo "LaunchAgent activation failed; restoring the prior runtime and LaunchAgent." >&2
+  if [[ -f "$PLIST_BACKUP" ]]; then
+    install -m 600 "$PLIST_BACKUP" "$PLIST_TARGET"
+  else
+    rm -f "$PLIST_TARGET"
+  fi
   if [[ -n "$RUNTIME_BACKUP" && -d "$RUNTIME_BACKUP" ]]; then
     FAILED_RUNTIME="$BACKUP_DIR/mojo-supervisor-runtime-failed-$(date +%Y%m%dT%H%M%S)"
     mv "$RUNTIME_ROOT" "$FAILED_RUNTIME"
     mv "$RUNTIME_BACKUP" "$RUNTIME_ROOT"
     RUNTIME_BACKUP=""
-    launchctl bootstrap "gui/$(id -u)" "$PLIST_TARGET" || true
+    [[ ! -f "$PLIST_TARGET" ]] || launchctl bootstrap "gui/$(id -u)" "$PLIST_TARGET" || true
   fi
   exit 1
 fi
 
+crontab "$FILTERED_CRON"
 echo "Installed one self-contained supervised Mojo runner. Crontab backup: $BACKUP_PATH"
 [[ -z "$RUNTIME_BACKUP" ]] || echo "Previous runtime backup: $RUNTIME_BACKUP"

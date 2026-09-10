@@ -204,6 +204,13 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
 } {
   const existing = qualifyMojoCallRecord(normalizeMojoCallRecord(existingValue)).call
   const incoming = normalizeMojoCallRecord(incomingValue)
+  if ((existing.provider_recording_id && incoming.provider_recording_id && existing.provider_recording_id !== incoming.provider_recording_id)
+    || (existing.recording_url && incoming.recording_url && existing.recording_url !== incoming.recording_url)) {
+    throw new Error('Mojo recording identity conflict requires review')
+  }
+  if (existing.follow_up_date && incoming.follow_up_date && existing.follow_up_date !== incoming.follow_up_date) {
+    throw new Error('Mojo follow-up time conflict requires review')
+  }
   const incomingDuration = Math.max(existing.call_duration, incoming.call_duration)
   const fill = (oldValue: string | undefined, newValue: string | undefined) => oldValue || newValue || undefined
   const longer = (oldValue: string | undefined, newValue: string | undefined) => (
@@ -211,6 +218,7 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
   )
   const merged = qualifyMojoCallRecord({
     ...existing,
+    call_date: !existing.recording_url && incoming.recording_url ? incoming.call_date : existing.call_date,
     contact_name: fill(existing.contact_name, incoming.contact_name) || '',
     phone_number: fill(existing.phone_number, incoming.phone_number) || '',
     property_address: fill(existing.property_address, incoming.property_address) || '',
@@ -235,6 +243,7 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
   }).call
 
   const materialFields: Array<keyof MojoCallRecord> = [
+    'call_date', 'contact_name', 'phone_number', 'property_address', 'city', 'state', 'zip', 'provider_contact_id',
     'call_duration', 'recording_url', 'follow_up_date', 'notes', 'email',
     'provider_recording_id', 'qualified_by_agent', 'qualification_override_reason', 'has_appointment',
     'promotion_eligible', 'qualification_status',

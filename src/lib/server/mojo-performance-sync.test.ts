@@ -38,6 +38,15 @@ function database(session: unknown = 'stored-session') {
 }
 
 describe('server-owned Mojo performance synchronization', () => {
+  it('preserves the actual provider failure after retries in the saved health reason', async () => {
+    const { db, upsert } = database()
+    const fetchSnapshot = vi.fn().mockRejectedValue(new Error('Mojo KPI returned invalid dialing time (type=number, value=-1)'))
+    await expect(syncCurrentMojoPerformance({ db: db as never, now: new Date('2026-09-08T20:00:00Z'), fetchSnapshot, sleep: vi.fn() }))
+      .rejects.toThrow('invalid dialing time')
+    expect(upsert).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ key: 'mojo_performance_sync_last_error', value: expect.stringContaining('value=-1') }),
+    ]), { onConflict: 'key' })
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     delete process.env.MOJO_SESSION_ID
