@@ -510,6 +510,16 @@
       ]
     },
     {
+      "id": "mobile_device_testing",
+      "name": "Physical iPhone smoke testing",
+      "owner": "Platform",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": [],
+      "tables": [],
+      "environment": ["IOS_DEVELOPMENT_TEAM", "IOS_DEVICE_ID", "IOS_DEVICE_NAME"]
+    },
+    {
       "id": "system_hygiene",
       "name": "System hygiene and data retention",
       "owner": "Administration",
