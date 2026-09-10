@@ -24,6 +24,7 @@ describe('resolveAuthenticatedActor', () => {
     })
     mocks.maybeSingle.mockResolvedValue({ data: { full_name: 'Casey' }, error: null })
     mocks.requireMobileActor.mockResolvedValue({
+      user: { id: 'mobile-user-123' },
       actor: { email: 'casey@savingkc.com', name: 'Casey Mobile' },
     })
     mocks.from.mockReturnValue({
@@ -35,6 +36,7 @@ describe('resolveAuthenticatedActor', () => {
 
   it('uses locally verified claims and a server-owned profile name', async () => {
     await expect(resolveAuthenticatedActor()).resolves.toEqual({
+      subject: 'user-123',
       email: 'casey@savingkc.com',
       name: 'Casey',
     })
@@ -53,6 +55,7 @@ describe('resolveAuthenticatedActor', () => {
     mocks.maybeSingle.mockRejectedValue(new Error('profile unavailable'))
 
     await expect(resolveAuthenticatedActor()).resolves.toEqual({
+      subject: 'user-123',
       email: 'casey@savingkc.com',
       name: 'casey@savingkc.com',
     })
@@ -64,6 +67,7 @@ describe('resolveAuthenticatedActor', () => {
     })
 
     await expect(resolveAuthenticatedActor(request)).resolves.toEqual({
+      subject: 'mobile-user-123',
       email: 'casey@savingkc.com',
       name: 'Casey Mobile',
     })

@@ -46,7 +46,7 @@ test('phone system, workflow registry, AI surface, and canonical workspace navig
 
   await page.locator('a[href="/ai"]').first().click()
   await expect(page).toHaveURL(/\/ai/)
-  await expect(page.getByRole('heading', { name: 'AI Assistant', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Decision room', exact: true })).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'Ask ARI' })).toBeEnabled()
   await expect(page.getByText('Execution boundary')).toBeVisible()
   await page.getByRole('button', { name: 'Clear' }).click()

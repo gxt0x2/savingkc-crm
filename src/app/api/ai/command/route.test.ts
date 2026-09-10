@@ -62,7 +62,7 @@ describe('durable AI command route', () => {
     vi.clearAllMocks()
     delete process.env.GROQ_API_KEY
     process.env.AI_GATEWAY_API_KEY = 'configured'
-    mocks.authenticated.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+    mocks.authenticated.mockResolvedValue({ subject: 'casey-user-id', email: 'casey@savingkc.com', name: 'Casey' })
     mocks.resolveActor.mockResolvedValue({ email: 'casey@savingkc.com', fullName: 'Casey', role: 'agent', access: 'agent' })
     mocks.start.mockResolvedValue({ created: true, threadId: 'thread-1', generationId: 'generation-1', requestMessageId: 'request-1', responseMessageId: null, status: 'running' })
     mocks.load.mockResolvedValue({ thread: { id: 'thread-1' }, messages: [{ id: 'request-1', role: 'user', content: 'What needs attention?', attachments: [], sources: [] }] })
@@ -93,12 +93,12 @@ describe('durable AI command route', () => {
     expect(response.status).toBe(200)
     expect(mocks.authenticated).toHaveBeenCalledWith(input)
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
-      actorEmail: 'casey@savingkc.com', actorName: 'Casey', requestId: 'request-123', surface: 'giraffe',
+      actorSubject: 'casey-user-id', actorEmail: 'casey@savingkc.com', actorName: 'Casey', requestId: 'request-123', surface: 'giraffe',
     }))
     expect(mocks.start.mock.invocationCallOrder[0]).toBeLessThan(mocks.generate.mock.invocationCallOrder[0])
     expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ email: 'casey@savingkc.com' }), 'gateway')
     expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({
-      actorEmail: 'casey@savingkc.com', provider: 'openai', model: 'openai/gpt-5.6-luna',
+      actorSubject: 'casey-user-id', actorEmail: 'casey@savingkc.com', provider: 'openai', model: 'openai/gpt-5.6-luna',
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, cacheReadTokens: 0 },
       metadata: expect.objectContaining({ permissionProfile: 'agent', toolScope: 'assigned_records' }),
     }))
@@ -107,6 +107,13 @@ describe('durable AI command route', () => {
       approvalRequiredFor: expect.arrayContaining(['task creation', 'calls and messages']),
     })
     expect(response.headers.get('vary')).toContain('Authorization')
+  })
+
+  it('fails closed when the verified identity lacks an immutable subject', async () => {
+    mocks.authenticated.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+    const response = await POST(request({ messages: [{ role: 'user', content: 'hello' }] }))
+    expect(response.status).toBe(401)
+    expect(mocks.start).not.toHaveBeenCalled()
   })
 
   it('prefers the configured Groq tool agent for text requests and records the direct provider', async () => {
@@ -147,7 +154,7 @@ describe('durable AI command route', () => {
     mocks.generate.mockRejectedValue(new Error('provider secret failure'))
     const response = await POST(request({ messages: [{ role: 'user', content: 'hello' }] }))
     expect(response.status).toBe(500)
-    expect(mocks.fail).toHaveBeenCalledWith(expect.objectContaining({ generationId: 'generation-1', actorEmail: 'casey@savingkc.com' }))
+    expect(mocks.fail).toHaveBeenCalledWith(expect.objectContaining({ generationId: 'generation-1', actorSubject: 'casey-user-id', actorEmail: 'casey@savingkc.com' }))
     expect(await response.json()).toEqual({ error: 'The AI Assistant could not complete this request.' })
   })
 
