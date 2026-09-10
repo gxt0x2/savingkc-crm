@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { mapMojoDisposition, mergeMojoCallEvidence, qualifyMojoCallRecord, type MojoCallRecord } from '@/lib/server/mojo-call-import'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { loadMojoIntakeSource, admitMojoCall, recordMojoIntakeReceipt } from '@/lib/server/mojo-intake-admission'
 
 export type { MojoCallRecord }
 
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
   if (unauthorized) return unauthorized
 
   try {
-    const body = await req.json() as { calls?: unknown }
+    const body = await req.json() as { calls?: unknown; sourceBatchId?: unknown; runtime?: { contentDigest?: unknown } }
     if (!Array.isArray(body.calls) || body.calls.length === 0) {
       return NextResponse.json({ error: 'calls array required' }, { status: 400 })
     }
@@ -33,20 +34,36 @@ export async function POST(req: NextRequest) {
     }
 
     const db = supabaseAdmin()
+    const source = await loadMojoIntakeSource(db, body)
+    if ('error' in source) {
+      console.warn(JSON.stringify({ event: 'mojo_intake_rejected', reason: source.error, requestId: req.headers.get('x-vercel-id') }))
+      return NextResponse.json({ error: source.error }, { status: source.status })
+    }
     let queued = 0
     let skipped = 0
     let rejected = 0
     let held = 0
     let enriched = 0
     let evidenceOnly = 0
-    const receipts: Array<{ recordId: string | null; status: 'accepted' | 'duplicate' | 'rejected'; reason?: string }> = []
+    const receipts: Array<{ recordId: string | null; queueRecordId?: string; status: 'accepted' | 'duplicate' | 'rejected'; reason?: string }> = []
     const heldReasons: Record<string, number> = {}
 
     for (const raw of body.calls) {
+      const requestedId = typeof raw?.record_id === 'string' ? raw.record_id : null
+      const acknowledge = async (queueRecordId: string, status: 'accepted' | 'duplicate') => {
+        try {
+          await recordMojoIntakeReceipt(db, source, requestedId!, queueRecordId)
+          receipts.push({ recordId: requestedId, queueRecordId, status })
+        } catch {
+          rejected++
+          receipts.push({ recordId: requestedId, status: 'rejected', reason: 'source_receipt_write_failed' })
+        }
+      }
       let call: MojoCallRecord
       let waitingForEvidence = false
       try {
-        const qualification = qualifyMojoCallRecord(raw as MojoCallRecord)
+        const admitted = await admitMojoCall(db, raw as MojoCallRecord, source)
+        const qualification = qualifyMojoCallRecord(admitted)
         call = qualification.call
         waitingForEvidence = qualification.assessment.status === 'evidence_pending'
           && !hasActionableFollowUp(call)
@@ -56,9 +73,9 @@ export async function POST(req: NextRequest) {
             heldReasons[reason] = (heldReasons[reason] || 0) + 1
           }
         }
-      } catch {
+      } catch (error) {
         rejected++
-        receipts.push({ recordId: typeof raw?.record_id === 'string' ? raw.record_id : null, status: 'rejected', reason: 'invalid_record' })
+        receipts.push({ recordId: requestedId, status: 'rejected', reason: error instanceof Error ? error.message : 'invalid_record' })
         continue
       }
 
@@ -68,7 +85,7 @@ export async function POST(req: NextRequest) {
         status: waitingForEvidence ? 'waiting_evidence' : 'pending',
       })
       if (!error) {
-        receipts.push({ recordId: call.record_id, status: 'accepted' })
+        await acknowledge(call.record_id, 'accepted')
         if (!waitingForEvidence) {
           queued++
           if (!call.promotion_eligible) evidenceOnly++
@@ -81,24 +98,24 @@ export async function POST(req: NextRequest) {
           .maybeSingle()
         if (readError || !existing?.payload) {
           rejected++
-          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'queue_read_failed' })
+          receipts.push({ recordId: requestedId, status: 'rejected', reason: 'queue_read_failed' })
           continue
         }
         let merged: ReturnType<typeof mergeMojoCallEvidence>
         try { merged = mergeMojoCallEvidence(existing.payload, call) }
         catch {
           rejected++
-          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'evidence_conflict' })
+          receipts.push({ recordId: requestedId, status: 'rejected', reason: 'evidence_conflict' })
           continue
         }
         if (!merged.improved) {
           skipped++
-          receipts.push({ recordId: call.record_id, status: 'duplicate' })
+          await acknowledge(call.record_id, 'duplicate')
           continue
         }
         if (existing.status === 'processing') {
           rejected++
-          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'processing_retry' })
+          receipts.push({ recordId: requestedId, status: 'rejected', reason: 'processing_retry' })
           continue
         }
         const mergedWaitingForEvidence = merged.call.qualification_status === 'evidence_pending'
@@ -122,15 +139,15 @@ export async function POST(req: NextRequest) {
           .select('record_id')
         if (updateError || updated?.length !== 1) {
           rejected++
-          receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'queue_update_conflict' })
+          receipts.push({ recordId: requestedId, status: 'rejected', reason: 'queue_update_conflict' })
         } else {
           enriched++
-          receipts.push({ recordId: call.record_id, status: 'accepted' })
+          await acknowledge(call.record_id, 'accepted')
         }
       } else {
         console.error('[mojo/sync] Queue insert failed:', error.message)
         rejected++
-        receipts.push({ recordId: call.record_id, status: 'rejected', reason: 'queue_write_failed' })
+        receipts.push({ recordId: requestedId, status: 'rejected', reason: 'queue_write_failed' })
       }
     }
 

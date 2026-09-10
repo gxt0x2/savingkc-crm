@@ -79,6 +79,11 @@ export async function PATCH(req: NextRequest) {
       if (error || count !== ids.length) {
         return NextResponse.json({ error: 'Acceptance manifest contains missing queue records' }, { status: 409 })
       }
+      const { data: receipts, error: receiptError } = await db.from('mojo_source_call_receipts')
+        .select('queue_record_id').eq('source_batch_id', id).in('queue_record_id', ids)
+      if (receiptError || new Set((receipts || []).map(row => row.queue_record_id)).size !== ids.length) {
+        return NextResponse.json({ error: 'Acceptance manifest lacks source delivery receipts' }, { status: 409 })
+      }
     }
     const { data, error } = await db.from('mojo_source_batches')
       .update({ accepted_at: new Date().toISOString(), last_error: null, record_ids: uniqueIds,

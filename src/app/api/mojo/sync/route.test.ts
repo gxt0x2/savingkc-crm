@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   requireAdminOrSecret: vi.fn(),
+  loadSource: vi.fn(),
+  admit: vi.fn(),
+  receipt: vi.fn(),
   insert: vi.fn(),
   maybeSingle: vi.fn(),
   update: vi.fn(),
@@ -20,6 +23,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }))
 
+vi.mock('@/lib/server/mojo-intake-admission', () => ({ loadMojoIntakeSource: mocks.loadSource, admitMojoCall: mocks.admit, recordMojoIntakeReceipt: mocks.receipt }))
 import { POST } from './route'
 
 const validCall = {
@@ -43,6 +47,9 @@ describe('/api/mojo/sync', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.requireAdminOrSecret.mockResolvedValue(null)
+    mocks.loadSource.mockResolvedValue({ id: 'source', payload: {}, digest: 'digest' })
+    mocks.admit.mockImplementation(async (db, call) => { if (!call.record_id) throw new Error('invalid_record'); return call })
+    mocks.receipt.mockResolvedValue(undefined)
     mocks.insert.mockResolvedValue({ error: null })
     mocks.maybeSingle.mockResolvedValue({ data: null, error: null })
     mocks.updateEq.mockReturnValue({ eq: mocks.updateEq, select: vi.fn().mockResolvedValue({ data: [{ record_id: 'mojo-1' }], error: null }) })
@@ -72,7 +79,7 @@ describe('/api/mojo/sync', () => {
       skipped: 0,
       rejected: 1,
       total: 2,
-      receipts: [{ recordId: 'mojo-1', status: 'accepted' }, { recordId: null, status: 'rejected', reason: 'invalid_record' }],
+      receipts: [{ recordId: 'mojo-1', queueRecordId: 'mojo-1', status: 'accepted' }, { recordId: null, status: 'rejected', reason: 'invalid_record' }],
     })
     expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
       record_id: 'mojo-1', status: 'pending',
@@ -211,6 +218,19 @@ describe('/api/mojo/sync', () => {
     if (failure === 'update_race') mocks.updateEq.mockReturnValue({ eq: mocks.updateEq, select: vi.fn().mockResolvedValue({ data: [], error: null }) })
     const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', { method: 'POST', body: JSON.stringify({ calls: [validCall] }) }) as never)
     expect(await response.json()).toMatchObject({ rejected: 1, receipts: [{ recordId: 'mojo-1', status: 'rejected' }] })
+  })
+
+  it('rejects an older authenticated importer before queue writes', async () => {
+    mocks.loadSource.mockResolvedValue({ error: 'importer_update_required', status: 409 })
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', { method: 'POST', body: JSON.stringify({ calls: [validCall] }) }) as never)
+    expect(response.status).toBe(409)
+    expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
+  it('does not acknowledge a queue write without its durable source receipt', async () => {
+    mocks.receipt.mockRejectedValue(new Error('unavailable'))
+    const response = await POST(new Request('https://crm.savingkc.com/api/mojo/sync', { method: 'POST', body: JSON.stringify({ calls: [validCall] }) }) as never)
+    expect(await response.json()).toMatchObject({ rejected: 1, receipts: [{ status: 'rejected', reason: 'source_receipt_write_failed' }] })
   })
 
   it('contains no Manifest, scoring, enrichment, alert, or outbound-message work', () => {

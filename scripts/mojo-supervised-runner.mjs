@@ -2,6 +2,7 @@
 
 import { spawn, execFileSync } from 'node:child_process'
 import { verifyRuntime } from './mojo-runtime-package.mjs'
+import { mojoSupervisorReceipt } from './mojo-supervisor-health.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -107,7 +108,7 @@ function runSync() {
 }
 
 async function checkHealth() {
-  const response = await fetch(`${crmBaseUrl()}/api/admin/mojo-health`, {
+  const response = await fetch(`${crmBaseUrl()}/api/admin/mojo-health?dryRun=1`, {
     headers: adminHeaders({ accept: 'application/json' }),
     signal: AbortSignal.timeout(20_000),
   })
@@ -133,7 +134,13 @@ async function main() {
       throw new Error('Installed Mojo runtime has no version manifest')
     }
     const result = await runSync()
-    if (stopping) return
+    if (stopping) {
+      fs.writeFileSync(heartbeatFile, `${JSON.stringify(mojoSupervisorReceipt(result, null), null, 2)}\n`, { mode: 0o600 })
+      return
+    }
+    const check = result.code === 0 ? await checkHealth().catch(() => ({ health: null })) : { health: null }
+    const receipt = mojoSupervisorReceipt(result, check.health)
+    fs.writeFileSync(heartbeatFile, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 })
     if (result.code !== 0) {
       await recordMojoFreshnessIssue({
         source: 'mojo-supervised-runner',
@@ -144,19 +151,14 @@ async function main() {
       return
     }
 
-    const { response, health } = await checkHealth()
-    if (!health || response.status >= 500 || health.status === 'attention') {
-      const message = health?.message || `Mojo freshness check failed with HTTP ${response.status}`
-      await recordMojoFreshnessIssue({ source: 'mojo-supervised-runner', reason: 'freshness_attention', message })
+    if (receipt.operationalAttention) {
+      // Intake already succeeded. Do not overwrite that fact with a historical
+      // reconciliation or KPI failure; the server monitor owns those incidents.
+      log('Intake completed; operational health requires attention')
       process.exitCode = 1
       return
     }
-
-    fs.writeFileSync(heartbeatFile, `${JSON.stringify({
-      status: 'healthy', completedAt: new Date().toISOString(), lastSyncAt: health.lastSyncAt || null,
-      queue: health.queue || null,
-    }, null, 2)}\n`, { mode: 0o600 })
-    log(`Completed; freshness=${health.lastSyncAgeMinutes ?? 'unknown'}m, queue=${(health.queue?.pending ?? 0) + (health.queue?.processing ?? 0)}`)
+    log(`Completed; status=${receipt.status}, lastSyncAt=${receipt.lastSyncAt}`)
   } finally {
     releaseLock()
   }
@@ -165,6 +167,7 @@ async function main() {
 main().catch(async (error) => {
   const message = error instanceof Error ? error.message : String(error)
   console.error(`[mojo-supervisor] ${message}`)
+  fs.writeFileSync(heartbeatFile, `${JSON.stringify({ ...mojoSupervisorReceipt({ code: 1, timedOut: false }, null), error: message }, null, 2)}\n`, { mode: 0o600 })
   await recordMojoFreshnessIssue({ source: 'mojo-supervised-runner', reason: 'supervisor_exception', message: `Mojo supervisor failed: ${message}` })
   releaseLock()
   process.exit(1)

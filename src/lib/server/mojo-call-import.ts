@@ -44,6 +44,9 @@ export interface MojoCallRecord {
   follow_up_date?: string
   email?: string
   provider_contact_id?: string
+  provider_action_id?: string
+  provider_activity_ids?: string[]
+  source_batch_id?: string
   provider_recording_id?: string
   qualified_by_agent?: boolean
   qualification_override_reason?: string
@@ -147,6 +150,9 @@ export function normalizeMojoCallRecord(value: unknown): MojoCallRecord {
     ...(followUpDate ? { follow_up_date: followUpDate } : {}),
     ...(stringField(raw.email, 320) ? { email: stringField(raw.email, 320).toLowerCase() } : {}),
     ...(stringField(raw.provider_contact_id, 160) ? { provider_contact_id: stringField(raw.provider_contact_id, 160) } : {}),
+    ...(stringField(raw.provider_action_id, 160) ? { provider_action_id: stringField(raw.provider_action_id, 160) } : {}),
+    ...(Array.isArray(raw.provider_activity_ids) ? { provider_activity_ids: stringArrayField(raw.provider_activity_ids, 500, 160) } : {}),
+    ...(stringField(raw.source_batch_id, 64) ? { source_batch_id: stringField(raw.source_batch_id, 64) } : {}),
     ...(stringField(raw.provider_recording_id, 160) ? { provider_recording_id: stringField(raw.provider_recording_id, 160) } : {}),
     ...(booleanField(raw.qualified_by_agent) ? { qualified_by_agent: true } : {}),
     ...(stringField(raw.qualification_override_reason, 500)
@@ -232,6 +238,9 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
     recording_url: fill(existing.recording_url, incoming.recording_url),
     follow_up_date: fill(existing.follow_up_date, incoming.follow_up_date),
     provider_contact_id: fill(existing.provider_contact_id, incoming.provider_contact_id),
+    provider_action_id: fill(existing.provider_action_id, incoming.provider_action_id),
+    provider_activity_ids: [...new Set([...(existing.provider_activity_ids || []), ...(incoming.provider_activity_ids || [])])],
+    source_batch_id: fill(existing.source_batch_id, incoming.source_batch_id),
     provider_recording_id: fill(existing.provider_recording_id, incoming.provider_recording_id),
     qualified_by_agent: existing.qualified_by_agent || incoming.qualified_by_agent,
     qualification_override_reason: fill(
@@ -245,7 +254,7 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
   const materialFields: Array<keyof MojoCallRecord> = [
     'call_date', 'contact_name', 'phone_number', 'property_address', 'city', 'state', 'zip', 'provider_contact_id',
     'call_duration', 'recording_url', 'follow_up_date', 'notes', 'email',
-    'provider_recording_id', 'qualified_by_agent', 'qualification_override_reason', 'has_appointment',
+    'provider_recording_id', 'provider_action_id', 'provider_activity_ids', 'source_batch_id', 'qualified_by_agent', 'qualification_override_reason', 'has_appointment',
     'promotion_eligible', 'qualification_status',
   ]
   const improved = materialFields.some((field) => JSON.stringify(merged[field]) !== JSON.stringify(existing[field]))
