@@ -48,7 +48,7 @@ INSERT INTO public.lead_activities(activity_type,description,agent,metadata) VAL
 Path(sys.argv[1]).write_text(fixture)
 PY
 "${PSQL[@]}" -f "$REHEARSAL_DIR/baseline.sql" >/dev/null
-"${PSQL[@]}" -f supabase/migrations/20261101130000_prospect_work_items.sql >/dev/null
+"${PSQL[@]}" -f supabase/migrations/20261102130000_prospect_work_items.sql >/dev/null
 "${PSQL[@]}" <<'SQL'
 DO $$
 DECLARE first_result jsonb; second_result jsonb; mail_key text; initial_count int;
@@ -92,5 +92,5 @@ DO $$ BEGIN
  IF (SELECT operational_lane FROM public.work_items WHERE title='Event source') <> 'review' THEN RAISE EXCEPTION 'event review weakened'; END IF;
 END $$;
 SQL
-"${PSQL[@]}" -f supabase/migrations/20261101130000_prospect_work_items.sql >/dev/null
+"${PSQL[@]}" -f supabase/migrations/20261102130000_prospect_work_items.sql >/dev/null
 "${PSQL[@]}" -c "SELECT 'PASS: Prospect history, canonical task/mail creation, completion, idempotence, promotion, dead lifecycle, review lanes, permissions and replay' AS result;"
