@@ -8,7 +8,7 @@
 import fs from 'fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runtimeIdentity } from './mojo-runtime-package.mjs'
-import { MOJO_INGESTION_VERSION, collectMojoActivities, assertMojoReceipts, spoolMojoSource, readMojoSpool } from './mojo-ingestion-integrity.mjs'
+import { MOJO_INGESTION_VERSION, collectMojoActivities, mojoActivityDayUrl, mojoReplayStartDate, assertMojoReceipts, spoolMojoSource, readMojoSpool } from './mojo-ingestion-integrity.mjs'
 import { homedir } from 'node:os'
 import path from 'path'
 import {
@@ -288,8 +288,8 @@ async function fetchRecordings(sessionId, from, to) {
   return data.recordings
 }
 
-async function fetchActivityStream(sessionId, page = 1) {
-  const url = `${MOJO_BASE_URL}/v2/rest/home/activity-stream/?page=${page}`
+async function fetchActivityStream(sessionId, date) {
+  const url = mojoActivityDayUrl(MOJO_BASE_URL, date)
   const resp = await fetch(url, {
     headers: mojoHeaders(sessionId),
     signal: AbortSignal.timeout(20000),
@@ -603,11 +603,11 @@ export async function sync(options = {}) {
     if (!session?.sessionId) throw new Error('session_expired: Mojo session missing')
     const state = readState()
     // Revisit seven Central calendar days every run for delayed evidence.
-    const from = historical ? targetDate : new Date(Date.parse(`${targetDate}T12:00:00Z`) - 7 * 86400000).toISOString().slice(0, 10)
+    const from = historical ? targetDate : mojoReplayStartDate(targetDate, state.lastSync)
     const since = centralMidnightIso(from)
     const activities = await collectMojoActivities(
-      page => fetchActivityStream(session.sessionId, page),
-      { lastActivityId: historical ? 0 : state.lastActivityId, since },
+      date => fetchActivityStream(session.sessionId, date),
+      { since, to: targetDate },
     )
     const recordings = await fetchRecordings(session.sessionId, from, targetDate)
     const payload = {
