@@ -13,6 +13,7 @@ import type {
   ProspectingOccupancy,
 } from '@/components/prospecting/prospecting-calling-types'
 import { ProspectAddressFields, ProspectOwnerNameFields } from '@/components/prospecting/prospect-display-fields'
+import { ProspectingWrapUpActions } from '@/components/prospecting/prospecting-wrap-up-actions'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
 import { toProperCase } from '@/lib/format'
 import type { DialerActivity } from '@/lib/dialer-lead-activity'
@@ -32,6 +33,7 @@ interface ProspectingCallingContextRailProps {
   occupancy: ProspectingOccupancy | null
   delinquentYears: string | null
   durableSessionId: string
+  campaignMemberId?: string | null
   activities: DialerActivity[]
   activeTab: ProspectingCallingTab
   callerId: string
@@ -82,6 +84,20 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
   const mailing = useMemo(() => resolveMailingDisplay(props.prospect), [props.prospect])
 
   return <aside aria-label="Seller context" className={`order-2 col-span-12 space-y-3 lg:self-start ${props.fullWidth ? 'lg:col-span-12' : 'lg:sticky lg:top-[168px] lg:col-span-4 lg:max-h-[calc(100vh-184px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1'}`}>
+
+    <ProspectingWrapUpActions
+      key={`actions:${props.prospect?.id || props.leadId || 'current'}`}
+      leadId={props.leadId}
+      prospectId={props.prospect?.id || null}
+      campaignMemberId={props.campaignMemberId || null}
+      dialerSessionId={props.durableSessionId}
+      sellerName={props.ownerName}
+      propertyAddress={props.situsAddress}
+      activities={props.activities}
+      readOnly={Boolean(props.readOnlyPreview)}
+      onRefresh={props.onRefreshActivities}
+    />
+
     <section className="ck-card p-4">
       <div className="mb-4">
         <div className="mb-3 flex items-start justify-between gap-3">
@@ -121,6 +137,8 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
 
     {props.lead ? <DialerAiAssist key={`${props.durableSessionId || 'legacy'}:${props.lead.id}`} sessionId={props.durableSessionId} leadId={props.lead.id} /> : null}
 
+
+
     <section aria-label="Seller communication workspace" className="ck-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="inline-flex rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-0.5">{([['texts', 'Text Hub'], ['activity', 'History']] as const).map(([tab, label]) => <button key={tab} type="button" onClick={() => props.onTabChange(tab)} className={`rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${props.activeTab === tab ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'}`}>{label}</button>)}</div>
@@ -147,7 +165,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
           {commsEvents.length > 0 ? <>
             <CommsSummaryBar summary={commsSummary} />
             <div className="border-t border-[var(--ck-border)] pt-3"><CommsTimeline events={commsEvents} /></div>
-          </> : contactNotes.length === 0 ? <p className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4 text-xs leading-5 text-[var(--ck-text-muted)]">No calls, texts, emails, or contact notes logged for this seller yet.</p> : null}
+          </> : contactNotes.length === 0 ? <p className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4 text-xs leading-5 text-[var(--ck-text-muted)]">No calls, texts, emails, notes, or next actions logged for this seller yet.</p> : null}
         </div>}
       </div>
       {props.leadId ? <Link href={`/conversations?lead=${encodeURIComponent(props.leadId)}`} prefetch={false} className="mt-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)] hover:underline">Open full conversation <Icon name="arrow_forward" size="text-xs" /></Link> : null}

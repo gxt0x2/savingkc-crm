@@ -9,6 +9,7 @@ export interface WorkItem {
   sourceKind: 'activity' | 'tc_task'
   sourceId: string
   leadId: string | null
+  prospectId: string | null
   tcFileId: string | null
   kind: string
   title: string
@@ -40,6 +41,7 @@ interface WorkItemRow {
   source_kind: 'activity' | 'tc_task'
   source_id: string
   lead_id: string | null
+  prospect_id: string | null
   tc_file_id: string | null
   kind: string
   title: string
@@ -66,9 +68,9 @@ export class WorkItemError extends Error {
   }
 }
 
-export function normalizeWorkItemKind(value: unknown): 'task' | 'appointment' | 'follow_up' | 'callback' | 'send_offer' {
+export function normalizeWorkItemKind(value: unknown): 'task' | 'appointment' | 'follow_up' | 'callback' | 'send_offer' | 'mail' {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (normalized === 'appointment' || normalized === 'follow_up' || normalized === 'callback' || normalized === 'send_offer') {
+  if (normalized === 'appointment' || normalized === 'follow_up' || normalized === 'callback' || normalized === 'send_offer' || normalized === 'mail') {
     return normalized
   }
   if (normalized === 'offer') return 'send_offer'
@@ -107,6 +109,7 @@ function mapWorkItem(row: WorkItemRow): WorkItem {
     sourceKind: row.source_kind,
     sourceId: row.source_id,
     leadId: row.lead_id,
+    prospectId: row.prospect_id ?? null,
     tcFileId: row.tc_file_id,
     kind: row.kind,
     title: row.title,
@@ -130,7 +133,7 @@ function databaseError(message: string): never {
   if (normalized.includes('work_item_not_found')) {
     throw new WorkItemError('Work item was not found.', 'not_found')
   }
-  if (normalized.includes('version_conflict') || normalized.includes('idempotency_conflict')) {
+  if (normalized.includes('version_conflict') || normalized.includes('idempotency_conflict') || normalized.includes('work_item_subject_mismatch')) {
     throw new WorkItemError('Work item changed in another request. Refresh and try again.', 'conflict')
   }
   if (normalized.includes('work_item_not_current')) {
@@ -162,10 +165,12 @@ function databaseError(message: string): never {
 }
 
 export async function listWorkItems(input: {
+  key?: string
   department?: string
   statuses?: WorkItemStatus[]
   leadId?: string
   leadIds?: string[]
+  prospectId?: string
   assignedTo?: string
   dueBefore?: string
   dueAfter?: string
@@ -175,15 +180,18 @@ export async function listWorkItems(input: {
   const limit = Math.max(1, Math.min(input.limit ?? 500, 500))
   let query = supabaseAdmin()
     .from('work_items')
-    .select('work_item_key, source_kind, source_id, lead_id, tc_file_id, kind, title, description, status, priority, due_at, assigned_to, department, role, primary_next_action, version, source_created_at, completed_at, updated_at')
+    .select('work_item_key, source_kind, source_id, lead_id, prospect_id, tc_file_id, kind, title, description, status, priority, due_at, assigned_to, department, role, primary_next_action, version, source_created_at, completed_at, updated_at')
     .order('due_at', { ascending: true, nullsFirst: false })
     .order('work_item_key', { ascending: true })
     .limit(limit)
+
+  if (input.key) query = query.eq('work_item_key', normalizeWorkItemKey(input.key))
 
   if (input.department) query = query.eq('department', input.department)
   if (input.statuses?.length) query = query.in('status', input.statuses)
   if (input.leadId) query = query.eq('lead_id', input.leadId)
   if (input.leadIds?.length) query = query.in('lead_id', input.leadIds)
+  if (input.prospectId) query = query.eq('prospect_id', input.prospectId)
   if (input.assignedTo) query = query.ilike('assigned_to', input.assignedTo)
   if (input.dueBefore) query = query.lte('due_at', input.dueBefore)
   if (input.dueAfter) query = query.gte('due_at', input.dueAfter)
@@ -217,6 +225,7 @@ export async function createWorkItem(input: {
   actor: string
   idempotencyKey: string
   leadId?: string | null
+  prospectId?: string | null
   kind: string
   title: string
   notes?: string | null
@@ -228,11 +237,13 @@ export async function createWorkItem(input: {
   primaryNextAction?: boolean
   provenance?: Record<string, unknown>
 }, db: SupabaseClient = supabaseAdmin()): Promise<{ created: boolean; workItem: WorkItem }> {
-  const rpcName = input.provenance ? 'create_work_item_v2' : 'create_work_item_v1'
+  const subjectAware = Boolean(input.prospectId) || normalizeWorkItemKind(input.kind) === 'mail'
+  const rpcName = subjectAware ? 'create_work_item_v3' : input.provenance ? 'create_work_item_v2' : 'create_work_item_v1'
   const rpcInput = {
     p_actor: input.actor,
     p_idempotency_key: input.idempotencyKey,
     p_lead_id: input.leadId || null,
+    ...(subjectAware ? { p_prospect_id: input.prospectId || null } : {}),
     p_kind: input.kind,
     p_title: input.title,
     p_notes: input.notes || null,
@@ -242,7 +253,7 @@ export async function createWorkItem(input: {
     p_role: input.role || null,
     p_priority: input.priority || 'normal',
     p_primary_next_action: input.primaryNextAction === true,
-    ...(input.provenance ? { p_provenance: input.provenance } : {}),
+    ...((input.provenance || subjectAware) ? { p_provenance: input.provenance || {} } : {}),
   }
   const { data, error } = await db.rpc(rpcName, rpcInput)
   if (error) databaseError(error.message)

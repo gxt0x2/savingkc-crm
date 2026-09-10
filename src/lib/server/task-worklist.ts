@@ -30,6 +30,7 @@ export type TaskWorklistItem = {
   sourceKind: 'activity' | 'tc_task'
   sourceId: string
   leadId: string | null
+  prospectId: string | null
   tcFileId: string | null
   kind: string
   title: string
@@ -95,7 +96,7 @@ function taskKinds(filter: string): string[] | null {
   if (!filter || filter === 'any') return null
   if (filter === 'offer') return ['send_offer']
   if (filter === 'general') return ['task', 'review', 'research']
-  if (['follow_up', 'callback', 'appointment'].includes(filter)) return [filter]
+  if (['follow_up', 'callback', 'appointment', 'mail'].includes(filter)) return [filter]
   throw new TaskWorklistError('Task type filter is invalid.', 'invalid')
 }
 
@@ -140,27 +141,66 @@ function parseItem(value: unknown): TaskWorklistItem | null {
 }
 
 type LeadReviewFact = { id: string; station: string | null; classification: string | null }
+type ProspectReviewFact = {
+  id: string
+  lead_id: string | null
+  owner_1: string | null
+  situs_street: string | null
+  situs_city: string | null
+  situs_state: string | null
+  situs_zip: string | null
+}
 
 async function attachOperationalEvidence(items: TaskWorklistItem[]): Promise<TaskWorklistItem[]> {
   const leadIds = [...new Set(items.filter((item) => item.operationalLane !== 'quarantine').map((item) => item.leadId).filter((value): value is string => Boolean(value)))].slice(0, 50)
-  if (!leadIds.length) {
+  const prospectIds = [...new Set(items.filter((item) => item.operationalLane !== 'quarantine' && !item.leadId).map((item) => item.prospectId).filter((value): value is string => Boolean(value)))].slice(0, 50)
+  if (!leadIds.length && !prospectIds.length) {
     return items.map((item) => item.operationalLane === 'quarantine'
       ? { ...item, reviewReason: 'automation_source' }
       : { ...item, operationalLane: 'review', reviewReason: 'unlinked' })
   }
 
-  const { data, error } = await supabaseAdmin()
-    .from('leads')
-    .select('id,station,classification')
-    .in('id', leadIds)
+  const [leadResult, prospectResult] = await Promise.all([
+    leadIds.length
+      ? supabaseAdmin().from('leads').select('id,station,classification').in('id', leadIds)
+      : Promise.resolve({ data: [] as LeadReviewFact[], error: null }),
+    prospectIds.length
+      ? supabaseAdmin().from('prospects').select('id,lead_id,owner_1,situs_street,situs_city,situs_state,situs_zip').in('id', prospectIds)
+      : Promise.resolve({ data: [] as ProspectReviewFact[], error: null }),
+  ])
 
-  if (error || !Array.isArray(data)) throw new TaskWorklistError('Task review evidence is unavailable.', 'unavailable')
-  const facts = new Map((data as LeadReviewFact[]).map((lead) => [lead.id, lead]))
+  if (leadResult.error || prospectResult.error || !Array.isArray(leadResult.data) || !Array.isArray(prospectResult.data)) {
+    throw new TaskWorklistError('Task review evidence is unavailable.', 'unavailable')
+  }
+  const leadFacts = new Map((leadResult.data as LeadReviewFact[]).map((lead) => [lead.id, lead]))
+  const prospectFacts = new Map((prospectResult.data as ProspectReviewFact[]).map((prospect) => [prospect.id, prospect]))
 
   return items.map((item) => {
     if (item.operationalLane === 'quarantine') return { ...item, reviewReason: 'automation_source' }
-    if (!item.leadId) return { ...item, operationalLane: 'review', reviewReason: 'unlinked' }
-    const lead = facts.get(item.leadId)
+    if (!item.leadId) {
+      if (!item.prospectId) return { ...item, operationalLane: 'review', reviewReason: 'unlinked' }
+      const prospect = prospectFacts.get(item.prospectId)
+      if (!prospect || prospect.lead_id) return { ...item, operationalLane: 'review', reviewReason: 'missing_contact' }
+      if (item.operationalLane === 'review') return { ...item, reviewReason: 'legacy_event' }
+      return {
+        ...item,
+        operationalLane: 'current',
+        reviewReason: 'none',
+        contact: {
+          id: prospect.id,
+          fullName: prospect.owner_1,
+          phone: null,
+          email: null,
+          propertyAddress: prospect.situs_street,
+          city: prospect.situs_city,
+          state: prospect.situs_state,
+          zip: prospect.situs_zip,
+          station: null,
+          createdAt: null,
+        },
+      }
+    }
+    const lead = leadFacts.get(item.leadId)
     if (!lead) return { ...item, operationalLane: 'review', reviewReason: 'missing_contact' }
     const station = (lead.station || '').trim().toLowerCase()
     const classification = (lead.classification || '').trim().toLowerCase()

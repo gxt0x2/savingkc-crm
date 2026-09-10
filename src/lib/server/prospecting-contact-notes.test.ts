@@ -11,7 +11,8 @@ function databaseFixture(options: {
   activities?: Array<Record<string, unknown>>
 } = {}) {
   const insert = vi.fn()
-  const contains = vi.fn()
+  const activityTypeFilter = vi.fn()
+  const prospectFilter = vi.fn()
   const from = vi.fn((table: string) => {
     if (table === 'prospecting_campaign_members') {
       const builder = {
@@ -33,8 +34,8 @@ function databaseFixture(options: {
       const builder = {
         insert: vi.fn((value: unknown) => { insert(value); return builder }),
         select: vi.fn(() => builder),
-        eq: vi.fn(() => builder),
-        contains: vi.fn((column: string, value: unknown) => { contains(column, value); return builder }),
+        eq: vi.fn((column: string, value: unknown) => { prospectFilter(column, value); return builder }),
+        in: vi.fn((column: string, value: unknown) => { activityTypeFilter(column, value); return builder }),
         order: vi.fn(() => builder),
         limit: vi.fn(async () => ({ data: options.activities ?? [], error: null })),
         single: vi.fn(async () => ({ data: { id: 'activity-1' }, error: null })),
@@ -43,7 +44,7 @@ function databaseFixture(options: {
     }
     throw new Error(`Unexpected table ${table}`)
   })
-  return { database: { from } as unknown as Pick<SupabaseClient, 'from'>, from, insert, contains }
+  return { database: { from } as unknown as Pick<SupabaseClient, 'from'>, from, insert, activityTypeFilter, prospectFilter }
 }
 
 describe('saveProspectingContactNote', () => {
@@ -52,6 +53,7 @@ describe('saveProspectingContactNote', () => {
   it('persists an authenticated note against an unpromoted source Prospect contact', async () => {
     const fixture = databaseFixture({
       member: { id: 'member-1', subject_kind: 'prospect', lead_id: null, prospect_id: 'prospect-1' },
+      prospect: { id: 'prospect-1', lead_id: null },
     })
 
     await saveProspectingContactNote(actor, {
@@ -66,6 +68,7 @@ describe('saveProspectingContactNote', () => {
 
     expect(fixture.insert).toHaveBeenCalledWith(expect.objectContaining({
       lead_id: null,
+      prospect_id: 'prospect-1',
       activity_type: 'note',
       description: 'Sister handles the estate calls.',
       agent: 'Agent Example',
@@ -129,16 +132,14 @@ describe('saveProspectingContactNote', () => {
     expect(fixture.from).not.toHaveBeenCalled()
   })
 
-  it('loads only bounded contact notes attributed to the requested source Prospect', async () => {
+  it('loads bounded notes and wrap-up work attributed to the requested source Prospect', async () => {
     const activities = [{ id: 'activity-1', activity_type: 'note', description: 'Call the daughter first.' }]
     const fixture = databaseFixture({ activities })
 
     const result = await loadProspectingContactNotes('prospect-1', fixture.database)
 
-    expect(fixture.contains).toHaveBeenCalledWith('metadata', {
-      source: 'prospecting_contact_note',
-      prospect_id: 'prospect-1',
-    })
+    expect(fixture.prospectFilter).toHaveBeenCalledWith('prospect_id', 'prospect-1')
+    expect(fixture.activityTypeFilter).toHaveBeenCalledWith('activity_type', ['note', 'task', 'appointment', 'follow_up', 'callback', 'mail'])
     expect(result).toEqual({ activities })
   })
 
