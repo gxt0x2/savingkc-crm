@@ -64,12 +64,13 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/eod',
   // Admin routes are exact-listed so a newly added administrative endpoint
   // cannot inherit service-bearer trust before its handler authorization and
-  // operational caller are reviewed. These four routes are used by the
+  // operational caller are reviewed. These routes are used by the
   // supervised Mojo runner and retain their own admin-or-secret checks.
   '/api/admin/mojo-health',
   '/api/admin/mojo-incident',
   '/api/admin/mojo-performance',
   '/api/admin/mojo-session',
+  '/api/admin/mojo-source-batches',
   '/api/admin/system-config',
   // Cron routes are exact-listed so a newly added scheduled endpoint cannot
   // inherit service-bearer trust before its handler authorization is reviewed.
