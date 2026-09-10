@@ -35,6 +35,7 @@ import {
   fetchConversationTimeline,
   type ConversationKindFilter,
   type ConversationQueue,
+  type ConversationTimeframe,
 } from '@/lib/queries/conversation-hub'
 
 interface ConversationThread {
@@ -312,6 +313,8 @@ export default function ConversationsPage() {
   const toastCounter = useRef(0)
   const [requestedThreadId, setRequestedThreadId] = useState<string | null>(() => routeRequestedThread)
   const [activeQueue, setActiveQueue] = useState<ConversationQueue>(() => routeRequestedThread ? 'all' : 'needs_reply')
+  const [activeTimeframe, setActiveTimeframe] = useState<ConversationTimeframe>('inbox')
+  const [conversationInboxCutoff] = useState(() => Date.now() - 86_400_000)
   const [kindFilter, setKindFilter] = useState<ConversationKindFilter>('all')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -341,8 +344,8 @@ export default function ConversationsPage() {
   const requestedLookupEnabled = requestedThreadSearch.length >= 3
 
   const hubQuery = useInfiniteQuery({
-    queryKey: conversationHubInfiniteQueryKey(activeQueue, normalizedSearch, kindFilter),
-    queryFn: ({ pageParam }) => fetchConversationHub<ConversationThread>({ queue: activeQueue, cursor: pageParam, search: normalizedSearch, kind: kindFilter }),
+    queryKey: conversationHubInfiniteQueryKey(activeQueue, normalizedSearch, kindFilter, activeTimeframe),
+    queryFn: ({ pageParam }) => fetchConversationHub<ConversationThread>({ queue: activeQueue, cursor: pageParam, search: normalizedSearch, kind: kindFilter, timeframe: activeTimeframe }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.pageInfo.hasMore ? lastPage.pageInfo.nextCursor ?? undefined : undefined,
     staleTime: conversationHubStaleTime,
@@ -352,7 +355,7 @@ export default function ConversationsPage() {
 
   const requestedThreadQuery = useQuery({
     queryKey: ['conversation-hub', 'direct', requestedThreadSearch],
-    queryFn: () => fetchConversationHub<ConversationThread>({ queue: 'all', search: requestedThreadSearch, limit: 1 }),
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: 'all', search: requestedThreadSearch, timeframe: 'all', limit: 1 }),
     enabled: requestedLookupEnabled,
     staleTime: conversationHubStaleTime,
     refetchInterval: pollVisible,
@@ -362,8 +365,8 @@ export default function ConversationsPage() {
     ? requestedThreadQuery.data?.items.find((thread) => conversationMatchesDeepLink(thread, requestedThreadId)) ?? null
     : null
   const selectedQueueThreadQuery = useQuery({
-    queryKey: ['conversation-hub', 'selected-queue', activeQueue, kindFilter, requestedThreadSearch],
-    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: requestedThreadSearch, kind: kindFilter, limit: 1 }),
+    queryKey: ['conversation-hub', 'selected-queue', activeTimeframe, activeQueue, kindFilter, requestedThreadSearch],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: requestedThreadSearch, kind: kindFilter, timeframe: activeTimeframe, limit: 1 }),
     enabled: requestedLookupEnabled && activeQueue !== 'all',
     staleTime: conversationHubStaleTime,
     refetchInterval: pollVisible,
@@ -374,8 +377,8 @@ export default function ConversationsPage() {
     : null
   const hubHasLoadedHistory = (hubQuery.data?.pages.length ?? 0) > 1
   const hubHeadQuery = useQuery({
-    queryKey: ['conversation-hub-head', activeQueue, kindFilter, normalizedSearch],
-    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: normalizedSearch, kind: kindFilter, limit: 50 }),
+    queryKey: ['conversation-hub-head', activeTimeframe, activeQueue, kindFilter, normalizedSearch],
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: activeQueue, search: normalizedSearch, kind: kindFilter, timeframe: activeTimeframe, limit: 50 }),
     enabled: hubHasLoadedHistory,
     staleTime: conversationHubStaleTime,
     refetchInterval: pollVisible,
@@ -462,7 +465,7 @@ export default function ConversationsPage() {
 
   const newConversationQuery = useQuery({
     queryKey: ['conversation-hub', 'all', normalizedNewConversationSearch, 'new-conversation'],
-    queryFn: () => fetchConversationHub<ConversationThread>({ queue: 'all', search: normalizedNewConversationSearch }),
+    queryFn: () => fetchConversationHub<ConversationThread>({ queue: 'all', search: normalizedNewConversationSearch, timeframe: 'all' }),
     enabled: showNewMessage,
     staleTime: conversationHubStaleTime,
   })
@@ -494,6 +497,7 @@ export default function ConversationsPage() {
 
   function selectNewConversation(thread: ConversationThread) {
     setActiveQueue('all')
+    setActiveTimeframe(new Date(thread.lastActivityAt || thread.created_at).getTime() < conversationInboxCutoff ? 'recent' : 'inbox')
     setPinnedThread(thread)
     setRequestedThreadId(thread.id)
     setActiveThreadKey(thread.threadKey)
@@ -504,8 +508,8 @@ export default function ConversationsPage() {
     closeNewConversation()
   }
 
-  function changeQueue(queue: ConversationQueue) {
-    setActiveQueue(queue)
+  function changeConversationList(updateFilter: () => void) {
+    updateFilter()
     setActiveThreadKey(null)
     setPinnedThread(null)
     setMobilePane('inbox')
@@ -515,16 +519,9 @@ export default function ConversationsPage() {
     window.history.replaceState(null, '', `${url.pathname}${url.search}`)
   }
 
-  function changeKindFilter(kind: ConversationKindFilter) {
-    setKindFilter(kind)
-    setActiveThreadKey(null)
-    setPinnedThread(null)
-    setMobilePane('inbox')
-    setRequestedThreadId(null)
-    const url = new URL(window.location.href)
-    url.searchParams.delete('lead')
-    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
-  }
+  function changeQueue(queue: ConversationQueue) { changeConversationList(() => setActiveQueue(queue)) }
+  function changeTimeframe(timeframe: ConversationTimeframe) { changeConversationList(() => setActiveTimeframe(timeframe)) }
+  function changeKindFilter(kind: ConversationKindFilter) { changeConversationList(() => setKindFilter(kind)) }
 
   const refreshConversation = useCallback(() => {
     void Promise.all([
@@ -627,6 +624,7 @@ export default function ConversationsPage() {
               threads={previews}
               activeThreadKey={resolvedActiveThreadKey || ''}
               activeQueue={activeQueue}
+              activeTimeframe={activeTimeframe}
               kindFilter={kindFilter}
               search={search}
               loading={hubQuery.isPending}
@@ -634,6 +632,7 @@ export default function ConversationsPage() {
               onRetry={() => void hubQuery.refetch()}
               onSelectThread={selectConversation}
               onQueueChange={changeQueue}
+              onTimeframeChange={changeTimeframe}
               onKindFilterChange={changeKindFilter}
               onSearchChange={setSearch}
               hasMore={Boolean(hubQuery.hasNextPage)}
