@@ -39,7 +39,7 @@
     },
     {
       "path": "/api/cron/process-mojo-queue",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/cron/sync-mojo-emails",

@@ -166,7 +166,7 @@ async function providerSnapshotWithRetry(options: {
   }
   throw new MojoPerformanceSyncError(
     'provider_unavailable',
-    `Mojo KPI could not be read after ${MAX_PROVIDER_ATTEMPTS} attempts`,
+    `Mojo KPI could not be read after ${MAX_PROVIDER_ATTEMPTS} attempts: ${lastError instanceof Error ? lastError.message.slice(0, 250) : 'unknown provider error'}`,
     { cause: lastError },
   )
 }

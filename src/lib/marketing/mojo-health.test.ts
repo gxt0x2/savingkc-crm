@@ -1,3 +1,4 @@
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 import { describe, expect, it } from 'vitest'
 
 import { getMojoHealth } from './mojo-health'
@@ -5,6 +6,7 @@ import { getMojoHealth } from './mojo-health'
 type Response = { data: unknown; error: { message: string } | null }
 
 const cleanReconciliation = {
+  version: 'crm_mojo_reconciliation_integrity_v1',
   checkedAt: '2026-09-08T23:00:00.000Z',
   windowSince: '2026-08-09T23:00:00.000Z',
   counts: {},
@@ -35,7 +37,7 @@ function database(performance: unknown[], config = [
     rpc: () => Promise.resolve({ data: reconciliation, error: null }),
     from: (table: string) => {
       if (table === 'system_config') {
-        return query({ data: config, error: null })
+        return query({ data: [{ key: 'mojo_runtime_content_digest', value: expectedRuntime.contentDigest }, ...config], error: null })
       }
       if (table === 'mojo_call_queue') return query({ data: queueRows, error: null })
       if (table === 'crm_mojo_call_events') return query({ data: eventRows, error: null })
@@ -49,6 +51,36 @@ function database(performance: unknown[], config = [
 }
 
 describe('Mojo health data watermark', () => {
+  it('detects an importer that has fallen behind the deployed application', async () => {
+    const health = await getMojoHealth(database([
+      { metric_date: '2026-09-04', source_fetched_at: '2026-09-04T19:00:00Z' },
+    ], [{ key: 'mojo_runtime_content_digest', value: 'old-runtime' }]) as never, { now: new Date('2026-09-04T19:05:00Z') })
+    expect(health.status).toBe('attention')
+    expect(health.runtime?.verified).toBe(false)
+    expect(health.message).toContain('does not match')
+  })
+  it('keeps unresolved old evidence visible after it leaves the recent event window', async () => {
+    const health = await getMojoHealth(database([
+      { metric_date: '2026-09-04', source_fetched_at: '2026-09-04T19:00:00.000Z' },
+    ], undefined, [], [], { ...cleanReconciliation, counts: { evidencePendingAllAges: 3 } }) as never,
+    { now: new Date('2026-09-04T19:05:00Z') })
+    expect(health.status).toBe('attention')
+    expect(health.qualification.evidencePending24h).toBe(0)
+    expect(health.reconciliation.counts.evidencePendingAllAges).toBe(3)
+  })
+  it('uses a newer exact-day snapshot instead of an older failure flag', async () => {
+    const health = await getMojoHealth(database([
+      { metric_date: '2026-09-04', source_fetched_at: '2026-09-04T19:00:00.000Z' },
+    ], [
+      { key: 'mojo_session_status', value: 'healthy' },
+      { key: 'mojo_sync_health', value: 'healthy' },
+      { key: 'mojo_sync_last_ok_at', value: '2026-09-04T19:00:00Z' },
+      { key: 'mojo_performance_sync_health', value: 'down' },
+      { key: 'mojo_performance_sync_last_error_at', value: '2026-09-04T18:45:00Z' },
+    ]) as never, { now: new Date('2026-09-04T19:05:00Z') })
+    expect(health.performance.status).toBe('current')
+    expect(health.status).toBe('clean')
+  })
   it('raises attention when the job reports success but today has no provider snapshot', async () => {
     const health = await getMojoHealth(database([
       { metric_date: '2026-09-03', source_fetched_at: '2026-09-03T19:00:00.000Z' },
@@ -129,6 +161,7 @@ describe('Mojo health data watermark', () => {
       [],
       [],
       {
+        version: 'crm_mojo_reconciliation_integrity_v1',
         checkedAt: '2026-09-08T23:00:00.000Z',
         windowSince: '2026-08-09T23:00:00.000Z',
         counts: {

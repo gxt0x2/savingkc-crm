@@ -1,9 +1,14 @@
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 import type { supabaseAdmin } from '@/lib/supabase/admin'
 import { isSavingKcWorkday } from '@/lib/company-calendar'
 
 export type MojoHealthStatus = 'clean' | 'watch' | 'attention'
 
 export type MojoReconciliationCounts = {
+  evidencePendingAllAges: number
+  sourceBatchesUnaccepted: number
+  queueOverdue: number
+  unlinkedFutureFollowups: number
   deadLetterQueue: number
   lifecycleStationDeadConflict: number
   lifecycleClassificationDeadConflict: number
@@ -33,6 +38,7 @@ export type MojoHealth = {
   latestQueuedAt: string | null
   latestCompletedAt: string | null
   latestQueueError: string | null
+  runtime?: { expectedDigest: string; reportedDigest: string | null; reportedRevision: string | null; verified: boolean }
   performance: {
     status: 'current' | 'delayed' | 'stale' | 'unavailable'
     message: string
@@ -119,6 +125,8 @@ type MojoCallEventRow = {
 }
 
 const SYSTEM_CONFIG_KEYS = [
+  'mojo_runtime_content_digest',
+  'mojo_runtime_revision',
   'last_mojo_sync_timestamp',
   'mojo_session_last_error',
   'mojo_session_last_error_at',
@@ -146,6 +154,10 @@ const QUALIFIED_STATIONS = new Set([
 ])
 
 const RECONCILIATION_COUNT_KEYS = [
+  'evidencePendingAllAges',
+  'sourceBatchesUnaccepted',
+  'queueOverdue',
+  'unlinkedFutureFollowups',
   'deadLetterQueue',
   'lifecycleStationDeadConflict',
   'lifecycleClassificationDeadConflict',
@@ -188,8 +200,10 @@ function reconciliationHealth(value: unknown): MojoHealth['reconciliation'] {
   )
 
   return {
-    status: issueCount === 0 ? 'clean' : 'attention',
-    message: issueCount === 0
+    status: issueCount === 0 && snapshot.version === 'crm_mojo_reconciliation_integrity_v1' ? 'clean' : 'attention',
+    message: snapshot.version !== 'crm_mojo_reconciliation_integrity_v1'
+      ? 'Mojo source reconciliation could not be verified'
+      : issueCount === 0
       ? 'CRM reconciliation is clean'
       : `CRM reconciliation has ${issueCount} unresolved issue${issueCount === 1 ? '' : 's'}`,
     windowDays: 30,
@@ -498,9 +512,13 @@ export async function getMojoHealth(
     }).formatToParts(now).find((part) => part.type === 'minute')?.value ?? 0)
     const withinStartupGrace = businessHours && centralHour === 8 && centralMinute < 30
 
+    const performanceDown = performanceSyncHealth.toLowerCase() === 'down'
+      && !(latestMetricDate === today && latestFetchedAt && performanceSyncLastErrorAt
+        && Date.parse(latestFetchedAt) > Date.parse(performanceSyncLastErrorAt))
+
     let performanceStatus: MojoHealth['performance']['status'] = 'current'
     let performanceMessage = 'Mojo provider performance is current'
-    if (businessHours && performanceSyncHealth.toLowerCase() === 'down') {
+    if (businessHours && performanceDown) {
       performanceStatus = 'unavailable'
       performanceMessage = performanceSyncLastError || 'Mojo provider performance sync is down'
     } else if (businessHours && latestMetricDate !== today) {
@@ -519,17 +537,26 @@ export async function getMojoHealth(
       performanceMessage = `Mojo provider performance is delayed by ${performanceAgeMinutes} minutes`
     }
 
+    const runtime = {
+      expectedDigest: expectedRuntime.contentDigest,
+      reportedDigest: configValue('mojo_runtime_content_digest') || null,
+      reportedRevision: configValue('mojo_runtime_revision') || null,
+      verified: configValue('mojo_runtime_content_digest') === expectedRuntime.contentDigest,
+    }
     let status: MojoHealthStatus = 'clean'
     let message = 'Mojo sync is healthy'
     if (['expired', 'missing'].includes(sessionStatus.toLowerCase())) {
       status = 'attention'
       message = lastError || 'Mojo session expired - manual refresh required'
-    } else if (performanceSyncHealth.toLowerCase() === 'down') {
+    } else if (performanceDown) {
       status = 'attention'
       message = performanceSyncLastError || 'Mojo provider performance sync is down'
     } else if (syncHealth.toLowerCase() === 'down') {
       status = 'attention'
       message = lastError || 'Mojo sync freshness is outside the supervised limit'
+    } else if (!runtime.verified) {
+      status = 'attention'
+      message = 'The installed Mojo importer does not match the verified release'
     } else if (deadLetterRows.length > 0 || failed24hRows.length > 0 || qualification.recordingFailed7d > 0) {
       status = 'attention'
       const failureCount = deadLetterRows.length + failed24hRows.length + qualification.recordingFailed7d
@@ -567,6 +594,7 @@ export async function getMojoHealth(
     return {
       status,
       message,
+      runtime,
       sessionStatus,
       syncHealth,
       businessHours,

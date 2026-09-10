@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
+import { verifyRuntime } from './mojo-runtime-package.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +21,11 @@ const stateRoot = path.dirname(defaultLogDir())
 const lockFile = path.join(stateRoot, 'mojo-supervised-sync.lock')
 const heartbeatFile = path.join(stateRoot, 'mojo-supervised-sync-heartbeat.json')
 const timeoutMs = Number(process.env.MOJO_SUPERVISED_TIMEOUT_MS || 5 * 60 * 1000)
+let stopping = false
+let stopRun = null
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => { stopping = true; process.exitCode = 143; stopRun?.() })
+}
 
 function log(message) {
   console.log(`[${new Date().toISOString()}] [mojo-supervisor] ${message}`)
@@ -46,10 +52,21 @@ function acquireLock() {
       try {
         const existing = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
         const pid = Number(existing.pid)
-        if (Number.isInteger(pid) && pid > 1) process.kill(pid, 0)
+        if (!Number.isInteger(pid) || pid <= 1) throw new SyntaxError('Invalid lock owner')
+        process.kill(pid, 0)
+        const command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })
+        if (!command.includes('mojo-supervised-runner.mjs')) {
+          fs.unlinkSync(lockFile)
+          return acquireLock()
+        }
         return false
       } catch (lockError) {
-        if (lockError?.code !== 'ESRCH') return false
+        if (lockError?.code !== 'ESRCH') {
+          // An incomplete lock from a crashed writer cannot block forever.
+          if (!(lockError instanceof SyntaxError) || Date.now() - fs.statSync(lockFile).mtimeMs < timeoutMs * 2) {
+            throw new Error('Mojo supervisor lock cannot be validated', { cause: lockError })
+          }
+        }
         fs.unlinkSync(lockFile)
         return acquireLock()
       }
@@ -59,22 +76,31 @@ function acquireLock() {
 }
 
 function releaseLock() {
-  try { fs.unlinkSync(lockFile) } catch {}
+  try {
+    if (JSON.parse(fs.readFileSync(lockFile, 'utf8')).pid === process.pid) fs.unlinkSync(lockFile)
+  } catch {}
 }
 
 function runSync() {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ['scripts/mojo-cron-runner.mjs', 'sync'], {
-      cwd: repoRoot, env: process.env, stdio: 'inherit',
+      cwd: repoRoot, env: process.env, stdio: 'inherit', detached: true,
     })
     let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      child.kill('SIGTERM')
-      setTimeout(() => child.kill('SIGKILL'), 5_000).unref()
-    }, timeoutMs)
-    child.on('exit', (code) => {
+    let terminated
+    const killGroup = signal => { try { process.kill(-child.pid, signal) } catch (error) { if (error.code !== 'ESRCH') throw error } }
+    const terminate = () => {
+      if (terminated) return
+      killGroup('SIGTERM')
+      terminated = new Promise(done => setTimeout(() => { killGroup('SIGKILL'); done() }, 5_000))
+    }
+    stopRun = terminate
+    const timer = setTimeout(() => { timedOut = true; terminate() }, timeoutMs)
+    child.on('error', () => { stopRun = null; clearTimeout(timer); resolve({ code: 1, timedOut: false }) })
+    child.on('exit', async (code) => {
       clearTimeout(timer)
+      if (terminated) await terminated
+      stopRun = null
       resolve({ code: timedOut ? 124 : code ?? 1, timedOut })
     })
   })
@@ -99,7 +125,15 @@ async function main() {
     return
   }
   try {
+    const manifestPath = path.join(repoRoot, 'runtime-manifest.json')
+    if (fs.existsSync(manifestPath)) {
+      const manifest = verifyRuntime(repoRoot)
+      log(`Runtime verified: revision=${manifest.revision}, content=${manifest.contentDigest}`)
+    } else if (!fs.existsSync(path.join(repoRoot, '.git'))) {
+      throw new Error('Installed Mojo runtime has no version manifest')
+    }
     const result = await runSync()
+    if (stopping) return
     if (result.code !== 0) {
       await recordMojoFreshnessIssue({
         source: 'mojo-supervised-runner',

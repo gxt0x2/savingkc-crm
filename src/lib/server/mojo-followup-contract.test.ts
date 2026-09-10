@@ -6,10 +6,14 @@ const eodSync = readFileSync('scripts/mojo-eod-sweep.mjs', 'utf8')
 const searchRoute = readFileSync('src/app/api/leads/search/route.ts', 'utf8')
 
 describe('Mojo scheduled follow-up contract', () => {
-  it.each([liveSync, eodSync])('ingests provider follow-up activities even without seller-intent notes', (source) => {
+  it.each([liveSync])('ingests provider follow-up activities even without seller-intent notes', (source) => {
     expect(source).toContain('const hasScheduledFollowUp = Boolean(entry.followUpDate)')
     expect(source).toMatch(/const isMeaningful = .*hasScheduledFollowUp/)
     expect(source).toContain("hasScheduledFollowUp || groupLower.includes('follow up')")
+  })
+
+  it('uses the same governed importer for manual day recovery', () => {
+    expect(eodSync).toContain("import { sync } from './mojo-sync.mjs'")
   })
 
   it('keeps the global search inclusive of prospect and terminal contact shells', () => {

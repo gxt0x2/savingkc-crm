@@ -9,6 +9,19 @@ import {
 } from '../../../scripts/mojo-call-evidence.mjs'
 
 describe('Mojo script evidence helpers', () => {
+  it('rejects a sole months-old recording and a sole undated recording', () => {
+    for (const call_date of ['06/18/2026 11:54 AM', undefined]) {
+      const index = indexMojoRecordings([{ contact_id: 7, audio: 'https://example.com/old.mp3', duration: '05:00', record_id: 1, call_date }])
+      expect(matchMojoRecording(index, 7, parseMojoTimestamp('09/10/2026 10:00 AM'))).toBeNull()
+    }
+  })
+  it('holds multiple plausible recordings instead of guessing by length or proximity', () => {
+    const index = indexMojoRecordings([
+      { contact_id: 7, audio: 'https://example.com/a.mp3', duration: '01:00', record_id: 1, call_date: '09/10/2026 10:00 AM' },
+      { contact_id: 7, audio: 'https://example.com/b.mp3', duration: '05:00', record_id: 2, call_date: '09/10/2026 10:10 AM' },
+    ])
+    expect(matchMojoRecording(index, 7, parseMojoTimestamp('09/10/2026 10:01 AM'))).toBeNull()
+  })
   it('uses the Central calendar date and real DST offset', () => {
     expect(centralDateString(new Date('2026-09-09T02:00:00Z'))).toBe('2026-09-08')
     expect(parseMojoTimestamp('09/08/2026 02:16 PM')).toBe('2026-09-08T19:16:00.000Z')
@@ -46,7 +59,7 @@ describe('Mojo script evidence helpers', () => {
 
   it('accepts the provider duration_seconds field when the formatted duration is absent', () => {
     const index = indexMojoRecordings([
-      { contact_id: 10, audio: 'https://example.com/c.mp3', duration_seconds: 180, record_id: 3 },
+      { contact_id: 10, audio: 'https://example.com/c.mp3', duration_seconds: 180, record_id: 3, call_date: '09/08/2026 10:00 AM' },
     ])
     expect(matchMojoRecording(index, 10, parseMojoTimestamp('09/08/2026 10:00 AM'))).toMatchObject({
       duration: 180,
