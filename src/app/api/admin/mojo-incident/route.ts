@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { recordMojoHealthIncident } from '@/lib/server/mojo-health-incident'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -27,6 +28,9 @@ const IncidentSchema = z.object({
 export async function POST(req: NextRequest) {
   const unauthorized = await requireAdminOrSecret(req)
   if (unauthorized) return unauthorized
+  if (req.headers.get('x-mojo-runtime-digest') !== expectedRuntime.contentDigest) {
+    return NextResponse.json({ ok: false, error: 'Mojo importer update required' }, { status: 409, headers: NO_STORE_HEADERS })
+  }
 
   const parsed = IncidentSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

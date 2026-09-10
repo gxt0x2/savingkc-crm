@@ -9,18 +9,30 @@ import { stageRuntime, verifyRuntime } from '../../../scripts/mojo-runtime-packa
 
 const dirs: string[] = []
 function temporary() { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mojo-integrity-test-')); dirs.push(dir); return dir }
-afterEach(() => { vi.unstubAllGlobals(); for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }) })
 let buildCallRecords: typeof import('../../../scripts/mojo-sync.mjs').buildCallRecords
 let deliverMojoCalls: typeof import('../../../scripts/mojo-sync.mjs').deliverMojoCalls
+let pushSessionToCRM: typeof import('../../../scripts/mojo-sync.mjs').pushSessionToCRM
 beforeAll(async () => {
   process.env.MOJO_LOG_DIR = os.tmpdir()
-  ;({ buildCallRecords, deliverMojoCalls } = await import('../../../scripts/mojo-sync.mjs'))
+  ;({ buildCallRecords, deliverMojoCalls, pushSessionToCRM } = await import('../../../scripts/mojo-sync.mjs'))
 })
 const activity = (id: number, type = 3, details: Record<string, unknown> = {}, date = '09/10/2026 10:00 AM') =>
   [id, type, 'Casey', date, { contact_id: 7, contact_name: 'Test seller', ...details }]
 const contact = async () => ({ phone: '9135550123', notes: 'Old unrelated motivation: sell now', address: '', city: '', state: '', zip: '', email: '', followUpDate: '' })
 
 describe('Mojo source integrity', () => {
+  it('sends the installed runtime identity on session handoff and queue delivery', async () => {
+    vi.stubEnv('ADMIN_API_SECRET', 'test-only-secret')
+    const sessionFetch = vi.fn().mockResolvedValue(new Response('{}'))
+    vi.stubGlobal('fetch', sessionFetch)
+    await pushSessionToCRM('test-only-session')
+    expect(sessionFetch.mock.calls[0][1].headers['x-mojo-runtime-digest']).toBe(expectedRuntime.contentDigest)
+    const delivery = vi.fn().mockResolvedValue(new Response(JSON.stringify({ rejected: 0, total: 1, receipts: [{ recordId: 'test-a', queueRecordId: 'legacy-a', status: 'duplicate' }] })))
+    expect(await deliverMojoCalls([{ record_id: 'test-a' }], delivery, 'a'.repeat(64))).toEqual(['legacy-a'])
+    expect(delivery.mock.calls[0][1].headers['x-mojo-runtime-digest']).toBe(expectedRuntime.contentDigest)
+    expect(JSON.parse(delivery.mock.calls[0][1].body)).toMatchObject({ sourceBatchId: 'a'.repeat(64), runtime: { contentDigest: expectedRuntime.contentDigest } })
+  })
   it('does not accept HTTP 200 when any record was rejected or receipts are absent', async () => {
     const calls = [{ record_id: 'test-a' }]
     expect(() => assertMojoReceipts(calls, { queued: 0, rejected: 1, total: 1 })).toThrow('checkpoint retained')
