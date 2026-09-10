@@ -16,6 +16,7 @@ import {
   clearMojoSyncIssue,
   isMojoSessionError,
   loadMojoEnv,
+  adminHeaders,
   markLocalSessionExpired,
   mojoSessionFile,
   recordMojoSessionIssue,
@@ -42,7 +43,6 @@ const CRM_API_URL = process.env.CRM_API_URL || `${CRM_BASE_URL}/api/mojo/sync`
 const CRM_CONFIG_URL = process.env.CRM_CONFIG_URL || `${CRM_BASE_URL}/api/admin/system-config`
 const CRM_QUEUE_URL = process.env.CRM_QUEUE_URL || `${CRM_BASE_URL}/api/cron/process-mojo-queue`
 const CRM_SOURCE_URL = `${CRM_BASE_URL}/api/admin/mojo-source-batches`
-const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || process.env.CRON_SECRET || process.env.DEPLOY_SECRET || ''
 const SESSION_FILE = mojoSessionFile()
 const STATE_FILE = process.env.MOJO_SYNC_STATE_FILE
   || path.join(homedir(), '.openclaw/workspace/memory/mojo-sync-state.json')
@@ -79,12 +79,6 @@ function logError(message, error) {
   const logLine = `[${timestamp}] ERROR: ${message} - ${errorDetails}\n`
   console.error(logLine.trim())
   fs.appendFileSync(LOG_FILE, logLine)
-}
-
-function adminHeaders(base = {}) {
-  return ADMIN_API_SECRET
-    ? { ...base, authorization: `Bearer ${ADMIN_API_SECRET}` }
-    : base
 }
 
 // --- State management ---
@@ -155,7 +149,7 @@ function markSessionExpired() {
   markLocalSessionExpired()
 }
 
-async function pushSessionToCRM(sessionId) {
+export async function pushSessionToCRM(sessionId) {
   const response = await fetch(CRM_API_URL.replace('/mojo/sync', '/admin/mojo-session'), {
     method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ sessionId }), signal: AbortSignal.timeout(10000),
