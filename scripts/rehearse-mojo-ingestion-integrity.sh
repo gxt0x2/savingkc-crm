@@ -23,7 +23,7 @@ CREATE TABLE public.mojo_call_queue (id text, record_id text, created_at timesta
 CREATE FUNCTION public.crm_mojo_reconciliation_snapshot_v1(p_since timestamptz DEFAULT now() - interval '30 days')
 RETURNS jsonb LANGUAGE sql AS $$ SELECT '{"counts":{"deadLetterQueue":2},"samples":{}}'::jsonb $$;
 SQL
-"${PSQL[@]}" -f supabase/migrations/20261102120000_mojo_ingestion_integrity.sql >/dev/null
+"${PSQL[@]}" -f supabase/migrations/20261103120000_mojo_ingestion_integrity.sql >/dev/null
 "${PSQL[@]}" <<'SQL'
 INSERT INTO crm_mojo_call_events VALUES ('a','old-held',now()-interval '90 days','evidence_pending',null,null),
  ('b','callback',now()-interval '30 days','ineligible',now()+interval '1 day',null);

@@ -15,7 +15,7 @@ The September 10 incident exposed independent KPI writers: a valid Mac snapshot 
 
 ## Release order and acceptance
 
-1. Review and apply `20261102120000_mojo_ingestion_integrity.sql`. This adds private source receipts and read-only health checks; it does not repair historical CRM rows. Rehearse with `bash scripts/rehearse-mojo-ingestion-integrity.sh` first.
+1. Review and apply `20261103120000_mojo_ingestion_integrity.sql`. This adds private source receipts and read-only health checks; it does not repair historical CRM rows. Rehearse with `bash scripts/rehearse-mojo-ingestion-integrity.sh` first.
 2. Deploy the reviewed application revision. Verify the source archive endpoint, per-record queue receipts, reconciliation version `crm_mojo_reconciliation_integrity_v1`, and the server KPI writer. An older reconciliation function must not report clean under the new application.
 3. Stage and verify the same revision with `node scripts/mojo-runtime-package.mjs --stage /reviewed/staging/path` and `--verify /reviewed/staging/path`. Inspect `scripts/install-mojo-supervisor.sh` without `--apply`; then install the reviewed runtime. Preserve the runtime backup and local source spool.
 4. Observe a scheduled Mac run, server queue execution, and server KPI run. Compare provider source, source receipts, queue outcomes, canonical events, follow-up work items, and signed-in My Day. Confirm the manifest digest in the installed directory. Clearing a notification is not acceptance.
