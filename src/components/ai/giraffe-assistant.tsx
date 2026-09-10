@@ -60,7 +60,7 @@ function readAsDataUrl(file: File) {
 
 export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolean }) {
   const [open, setOpen] = useState(initialOpen)
-  const { messages, loadingHistory, sending, error, setError, send, clear } = useAssistantThread('giraffe')
+  const { messages, loadingHistory, sending, error, setError, send, clear, ownerEmail } = useAssistantThread('giraffe')
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
   const [listening, setListening] = useState(false)
@@ -176,7 +176,7 @@ export function GiraffeAssistant({ initialOpen = false }: { initialOpen?: boolea
             <AssistantMark live className="h-11 w-11 rounded-[14px]" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2"><h2 className="truncate text-sm font-black tracking-tight text-[var(--crm-ink)]">SavingKC Intelligence</h2><span className="rounded-full bg-[var(--crm-brand-soft)] px-2 py-0.5 text-[8px] font-black uppercase tracking-[.14em] text-[var(--crm-brand)]">Live</span></div>
-              <p className="mt-0.5 truncate text-[10px] font-semibold text-[var(--crm-text-muted)]">Decisions grounded in your CRM</p>
+              <p className="mt-0.5 truncate text-[10px] font-semibold text-[var(--crm-text-muted)]">Private{ownerEmail ? ` to ${ownerEmail}` : ' to your account'} · live CRM context</p>
             </div>
             <button type="button" onClick={() => void clear()} disabled={sending || loadingHistory} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg disabled:opacity-40" aria-label="Start a new AI conversation"><Icon name="edit_square" /></button>
             <button type="button" onClick={() => setOpen(false)} className="crm-icon-button grid h-9 w-9 place-items-center rounded-lg" aria-label="Close SavingKC Intelligence"><Icon name="close" /></button>

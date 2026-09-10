@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   archiveAssistantConversation,
   loadLatestAssistantThread,
@@ -8,6 +8,7 @@ import {
   type AssistantClientMessage,
 } from '@/lib/ai/assistant-client'
 import type { AssistantSurface } from '@/lib/ai/generation-store'
+import { useAuth } from '@/hooks/use-auth'
 
 type Attachment = { name: string; mediaType: string; size: number; dataUrl: string }
 
@@ -27,6 +28,10 @@ function optimisticMessage(content: string, attachments: Attachment[]): Assistan
 }
 
 export function useAssistantThread(surface: AssistantSurface) {
+  const { user, loading: authLoading } = useAuth()
+  const ownerSubject = user?.id ?? null
+  const ownerEmail = user?.email?.trim().toLowerCase() ?? null
+  const activeOwnerRef = useRef(ownerSubject)
   const [threadId, setThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<AssistantClientMessage[]>([])
   const [loadingHistory, setLoadingHistory] = useState(true)
@@ -35,6 +40,20 @@ export function useAssistantThread(surface: AssistantSurface) {
 
   useEffect(() => {
     let cancelled = false
+    activeOwnerRef.current = ownerSubject
+    setThreadId(null)
+    setMessages([])
+    setError('')
+    setSending(false)
+    if (authLoading) {
+      setLoadingHistory(true)
+      return () => { cancelled = true }
+    }
+    if (!ownerSubject) {
+      setLoadingHistory(false)
+      return () => { cancelled = true }
+    }
+    setLoadingHistory(true)
     void loadLatestAssistantThread()
       .then((result) => {
         if (cancelled) return
@@ -46,19 +65,21 @@ export function useAssistantThread(surface: AssistantSurface) {
       })
       .finally(() => {
         if (!cancelled) setLoadingHistory(false)
-      })
+    })
     return () => { cancelled = true }
-  }, [])
+  }, [authLoading, ownerSubject])
 
   const send = useCallback(async (content: string, attachments: Attachment[] = []) => {
     const clean = content.trim()
-    if (!clean || sending || loadingHistory) return false
+    if (!clean || !ownerSubject || sending || loadingHistory) return false
+    const requestOwner = ownerSubject
     const requestId = crypto.randomUUID()
     setMessages((current) => [...current, optimisticMessage(clean, attachments)])
     setSending(true)
     setError('')
     try {
       const result = await sendAssistantMessage({ threadId, surface, requestId, content: clean, attachments })
+      if (activeOwnerRef.current !== requestOwner) return false
       setThreadId(result.threadId)
       setMessages((current) => [...current, {
         id: result.responseMessageId,
@@ -74,12 +95,13 @@ export function useAssistantThread(surface: AssistantSurface) {
       }])
       return true
     } catch (cause) {
+      if (activeOwnerRef.current !== requestOwner) return false
       setError(cause instanceof Error ? cause.message : 'The AI Assistant could not complete the request.')
       return false
     } finally {
-      setSending(false)
+      if (activeOwnerRef.current === requestOwner) setSending(false)
     }
-  }, [loadingHistory, sending, surface, threadId])
+  }, [loadingHistory, ownerSubject, sending, surface, threadId])
 
   const clear = useCallback(async () => {
     if (sending) return false
@@ -95,5 +117,5 @@ export function useAssistantThread(surface: AssistantSurface) {
     }
   }, [sending, threadId])
 
-  return { threadId, messages, loadingHistory, sending, error, setError, send, clear }
+  return { threadId, messages, loadingHistory, sending, error, setError, send, clear, ownerEmail }
 }

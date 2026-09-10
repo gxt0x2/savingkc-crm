@@ -14,7 +14,7 @@ import { GET } from './route'
 describe('assistant thread list route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+    mocks.actor.mockResolvedValue({ subject: 'casey-user-id', email: 'casey@savingkc.com', name: 'Casey' })
     mocks.list.mockResolvedValue([{ id: 'thread-1', status: 'active' }])
   })
 
@@ -30,8 +30,15 @@ describe('assistant thread list route', () => {
     const response = await GET(request)
     expect(response.status).toBe(200)
     expect(mocks.actor).toHaveBeenCalledWith(request)
-    expect(mocks.list).toHaveBeenCalledWith('casey@savingkc.com', 500)
+    expect(mocks.list).toHaveBeenCalledWith({ subject: 'casey-user-id' }, 500)
     expect(response.headers.get('cache-control')).toContain('no-store')
     expect(response.headers.get('vary')).toContain('Authorization')
+  })
+
+  it('fails closed when a legacy identity has email but no immutable subject', async () => {
+    mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', name: 'Casey' })
+    const response = await GET(new Request('https://crm.savingkc.com/api/ai/threads'))
+    expect(response.status).toBe(401)
+    expect(mocks.list).not.toHaveBeenCalled()
   })
 })

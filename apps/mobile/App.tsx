@@ -345,7 +345,7 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
           refreshing={leadsQuery.isFetching}
           onRefresh={() => leadsQuery.refetch()}
         />
-      )}</> : activeTab === 'work' ? <WorkScreen accessToken={accessToken} onOpenLead={setSelectedLeadId} /> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : activeTab === 'ari' ? <AssistantScreen accessToken={accessToken} initialPrompt={assistantPrompt} onInitialPromptConsumed={() => setAssistantPrompt(null)} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
+      )}</> : activeTab === 'work' ? <WorkScreen accessToken={accessToken} onOpenLead={setSelectedLeadId} /> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : activeTab === 'ari' ? <AssistantScreen accessToken={accessToken} ownerEmail={email} initialPrompt={assistantPrompt} onInitialPromptConsumed={() => setAssistantPrompt(null)} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
     </SafeAreaView>
   )
 }
