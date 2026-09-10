@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { collectMojoActivities, assertMojoReceipts, spoolMojoSource, readMojoSpool } from '../../../scripts/mojo-ingestion-integrity.mjs'
+import { collectMojoActivities, mojoActivityDayUrl, mojoReplayStartDate, assertMojoReceipts, spoolMojoSource, readMojoSpool } from '../../../scripts/mojo-ingestion-integrity.mjs'
 import { indexMojoRecordings } from '../../../scripts/mojo-call-evidence.mjs'
 import { stageRuntime, verifyRuntime } from '../../../scripts/mojo-runtime-package.mjs'
 
@@ -29,18 +29,32 @@ describe('Mojo source integrity', () => {
       .rejects.toThrow('checkpoint retained')
     expect(() => assertMojoReceipts(calls, { rejected: 0, total: 1, receipts: [{ recordId: 'test-a', status: 'duplicate' }] })).not.toThrow()
   })
-  it('reads beyond page two and requires coverage of the replay window', async () => {
-    const fetchPage = vi.fn().mockResolvedValueOnce([activity(5)]).mockResolvedValueOnce([activity(4)])
-      .mockResolvedValueOnce([activity(3)]).mockResolvedValueOnce([activity(2, 3, {}, '09/01/2026 10:00 AM')])
-    const rows = await collectMojoActivities(fetchPage, { lastActivityId: 4, since: '2026-09-03T05:00:00Z' })
-    expect(rows.map(row => row[0])).toEqual([5, 4, 3, 2])
-    expect(fetchPage).toHaveBeenCalledTimes(4)
+  it('reads each explicit provider day including empty days and out-of-order IDs', async () => {
+    const fetchDay = vi.fn().mockResolvedValueOnce([activity(9, 3, {}, '09/08/2026 10:00 AM')])
+      .mockResolvedValueOnce([]).mockResolvedValueOnce([activity(5)])
+    const rows = await collectMojoActivities(fetchDay, { since: '2026-09-08T05:00:00Z', to: '2026-09-10' })
+    expect(rows.map(row => row[0])).toEqual([9, 5])
+    expect(fetchDay.mock.calls).toEqual([['2026-09-08'], ['2026-09-09'], ['2026-09-10']])
+    const url = new URL(mojoActivityDayUrl('https://provider.example', '2026-09-08'))
+    expect(url.pathname).toBe('/v2/rest/home/activity-stream/')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ start_date: '09/08/2026', end_date: '09/08/2026' })
   })
-  it('fails closed on partial pagination, repeated pages, and the page cap', async () => {
+  it('fails closed on a partial window, ignored date filters, and safety limits', async () => {
     await expect(collectMojoActivities(vi.fn().mockResolvedValueOnce([activity(5)]).mockRejectedValueOnce(new Error('page 2 failed')),
-      { lastActivityId: 1, since: '2026-09-03T05:00:00Z' })).rejects.toThrow('page 2 failed')
-    await expect(collectMojoActivities(async () => [activity(5)], { since: '2026-09-03T05:00:00Z' })).rejects.toThrow('no progress')
-    await expect(collectMojoActivities(async () => [activity(5)], { since: '2026-09-03T05:00:00Z', maxPages: 1 })).rejects.toThrow('exceeded')
+      { since: '2026-09-10T05:00:00Z', to: '2026-09-11' })).rejects.toThrow('page 2 failed')
+    await expect(collectMojoActivities(async () => [activity(5)], { since: '2026-09-03T05:00:00Z', to: '2026-09-10' })).rejects.toThrow('ignored activity date filter')
+    await expect(collectMojoActivities(async () => [], { since: '2026-09-03T05:00:00Z', to: '2026-09-10', maxDays: 1 })).rejects.toThrow('exceeds')
+    await expect(collectMojoActivities(async () => [activity(5)], { since: '2026-09-10T05:00:00Z', to: '2026-09-10', maxRowsPerDay: 1 })).rejects.toThrow('row safety limit')
+    await expect(collectMojoActivities(async () => [activity(5), activity(5, 6)], { since: '2026-09-10T05:00:00Z', to: '2026-09-10' })).rejects.toThrow('Conflicting Mojo activity identity')
+  })
+  it('covers a checkpoint older than the replay window and Central days across DST', async () => {
+    expect(mojoReplayStartDate('2026-09-10', '2026-09-01T04:59:00Z')).toBe('2026-08-31')
+    expect(mojoReplayStartDate('2026-09-10', '2026-09-10T15:00:00Z')).toBe('2026-09-03')
+    const fetchDay = vi.fn().mockResolvedValue([])
+    await collectMojoActivities(fetchDay, { since: '2026-10-31T05:00:00Z', to: '2026-11-02' })
+    expect(fetchDay.mock.calls).toEqual([['2026-10-31'], ['2026-11-01'], ['2026-11-02']])
+    expect(() => mojoActivityDayUrl('https://provider.example', '2026-02-30')).toThrow('Invalid Mojo source date')
+    expect(() => mojoReplayStartDate('2026-09-10', 'invalid')).toThrow('Invalid Mojo checkpoint date')
   })
   it('retains the exact source durably across retries and detects corruption', () => {
     const dir = temporary()
