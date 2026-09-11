@@ -213,6 +213,24 @@ body {
   color-scheme: dark;
 }
 
+.prospecting-tool-tabs {
+  scrollbar-color: #686d73 transparent;
+  scrollbar-width: thin;
+}
+
+.prospecting-tool-tabs::-webkit-scrollbar {
+  height: 6px;
+}
+
+.prospecting-tool-tabs::-webkit-scrollbar-thumb {
+  background: #686d73;
+  border-radius: 999px;
+}
+
+.prospecting-tool-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .crm-workspace-shell :is(button, a, input, select, textarea):focus-visible {
   outline: 2px solid var(--crm-focus);
   outline-offset: 3px;
@@ -614,6 +632,162 @@ html.dark .crm-modal-surface {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+/* ─── Prospecting answer workspace ────────────────────────────────────────
+ * This console has its own high-density surface ladder so light mode is a
+ * designed interface, not a washed-out inversion of the dark cockpit.
+ */
+.prospecting-answer-workspace {
+  --prospecting-canvas: #131719;
+  --prospecting-header: #0f1214;
+  --prospecting-panel: #1c2225;
+  --prospecting-elevated: #252c30;
+  --prospecting-hover: #30383d;
+  --prospecting-border: #3a4449;
+  --prospecting-border-strong: #6d7b82;
+  --prospecting-text: #f3f5f6;
+  --prospecting-muted: #b5bec3;
+  --prospecting-dim: #829097;
+  --prospecting-primary: #67b3ca;
+  --prospecting-primary-strong: #2f788e;
+  --prospecting-primary-soft: #17343e;
+  --prospecting-on-primary: #0b1b20;
+  --prospecting-danger: #ef6a7b;
+  --prospecting-danger-hover: #d85668;
+  --prospecting-danger-soft: #3b2227;
+  --prospecting-success: #5dc7a6;
+  --prospecting-success-strong: #2d8069;
+  --prospecting-success-soft: #143a31;
+  --prospecting-on-success: #0d211b;
+  --prospecting-warning: #e6b85c;
+  --prospecting-warning-soft: #3d321d;
+  --prospecting-warning-ink: #f0c872;
+  --prospecting-on-warning: #231a08;
+  --prospecting-info: #76a9d4;
+  --prospecting-info-soft: #1c3041;
+  --ck-bg: var(--prospecting-canvas);
+  --ck-surface: var(--prospecting-panel);
+  --ck-surface-elev: var(--prospecting-elevated);
+  --ck-surface-hi: var(--prospecting-hover);
+  --ck-border: var(--prospecting-border);
+  --ck-border-strong: var(--prospecting-border-strong);
+  --ck-text: var(--prospecting-text);
+  --ck-text-muted: var(--prospecting-muted);
+  --ck-text-dim: var(--prospecting-dim);
+  --ck-accent: var(--prospecting-primary);
+  --ck-accent-bright: var(--prospecting-primary-strong);
+  --ck-warn: var(--prospecting-warning);
+  --ck-success: var(--prospecting-success);
+  --ck-info: var(--prospecting-info);
+  background: var(--prospecting-canvas);
+  color: var(--prospecting-text);
+  color-scheme: dark;
+}
+
+.theme-light .prospecting-answer-workspace {
+  --prospecting-canvas: #f2f3f3;
+  --prospecting-header: #fbfcfc;
+  --prospecting-panel: #ffffff;
+  --prospecting-elevated: #f5f6f6;
+  --prospecting-hover: #e9edef;
+  --prospecting-border: #d5dbde;
+  --prospecting-border-strong: #87949b;
+  --prospecting-text: #172026;
+  --prospecting-muted: #4b5961;
+  --prospecting-dim: #66757d;
+  --prospecting-primary: #1f5f74;
+  --prospecting-primary-strong: #17495a;
+  --prospecting-primary-soft: #e6f0f3;
+  --prospecting-on-primary: #ffffff;
+  --prospecting-danger: #b4233b;
+  --prospecting-danger-hover: #921c31;
+  --prospecting-danger-soft: #faeaed;
+  --prospecting-success: #147d64;
+  --prospecting-success-strong: #0e624f;
+  --prospecting-success-soft: #e4f3ee;
+  --prospecting-on-success: #ffffff;
+  --prospecting-warning: #a96708;
+  --prospecting-warning-soft: #fff3d6;
+  --prospecting-warning-ink: #754700;
+  --prospecting-on-warning: #ffffff;
+  --prospecting-info: #315f86;
+  --prospecting-info-soft: #e9f1f7;
+  color-scheme: light;
+}
+
+.theme-light .prospecting-answer-workspace :is(input, textarea, select) {
+  color-scheme: light;
+}
+
+/* The disposition rail is an operational instrument: it stays charcoal in
+   either theme so the red results and call controls remain unmistakable. */
+.prospecting-dialer-control-surface {
+  --prospecting-panel: #20262d;
+  --prospecting-header: #1b2127;
+  --prospecting-elevated: #3c4551;
+  --prospecting-hover: #46515e;
+  --prospecting-border: #36404a;
+  --prospecting-border-strong: #596572;
+  --prospecting-text: #f7f8fa;
+  --prospecting-muted: #c8ced5;
+  --prospecting-dim: #98a2ad;
+  --prospecting-primary: #2f788e;
+  --prospecting-primary-strong: #27677a;
+  --prospecting-on-primary: #ffffff;
+  --ck-text: var(--prospecting-text);
+  --ck-text-muted: var(--prospecting-muted);
+  --ck-text-dim: var(--prospecting-dim);
+  color-scheme: dark;
+}
+
+.prospecting-dialer-secondary-button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border: 1px solid #4d5865;
+  border-radius: 0.75rem;
+  background: #3c4551;
+  padding: 0.5rem 0.75rem;
+  color: #f4f6f8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.prospecting-dialer-secondary-button:enabled:hover {
+  border-color: #687583;
+  background: #46515e;
+}
+
+.prospecting-dialer-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.prospecting-information-panel {
+  container-type: inline-size;
+}
+
+.prospecting-tool-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+@container (min-width: 24rem) {
+  .prospecting-tool-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 44rem) {
+  .prospecting-tool-tabs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 
 /* ─── Lead Cockpit tokens (shared with .ck-dark for portaled modals) ─── */

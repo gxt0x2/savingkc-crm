@@ -28,7 +28,6 @@ export interface DialerPanelProps {
   pendingQueue?: HeirQueueItem[] | null
   pendingQueueCallerId?: string | null
   pendingQueueCallerPlan?: DialerCallerPlan | null
-  pendingQueueAutoDial?: boolean
   pendingSessionId?: string | null
   /** How many rings to allow before giving up; maps to the Twilio Dial timeout. */
   pendingQueueRingCount?: number | null

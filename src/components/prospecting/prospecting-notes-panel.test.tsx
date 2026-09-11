@@ -28,6 +28,7 @@ describe('ProspectingNotesPanel', () => {
       campaignMemberId="member-1"
       dialerSessionId="session-1"
       sellerName="Mary Seller"
+      recordKind="Source Prospect"
       notes={[{
         id: 'note-1',
         activity_type: 'note',
@@ -66,6 +67,7 @@ describe('ProspectingNotesPanel', () => {
       campaignMemberId={null}
       dialerSessionId=""
       sellerName="Mary Seller"
+      recordKind="Lead"
       notes={[]}
       readOnly
       onSaved={vi.fn()}
@@ -73,6 +75,6 @@ describe('ProspectingNotesPanel', () => {
 
     expect(screen.getByRole('region', { name: 'Notes' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Note for Mary Seller' })).toBeDisabled()
-    expect(screen.getByText(/save only during live calling/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled()
   })
 })

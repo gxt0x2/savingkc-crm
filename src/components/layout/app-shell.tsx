@@ -83,7 +83,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams()
   const currentRouteKey = `${pathname || ''}?${searchParams.toString()}`
   const currentRouteKeyRef = useRef(currentRouteKey)
-  currentRouteKeyRef.current = currentRouteKey
+  useEffect(() => {
+    currentRouteKeyRef.current = currentRouteKey
+  }, [currentRouteKey])
   const isAcquisitionsCalendar =
     (pathname?.startsWith('/calendar') ?? false) &&
     (searchParams.get('department') === 'acquisitions' || (!searchParams.get('department') && mode === 'acquisitions'))
@@ -117,8 +119,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (pathname?.startsWith('/dashboard') ?? false) ||
     isAcquisitionsSettings
   const { theme: userTheme, toggle: toggleTheme } = useThemePreference()
-  const useUserLightTheme = hydrated && userTheme === 'light'
-  const useLightLogo = useUserLightTheme
   // The Prospecting calling floor owns its call context and progress UI. Keep
   // the softphone docked there so saving a disposition does not open a second
   // full-screen dialer over the heir queue. `/dialer` remains redirect-only
@@ -127,6 +127,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
     searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort') || isProspectingPreviewFloor,
   )
+  const useUserLightTheme = hydrated && userTheme === 'light'
+  const useLightLogo = useUserLightTheme
   const dialerPresentation = pathname?.startsWith('/dialer')
     ? 'dock'
     : isProspectingCallingFloor
@@ -193,7 +195,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingQueue, setPendingQueue] = useState<HeirQueueItem[] | null>(null)
   const [pendingQueueCallerId, setPendingQueueCallerId] = useState<string | null>(null)
   const [pendingQueueCallerPlan, setPendingQueueCallerPlan] = useState<DialerCallerPlan | null>(null)
-  const [pendingQueueAutoDial, setPendingQueueAutoDial] = useState(false)
   const [pendingQueueRingCount, setPendingQueueRingCount] = useState<number | null>(null)
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null)
 
@@ -219,7 +220,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setPendingQueue(null)
         setPendingQueueCallerId(null)
         setPendingQueueCallerPlan(null)
-        setPendingQueueAutoDial(false)
         setPendingQueueRingCount(null)
         setPendingSessionId(null)
         setDialerOwnerRoute(currentRouteKeyRef.current)
@@ -232,7 +232,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setPendingQueue(null)
       setPendingQueueCallerId(null)
       setPendingQueueCallerPlan(null)
-      setPendingQueueAutoDial(false)
       setPendingQueueRingCount(null)
       setPendingSessionId(null)
       setDialerOwnerRoute(currentRouteKeyRef.current)
@@ -251,7 +250,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         const callerId = typeof detail.callerId === 'string' ? detail.callerId : null
         setPendingQueueCallerId(callerId)
         setPendingQueueCallerPlan(normalizeDialerCallerPlan(detail.callerPlan, callerId || ''))
-        setPendingQueueAutoDial(Boolean(detail.autoDial))
         setPendingQueueRingCount(typeof detail.ringCount === 'number' ? detail.ringCount : null)
         setPendingSessionId(typeof detail.sessionId === 'string' ? detail.sessionId : null)
         setPendingDialLead(null)
@@ -373,7 +371,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setPendingQueue(null)
       setPendingQueueCallerId(null)
       setPendingQueueCallerPlan(null)
-      setPendingQueueAutoDial(false)
       setPendingQueueRingCount(null)
       setPendingSessionId(null)
     }}
@@ -382,7 +379,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pendingQueue={floorQueueMatchesSession ? pendingQueue : null}
     pendingQueueCallerId={floorQueueMatchesSession ? pendingQueueCallerId : null}
     pendingQueueCallerPlan={floorQueueMatchesSession ? pendingQueueCallerPlan : null}
-    pendingQueueAutoDial={floorQueueMatchesSession && pendingQueueAutoDial}
     pendingQueueRingCount={floorQueueMatchesSession ? pendingQueueRingCount : null}
     pendingSessionId={isProspectingCallingFloor ? activeFloorSessionId : pendingSessionId}
     presentation={dialerPresentation}

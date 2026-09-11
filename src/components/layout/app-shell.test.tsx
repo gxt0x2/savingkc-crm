@@ -98,6 +98,8 @@ describe('AppShell first-load work', () => {
     expect(screen.getByRole('region', { name: 'Preview prospecting call controls' })).toBeVisible()
     expect(screen.getByText('Read-only preview')).toBeVisible()
     expect(screen.queryByTestId('lazy-dialer')).not.toBeInTheDocument()
+    expect(document.documentElement).toHaveClass('theme-light')
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 
   it('does not reopen the session dialer after returning to the campaign screen', () => {

@@ -1,10 +1,11 @@
 'use client'
 
+import { useState } from 'react'
+
 import { Icon } from '@/components/ui/icon'
 import {
   PROSPECTING_DIALER_DISPOSITIONS,
   type DispositionDef,
-  type DispositionGroup,
   type DispositionId,
 } from '@/lib/dialer-dispositions'
 
@@ -16,16 +17,19 @@ type WorkspaceDispositionControlsProps = {
   onDisposition?: (disposition: DispositionId) => void
 }
 
-const GROUP_LABELS: Record<DispositionGroup, string> = {
-  reached: 'Reached',
-  no_contact: 'No contact',
-  stop: 'Stop',
-}
+const WORKSPACE_OUTCOMES = [
+  { key: 'contact', label: 'Contact', icon: 'person', disposition: 'spoke_with_owner' },
+  { key: 'no_contact', label: 'No Contact', icon: 'person_off', disposition: 'no_answer' },
+  { key: 'bad_number', label: 'Bad Number', icon: 'phone_disabled', disposition: 'disconnected' },
+  { key: 'voicemail', label: 'Voicemail', icon: 'mail', disposition: 'left_voicemail' },
+  { key: 'dnc_contact', label: 'DNC Contact', icon: 'person_off', disposition: 'dnc' },
+  { key: 'dnc_number', label: 'DNC Number', icon: 'phone_disabled', disposition: 'dnc' },
+] as const satisfies ReadonlyArray<{ key: string; label: string; icon: string; disposition: DispositionId }>
 
-const GROUP_STYLES: Record<DispositionGroup, string> = {
-  reached: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200 enabled:hover:bg-emerald-400/20',
-  no_contact: 'border-sky-400/25 bg-sky-400/10 text-sky-200 enabled:hover:bg-sky-400/20',
-  stop: 'border-rose-400/25 bg-rose-400/10 text-rose-200 enabled:hover:bg-rose-400/20',
+type WorkspaceOutcomeKey = typeof WORKSPACE_OUTCOMES[number]['key']
+
+function emptyCounts(): Record<WorkspaceOutcomeKey, number> {
+  return Object.fromEntries(WORKSPACE_OUTCOMES.map((item) => [item.key, 0])) as Record<WorkspaceOutcomeKey, number>
 }
 
 export function WorkspaceDispositionControls({
@@ -35,6 +39,8 @@ export function WorkspaceDispositionControls({
   savingDisposition = null,
   onDisposition,
 }: WorkspaceDispositionControlsProps) {
+  const [counts, setCounts] = useState<Record<WorkspaceOutcomeKey, number>>(emptyCounts)
+  const available = new Set(dispositions.map((item) => item.id))
   const disabled = previewOnly || !outcomeRequired || Boolean(savingDisposition)
   const status = previewOnly
     ? 'Read-only preview'
@@ -42,32 +48,28 @@ export function WorkspaceDispositionControls({
       ? 'Choose one result to finish this call'
       : 'Available when a call ends'
 
-  return <section aria-label="Call disposition controls" className="space-y-3 rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-3">
-    <div className="flex items-center justify-between gap-3">
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#FF6868]">Call result</p>
-        <p aria-live="polite" className="mt-1 text-xs text-[var(--skc-text-tertiary)]">{status}</p>
-      </div>
-      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${outcomeRequired && !previewOnly ? 'animate-pulse bg-amber-300' : 'bg-[var(--skc-surface-3)]'}`} />
+  return <section aria-label="Call disposition controls" className="border-t border-white/15 pt-3">
+    <p className="sr-only" aria-live="polite">{status}</p>
+    <div className="grid gap-1.5">
+      {WORKSPACE_OUTCOMES.map((item) => {
+        const unavailable = !available.has(item.disposition)
+        const saving = savingDisposition === item.disposition
+        return <button
+          key={item.key}
+          type="button"
+          aria-label={item.label}
+          disabled={disabled || unavailable}
+          onClick={() => {
+            setCounts((current) => ({ ...current, [item.key]: current[item.key] + 1 }))
+            onDisposition?.(item.disposition)
+          }}
+          className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-lg border border-[#df3349] bg-[#c91934] px-3 py-2 text-left text-xs font-semibold leading-tight text-white transition-colors enabled:hover:border-[#f46a7c] enabled:hover:bg-[#b9132b] disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          <Icon name={saving ? 'progress_activity' : item.icon} size="text-sm" className={`shrink-0 text-white ${saving ? 'animate-spin' : ''}`} />
+          <span className="min-w-0 flex-1 whitespace-normal break-words">{item.label}</span>
+          <span aria-hidden="true" className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-white px-1 text-[10px] font-black tabular-nums text-[#222831]">{counts[item.key]}</span>
+        </button>
+      })}
     </div>
-
-    {(['reached', 'no_contact', 'stop'] as const).map((group) => {
-      const groupDispositions = dispositions.filter((item) => item.group === group)
-      return <fieldset key={group}>
-        <legend className="mb-1.5 text-[9px] font-black uppercase tracking-[0.12em] text-[var(--skc-text-tertiary)]">{GROUP_LABELS[group]}</legend>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-1.5">
-          {groupDispositions.map((item) => <button
-            key={item.id}
-            type="button"
-            disabled={disabled}
-            onClick={() => onDisposition?.(item.id)}
-            className={`flex min-h-10 w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[11px] font-bold leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${GROUP_STYLES[group]}`}
-          >
-            <Icon name={savingDisposition === item.id ? 'progress_activity' : item.icon} size="text-sm" className={`shrink-0 ${savingDisposition === item.id ? 'animate-spin' : ''}`} />
-            <span className="min-w-0 whitespace-normal break-words">{item.label}</span>
-          </button>)}
-        </div>
-      </fieldset>
-    })}
   </section>
 }

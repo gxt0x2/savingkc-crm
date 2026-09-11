@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+
 import { WorkspaceCallController } from './workspace-call-controller'
 
 const queueItem = {
@@ -16,129 +17,70 @@ const queueItem = {
   deceasedOwnerName: 'Owner Seller',
 }
 
+const baseProps = {
+  callerPlan: { mode: 'static' as const, staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' },
+  dialDisplay: '(816) 555-0123',
+  effectiveCallerId: '+18163078735',
+  onCall: vi.fn(),
+  queueItem,
+  statusLabel: 'Ready',
+}
+
 describe('WorkspaceCallController', () => {
   it('uses one stable loading state while the session queue is restored', () => {
-    render(
-      <WorkspaceCallController
-        callerPlan={{ mode: 'static', staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
-        dialDisplay=""
-        dialReady={false}
-        effectiveCallerId="+18163078735"
-        loadingSessionQueue
-        onCall={vi.fn()}
-        queueItem={null}
-        statusLabel="Connecting"
-      />,
-    )
+    render(<WorkspaceCallController {...baseProps} dialDisplay="" dialReady={false} loadingSessionQueue queueItem={null} />)
 
     expect(screen.getByRole('status', { name: 'Loading calling session' })).toHaveTextContent('Loading call controls')
-    expect(screen.queryByText('Choose a number from the seller list')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start dialing' })).not.toBeInTheDocument()
   })
 
-  it('offers one explicit call action for the selected associated number', () => {
+  it('removes duplicate seller details and offers one explicit start action', () => {
     const onCall = vi.fn()
-    render(
-      <WorkspaceCallController
-        callerPlan={{ mode: 'static', staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
-        dialDisplay="(816) 555-0123"
-        dialReady
-        effectiveCallerId="+18163078735"
-        onCall={onCall}
-        queueItem={queueItem}
-        statusLabel="Ready"
-      />,
-    )
+    render(<WorkspaceCallController {...baseProps} dialReady onCall={onCall} />)
 
-    expect(screen.getByRole('heading', { name: 'Helen Seller' })).toBeVisible()
-    expect(screen.getByText('(816) 555-0123')).toBeVisible()
-    expect(screen.getByText('Calling from')).toBeVisible()
-    expect(screen.getByText('Campaign')).toBeVisible()
-    expect(screen.queryByText(/verified by the server before every call/i)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Call selected number' }))
+    expect(screen.getByRole('heading', { name: 'Call outcome' })).toBeVisible()
+    expect(screen.getByText('Ready to dial · 00:00')).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Helen Seller' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Start dialing' }))
     expect(onCall).toHaveBeenCalledOnce()
   })
 
-  it('shows rotation as server-owned policy instead of an agent setup form', () => {
-    render(
-      <WorkspaceCallController
-        callerPlan={{ mode: 'rotation', staticCallerId: '+18163078735', rotationCallerIds: ['+18163078735', '+18165550100'], rotateEveryCalls: 25, redialCallerId: '' }}
-        dialDisplay=""
-        dialReady={false}
-        effectiveCallerId="+18163078735"
-        onCall={vi.fn()}
-        queueItem={queueItem}
-        statusLabel="Connecting"
-      />,
-    )
+  it('does not expose calling-line setup inside the compact rail', () => {
+    render(<WorkspaceCallController
+      {...baseProps}
+      callerPlan={{ mode: 'rotation', staticCallerId: '+18163078735', rotationCallerIds: ['+18163078735', '+18165550100'], rotateEveryCalls: 25, redialCallerId: '' }}
+      dialReady={false}
+      statusLabel="Connecting"
+    />)
 
-    expect(screen.getByText('2 lines')).toBeVisible()
-    expect(screen.queryByText('2 approved lines · rotates every 25 calls')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connecting' })).toBeDisabled()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByText('Calling from')).not.toBeInTheDocument()
   })
 
-  it('does not mislabel the agent default line as the campaign line before seller selection', () => {
-    render(
-      <WorkspaceCallController
-        callerPlan={{ mode: 'static', staticCallerId: '+18166088588', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
-        dialDisplay=""
-        dialReady={false}
-        effectiveCallerId="+18166088588"
-        onCall={vi.fn()}
-        queueItem={null}
-        statusLabel="Ready"
-      />,
-    )
+  it('asks for a current-contact number before enabling the start action', () => {
+    render(<WorkspaceCallController {...baseProps} dialDisplay="" dialReady={false} queueItem={null} />)
 
-    expect(screen.getByText('Select a seller number')).toBeVisible()
-    expect(screen.queryByText(/reviewed campaign caller ID loads/i)).not.toBeInTheDocument()
-    expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
-    expect(screen.queryByText('Campaign-assigned line · verified by the server before every call')).not.toBeInTheDocument()
+    expect(screen.getByText('Choose a number from the current contact')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Ready' })).toBeDisabled()
   })
 
-  it('shows a visible first-call countdown without duplicating the persistent pause action', () => {
-    render(
-      <WorkspaceCallController
-        autoStartCountdownSeconds={15}
-        callerPlan={{ mode: 'static', staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
-        dialDisplay="(816) 555-0123"
-        dialReady={false}
-        effectiveCallerId="+18163078735"
-        onCall={vi.fn()}
-        queueItem={queueItem}
-        statusLabel="Ready"
-      />,
-    )
+  it('never starts the first call without an explicit agent action', () => {
+    const onCall = vi.fn()
+    render(<WorkspaceCallController {...baseProps} dialReady onCall={onCall} />)
 
-    expect(screen.getByRole('region', { name: 'First call countdown' })).toBeVisible()
-    expect(screen.getByText('First call starts in')).toBeVisible()
-    expect(screen.getByText('15')).toBeVisible()
-    expect(screen.getByText('Helen Seller')).toBeVisible()
-    expect(screen.getByText('(816) 555-0123')).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Call selected number' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
-    expect(screen.getByText('Pause session below to stop the countdown.')).toBeVisible()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByText(/starts in/i)).not.toBeInTheDocument()
+    expect(onCall).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Start dialing' }))
+    expect(onCall).toHaveBeenCalledOnce()
   })
 
-  it('formats an E.164 number and collapses the call card when an outcome is required', () => {
-    render(
-      <WorkspaceCallController
-        callerPlan={{ mode: 'static', staticCallerId: '+18163078735', rotationCallerIds: [], rotateEveryCalls: 50, redialCallerId: '' }}
-        dialDisplay="+18165550123"
-        dialReady={false}
-        effectiveCallerId="+18163078735"
-        onCall={vi.fn()}
-        outcomeRequired
-        queueItem={queueItem}
-        statusLabel="Ready"
-      />,
-    )
+  it('collapses to the outcome-required state after a call', () => {
+    render(<WorkspaceCallController {...baseProps} dialReady={false} dialDisplay="+18165550123" outcomeRequired />)
 
     const summary = screen.getByRole('region', { name: 'Current call summary' })
-    expect(summary).toHaveTextContent('Helen Seller')
-    expect(summary).toHaveTextContent('(816) 555-0123')
-    expect(summary).toHaveTextContent('Outcome required')
-    expect(screen.queryByRole('button', { name: 'Call selected number' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Calling from')).not.toBeInTheDocument()
+    expect(summary).toHaveTextContent('Call ended · outcome required')
+    expect(screen.queryByRole('button', { name: 'Start dialing' })).not.toBeInTheDocument()
   })
 })

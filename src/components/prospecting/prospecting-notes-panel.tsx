@@ -10,6 +10,7 @@ interface ProspectingNotesPanelProps {
   campaignMemberId: string | null
   dialerSessionId: string
   sellerName: string
+  recordKind: 'Lead' | 'Source Prospect'
   notes: DialerActivity[]
   readOnly: boolean
   onSaved: () => void
@@ -57,26 +58,24 @@ export function ProspectingNotesPanel(props: ProspectingNotesPanelProps) {
     props.onSaved()
   }
 
-  return <section aria-label="Notes" className="ck-card p-4">
+  return <section aria-label="Notes">
     <div className="flex items-start justify-between gap-3">
       <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Notes</p>
-        <h2 className="mt-0.5 text-sm font-black text-[var(--ck-text)]">Keep the seller context in view</h2>
+        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Default workspace</p>
+        <h2 className="mt-0.5 text-sm font-black text-[var(--ck-text)]">Notes</h2>
       </div>
-      <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-muted)]">{props.notes.length} saved</span>
+      <span className="rounded-full border border-[var(--prospecting-warning)]/35 bg-[var(--prospecting-warning-soft)] px-2.5 py-1 text-[9px] font-bold text-[var(--prospecting-warning-ink)]">{props.recordKind}</span>
     </div>
 
-    <ContactNoteComposer contactName={props.sellerName || 'current seller'} onSave={save} readOnlyPreview={props.readOnly} rows={4} />
+    <ContactNoteComposer contactName={props.sellerName || 'current seller'} onSave={save} readOnlyPreview={props.readOnly} rows={4} variant="workspace" />
 
-    {props.notes.length > 0 ? <div className="mt-3 space-y-2 border-t border-[var(--ck-border)] pt-3">
-      {props.notes.slice(0, 3).map((note) => <article key={note.id} className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] p-3">
-        <div className="flex items-start justify-between gap-3">
-          <p className="truncate text-xs font-black text-[var(--ck-text)]">{noteContact(note)}</p>
-          <time dateTime={note.created_at} className="shrink-0 text-[9px] font-bold text-[var(--ck-text-dim)]">{noteTime(note.created_at)}</time>
-        </div>
-        <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-[var(--ck-text-muted)]">{note.description || 'Note saved without details.'}</p>
-      </article>)}
+    <div className="mt-3 space-y-2 border-t border-[var(--ck-border)] pt-3">
+      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ck-text-dim)]">Recent notes</p>
+      {props.notes.length > 0 ? props.notes.slice(0, 3).map((note) => <article key={note.id} className="rounded-lg border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] p-3">
+        <p className="truncate text-[11px] font-bold text-[var(--ck-text)]">{noteContact(note)} · <time dateTime={note.created_at}>{noteTime(note.created_at)}</time></p>
+        <p className="mt-1 pl-5 line-clamp-3 whitespace-pre-wrap text-[11px] leading-4 text-[var(--ck-text-muted)]">{note.description || 'Note saved without details.'}</p>
+      </article>) : <p className="rounded-lg border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] px-3 py-3 text-[11px] text-[var(--ck-text-muted)]">No recent notes for this record.</p>}
       {props.notes.length > 3 ? <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">{props.notes.length - 3} more in History</p> : null}
-    </div> : <p className="mt-2 text-[10px] leading-4 text-[var(--ck-text-muted)]">Seller notes and notes saved on associated people stay here and in History.</p>}
+    </div>
   </section>
 }
