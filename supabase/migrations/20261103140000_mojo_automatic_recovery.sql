@@ -26,6 +26,7 @@ CREATE TABLE public.mojo_recovery_incidents (
   failure_key text NOT NULL,
   failure_message text NOT NULL,
   recovery_run_id uuid REFERENCES public.mojo_recovery_runs(id),
+  briefing_event_id uuid,
   alert_claimed_at timestamptz,
   sms_status text CHECK (sms_status IN ('claimed','sent','failed','unknown'))
 );

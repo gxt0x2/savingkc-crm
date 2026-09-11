@@ -9,7 +9,7 @@ export type MojoRecoveryRun = {
 }
 export type MojoRecoveryIncident = {
   id: string; first_seen_at: string; failure_key: string; failure_message: string
-  alert_claimed_at: string | null; sms_status: string | null
+  alert_claimed_at: string | null; sms_status: string | null; briefing_event_id?: string | null
 }
 export type MojoRecoveryDecision = {
   state: 'healthy' | 'scheduled' | 'recovering' | 'action_required'

@@ -25,7 +25,7 @@ function database(exhausted = false, legacy = false) {
       select: () => Query; order: () => Query; limit: () => Query
       eq: (k: string, v: unknown) => Query; is: (k: string, v: unknown) => Query
       update: (v: Record<string, unknown>) => Query; insert: (v: Record<string, unknown>) => Query
-      maybeSingle: () => Query
+      maybeSingle: () => Query; single: () => Query
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise<unknown>
     }
     const q: Query = {
@@ -35,12 +35,15 @@ function database(exhausted = false, legacy = false) {
       update: (v: Record<string, unknown>) => { op = 'update'; patch = v; return q },
       insert: (v: Record<string, unknown>) => { op = 'insert'; patch = v; return q },
       maybeSingle: () => { single = true; return q },
+      single: () => { single = true; return q },
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve().then(() => {
         let data: Array<Record<string, unknown>> = []
         if (op === 'insert') {
           if (name === 'mojo_recovery_incidents' && tables[name].some(r => r.status === 'open')) return { data: null, error: { code: '23505' } }
           if (legacy && name === 'ari_briefing_events' && patch.metadata) return { error: { message: 'column ari_briefing_events.metadata does not exist' } }
-          tables[name].push({ id: `id-${tables[name].length}`, status: 'open', alert_claimed_at: null, ...patch })
+          const row = { id: `id-${tables[name].length}`, status: 'open', alert_claimed_at: null, ...patch }
+          tables[name].push(row)
+          data = [row]
         } else {
           data = tables[name].filter(r => filters.every(f => f(r)))
           if (op === 'update') data.forEach((r: Record<string, unknown>) => Object.assign(r, patch))
@@ -80,6 +83,7 @@ describe('one recovery gate for every Mojo alert producer', () => {
     mocks.health.mockResolvedValue(healthy())
     await recordMojoHealthIncident(db as never, input, now)
     expect(db.tables.mojo_recovery_incidents[0].status).toBe('resolved')
+    expect(db.tables.ari_briefing_events[0].dismissed).toBe(true)
     mocks.health.mockResolvedValue(failure())
     await recordMojoHealthIncident(db as never, input, new Date('2026-09-11T15:01:00Z'))
     expect(mocks.sendAlert).toHaveBeenCalledOnce()

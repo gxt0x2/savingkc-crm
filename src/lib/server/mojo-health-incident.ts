@@ -33,6 +33,12 @@ export async function recordMojoHealthIncident(db: SupabaseLike, input: MojoInci
   const { alert } = snapshot
   if (alert.kind !== 'operational_failure') {
     if (snapshot.incident) {
+      // Clear the matching user-facing warning before closing the episode. If
+      // this write fails, the open episode makes the next healthy check retry it.
+      if (snapshot.incident.briefing_event_id) {
+        const closed = await db.from('ari_briefing_events').update({ dismissed: true }).eq('id', snapshot.incident.briefing_event_id)
+        if (closed.error) throw new Error(`Mojo warning closure failed: ${closed.error.message}`)
+      }
       const { error } = await db.from('mojo_recovery_incidents').update({ status: 'resolved', resolved_at: now.toISOString(), last_seen_at: now.toISOString() })
         .eq('id', snapshot.incident.id).eq('status', 'open')
       if (error) throw new Error(`Mojo recovery closure failed: ${error.message}`)
@@ -69,16 +75,18 @@ export async function recordMojoHealthIncident(db: SupabaseLike, input: MojoInci
     metadata: { system: 'mojo_ingestion', incident_id: incident.id, reason: alert.failureKey,
       source: input.source, recovery_run_id: snapshot.run?.id ?? null },
   }
-  let { error: insertError } = await db.from('ari_briefing_events').insert(event)
+  let { data: briefing, error: insertError } = await db.from('ari_briefing_events').insert(event).select('id').single()
   if (insertError && /ari_briefing_events\.metadata|metadata.*column|column.*metadata/i.test(insertError.message)) {
     const legacy = { event_type: event.event_type, priority: event.priority, title: event.title,
       description: event.description, read: false, dismissed: false }
-    ;({ error: insertError } = await db.from('ari_briefing_events').insert(legacy))
+    ;({ data: briefing, error: insertError } = await db.from('ari_briefing_events').insert(legacy).select('id').single())
   }
   if (insertError) {
     await db.from('mojo_recovery_incidents').update({ alert_claimed_at: null, sms_status: 'failed' }).eq('id', incident.id)
     throw new Error(`Mojo incident insert failed: ${insertError.message}`)
   }
+  const linked = await db.from('mojo_recovery_incidents').update({ briefing_event_id: briefing?.id ?? null }).eq('id', incident.id)
+  if (linked.error) throw new Error(`Mojo warning link failed: ${linked.error.message}`)
   try {
     const result = await sendMojoIngestionFailureSmsAlert({ incidentId: incident.id, message, source: input.source })
     const sent = Boolean(result.result?.success)
