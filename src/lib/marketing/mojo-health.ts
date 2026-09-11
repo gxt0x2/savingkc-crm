@@ -1,6 +1,6 @@
 import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 import type { supabaseAdmin } from '@/lib/supabase/admin'
-import { isSavingKcWorkday } from '@/lib/company-calendar'
+import { mojoCallingAge, mojoSchedule } from './mojo-schedule.mjs'
 
 export type MojoHealthStatus = 'clean' | 'watch' | 'attention'
 
@@ -32,6 +32,7 @@ export type MojoHealth = {
   businessHours: boolean
   lastSyncAt: string | null
   lastSyncAgeMinutes: number | null
+  lastSyncCallingAgeMinutes?: number
   lastSessionOkAt: string | null
   lastError: string | null
   lastErrorAt: string | null
@@ -246,15 +247,7 @@ function latestIso(values: Array<string | null | undefined>): string | null {
   return latest
 }
 
-function centralBusinessHours(now: Date): boolean {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    hour: 'numeric',
-    hour12: false,
-  }).formatToParts(now)
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
-  return isSavingKcWorkday(centralDateKey(now)) && hour >= 8 && hour < 18
-}
+function centralBusinessHours(now: Date): boolean { return mojoSchedule(now).businessHours }
 
 function centralDateKey(now: Date): string {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -504,13 +497,8 @@ export async function getMojoHealth(
     const performanceSyncLastError = configValue('mojo_performance_sync_last_error') || null
     const performanceSyncLastErrorAt = isoOrNull(configValue('mojo_performance_sync_last_error_at'))
       || configUpdatedAt('mojo_performance_sync_last_error_at')
-    const centralHour = Number(new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Chicago', hour: 'numeric', hour12: false,
-    }).formatToParts(now).find((part) => part.type === 'hour')?.value ?? 0)
-    const centralMinute = Number(new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Chicago', minute: '2-digit',
-    }).formatToParts(now).find((part) => part.type === 'minute')?.value ?? 0)
-    const withinStartupGrace = businessHours && centralHour === 8 && centralMinute < 30
+    const withinStartupGrace = mojoSchedule(now).withinStartupGrace
+    const lastSyncCallingAgeMinutes = mojoCallingAge(lastSyncAt, now)
 
     const performanceDown = performanceSyncHealth.toLowerCase() === 'down'
       && !(latestMetricDate === today && latestFetchedAt && performanceSyncLastErrorAt
@@ -564,7 +552,7 @@ export async function getMojoHealth(
     } else if (reconciliation.status === 'attention') {
       status = 'attention'
       message = reconciliation.message
-    } else if (businessHours && !lastSyncAt) {
+    } else if (businessHours && !lastSyncAt && !withinStartupGrace) {
       status = 'attention'
       message = 'Mojo sync has no successful timestamp during business hours'
     } else if (businessHours && latestMetricDate !== today) {
@@ -576,15 +564,15 @@ export async function getMojoHealth(
     } else if (businessHours && (performanceAgeMinutes ?? 0) >= 120) {
       status = 'attention'
       message = `Mojo provider performance has not updated in ${performanceAgeMinutes} minutes during business hours`
-    } else if (businessHours && (lastSyncAgeMinutes ?? 0) >= 120) {
+    } else if (businessHours && lastSyncCallingAgeMinutes >= 120) {
       status = 'attention'
-      message = `Mojo sync has not completed in ${lastSyncAgeMinutes} minutes during business hours`
+      message = `Mojo sync has not completed in ${lastSyncCallingAgeMinutes} minutes of this calling window`
     } else if (businessHours && (performanceAgeMinutes ?? 0) >= 60) {
       status = 'watch'
       message = `Mojo provider performance is delayed by ${performanceAgeMinutes} minutes`
-    } else if (businessHours && (lastSyncAgeMinutes ?? 0) >= 60) {
+    } else if (businessHours && lastSyncCallingAgeMinutes >= 60) {
       status = 'watch'
-      message = `Mojo sync is stale by ${lastSyncAgeMinutes} minutes`
+      message = `Mojo sync is stale by ${lastSyncCallingAgeMinutes} minutes of this calling window`
     } else if (pending > 0 || processing > 0 || qualification.recordingOutstanding24h > 0 || qualification.evidencePending24h > 0) {
       status = 'watch'
       const activeCount = pending + processing + qualification.recordingOutstanding24h + qualification.evidencePending24h
@@ -600,6 +588,7 @@ export async function getMojoHealth(
       businessHours,
       lastSyncAt,
       lastSyncAgeMinutes,
+      lastSyncCallingAgeMinutes,
       lastSessionOkAt,
       lastError,
       lastErrorAt,

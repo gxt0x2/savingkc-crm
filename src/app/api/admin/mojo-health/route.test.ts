@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), health: vi.fn(), persist: vi.fn(), incident: vi.fn() }))
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), health: vi.fn(), persist: vi.fn(), incident: vi.fn(), recovery: vi.fn() }))
 vi.mock('@/lib/api/admin-auth', () => ({ requireAdminOrSecret: mocks.auth }))
 vi.mock('@/lib/marketing/mojo-health', () => ({ getMojoHealth: mocks.health, persistMojoHealth: mocks.persist }))
-vi.mock('@/lib/server/mojo-health-incident', () => ({ recordMojoHealthIncident: mocks.incident }))
+vi.mock('@/lib/server/mojo-health-incident', () => ({ recordMojoHealthIncident: mocks.incident, getMojoRecoverySnapshot: mocks.recovery }))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({}) }))
 import { GET } from './route'
 
@@ -24,21 +24,22 @@ describe('Mojo health alert transport', () => {
     mocks.auth.mockResolvedValue(null)
     mocks.health.mockResolvedValue(health())
     mocks.persist.mockResolvedValue(undefined)
+    mocks.recovery.mockResolvedValue({ decision: { state: 'healthy', escalate: false } })
     mocks.incident.mockResolvedValue({ created: true, alerted: false })
   })
 
-  it('persists review attention without creating an outage incident or sending its SMS', async () => {
+  it('persists review attention and lets the shared gate close any recovered incident', async () => {
     const response = await GET(new NextRequest('https://crm.savingkc.com/api/admin/mojo-health'))
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({ health: { reconciliation: { issueCount: 6 } }, alert: { kind: 'evidence_review' } })
     expect(mocks.persist).toHaveBeenCalledOnce()
-    expect(mocks.incident).not.toHaveBeenCalled()
+    expect(mocks.incident).toHaveBeenCalledOnce()
   })
 
   it('still creates an incident for a real failure alongside historical holds', async () => {
     mocks.health.mockResolvedValue({ ...health(), syncHealth: 'down', lastError: 'Source intake failed' })
     await GET(new NextRequest('https://crm.savingkc.com/api/admin/mojo-health'))
-    expect(mocks.incident).toHaveBeenCalledWith({}, expect.objectContaining({ message: 'Source intake failed' }))
+    expect(mocks.incident).toHaveBeenCalledWith({}, expect.objectContaining({ message: 'Source intake failed' }), expect.any(Date), expect.objectContaining({ syncHealth: 'down' }))
   })
 
   it('exposes the same decision in read-only mode without side effects', async () => {

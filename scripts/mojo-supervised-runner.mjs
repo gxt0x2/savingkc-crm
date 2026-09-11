@@ -3,6 +3,8 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { verifyRuntime } from './mojo-runtime-package.mjs'
 import { mojoSupervisorReceipt } from './mojo-supervisor-health.mjs'
+import { runMojoRecovery } from './mojo-recovery-cycle.mjs'
+import { mojoSchedule } from '../src/lib/marketing/mojo-schedule.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,7 +23,7 @@ const repoRoot = path.resolve(dirname, '..')
 const stateRoot = path.dirname(defaultLogDir())
 const lockFile = path.join(stateRoot, 'mojo-supervised-sync.lock')
 const heartbeatFile = path.join(stateRoot, 'mojo-supervised-sync-heartbeat.json')
-const timeoutMs = Number(process.env.MOJO_SUPERVISED_TIMEOUT_MS || 5 * 60 * 1000)
+const timeoutMs = Math.max(1000, Math.min(240_000, Number(process.env.MOJO_SUPERVISED_TIMEOUT_MS) || 240_000))
 let stopping = false
 let stopRun = null
 for (const signal of ['SIGTERM', 'SIGINT']) {
@@ -32,14 +34,7 @@ function log(message) {
   console.log(`[${new Date().toISOString()}] [mojo-supervisor] ${message}`)
 }
 
-function inBusinessHours(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', hour12: false,
-  }).formatToParts(now)
-  const weekday = parts.find((part) => part.type === 'weekday')?.value || ''
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0)
-  return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 18
-}
+function inBusinessHours(now = new Date()) { return mojoSchedule(now).businessHours }
 
 function acquireLock() {
   fs.mkdirSync(stateRoot, { recursive: true })
@@ -116,6 +111,16 @@ async function checkHealth() {
   return { response, health: body?.health ?? null }
 }
 
+async function reportRecovery(body) {
+  const response = await fetch(`${crmBaseUrl()}/api/admin/mojo-recovery`, {
+    method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+  })
+  const result = await response.json().catch(() => null)
+  if (!response.ok || !result?.ok) throw new Error(`Recovery receipt rejected (${response.status})`)
+  return result
+}
+
 async function main() {
   if (!inBusinessHours() && !process.argv.includes('--force')) {
     log('Outside supervised business hours; no work scheduled')
@@ -133,32 +138,44 @@ async function main() {
     } else if (!fs.existsSync(path.join(repoRoot, '.git'))) {
       throw new Error('Installed Mojo runtime has no version manifest')
     }
-    const result = await runSync()
-    if (stopping) {
-      fs.writeFileSync(heartbeatFile, `${JSON.stringify(mojoSupervisorReceipt(result, null), null, 2)}\n`, { mode: 0o600 })
-      return
-    }
-    const check = result.code === 0 ? await checkHealth().catch(() => ({ health: null })) : { health: null }
-    const receipt = mojoSupervisorReceipt(result, check.health)
-    fs.writeFileSync(heartbeatFile, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 })
-    if (result.code !== 0) {
-      await recordMojoFreshnessIssue({
-        source: 'mojo-supervised-runner',
-        reason: result.timedOut ? 'sync_timeout' : 'sync_failed',
-        message: `Mojo supervised sync failed${result.timedOut ? ' after its five-minute timeout' : ` with exit code ${result.code}`}.`,
-      })
-      process.exitCode = result.code
-      return
-    }
+    const cycle = await runMojoRecovery({
+      stopped: () => stopping,
+      sleep: ms => new Promise(resolve => {
+        const timer = setTimeout(resolve, ms)
+        stopRun = () => { clearTimeout(timer); resolve() }
+      }),
+      start: runId => reportRecovery({ event: 'start', runId }),
+      runAttempt: async attempt => {
+        log(`Automatic recovery attempt ${attempt}/3`)
+        const result = await runSync()
+        if (result.code === 0 && !stopping) {
+          const { health } = await checkHealth().catch(() => ({ health: null }))
+          if (!health || health.performance?.status !== 'current'
+            || health.performance?.latestMetricDate !== mojoSchedule().date
+            || health.performance?.syncHealth === 'down') {
+            // The hosted KPI path owns storage and already retries source reads.
+            // The preceding sync renews/pushes the provider session before this request.
+            const response = await fetch(`${crmBaseUrl()}/api/cron/sync-mojo-performance?force=1`, {
+              method: 'POST', headers: adminHeaders(), signal: AbortSignal.timeout(70_000),
+            }).catch(() => null)
+            if (!response?.ok) log(`Provider totals recovery returned ${response?.status || 'no response'}; verifying before the next attempt`)
+          }
+        }
+        return result
+      },
+      report: (runId, attempts) => reportRecovery({ event: 'attempt', runId, attempts }),
+      retain: cycle => {
+        const health = cycle.server?.health ?? null
+        const receipt = { ...mojoSupervisorReceipt(cycle.result || { code: 1, timedOut: false }, health), recovery: cycle }
+        if (cycle.status !== 'recovered') { receipt.status = cycle.status; receipt.operationalAttention = cycle.status === 'exhausted' }
+        fs.writeFileSync(`${heartbeatFile}.tmp`, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 })
+        fs.renameSync(`${heartbeatFile}.tmp`, heartbeatFile)
+        fs.appendFileSync(path.join(stateRoot, 'mojo-recovery-history.jsonl'), `${JSON.stringify(cycle)}\n`, { mode: 0o600 })
+      },
+    })
+    log(`Recovery cycle ${cycle.runId}: ${cycle.status}, attempts=${cycle.attempts.length}`)
+    if (cycle.status !== 'recovered') process.exitCode = 1
 
-    if (receipt.operationalAttention) {
-      // Intake already succeeded. Do not overwrite that fact with a historical
-      // reconciliation or KPI failure; the server monitor owns those incidents.
-      log('Intake completed; operational health requires attention')
-      process.exitCode = 1
-      return
-    }
-    log(`Completed; status=${receipt.status}, lastSyncAt=${receipt.lastSyncAt}`)
   } finally {
     releaseLock()
   }
