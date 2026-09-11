@@ -71,7 +71,8 @@ interface NextActionSubject {
   propertyAddress: string | null
 }
 
-export function DialerPanel({
+export function SoftphoneCore({
+  surface,
   open,
   onClose,
   onStatusChange,
@@ -588,6 +589,7 @@ export function DialerPanel({
         : leadIdAtStart ? 'lead' : 'manual'
       const authorized = await requestDialerCallIntent({
         phone: number,
+        surface,
         callerId: callerIdForThisCall,
         kind,
         leadId: kind === 'lead' || kind === 'heir' ? leadIdAtStart : null,
@@ -1768,6 +1770,8 @@ export function DialerPanel({
     </>
   )
 }
+
+export const DialerPanel = SoftphoneCore
 
 // Re-export for backwards compat if anything imported TelephonyBar
 export { DialerPanel as TelephonyBar }

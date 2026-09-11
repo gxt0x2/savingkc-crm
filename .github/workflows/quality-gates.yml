@@ -91,7 +91,15 @@ jobs:
         run: node scripts/ci/check-dialer-ringback.mjs
 
       - name: Install Playwright browser
+        timeout-minutes: 5
         run: |
+          # A reachable mirror can still stall while transferring repository
+          # metadata. Bound each request so apt can reach the fallback mirrors.
+          sudo tee /etc/apt/apt.conf.d/99-savingkc-ci-network >/dev/null <<'EOF'
+          Acquire::http::Timeout "20";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "1";
+          EOF
           # Keep Azure as a fallback, but avoid letting a reachable-yet-throttled
           # Azure Ubuntu mirror hold the Playwright gate for ~15 minutes.
           if [[ -f /etc/apt/apt-mirrors.txt ]]; then

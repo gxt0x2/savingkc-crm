@@ -4,6 +4,7 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HeirsSection } from './heirs-section'
+import { CRM_DIALER_QUEUE_EVENT } from '@/lib/telephony/dialer-events'
 
 const heirsPayload = {
   heirs: [
@@ -319,7 +320,7 @@ describe('HeirsSection dial queue', () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
 
     renderHeirsSection()
 
@@ -340,14 +341,14 @@ describe('HeirsSection dial queue', () => {
       'lead-1',
     ])
 
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
   it('queues associated phones for an unpromoted source Prospect without a Lead ID', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
 
     renderHeirsSection({ leadId: null, prospectId: 'prospect-1', campaignMemberId: 'member-1', showAllPhones: true })
 
@@ -365,7 +366,7 @@ describe('HeirsSection dial queue', () => {
       }),
     ]))
     expect(screen.queryByRole('button', { name: /skip trace/i })).not.toBeInTheDocument()
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
   it('keeps a reviewed Lead-primary snapshot callable without inventing source-phone provenance', async () => {
@@ -396,7 +397,7 @@ describe('HeirsSection dial queue', () => {
     }))
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
 
     renderHeirsSection({ campaignMemberId: 'member-lead-1' })
     fireEvent.click(await screen.findByRole('button', { name: 'Call all 1 number' }))
@@ -409,14 +410,14 @@ describe('HeirsSection dial queue', () => {
       campaignMemberId: 'member-lead-1',
     })
     expect(screen.queryByLabelText('Verify this number')).not.toBeInTheDocument()
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
   it('loads the next property queue without starting a call', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
 
     renderHeirsSection({ autoStart: true })
 
@@ -429,14 +430,14 @@ describe('HeirsSection dial queue', () => {
       'phone-verified',
     ])
 
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
   it('loads the remaining reviewed numbers after completed attempts', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
 
     renderHeirsSection({
       autoStart: true,
@@ -449,7 +450,7 @@ describe('HeirsSection dial queue', () => {
       'phone-verified',
     ])
 
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
   it('uses the normalized number when a legacy phone snapshot has no source phone id', async () => {
@@ -458,20 +459,20 @@ describe('HeirsSection dial queue', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => legacyPayload }))
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
 
     renderHeirsSection({ autoStart: true, autoStartSkipPhones: ['(816) 000-0001'] })
 
     await waitFor(() => expect(queueEvents).toHaveLength(1))
     expect(queueEvents[0].detail.queue.map((item: { phone: string }) => item.phone)).not.toContain('+18160000001')
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
   it('queues the saved seller again exactly once after a new control epoch', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
     const view = renderHeirsSection({ autoStart: true, autoStartEpoch: 1 })
 
     await waitFor(() => expect(queueEvents).toHaveLength(1))
@@ -494,14 +495,14 @@ describe('HeirsSection dial queue', () => {
 
     await waitFor(() => expect(queueEvents).toHaveLength(2))
     expect(queueEvents[1].detail.autoDial).toBeUndefined()
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
   it('keeps hard-stop phones visible but prevents disconnected, DNC, and wrong numbers from being queued manually', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
-    window.addEventListener('open-dialer-queue', onQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
 
     renderHeirsSection()
     fireEvent.click(await screen.findByText('Angela Taylor'))
@@ -514,6 +515,6 @@ describe('HeirsSection dial queue', () => {
     })
     expect(queueEvents).toHaveLength(0)
 
-    window.removeEventListener('open-dialer-queue', onQueue)
+    window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 })

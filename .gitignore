@@ -45,6 +45,8 @@ savingkc-dialer
 
 # QA test artifacts
 test-results/
+tests/ios-device/SavingKCDeviceHarness.xcodeproj/
+tests/ios-device/TestResults/
 deploy.log
 query-sharion.js
 

@@ -31,7 +31,20 @@ describe('conversation client read contract', () => {
     expect(url).toContain('queue=mine')
     expect(url).toContain('q=seller')
     expect(url).toContain('cursor=next-page')
+    expect(url).toContain('timeframe=inbox')
     expect(url).not.toMatch(/owner|agent/i)
+  })
+
+  it('requests the server-owned recent timeframe for conversations older than 24 hours', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], pageInfo: { hasMore: false, nextCursor: null }, source: 'projection', degraded: false }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchConversationHub({ queue: 'all', timeframe: 'recent' })
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('timeframe=recent')
   })
 
   it('sends the known or unmatched filter only when selected', async () => {

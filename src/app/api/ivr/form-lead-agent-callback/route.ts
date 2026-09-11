@@ -138,6 +138,7 @@ export async function POST(req: Request) {
 
   const policyInput = {
     phone: leadPhone,
+    surface: 'automation' as const,
     leadId: leadId || null,
     prospectPhoneId: null,
     source: 'form_lead_callback' as const,

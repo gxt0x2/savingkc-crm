@@ -14,6 +14,12 @@ import { preloadGlobalDialer } from '@/components/telephony/global-dialer-button
 import { getServerViewedAgentEmailSnapshot, getViewedAgentEmailSnapshot, subscribeToViewedAgentChange } from '@/lib/viewed-agent-session'
 import { isCaseyCrmUser } from '@/lib/telephony/agent-identity'
 import { isCallReviewer } from '@/lib/call-review-reviewers'
+import {
+  CRM_DIALER_OPEN_EVENT,
+  CRM_DIALER_QUEUE_EVENT,
+  PROSPECTING_DIALER_CONTROLS_EVENT,
+  PROSPECTING_DIALER_QUEUE_EVENT,
+} from '@/lib/telephony/dialer-events'
 
 const NavTabs = dynamic(() => import('./nav-tab').then((mod) => mod.NavTabs), { ssr: false })
 const ModeSwitcher = dynamic(() => import('./mode-switcher').then((mod) => mod.ModeSwitcher), { ssr: false })
@@ -127,6 +133,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
     searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort') || isProspectingPreviewFloor,
   )
+  const isProspectingCallingFloorRef = useRef(Boolean(isProspectingCallingFloor))
+  isProspectingCallingFloorRef.current = Boolean(isProspectingCallingFloor)
   const useUserLightTheme = hydrated && userTheme === 'light'
   const useLightLogo = useUserLightTheme
   const dialerPresentation = pathname?.startsWith('/dialer')
@@ -225,7 +233,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setDialerOwnerRoute(currentRouteKeyRef.current)
         setDialerMounted(true)
         setShowDialer(true)
-      }
+      } else handleOpenGlobalDialer()
     }
     function handleOpenGlobalDialer() {
       setPendingDialLead(null)
@@ -258,15 +266,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setShowDialer(true)
       }
     }
+    function handleOpenProspectingQueue(e: Event) {
+      if (!isProspectingCallingFloorRef.current) return
+      handleOpenDialerQueue(e)
+    }
     window.addEventListener('open-dialer', handleOpenDialer)
+    window.addEventListener(CRM_DIALER_OPEN_EVENT, handleOpenDialer)
     window.addEventListener('open-global-dialer', handleOpenGlobalDialer)
     window.addEventListener('show-dialer-controls', handleShowDialerControls)
+    window.addEventListener(PROSPECTING_DIALER_CONTROLS_EVENT, handleShowDialerControls)
     window.addEventListener('open-dialer-queue', handleOpenDialerQueue)
+    window.addEventListener(CRM_DIALER_QUEUE_EVENT, handleOpenDialerQueue)
+    window.addEventListener(PROSPECTING_DIALER_QUEUE_EVENT, handleOpenProspectingQueue)
     return () => {
       window.removeEventListener('open-dialer', handleOpenDialer)
+      window.removeEventListener(CRM_DIALER_OPEN_EVENT, handleOpenDialer)
       window.removeEventListener('open-global-dialer', handleOpenGlobalDialer)
       window.removeEventListener('show-dialer-controls', handleShowDialerControls)
+      window.removeEventListener(PROSPECTING_DIALER_CONTROLS_EVENT, handleShowDialerControls)
       window.removeEventListener('open-dialer-queue', handleOpenDialerQueue)
+      window.removeEventListener(CRM_DIALER_QUEUE_EVENT, handleOpenDialerQueue)
+      window.removeEventListener(PROSPECTING_DIALER_QUEUE_EVENT, handleOpenProspectingQueue)
     }
   }, [])
 
@@ -363,6 +383,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     rotationNumbers={searchParams.get('rotation_numbers') || ''}
   /> : shouldRenderDialer ? <DialerPanel
     key={isProspectingCallingFloor ? `prospecting:${activeFloorSessionId || 'preview'}` : 'global'}
+    surface={isProspectingCallingFloor ? 'prospecting' : 'crm'}
     open={isProspectingCallingFloor ? true : showDialer}
     onClose={() => {
       if (isProspectingCallingFloor) return

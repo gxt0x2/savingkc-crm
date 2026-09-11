@@ -11,7 +11,7 @@ import {
   isAllowedDialerCallerId,
   recordBlockedDialerCall,
 } from '@/lib/server/dialer-call-eligibility'
-import { createDialerCallIntent } from '@/lib/telephony/dialer-call-intent'
+import { createDialerCallIntent, dialerCallIntentFailureSource } from '@/lib/telephony/dialer-call-intent'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 
 export const dynamic = 'force-dynamic'
@@ -45,11 +45,12 @@ export async function POST(request: NextRequest) {
     const requestedCallerId = text(body.callerId)
     const callerId = requestedCallerId ?? profile.defaultCallerId
     if (!isAllowedDialerCallerId(callerId)) {
-      return json({ allowed: false, error: 'Select an approved prospecting caller ID', reason: 'invalid_caller_id' }, 409)
+      return json({ allowed: false, error: 'Select an approved CRM caller ID', reason: 'invalid_caller_id' }, 409)
     }
 
     const policyInput = {
       phone,
+      surface: 'crm' as const,
       leadId,
       prospectPhoneId: null,
       source: leadId ? 'mobile_lead' as const : 'mobile_manual' as const,
@@ -60,7 +61,12 @@ export async function POST(request: NextRequest) {
     const policy = await evaluateOutboundDialerCall(policyInput)
     if (!policy.allowed) {
       await recordBlockedDialerCall(policyInput, policy)
-      return json({ allowed: false, error: policy.message, reason: policy.reason }, dialerBlockStatus(policy.reason))
+      return json({
+        allowed: false,
+        error: policy.message,
+        reason: policy.reason,
+        reasonSource: policy.reasonSource,
+      }, dialerBlockStatus(policy.reason))
     }
 
     try {
@@ -70,7 +76,8 @@ export async function POST(request: NextRequest) {
         callerId,
         kind,
         source: policyInput.source,
-        leadId: policy.leadId,
+        surface: policyInput.surface,
+        leadId: kind === 'lead' ? policy.leadId : null,
         clientAttemptId,
       })
       return json({
@@ -79,12 +86,15 @@ export async function POST(request: NextRequest) {
         to: issued.claims.to,
         callerId: issued.claims.callerId,
         kind: issued.claims.kind,
+        source: issued.claims.source,
+        surface: issued.claims.surface,
         leadId: issued.claims.leadId,
         prospectPhoneId: null,
         clientAttemptId: issued.claims.clientAttemptId,
         expiresAt: issued.claims.expiresAt,
       })
     } catch (error) {
+      const reasonSource = dialerCallIntentFailureSource(error)
       console.error('[mobile/twilio/call-intents] Intent signing unavailable', error)
       await recordBlockedDialerCall(policyInput, {
         allowed: false,
@@ -96,9 +106,14 @@ export async function POST(request: NextRequest) {
         leadId: policy.leadId,
         prospectId: null,
         prospectPhoneId: policy.prospectPhoneId,
-        reasonSource: 'intent_signing',
+        reasonSource,
       })
-      return json({ allowed: false, error: 'Calling is paused because authorization is unavailable', reason: 'policy_unavailable' }, 503)
+      return json({
+        allowed: false,
+        error: 'Calling is paused because authorization is unavailable',
+        reason: 'policy_unavailable',
+        reasonSource,
+      }, 503)
     }
   } catch (error) {
     const status = error instanceof MobileAuthError ? error.status : 500

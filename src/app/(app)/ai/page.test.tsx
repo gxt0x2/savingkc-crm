@@ -15,6 +15,7 @@ vi.mock('@/hooks/use-assistant-thread', () => ({
     loadingHistory: false,
     sending: false,
     error: '',
+    ownerEmail: 'ernest@savingkc.com',
     send: vi.fn(),
     clear: vi.fn(),
   }),
@@ -57,6 +58,9 @@ describe('AI Assistant live context', () => {
 
     render(<AiAssistantPage />)
 
+    expect(screen.getByText(/teammates cannot open this history/)).toHaveTextContent(
+      'Private to ernest@savingkc.com · teammates cannot open this history',
+    )
     expect(screen.getAllByText('Loading…')).toHaveLength(4)
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
     expect(fetchMock).not.toHaveBeenCalledWith('/api/reports/operating?period=30d', expect.anything())

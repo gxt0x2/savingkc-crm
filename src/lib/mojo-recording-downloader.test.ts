@@ -1,0 +1,42 @@
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
+const mocks = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), fetch: vi.fn() }))
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ from: () => ({ select: () => ({ eq: () => ({ single: mocks.read }) }) }) }) }))
+vi.mock('fs/promises', () => ({ mkdir: vi.fn(), writeFile: mocks.write, readFile: vi.fn().mockRejectedValue(new Error('missing')) }))
+const audio = () => new Response(new Uint8Array(2048), { headers: { 'content-type': 'audio/mpeg' } })
+describe('Mojo recording session recovery', () => {
+  beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); vi.stubGlobal('fetch', mocks.fetch); vi.stubEnv('MOJO_SESSION_ID', 'deployment-cookie'); mocks.read.mockResolvedValue({ data: { value: 'shared-current-cookie' } }); mocks.fetch.mockImplementation(async () => audio()) })
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+  it('uses the shared admin client and current database cookie ahead of the deployment cookie', async () => {
+    const { downloadRecording } = await import('./mojo-recording-downloader')
+    await downloadRecording('https://app71.mojosells.com/recording', 'test')
+    expect(mocks.fetch.mock.calls[0][1].headers.cookie).toBe('sessionid=shared-current-cookie')
+    expect(mocks.write).toHaveBeenCalledOnce()
+  })
+  it('retries once with the newly refreshed shared session after a warm worker receives 401', async () => {
+    const cookies: string[] = []
+    mocks.fetch.mockImplementation(async (_url, options) => { cookies.push(options.headers.cookie); return cookies.length === 2 ? new Response('expired', { status: 401 }) : audio() })
+    const { downloadRecording } = await import('./mojo-recording-downloader')
+    await downloadRecording('https://app71.mojosells.com/recording', 'first')
+    mocks.read.mockResolvedValue({ data: { value: 'refreshed-cookie' } })
+    await downloadRecording('https://app71.mojosells.com/recording', 'second')
+    expect(cookies).toEqual(['sessionid=shared-current-cookie', 'sessionid=shared-current-cookie', 'sessionid=refreshed-cookie'])
+    expect(mocks.write).toHaveBeenCalledTimes(2)
+  })
+  it('does not persist a login page as audio or retry indefinitely with the same expired session', async () => {
+    mocks.fetch.mockImplementation(async () => new Response('Please login', { headers: { 'content-type': 'text/html' } }))
+    const { downloadRecording } = await import('./mojo-recording-downloader')
+    await expect(downloadRecording('https://app71.mojosells.com/recording', 'test')).rejects.toThrow('session expired')
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+    expect(mocks.write).not.toHaveBeenCalled()
+    mocks.read.mockResolvedValue({ data: { value: 'recovered-cookie' } }); mocks.fetch.mockImplementation(async () => audio())
+    await downloadRecording('https://app71.mojosells.com/recording', 'recovered')
+    expect(mocks.fetch.mock.calls.at(-1)?.[1].headers.cookie).toBe('sessionid=recovered-cookie')
+  })
+  it('keeps Twilio audio retrieval independent of Mojo session storage', async () => {
+    const { downloadRecording } = await import('./mojo-recording-downloader')
+    await downloadRecording('https://api.twilio.com/recording', 'test')
+    expect(mocks.fetch.mock.calls[0][0]).toBe('https://api.twilio.com/recording.mp3')
+    expect(mocks.fetch.mock.calls[0][1].headers.cookie).toBeUndefined()
+    expect(mocks.read).not.toHaveBeenCalled()
+  })
+})

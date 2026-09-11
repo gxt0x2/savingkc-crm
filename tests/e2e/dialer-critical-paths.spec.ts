@@ -138,7 +138,7 @@ test.describe('CRM synthetic critical paths', () => {
     ).toBeTruthy()
 
     await page.evaluate((payload) => {
-      window.dispatchEvent(new CustomEvent('open-dialer', { detail: payload }))
+      window.dispatchEvent(new CustomEvent('crm-dialer-open', { detail: payload }))
     }, {
       phone: '+18166088588',
       name: 'E2E Validation Lead',

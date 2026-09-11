@@ -34,7 +34,7 @@ const ERNEST_CALLER_ID = '+18166088588'
 const allowedDecision = {
   allowed: true as const,
   normalizedPhone: DESTINATION,
-  policyVersion: 'dialer_safety_v1' as const,
+  policyVersion: 'dialer_safety_v2' as const,
   checkedAt: CHECKED_AT,
   leadId: null,
   prospectId: null,
@@ -46,7 +46,7 @@ const blockedDecision = {
   normalizedPhone: DESTINATION,
   reason: 'do_not_call' as const,
   message: 'This number is on the do-not-call list.',
-  policyVersion: 'dialer_safety_v1' as const,
+  policyVersion: 'dialer_safety_v2' as const,
   checkedAt: CHECKED_AT,
   leadId: 'lead-1',
   prospectId: null,
@@ -62,6 +62,7 @@ const validLeadClaims = {
   callerId: ERNEST_CALLER_ID,
   kind: 'lead' as const,
   source: 'web_click_to_call' as const,
+  surface: 'crm' as const,
   leadId: 'lead-1',
   prospectId: null,
   prospectPhoneId: null,
@@ -76,6 +77,7 @@ const validProspectClaims = {
   ...validLeadClaims,
   kind: 'prospect' as const,
   source: 'web_heir_dialer' as const,
+  surface: 'prospecting' as const,
   leadId: null,
   prospectId: 'prospect-1',
   prospectPhoneId: 'prospect-phone-1',
@@ -209,6 +211,7 @@ describe('TwiML request containment', () => {
       prospectId: null,
       prospectPhoneId: null,
       source: 'legacy_sdk',
+      surface: 'automation',
       identity: 'ernest',
       callerId: ERNEST_CALLER_ID,
       callSid: 'CA_test_outbound',
@@ -250,12 +253,14 @@ describe('TwiML request containment', () => {
       prospectId: null,
       prospectPhoneId: null,
       source: 'web_click_to_call',
+      surface: 'crm',
       identity: 'ernest',
       callerId: ERNEST_CALLER_ID,
       callSid: 'CA_test_outbound',
       clientAttemptId: 'attempt-1',
     })
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
+    expect(text).toContain('answerOnBridge="true" ringTone="us"')
     expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
     expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1"')
   })
@@ -281,6 +286,7 @@ describe('TwiML request containment', () => {
       prospectId: 'prospect-1',
       prospectPhoneId: 'prospect-phone-1',
       source: 'web_heir_dialer',
+      surface: 'prospecting',
       identity: 'ernest',
       callerId: ERNEST_CALLER_ID,
       callSid: 'CA_test_outbound',

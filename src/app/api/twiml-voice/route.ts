@@ -113,7 +113,7 @@ function blockedDecision(input: {
 }): BlockedDialerCallDecision {
   return {
     allowed: false,
-    policyVersion: 'dialer_safety_v1',
+    policyVersion: 'dialer_safety_v2',
     checkedAt: new Date().toISOString(),
     normalizedPhone: input.normalizedPhone ?? null,
     leadId: input.leadId ?? null,
@@ -141,9 +141,10 @@ async function blockOutboundCall(
 
 export async function POST(req: Request) {
   let requestKind: RequestKind = 'unknown'
-  let outboundContext: OutboundDialerCallInput = {
-    phone: '',
-    source: 'legacy_sdk',
+    let outboundContext: OutboundDialerCallInput = {
+      phone: '',
+      surface: 'automation',
+      source: 'legacy_sdk',
     identity: null,
     callerId: null,
     callSid: null,
@@ -263,6 +264,7 @@ export async function POST(req: Request) {
         clientAttemptId = claims.clientAttemptId
         outboundContext = {
           ...outboundContext,
+          surface: claims.surface,
           source,
           leadId,
           prospectId,
@@ -296,6 +298,7 @@ export async function POST(req: Request) {
 
       const policyInput: OutboundDialerCallInput = {
         phone: sanitizedTo,
+        surface: intentVerification?.valid ? intentVerification.claims.surface : 'automation',
         leadId,
         prospectId,
         prospectPhoneId,
@@ -331,7 +334,7 @@ export async function POST(req: Request) {
       const dialTimeout = parseDialTimeout(getFormString(body, ['RingCount', 'ringCount', 'ring_count']))
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${callerId}" timeout="${dialTimeout}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">
+  <Dial callerId="${callerId}" timeout="${dialTimeout}" answerOnBridge="true" ringTone="us" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">
     <Number statusCallback="${statusCallback}" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">${sanitizedTo}</Number>
   </Dial>
 </Response>`

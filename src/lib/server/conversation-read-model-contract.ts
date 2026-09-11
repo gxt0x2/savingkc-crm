@@ -8,6 +8,7 @@ export const CONVERSATION_MAX_PAGE_SIZE = 100
 export type ConversationQueue = 'needs_reply' | 'mine' | 'unassigned' | 'all'
 export type ConversationChannel = 'call' | 'sms' | 'email' | 'voicemail'
 export type ConversationKindFilter = 'all' | 'known' | 'unmatched'
+export type ConversationTimeframe = 'inbox' | 'recent' | 'all'
 
 export interface ThreadCursor {
   v: 1
@@ -70,6 +71,12 @@ export function conversationKindFilter(value: unknown): ConversationKindFilter {
   if (value === null || value === undefined || value === '' || value === 'all') return 'all'
   if (value === 'known' || value === 'unmatched') return value
   throw new ConversationReadModelInputError('kind must be all, known, or unmatched')
+}
+
+export function conversationTimeframe(value: unknown): ConversationTimeframe {
+  if (value === null || value === undefined || value === '' || value === 'inbox') return 'inbox'
+  if (value === 'recent' || value === 'all') return value
+  throw new ConversationReadModelInputError('timeframe must be inbox, recent, or all')
 }
 
 export function conversationSearchQuery(value: unknown): string | null {

@@ -125,6 +125,24 @@ describe('Casey My Day model', () => {
     expect(report.habits.find((habit) => habit.key === 'followup')?.value).toBe(80)
   })
 
+  it('marks Labor Day as closed and removes it from the calling target', () => {
+    const now = new Date('2026-09-08T16:30:00.000Z')
+    const report = buildMyDay(input({
+      month: '2026-09',
+      now,
+      range: { preset: 'this_week', from: '2026-09-07', to: '2026-09-08', label: 'This week' },
+      stats: [],
+      performance: [
+        { metric_date: '2026-09-07', dialing_seconds: 0, in_progress_seconds: 0, calls: 0, contacts: 0, leads: 0, appointments: 0, source_fetched_at: '2026-09-07T22:59:00.000Z' },
+        { metric_date: '2026-09-08', dialing_seconds: 600, in_progress_seconds: 0, calls: 5, contacts: 1, leads: 0, appointments: 0, source_fetched_at: '2026-09-08T16:25:00.000Z' },
+      ],
+    }))
+
+    expect(report.performance.status).toBe('available')
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([null, 5, null, null, null])
+    expect(report.habits.find((habit) => habit.key === 'calling')?.value).toBe(100)
+  })
+
   it('defaults My Day to today while retaining the containing workweek breakdown', () => {
     const now = new Date('2026-08-05T18:00:00.000Z')
     const range = resolveMyDayDateRange({}, now)
@@ -200,10 +218,27 @@ describe('Casey My Day model', () => {
   })
 
   it('withholds aggregate totals when even one required provider day is missing', () => {
-    const report = buildMyDay(input({ performance: input().performance.filter((row) => row.metric_date !== '2026-08-02') }))
+    const report = buildMyDay(input({ performance: input().performance.filter((row) => row.metric_date !== '2026-08-04') }))
     expect(report.performance.status).toBe('partial')
     expect(report.funnel[0].value).toBeNull()
     expect(report.funnel[1].value).toBeNull()
+  })
+
+  it('withholds a stale current-day Mojo snapshot while retaining historical weekly evidence', () => {
+    const report = buildMyDay(input({
+      sourceFreshness: {
+        status: 'stale',
+        message: 'Mojo provider performance has not updated in 180 minutes',
+        lastSuccessfulSyncAt: '2026-08-05T15:00:00.000Z',
+        ageMinutes: 180,
+      },
+    }))
+
+    expect(report.performance.status).toBe('partial')
+    expect(report.funnel.find((metric) => metric.key === 'calls')?.value).toBeNull()
+    expect(report.funnel.find((metric) => metric.key === 'leads')?.value).toBeNull()
+    expect(report.week.rows.find((row) => row.key === 'calls')?.days).toEqual([10, 20, null, null, null])
+    expect(report.performance.freshness.status).toBe('stale')
   })
 
   it('turns Casey-assigned work into real commitments and call-list candidates', () => {
@@ -303,6 +338,31 @@ describe('Casey My Day model', () => {
     })
 
     expect(items).toEqual([])
+  })
+
+  it('surfaces legacy terminal records that have no lifecycle audit row', () => {
+    const items = buildMojoAttentionItems({
+      events: [{
+        record_id: 'mojo-howard',
+        lead_id: 'legacy-dead-lead',
+        contact_name: 'Howard Snitkoff',
+        property_address: '8032 W 80th St',
+        call_at: '2026-08-05T15:13:00.000Z',
+        disposition_raw: 'Interested',
+        outcome: 'meaningful_conversation',
+        follow_up_at: null,
+      }],
+      leads: [{ id: 'legacy-dead-lead', full_name: 'Howard Snitkoff', property_address: '8032 W 80th St', station: 'dead', classification: 'lead' }],
+      terminalEvents: [],
+      reviewedRecordIds: [],
+      range: input().range,
+    })
+
+    expect(items).toEqual([expect.objectContaining({
+      recordId: 'mojo-howard',
+      leadName: 'Howard Snitkoff',
+      kind: 'terminal_record_activity',
+    })])
   })
 
   it('suppresses a Mojo reconciliation notice after its record was reviewed', () => {

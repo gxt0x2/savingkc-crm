@@ -50,8 +50,9 @@ describe('rebuilt conversation workspace controls', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('uses the four server-owned work queues', () => {
+  it('uses server-owned Inbox and Recent timeframes with the four work queues', () => {
     const onQueueChange = vi.fn()
+    const onTimeframeChange = vi.fn()
     render(<InboxSidebar
       threads={[baseThread]}
       activeThreadKey="lead:lead-1"
@@ -59,6 +60,7 @@ describe('rebuilt conversation workspace controls', () => {
       search=""
       onSelectThread={() => {}}
       onQueueChange={onQueueChange}
+      onTimeframeChange={onTimeframeChange}
       onSearchChange={() => {}}
     />)
 
@@ -66,11 +68,14 @@ describe('rebuilt conversation workspace controls', () => {
     expect(screen.getByRole('button', { name: 'Mine' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Unassigned' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Recent/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Inbox/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /Recent/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Hot/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Mine' }))
     expect(onQueueChange).toHaveBeenCalledWith('mine')
+    fireEvent.click(screen.getByRole('tab', { name: /Recent/ }))
+    expect(onTimeframeChange).toHaveBeenCalledWith('recent')
   })
 
   it('switches between indexed known and unmatched contact lanes', () => {
@@ -104,7 +109,7 @@ describe('rebuilt conversation workspace controls', () => {
     />)
 
     expect(screen.getByRole('status')).toHaveTextContent('No conversations are waiting for an owner.')
-    expect(screen.getByRole('status')).toHaveTextContent('calculated by the CRM')
+    expect(screen.getByRole('status')).toHaveTextContent('moves a thread to Recent')
 
     rerender(<InboxSidebar
       threads={[]}

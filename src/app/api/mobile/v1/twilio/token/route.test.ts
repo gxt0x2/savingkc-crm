@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   accessToken: vi.fn(),
   addGrant: vi.fn(),
   voiceGrant: vi.fn(),
+  env: {} as Record<string, string>,
 }))
 
 vi.mock('@/lib/mobile-api/auth', async (importOriginal) => {
@@ -14,11 +15,7 @@ vi.mock('@/lib/mobile-api/auth', async (importOriginal) => {
 })
 
 vi.mock('@/lib/telephony/twiml-app', () => ({
-  cleanTwilioEnv: vi.fn((name: string) => ({
-    TWILIO_ACCOUNT_SID: `AC${'a'.repeat(32)}`,
-    TWILIO_API_KEY: `SK${'b'.repeat(32)}`,
-    TWILIO_API_SECRET: 'secret',
-  } as Record<string, string>)[name] || ''),
+  cleanTwilioEnv: vi.fn((name: string) => mocks.env[name] || ''),
   resolveTwimlAppSid: mocks.resolveTwimlAppSid,
 }))
 
@@ -59,6 +56,12 @@ function request() {
 describe('mobile Twilio Voice token application integrity', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.env = {
+      TWILIO_ACCOUNT_SID: `AC${'a'.repeat(32)}`,
+      TWILIO_API_KEY: `SK${'b'.repeat(32)}`,
+      TWILIO_API_SECRET: 'secret',
+      TWILIO_VOIP_PUSH_CREDENTIAL_SID: `CR${'d'.repeat(32)}`,
+    }
     mocks.requireMobileUser.mockResolvedValue({ user: { email: 'casey@savingkc.com' } })
     mocks.resolveTwimlAppSid.mockResolvedValue(`AP${'c'.repeat(32)}`)
   })
@@ -75,6 +78,11 @@ describe('mobile Twilio Voice token application integrity', () => {
     expect(mocks.resolveTwimlAppSid.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.voiceGrant.mock.invocationCallOrder[0])
     expect(mocks.accessToken).toHaveBeenCalledTimes(1)
+    expect(mocks.voiceGrant).toHaveBeenCalledWith({
+      outgoingApplicationSid: `AP${'c'.repeat(32)}`,
+      incomingAllow: true,
+      pushCredentialSid: `CR${'d'.repeat(32)}`,
+    })
   })
 
   it('fails closed without exposing configuration when validation is unavailable', async () => {
@@ -89,5 +97,17 @@ describe('mobile Twilio Voice token application integrity', () => {
     expect(JSON.stringify(body)).not.toContain('APcccc')
     expect(mocks.voiceGrant).not.toHaveBeenCalled()
     expect(mocks.accessToken).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the production VoIP push credential is missing', async () => {
+    delete mocks.env.TWILIO_VOIP_PUSH_CREDENTIAL_SID
+
+    const response = await GET(request() as never)
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body).toEqual({ error: 'Calling is temporarily unavailable' })
+    expect(mocks.resolveTwimlAppSid).not.toHaveBeenCalled()
+    expect(mocks.voiceGrant).not.toHaveBeenCalled()
   })
 })

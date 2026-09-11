@@ -11,6 +11,7 @@ import {
   conversationPageLimit,
   conversationQueue,
   conversationSearchQuery,
+  conversationTimeframe,
   readConversationThreads,
 } from '@/lib/server/conversation-read-model'
 
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
     const channel = conversationChannel(searchParams.get('channel'))
     const query = conversationSearchQuery(searchParams.get('q'))
     const kind = conversationKindFilter(searchParams.get('kind'))
+    const timeframe = conversationTimeframe(searchParams.get('timeframe'))
     let actorName: string | null = null
 
     if (queue === 'mine') {
@@ -62,6 +64,7 @@ export async function GET(request: Request) {
       channel,
       query,
       kind,
+      timeframe,
       actorName,
       cursor: searchParams.get('cursor'),
     })

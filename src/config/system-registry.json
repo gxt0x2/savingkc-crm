@@ -271,9 +271,9 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/prospecting", "/dialer"],
-      "apiRoutes": ["/api/dialer/queue", "/api/dialer/call-intents", "/api/dialer/sessions", "/api/dialer/sessions/[id]", "/api/dialer/sessions/[id]/control", "/api/dialer/sessions/[id]/control/operations", "/api/dialer/sessions/[id]/pre-call-brief", "/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/heirs", "/api/heirs/attempt", "/api/heirs/sync", "/api/heirs/verify", "/api/mobile/v1/twilio/call-intents", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
+      "apiRoutes": ["/api/crm/call-intents", "/api/prospecting/call-intents", "/api/dialer/queue", "/api/dialer/call-intents", "/api/dialer/sessions", "/api/dialer/sessions/[id]", "/api/dialer/sessions/[id]/control", "/api/dialer/sessions/[id]/control/operations", "/api/dialer/sessions/[id]/pre-call-brief", "/api/dialer/sessions/[id]/attempts/[attemptId]", "/api/heirs", "/api/heirs/attempt", "/api/heirs/sync", "/api/heirs/verify", "/api/mobile/v1/twilio/call-intents", "/api/mobile/v1/twilio/token", "/api/twiml-voice", "/api/ivr/form-lead-agent-callback", "/api/twilio-token", "/api/call-log", "/api/support/twilio/verify"],
       "tables": ["call_logs", "dialer_saved_lists", "dialer_sessions", "dialer_session_events", "dialer_session_attempts", "dialer_queue_state", "phone_number_registry", "agent_profiles", "leads", "lead_activities", "prospects", "prospect_phones", "sms_opt_outs", "conversation_thread_state", "work_items", "appointments", "briefings", "crm_briefing_jobs", "assistant_generations", "lead_co_owners"],
-      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "SKIPTRACE_SERVICE_URL", "ERNEST_PHONE", "CASEY_PHONE"]
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "TWILIO_VOIP_PUSH_CREDENTIAL_SID", "TWILIO_SKIP_SIGNATURE_VALIDATION", "DIALER_CALL_INTENT_SECRET", "DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS", "SKIPTRACE_SERVICE_URL", "ERNEST_PHONE", "CASEY_PHONE"]
     },
     {
       "id": "prospecting",
@@ -387,6 +387,16 @@
       "environment": ["CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_ALLOWED_EMAILS", "CRM_ASSISTANT_OWNER_EMAILS"]
     },
     {
+      "id": "crm_mcp",
+      "name": "SavingKC CRM MCP",
+      "owner": "Operations",
+      "status": "active",
+      "routes": ["/.well-known/oauth-protected-resource", "/oauth/consent"],
+      "apiRoutes": ["/api/mcp", "/api/oauth/decision"],
+      "tables": ["assistant_query_audit"],
+      "environment": ["CRM_MCP_TOKEN", "CRM_MCP_ACTOR_EMAIL", "CRM_ASSISTANT_API_SECRET", "CRM_ASSISTANT_OWNER_EMAILS"]
+    },
+    {
       "id": "workflows",
       "name": "Workflow control center",
       "owner": "Operations",
@@ -472,13 +482,14 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/mojo/sync", "/api/mojo/reprocess", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/admin/mojo-health", "/api/admin/mojo-performance"],
-      "tables": ["mojo_call_queue", "crm_mojo_call_events", "mojo_agent_daily_performance", "agent_daily_stats", "system_config", "leads", "lead_activities", "appointments", "work_items", "crm_lifecycle_events", "sms_opt_outs", "system_workers"],
-      "environment": ["MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SUPERVISED_TIMEOUT_MS", "CRM_PERFORMANCE_URL"],
+      "apiRoutes": ["/api/admin/mojo-recovery", "/api/admin/mojo-source-batches", "/api/mojo/sync", "/api/mojo/reprocess", "/api/recordings/mojo/[eventId]", "/api/cron/process-mojo-queue", "/api/cron/sync-mojo-emails", "/api/cron/sync-mojo-performance", "/api/admin/mojo-health", "/api/admin/mojo-incident", "/api/admin/mojo-performance"],
+      "tables": ["mojo_recovery_runs", "mojo_recovery_incidents", "mojo_evidence_corrections", "mojo_source_call_receipts", "mojo_source_batches", "mojo_call_queue", "crm_mojo_call_events", "crm_mojo_projection_receipts", "crm_mojo_projection_repair_candidates_v2", "crm_contact_methods", "crm_properties", "crm_lead_entity_links", "crm_identity_conflicts", "crm_property_enrichment_jobs", "mojo_agent_daily_performance", "agent_daily_stats", "system_config", "leads", "lead_activities", "appointments", "work_items", "crm_lifecycle_events", "sms_opt_outs", "system_workers"],
+      "environment": ["MOJO_SOURCE_SPOOL_DIR", "MOJO_EMAIL", "MOJO_PASSWORD", "MOJO_SESSION_ID", "MOJO_PROVIDER_AGENT_ID", "MOJO_AGENT_KEY", "MOJO_ENV_FILE", "MOJO_LOG_DIR", "MOJO_SYNC_STATE_FILE", "MOJO_SUPERVISED_TIMEOUT_MS", "CRM_PERFORMANCE_URL", "CRON_SECRET", "GROQ_API_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
-        { "path": "/api/cron/process-mojo-queue", "schedule": "*/15 * * * *" },
+        { "path": "/api/cron/process-mojo-queue", "schedule": "*/2 * * * *", "highFrequencyReason": "Drain one bounded item every two minutes so callbacks and retained evidence do not wait behind a 15-minute poll." },
         { "path": "/api/cron/sync-mojo-emails", "schedule": "*/15 13-22 * * 1-5" },
-        { "path": "/api/admin/mojo-health", "schedule": "*/15 13-22 * * 1-5" }
+        { "path": "/api/cron/sync-mojo-performance", "schedule": "*/15 13-23 * * 1-5" },
+        { "path": "/api/admin/mojo-health", "schedule": "5,20,35,50 13-23 * * 1-5" }
       ]
     },
     {
@@ -497,6 +508,16 @@
           "highFrequencyReason": "Claim at most three coalesced, revision-safe briefing refreshes so seller evidence stays current without blocking CRM writes."
         }
       ]
+    },
+    {
+      "id": "mobile_device_testing",
+      "name": "Physical iPhone smoke testing",
+      "owner": "Platform",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": [],
+      "tables": [],
+      "environment": ["IOS_DEVELOPMENT_TEAM", "IOS_DEVICE_ID", "IOS_DEVICE_NAME"]
     },
     {
       "id": "system_hygiene",

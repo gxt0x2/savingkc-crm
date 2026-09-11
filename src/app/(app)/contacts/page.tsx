@@ -24,6 +24,7 @@ import { conversationHubQueryKey } from '@/lib/queries/conversation-hub'
 import { CONTACT_SMART_LIST_COPY, CONTACT_SMART_LIST_ORDER_STORAGE_KEY, CONTACT_SMART_LISTS, DEFAULT_CONTACT_SMART_LIST_ORDER, DEFAULT_CONTACT_SORT, canonicalContactSmartList, contactPipelineStatusLabel, normalizeContactSmartListOrder, type ContactSmartList, type ContactSmartListNavigationId, type ContactSort } from '@/lib/contact-smart-lists'
 import { parseCsv } from '@/lib/parse-csv'
 import { campaignAudienceReturnHref, MAX_PROSPECTING_QUERY_AUDIENCE, prospectingCampaignId, PROSPECTING_AUDIENCE_STORAGE_KEY, serializeProspectingAudienceSelection, type ProspectingAudienceQuery } from '@/lib/prospecting/audience-handoff'
+import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
 
 interface ContactRow {
   id: string
@@ -516,7 +517,7 @@ export default function ContactsPage() {
 
   function openDialer(contact: ContactWorkspaceRow) {
     if (!contact.phone) return
-    window.dispatchEvent(new CustomEvent('open-dialer', { detail: { leadId: contact.id, phone: contact.phone, name: getDisplayLeadName(contact.fullName, contact.phone) } }))
+    window.dispatchEvent(new CustomEvent(CRM_DIALER_OPEN_EVENT, { detail: { leadId: contact.id, phone: contact.phone, name: getDisplayLeadName(contact.fullName, contact.phone) } }))
   }
 
   function openCampaignBuilder() {
@@ -657,9 +658,10 @@ export default function ContactsPage() {
             )}
             {hasCustomSmartListOrder ? <button type="button" onClick={resetSmartListOrder} className="ml-2 flex shrink-0 items-center gap-1 border-l border-[var(--crm-border)] px-3 text-xs font-semibold text-[var(--crm-text-muted)] hover:text-[var(--crm-brand)]" aria-label="Reset smart-list order"><Icon name="restart_alt" className="text-[16px]" />Reset order</button> : null}
             <ProspectsWorkspaceTab count={counts.prospects} active={smartList === 'prospects'} onSelect={() => selectSmartList('prospects')} />
+            <ProspectsWorkspaceTab label="Not Leads" icon="person_off" tone="muted" count={counts.not_leads} active={smartList === 'not_leads'} onSelect={() => selectSmartList('not_leads')} />
           </div> : null}
 
-          {isMobile ? <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Pipeline view" value={smartList} onChange={(event) => selectSmartList(event.target.value as ContactSmartListNavigationId)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{[...orderedSmartLists, { id: 'prospects' as const, label: 'Prospects' }].map(({ id, label }) => <option key={id} value={id}>{label} ({counts[id]})</option>)}</select></label> : null}
+          {isMobile ? <label className="flex items-center gap-3 border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-3 py-2"><span className="text-xs font-bold text-[var(--crm-text-muted)]">View</span><select aria-label="Pipeline view" value={smartList} onChange={(event) => selectSmartList(event.target.value as ContactSmartListNavigationId)} className="crm-field h-10 min-w-0 flex-1 rounded-xl px-3 text-base font-bold">{[...orderedSmartLists, { id: 'prospects' as const, label: 'Prospects' }, { id: 'not_leads' as const, label: 'Not Leads' }].map(({ id, label }) => <option key={id} value={id}>{label} ({counts[id]})</option>)}</select></label> : null}
 
           <div className="px-3 py-3 sm:px-5 lg:px-7">
             {requestedCampaignId ? <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] px-4 py-3" role="status"><span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--crm-brand)] text-white"><Icon name="group_add" /></span><div className="min-w-0 flex-1"><p className="text-sm font-black text-[var(--crm-ink)]">Building the audience for {requestedCampaignName || 'your campaign'}</p><p className="mt-0.5 text-xs text-[var(--crm-text-muted)]">Select sellers below. The server will check DNC, phone quality, and lifecycle status before enrollment.</p></div><Link href={`/prospecting?campaign=${encodeURIComponent(requestedCampaignId)}`} className="crm-secondary-button inline-flex h-9 items-center rounded-lg px-3 text-xs font-black">Cancel</Link></div> : null}

@@ -16,6 +16,7 @@ describe('marketing call recordings helpers', () => {
     expect(readRecordingDuration({ duration: 122.4 })).toBe(122)
     expect(readRecordingDuration({ recordingDuration: '305' })).toBe(305)
     expect(readRecordingDuration({ RecordingDuration: '61' })).toBe(61)
+    expect(readRecordingDuration({ duration_seconds: 758 })).toBe(758)
     expect(readRecordingDuration({ duration: 'not-a-number' })).toBe(0)
   })
 
@@ -25,6 +26,11 @@ describe('marketing call recordings helpers', () => {
     expect(playableRecordingUrl({ recordingUrl: '/api/recordings/RE789' })).toBe('/api/recordings/RE789')
     expect(playableRecordingUrl({ RecordingUrl: 'https://api.twilio.com/2010-04-01/Accounts/AC123/Recordings/RE789.mp3' })).toBe('/api/recordings/RE789')
     expect(playableRecordingUrl({ recordingUrl: 'https://example.com/recordings/RE789' })).toBeNull()
+    expect(playableRecordingUrl({
+      provider: 'mojo',
+      event_id: 'event-1',
+      recording_url: 'https://app71.mojosells.com/audio/1',
+    })).toBe('/api/recordings/mojo/event-1')
   })
 
   it('reads and merges recording review metadata without mutating existing fields', () => {

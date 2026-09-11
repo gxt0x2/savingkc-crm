@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { MojoRecoveryStatus } from '@/components/settings/mojo-recovery-status'
 import { redirect } from 'next/navigation'
 import { isCurrentUserAdmin } from '@/lib/auth/admin'
 import { TwilioSecurityStatus } from '@/components/settings/twilio-security-status'
@@ -81,6 +82,7 @@ export default async function SystemHealthPage() {
         ))}
       </section>
 
+      <MojoRecoveryStatus />
       <TwilioSecurityStatus />
 
       <section className="mb-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">

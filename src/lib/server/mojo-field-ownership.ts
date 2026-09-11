@@ -1,6 +1,6 @@
 import type { MojoCallRecord } from '@/lib/server/mojo-call-import'
 
-export const MOJO_FIELD_OWNERSHIP_VERSION = 'mojo_field_ownership_v1' as const
+export const MOJO_FIELD_OWNERSHIP_VERSION = 'mojo_source_projection_v2' as const
 
 export const MOJO_FIELD_OWNERSHIP = {
   providerEvidence: [
@@ -16,6 +16,7 @@ export const MOJO_FIELD_OWNERSHIP = {
     'campaign_name',
   ],
   identityFillOnly: ['full_name', 'phone', 'email'],
+  sourceProjectionFillOnly: ['property_address', 'city', 'state', 'zip', 'emails'],
   operationalSnapshot: ['mojo_record_id', 'call_result', 'call_duration_seconds'],
   commandOnly: ['assigned_agent', 'station', 'dead_reason', 'appointment', 'work_item', 'dnc'],
   canonicalOnly: [
@@ -26,10 +27,6 @@ export const MOJO_FIELD_OWNERSHIP = {
     'tax_delinquent_years',
     'cumulative_due',
     'deceased',
-    'property_address',
-    'city',
-    'state',
-    'zip',
     'property_type',
     'assessed_value',
     'market_value',

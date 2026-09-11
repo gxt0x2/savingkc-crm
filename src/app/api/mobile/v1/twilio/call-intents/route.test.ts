@@ -17,7 +17,12 @@ vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   isAllowedDialerCallerId: (value: string) => value === '+18167277667',
   dialerBlockStatus: (reason: string) => reason === 'policy_unavailable' ? 503 : 409,
 }))
-vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: mocks.createDialerCallIntent }))
+vi.mock('@/lib/telephony/dialer-call-intent', () => ({
+  createDialerCallIntent: mocks.createDialerCallIntent,
+  dialerCallIntentFailureSource: (error: unknown) => (
+    error instanceof Error && error.message.includes('context') ? 'intent_claims' : 'intent_signing'
+  ),
+}))
 
 import { POST } from './route'
 
@@ -32,7 +37,7 @@ function request(body: Record<string, unknown>) {
 const allowed = {
   allowed: true,
   normalizedPhone: '+19135550123',
-  policyVersion: 'dialer_safety_v1',
+  policyVersion: 'dialer_safety_v2',
   checkedAt: '2026-08-19T17:00:00.000Z',
   leadId: 'lead-1',
   prospectPhoneId: null,
@@ -81,5 +86,56 @@ describe('mobile dialer call intent authorization', () => {
       source: 'mobile_lead',
       leadId: 'lead-1',
     }))
+  })
+
+  it('strips inferred lead context from a manual mobile intent', async () => {
+    const response = await POST(request({
+      phone: '+19135550123',
+      callerId: '+18167277667',
+      clientAttemptId: 'attempt-1',
+    }) as never)
+
+    expect(response.status).toBe(200)
+    expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'manual',
+      source: 'mobile_manual',
+      leadId: null,
+    }))
+  })
+
+  it('uses CRM wording for an unapproved mobile caller ID', async () => {
+    const response = await POST(request({
+      phone: '+19135550123',
+      callerId: '+18165550000',
+      leadId: 'lead-1',
+    }) as never)
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Select an approved CRM caller ID',
+      reason: 'invalid_caller_id',
+    })
+  })
+
+  it('returns the exact durable source for a mobile policy denial', async () => {
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({
+      ...allowed,
+      allowed: false,
+      reason: 'disconnected',
+      message: 'This number is marked disconnected.',
+      reasonSource: 'prospect_phones.phone_connected',
+    })
+
+    const response = await POST(request({
+      phone: '+19135550123',
+      callerId: '+18167277667',
+      leadId: 'lead-1',
+    }) as never)
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({
+      reason: 'disconnected',
+      reasonSource: 'prospect_phones.phone_connected',
+    })
   })
 })

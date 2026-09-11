@@ -4,7 +4,7 @@ import {
   dialerMutationControlErrorResponse,
 } from '@/lib/api/dialer-mutation-control'
 import { prospectingJson } from '@/lib/api/prospecting-response'
-import { createWorkItem, transitionWorkItem, WorkItemError } from '@/lib/server/work-items'
+import { createWorkItem, listWorkItems, transitionWorkItem, WorkItemError } from '@/lib/server/work-items'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +38,7 @@ export async function POST(request: Request) {
     const propertyAddress = text(input.propertyAddress, 240)
     const notes = text(input.notes, 2_000)
     const rawDueAt = text(input.dueAt, 80)
+    const existingKey = text(input.workItemKey, 100)
 
     if (!leadId && !prospectId) return prospectingJson({ error: 'A Lead or source Prospect is required' }, { status: 400 })
     if (!MAIL_PIECES.has(pieceType)) return prospectingJson({ error: 'Choose a valid mail piece' }, { status: 400 })
@@ -54,6 +55,20 @@ export async function POST(request: Request) {
     })
 
     const idempotencyKey = request.headers.get('idempotency-key')?.trim() || crypto.randomUUID()
+    if (existingKey) {
+      if (mailState !== 'sent') return prospectingJson({ error: 'Existing mail can only be marked sent here' }, { status: 400 })
+      const [existing] = await listWorkItems({ key: existingKey, limit: 1 })
+      if (!existing || existing.kind !== 'mail'
+        || (leadId && existing.leadId !== leadId)
+        || (prospectId && existing.prospectId !== prospectId)) {
+        return prospectingJson({ error: 'Mail work no longer matches this seller. Refresh and try again.' }, { status: 409 })
+      }
+      if (existing.status === 'completed') return prospectingJson({ created: false, mailAction: existing })
+      const result = await transitionWorkItem({ key: existing.key, actor: actor.name, action: 'complete', idempotencyKey, expectedVersion: existing.version })
+      return prospectingJson({ created: false, mailAction: result.workItem })
+    }
+
+    if (mailState === 'needed' && !dueAt) return prospectingJson({ error: 'Choose when the mail is due' }, { status: 400 })
     const pieceLabel = pieceType === 'thank_you' ? 'Thank-you letter' : pieceType === 'postcard' ? 'Postcard' : 'Letter'
     const created = await createWorkItem({
       actor: actor.name,

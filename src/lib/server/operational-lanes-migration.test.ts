@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20260906120000_operational_review_lanes.sql'), 'utf8')
+const recencySql = readFileSync(join(process.cwd(), 'supabase/migrations/20261031120000_conversation_inbox_recency.sql'), 'utf8')
 
 describe('operational review lane migration', () => {
   it('keeps the rollout additive and service-role only', () => {
@@ -28,5 +29,13 @@ describe('operational review lane migration', () => {
     expect(sql).toContain("clean_kind NOT IN ('all', 'known', 'unmatched')")
     expect(sql).toContain("clean_kind = 'known' AND thread.lead_id IS NOT NULL")
     expect(sql).toContain("clean_kind = 'unmatched' AND thread.lead_id IS NULL")
+  })
+
+  it('partitions the conversation inbox at the rolling 24-hour boundary', () => {
+    expect(recencySql).toContain('conversation_thread_page_v3')
+    expect(recencySql).toContain("now() - interval '24 hours'")
+    expect(recencySql).toContain("clean_timeframe = 'inbox' AND thread.last_activity_at >= inbox_cutoff")
+    expect(recencySql).toContain("clean_timeframe = 'recent' AND thread.last_activity_at < inbox_cutoff")
+    expect(recencySql).toMatch(/REVOKE ALL ON FUNCTION public\.conversation_thread_page_v3[\s\S]*FROM PUBLIC, anon, authenticated/)
   })
 })

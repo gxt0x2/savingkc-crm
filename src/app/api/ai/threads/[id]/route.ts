@@ -9,7 +9,7 @@ import {
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie' }
+const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie, Authorization' }
 
 function failure(error: unknown) {
   if (error instanceof AssistantGenerationError) {
@@ -19,25 +19,25 @@ function failure(error: unknown) {
   return NextResponse.json({ error: 'Assistant history is unavailable' }, { status: 503, headers: HEADERS })
 }
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const actor = await resolveAuthenticatedActor()
-  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const actor = await resolveAuthenticatedActor(request)
+  if (!actor?.subject) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
   try {
     const { id } = await context.params
-    return NextResponse.json(await loadAssistantThread(actor.email, id), { headers: HEADERS })
+    return NextResponse.json(await loadAssistantThread({ subject: actor.subject }, id), { headers: HEADERS })
   } catch (error) {
     return failure(error)
   }
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const actor = await resolveAuthenticatedActor()
-  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
+  const actor = await resolveAuthenticatedActor(request)
+  if (!actor?.subject) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
   const body = await request.json().catch(() => null) as { action?: unknown } | null
   if (body?.action !== 'archive') return NextResponse.json({ error: 'Invalid thread action' }, { status: 400, headers: HEADERS })
   try {
     const { id } = await context.params
-    await archiveAssistantThread(actor.email, id)
+    await archiveAssistantThread({ subject: actor.subject }, id)
     return NextResponse.json({ archived: true }, { headers: HEADERS })
   } catch (error) {
     return failure(error)

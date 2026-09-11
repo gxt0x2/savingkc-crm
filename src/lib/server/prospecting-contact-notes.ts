@@ -114,7 +114,8 @@ export async function saveProspectingContactNote(
     leadId = memberLeadId
     prospectId = memberProspectId
     subjectKind = member.subject_kind === 'prospect' ? 'prospect' : 'lead'
-  } else if (prospectId) {
+  }
+  if (prospectId) {
     const { data: prospect, error } = await database
       .from('prospects')
       .select('id,lead_id')

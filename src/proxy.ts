@@ -6,6 +6,10 @@ import { hasVerifiedSubject } from '@/lib/auth/verified-claims'
 
 // Routes that don't require authentication
 const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
+const PUBLIC_PAGE_EXACT = new Set([
+  '/.well-known/oauth-protected-resource',
+  '/.well-known/oauth-authorization-server',
+])
 
 // API routes that must remain reachable without a CRM session.
 const PUBLIC_API_EXACT = new Set([
@@ -17,6 +21,13 @@ const PUBLIC_API_EXACT = new Set([
   '/api/leads/ppc/track',
   '/api/ppc/track',
   '/api/google-maps-key',
+  // MCP performs its own dedicated bearer-token authorization in the route.
+  '/api/mcp',
+  // These fixed-target OAuth bridge routes remove only the unsupported MCP
+  // resource indicator before forwarding to the configured Supabase issuer.
+  '/api/oauth/authorize',
+  '/api/oauth/register',
+  '/api/oauth/token',
   '/api/sell-edits',
   '/api/deals/image',
   '/api/docuseal/webhook',
@@ -53,11 +64,14 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/eod',
   // Admin routes are exact-listed so a newly added administrative endpoint
   // cannot inherit service-bearer trust before its handler authorization and
-  // operational caller are reviewed. These four routes are used by the
+  // operational caller are reviewed. These routes are used by the
   // supervised Mojo runner and retain their own admin-or-secret checks.
   '/api/admin/mojo-health',
+  '/api/admin/mojo-incident',
   '/api/admin/mojo-performance',
+  '/api/admin/mojo-recovery',
   '/api/admin/mojo-session',
+  '/api/admin/mojo-source-batches',
   '/api/admin/system-config',
   // Cron routes are exact-listed so a newly added scheduled endpoint cannot
   // inherit service-bearer trust before its handler authorization is reviewed.
@@ -70,6 +84,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/cron/sync-gmail',
   '/api/cron/sync-gmail/trigger',
   '/api/cron/sync-mojo-emails',
+  '/api/cron/sync-mojo-performance',
   '/api/deals/import-photos',
   '/api/deals/upload',
   // Enrichment is intentionally exact-listed so adding a new route under the
@@ -445,7 +460,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   // Skip auth for public routes
-  if (PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
+  if (PUBLIC_PAGE_EXACT.has(pathname) || PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
     return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
 

@@ -124,7 +124,7 @@ test('legacy CRM pages resolve to their canonical workspaces', async ({ page }) 
 
   await page.goto('/ari', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/ai$/);
-  await expect(page.getByRole('heading', { name: 'AI Assistant', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Decision room', exact: true })).toBeVisible();
 });
 
 test('Issue Log is the sole Andon dashboard and Marketing replaces the retired dashboard tab', async ({ page }) => {
@@ -136,7 +136,8 @@ test('Issue Log is the sole Andon dashboard and Marketing replaces the retired d
   await expect(page.getByRole('heading', { name: 'Bottleneck Board' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Open AI Assistant' }).click();
-  await expect(page.getByText(/SavingKC's recorded goals/)).toBeVisible();
+  await expect(page.getByText('Built for decisions')).toBeVisible();
+  await expect(page.getByText(/Ask one clear question/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Attach evidence' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start voice dictation' })).toBeAttached();
 

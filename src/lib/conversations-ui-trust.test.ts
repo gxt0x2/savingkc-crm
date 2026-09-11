@@ -8,7 +8,7 @@ describe('Conversations V2 client trust contract', () => {
   it('reads queues and timelines from bounded server endpoints', () => {
     expect(pageSource).toContain('fetchConversationHub<ConversationThread>')
     expect(pageSource).toContain('fetchConversationTimeline<ConversationTimelineItem>')
-    expect(pageSource).toContain("activeQueue, cursor: pageParam, search: normalizedSearch")
+    expect(pageSource).toContain("activeQueue, cursor: pageParam, search: normalizedSearch, kind: kindFilter, timeframe: activeTimeframe")
     expect(pageSource).toContain("threadId: activeThread!.id")
     expect(threadSource).toContain('Load earlier activity')
   })
@@ -32,7 +32,7 @@ describe('Conversations V2 client trust contract', () => {
     expect(pageSource).toContain('useSearchParams()')
     expect(pageSource).not.toContain('window.location.search')
     expect(pageSource).toContain("routeRequestedThread ? 'all' : 'needs_reply'")
-    expect(pageSource).toContain("search: requestedThreadSearch, limit: 1")
+    expect(pageSource).toContain("search: requestedThreadSearch, timeframe: 'all', limit: 1")
     expect(pageSource).toContain('selectedThreadKey === resolvedActiveThreadKey')
     expect(pageSource).toContain('setPinnedThread(thread)')
   })

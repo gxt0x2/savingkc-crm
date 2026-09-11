@@ -16,7 +16,12 @@ vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   isAllowedDialerCallerId: (value: string) => ['+18167277667', '+18163100845'].includes(value),
   dialerBlockStatus: (reason: string) => reason === 'policy_unavailable' ? 503 : 409,
 }))
-vi.mock('@/lib/telephony/dialer-call-intent', () => ({ createDialerCallIntent: mocks.createDialerCallIntent }))
+vi.mock('@/lib/telephony/dialer-call-intent', () => ({
+  createDialerCallIntent: mocks.createDialerCallIntent,
+  dialerCallIntentFailureSource: (error: unknown) => (
+    error instanceof Error && error.message.includes('context') ? 'intent_claims' : 'intent_signing'
+  ),
+}))
 vi.mock('@/lib/server/dialer-session-engine', () => ({
   authorizeDialerSessionAttempt: mocks.authorizeDialerSessionAttempt,
   getDialerSession: mocks.getDialerSession,
@@ -26,7 +31,9 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   isUuid: (value: unknown) => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value),
 }))
 
-import { POST } from './route'
+import { POST as postLegacyCallIntent } from './route'
+import { POST as postCrmCallIntent } from '@/app/api/crm/call-intents/route'
+import { POST as postProspectingCallIntent } from '@/app/api/prospecting/call-intents/route'
 
 const controllerToken = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -43,7 +50,7 @@ function request(body: Record<string, unknown>, withController = true) {
 const allowed = {
   allowed: true,
   normalizedPhone: '+19135550123',
-  policyVersion: 'dialer_safety_v1',
+  policyVersion: 'dialer_safety_v2',
   checkedAt: '2026-08-19T17:00:00.000Z',
   leadId: 'lead-1',
   prospectId: null,
@@ -57,20 +64,21 @@ describe('web dialer call intent authorization', () => {
     mocks.evaluateOutboundDialerCall.mockResolvedValue(allowed)
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
     mocks.authorizeDialerSessionAttempt.mockResolvedValue({ id: 'attempt-row' })
-    mocks.createDialerCallIntent.mockReturnValue({
+    mocks.createDialerCallIntent.mockImplementation((input) => ({
       token: 'signed-intent',
-      claims: {
-        to: '+19135550123',
-        callerId: '+18167277667',
-        kind: 'lead',
-        leadId: 'lead-1',
-        prospectId: null,
-        prospectPhoneId: null,
-        campaignMemberId: null,
-        clientAttemptId: 'attempt-1',
-        expiresAt: 123,
-      },
+      claims: { ...input, clientAttemptId: input.clientAttemptId || 'attempt-1', expiresAt: 123 },
+    }))
+  })
+
+  it('retires the ambiguous inferred-surface endpoint', async () => {
+    const response = await postLegacyCallIntent()
+
+    expect(response.status).toBe(410)
+    await expect(response.json()).resolves.toMatchObject({
+      reason: 'surface_context_mismatch',
+      reasonSource: 'legacy_endpoint',
     })
+    expect(mocks.resolveAuthenticatedActor).not.toHaveBeenCalled()
   })
 
   it('requires a verified CRM actor before parsing or policy work', async () => {
@@ -78,7 +86,7 @@ describe('web dialer call intent authorization', () => {
     const input = request({ phone: '+19135550123', kind: 'lead', leadId: 'lead-1' })
     const parse = vi.spyOn(input, 'json')
 
-    const response = await POST(input)
+    const response = await postCrmCallIntent(input)
 
     expect(response.status).toBe(401)
     expect(parse).not.toHaveBeenCalled()
@@ -91,10 +99,10 @@ describe('web dialer call intent authorization', () => {
       allowed: false,
       reason: 'do_not_call',
       message: 'This number is on the do-not-call list.',
-      reasonSource: 'sms_opt_outs.reason',
+      reasonSource: 'leads.dead_reason',
     })
 
-    const response = await POST(request({
+    const response = await postCrmCallIntent(request({
       phone: '+19135550123',
       callerId: '+18167277667',
       kind: 'lead',
@@ -103,13 +111,17 @@ describe('web dialer call intent authorization', () => {
     }))
 
     expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({ allowed: false, reason: 'do_not_call' })
+    expect(await response.json()).toMatchObject({
+      allowed: false,
+      reason: 'do_not_call',
+      reasonSource: 'leads.dead_reason',
+    })
     expect(mocks.recordBlockedDialerCall).toHaveBeenCalledOnce()
     expect(mocks.createDialerCallIntent).not.toHaveBeenCalled()
   })
 
   it('signs only the server-resolved destination, identity, source, and context', async () => {
-    const response = await POST(request({
+    const response = await postCrmCallIntent(request({
       phone: '(913) 555-0123',
       callerId: '+18167277667',
       kind: 'lead',
@@ -123,7 +135,8 @@ describe('web dialer call intent authorization', () => {
       to: '+19135550123',
       callerId: '+18167277667',
       kind: 'lead',
-      source: 'web_power_dialer',
+      source: 'web_click_to_call',
+      surface: 'crm',
       leadId: 'lead-1',
       prospectId: null,
       prospectPhoneId: null,
@@ -131,6 +144,98 @@ describe('web dialer call intent authorization', () => {
       clientAttemptId: 'attempt-1',
     })
     expect(await response.json()).toMatchObject({ allowed: true, intent: 'signed-intent' })
+  })
+
+  it('strips inferred lead context from a manual CRM intent', async () => {
+    const response = await postCrmCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'manual',
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'manual',
+      source: 'web_manual',
+      leadId: null,
+      prospectId: null,
+      prospectPhoneId: null,
+    }))
+  })
+
+  it('strips linked prospect context that is invalid for an heir intent', async () => {
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({
+      ...allowed,
+      prospectId: 'prospect-1',
+      prospectPhoneId: 'prospect-phone-1',
+    })
+
+    const response = await postProspectingCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'heir',
+      leadId: 'lead-1',
+      prospectPhoneId: 'prospect-phone-1',
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'heir',
+      leadId: 'lead-1',
+      prospectId: null,
+      prospectPhoneId: 'prospect-phone-1',
+    }))
+  })
+
+  it('keeps Prospecting source and policy context separate from CRM lead calls', async () => {
+    const response = await postProspectingCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'lead',
+      leadId: 'lead-1',
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith(expect.objectContaining({
+      surface: 'prospecting',
+      source: 'web_power_dialer',
+    }))
+    expect(mocks.createDialerCallIntent).toHaveBeenCalledWith(expect.objectContaining({
+      surface: 'prospecting',
+      source: 'web_power_dialer',
+    }))
+  })
+
+  it('rejects Prospecting session context at the CRM endpoint', async () => {
+    const response = await postCrmCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'lead',
+      leadId: 'lead-1',
+      sessionId: '00000000-0000-4000-8000-000000000010',
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ reason: 'surface_context_mismatch' })
+    expect(mocks.getDialerSession).not.toHaveBeenCalled()
+    expect(mocks.evaluateOutboundDialerCall).not.toHaveBeenCalled()
+  })
+
+  it('rejects manual calls at the Prospecting endpoint', async () => {
+    const response = await postProspectingCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'manual',
+      clientAttemptId: 'attempt-1',
+    }))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ reason: 'surface_context_mismatch' })
+    expect(mocks.evaluateOutboundDialerCall).not.toHaveBeenCalled()
   })
 
   it('creates a durable attempt before returning a session-bound call intent', async () => {
@@ -151,7 +256,7 @@ describe('web dialer call intent authorization', () => {
       settingsSnapshot: { ringCount: 6 },
     })
 
-    const response = await POST(request({
+    const response = await postProspectingCallIntent(request({
       phone: '(913) 555-0123',
       callerId: '+18167277667',
       kind: 'lead',
@@ -182,7 +287,7 @@ describe('web dialer call intent authorization', () => {
     const sessionId = '00000000-0000-4000-8000-000000000010'
     const leadId = '00000000-0000-4000-8000-000000000011'
 
-    const response = await POST(request({
+    const response = await postProspectingCallIntent(request({
       phone: '(913) 555-0123',
       callerId: '+18167277667',
       kind: 'lead',
@@ -214,7 +319,7 @@ describe('web dialer call intent authorization', () => {
       new DialerError('session_control_lost', 409, 'This dialing session is controlled in another browser'),
     )
 
-    const response = await POST(request({
+    const response = await postProspectingCallIntent(request({
       phone: '(913) 555-0123',
       callerId: '+18167277667',
       kind: 'lead',
@@ -243,7 +348,7 @@ describe('web dialer call intent authorization', () => {
       claims: { ...input, clientAttemptId: 'attempt-1', expiresAt: 123 },
     }))
 
-    const response = await POST(request({
+    const response = await postProspectingCallIntent(request({
       phone: '(913) 555-0123',
       callerId: '+18166088588',
       kind: 'lead',
@@ -281,13 +386,13 @@ describe('web dialer call intent authorization', () => {
       claims: { ...input, clientAttemptId: 'attempt-1', expiresAt: 123 },
     }))
 
-    const allowedResponse = await POST(request({
+    const allowedResponse = await postProspectingCallIntent(request({
       phone: '(913) 555-0123', callerId: '+18163100845', kind: 'lead', leadId, sessionId, clientAttemptId: 'attempt-1',
     }))
     expect(allowedResponse.status).toBe(200)
     expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith(expect.objectContaining({ callerId: '+18163100845' }))
 
-    const blockedResponse = await POST(request({
+    const blockedResponse = await postProspectingCallIntent(request({
       phone: '(913) 555-0123', callerId: '+18166088588', kind: 'lead', leadId, sessionId, clientAttemptId: 'attempt-2',
     }))
     expect(blockedResponse.status).toBe(409)
@@ -328,7 +433,7 @@ describe('web dialer call intent authorization', () => {
       callerId: '+18167277667',
     })
 
-    const response = await POST(request({
+    const response = await postProspectingCallIntent(request({
       phone: '(913) 555-0123',
       callerId: '+18167277667',
       kind: 'prospect',

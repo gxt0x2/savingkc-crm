@@ -58,7 +58,7 @@ export interface CallAnalysisResult {
 
 export async function analyzeCallTranscript(
   transcript: string,
-  _manifest?: unknown,
+  context?: { referenceDate?: string } | unknown,
   request: typeof fetch = fetch,
 ): Promise<CallAnalysisResult> {
   const apiKey = process.env.GROQ_API_KEY
@@ -72,9 +72,24 @@ export async function analyzeCallTranscript(
     ? transcript.slice(0, maxChars) + '\n... [transcript truncated]'
     : transcript
 
-  const today = new Date()
-  const todayISO = today.toISOString().slice(0, 10)
-  const todayReadable = `${today.toLocaleDateString('en-US', { weekday: 'short' })} ${today.toLocaleDateString('en-US', { month: 'long' })} ${today.getDate()}`
+  const referenceDate = context && typeof context === 'object' && !Array.isArray(context)
+    ? (context as { referenceDate?: unknown }).referenceDate
+    : null
+  const parsedReferenceDate = typeof referenceDate === 'string' ? new Date(referenceDate) : null
+  const today = parsedReferenceDate && Number.isFinite(parsedReferenceDate.getTime())
+    ? parsedReferenceDate
+    : new Date()
+  const centralDateParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(today)
+  const centralDatePart = (type: Intl.DateTimeFormatPartTypes) => (
+    centralDateParts.find((part) => part.type === type)?.value || ''
+  )
+  const todayISO = `${centralDatePart('year')}-${centralDatePart('month')}-${centralDatePart('day')}`
+  const todayReadable = today.toLocaleDateString('en-US', {
+    timeZone: 'America/Chicago', weekday: 'short', month: 'long', day: 'numeric',
+  })
 
   const prompt = `You are an expert real estate wholesaling call analyst for Saving KC Homebuyers in Kansas City. Analyze this seller call transcript and extract structured intelligence.
 

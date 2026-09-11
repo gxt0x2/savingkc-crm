@@ -133,7 +133,7 @@ function databaseError(message: string): never {
   if (normalized.includes('work_item_not_found')) {
     throw new WorkItemError('Work item was not found.', 'not_found')
   }
-  if (normalized.includes('version_conflict') || normalized.includes('idempotency_conflict')) {
+  if (normalized.includes('version_conflict') || normalized.includes('idempotency_conflict') || normalized.includes('work_item_subject_mismatch')) {
     throw new WorkItemError('Work item changed in another request. Refresh and try again.', 'conflict')
   }
   if (normalized.includes('work_item_not_current')) {
@@ -165,6 +165,7 @@ function databaseError(message: string): never {
 }
 
 export async function listWorkItems(input: {
+  key?: string
   department?: string
   statuses?: WorkItemStatus[]
   leadId?: string
@@ -183,6 +184,8 @@ export async function listWorkItems(input: {
     .order('due_at', { ascending: true, nullsFirst: false })
     .order('work_item_key', { ascending: true })
     .limit(limit)
+
+  if (input.key) query = query.eq('work_item_key', normalizeWorkItemKey(input.key))
 
   if (input.department) query = query.eq('department', input.department)
   if (input.statuses?.length) query = query.in('status', input.statuses)

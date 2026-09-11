@@ -119,6 +119,7 @@ export type CallIntentDeniedResponse = {
   allowed: false
   error: string
   reason?: string
+  reasonSource?: string
 }
 
 export type CallIntentResponse = CallIntentAllowedResponse | CallIntentDeniedResponse
@@ -141,6 +142,7 @@ export type MobileSession = {
     workQueue: boolean
     ownerAssignment: boolean
     handoffAcceptance: boolean
+    aiAssistantReadOnly: boolean
   }
 }
 
@@ -169,5 +171,39 @@ export type VoiceTokenResponse = {
   identity: string
   callerId: string
   displayName: string
+  error?: string
+}
+
+export type AssistantSource = {
+  name: string
+  url: string
+  generatedAt?: string
+  detail?: string
+}
+
+export type AssistantMessage = {
+  id: string
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  content: string
+  sources: AssistantSource[]
+  createdAt: string
+}
+
+export type AssistantThread = {
+  id: string
+  title: string
+  status: 'active' | 'archived'
+}
+
+export type AssistantHistory = {
+  thread: AssistantThread
+  messages: AssistantMessage[]
+}
+
+export type AssistantCommandResponse = {
+  reply: string
+  threadId: string
+  responseMessageId: string
+  sources: AssistantSource[]
   error?: string
 }

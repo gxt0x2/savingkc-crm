@@ -9,6 +9,7 @@ import {
   conversationKindFilter,
   conversationQueue,
   conversationSearchQuery,
+  conversationTimeframe,
   conversationThreadKey,
   decodeConversationThreadCursor,
   isConversationReadModelMissing,
@@ -50,6 +51,9 @@ describe('conversation read model inputs', () => {
     expect(conversationQueue(null)).toBe('needs_reply')
     expect(conversationKindFilter(null)).toBe('all')
     expect(conversationKindFilter('unmatched')).toBe('unmatched')
+    expect(conversationTimeframe(null)).toBe('inbox')
+    expect(conversationTimeframe('recent')).toBe('recent')
+    expect(() => conversationTimeframe('archive')).toThrow('timeframe must be')
     expect(() => conversationKindFilter('vendor')).toThrow('kind must be')
   })
 
@@ -98,10 +102,11 @@ describe('conversation thread pages', () => {
       { rpc } as never,
     )
 
-    expect(rpc).toHaveBeenCalledWith('conversation_thread_page_v2', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('conversation_thread_page_v3', expect.objectContaining({
       page_limit: 2,
       page_queue: 'all',
       page_kind: 'all',
+      page_timeframe: 'inbox',
     }))
     expect(page).toMatchObject({ source: 'projection', degraded: false, pageInfo: { limit: 1, hasMore: true } })
     expect(page.items[0]).toMatchObject({

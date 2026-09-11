@@ -10,28 +10,27 @@ import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir, homedir } from 'os'
 
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const MOJO_BASE = 'https://app71.mojosells.com'
 const SESSION_FILE_PATHS = [
   join(homedir(), '.openclaw/workspace/memory/mojo-session.json'),
-  '/Users/ernestdodson/.openclaw/workspace/memory/mojo-session.json',
 ]
 
 // In-memory session cache (survives across requests within same process)
 let cachedSessionId: string | null = null
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+let sessionCachedAt = 0
+const SESSION_CACHE_MS = 60_000
+function cacheSession(value: string): string {
+  cachedSessionId = value
+  sessionCachedAt = Date.now()
+  return value
 }
 
 /** Try to get session from Supabase system_config table */
 async function getSessionFromSupabase(): Promise<string | null> {
   try {
-    const supabase = getSupabase()
+    const supabase = supabaseAdmin()
     const { data } = await supabase
       .from('system_config')
       .select('value')
@@ -53,7 +52,7 @@ async function getSessionFromSupabase(): Promise<string | null> {
 /** Store session in Supabase for persistence across restarts */
 async function saveSessionToSupabase(sessionId: string): Promise<void> {
   try {
-    const supabase = getSupabase()
+    const supabase = supabaseAdmin()
     await supabase
       .from('system_config')
       .upsert({
@@ -67,22 +66,13 @@ async function saveSessionToSupabase(sessionId: string): Promise<void> {
 }
 
 async function getMojoSessionId(): Promise<string | null> {
-  // 1. In-memory cache
-  if (cachedSessionId) return cachedSessionId
+  if (cachedSessionId && Date.now() - sessionCachedAt < SESSION_CACHE_MS) return cachedSessionId
 
-  // 2. Env var
-  if (process.env.MOJO_SESSION_ID) {
-    cachedSessionId = process.env.MOJO_SESSION_ID
-    return cachedSessionId
-  }
-
-  // 3. Supabase (persists across deploys/restarts)
+  // The Mac refreshes this shared session. Prefer it over a deployment-time
+  // environment cookie that cannot change until a new deployment.
   const dbSession = await getSessionFromSupabase()
-  if (dbSession) {
-    cachedSessionId = dbSession
-    console.log('Mojo session loaded from Supabase')
-    return cachedSessionId
-  }
+  if (dbSession) return cacheSession(dbSession)
+  if (process.env.MOJO_SESSION_ID) return cacheSession(process.env.MOJO_SESSION_ID)
 
   // 4. Session files on disk
   const customPath = process.env.MOJO_SESSION_FILE
@@ -92,7 +82,7 @@ async function getMojoSessionId(): Promise<string | null> {
       const content = await readFile(filePath, 'utf8')
       const session = JSON.parse(content)
       if (!session.expired && session.sessionId) {
-        cachedSessionId = session.sessionId
+        cacheSession(session.sessionId)
         console.log(`Mojo session loaded from ${filePath}`)
         // Also persist to Supabase for future use
         await saveSessionToSupabase(session.sessionId)
@@ -109,6 +99,7 @@ async function getMojoSessionId(): Promise<string | null> {
 /** Clear cached session (call on auth failure to force re-login) */
 function clearSessionCache() {
   cachedSessionId = null
+  sessionCachedAt = 0
 }
 
 export async function downloadRecording(url: string, recordId?: string): Promise<string> {
@@ -136,12 +127,24 @@ export async function downloadRecording(url: string, recordId?: string): Promise
     }
   }
 
-  const response = await fetch(downloadUrl, {
-    headers,
-    redirect: 'follow',
+  const requestAudio = () => fetch(downloadUrl, {
+    headers, redirect: 'follow', signal: AbortSignal.timeout(30_000),
   })
+  let response = await requestAudio()
+  const mayBeExpired = [401, 403].includes(response.status)
+    || /text\/html|application\/json/.test(response.headers.get('content-type') || '')
+  if (url.includes('mojosells.com') && mayBeExpired) {
+    const previousCookie = headers.cookie
+    clearSessionCache()
+    const refreshed = await getMojoSessionId()
+    if (refreshed && `sessionid=${refreshed}` !== previousCookie) {
+      headers.cookie = `sessionid=${refreshed}`
+      response = await requestAudio()
+    }
+  }
 
   if (!response.ok) {
+    if (url.includes('mojosells.com') && [401, 403].includes(response.status)) clearSessionCache()
     throw new Error(`Failed to download recording: ${response.status} ${response.statusText}`)
   }
 

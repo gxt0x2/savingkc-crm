@@ -48,6 +48,7 @@ describe('conversation hub API', () => {
       channel: null,
       query: null,
       kind: 'all',
+      timeframe: 'inbox',
       actorName: null,
       cursor: null,
     })

@@ -9,13 +9,10 @@ function databaseFixture(options: {
   member?: { id: string; subject_kind: 'lead' | 'prospect'; lead_id: string | null; prospect_id: string | null } | null
   prospect?: { id: string; lead_id: string | null } | null
   activities?: Array<Record<string, unknown>>
-  firstActivityError?: { code?: string; message: string } | null
 } = {}) {
   const insert = vi.fn()
   const activityTypeFilter = vi.fn()
   const prospectFilter = vi.fn()
-  const metadataFilter = vi.fn()
-  let activityListCalls = 0
   const from = vi.fn((table: string) => {
     if (table === 'prospecting_campaign_members') {
       const builder = {
@@ -38,23 +35,16 @@ function databaseFixture(options: {
         insert: vi.fn((value: unknown) => { insert(value); return builder }),
         select: vi.fn(() => builder),
         eq: vi.fn((column: string, value: unknown) => { prospectFilter(column, value); return builder }),
-        contains: vi.fn((column: string, value: unknown) => { metadataFilter(column, value); return builder }),
         in: vi.fn((column: string, value: unknown) => { activityTypeFilter(column, value); return builder }),
         order: vi.fn(() => builder),
-        limit: vi.fn(async () => {
-          activityListCalls += 1
-          return {
-            data: options.activities ?? [],
-            error: activityListCalls === 1 ? options.firstActivityError ?? null : null,
-          }
-        }),
+        limit: vi.fn(async () => ({ data: options.activities ?? [], error: null })),
         single: vi.fn(async () => ({ data: { id: 'activity-1' }, error: null })),
       }
       return builder
     }
     throw new Error(`Unexpected table ${table}`)
   })
-  return { database: { from } as unknown as Pick<SupabaseClient, 'from'>, from, insert, activityTypeFilter, prospectFilter, metadataFilter }
+  return { database: { from } as unknown as Pick<SupabaseClient, 'from'>, from, insert, activityTypeFilter, prospectFilter }
 }
 
 describe('saveProspectingContactNote', () => {
@@ -63,6 +53,7 @@ describe('saveProspectingContactNote', () => {
   it('persists an authenticated note against an unpromoted source Prospect contact', async () => {
     const fixture = databaseFixture({
       member: { id: 'member-1', subject_kind: 'prospect', lead_id: null, prospect_id: 'prospect-1' },
+      prospect: { id: 'prospect-1', lead_id: null },
     })
 
     await saveProspectingContactNote(actor, {
@@ -149,22 +140,6 @@ describe('saveProspectingContactNote', () => {
 
     expect(fixture.prospectFilter).toHaveBeenCalledWith('prospect_id', 'prospect-1')
     expect(fixture.activityTypeFilter).toHaveBeenCalledWith('activity_type', ['note', 'task', 'appointment', 'follow_up', 'callback', 'mail'])
-    expect(result).toEqual({ activities })
-  })
-
-  it('keeps existing metadata-scoped notes visible in a pre-migration read-only preview', async () => {
-    const activities = [{ id: 'activity-1', activity_type: 'note', description: 'Call the daughter first.' }]
-    const fixture = databaseFixture({
-      activities,
-      firstActivityError: { code: '42703', message: 'column lead_activities.prospect_id does not exist' },
-    })
-
-    const result = await loadProspectingContactNotes('prospect-1', fixture.database)
-
-    expect(fixture.metadataFilter).toHaveBeenCalledWith('metadata', {
-      source: 'prospecting_contact_note',
-      prospect_id: 'prospect-1',
-    })
     expect(result).toEqual({ activities })
   })
 

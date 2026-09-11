@@ -7,6 +7,12 @@ const callingFloor = readFileSync('src/components/prospecting/prospecting-callin
 const sessionControl = readFileSync('src/components/prospecting/use-prospecting-session-control.ts', 'utf8')
 const sessionCommand = readFileSync('src/components/dialer/dialer-session-command.tsx', 'utf8')
 const contextRail = readFileSync('src/components/prospecting/prospecting-calling-context-rail.tsx', 'utf8')
+const appShell = readFileSync('src/components/layout/app-shell.tsx', 'utf8')
+const dialerEntry = readFileSync('src/components/telephony/dialer-entry.tsx', 'utf8')
+const crmDialer = readFileSync('src/components/telephony/crm-dialer-modal.tsx', 'utf8')
+const prospectingDialer = readFileSync('src/components/prospecting/prospecting-dialer-rail.tsx', 'utf8')
+const clientPreflight = readFileSync('src/lib/telephony/dialer-client-preflight.ts', 'utf8')
+const legacyCallIntentRoute = readFileSync('src/app/api/dialer/call-intents/route.ts', 'utf8')
 
 describe('Prospecting calling-floor truth contract', () => {
   it('keeps the old Dialer URL as redirect-only compatibility', () => {
@@ -41,6 +47,18 @@ describe('Prospecting calling-floor truth contract', () => {
       'Start single-line session',
       'saved-list-meta',
     ]) expect(callingFloor).not.toContain(obsolete)
+  })
+
+  it('keeps CRM and Prospecting controllers explicit over the shared phone core', () => {
+    expect(appShell).toContain("surface={isProspectingCallingFloor ? 'prospecting' : 'crm'}")
+    expect(dialerEntry).toContain('<CrmDialerModal')
+    expect(dialerEntry).toContain('<ProspectingDialerRail')
+    expect(crmDialer).toContain('surface="crm" presentation="modal" pendingSessionId={null}')
+    expect(prospectingDialer).toContain('surface="prospecting" presentation="workspace"')
+    expect(clientPreflight).toContain('dialerCallIntentEndpoint(input.surface)')
+    expect(legacyCallIntentRoute).toContain('status: 410')
+    expect(legacyCallIntentRoute).toContain("reasonSource: 'legacy_endpoint'")
+    expect(legacyCallIntentRoute).not.toContain('handleWebDialerCallIntent')
   })
 
   it('keeps session controls explicit and the seller history bounded', () => {

@@ -17,6 +17,7 @@ import {
   conversationPageLimit,
   conversationQueue,
   conversationSearchQuery,
+  conversationTimeframe,
   conversationThreadKey,
   decodeConversationThreadCursor,
   decodeConversationTimelineCursor,
@@ -25,6 +26,7 @@ import {
   type ConversationChannel,
   type ConversationKindFilter,
   type ConversationQueue,
+  type ConversationTimeframe,
 } from './conversation-read-model-contract'
 
 export {
@@ -37,11 +39,12 @@ export {
   conversationPageLimit,
   conversationQueue,
   conversationSearchQuery,
+  conversationTimeframe,
   conversationThreadKey,
   decodeConversationThreadCursor,
   decodeConversationTimelineCursor,
 } from './conversation-read-model-contract'
-export type { ConversationChannel, ConversationKindFilter, ConversationQueue } from './conversation-read-model-contract'
+export type { ConversationChannel, ConversationKindFilter, ConversationQueue, ConversationTimeframe } from './conversation-read-model-contract'
 
 export type ConversationReadSource = 'projection' | 'compatibility'
 
@@ -100,6 +103,7 @@ export interface ReadConversationThreadsInput {
   actorName?: string | null
   channel?: ConversationChannel | null
   kind?: ConversationKindFilter
+  timeframe?: ConversationTimeframe
   query?: string | null
 }
 
@@ -149,7 +153,7 @@ export function isConversationReadModelMissing(error: unknown): boolean {
   const code = errorCode(error)
   const message = errorMessage(error)
   return ['42P01', '42883', 'PGRST202', 'PGRST205'].includes(code) ||
-    /conversation_(thread_page|timeline_page|attention_summary)_v1.*(not find|does not exist)/i.test(message) ||
+    /conversation_(thread_page|timeline_page|attention_summary)_v\d+.*(not find|does not exist)/i.test(message) ||
     /conversation_thread_state.*does not exist/i.test(message)
 }
 
@@ -285,19 +289,21 @@ export async function readConversationThreads(
   const limit = conversationPageLimit(input.limit)
   const queue = conversationQueue(input.queue)
   const kind = conversationKindFilter(input.kind)
+  const timeframe = conversationTimeframe(input.timeframe)
   const query = conversationSearchQuery(input.query)
   const cursor = decodeConversationThreadCursor(input.cursor)
   if (queue === 'mine' && !text(input.actorName)) {
     throw new ConversationReadModelInputError('The mine queue requires an authenticated actor')
   }
 
-  const { data, error } = await db.rpc('conversation_thread_page_v2', {
+  const { data, error } = await db.rpc('conversation_thread_page_v3', {
     page_limit: limit + 1,
     page_queue: queue,
     page_actor: queue === 'mine' ? text(input.actorName) : null,
     page_channel: input.channel ?? null,
     page_query: query,
     page_kind: kind,
+    page_timeframe: timeframe,
     after_attention_rank: cursor?.rank ?? null,
     after_activity_at: cursor?.at ?? null,
     after_thread_key: cursor?.key ?? null,

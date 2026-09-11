@@ -2,6 +2,10 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export type AssistantSurface = 'ai_page' | 'giraffe' | 'api'
 
+export type AssistantThreadOwner = {
+  subject: string
+}
+
 export type AssistantSource = {
   name: string
   url: string
@@ -194,6 +198,7 @@ export function buildAssistantToolTrace(toolResults: Array<{
 
 export async function startAssistantGeneration(input: {
   threadId?: string | null
+  actorSubject: string
   actorEmail: string
   actorName: string
   surface: AssistantSurface
@@ -202,8 +207,9 @@ export async function startAssistantGeneration(input: {
   requestId: string
 }) {
   if (input.threadId && !UUID_PATTERN.test(input.threadId)) throw new AssistantGenerationError('invalid_thread_id', 400, 'Assistant conversation is invalid')
-  const { data, error } = await supabaseAdmin().rpc('start_assistant_generation_v1', {
+  const { data, error } = await supabaseAdmin().rpc('start_assistant_generation_v2', {
     p_thread_id: input.threadId || null,
+    p_actor_subject: input.actorSubject,
     p_actor_email: input.actorEmail,
     p_actor_name: input.actorName,
     p_surface: input.surface,
@@ -261,6 +267,7 @@ export async function startAssistantArtifactGeneration(input: {
 
 export async function completeAssistantGeneration(input: {
   generationId: string
+  actorSubject?: string
   actorEmail: string
   content: string
   provider: string
@@ -272,9 +279,8 @@ export async function completeAssistantGeneration(input: {
   metadata?: Record<string, unknown>
 }) {
   const cost = estimateAssistantCostMicros(input.model, input.usage)
-  const { data, error } = await supabaseAdmin().rpc('complete_assistant_generation_v1', {
+  const common = {
     p_generation_id: input.generationId,
-    p_actor_email: input.actorEmail,
     p_response_content: input.content,
     p_provider: input.provider,
     p_model: input.model,
@@ -285,34 +291,42 @@ export async function completeAssistantGeneration(input: {
     p_tool_trace: input.toolTrace,
     p_sources: input.sources,
     p_metadata: input.metadata || {},
-  })
+  }
+  const { data, error } = input.actorSubject
+    ? await supabaseAdmin().rpc('complete_assistant_generation_v2', { ...common, p_actor_subject: input.actorSubject })
+    : await supabaseAdmin().rpc('complete_assistant_generation_v1', { ...common, p_actor_email: input.actorEmail })
   if (error) throw databaseError(error)
   return { ...(data as Record<string, unknown>), estimatedCostMicros: cost }
 }
 
 export async function failAssistantGeneration(input: {
   generationId: string
+  actorSubject?: string
   actorEmail: string
   code: string
   message: string
 }) {
-  const { error } = await supabaseAdmin().rpc('fail_assistant_generation_v1', {
+  const common = {
     p_generation_id: input.generationId,
-    p_actor_email: input.actorEmail,
     p_error_code: input.code,
     p_error_message: input.message,
-  })
+  }
+  const { error } = input.actorSubject
+    ? await supabaseAdmin().rpc('fail_assistant_generation_v2', { ...common, p_actor_subject: input.actorSubject })
+    : await supabaseAdmin().rpc('fail_assistant_generation_v1', { ...common, p_actor_email: input.actorEmail })
   if (error) console.error('[assistant-generation] failure persistence failed', { code: error.code })
 }
 
-export async function replayAssistantGeneration(actorEmail: string, generationId: string) {
+export async function replayAssistantGeneration(actorEmail: string, generationId: string, actorSubject?: string) {
   const db = supabaseAdmin()
-  const { data, error } = await db
+  let query = db
     .from('assistant_generations')
     .select('id, thread_id, status, provider, model, finish_reason, input_tokens, output_tokens, total_tokens, cache_read_tokens, estimated_cost_micros, response_message_id')
     .eq('id', generationId)
-    .eq('actor_email', actorEmail.toLowerCase())
-    .maybeSingle()
+  query = actorSubject
+    ? query.eq('actor_subject', actorSubject)
+    : query.eq('actor_email', actorEmail.toLowerCase())
+  const { data, error } = await query.maybeSingle()
   if (error) throw databaseError(error)
   if (!data) throw new AssistantGenerationError('generation_not_found', 404, 'Assistant generation not found')
   let response: { content: string; sources: unknown } | null = null
@@ -346,11 +360,11 @@ export async function replayAssistantGeneration(actorEmail: string, generationId
   }
 }
 
-export async function listAssistantThreads(actorEmail: string, limit = 20): Promise<AssistantThreadSummary[]> {
+export async function listAssistantThreads(owner: AssistantThreadOwner, limit = 20): Promise<AssistantThreadSummary[]> {
   const { data, error } = await supabaseAdmin()
     .from('assistant_threads')
     .select('id,title,status,surface,last_message_at,created_at,updated_at')
-    .eq('actor_email', actorEmail.toLowerCase())
+    .eq('actor_subject', owner.subject)
     .order('last_message_at', { ascending: false })
     .limit(Math.max(1, Math.min(limit, 50)))
   if (error) throw databaseError(error)
@@ -365,14 +379,14 @@ export async function listAssistantThreads(actorEmail: string, limit = 20): Prom
   }))
 }
 
-export async function loadAssistantThread(actorEmail: string, threadId: string) {
+export async function loadAssistantThread(owner: AssistantThreadOwner, threadId: string) {
   if (!UUID_PATTERN.test(threadId)) throw new AssistantGenerationError('invalid_thread_id', 400, 'Assistant conversation is invalid')
   const db = supabaseAdmin()
   const { data: thread, error: threadError } = await db
     .from('assistant_threads')
     .select('id,title,status,surface,last_message_at,created_at,updated_at')
     .eq('id', threadId)
-    .eq('actor_email', actorEmail.toLowerCase())
+    .eq('actor_subject', owner.subject)
     .maybeSingle()
   if (threadError) throw databaseError(threadError)
   if (!thread) throw new AssistantGenerationError('thread_not_found', 404, 'Assistant conversation not found')
@@ -427,11 +441,11 @@ export async function loadAssistantThread(actorEmail: string, threadId: string) 
   }
 }
 
-export async function archiveAssistantThread(actorEmail: string, threadId: string) {
+export async function archiveAssistantThread(owner: AssistantThreadOwner, threadId: string) {
   if (!UUID_PATTERN.test(threadId)) throw new AssistantGenerationError('invalid_thread_id', 400, 'Assistant conversation is invalid')
-  const { error } = await supabaseAdmin().rpc('archive_assistant_thread_v1', {
+  const { error } = await supabaseAdmin().rpc('archive_assistant_thread_v2', {
     p_thread_id: threadId,
-    p_actor_email: actorEmail.toLowerCase(),
+    p_actor_subject: owner.subject,
   })
   if (error) throw databaseError(error)
 }

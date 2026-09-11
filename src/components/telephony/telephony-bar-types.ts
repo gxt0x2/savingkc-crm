@@ -1,5 +1,6 @@
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
 import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
+import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 
 export type CallStatus = 'offline' | 'connecting' | 'ready' | 'calling' | 'on_call' | 'incoming'
 
@@ -21,6 +22,7 @@ export type TwilioErrorLike = {
 export type HeirQueueItem = HeirDialerQueueItem
 
 export interface DialerPanelProps {
+  surface: InteractiveDialerSurface
   open: boolean
   onClose: () => void
   onStatusChange?: (status: CallStatus) => void

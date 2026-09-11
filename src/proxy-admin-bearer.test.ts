@@ -37,8 +37,11 @@ describe('admin proxy bearer allowlist', () => {
 
   it.each([
     '/api/admin/mojo-health',
+    '/api/admin/mojo-incident',
     '/api/admin/mojo-performance',
+    '/api/admin/mojo-recovery',
     '/api/admin/mojo-session',
+    '/api/admin/mojo-source-batches',
     '/api/admin/system-config',
   ])('allows the reviewed server-to-server endpoint %s', async (pathname) => {
     const response = await proxy(bearerRequest(pathname), event)
@@ -52,6 +55,10 @@ describe('admin proxy bearer allowlist', () => {
     '/api/admin/entity-health',
     '/api/admin/import-historical',
     '/api/admin/sync-mojo-session',
+    '/api/admin/mojo-source-batches/unreviewed',
+    '/api/admin/mojo-source-batches-extra',
+    '/api/admin/mojo-recovery/unreviewed',
+    '/api/admin/mojo-recovery-extra',
     '/api/admin/unreviewed',
   ])('does not grant service-bearer trust to %s', async (pathname) => {
     const response = await proxy(bearerRequest(pathname), event)
@@ -60,5 +67,34 @@ describe('admin proxy bearer allowlist', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0')
     await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
     expect(mocks.getClaims).toHaveBeenCalledOnce()
+  })
+
+  it.each(['GET', 'POST', 'PATCH'])('requires importer authentication for source archive %s', async (method) => {
+    const pathname = 'https://crm.savingkc.com/api/admin/mojo-source-batches'
+    const authorized = await proxy(new NextRequest(pathname, {
+      method,
+      headers: { authorization: 'Bearer test-cron-secret' },
+    }), event)
+    expect(authorized.headers.get('x-middleware-next')).toBe('1')
+
+    for (const headers of [new Headers(), new Headers({ authorization: 'Bearer invalid-secret' })]) {
+      const denied = await proxy(new NextRequest(pathname, { method, headers }), event)
+      expect(denied.status).toBe(401)
+    }
+  })
+
+  it('admits authenticated recovery receipts while rejecting missing and invalid credentials', async () => {
+    const pathname = 'https://crm.savingkc.com/api/admin/mojo-recovery'
+    const authorized = await proxy(new NextRequest(pathname, {
+      method: 'POST',
+      headers: { authorization: 'Bearer test-cron-secret' },
+    }), event)
+    expect(authorized.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+
+    for (const headers of [new Headers(), new Headers({ authorization: 'Bearer invalid-secret' })]) {
+      const denied = await proxy(new NextRequest(pathname, { method: 'POST', headers }), event)
+      expect(denied.status).toBe(401)
+    }
   })
 })

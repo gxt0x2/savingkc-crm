@@ -1,6 +1,28 @@
+import expectedRuntime from '@/config/mojo-runtime-manifest.json'
 import type { supabaseAdmin } from '@/lib/supabase/admin'
+import { mojoCallingAge, mojoSchedule } from './mojo-schedule.mjs'
 
 export type MojoHealthStatus = 'clean' | 'watch' | 'attention'
+
+export type MojoReconciliationCounts = {
+  evidencePendingAllAges: number
+  sourceBatchesUnaccepted: number
+  queueOverdue: number
+  unlinkedFutureFollowups: number
+  deadLetterQueue: number
+  lifecycleStationDeadConflict: number
+  lifecycleClassificationDeadConflict: number
+  deadActiveAppointments: number
+  staleActiveAppointments: number
+  cancelledOutcomeActiveAppointments: number
+  deadCurrentWorkItems: number
+  followupsMissingWorkItems: number
+  eligibleMissingRecordingUrl: number
+  recordingsNotAnalyzed: number
+  analyzedMissingTranscript: number
+  analyzedMissingSummary: number
+  strongDuplicateRecordingPairs: number
+}
 
 export type MojoHealth = {
   status: MojoHealthStatus
@@ -10,12 +32,25 @@ export type MojoHealth = {
   businessHours: boolean
   lastSyncAt: string | null
   lastSyncAgeMinutes: number | null
+  lastSyncCallingAgeMinutes?: number
   lastSessionOkAt: string | null
   lastError: string | null
   lastErrorAt: string | null
   latestQueuedAt: string | null
   latestCompletedAt: string | null
   latestQueueError: string | null
+  runtime?: { expectedDigest: string; reportedDigest: string | null; reportedRevision: string | null; verified: boolean }
+  performance: {
+    status: 'current' | 'delayed' | 'stale' | 'unavailable'
+    message: string
+    latestMetricDate: string | null
+    latestFetchedAt: string | null
+    ageMinutes: number | null
+    syncHealth: string
+    lastOkAt: string | null
+    lastError: string | null
+    lastErrorAt: string | null
+  }
   queue: {
     pending: number
     processing: number
@@ -25,11 +60,30 @@ export type MojoHealth = {
     queued24h: number
     total7d: number
   }
+  qualification: {
+    eligible24h: number
+    ineligible24h: number
+    evidencePending24h: number
+    recordingOutstanding24h: number
+    recordingFailed7d: number
+    analyzed24h: number
+  }
   leads: {
     last24h: number
     period: number
     qualifiedPeriod: number
     appointmentPeriod: number
+  }
+  reconciliation: {
+    status: 'clean' | 'attention'
+    message: string
+    windowDays: number
+    checkedAt: string | null
+    windowSince: string | null
+    issueCount: number
+    counts: MojoReconciliationCounts
+    samples: Record<string, unknown[]>
+    error: string | null
   }
   monitor: {
     path: string
@@ -38,7 +92,7 @@ export type MojoHealth = {
   }
 }
 
-type SupabaseLike = Pick<ReturnType<typeof supabaseAdmin>, 'from'>
+type SupabaseLike = Pick<ReturnType<typeof supabaseAdmin>, 'from' | 'rpc'>
 
 type SystemConfigRow = {
   key: string
@@ -59,7 +113,21 @@ type MojoLeadRow = {
   created_at?: string | null
 }
 
+type MojoPerformanceRow = {
+  metric_date?: string | null
+  source_fetched_at?: string | null
+}
+
+type MojoCallEventRow = {
+  call_at?: string | null
+  promotion_eligible?: boolean | null
+  qualification_status?: string | null
+  recording_processing_status?: string | null
+}
+
 const SYSTEM_CONFIG_KEYS = [
+  'mojo_runtime_content_digest',
+  'mojo_runtime_revision',
   'last_mojo_sync_timestamp',
   'mojo_session_last_error',
   'mojo_session_last_error_at',
@@ -69,6 +137,10 @@ const SYSTEM_CONFIG_KEYS = [
   'mojo_sync_last_error_at',
   'mojo_sync_last_ok_at',
   'mojo_sync_health',
+  'mojo_performance_sync_health',
+  'mojo_performance_sync_last_ok_at',
+  'mojo_performance_sync_last_error',
+  'mojo_performance_sync_last_error_at',
 ]
 
 const QUALIFIED_STATIONS = new Set([
@@ -81,6 +153,69 @@ const QUALIFIED_STATIONS = new Set([
   'under_contract',
   'closed',
 ])
+
+const RECONCILIATION_COUNT_KEYS = [
+  'evidencePendingAllAges',
+  'sourceBatchesUnaccepted',
+  'queueOverdue',
+  'unlinkedFutureFollowups',
+  'deadLetterQueue',
+  'lifecycleStationDeadConflict',
+  'lifecycleClassificationDeadConflict',
+  'deadActiveAppointments',
+  'staleActiveAppointments',
+  'cancelledOutcomeActiveAppointments',
+  'deadCurrentWorkItems',
+  'followupsMissingWorkItems',
+  'eligibleMissingRecordingUrl',
+  'recordingsNotAnalyzed',
+  'analyzedMissingTranscript',
+  'analyzedMissingSummary',
+  'strongDuplicateRecordingPairs',
+] as const satisfies readonly (keyof MojoReconciliationCounts)[]
+
+function emptyReconciliationCounts(): MojoReconciliationCounts {
+  return Object.fromEntries(RECONCILIATION_COUNT_KEYS.map((key) => [key, 0])) as MojoReconciliationCounts
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function nonNegativeCount(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0
+}
+
+function reconciliationHealth(value: unknown): MojoHealth['reconciliation'] {
+  const snapshot = record(value)
+  const rawCounts = record(snapshot.counts)
+  const counts = emptyReconciliationCounts()
+  for (const key of RECONCILIATION_COUNT_KEYS) counts[key] = nonNegativeCount(rawCounts[key])
+  const issueCount = RECONCILIATION_COUNT_KEYS.reduce((total, key) => total + counts[key], 0)
+  const rawSamples = record(snapshot.samples)
+  const samples = Object.fromEntries(
+    Object.entries(rawSamples).map(([key, sample]) => [key, Array.isArray(sample) ? sample : []]),
+  )
+
+  return {
+    status: issueCount === 0 && snapshot.version === 'crm_mojo_reconciliation_integrity_v1' ? 'clean' : 'attention',
+    message: snapshot.version !== 'crm_mojo_reconciliation_integrity_v1'
+      ? 'Mojo source reconciliation could not be verified'
+      : issueCount === 0
+      ? 'CRM reconciliation is clean'
+      : `CRM reconciliation has ${issueCount} unresolved issue${issueCount === 1 ? '' : 's'}`,
+    windowDays: 30,
+    checkedAt: isoOrNull(snapshot.checkedAt),
+    windowSince: isoOrNull(snapshot.windowSince),
+    issueCount,
+    counts,
+    samples,
+    error: null,
+  }
+}
 
 function text(value: unknown): string {
   if (typeof value === 'string') return value.trim()
@@ -112,16 +247,27 @@ function latestIso(values: Array<string | null | undefined>): string | null {
   return latest
 }
 
-function centralBusinessHours(now: Date): boolean {
+function centralBusinessHours(now: Date): boolean { return mojoSchedule(now).businessHours }
+
+function centralDateKey(now: Date): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago',
-    weekday: 'short',
-    hour: 'numeric',
-    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).formatToParts(now)
-  const weekday = parts.find((part) => part.type === 'weekday')?.value ?? ''
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0)
-  return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 18
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
+
+function centralTimestamp(value: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
 function countByStatus(rows: MojoQueueRow[], status: string): number {
@@ -143,6 +289,17 @@ function buildFallbackHealth(error: string, now: Date): MojoHealth {
     latestQueuedAt: null,
     latestCompletedAt: null,
     latestQueueError: error,
+    performance: {
+      status: 'unavailable',
+      message: `Mojo provider performance health failed: ${error}`,
+      latestMetricDate: null,
+      latestFetchedAt: null,
+      ageMinutes: null,
+      syncHealth: 'unknown',
+      lastOkAt: null,
+      lastError: error,
+      lastErrorAt: now.toISOString(),
+    },
     queue: {
       pending: 0,
       processing: 0,
@@ -152,11 +309,30 @@ function buildFallbackHealth(error: string, now: Date): MojoHealth {
       queued24h: 0,
       total7d: 0,
     },
+    qualification: {
+      eligible24h: 0,
+      ineligible24h: 0,
+      evidencePending24h: 0,
+      recordingOutstanding24h: 0,
+      recordingFailed7d: 0,
+      analyzed24h: 0,
+    },
     leads: {
       last24h: 0,
       period: 0,
       qualifiedPeriod: 0,
       appointmentPeriod: 0,
+    },
+    reconciliation: {
+      status: 'attention',
+      message: `CRM reconciliation failed: ${error}`,
+      windowDays: 30,
+      checkedAt: now.toISOString(),
+      windowSince: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      issueCount: 1,
+      counts: emptyReconciliationCounts(),
+      samples: {},
+      error,
     },
     monitor: {
       path: '/api/admin/mojo-health',
@@ -190,8 +366,11 @@ export async function getMojoHealth(
     const [
       { data: configRows, error: configError },
       { data: queueRows, error: queueError },
+      { data: callEventRows, error: callEventError },
       { data: periodLeadRows, error: periodLeadError },
       { data: recentLeadRows, error: recentLeadError },
+      { data: performanceRows, error: performanceError },
+      { data: reconciliationSnapshot, error: reconciliationError },
     ] = await Promise.all([
       supabase
         .from('system_config')
@@ -203,6 +382,12 @@ export async function getMojoHealth(
         .gte('created_at', since7d)
         .order('created_at', { ascending: false })
         .limit(2000),
+      supabase
+        .from('crm_mojo_call_events')
+        .select('call_at,promotion_eligible,qualification_status,recording_processing_status')
+        .gte('call_at', since7d)
+        .order('call_at', { ascending: false })
+        .limit(5000),
       supabase
         .from('leads')
         .select('id,station,created_at')
@@ -216,9 +401,19 @@ export async function getMojoHealth(
         .eq('source', 'mojo_call')
         .gte('created_at', since24h)
         .limit(500),
+      supabase
+        .from('mojo_agent_daily_performance')
+        .select('metric_date,source_fetched_at')
+        .eq('agent_key', 'casey')
+        .order('metric_date', { ascending: false })
+        .limit(1),
+      supabase.rpc('crm_mojo_reconciliation_snapshot_v1', {
+        p_since: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
     ])
 
-    const firstError = configError || queueError || periodLeadError || recentLeadError
+    const firstError = configError || queueError || callEventError || periodLeadError || recentLeadError
+      || performanceError || reconciliationError
     if (firstError) return buildFallbackHealth(firstError.message, now)
 
     const configByKey = new Map<string, SystemConfigRow>(
@@ -248,6 +443,27 @@ export async function getMojoHealth(
     const queue = (queueRows ?? []) as MojoQueueRow[]
     const leads = (periodLeadRows ?? []) as MojoLeadRow[]
     const recentLeads = (recentLeadRows ?? []) as MojoLeadRow[]
+    const callEvents = (callEventRows ?? []) as MojoCallEventRow[]
+    const callEvents24h = callEvents.filter((event) => {
+      const callAt = isoOrNull(event.call_at)
+      return Boolean(callAt && callAt >= since24h)
+    })
+    const qualification = {
+      eligible24h: callEvents24h.filter((event) => event.promotion_eligible === true).length,
+      ineligible24h: callEvents24h.filter((event) => text(event.qualification_status) === 'ineligible').length,
+      evidencePending24h: callEvents24h.filter((event) => text(event.qualification_status) === 'evidence_pending').length
+        + queue.filter((row) => {
+          const created = isoOrNull(row.created_at)
+          return Boolean(created && created >= since24h && text(row.status).toLowerCase() === 'waiting_evidence')
+        }).length,
+      recordingOutstanding24h: callEvents24h.filter((event) => (
+        event.promotion_eligible === true
+        && !['analyzed', 'failed'].includes(text(event.recording_processing_status))
+      )).length,
+      recordingFailed7d: callEvents.filter((event) => text(event.recording_processing_status) === 'failed').length,
+      analyzed24h: callEvents24h.filter((event) => text(event.recording_processing_status) === 'analyzed').length,
+    }
+    const reconciliation = reconciliationHealth(reconciliationSnapshot)
     const queued24hRows = queue.filter((row) => {
       const created = isoOrNull(row.created_at)
       return created ? created >= since24h : false
@@ -270,46 +486,123 @@ export async function getMojoHealth(
     const processing = countByStatus(queue, 'processing')
     const qualifiedPeriod = leads.filter((lead) => QUALIFIED_STATIONS.has(text(lead.station).toLowerCase())).length
     const appointmentPeriod = leads.filter((lead) => text(lead.station).toLowerCase() === 'appointment_set').length
+    const latestPerformance = ((performanceRows ?? []) as MojoPerformanceRow[])[0]
+    const latestMetricDate = text(latestPerformance?.metric_date) || null
+    const latestFetchedAt = isoOrNull(latestPerformance?.source_fetched_at)
+    const performanceAgeMinutes = ageMinutes(latestFetchedAt, now)
+    const today = centralDateKey(now)
+    const performanceSyncHealth = configValue('mojo_performance_sync_health') || 'unknown'
+    const performanceSyncLastOkAt = isoOrNull(configValue('mojo_performance_sync_last_ok_at'))
+      || configUpdatedAt('mojo_performance_sync_last_ok_at')
+    const performanceSyncLastError = configValue('mojo_performance_sync_last_error') || null
+    const performanceSyncLastErrorAt = isoOrNull(configValue('mojo_performance_sync_last_error_at'))
+      || configUpdatedAt('mojo_performance_sync_last_error_at')
+    const withinStartupGrace = mojoSchedule(now).withinStartupGrace
+    const lastSyncCallingAgeMinutes = mojoCallingAge(lastSyncAt, now)
 
+    const performanceDown = performanceSyncHealth.toLowerCase() === 'down'
+      && !(latestMetricDate === today && latestFetchedAt && performanceSyncLastErrorAt
+        && Date.parse(latestFetchedAt) > Date.parse(performanceSyncLastErrorAt))
+
+    let performanceStatus: MojoHealth['performance']['status'] = 'current'
+    let performanceMessage = 'Mojo provider performance is current'
+    if (businessHours && performanceDown) {
+      performanceStatus = 'unavailable'
+      performanceMessage = performanceSyncLastError || 'Mojo provider performance sync is down'
+    } else if (businessHours && latestMetricDate !== today) {
+      performanceStatus = withinStartupGrace ? 'delayed' : latestFetchedAt ? 'stale' : 'unavailable'
+      performanceMessage = latestFetchedAt
+        ? `Mojo provider performance was last updated ${centralTimestamp(latestFetchedAt)}`
+        : 'Mojo has no current provider performance snapshot'
+    } else if (businessHours && !latestFetchedAt) {
+      performanceStatus = 'unavailable'
+      performanceMessage = `Mojo provider performance for ${today} has no fetch timestamp`
+    } else if (businessHours && (performanceAgeMinutes ?? 0) >= 120) {
+      performanceStatus = 'stale'
+      performanceMessage = `Mojo provider performance has not updated in ${performanceAgeMinutes} minutes during business hours`
+    } else if (businessHours && (performanceAgeMinutes ?? 0) >= 60) {
+      performanceStatus = 'delayed'
+      performanceMessage = `Mojo provider performance is delayed by ${performanceAgeMinutes} minutes`
+    }
+
+    const runtime = {
+      expectedDigest: expectedRuntime.contentDigest,
+      reportedDigest: configValue('mojo_runtime_content_digest') || null,
+      reportedRevision: configValue('mojo_runtime_revision') || null,
+      verified: configValue('mojo_runtime_content_digest') === expectedRuntime.contentDigest,
+    }
     let status: MojoHealthStatus = 'clean'
     let message = 'Mojo sync is healthy'
-    if (sessionStatus.toLowerCase() === 'expired') {
+    if (['expired', 'missing'].includes(sessionStatus.toLowerCase())) {
       status = 'attention'
       message = lastError || 'Mojo session expired - manual refresh required'
+    } else if (performanceDown) {
+      status = 'attention'
+      message = performanceSyncLastError || 'Mojo provider performance sync is down'
     } else if (syncHealth.toLowerCase() === 'down') {
       status = 'attention'
       message = lastError || 'Mojo sync freshness is outside the supervised limit'
-    } else if (deadLetterRows.length > 0 || failed24hRows.length > 0) {
+    } else if (!runtime.verified) {
       status = 'attention'
-      message = `Mojo queue has ${deadLetterRows.length + failed24hRows.length} failed item${deadLetterRows.length + failed24hRows.length === 1 ? '' : 's'}`
-    } else if (businessHours && !lastSyncAt) {
+      message = 'The installed Mojo importer does not match the verified release'
+    } else if (deadLetterRows.length > 0 || failed24hRows.length > 0 || qualification.recordingFailed7d > 0) {
+      status = 'attention'
+      const failureCount = deadLetterRows.length + failed24hRows.length + qualification.recordingFailed7d
+      message = `Mojo ingestion has ${failureCount} failed item${failureCount === 1 ? '' : 's'}`
+    } else if (reconciliation.status === 'attention') {
+      status = 'attention'
+      message = reconciliation.message
+    } else if (businessHours && !lastSyncAt && !withinStartupGrace) {
       status = 'attention'
       message = 'Mojo sync has no successful timestamp during business hours'
-    } else if (businessHours && (lastSyncAgeMinutes ?? 0) >= 120) {
+    } else if (businessHours && latestMetricDate !== today) {
+      status = withinStartupGrace ? 'watch' : 'attention'
+      message = performanceMessage
+    } else if (businessHours && !latestFetchedAt) {
       status = 'attention'
-      message = `Mojo sync has not completed in ${lastSyncAgeMinutes} minutes during business hours`
-    } else if (businessHours && (lastSyncAgeMinutes ?? 0) >= 60) {
+      message = `Mojo provider performance for ${today} has no fetch timestamp`
+    } else if (businessHours && (performanceAgeMinutes ?? 0) >= 120) {
+      status = 'attention'
+      message = `Mojo provider performance has not updated in ${performanceAgeMinutes} minutes during business hours`
+    } else if (businessHours && lastSyncCallingAgeMinutes >= 30) {
+      status = 'attention'
+      message = `Mojo sync has not completed in ${lastSyncCallingAgeMinutes} minutes of this calling window`
+    } else if (businessHours && (performanceAgeMinutes ?? 0) >= 60) {
       status = 'watch'
-      message = `Mojo sync is stale by ${lastSyncAgeMinutes} minutes`
-    } else if (pending > 0 || processing > 0) {
+      message = `Mojo provider performance is delayed by ${performanceAgeMinutes} minutes`
+    } else if (pending > 0 || processing > 0 || qualification.recordingOutstanding24h > 0 || qualification.evidencePending24h > 0) {
       status = 'watch'
-      message = `Mojo queue has ${pending + processing} active item${pending + processing === 1 ? '' : 's'}`
+      const activeCount = pending + processing + qualification.recordingOutstanding24h + qualification.evidencePending24h
+      message = `Mojo ingestion has ${activeCount} active item${activeCount === 1 ? '' : 's'}`
     }
 
     return {
       status,
       message,
+      runtime,
       sessionStatus,
       syncHealth,
       businessHours,
       lastSyncAt,
       lastSyncAgeMinutes,
+      lastSyncCallingAgeMinutes,
       lastSessionOkAt,
       lastError,
       lastErrorAt,
       latestQueuedAt,
       latestCompletedAt,
       latestQueueError,
+      performance: {
+        status: performanceStatus,
+        message: performanceMessage,
+        latestMetricDate,
+        latestFetchedAt,
+        ageMinutes: performanceAgeMinutes,
+        syncHealth: performanceSyncHealth,
+        lastOkAt: performanceSyncLastOkAt,
+        lastError: performanceSyncLastError,
+        lastErrorAt: performanceSyncLastErrorAt,
+      },
       queue: {
         pending,
         processing,
@@ -319,12 +612,14 @@ export async function getMojoHealth(
         queued24h: queued24hRows.length,
         total7d: queue.length,
       },
+      qualification,
       leads: {
         last24h: recentLeads.length,
         period: leads.length,
         qualifiedPeriod,
         appointmentPeriod,
       },
+      reconciliation,
       monitor: {
         path: '/api/admin/mojo-health',
         schedule: 'Every 15 minutes during Mojo business hours',

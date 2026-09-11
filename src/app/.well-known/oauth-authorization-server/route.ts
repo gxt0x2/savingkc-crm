@@ -1,0 +1,13 @@
+import { crmMcpAuthorizationServerMetadata } from '@/lib/mcp/oauth'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+export function GET() {
+  return Response.json(crmMcpAuthorizationServerMetadata(), {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=300',
+    },
+  })
+}

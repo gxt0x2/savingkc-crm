@@ -23,6 +23,7 @@ import {
 
 interface Props {
   defaultSection?: string
+  initialDescription?: string
   onClose: () => void
   onSubmit: () => void
 }
@@ -57,12 +58,12 @@ function defaultsForContext(context: string): { kind: AndonIssueKind; workstream
   return { kind: 'system', workstream: 'Acquisitions', category: 'Cold Dialer Lag' }
 }
 
-export function FeedbackForm({ defaultSection = '', onClose, onSubmit }: Props) {
+export function FeedbackForm({ defaultSection = '', initialDescription = '', onClose, onSubmit }: Props) {
   const initial = defaultsForContext(defaultSection)
   const [issueKind, setIssueKind] = useState<AndonIssueKind>(initial.kind)
   const [workstream, setWorkstream] = useState(initial.workstream)
   const [category, setCategory] = useState(initial.category)
-  const [description, setDescription] = useState('')
+  const [description, setDescription] = useState(initialDescription)
   const [fiveWhys, setFiveWhys] = useState(['', '', '', '', ''])
   const [priority, setPriority] = useState<AndonPriority>('medium')
   const [attachments, setAttachments] = useState<File[]>([])

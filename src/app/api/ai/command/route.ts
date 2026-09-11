@@ -20,7 +20,7 @@ export const maxDuration = 60
 
 type CommandMessage = { role: 'user' | 'assistant'; content: string }
 type CommandAttachment = { name: string; mediaType: string; dataUrl: string; base64: string; size: number }
-const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie' }
+const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie, Authorization' }
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/json', 'application/pdf', 'image/heic', 'image/jpeg', 'image/png',
   'image/webp', 'text/csv', 'text/markdown', 'text/plain', 'text/xml',
@@ -125,8 +125,8 @@ function failure(error: unknown) {
 }
 
 export async function POST(request: Request) {
-  const authenticated = await resolveAuthenticatedActor()
-  if (!authenticated) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
+  const authenticated = await resolveAuthenticatedActor(request)
+  if (!authenticated?.subject) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: HEADERS })
   const actor = await resolveAssistantActor(authenticated.email)
   if (!actor) return NextResponse.json({ error: 'CRM profile not authorized' }, { status: 403, headers: HEADERS })
 
@@ -141,6 +141,7 @@ export async function POST(request: Request) {
     const attachments = cleanAttachments(body?.attachments)
     const started = await startAssistantGeneration({
       threadId: typeof body?.threadId === 'string' ? body.threadId : null,
+      actorSubject: authenticated.subject,
       actorEmail: actor.email,
       actorName: actor.fullName,
       surface: cleanSurface(body?.surface),
@@ -151,12 +152,12 @@ export async function POST(request: Request) {
     generationId = started.generationId
 
     if (!started.created) {
-      const existing = await replayAssistantGeneration(actor.email, started.generationId)
+      const existing = await replayAssistantGeneration(actor.email, started.generationId, authenticated.subject)
       if (existing.status === 'complete' && existing.reply) return NextResponse.json(responsePayload(existing), { headers: HEADERS })
       return NextResponse.json({ error: existing.status === 'running' ? 'A response is already in progress.' : 'This request was already attempted.', code: `generation_${existing.status}` }, { status: 409, headers: HEADERS })
     }
 
-    const stored = await loadAssistantThread(actor.email, started.threadId)
+    const stored = await loadAssistantThread({ subject: authenticated.subject }, started.threadId)
     const messages = stored.messages
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .slice(-20)
@@ -191,6 +192,7 @@ export async function POST(request: Request) {
 
     await completeAssistantGeneration({
       generationId: started.generationId,
+      actorSubject: authenticated.subject,
       actorEmail: actor.email,
       content: providerReply.reply,
       provider: providerReply.provider,
@@ -206,12 +208,13 @@ export async function POST(request: Request) {
         toolScope: assistantActorCanReadCompanyWide(actor) ? 'company_wide' : 'assigned_records',
       },
     })
-    const completed = await replayAssistantGeneration(actor.email, started.generationId)
+    const completed = await replayAssistantGeneration(actor.email, started.generationId, authenticated.subject)
     return NextResponse.json(responsePayload(completed), { headers: HEADERS })
   } catch (error) {
     if (generationId) {
       await failAssistantGeneration({
         generationId,
+        actorSubject: authenticated.subject,
         actorEmail: actor.email,
         code: error instanceof AssistantGenerationError ? error.code : 'generation_failed',
         message: error instanceof Error ? error.message : 'AI generation failed',
