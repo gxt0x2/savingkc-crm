@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { getMojoHealth, persistMojoHealth } from '@/lib/marketing/mojo-health'
 import { mojoAlertDecision } from '@/lib/marketing/mojo-alert-policy'
-import { recordMojoHealthIncident } from '@/lib/server/mojo-health-incident'
+import { getMojoRecoverySnapshot, recordMojoHealthIncident } from '@/lib/server/mojo-health-incident'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -28,7 +28,7 @@ async function handle(req: NextRequest) {
     const alert = mojoAlertDecision(health)
     if (!dryRun) {
       await persistMojoHealth(supabase, health)
-      if (alert.kind === 'operational_failure') {
+      {
         try {
           const incident = await recordMojoHealthIncident(supabase, {
             message: alert.message,
@@ -37,10 +37,10 @@ async function handle(req: NextRequest) {
             sessionStatus: health.sessionStatus,
             syncHealth: health.syncHealth,
             lastSyncAt: health.lastSyncAt,
-          })
+          }, new Date(), health)
           console.log(JSON.stringify({
-            level: 'warn',
-            message: 'mojo_health_attention',
+            level: alert.kind === 'operational_failure' ? 'warn' : 'info',
+            message: 'mojo_health_observed',
             healthStatus: health.status,
             incidentCreated: incident.created,
             smsAlerted: incident.alerted,
@@ -56,12 +56,14 @@ async function handle(req: NextRequest) {
       }
     }
 
+    const recovery = await getMojoRecoverySnapshot(supabase, health)
     return NextResponse.json(
       {
         ok: health.status !== 'attention',
         dryRun,
         health,
         alert,
+        recovery,
       },
       {
         status: health.status === 'attention' ? 503 : 200,

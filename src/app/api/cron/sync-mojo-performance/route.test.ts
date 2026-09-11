@@ -71,7 +71,7 @@ describe('/api/cron/sync-mojo-performance', () => {
       ok: false,
       code: 'session_expired',
       error: "Today's Mojo performance could not be refreshed.",
-      actionRequired: 'refresh_mojo_session',
+      actionRequired: 'retry_automatically',
     })
     expect(mocks.incident).toHaveBeenCalledWith(mocks.db, expect.objectContaining({
       reason: 'session_expired',

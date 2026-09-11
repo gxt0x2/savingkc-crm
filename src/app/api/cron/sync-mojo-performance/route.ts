@@ -97,9 +97,7 @@ async function handle(request: NextRequest) {
         ok: false,
         code,
         error: 'Today\'s Mojo performance could not be refreshed.',
-        actionRequired: code === 'session_expired' || code === 'session_missing'
-          ? 'refresh_mojo_session'
-          : 'retry_automatically',
+        actionRequired: 'retry_automatically',
       },
       { status: 503, headers: NO_STORE_HEADERS },
     )

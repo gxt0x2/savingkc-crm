@@ -57,7 +57,7 @@ export async function sendMojoIngestionFailureSmsAlert(input: {
     event: 'mojo_ingestion_failure',
     recipient: ernestPhone(),
     referenceId: input.incidentId,
-    body: `Mojo needs technical attention: ${input.message}. Check status and recovery steps: ${crmUrl('/settings/system-health')}`,
+    body: `Mojo needs technical attention: ${input.message}. Recovery details: ${crmUrl('/settings/system-health#mojo-recovery')}`,
   })
 }
 

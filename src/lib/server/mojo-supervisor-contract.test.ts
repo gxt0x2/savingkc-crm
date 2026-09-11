@@ -22,7 +22,7 @@ const identityResolver = fs.readFileSync('supabase/migrations/20261012120000_moj
 describe('Mojo supervised recovery contract', () => {
   it('runs one overlap-locked business-hours sync and persists freshness', () => {
     expect(runner).toContain("fs.openSync(lockFile, 'wx'")
-    expect(runner).toContain("['Sat', 'Sun']")
+    expect(runner).toContain("mojoSchedule(now).businessHours")
     expect(runner).toContain("['scripts/mojo-cron-runner.mjs', 'sync']")
     expect(runner).toContain('/api/admin/mojo-health')
     expect(runner).toContain('mojo-supervised-sync-heartbeat.json')

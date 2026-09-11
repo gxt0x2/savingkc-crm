@@ -45,7 +45,7 @@ describe('Mojo SMS alert decision', () => {
   it.each(['stale', 'unavailable'] as const)('uses the actual %s KPI cause even when history masks the overall message', (status) => {
     const health = evidenceReview()
     health.performance = { ...health.performance, status, message: 'Provider totals cannot be refreshed' }
-    expect(mojoAlertDecision(health)).toEqual({ kind: 'operational_failure', message: 'Provider totals cannot be refreshed' })
+    expect(mojoAlertDecision(health)).toEqual({ kind: 'operational_failure', message: 'Provider totals cannot be refreshed', failureKey: 'performance' })
   })
 
   it('does not confuse a delayed snapshot with an outage', () => {
@@ -60,13 +60,17 @@ describe('Mojo SMS alert decision', () => {
     expect(result.message).not.toContain('6 unresolved')
   })
 
+  it('does not count the overnight break as missed intake before the first morning run', () => {
+    expect(mojoAlertDecision({ ...evidenceReview(), lastSyncAgeMinutes: 854, lastSyncCallingAgeMinutes: 5 }).kind).toBe('evidence_review')
+  })
+
   it('does not expect intake while the calling schedule is closed', () => {
     expect(mojoAlertDecision({ ...evidenceReview(), businessHours: false, lastSyncAgeMinutes: 200 }).kind).toBe('evidence_review')
   })
 
   it('retains a provider failure message after hours even when performance status defaults to current', () => {
     expect(mojoAlertDecision({ ...evidenceReview(), businessHours: false, message: 'Provider refresh failed' }))
-      .toEqual({ kind: 'operational_failure', message: 'Provider refresh failed' })
+      .toEqual({ kind: 'operational_failure', message: 'Provider refresh failed', failureKey: 'integrity' })
   })
 
   it('does not suppress failed recording or queue work', () => {
