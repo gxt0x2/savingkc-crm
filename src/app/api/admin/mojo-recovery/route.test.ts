@@ -59,7 +59,7 @@ describe('server verification of automatic recovery receipts', () => {
   it('keeps a completed receipt immutable on a duplicate request', async () => {
     const db = database({ status: 'recovered', attempt_count: 1 }); mocks.db.mockReturnValue(db)
     await POST(request())
-    expect(db.update).not.toHaveBeenCalled(); expect(mocks.health).not.toHaveBeenCalled()
+    expect(db.update).not.toHaveBeenCalled(); expect(mocks.health).toHaveBeenCalledOnce()
   })
   it('rejects a child that finishes after its entire recovery deadline', async () => {
     const db = database({ started_at: '2026-09-11T14:30:00Z' }); mocks.db.mockReturnValue(db)

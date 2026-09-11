@@ -31,6 +31,15 @@ describe('automatic Mojo recovery controller', () => {
     expect(f.start).toHaveBeenCalledTimes(2)
     expect(f.retain.mock.calls.some(([r]) => r.error === 'network unavailable')).toBe(true)
   })
+  it('retrieves a successful run after its acknowledgment is lost without repeating the import', async () => {
+    const f = fixture()
+    f.start.mockResolvedValueOnce({}).mockResolvedValueOnce({ run: { status: 'recovered', attempts: [{ exitCode: 0, timedOut: false }] }, health: { status: 'clean' } })
+    f.report.mockRejectedValueOnce(new Error('acknowledgment lost'))
+    const result = await runMojoRecovery(f)
+    expect(result.status).toBe('recovered')
+    expect(f.runAttempt).toHaveBeenCalledOnce()
+    expect(f.report).toHaveBeenCalledOnce()
+  })
   it('does not run the importer until the CRM admits the runtime and run', async () => {
     const f = fixture()
     f.start.mockRejectedValue(new Error('old runtime'))

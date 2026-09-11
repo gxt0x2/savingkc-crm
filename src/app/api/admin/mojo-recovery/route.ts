@@ -34,7 +34,10 @@ export async function POST(req: NextRequest) {
     const { data: run, error } = await db.from('mojo_recovery_runs').select('*').eq('id', body.runId).single()
     if (error || !run) throw new Error(error?.message || 'Recovery run missing')
     if (run.runtime_digest !== expectedRuntime.contentDigest) return NextResponse.json({ ok: false, error: 'Recovery runtime changed' }, { status: 409, headers })
-    if (body.event === 'start' || run.status !== 'running' || body.attempts.length <= run.attempt_count) {
+    if (run.status !== 'running') {
+      return NextResponse.json({ ok: true, run, health: await getMojoHealth(db) }, { headers })
+    }
+    if (body.event === 'start' || body.attempts.length <= run.attempt_count) {
       return NextResponse.json({ ok: true, run }, { headers })
     }
     const now = new Date()

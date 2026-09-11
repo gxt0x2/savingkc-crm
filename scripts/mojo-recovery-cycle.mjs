@@ -11,7 +11,15 @@ export async function runMojoRecovery({ start, runAttempt, report, retain, sleep
     let result = { code: 1, timedOut: false }
     try {
       // Idempotent start also repairs a lost start response or temporary CRM outage.
-      await start(runId)
+      const admission = await start(runId)
+      if (admission?.run?.status === 'recovered' || admission?.run?.status === 'exhausted') {
+        const savedAttempts = admission.run.attempts || attempts
+        const savedLast = savedAttempts.at(-1)
+        last = { ...last, runId, status: admission.run.status, attempts: savedAttempts, server: admission,
+          result: last?.result || { code: savedLast?.exitCode ?? 1, timedOut: savedLast?.timedOut ?? false } }
+        await retain(last)
+        return last
+      }
       result = await runAttempt(attempt)
     } catch (error) {
       result = { code: 1, timedOut: false, error: error instanceof Error ? error.message : String(error) }
