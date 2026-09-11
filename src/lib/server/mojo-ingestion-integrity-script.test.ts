@@ -19,7 +19,7 @@ beforeAll(async () => {
 })
 const activity = (id: number, type = 3, details: Record<string, unknown> = {}, date = '09/10/2026 10:00 AM') =>
   [id, type, 'Casey', date, { contact_id: 7, contact_name: 'Test seller', ...details }]
-const contact = async () => ({ phone: '9135550123', notes: 'Old unrelated motivation: sell now', address: '', city: '', state: '', zip: '', email: '', followUpDate: '' })
+const contact = async () => ({ phone: '9135550123', notes: 'Old unrelated motivation: sell now', address: '', city: '', state: '', zip: '', email: '', emails: [], followUpDate: '' })
 
 describe('Mojo source integrity', () => {
   it('sends the installed runtime identity on session handoff and queue delivery', async () => {
