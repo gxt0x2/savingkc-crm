@@ -15,28 +15,35 @@ const failure = () => ({ ...healthy(), status: 'attention', sessionStatus: 'expi
 
 // Query filters and unique-open enforcement model the concurrency boundary; the migration is also rehearsed in PostgreSQL.
 function database(exhausted = false, legacy = false) {
-  const tables: Record<string, Array<Record<string, any>>> = { mojo_recovery_runs: exhausted ? [{
+  const tables: Record<string, Array<Record<string, unknown>>> = { mojo_recovery_runs: exhausted ? [{
     id: 'r', runtime_digest: expectedRuntime.contentDigest, started_at: '2026-09-11T14:50:00Z',
     status: 'exhausted', attempt_count: 3, failure_key: 'session', completed_at: '2026-09-11T15:00:00Z',
   }] : [], mojo_recovery_incidents: [], ari_briefing_events: [] }
   return { tables, from: (name: string) => {
-    let filters: Array<(r: Record<string, any>) => boolean> = []; let op = ''; let patch: any; let single = false
-    const q: any = {
+    const filters: Array<(r: Record<string, unknown>) => boolean> = []; let op = ''; let patch: Record<string, unknown> = {}; let single = false
+    type Query = {
+      select: () => Query; order: () => Query; limit: () => Query
+      eq: (k: string, v: unknown) => Query; is: (k: string, v: unknown) => Query
+      update: (v: Record<string, unknown>) => Query; insert: (v: Record<string, unknown>) => Query
+      maybeSingle: () => Query
+      then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise<unknown>
+    }
+    const q: Query = {
       select: () => q, order: () => q, limit: () => q,
-      eq: (k: string, v: any) => { filters.push(r => r[k] === v); return q },
-      is: (k: string, v: any) => { filters.push(r => (r[k] ?? null) === v); return q },
-      update: (v: any) => { op = 'update'; patch = v; return q },
-      insert: (v: any) => { op = 'insert'; patch = v; return q },
+      eq: (k: string, v: unknown) => { filters.push(r => r[k] === v); return q },
+      is: (k: string, v: unknown) => { filters.push(r => (r[k] ?? null) === v); return q },
+      update: (v: Record<string, unknown>) => { op = 'update'; patch = v; return q },
+      insert: (v: Record<string, unknown>) => { op = 'insert'; patch = v; return q },
       maybeSingle: () => { single = true; return q },
-      then: (resolve: any, reject: any) => Promise.resolve().then(() => {
-        let data: any = []
+      then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve().then(() => {
+        let data: Array<Record<string, unknown>> = []
         if (op === 'insert') {
           if (name === 'mojo_recovery_incidents' && tables[name].some(r => r.status === 'open')) return { data: null, error: { code: '23505' } }
           if (legacy && name === 'ari_briefing_events' && patch.metadata) return { error: { message: 'column ari_briefing_events.metadata does not exist' } }
           tables[name].push({ id: `id-${tables[name].length}`, status: 'open', alert_claimed_at: null, ...patch })
         } else {
           data = tables[name].filter(r => filters.every(f => f(r)))
-          if (op === 'update') data.forEach((r: any) => Object.assign(r, patch))
+          if (op === 'update') data.forEach((r: Record<string, unknown>) => Object.assign(r, patch))
         }
         return { data: single ? data[0] ?? null : data, error: null }
       }).then(resolve, reject),

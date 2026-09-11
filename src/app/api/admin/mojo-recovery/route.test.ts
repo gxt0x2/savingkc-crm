@@ -10,10 +10,15 @@ import { POST } from './route'
 const runId = '47e3f248-3461-4d08-80ae-12c72e7a335e'
 function database(change = {}) {
   const run = { id: runId, runtime_digest: expectedRuntime.contentDigest, started_at: '2026-09-11T14:55:00Z', status: 'running', attempt_count: 0, ...change }
-  const update = vi.fn((patch) => { Object.assign(run, patch); return q })
+  const update = vi.fn((patch: Record<string, unknown>): Query => { Object.assign(run, patch); return q })
   const upsert = vi.fn(() => q)
-  const q: any = { select: () => q, eq: () => q, lt: () => q, upsert, update, single: () => q, maybeSingle: () => q,
-    then: (resolve: any) => Promise.resolve({ data: run, error: null }).then(resolve) }
+  type Query = {
+    select: () => Query; eq: () => Query; lt: () => Query; single: () => Query; maybeSingle: () => Query
+    upsert: () => Query; update: (patch: Record<string, unknown>) => Query
+    then: (resolve: (value: unknown) => unknown) => Promise<unknown>
+  }
+  const q: Query = { select: () => q, eq: () => q, lt: () => q, upsert, update, single: () => q, maybeSingle: () => q,
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: run, error: null }).then(resolve) }
   return { run, update, upsert, from: () => q }
 }
 const body = { event: 'attempt', runId, attempts: [{ exitCode: 0, timedOut: false }] }

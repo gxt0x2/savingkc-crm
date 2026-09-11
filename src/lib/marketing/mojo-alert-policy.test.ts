@@ -69,7 +69,7 @@ describe('Mojo SMS alert decision', () => {
   })
 
   it('retains a provider failure message after hours even when performance status defaults to current', () => {
-    expect(mojoAlertDecision({ ...evidenceReview(), businessHours: false, message: 'Provider refresh failed', failureKey: 'integrity' }))
+    expect(mojoAlertDecision({ ...evidenceReview(), businessHours: false, message: 'Provider refresh failed' }))
       .toEqual({ kind: 'operational_failure', message: 'Provider refresh failed', failureKey: 'integrity' })
   })
 

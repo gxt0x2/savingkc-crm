@@ -3,7 +3,7 @@ import { runMojoRecovery } from '../../../scripts/mojo-recovery-cycle.mjs'
 function fixture(statuses = ['recovered']) {
   return { start: vi.fn().mockResolvedValue({}), runAttempt: vi.fn().mockResolvedValue({ code: 0, timedOut: false }),
     report: vi.fn().mockImplementation(async () => ({ run: { status: statuses.shift() || 'exhausted' } })),
-    retain: vi.fn(), sleep: vi.fn().mockResolvedValue(undefined), runId: 'run-1' }
+    retain: vi.fn(), sleep: vi.fn().mockResolvedValue(undefined), runId: '11111111-1111-4111-8111-111111111111' as const }
 }
 describe('automatic Mojo recovery controller', () => {
   it('recovers a transient failure without waiting for a human or the next 15-minute tick', async () => {

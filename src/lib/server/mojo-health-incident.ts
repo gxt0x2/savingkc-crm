@@ -71,7 +71,8 @@ export async function recordMojoHealthIncident(db: SupabaseLike, input: MojoInci
   }
   let { error: insertError } = await db.from('ari_briefing_events').insert(event)
   if (insertError && /ari_briefing_events\.metadata|metadata.*column|column.*metadata/i.test(insertError.message)) {
-    const { metadata: _metadata, ...legacy } = event
+    const legacy = { event_type: event.event_type, priority: event.priority, title: event.title,
+      description: event.description, read: false, dismissed: false }
     ;({ error: insertError } = await db.from('ari_briefing_events').insert(legacy))
   }
   if (insertError) {
