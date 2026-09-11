@@ -44,15 +44,17 @@ describe('Mojo field ownership', () => {
     expect(projectApprovedMojoLeadPatch({}, call, { latestForLead: false })).toEqual({})
   })
 
-  it('keeps county, tax, deceased, property, and source fields canonical', () => {
-    expect(MOJO_FIELD_OWNERSHIP_VERSION).toBe('mojo_field_ownership_v1')
+  it('keeps verified facts canonical and routes provider location through guarded projection', () => {
+    expect(MOJO_FIELD_OWNERSHIP_VERSION).toBe('mojo_source_projection_v2')
+    expect(MOJO_FIELD_OWNERSHIP.sourceProjectionFillOnly).toEqual([
+      'property_address', 'city', 'state', 'zip', 'emails',
+    ])
     expect(MOJO_FIELD_OWNERSHIP.canonicalOnly).toEqual(expect.arrayContaining([
       'county',
       'tax_delinquent',
       'tax_delinquent_years',
       'cumulative_due',
       'deceased',
-      'property_address',
       'source',
     ]))
 

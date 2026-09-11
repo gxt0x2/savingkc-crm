@@ -43,6 +43,7 @@ export interface MojoCallRecord {
   recording_url?: string
   follow_up_date?: string
   email?: string
+  emails?: string[]
   provider_contact_id?: string
   provider_action_id?: string
   provider_activity_ids?: string[]
@@ -131,6 +132,10 @@ export function normalizeMojoCallRecord(value: unknown): MojoCallRecord {
   const duration = Number(raw.call_duration || 0)
   if (!Number.isFinite(duration) || duration < 0 || duration > 86400) throw new Error('invalid_call_duration')
   const followUpDate = parseDate(raw.follow_up_date, 'follow_up_date', false)
+  const emails = [...new Set([
+    stringField(raw.email, 320).toLowerCase(),
+    ...stringArrayField(raw.emails, 20, 320).map((email) => email.toLowerCase()),
+  ].filter((email) => email.includes('@')))]
   return {
     record_id: requiredString(raw.record_id, 'record_id', 160),
     contact_name: stringField(raw.contact_name, 250),
@@ -148,7 +153,7 @@ export function normalizeMojoCallRecord(value: unknown): MojoCallRecord {
     ...(stringField(raw.campaign_name, 250) ? { campaign_name: stringField(raw.campaign_name, 250) } : {}),
     ...(stringField(raw.recording_url, 2000) ? { recording_url: stringField(raw.recording_url, 2000) } : {}),
     ...(followUpDate ? { follow_up_date: followUpDate } : {}),
-    ...(stringField(raw.email, 320) ? { email: stringField(raw.email, 320).toLowerCase() } : {}),
+    ...(emails[0] ? { email: emails[0], emails } : {}),
     ...(stringField(raw.provider_contact_id, 160) ? { provider_contact_id: stringField(raw.provider_contact_id, 160) } : {}),
     ...(stringField(raw.provider_action_id, 160) ? { provider_action_id: stringField(raw.provider_action_id, 160) } : {}),
     ...(Array.isArray(raw.provider_activity_ids) ? { provider_activity_ids: stringArrayField(raw.provider_activity_ids, 500, 160) } : {}),
@@ -232,6 +237,7 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
     state: fill(existing.state, incoming.state) || '',
     zip: fill(existing.zip, incoming.zip) || '',
     email: fill(existing.email, incoming.email),
+    emails: [...new Set([...(existing.emails || []), ...(incoming.emails || [])])],
     notes: longer(existing.notes, incoming.notes),
     list_name: fill(existing.list_name, incoming.list_name),
     campaign_name: fill(existing.campaign_name, incoming.campaign_name),
@@ -253,7 +259,7 @@ export function mergeMojoCallEvidence(existingValue: unknown, incomingValue: unk
 
   const materialFields: Array<keyof MojoCallRecord> = [
     'call_date', 'contact_name', 'phone_number', 'property_address', 'city', 'state', 'zip', 'provider_contact_id',
-    'call_duration', 'recording_url', 'follow_up_date', 'notes', 'email',
+    'call_duration', 'recording_url', 'follow_up_date', 'notes', 'email', 'emails',
     'provider_recording_id', 'provider_action_id', 'provider_activity_ids', 'source_batch_id', 'qualified_by_agent', 'qualification_override_reason', 'has_appointment',
     'promotion_eligible', 'qualification_status',
   ]

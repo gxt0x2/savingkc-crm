@@ -27,6 +27,8 @@
     "mojo:email": "node scripts/mojo-email-sync.mjs",
     "mojo:queue": "node scripts/mojo-queue-status.mjs",
     "mojo:qualification:audit": "tsx scripts/mojo-qualification-audit.mts",
+    "mojo:projection:audit": "tsx scripts/mojo-source-projection-audit.mts",
+    "mojo:projection:apply-reviewed": "tsx scripts/mojo-source-projection-apply-reviewed.mts",
     "gate:kpi-coverage": "node scripts/ci/check-kpi-coverage.mjs",
     "gate:canonical": "node scripts/ci/check-canonical-crm-build.mjs",
     "gate:proxy": "node scripts/ci/check-proxy-registration.mjs",

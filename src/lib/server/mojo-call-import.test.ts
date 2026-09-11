@@ -50,15 +50,32 @@ function result(overrides: Partial<MojoCallIngestResult> = {}): MojoCallIngestRe
 
 describe('canonical Mojo call import', () => {
   it('normalizes provider facts without inventing CRM intelligence', () => {
-    expect(normalizeMojoCallRecord({ ...call, call_duration: 120.8 })).toMatchObject({
+    expect(normalizeMojoCallRecord({
+      ...call,
+      call_duration: 120.8,
+      email: 'Primary@Example.com',
+      emails: ['primary@example.com', ' Alternate@Example.com ', 'invalid'],
+    })).toMatchObject({
       record_id: 'mojo-123',
       state: 'MO',
       call_duration: 120,
       call_date: '2026-08-24T12:00:00.000Z',
       follow_up_date: '2026-08-25T15:00:00.000Z',
+      email: 'primary@example.com',
+      emails: ['primary@example.com', 'alternate@example.com'],
     })
     expect(() => normalizeMojoCallRecord({ ...call, record_id: '' })).toThrow('invalid_record_id')
     expect(() => normalizeMojoCallRecord({ ...call, call_date: 'not-a-date' })).toThrow('invalid_call_date')
+  })
+
+  it('merges later Mojo email evidence without changing the primary email', () => {
+    const merged = mergeMojoCallEvidence(
+      { ...call, email: 'primary@example.com', emails: ['primary@example.com'] },
+      { ...call, email: 'alternate@example.com', emails: ['alternate@example.com', 'third@example.com'] },
+    )
+    expect(merged.call.email).toBe('primary@example.com')
+    expect(merged.call.emails).toEqual(['primary@example.com', 'alternate@example.com', 'third@example.com'])
+    expect(merged.improved).toBe(true)
   })
 
   it.each([

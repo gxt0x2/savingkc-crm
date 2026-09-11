@@ -51,7 +51,7 @@ async function requireOwnershipMigration() {
   const { data, error } = await db.from('system_config').select('value').eq('key', 'mojo_field_ownership_version').maybeSingle()
   if (error) throw new Error(`Ownership migration check failed: ${error.message}`)
   const value = typeof data?.value === 'string' ? data.value : String(data?.value || '')
-  if (value !== MOJO_FIELD_OWNERSHIP_VERSION) throw new Error('mojo_field_ownership_v1 is not active in production')
+  if (value !== MOJO_FIELD_OWNERSHIP_VERSION) throw new Error(`${MOJO_FIELD_OWNERSHIP_VERSION} is not active in production`)
   return db
 }
 

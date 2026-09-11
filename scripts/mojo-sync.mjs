@@ -207,7 +207,7 @@ async function readMojoJson(resp, label) {
  * (NOT /v2/rest/contacts/{id}/ — that's a SPA route that returns HTML)
  */
 async function fetchContactDetails(sessionId, contactId) {
-  const result = { phone: '', notes: '', address: '', city: '', state: '', zip: '', email: '', followUpDate: '' }
+  const result = { phone: '', notes: '', address: '', city: '', state: '', zip: '', email: '', emails: [], followUpDate: '' }
   if (!contactId) return result
   try {
     const url = `${MOJO_BASE_URL}/v2/rest/contacts/data/${contactId}/`
@@ -236,9 +236,12 @@ async function fetchContactDetails(sessionId, contactId) {
     if (data.mediainfo_set && Array.isArray(data.mediainfo_set)) {
       const primaryPhone = data.mediainfo_set.find(m => m.type === 3 && m.value)
       const anyPhone = data.mediainfo_set.find(m => (m.type === 2 || m.type === 3) && m.value)
-      const emailEntry = data.mediainfo_set.find(m => m.type === 4 && m.value)
+      const emails = [...new Set(data.mediainfo_set
+        .filter(m => m.type === 4 && typeof m.value === 'string' && m.value.trim())
+        .map(m => m.value.trim().toLowerCase()))]
       result.phone = (primaryPhone || anyPhone)?.value || ''
-      result.email = emailEntry?.value || ''
+      result.email = emails[0] || ''
+      result.emails = emails
     }
 
     // Notes from contactnote_set
@@ -506,6 +509,7 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
         has_appointment: entry.hasAppointment,
         follow_up_date: followUpDate,
         email: contactDetails.email,
+        emails: contactDetails.emails,
       }
 
       const qualification = assessMojoCallQualification({

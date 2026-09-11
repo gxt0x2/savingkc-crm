@@ -128,6 +128,7 @@ function durationSeconds(value: unknown): number {
 type ContactDetails = {
   phone: string
   email: string
+  emails: string[]
   notes: string
   address: string
   city: string
@@ -140,7 +141,9 @@ async function fetchContact(sessionId: string, contactId: string): Promise<Conta
   const body = await mojoJson(sessionId, `${MOJO_BASE_URL}/v2/rest/contacts/data/${encodeURIComponent(contactId)}/`)
   const media = Array.isArray(body.mediainfo_set) ? body.mediainfo_set as Array<Record<string, unknown>> : []
   const primaryPhone = media.find((item) => item.type === 3 && item.value) || media.find((item) => item.type === 2 && item.value)
-  const email = media.find((item) => item.type === 4 && item.value)
+  const emails = [...new Set(media
+    .filter((item) => item.type === 4 && typeof item.value === 'string' && item.value.trim())
+    .map((item) => String(item.value).trim().toLowerCase()))]
   const notes = (Array.isArray(body.contactnote_set) ? body.contactnote_set as Array<Record<string, unknown>> : [])
     .map((item) => typeof item.contents === 'string' ? item.contents.trim() : '')
     .filter(Boolean)
@@ -150,7 +153,7 @@ async function fetchContact(sessionId: string, contactId: string): Promise<Conta
     .filter((value) => Number.isFinite(Date.parse(value)) && Date.parse(value) > Date.now())
     .sort((a, b) => Date.parse(a) - Date.parse(b))
   return {
-    phone: String(primaryPhone?.value || ''), email: String(email?.value || ''), notes,
+    phone: String(primaryPhone?.value || ''), email: emails[0] || '', emails, notes,
     address: String(body.address || body.full_address || ''), city: String(body.city || ''),
     state: String(body.state || ''), zip: String(body.zip_code || body.zip || ''),
     followUpDate: futureEvents[0] || '',
@@ -177,7 +180,7 @@ export function buildCalls(recordings: Recording[], contacts: Map<string, Contac
     return {
       record_id: String(row.record_id), contact_name: String(row.contact?.name || 'Unknown'),
       phone_number: details?.phone || '', property_address: details?.address || '', city: details?.city || '',
-      state: details?.state || '', zip: details?.zip || '', email: details?.email || '',
+      state: details?.state || '', zip: details?.zip || '', email: details?.email || '', emails: details?.emails || [],
       call_date: callDate.toISOString(), call_duration: durationSeconds(row.duration),
       disposition: String(row.result || 'Unknown'), agent_name: String(row.agent_name || 'Unknown'),
       notes: details?.notes || '', recording_url: String(row.audio || ''), follow_up_date: details?.followUpDate || '',
