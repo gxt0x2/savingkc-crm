@@ -1,9 +1,13 @@
 'use client'
 
 import { useRef, useState, type RefObject } from 'react'
-import { Icon } from '@/components/ui/icon'
-
 const PLAYBACK_SPEEDS = [0.75, 1, 1.25, 1.5, 2] as const
+
+function PlaybackGlyph({ name }: { name: 'play' | 'pause' | 'restart' }) {
+  if (name === 'play') return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M8 5.5v13l10-6.5z" /></svg>
+  if (name === 'pause') return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M7 5h4v14H7zm6 0h4v14h-4z" /></svg>
+  return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11a8 8 0 1 1 2.3 6" /><path d="M4 4v7h7" /></svg>
+}
 
 export function finiteSeconds(value: number | null | undefined) {
   return Number.isFinite(value) && Number(value) >= 0 ? Math.floor(Number(value)) : 0
@@ -105,10 +109,10 @@ export function CallReviewAudioPlayer({
       />
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => void togglePlayback()} aria-label={playing ? 'Pause original call' : 'Play original call'} className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-lg px-4 text-xs font-black">
-          <Icon name={playing ? 'pause' : 'play_arrow'} />{playing ? 'Pause' : 'Play'}
+          <PlaybackGlyph name={playing ? 'pause' : 'play'} />{playing ? 'Pause' : 'Play'}
         </button>
         <button type="button" onClick={restart} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-lg px-3 text-xs font-black">
-          <Icon name="replay" />Restart
+          <PlaybackGlyph name="restart" />Restart
         </button>
         <label className="ml-auto flex items-center gap-2 text-[11px] font-black text-[var(--crm-text-muted)]">
           Speed

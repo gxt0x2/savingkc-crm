@@ -52,9 +52,30 @@ describe('MyDayCallReview submitter notes', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
   })
 
+  it('saves a preview scorecard after every current behavior is rated even with a stale saved answer', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ viewerEmail: 'ernest@savingkc.com', recordings: [{
+        id: 'preview-local', leadName: 'Preview save test', recordingUrl: '/audio/ivr-voicemail.mp3', durationSeconds: 5, analysisSummary: null, previewLocal: true,
+        reviewWorkflow: { status: 'submitted', framework: 'junior_acquisitions', score: null, submittedBy: 'preview-user', assignedReviewer: 'ernest@savingkc.com', tags: [], aiStatus: 'idle', answers: { retired_behavior: 3 } },
+      }] }),
+    }))
+
+    render(<MyDayCallReview surface="scorecard" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Score Call' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Preview save test' })
+    for (const group of within(dialog).getAllByRole('radiogroup')) fireEvent.click(within(group).getByRole('radio', { name: '0' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Complete Scorecard' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Preview save test' })).not.toBeInTheDocument())
+    expect(window.localStorage.getItem('savingkc:preview-call-review-result:v1:preview-local')).toContain('"status":"completed"')
+  })
+
   it('keeps the reviewer microphone live while the seller call plays', async () => {
     const gains: Array<{ gain: { value: number; setValueAtTime: ReturnType<typeof vi.fn> }; connect: (target: unknown) => unknown; disconnect: ReturnType<typeof vi.fn> }> = []
-    const stream = { getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream
+    const track = { readyState: 'live', stop: vi.fn() }
+    const stream = { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream
+    let recorderOptions: MediaRecorderOptions | undefined
     class MockAudioContext {
       state = 'running'
       currentTime = 0
@@ -64,6 +85,7 @@ describe('MyDayCallReview submitter notes', () => {
       createMediaElementSource() { return { connect: (target: unknown) => target, disconnect: vi.fn() } }
       createMediaStreamDestination() { return { stream: {} as MediaStream, connect: (target: unknown) => target, disconnect: vi.fn() } }
       createMediaStreamSource() { return { connect: (target: unknown) => target, disconnect: vi.fn() } }
+      createAnalyser() { return { fftSize: 512, getByteTimeDomainData: (values: Uint8Array) => values.fill(132), connect: (target: unknown) => target, disconnect: vi.fn() } }
       createGain() {
         const node = { gain: { value: 0, setValueAtTime: vi.fn() }, connect: (target: unknown) => target, disconnect: vi.fn() }
         gains.push(node)
@@ -76,7 +98,7 @@ describe('MyDayCallReview submitter notes', () => {
       mimeType = 'audio/webm;codecs=opus'
       ondataavailable: ((event: BlobEvent) => void) | null = null
       onstop: (() => void) | null = null
-      constructor(_stream: MediaStream, public options?: MediaRecorderOptions) {}
+      constructor(_stream: MediaStream, public options?: MediaRecorderOptions) { recorderOptions = options }
       start() { this.state = 'recording' }
       requestData() {}
       stop() { this.state = 'inactive'; this.onstop?.() }
@@ -99,11 +121,16 @@ describe('MyDayCallReview submitter notes', () => {
 
     expect(await screen.findByText('The seller call and your microphone are both recording.')).toBeInTheDocument()
     expect(gains).toHaveLength(2)
-    expect(gains[1].gain.value).toBe(1)
+    expect(gains[0].gain.value).toBe(0.55)
+    expect(gains[1].gain.value).toBe(1.8)
+    expect(recorderOptions?.audioBitsPerSecond).toBe(96_000)
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: { autoGainControl: false, channelCount: 1, echoCancellation: false, noiseSuppression: false } })
+    expect(screen.getByLabelText('Live microphone level')).toBeInTheDocument()
   })
 
   it('rejects an empty browser recording instead of showing false completion', async () => {
-    const stream = { getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream
+    const track = { readyState: 'live', stop: vi.fn() }
+    const stream = { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream
     class MockAudioContext {
       state = 'running'
       currentTime = 0
@@ -113,6 +140,7 @@ describe('MyDayCallReview submitter notes', () => {
       createMediaElementSource() { return { connect: (target: unknown) => target, disconnect: vi.fn() } }
       createMediaStreamDestination() { return { stream: {} as MediaStream, connect: (target: unknown) => target, disconnect: vi.fn() } }
       createMediaStreamSource() { return { connect: (target: unknown) => target, disconnect: vi.fn() } }
+      createAnalyser() { return { fftSize: 512, getByteTimeDomainData: (values: Uint8Array) => values.fill(128), connect: (target: unknown) => target, disconnect: vi.fn() } }
       createGain() { return { gain: { value: 0, setValueAtTime: vi.fn() }, connect: (target: unknown) => target, disconnect: vi.fn() } }
     }
     class EmptyMediaRecorder {
