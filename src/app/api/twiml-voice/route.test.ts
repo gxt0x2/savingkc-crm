@@ -260,6 +260,7 @@ describe('TwiML request containment', () => {
       clientAttemptId: 'attempt-1',
     })
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
+    expect(text).toContain('answerOnBridge="true" ringTone="us"')
     expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
     expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1"')
   })

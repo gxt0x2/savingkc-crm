@@ -1,12 +1,12 @@
 // Guard against the recurring "outbound dialer is silent" regression.
 //
-// Two pieces have to stay in lockstep:
+// Four pieces have to stay in lockstep:
 //   1. The TwiML must include answerOnBridge="true" on the outbound Dial.
-//   2. The Twilio Voice SDK client must pass enableRingingState: true into
-//      device.connect(), otherwise the SDK never emits the ringing event or
-//      plays ringback audio while the parent leg is in the "ringing" state.
+//   2. TwiML must request a deterministic US ring tone.
+//   3. The Voice SDK client must enable the ringing event.
+//   4. The client must play local ringback when Twilio reports no early media.
 //
-// If either piece disappears, the agent hears silence then a disconnect tone
+// If any piece disappears, the agent can hear silence then a disconnect tone
 // — the exact symptom Casey reported (it's already happened three times).
 //
 // This script fails the CI gate if either invariant is missing, so we can't
@@ -26,7 +26,27 @@ const checks = [
   {
     file: 'src/components/telephony/telephony-bar.tsx',
     needle: 'enableRingingState: true',
-    why: 'Twilio Voice SDK connect() must pass enableRingingState: true so the SDK plays ringback while the parent leg is ringing.',
+    why: 'Twilio Voice SDK connect() must pass enableRingingState: true so the client receives ringing state.',
+  },
+  {
+    file: 'src/app/api/twiml-voice/route.ts',
+    needle: 'ringTone="us"',
+    why: 'Outbound TwiML must request deterministic US ringback instead of relying only on carrier early media.',
+  },
+  {
+    file: 'src/components/telephony/use-dialer-ringback.ts',
+    needle: "new Audio('/api/audio/us-ringback.wav')",
+    why: 'The browser must play local ringback when the ringing event reports no early media.',
+  },
+  {
+    file: 'src/components/telephony/telephony-bar.tsx',
+    needle: 'if (deviceInitPromiseRef.current) return deviceInitPromiseRef.current',
+    why: 'Dialer initialization must be single-flight so one agent identity cannot register competing Voice devices.',
+  },
+  {
+    file: 'src/components/telephony/telephony-bar.tsx',
+    needle: 'await verifyMicrophoneInput()',
+    why: 'The browser must prove a live microphone track exists before it can place a call.',
   },
 ]
 
