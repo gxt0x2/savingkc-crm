@@ -83,7 +83,7 @@ export function ProspectingSessionTakeoverDialog({
 
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button type="button" autoFocus onClick={onCancel} disabled={busy} className="crm-secondary-button h-11 rounded-xl px-5 text-sm font-black disabled:opacity-50">Cancel</button>
-          <button type="button" onClick={onContinue} disabled={busy} className="crm-primary-button inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40"><Icon name={busy ? 'progress_activity' : 'power_settings_new'} className={busy ? 'animate-spin' : ''} />{busy ? 'Disconnecting…' : 'Disconnect & review here'}</button>
+          <button type="button" onClick={onContinue} disabled={busy} className="crm-primary-button inline-flex h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40"><Icon name={busy ? 'progress_activity' : 'power_settings_new'} className={busy ? 'animate-spin' : ''} />{busy ? 'Disconnecting…' : 'Disconnect & start here'}</button>
         </div>
       </section>
     </div>
