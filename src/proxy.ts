@@ -69,6 +69,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/admin/mojo-health',
   '/api/admin/mojo-incident',
   '/api/admin/mojo-performance',
+  '/api/admin/mojo-recovery',
   '/api/admin/mojo-session',
   '/api/admin/mojo-source-batches',
   '/api/admin/system-config',
