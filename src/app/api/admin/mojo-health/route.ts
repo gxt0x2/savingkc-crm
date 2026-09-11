@@ -39,8 +39,8 @@ async function handle(req: NextRequest) {
             lastSyncAt: health.lastSyncAt,
           }, new Date(), health)
           console.log(JSON.stringify({
-            level: 'warn',
-            message: 'mojo_health_attention',
+            level: alert.kind === 'operational_failure' ? 'warn' : 'info',
+            message: 'mojo_health_observed',
             healthStatus: health.status,
             incidentCreated: incident.created,
             smsAlerted: incident.alerted,

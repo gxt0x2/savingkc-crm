@@ -19,7 +19,7 @@ export function mojoAlertDecision(health: MojoHealth): MojoAlertDecision {
   if (!health.runtime?.verified) return failure('The Mojo collector does not match the verified release', 'runtime')
   if (['stale', 'unavailable'].includes(health.performance.status)) return failure(health.performance.message, 'performance')
   const callingAge = health.lastSyncCallingAgeMinutes ?? health.lastSyncAgeMinutes
-  if (health.businessHours && (callingAge === null || callingAge > 30)) {
+  if (health.businessHours && (callingAge === null || callingAge >= 30)) {
     return failure('Mojo source intake has missed its scheduled completion in the current calling window', 'intake')
   }
   if (health.queue.failed24h > 0 || health.queue.deadLetter > 0 || health.qualification.recordingFailed7d > 0) {

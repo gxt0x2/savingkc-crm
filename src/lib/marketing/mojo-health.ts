@@ -564,15 +564,12 @@ export async function getMojoHealth(
     } else if (businessHours && (performanceAgeMinutes ?? 0) >= 120) {
       status = 'attention'
       message = `Mojo provider performance has not updated in ${performanceAgeMinutes} minutes during business hours`
-    } else if (businessHours && lastSyncCallingAgeMinutes >= 120) {
+    } else if (businessHours && lastSyncCallingAgeMinutes >= 30) {
       status = 'attention'
       message = `Mojo sync has not completed in ${lastSyncCallingAgeMinutes} minutes of this calling window`
     } else if (businessHours && (performanceAgeMinutes ?? 0) >= 60) {
       status = 'watch'
       message = `Mojo provider performance is delayed by ${performanceAgeMinutes} minutes`
-    } else if (businessHours && lastSyncCallingAgeMinutes >= 60) {
-      status = 'watch'
-      message = `Mojo sync is stale by ${lastSyncCallingAgeMinutes} minutes of this calling window`
     } else if (pending > 0 || processing > 0 || qualification.recordingOutstanding24h > 0 || qualification.evidencePending24h > 0) {
       status = 'watch'
       const activeCount = pending + processing + qualification.recordingOutstanding24h + qualification.evidencePending24h
