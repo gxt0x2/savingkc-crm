@@ -29,7 +29,7 @@ import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-contro
 
 const StreetViewPanel = dynamic(() => import('@/components/leads/google-map-panel').then((module) => module.StreetViewPanel), {
   ssr: false,
-  loading: () => <div className="grid h-[150px] place-items-center bg-[var(--ck-surface-elev)] text-xs text-[var(--ck-text-muted)]">Loading Street View…</div>,
+  loading: () => <div className="grid h-full min-h-[150px] place-items-center bg-[var(--ck-surface-elev)] text-xs text-[var(--ck-text-muted)]">Loading Street View…</div>,
 })
 
 type InformationTab = 'notes' | 'details' | ProspectingWrapUpAction
@@ -146,10 +146,10 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
 
   const contactColumn = <main
     aria-label="Current Contact"
-    className="min-w-0 self-start overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm"
+    className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm lg:h-full"
   >
     <ColumnHeader label="Current Contact" tone="contact" />
-    <div className="space-y-4 p-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold tracking-[-0.02em] text-[var(--ck-text)]">{owner.fullName || props.ownerName}</h1>
@@ -163,12 +163,12 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
 
       {props.primaryWorkspace}
 
-      <section aria-label="Property lookup" className="overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
+      <section aria-label="Property lookup" className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
         <div role="tablist" aria-label="Property lookup" className="grid grid-cols-2 border-b border-[var(--ck-border)] p-1">
           {(['street', 'zillow'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={propertyTab === tab} onClick={() => setPropertyTab(tab)} className={`min-h-9 rounded-lg text-xs font-black ${propertyTab === tab ? 'bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-sm' : 'text-[var(--ck-text-muted)]'}`}>{tab === 'street' ? 'Street View' : 'Zillow'}</button>)}
         </div>
-        {propertyTab === 'street' ? <div role="tabpanel" aria-label="Street View" className="overflow-hidden"><StreetViewPanel address={situsLine} height={150} /></div>
-          : <div role="tabpanel" aria-label="Zillow" className="space-y-3 p-4">
+        {propertyTab === 'street' ? <div role="tabpanel" aria-label="Street View" className="min-h-[150px] flex-1 overflow-hidden"><StreetViewPanel address={situsLine} height="100%" /></div>
+          : <div role="tabpanel" aria-label="Zillow" className="flex flex-1 flex-col gap-3 p-4">
             <div className="flex items-end justify-between gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
               <div><p className="text-[9px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Quick Zestimate</p><p className="mt-1 text-2xl font-black text-[var(--ck-text)]">{compactDollars(props.prospect?.zestimate)}</p></div>
               <span className="text-[10px] font-bold text-[var(--ck-text-muted)]">Saved property estimate</span>
@@ -184,13 +184,13 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
 
   const informationColumn = <aside
     aria-label="Prospect information workspace"
-    className="prospecting-information-panel min-w-0 self-start overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm"
+    className="prospecting-information-panel flex min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm lg:h-full"
   >
     <ColumnHeader label="Information" tone="information" />
     <div role="tablist" aria-label="Contact tools" className="prospecting-tool-tabs w-full border-b border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
       {INFORMATION_TABS.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeInfoTab === tab.id} onClick={() => setActiveInfoTab(tab.id)} className={`flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 text-[10px] font-bold whitespace-nowrap transition-colors ${activeInfoTab === tab.id ? 'bg-[var(--prospecting-primary-soft)] text-[var(--prospecting-primary)] shadow-sm ring-1 ring-inset ring-[var(--prospecting-primary)]/35' : 'text-[var(--ck-text-muted)] hover:bg-[var(--prospecting-hover)] hover:text-[var(--ck-text)]'}`}><Icon name={tab.icon} size="text-base" className="shrink-0" /><span className="min-w-0 truncate">{tab.label}</span></button>)}
     </div>
-    <div className="p-4">
+    <div className="flex min-h-0 flex-1 flex-col p-4">
       {activeInfoTab === 'notes' ? <ProspectingNotesPanel
         key={`notes:${recordKey}`}
         leadId={props.leadId}
@@ -252,7 +252,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
   </aside>
 
   return <section aria-label="Seller answer workspace" className="min-w-0">
-    <div className="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(11rem,0.72fr)] 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]">
+    <div className="grid min-w-0 grid-cols-1 items-stretch gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(11rem,0.72fr)] 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]">
       {contactColumn}
       {informationColumn}
       {dialerColumn}

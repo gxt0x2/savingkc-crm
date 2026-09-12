@@ -74,7 +74,9 @@ describe('ProspectingNotesPanel', () => {
     />)
 
     expect(screen.getByRole('region', { name: 'Notes' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Notes' })).toHaveClass('h-full')
     expect(screen.getByRole('textbox', { name: 'Note for Mary Seller' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: 'Note for Mary Seller' })).toHaveClass('flex-1', 'resize-none')
     expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled()
   })
 })

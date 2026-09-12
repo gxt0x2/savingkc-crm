@@ -10,12 +10,14 @@ export function ContactNoteComposer({
   readOnlyPreview = false,
   rows = 1,
   variant = 'compact',
+  fillAvailable = false,
 }: {
   contactName: string
   onSave: (description: string) => Promise<void>
   readOnlyPreview?: boolean
   rows?: number
   variant?: 'compact' | 'workspace'
+  fillAvailable?: boolean
 }) {
   const [note, setNote] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -36,9 +38,9 @@ export function ContactNoteComposer({
     }
   }
 
-  if (variant === 'workspace') return <div className="mt-4">
-    <form onSubmit={(event) => { event.preventDefault(); void submit() }}>
-      <label className="block">
+  if (variant === 'workspace') return <div className={fillAvailable ? 'mt-4 flex min-h-0 flex-1 flex-col' : 'mt-4'}>
+    <form onSubmit={(event) => { event.preventDefault(); void submit() }} className={fillAvailable ? 'flex min-h-0 flex-1 flex-col' : undefined}>
+      <label className={fillAvailable ? 'flex min-h-0 flex-1 flex-col' : 'block'}>
         <span className="mb-2 block text-[11px] font-medium text-[var(--ck-text-muted)]">Call notes</span>
         <textarea
           aria-label={`Note for ${contactName}`}
@@ -48,7 +50,7 @@ export function ContactNoteComposer({
           maxLength={2_000}
           disabled={readOnlyPreview}
           placeholder="Type what you learn during the conversation..."
-          className="min-h-[98px] w-full resize-y rounded-lg border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] px-3 py-2 text-xs leading-5 text-[var(--ck-text)] outline-none placeholder:text-[var(--ck-text-dim)] focus:border-[var(--prospecting-border-strong)] disabled:cursor-not-allowed"
+          className={`${fillAvailable ? 'min-h-[12rem] flex-1 resize-none' : 'min-h-[98px] resize-y'} w-full rounded-lg border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] px-3 py-2 text-xs leading-5 text-[var(--ck-text)] outline-none placeholder:text-[var(--ck-text-dim)] focus:border-[var(--prospecting-border-strong)] disabled:cursor-not-allowed`}
         />
       </label>
       <button type="submit" aria-label="Save note" disabled={readOnlyPreview || !note.trim() || status === 'saving'} title={readOnlyPreview ? 'Available in a live calling session' : undefined} className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--prospecting-primary)] px-3 text-xs font-bold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed">

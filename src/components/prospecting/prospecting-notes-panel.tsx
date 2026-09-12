@@ -58,7 +58,7 @@ export function ProspectingNotesPanel(props: ProspectingNotesPanelProps) {
     props.onSaved()
   }
 
-  return <section aria-label="Notes">
+  return <section aria-label="Notes" className="flex h-full min-h-0 flex-col">
     <div className="flex items-start justify-between gap-3">
       <div>
         <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Default workspace</p>
@@ -67,7 +67,7 @@ export function ProspectingNotesPanel(props: ProspectingNotesPanelProps) {
       <span className="rounded-full border border-[var(--prospecting-warning)]/35 bg-[var(--prospecting-warning-soft)] px-2.5 py-1 text-[9px] font-bold text-[var(--prospecting-warning-ink)]">{props.recordKind}</span>
     </div>
 
-    <ContactNoteComposer contactName={props.sellerName || 'current seller'} onSave={save} readOnlyPreview={props.readOnly} rows={4} variant="workspace" />
+    <ContactNoteComposer contactName={props.sellerName || 'current seller'} onSave={save} readOnlyPreview={props.readOnly} rows={4} variant="workspace" fillAvailable />
 
     <div className="mt-3 space-y-2 border-t border-[var(--ck-border)] pt-3">
       <p className="text-[9px] font-black uppercase tracking-[0.14em] text-[var(--ck-text-dim)]">Recent notes</p>
