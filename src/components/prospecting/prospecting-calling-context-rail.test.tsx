@@ -77,7 +77,10 @@ describe('ProspectingCallingContextRail', () => {
     expect(screen.queryByText(/Auto-linked to live record/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mark as Lead' })).toBeVisible()
     expect(screen.getByText('Daughter handles the estate calls.')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Seller answer workspace' }).firstElementChild).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]')
+    expect(screen.getByRole('region', { name: 'Seller answer workspace' }).firstElementChild).toHaveClass(
+      'lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(11rem,0.72fr)]',
+      '2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]',
+    )
     expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).toHaveClass('lg:sticky', 'lg:top-3')
     expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).not.toHaveClass('lg:col-span-2')
     expect(screen.getByRole('tablist', { name: 'Contact tools' })).toHaveClass('prospecting-tool-tabs')

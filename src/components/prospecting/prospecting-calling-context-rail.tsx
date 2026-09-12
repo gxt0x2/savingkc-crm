@@ -252,7 +252,7 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
   </aside>
 
   return <section aria-label="Seller answer workspace" className="min-w-0">
-    <div className="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]">
+    <div className="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(11rem,0.72fr)] 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]">
       {contactColumn}
       {informationColumn}
       {dialerColumn}
