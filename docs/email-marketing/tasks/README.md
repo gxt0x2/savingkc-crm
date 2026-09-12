@@ -1,6 +1,6 @@
 # Implementation packets
 
-Specification v1.2 · Design only. Start after implementation is authorized.
+Specification v1.2 · Implementation authorized. Follow the [audited status](../build-status.md) and [connected local milestone](../recovery-milestone.md); the packet list below describes the full target, not completed functionality.
 
 Read [07](../07-sales-voice-and-response-operations.md) for the current sales voice, personalization, scheduling, alert and phone contracts. Read [08](../08-focused-workspace-and-cadence.md) for current navigation, inbox views, campaign recipients and cadence. EM-031–EM-035 run before final EM-030 release verification.
 

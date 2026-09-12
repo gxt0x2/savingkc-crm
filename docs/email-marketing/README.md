@@ -1,8 +1,10 @@
 # SavingKC Email: build specification
 
-**The design is approved and the local implementation baseline is complete. The email application has not been built yet.**
+**The design is approved. A connected local simulation is implemented; the full application and live integrations are unfinished.**
 
-Implementation starts in the isolated checkout named in [the current baseline and model handoff](implementation-baseline.md). Read it before a build packet: it updates older CRM assumptions and distinguishes verified local evidence from pending live schema checks.
+Start with [current build status](build-status.md) and [local verification](local-verification.md). These replace earlier packet-completion claims.
+
+Implementation continues in the isolated checkout named in [the historical source baseline](implementation-baseline.md). Its CRM identity and lifecycle findings remain useful; the current build-status document owns continuation instructions.
 
 Ernest's decisions: email belongs inside the CRM; campaign sending uses separately registered domains; Resend is the initial transport; AI handles routine work with bounded human intervention; expressed seller interest becomes a **Lead**, and acquisitions explicitly qualifies an **Opportunity**. Final subscriptions, domains, team, audience and spend are collected through a guided setup experience.
 

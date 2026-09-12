@@ -1,0 +1,187 @@
+import { test, expect } from '@playwright/test'
+
+test('campaign → review → simulated acceptance → reply → takeover → callback → opt-out survives reload', async ({
+  page,
+}) => {
+  const browserErrors: string[] = []
+  page.on('pageerror', (error) => browserErrors.push(error.message))
+  await page.goto('/')
+  await expect(
+    page.getByText('Local practice workspace', { exact: true }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Campaigns', exact: true }).click()
+  await page
+    .getByLabel('Campaign name', { exact: true })
+    .fill('Verified browser pilot')
+  await page.getByRole('button', { name: 'New campaign', exact: true }).click()
+  await page.getByRole('button', { name: 'Save sequence', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Draft updated')
+  await page.getByRole('button', { name: 'Recipients', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Review saved campaign', exact: true })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: '2 ready · 1 excluded' }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Address verification required', { exact: true }),
+  ).toBeVisible()
+  await page
+    .getByRole('button', { name: 'Start reviewed simulation', exact: true })
+    .click()
+  await expect(
+    page.getByRole('button', { name: 'Pause this campaign', exact: true }),
+  ).toBeVisible()
+  await page.getByText('Local testing controls', { exact: true }).click()
+  await page
+    .getByRole('button', {
+      name: 'Process next simulated message',
+      exact: true,
+    })
+    .click()
+  await expect(page.getByRole('status')).toHaveText(
+    'One message accepted by the simulated transport.',
+  )
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click()
+  await page.getByRole('button', { name: /All conversations/ }).click()
+  await page
+    .getByRole('region', { name: 'Conversations', exact: true })
+    .getByRole('button')
+    .first()
+    .click()
+  await page
+    .getByRole('button', {
+      name: 'Receive practice reply in selected conversation',
+      exact: true,
+    })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Pending sequence messages are stopped',
+  )
+  const messageCards = page
+    .getByRole('region', { name: 'Selected conversation' })
+    .locator('article')
+  await expect(messageCards.nth(0)).toContainText('SavingKC · simulated')
+  await expect(messageCards.nth(1)).toContainText('I might consider selling')
+  await page.getByRole('button', { name: 'Take over', exact: true }).click()
+  await page
+    .getByLabel('Reply draft', { exact: true })
+    .fill('Would 2 PM work for a quick call?')
+  await page
+    .getByRole('button', { name: 'Save reply draft', exact: true })
+    .click()
+  await expect(
+    page.getByRole('button', { name: 'Queue simulated reply', exact: true }),
+  ).toBeEnabled()
+  // A later inbound must invalidate the saved reply through the actual API.
+  await page
+    .getByRole('button', {
+      name: 'Receive practice reply in selected conversation',
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('button', { name: 'Queue simulated reply', exact: true }),
+  ).toHaveCount(0)
+  await page
+    .getByRole('button', { name: 'Arrange callback', exact: true })
+    .click()
+  await page
+    .getByLabel('Phone from this reply', { exact: true })
+    .fill('816-555-0101')
+  await page
+    .getByLabel('Seller’s exact time wording', { exact: true })
+    .fill('Tomorrow afternoon')
+  await page
+    .getByRole('button', { name: 'Save callback handoff', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'No calendar booking or CRM Lead was created',
+  )
+  await page.screenshot({
+    path: 'test-results/email-local/inbox-desktop.png',
+    fullPage: true,
+  })
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await expect(
+    page.getByText('Callback needs a time', { exact: true }),
+  ).toBeVisible()
+  await page
+    .getByRole('button', { name: 'Acknowledge', exact: true })
+    .first()
+    .click()
+  await expect(page.getByText('Acknowledged', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Inbox', exact: true }),
+  ).toBeVisible()
+  if (
+    !(await page
+      .getByLabel('Practice incoming reply', { exact: true })
+      .isVisible())
+  )
+    await page.getByText('Local testing controls', { exact: true }).click()
+  await page
+    .getByLabel('Practice incoming reply', { exact: true })
+    .fill('Please unsubscribe me.')
+  await page
+    .getByRole('button', {
+      name: 'Receive practice reply in selected conversation',
+      exact: true,
+    })
+    .click()
+  await expect(page.getByText('Unsubscribed', { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Save reply draft', exact: true }),
+  ).toHaveCount(0)
+  await page.reload()
+  await page.getByRole('button', { name: /Closed & stopped/ }).click()
+  await page
+    .getByRole('region', { name: 'Conversations', exact: true })
+    .getByRole('button')
+    .click()
+  await expect(page.getByText('Unsubscribed', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText('Callback needs review — marketing stopped', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({
+    path: 'test-results/email-local/inbox-mobile.png',
+    fullPage: true,
+  })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+  expect(browserErrors).toEqual([])
+})
+
+test('unavailable state is visible and refresh recovers; wrong-origin writes are rejected', async ({
+  page,
+  request,
+}) => {
+  await page.route('**/api/email/workspace', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'EMAIL_UNAVAILABLE' }),
+    }),
+  )
+  await page.goto('/')
+  await expect(page.getByRole('main').getByRole('alert')).toContainText(
+    'could not be loaded',
+  )
+  await page.unroute('**/api/email/workspace')
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(
+    page.getByText('Local practice workspace', { exact: true }),
+  ).toBeVisible()
+  const response = await request.post('/api/email/workspace', {
+    headers: { Origin: 'https://unrelated.test' },
+    data: { command: 'CAM-CREATE' },
+  })
+  expect(response.status()).toBe(403)
+})
