@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {reportValue} from '../reports';describe('reports',()=>it('never relabels unknown as zero',()=>{expect(reportValue(undefined,true)).toMatchObject({state:'unknown',value:null});expect(reportValue(0,true)).toMatchObject({state:'known',value:0})}))
