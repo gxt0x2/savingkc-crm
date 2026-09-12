@@ -1,0 +1,1592 @@
+{
+  "specVersion": "1.2",
+  "date": "2026-09-12",
+  "state": "design_only",
+  "tasks": [
+    {
+      "n": 1,
+      "title": "Verify the implementation baseline",
+      "deps": [],
+      "spec": "02 \u00a71/\u00a79; 03 \u00a71/\u00a78; 06 \u00a75 G0",
+      "files": [
+        "docs/email-marketing/implementation-baseline.md",
+        "docs/email-marketing/build-status.md"
+      ],
+      "actions": [],
+      "tests": [],
+      "outcome": "Record exact current schema, CRM identity and stage mapping, email entry points, auth roles, package manager and hosting capability before implementation.",
+      "requirements": [
+        "Inspect git state and preserve unrelated edits. Use an isolated codex/ branch/worktree when implementation is authorized.",
+        "Read installed Next guides; resolve missing dependencies from the existing lockfile. Record actual leads phone/source constraints, prospects/buyer identity and all-contact restrictions without printing secrets.",
+        "Inventory every Resend/Gmail sender and hidden CRM automation side effect. Record schema drift and reconcile contract before dependent SQL. Missing live access is a named gate, not guessed schema."
+      ],
+      "suite": null,
+      "gate": "G0",
+      "id": "EM-001",
+      "dependencies": [],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 2,
+      "title": "Create shared contracts and test harness",
+      "deps": [
+        1
+      ],
+      "spec": "02 \u00a72\u2013\u00a74; 03 \u00a73; 04 \u00a71; 06 \u00a72",
+      "files": [
+        "src/lib/email/contracts.ts",
+        "src/lib/email/__tests__/schema.test.ts",
+        "tests/email-db/",
+        "tests/email/",
+        "package.json"
+      ],
+      "actions": [],
+      "tests": [
+        "T03",
+        "T18"
+      ],
+      "outcome": "Publish strict shared enums, command/result schemas and meaningful disposable-database/browser harnesses.",
+      "requirements": [
+        "Encode every server action payload from 04 as a discriminated union; reject extra keys and client workspace authority.",
+        "Add test:email:db and test:email:ui scripts following the existing runner, failing explicitly if required environment is absent.",
+        "Do not add any provider credentials, fake successful readiness or network sends to default tests."
+      ],
+      "suite": "schema",
+      "id": "EM-002",
+      "dependencies": [
+        "EM-001"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 3,
+      "title": "Implement workspace configuration and authorization",
+      "deps": [
+        2
+      ],
+      "spec": "02 \u00a73 configuration/\u00a77; 03 \u00a72/\u00a73; 04 SET actions",
+      "files": [
+        "supabase/migrations/*_email_configuration.sql",
+        "src/lib/email/auth.ts",
+        "src/lib/email/db.ts",
+        "src/lib/email/config.ts",
+        "src/lib/email/commands/settings.ts",
+        "src/lib/email/__tests__/auth.test.ts"
+      ],
+      "actions": [
+        "SET-BUSINESS",
+        "SET-TEAM",
+        "SET-ROLES",
+        "SET-AUTOMATION",
+        "SET-ENABLE",
+        "SET-PAUSE"
+      ],
+      "tests": [
+        "T03",
+        "T07",
+        "T08",
+        "T26"
+      ],
+      "outcome": "Add single-workspace membership, private configuration, RLS and server capability enforcement.",
+      "requirements": [
+        "Create configuration/audit/receipt tables and typed settings; seed only verified existing CRM admins.",
+        "Use fixed search paths and revoked public RPC execution; derive workspace/session actor server-side.",
+        "Emergency pause persists immediately; enable requires current readiness; removed users trigger backup/hold rather than automatic AI ownership."
+      ],
+      "suite": "auth",
+      "id": "EM-003",
+      "dependencies": [
+        "EM-002"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 4,
+      "title": "Implement email identity and property links",
+      "deps": [
+        3
+      ],
+      "spec": "02 \u00a71/\u00a73 identity/\u00a76; 04 AUD-RESOLVE and THR-LINK",
+      "files": [
+        "supabase/migrations/*_email_identity.sql",
+        "src/lib/email/identity.ts",
+        "src/lib/email/__tests__/identity.test.ts"
+      ],
+      "actions": [
+        "AUD-RESOLVE",
+        "THR-LINK"
+      ],
+      "tests": [
+        "T13",
+        "T14"
+      ],
+      "outcome": "Match sourced email addresses to existing parties/properties without making imports into Leads.",
+      "requirements": [
+        "Create normalized address/party/link tables with source evidence, shared-address states and correct unique keys.",
+        "Preserve local-part normalization, plus aliases and multi-property relationships; ambiguous matches require explicit resolution.",
+        "Expose reusable identity resolver and confirmed-alias suppression lookup. Do not merge/delete existing CRM rows."
+      ],
+      "suite": "identity",
+      "id": "EM-004",
+      "dependencies": [
+        "EM-003"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 5,
+      "title": "Implement immutable campaign publication",
+      "deps": [
+        4
+      ],
+      "spec": "02 \u00a73 audiences/campaigns/\u00a74; 03 \u00a73; 04 \u00a75",
+      "files": [
+        "supabase/migrations/*_email_campaigns.sql",
+        "src/lib/email/campaigns.ts",
+        "src/lib/email/commands/campaigns.ts",
+        "src/lib/email/__tests__/campaigns.test.ts"
+      ],
+      "actions": [
+        "CAM-CREATE",
+        "CAM-SAVE",
+        "CAM-PREVIEW",
+        "CAM-LAUNCH",
+        "CAM-REVISE",
+        "CAM-DUPLICATE",
+        "CAM-ARCHIVE"
+      ],
+      "tests": [
+        "T17",
+        "T18"
+      ],
+      "outcome": "Create frozen campaign versions, stable snapshots and once-only enrollment transactions.",
+      "requirements": [
+        "Add minimal audience snapshot/playbook references needed by publication; later tasks extend import/eval behavior without changing these contracts.",
+        "Double-click/concurrent launch must produce one logical launch and unique recipient membership; restrict one active address/confirmed party context.",
+        "Review hashes bind exact copy/audience/caps; revision/duplicate copies no execution, approval or historical recipient eligibility."
+      ],
+      "suite": "campaigns",
+      "id": "EM-005",
+      "dependencies": [
+        "EM-004"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 6,
+      "title": "Implement message ledger and durable queue",
+      "deps": [
+        3,
+        5
+      ],
+      "spec": "02 \u00a73 messages/jobs/\u00a75; 03 \u00a78",
+      "files": [
+        "supabase/migrations/*_email_execution.sql",
+        "src/lib/email/jobs.ts",
+        "src/lib/email/worker.ts",
+        "src/app/api/workers/email/route.ts",
+        "src/lib/email/__tests__/jobs.test.ts",
+        "tests/email-db/leases.test.ts"
+      ],
+      "actions": [],
+      "tests": [
+        "T10",
+        "T40"
+      ],
+      "outcome": "Persist threads, messages, intents, events and fenced background jobs before any external dispatch.",
+      "requirements": [
+        "Create remaining thread/message/job/event tables and circular foreign keys safely; unique logical keys and due indexes required.",
+        "Use SKIP LOCKED, lease token and CAS completion; expired dispatching intents become reconciliation work, not ready sends.",
+        "Authenticate workers, preserve event priority, honor runtime budget. Do not enable production cron before verified hosting/authorization."
+      ],
+      "suite": "jobs",
+      "id": "EM-006",
+      "dependencies": [
+        "EM-003",
+        "EM-005"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 7,
+      "title": "Implement secure service connections",
+      "deps": [
+        3,
+        6
+      ],
+      "spec": "03 \u00a72; 04 SVC actions",
+      "files": [
+        "src/lib/email/secrets.ts",
+        "src/lib/email/commands/connections.ts",
+        "src/app/api/email/connections/route.ts",
+        "src/lib/email/__tests__/setup.test.ts"
+      ],
+      "actions": [
+        "SVC-CONNECT",
+        "SVC-SIGNUP",
+        "SVC-CHECK",
+        "SVC-DISCONNECT"
+      ],
+      "tests": [
+        "T05",
+        "T06"
+      ],
+      "outcome": "Connect existing provider accounts with write-only keys, scoped checks and resumable failures.",
+      "requirements": [
+        "Implement AES-GCM AAD/key version/rotation and masked DTOs, no request-body logging.",
+        "Do not infer billing plan from a working API key; distinguish reported terms and verified capabilities.",
+        "Failed reconnect keeps previous working credential until replacement verified; disconnect previews and pauses dependencies without deleting history."
+      ],
+      "suite": "setup",
+      "id": "EM-007",
+      "dependencies": [
+        "EM-003",
+        "EM-006"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 8,
+      "title": "Implement domains and stable sender identities",
+      "deps": [
+        7
+      ],
+      "spec": "03 \u00a75; 04 \u00a78 DOM/SND",
+      "files": [
+        "src/lib/email/providers/resend-domains.ts",
+        "src/lib/email/commands/sending.ts",
+        "src/lib/email/__tests__/domains.test.ts"
+      ],
+      "actions": [
+        "DOM-ADD",
+        "DOM-VERIFY",
+        "DOM-PAUSE",
+        "SND-SAVE"
+      ],
+      "tests": [
+        "T36",
+        "T37"
+      ],
+      "outcome": "Manage independently registered sending domains, exact DNS records and stable correspondence senders.",
+      "requirements": [
+        "Reject primary registrable domain and its subdomains using a maintained public suffix parser, not naive last-two-label splitting.",
+        "Read actual provider records/capabilities; enable receiving explicitly; identify DNS and brand-host readiness separately.",
+        "Preserve sender identity on active threads; retiring stops new enrollment while retaining incoming routing."
+      ],
+      "suite": "domains",
+      "id": "EM-008",
+      "dependencies": [
+        "EM-007"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 9,
+      "title": "Implement suppression and public preferences",
+      "deps": [
+        4,
+        6
+      ],
+      "spec": "02 \u00a76; 03 \u00a76; 04 SUP/PUB",
+      "files": [
+        "supabase/migrations/*_email_suppression.sql",
+        "src/lib/email/suppression.ts",
+        "src/lib/email/commands/suppression.ts",
+        "src/app/email/unsubscribe/[token]/page.tsx",
+        "src/app/api/email/unsubscribe/[token]/route.ts",
+        "src/lib/email/__tests__/suppression.test.ts",
+        "src/proxy.ts"
+      ],
+      "actions": [
+        "SUP-ADD",
+        "SUP-RELEASE",
+        "PUB-UNSUBSCRIBE",
+        "PUB-PREFERENCE"
+      ],
+      "tests": [
+        "T16",
+        "T39",
+        "T45"
+      ],
+      "outcome": "Provide immediate no-login opt-out across campaign domains, with durable evidence and dispatch protection.",
+      "requirements": [
+        "GET is safe for scanners; one-click POST immediately suppresses without follow-up email or extra hurdles.",
+        "Keep opaque tokens and minimal identity-safe responses; private mutations use CSRF/session/roles; public cannot resubscribe.",
+        "Suppression commits synchronously, cancellation may queue; permission/verification/import restore never implicitly clears restrictions."
+      ],
+      "suite": "suppression",
+      "id": "EM-009",
+      "dependencies": [
+        "EM-004",
+        "EM-006"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 10,
+      "title": "Implement dispatch guards and monetary reservations",
+      "deps": [
+        5,
+        6,
+        8,
+        9
+      ],
+      "spec": "02 \u00a75/\u00a78; 03 \u00a79; 04 SET-BUDGET",
+      "files": [
+        "supabase/migrations/*_email_costs.sql",
+        "src/lib/email/guards.ts",
+        "src/lib/email/limits.ts",
+        "src/lib/email/costs.ts",
+        "src/lib/email/__tests__/limits.test.ts",
+        "tests/email-db/dispatch.test.ts"
+      ],
+      "actions": [
+        "SET-BUDGET"
+      ],
+      "tests": [
+        "T10",
+        "T24",
+        "T25",
+        "T26"
+      ],
+      "outcome": "Make sending limits, costs, recipient restrictions and ownership transactional prerequisites.",
+      "requirements": [
+        "Use lock order, rate buckets and worst-case cost reservations before remote calls; stricter workspace/domain/sender/campaign cap wins.",
+        "Reject stale ingress/readiness, ineligible audience and expired policy; show blocked reason and next permitted time.",
+        "Parallel last-credit test must use actual DB connections. Unknown outcomes keep reservation; settle/adjust once, never cap unrelated provider bills falsely."
+      ],
+      "suite": "limits",
+      "id": "EM-010",
+      "dependencies": [
+        "EM-005",
+        "EM-006",
+        "EM-008",
+        "EM-009"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 11,
+      "title": "Implement Resend dispatch and reconciliation",
+      "deps": [
+        7,
+        8,
+        10
+      ],
+      "spec": "03 \u00a74/\u00a78; 06 T19/T40",
+      "files": [
+        "src/lib/email/providers/resend.ts",
+        "src/lib/email/commands/tests.ts",
+        "src/lib/email/__tests__/provider.test.ts"
+      ],
+      "actions": [
+        "CAM-TEST",
+        "SND-TEST"
+      ],
+      "tests": [
+        "T09",
+        "T19",
+        "T37",
+        "T40"
+      ],
+      "outcome": "Send one immutable intent with accurate accepted/rejected/uncertain outcomes and safe retries.",
+      "requirements": [
+        "Inspect SDK data/error, use stable idempotency key and original frozen payload, persist provider IDs.",
+        "Implement request timeout and 24-hour-window rules; do not retry uncertain remote work with a fresh key.",
+        "Controlled tests require allowlisted recipients and visible exact scope; mark test data for report exclusion. No live send in default test suite."
+      ],
+      "suite": "provider",
+      "id": "EM-011",
+      "dependencies": [
+        "EM-007",
+        "EM-008",
+        "EM-010"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 12,
+      "title": "Implement authentic inbound capture and correlation",
+      "deps": [
+        6,
+        8,
+        9,
+        11
+      ],
+      "spec": "03 \u00a75; 02 \u00a75/\u00a76; 06 T41",
+      "files": [
+        "src/lib/email/inbound/verify.ts",
+        "src/lib/email/inbound/ingest.ts",
+        "src/lib/email/inbound/correlate.ts",
+        "src/lib/email/inbound/project.ts",
+        "src/app/api/webhooks/email/resend/route.ts",
+        "src/lib/email/__tests__/inbound.test.ts",
+        "src/proxy.ts"
+      ],
+      "actions": [],
+      "tests": [
+        "T10",
+        "T37",
+        "T38",
+        "T41",
+        "T42"
+      ],
+      "outcome": "Persist every authentic event once, interrupt pending follow-ups immediately and load full reply content.",
+      "requirements": [
+        "Verify raw-body signature then durable ack; wrong signature/different duplicate payload must not mutate conversation.",
+        "Set minimal inbound holds before full-body retrieval; unknown alias/gap holds affected automation.",
+        "Separate provider UUID/RFC Message-ID; safe correlation, sanitized body/attachments, out-of-order fact reducer and replay recovery."
+      ],
+      "suite": "inbound",
+      "id": "EM-012",
+      "dependencies": [
+        "EM-006",
+        "EM-008",
+        "EM-009",
+        "EM-011"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 13,
+      "title": "Implement thread ownership and exact draft approval",
+      "deps": [
+        10,
+        12
+      ],
+      "spec": "02 \u00a74/\u00a75; 04 \u00a76",
+      "files": [
+        "supabase/migrations/*_email_reviews.sql",
+        "src/lib/email/threads.ts",
+        "src/lib/email/drafts.ts",
+        "src/lib/email/commands/threads.ts",
+        "src/lib/email/__tests__/threads.test.ts",
+        "tests/email-db/ownership.test.ts"
+      ],
+      "actions": [
+        "THR-READ",
+        "THR-TAKEOVER",
+        "THR-TRANSFER",
+        "THR-RELEASE",
+        "THR-DRAFT",
+        "THR-SEND",
+        "THR-SNOOZE",
+        "THR-CLOSE",
+        "THR-TAG",
+        "REV-APPROVE",
+        "REV-REJECT",
+        "REV-ASSIGN",
+        "REV-RESOLVE"
+      ],
+      "tests": [
+        "T27",
+        "T28",
+        "T29",
+        "T30"
+      ],
+      "outcome": "Keep one controller and reject stale drafts across every compose surface.",
+      "requirements": [
+        "Takeover cancels AI work atomically; occupied human ownership uses explicit transfer and CAS.",
+        "New inbound invalidates approval by body/content/controller/policy hashes; no optimistic Sent.",
+        "Read state per user, snooze/close behavior, reviews as same-thread tasks and safe release to current policy."
+      ],
+      "suite": "threads",
+      "id": "EM-013",
+      "dependencies": [
+        "EM-010",
+        "EM-012"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 14,
+      "title": "Bridge email Leads, acquisition handoffs and CRM history",
+      "deps": [
+        4,
+        12,
+        13
+      ],
+      "spec": "02 \u00a71; 03 \u00a79; 04 \u00a77",
+      "files": [
+        "supabase/migrations/*_email_handoffs.sql",
+        "src/lib/email/crm-adapter.ts",
+        "src/lib/email/handoffs.ts",
+        "src/lib/email/__tests__/legacy.test.ts",
+        "src/lib/email/__tests__/handoffs.test.ts",
+        "supabase/migrations/*_email_crm_compatibility.sql"
+      ],
+      "actions": [
+        "THR-HANDOFF",
+        "HAN-ACCEPT",
+        "HAN-REASSIGN",
+        "HAN-OUTCOME",
+        "HAN-QUALIFY",
+        "HAN-RETURN"
+      ],
+      "tests": [
+        "T14",
+        "T31",
+        "T32",
+        "T35"
+      ],
+      "outcome": "Create one evidenced seller Lead and human handoff without unintended qualification or other-channel side effects.",
+      "requirements": [
+        "Resolve actual leads source/null-phone constraints additively; existing first touch and advanced/terminal stage retained.",
+        "Use contacted=Lead and qualified=Opportunity, acquisitions-only qualification evidence; no general auto-advance/PPC conversion calls.",
+        "Project activity once using canonical message IDs; callback task uses honest email source, no fake phone, dialing, SMS or invitations."
+      ],
+      "suite": "handoffs",
+      "id": "EM-014",
+      "dependencies": [
+        "EM-004",
+        "EM-012",
+        "EM-013"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 15,
+      "title": "Implement bounded AI inference and policy guards",
+      "deps": [
+        7,
+        10,
+        12,
+        13,
+        14
+      ],
+      "spec": "05 \u00a71\u2013\u00a74/\u00a76; 03 \u00a77",
+      "files": [
+        "supabase/migrations/*_email_ai.sql",
+        "src/lib/email/providers/ai.ts",
+        "src/lib/email/ai/policy.ts",
+        "src/lib/email/ai/prompts.ts",
+        "src/lib/email/commands/playbooks.ts",
+        "src/lib/email/__tests__/ai.test.ts"
+      ],
+      "actions": [
+        "THR-REGENERATE",
+        "PB-SAVE"
+      ],
+      "tests": [
+        "T21",
+        "T22",
+        "T23"
+      ],
+      "outcome": "Produce evidence-backed suggestions and permitted actions without giving a model dispatch authority.",
+      "requirements": [
+        "Strict schema, exact quote spans, bounded context/cost and no tools; never send raw text after schema/refusal failure.",
+        "Implement fixed critical escalation/opt-out/bot/identity/claim/limit guards independently of model confidence.",
+        "Discard stale inference after takeover/new inbound; callback handoff survives failed acknowledgment; draft-only default."
+      ],
+      "suite": "ai",
+      "id": "EM-015",
+      "dependencies": [
+        "EM-007",
+        "EM-010",
+        "EM-012",
+        "EM-013",
+        "EM-014"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 16,
+      "title": "Implement repeatable AI evaluations and publication",
+      "deps": [
+        15
+      ],
+      "spec": "05 \u00a75; ai-fixtures.json; 06 G4",
+      "files": [
+        "src/lib/email/ai/evaluate.ts",
+        "scripts/email/evaluate-playbook.ts",
+        "src/lib/email/__tests__/ai.test.ts",
+        "src/lib/email/commands/playbooks.ts"
+      ],
+      "actions": [
+        "PB-SIMULATE",
+        "PB-PUBLISH"
+      ],
+      "tests": [
+        "T21",
+        "T22",
+        "T23"
+      ],
+      "outcome": "Gate automatic policies on traceable repeated evaluations and human review.",
+      "requirements": [
+        "Expand40 seed cases into complete schema inputs, held-out paraphrases and multi-turn/controller variants; report critical failures separately.",
+        "Record provider/model/rate/fixture/prompt hashes and billed attempts; require explicit budget for live model runs.",
+        "Zero critical failures across three runs per critical case; model-backed evaluation unavailable means automatic mode blocked, not mock-passed."
+      ],
+      "suite": "ai",
+      "id": "EM-016",
+      "dependencies": [
+        "EM-015"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 17,
+      "title": "Prove the first complete configured email journey",
+      "deps": [
+        5,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "spec": "06 \u00a74/G2; 03 \u00a710; 04 P02/P06/P09",
+      "files": [
+        "src/app/api/email/actions/route.ts",
+        "src/app/api/email/[resource]/route.ts",
+        "src/app/api/email/[resource]/[id]/route.ts",
+        "src/components/email/foundation-setup.tsx",
+        "scripts/email/verify-controlled-path.ts",
+        "tests/email/foundation.spec.ts"
+      ],
+      "actions": [
+        "SET-READINESS"
+      ],
+      "tests": [
+        "T08",
+        "T09",
+        "T10",
+        "T14",
+        "T28",
+        "T32",
+        "T37",
+        "T39",
+        "T40",
+        "T41"
+      ],
+      "outcome": "Demonstrate setup\u2192authorized test send\u2192real reply\u2192takeover\u2192Lead/handoff\u2192unsubscribe before full page build.",
+      "requirements": [
+        "Compose existing services, provide minimal usable authenticated controls and immutable evidence; don't duplicate domain logic in fixture UI.",
+        "Default probe dry-run; real test requires known account/domain and exact approved allowlist/send count.",
+        "Record provider IDs and shared CRM effects; if access absent, preserve blocked G2 and continue independent UI work without claiming success."
+      ],
+      "suite": null,
+      "gate": "G2",
+      "id": "EM-017",
+      "dependencies": [
+        "EM-005",
+        "EM-011",
+        "EM-012",
+        "EM-013",
+        "EM-014",
+        "EM-015",
+        "EM-016"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 18,
+      "title": "Implement imports, segments and verification jobs",
+      "deps": [
+        4,
+        5,
+        7,
+        9,
+        10
+      ],
+      "spec": "02 \u00a73 audiences; 03 \u00a77; 04 \u00a74",
+      "files": [
+        "src/lib/email/audiences.ts",
+        "src/lib/email/providers/verification.ts",
+        "src/lib/email/commands/audiences.ts",
+        "src/app/api/email/uploads/route.ts",
+        "src/app/api/email/uploads/[id]/complete/route.ts",
+        "src/lib/email/__tests__/audiences.test.ts"
+      ],
+      "actions": [
+        "AUD-CREATE",
+        "AUD-UPLOAD",
+        "AUD-MAP",
+        "AUD-REFRESH",
+        "AUD-VERIFY",
+        "AUD-EXCLUDE",
+        "AUD-PREPARE",
+        "AUD-ARCHIVE"
+      ],
+      "tests": [
+        "T11",
+        "T12",
+        "T13",
+        "T15",
+        "T16"
+      ],
+      "outcome": "Create resumable verified audience candidates with reconciled counts and provenance.",
+      "requirements": [
+        "Private CSV staging and chunk recovery, field mapping, source/permission evidence, safe error export.",
+        "Recent evidence import and optional ZeroBounce adapter share conservative state mapping/cache; no subscription assumed.",
+        "Exact identity/permission/verification/suppression gates remain independent; selection-all uses frozen filter scope."
+      ],
+      "suite": "audiences",
+      "id": "EM-018",
+      "dependencies": [
+        "EM-004",
+        "EM-005",
+        "EM-007",
+        "EM-009",
+        "EM-010"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 19,
+      "title": "Complete pacing, campaign interrupts and resume",
+      "deps": [
+        5,
+        10,
+        11,
+        12,
+        18
+      ],
+      "spec": "02 \u00a74/\u00a78; 03 \u00a78; 04 \u00a75",
+      "files": [
+        "src/lib/email/campaigns.ts",
+        "src/lib/email/worker.ts",
+        "src/lib/email/commands/campaigns.ts",
+        "src/lib/email/__tests__/campaigns.test.ts"
+      ],
+      "actions": [
+        "CAM-PAUSE",
+        "CAM-RESUME",
+        "CAM-STOP-RECIPIENT"
+      ],
+      "tests": [
+        "T17",
+        "T19",
+        "T20",
+        "T24",
+        "T26"
+      ],
+      "outcome": "Run sequences under business-hour/volume rules and stop safely on replies, pauses and expiry.",
+      "requirements": [
+        "Calculate future timing from actual acceptance with named-zone DST/business days; strict sender/party budget locking.",
+        "Resume preview rechecks exclusions and paces remaining work; no catch-up burst or old sequence after human reply.",
+        "Stable sender per enrollment; active published config immutable; automatic domain rotation unavailable."
+      ],
+      "suite": "campaigns",
+      "id": "EM-019",
+      "dependencies": [
+        "EM-005",
+        "EM-010",
+        "EM-011",
+        "EM-012",
+        "EM-018"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 20,
+      "title": "Build Email shell, overview and complete setup",
+      "deps": [
+        3,
+        7,
+        8,
+        16,
+        17,
+        18,
+        19
+      ],
+      "spec": "04 \u00a71\u2013\u00a73/P01/P02; 03 \u00a710",
+      "files": [
+        "src/app/(app)/marketing/email/layout.tsx",
+        "src/app/(app)/marketing/email/page.tsx",
+        "src/app/(app)/marketing/email/setup/page.tsx",
+        "src/components/email/setup-wizard.tsx",
+        "src/components/email/email-nav.tsx",
+        "src/hooks/use-email.ts",
+        "src/components/layout/nav-tab.tsx",
+        "tests/email/setup.spec.ts"
+      ],
+      "actions": [
+        "UI-VIEW",
+        "UI-CANCEL",
+        "SET-FINISH"
+      ],
+      "tests": [
+        "T01",
+        "T02",
+        "T04",
+        "T05",
+        "T08",
+        "T42",
+        "T46"
+      ],
+      "outcome": "Provide a real resumable ten-step onboarding and actionable overview inside the current CRM shell.",
+      "requirements": [
+        "Preserve Ads route and unrelated nav edits; scoped Email active match and accessible nested navigation.",
+        "All domain/settings actions use existing commands, concrete failure states and current evidence; finish and launch remain separate.",
+        "Show reported vs verified costs, external signup return, optional manual calendar and stale source states. No sample data in production."
+      ],
+      "suite": null,
+      "id": "EM-020",
+      "dependencies": [
+        "EM-003",
+        "EM-007",
+        "EM-008",
+        "EM-016",
+        "EM-017",
+        "EM-018",
+        "EM-019"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 21,
+      "title": "Build audience list, mapping and review pages",
+      "deps": [
+        18,
+        20
+      ],
+      "spec": "04 P03/P04/\u00a74",
+      "files": [
+        "src/app/(app)/marketing/email/audiences/page.tsx",
+        "src/app/(app)/marketing/email/audiences/[id]/page.tsx",
+        "src/components/email/audience-editor.tsx",
+        "tests/email/audiences.spec.ts"
+      ],
+      "actions": [],
+      "tests": [
+        "T01",
+        "T11",
+        "T12",
+        "T13",
+        "T15",
+        "T46"
+      ],
+      "outcome": "Make import/source/identity/eligibility review usable without engineering knowledge.",
+      "requirements": [
+        "Implement all AUD actions and common loading/error/empty/permission states; exact row totals and exclusions.",
+        "Map samples before processing; show long-running jobs and safe row-level recovery; no front-end-only imports.",
+        "Narrow layout opens focused row/evidence page and returns with filters/selection preserved."
+      ],
+      "suite": null,
+      "id": "EM-021",
+      "dependencies": [
+        "EM-018",
+        "EM-020"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 22,
+      "title": "Build campaign list, builder and live detail",
+      "deps": [
+        19,
+        20,
+        21
+      ],
+      "spec": "04 P05/P06/P07/\u00a75",
+      "files": [
+        "src/app/(app)/marketing/email/campaigns/page.tsx",
+        "src/app/(app)/marketing/email/campaigns/[id]/page.tsx",
+        "src/app/(app)/marketing/email/campaigns/[id]/edit/page.tsx",
+        "src/components/email/campaign-builder.tsx",
+        "tests/email/campaigns.spec.ts"
+      ],
+      "actions": [],
+      "tests": [
+        "T01",
+        "T02",
+        "T17",
+        "T18",
+        "T20",
+        "T26",
+        "T46"
+      ],
+      "outcome": "Expose exact campaign scope and every state transition before the user launches.",
+      "requirements": [
+        "Implement all CAM actions with immutable version/copy/audience review and Launch N recipients label.",
+        "Preview missing fields/costs/exclusions, pending materialization and stop/pause/pace behavior from real API truth.",
+        "Keyboard/mobile sequence editing and stale draft comparisons; no inert controls or optimistic provider success."
+      ],
+      "suite": null,
+      "id": "EM-022",
+      "dependencies": [
+        "EM-019",
+        "EM-020",
+        "EM-021"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 23,
+      "title": "Build shared inbox, composer and review",
+      "deps": [
+        13,
+        14,
+        15,
+        20
+      ],
+      "spec": "04 P08/P09/P10/\u00a76",
+      "files": [
+        "src/app/(app)/marketing/email/inbox/page.tsx",
+        "src/app/(app)/marketing/email/inbox/[id]/page.tsx",
+        "src/app/(app)/marketing/email/review/page.tsx",
+        "src/components/email/thread-view.tsx",
+        "src/components/email/review-panel.tsx",
+        "tests/email/inbox.spec.ts"
+      ],
+      "actions": [],
+      "tests": [
+        "T01",
+        "T27",
+        "T28",
+        "T29",
+        "T30",
+        "T38",
+        "T46"
+      ],
+      "outcome": "Let staff see full replies, control AI, send exact reviewed drafts and resolve exceptions.",
+      "requirements": [
+        "One shared ThreadView with evidence/source/actual sender and lead stage; no duplicated review conversation.",
+        "Use real controller and content revisions; two-user browser race and stale approval acceptance required.",
+        "Safe body/attachment rendering, per-user unread, narrow one-pane workflow, clear disabled Send reasons."
+      ],
+      "suite": null,
+      "id": "EM-023",
+      "dependencies": [
+        "EM-013",
+        "EM-014",
+        "EM-015",
+        "EM-020"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 24,
+      "title": "Complete handoff page and optional calendar scheduling",
+      "deps": [
+        14,
+        20,
+        23
+      ],
+      "spec": "03 \u00a79; 04 P11/\u00a77",
+      "files": [
+        "supabase/migrations/*_email_calendar.sql",
+        "src/lib/email/calendar.ts",
+        "src/lib/email/commands/handoffs.ts",
+        "src/app/api/email/calendar/slots/route.ts",
+        "src/app/(app)/marketing/email/handoffs/page.tsx",
+        "src/components/email/handoff-panel.tsx",
+        "tests/email/handoffs.spec.ts",
+        "src/lib/email/__tests__/handoffs.test.ts"
+      ],
+      "actions": [
+        "HAN-SCHEDULE"
+      ],
+      "tests": [
+        "T31",
+        "T32",
+        "T33",
+        "T34",
+        "T35",
+        "T46"
+      ],
+      "outcome": "Give acquisitions an accountable callback and qualification workflow using actual availability when connected.",
+      "requirements": [
+        "Manual task is first-class when calendar absent; enforce named zone, slot expiry and08:30 boundary.",
+        "Recheck booking availability and reconcile unknown outcome with stable event key; no automatic invite/call/SMS.",
+        "Accept/completed conversation/Opportunity are separate explicit actions with source evidence and no hidden PPC conversion."
+      ],
+      "suite": "handoffs",
+      "id": "EM-024",
+      "dependencies": [
+        "EM-014",
+        "EM-020",
+        "EM-023"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 25,
+      "title": "Build playbook editing and evaluation review",
+      "deps": [
+        16,
+        20
+      ],
+      "spec": "04 P12/\u00a78; 05 \u00a75",
+      "files": [
+        "src/app/(app)/marketing/email/playbooks/page.tsx",
+        "src/components/email/playbook-editor.tsx",
+        "tests/email/playbooks.spec.ts"
+      ],
+      "actions": [],
+      "tests": [
+        "T01",
+        "T21",
+        "T22",
+        "T23",
+        "T46"
+      ],
+      "outcome": "Make AI permissions, examples and publish evidence reviewable by an operator.",
+      "requirements": [
+        "Implement PB actions, fixed escalation requirements, version compare and critical-case drilldown.",
+        "Show actual model/evaluation cost and latency with source hashes; simulated fixtures labeled separately.",
+        "Existing campaigns stay pinned; editing/publishing a policy never silently increases autonomy."
+      ],
+      "suite": null,
+      "id": "EM-025",
+      "dependencies": [
+        "EM-016",
+        "EM-020"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 26,
+      "title": "Build sending, settings and brand pages",
+      "deps": [
+        7,
+        8,
+        9,
+        10,
+        20
+      ],
+      "spec": "04 P13/P15/P16/P19/\u00a78/\u00a79",
+      "files": [
+        "src/app/(app)/marketing/email/sending/page.tsx",
+        "src/app/(app)/marketing/email/settings/page.tsx",
+        "src/app/email/brand/[domain]/page.tsx",
+        "src/components/email/sending-panel.tsx",
+        "src/components/email/settings-panel.tsx",
+        "tests/email/sending.spec.ts"
+      ],
+      "actions": [
+        "PUB-CONTACT"
+      ],
+      "tests": [
+        "T03",
+        "T05",
+        "T06",
+        "T07",
+        "T16",
+        "T36",
+        "T37",
+        "T45",
+        "T46"
+      ],
+      "outcome": "Make ongoing service/domain/team/budget/suppression maintenance use the same state as onboarding.",
+      "requirements": [
+        "Implement shared SVC/DOM/SND/SET/SUP actions without duplicated config or secret retrieval.",
+        "Exact DNS copy/recheck, sender retirement, reconnect failure and affected campaign preview.",
+        "Public brand uses real verified business configuration; no sensitive CRM data or fictitious domain ownership."
+      ],
+      "suite": null,
+      "id": "EM-026",
+      "dependencies": [
+        "EM-007",
+        "EM-008",
+        "EM-009",
+        "EM-010",
+        "EM-020"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 27,
+      "title": "Implement truthful reports and exports",
+      "deps": [
+        14,
+        18,
+        19,
+        20
+      ],
+      "spec": "02 attribution/cost tables; 03 \u00a79; 04 P14/\u00a79",
+      "files": [
+        "src/lib/email/reports.ts",
+        "src/lib/email/commands/reports.ts",
+        "src/app/(app)/marketing/email/reports/page.tsx",
+        "src/lib/email/__tests__/reports.test.ts",
+        "tests/email/reports.spec.ts"
+      ],
+      "actions": [
+        "RPT-QUERY",
+        "RPT-EXPORT"
+      ],
+      "tests": [
+        "T25",
+        "T38",
+        "T43",
+        "T44"
+      ],
+      "outcome": "Report unique people, actual messages, human-qualified outcomes and cost with reconcilable denominators.",
+      "requirements": [
+        "Separate cohort and event-period modes, source freshness, test exclusions and first/assisted attribution.",
+        "No opens-as-interest, score-as-Opportunity or model price-as-revenue; link each count to underlying evidence.",
+        "Export frozen filtered result with as-of and safe CSV; unknown source/cost stays unknown."
+      ],
+      "suite": "reports",
+      "id": "EM-027",
+      "dependencies": [
+        "EM-014",
+        "EM-018",
+        "EM-019",
+        "EM-020"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 28,
+      "title": "Close legacy sending and conversation bypasses",
+      "deps": [
+        9,
+        11,
+        13,
+        14,
+        23
+      ],
+      "spec": "02 \u00a71; 03 \u00a76; 06 T47",
+      "files": [
+        "src/app/api/conversations/send/route.ts",
+        "src/app/(app)/conversations/page.tsx",
+        "src/app/api/broadcasts/send/route.ts",
+        "src/lib/gmail-sync.ts",
+        "src/lib/email/__tests__/legacy.test.ts",
+        "tests/email/shared-conversations.spec.ts"
+      ],
+      "actions": [],
+      "tests": [
+        "T16",
+        "T28",
+        "T32",
+        "T47"
+      ],
+      "outcome": "Enforce identical campaign safety/ownership through existing Conversations and buyer email entry points.",
+      "requirements": [
+        "Known campaign thread uses guarded service; ambiguous address requires thread selection, no old direct Resend bypass.",
+        "Gmail RFC-ID projection dedup and shared ThreadView preserve existing SMS/call/TC behavior.",
+        "Repeat send-entry inventory; prove email-only lead/no hidden appointment or ad-conversion effects."
+      ],
+      "suite": "legacy",
+      "id": "EM-028",
+      "dependencies": [
+        "EM-009",
+        "EM-011",
+        "EM-013",
+        "EM-014",
+        "EM-023"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 29,
+      "title": "Build recovery operations, downloads and retention controls",
+      "deps": [
+        6,
+        12,
+        20,
+        26,
+        27
+      ],
+      "spec": "03 \u00a78; 04 P17/\u00a78; 06 \u00a76",
+      "files": [
+        "supabase/migrations/*_email_operations.sql",
+        "src/lib/email/commands/operations.ts",
+        "src/lib/email/retention.ts",
+        "src/app/api/email/downloads/[id]/route.ts",
+        "src/components/email/operations-panel.tsx",
+        "src/lib/email/__tests__/retention.test.ts",
+        "tests/email/operations.spec.ts"
+      ],
+      "actions": [
+        "UI-DOWNLOAD",
+        "SET-RETENTION",
+        "OPS-REPLAY",
+        "OPS-RECONCILE",
+        "OPS-ACK"
+      ],
+      "tests": [
+        "T38",
+        "T40",
+        "T41",
+        "T42"
+      ],
+      "outcome": "Recover failed internal work without duplicate remote sends or misleading healthy status.",
+      "requirements": [
+        "Show job/event/intent correlation, exact replay effect, incident owner/acknowledgment and source lag.",
+        "Uncertain sends outside provider window remain held without evidence; manual replay is not a hidden resend.",
+        "Private downloads, legal holds, retention preview and default-disabled purge; minimal suppression retained."
+      ],
+      "suite": "retention",
+      "id": "EM-029",
+      "dependencies": [
+        "EM-006",
+        "EM-012",
+        "EM-020",
+        "EM-026",
+        "EM-027"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 30,
+      "title": "Verify the complete product and prepare a bounded release",
+      "deps": [
+        17,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "spec": "06 all gates; 04 all pages/actions",
+      "files": [
+        "tests/email/",
+        "tests/email-db/",
+        "docs/email-marketing/release-evidence.md",
+        "docs/email-marketing/build-status.md",
+        "vercel.json"
+      ],
+      "actions": [],
+      "tests": [
+        "T01",
+        "T02",
+        "T03",
+        "T04",
+        "T05",
+        "T06",
+        "T07",
+        "T08",
+        "T09",
+        "T10",
+        "T11",
+        "T12",
+        "T13",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T18",
+        "T19",
+        "T20",
+        "T21",
+        "T22",
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27",
+        "T28",
+        "T29",
+        "T30",
+        "T31",
+        "T32",
+        "T33",
+        "T34",
+        "T35",
+        "T36",
+        "T37",
+        "T38",
+        "T39",
+        "T40",
+        "T41",
+        "T42",
+        "T43",
+        "T44",
+        "T45",
+        "T46",
+        "T47",
+        "T48",
+        "T49",
+        "T50",
+        "T51",
+        "T52",
+        "T53",
+        "T54",
+        "T55",
+        "T56",
+        "T57",
+        "T58",
+        "T59",
+        "T60",
+        "T61",
+        "T62"
+      ],
+      "outcome": "Produce a tested, reviewable release candidate with actual evidence and remaining production setup clearly separated.",
+      "requirements": [
+        "Run relevant unit/DB/browser/regression tests, authenticated light/dark and narrow/wide full journeys; reconcile every action ID to code/test evidence.",
+        "Verify exact candidate revision, additive migration/disabled deploy plan and rollback that preserves inbound/opt-out; cadence change only after hosting verification.",
+        "Do not purchase/deploy/launch merely because coding is complete. Obtain only required concrete release/setup actions; record provider/production checks honestly, not mocked."
+      ],
+      "suite": null,
+      "gate": "G3\u2013G6",
+      "id": "EM-030",
+      "dependencies": [
+        "EM-017",
+        "EM-021",
+        "EM-022",
+        "EM-023",
+        "EM-024",
+        "EM-025",
+        "EM-026",
+        "EM-027",
+        "EM-028",
+        "EM-029",
+        "EM-031",
+        "EM-032",
+        "EM-033",
+        "EM-034",
+        "EM-035"
+      ],
+      "verification_scope": "Component evidence for owned behavior; overall acceptance remains pending until full stated evidence exists. EM-017 owns foundation provider journey, EM-030 final reconciliation."
+    },
+    {
+      "n": 31,
+      "id": "EM-031",
+      "title": "Add controlled per-recipient copy and everyday Black Swan voice",
+      "dependencies": [
+        "EM-015",
+        "EM-016",
+        "EM-018",
+        "EM-022"
+      ],
+      "spec": "07 \u00a72\u2013\u00a73; 05 voice policy; 04 COP actions",
+      "files": [
+        "supabase/migrations/*_email_recipient_copy.sql",
+        "src/lib/email/copy.ts",
+        "src/lib/email/ai/policy.ts",
+        "src/lib/email/ai/prompts.ts",
+        "src/lib/email/commands/copy.ts",
+        "src/components/email/campaign-builder.tsx",
+        "src/lib/email/__tests__/copy.test.ts",
+        "tests/email/copy.spec.ts"
+      ],
+      "actions": [
+        "COP-GENERATE",
+        "COP-REVIEW"
+      ],
+      "tests": [
+        "T49",
+        "T50",
+        "T56"
+      ],
+      "outcome": "Generate relevant, evidence-grounded initial emails from approved patterns and freeze the exact recipient content before launch.",
+      "requirements": [
+        "Create em_copy_sets/em_recipient_copy and immutable campaign/send references; approved segment template is the pilot default, contextual_ai is an optional measured comparison.",
+        "Use everyday labels/mirrors/paraphrases only where warranted; sparse evidence means neutral approved copy, not invented pain. A tentative label is not a CRM fact; no technique quota.",
+        "Budget draft generation, sample20 representative rows plus every flagged outlier, pin model/policy/evidence/copy hashes; changed evidence invalidates approval, no rewrite at dispatch.",
+        "Compare neutral and contextual copy with stable deduplicated cohort/version assignment; evaluate quality and qualified outcomes, not artificial uniqueness."
+      ],
+      "suite": "copy",
+      "deps": [
+        15,
+        16,
+        18,
+        22
+      ],
+      "verification_scope": "Component evidence; complete cases require all stated evidence in06 and EM-030."
+    },
+    {
+      "n": 32,
+      "id": "EM-032",
+      "title": "Add targeted phone and callback alerts with acknowledgment",
+      "dependencies": [
+        "EM-012",
+        "EM-014",
+        "EM-023",
+        "EM-029"
+      ],
+      "spec": "07 \u00a74; 04 NTF actions; 06 T51\u2013T52",
+      "files": [
+        "supabase/migrations/*_email_notifications.sql",
+        "src/lib/email/notifications.ts",
+        "src/lib/email/commands/notifications.ts",
+        "src/lib/push-notifications.ts",
+        "src/components/email/handoff-panel.tsx",
+        "src/components/email/setup-wizard.tsx",
+        "src/lib/email/__tests__/notifications.test.ts",
+        "tests/email/notifications.spec.ts"
+      ],
+      "actions": [
+        "NTF-TEST",
+        "NTF-ACK"
+      ],
+      "tests": [
+        "T51",
+        "T52"
+      ],
+      "outcome": "Send actionable recipient-scoped alerts and distinguish queued/delivered/acknowledged work.",
+      "requirements": [
+        "Extract new phone/time signals from current message spans, not signatures/quoted history; bare phone alerts owner without fabricating Lead/Opportunity/appointment.",
+        "Persistent CRM work plus targeted push; verify auth-user mapping and device readiness. Do not blindly use the current unscoped generic notification feed or all-agent broadcast.",
+        "Create delivery/ack ledgers, dedupe events, propose5-minute urgent acknowledgment and backup escalation. Cancel obsolete reminders on transfer/reschedule.",
+        "Lockscreen payload stays nonsensitive. Missing delivery is a visible issue; no silent SMS/Slack/email fallback. Controlled test targets requesting user only."
+      ],
+      "suite": "notifications",
+      "deps": [
+        12,
+        14,
+        23,
+        29
+      ],
+      "verification_scope": "Component evidence; complete cases require all stated evidence in06 and EM-030."
+    },
+    {
+      "n": 33,
+      "id": "EM-033",
+      "title": "Automate agreed callbacks and correct the no-response cadence",
+      "dependencies": [
+        "EM-019",
+        "EM-024",
+        "EM-032"
+      ],
+      "spec": "07 \u00a75; 04 SCH actions; 02 campaign delay schema",
+      "files": [
+        "src/lib/email/calendar.ts",
+        "src/lib/email/handoffs.ts",
+        "src/lib/email/campaigns.ts",
+        "src/lib/email/commands/scheduling.ts",
+        "src/components/email/handoff-panel.tsx",
+        "src/components/email/setup-wizard.tsx",
+        "src/lib/email/__tests__/scheduling.test.ts",
+        "tests/email/scheduling.spec.ts"
+      ],
+      "actions": [
+        "SCH-POLICY",
+        "SCH-RESCHEDULE",
+        "SCH-CANCEL"
+      ],
+      "tests": [
+        "T20",
+        "T33",
+        "T34",
+        "T53",
+        "T54",
+        "T56"
+      ],
+      "outcome": "Book sufficiently precise permitted seller requests, clarify vague times and follow up unanswered email after7\u201310 calendar days on weekdays.",
+      "requirements": [
+        "Pin scheduling policy, actual calendar, owner, time zone,15-minute callback/10-minute buffer defaults and capacity. Respect08:30 floor, named time zones and availability.",
+        "Phone alone/date only/time range prompts clarification or work item. Exact explicit request/accepted available slot may book automatically under enabled policy; no duplicate event on retry.",
+        "Confirm only after provider success through allowed thread owner/mode; notify assigned agent; update one event and cancel old reminders on reschedule/cancel.",
+        "Replace business-day delay semantics with min7/max10/target8 calendar days from actual acceptance, weekdays only. Friday+8 moves to Monday/day10; restrictions can hold longer, never force dispatch. Do not delay active conversation replies.",
+        "Disposition/next action required after actual completed/missed call; no-response email alone is never a calendar appointment."
+      ],
+      "suite": "scheduling",
+      "deps": [
+        19,
+        24,
+        32
+      ],
+      "verification_scope": "Component evidence; complete cases require all stated evidence in06 and EM-030."
+    },
+    {
+      "n": 34,
+      "id": "EM-034",
+      "title": "Connect one stable email-response phone line",
+      "dependencies": [
+        "EM-024",
+        "EM-026",
+        "EM-028",
+        "EM-032"
+      ],
+      "spec": "07 \u00a76; 04 TEL actions; 06 T55",
+      "files": [
+        "src/lib/email/phone-line.ts",
+        "src/lib/email/commands/phone-line.ts",
+        "src/lib/twilio-numbers.ts",
+        "src/lib/agent-routing.ts",
+        "src/app/api/twilio-missed-call/route.ts",
+        "src/components/email/sending-panel.tsx",
+        "src/lib/email/__tests__/phone-line.test.ts",
+        "tests/email/phone-line.spec.ts"
+      ],
+      "actions": [
+        "TEL-SAVE",
+        "TEL-TEST"
+      ],
+      "tests": [
+        "T31",
+        "T32",
+        "T52",
+        "T55"
+      ],
+      "outcome": "Route email-origin incoming calls to the right team member, capture missed calls and preserve attribution.",
+      "requirements": [
+        "Verify real number ownership/current purpose first; prefer a reusable existing number, protect reserved Ads and agent company lines. No purchase/provisioning from save.",
+        "Add explicit email_marketing number purpose, default blast/dialer eligibility off, stable return caller ID. Known owner routing, unknown intake, backup then business voicemail.",
+        "Use actual agent-leg outcomes and provider CallSid dedup; add voicemail/missed-call work and targeted alert once. Parent completed is not proof an agent answered.",
+        "Prevent inherited automatic SMS/lead/PPC-conversion side effects on this line. One shared number proves program origin, not exact campaign/person; keep unknown matches unresolved.",
+        "If incoming texts are advertised, verify existing SMS inbox ownership and coverage before publishing that contact option. No automatic dialing or text marketing."
+      ],
+      "suite": "phone-line",
+      "deps": [
+        24,
+        26,
+        28,
+        32
+      ],
+      "verification_scope": "Component evidence; complete cases require all stated evidence in06 and EM-030."
+    },
+    {
+      "n": 35,
+      "id": "EM-035",
+      "title": "Reconcile the focused workspace, saved views and campaign cadence",
+      "deps": [
+        20,
+        21,
+        22,
+        23,
+        24,
+        27,
+        33
+      ],
+      "dependencies": [
+        "EM-020",
+        "EM-021",
+        "EM-022",
+        "EM-023",
+        "EM-024",
+        "EM-027",
+        "EM-033"
+      ],
+      "spec": "08 all sections; 04 navigation/inbox/campaigns; 06 T57-T62",
+      "files": [
+        "src/components/email/",
+        "src/app/(app)/marketing/email/",
+        "src/lib/email/queries/",
+        "src/lib/email/commands/inbox-views.ts",
+        "src/app/api/email/",
+        "supabase/migrations/*_email_inbox_views.sql",
+        "src/lib/email/__tests__/inbox-views.test.ts",
+        "tests/email/focused-workspace.spec.ts",
+        "tests/email-db/inbox-views.test.ts"
+      ],
+      "actions": [
+        "INB-SAVEVIEW",
+        "INB-DELETEVIEW"
+      ],
+      "tests": [
+        "T57",
+        "T58",
+        "T59",
+        "T60",
+        "T61",
+        "T62"
+      ],
+      "outcome": "Focused agent work, precise saved filters, multiple campaigns and visible recipient/drip behavior.",
+      "requirements": [
+        "Use08 exact work/outcome/controller predicates and scoped server counts; no state mutations from filters.",
+        "Use Inbox, Campaigns, More navigation and preserve deep links, role access and problem visibility.",
+        "Keep recipients inside each campaign, full sequence/date preview and frozen approved cohorts.",
+        "Reconcile simultaneous campaigns under existing shared capacity, dedup, ownership and suppression guards."
+      ],
+      "suite": "inbox-views",
+      "verification_scope": "Component and authenticated UI evidence; provider and final release proof remain separate."
+    }
+  ]
+}
