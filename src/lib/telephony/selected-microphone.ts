@@ -3,6 +3,7 @@ import { microphoneFailureMessage } from './microphone-preflight'
 
 const STORAGE_KEY = 'savingkc.voice.microphone.v1'
 const owners = new WeakMap<Device, 'call' | 'test'>()
+const releases = new WeakMap<Device, Promise<void>>()
 export function preferredMicrophone(): string {
   try { return localStorage.getItem(STORAGE_KEY) || 'default' } catch { return 'default' }
 }
@@ -25,8 +26,15 @@ async function bindMicrophone(device: Device): Promise<MediaStream> {
 }
 async function release(device: Device, owner: 'call' | 'test'): Promise<void> {
   if (owners.get(device) !== owner) return
-  // Keep the lock until the asynchronous SDK release has finished.
-  try { await device.audio?.unsetInputDevice() } finally { owners.delete(device) }
+  // Several terminal events may fire. Share their release and keep the lock
+  // until it finishes, so a late cleanup cannot erase the next call's owner.
+  const pending = releases.get(device)
+  if (pending) return pending
+  const operation = Promise.resolve().then(() => device.audio?.unsetInputDevice()).then(() => {}).finally(() => {
+    owners.delete(device); releases.delete(device)
+  })
+  releases.set(device, operation)
+  return operation
 }
 export async function prepareCallMicrophone(device: Device): Promise<void> {
   if (owners.has(device)) throw new Error('Finish the microphone check or current call before dialing.')

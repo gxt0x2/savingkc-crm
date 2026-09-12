@@ -38,7 +38,8 @@ describe('SDK microphone selection', () => {
     const call = { once: (event: string, handler: () => void) => { handlers.set(event, handler) } } as unknown as Call
     monitorCallMicrophone(device, call)
     handlers.get('disconnect')!()
-    await Promise.resolve()
+    handlers.get('cancel')!()
+    await releaseCallMicrophone(device)
     expect(device.audio!.unsetInputDevice).toHaveBeenCalledOnce()
   })
   it('measures the SDK input and blocks dialing while that test owns the microphone', async () => {
