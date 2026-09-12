@@ -1,0 +1,2 @@
+import {describe,expect,it} from 'vitest';import {isDraftCurrent,takeOver} from '../threads'
+describe('thread control',()=>{it('uses CAS takeover and makes old drafts stale',()=>{const t=takeOver({controller:'ai',controllerRevision:2,contentRevision:4},'agent',2);expect(t.controller).toBe('human');expect(isDraftCurrent(t,{controllerRevision:2,contentRevision:4})).toBe(false);expect(()=>takeOver(t,'other',2)).toThrow('CONTROLLER_CONFLICT')})})
