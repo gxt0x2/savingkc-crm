@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {canFreezeRecipientCopy} from '../copy';describe('recipient copy',()=>it('requires evidence and review',()=>{expect(canFreezeRecipientCopy({hasEvidence:false,reviewed:true,content:'Hello'})).toBe(false);expect(canFreezeRecipientCopy({hasEvidence:true,reviewed:true,content:'Hello'})).toBe(true)}))
