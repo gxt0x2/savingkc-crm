@@ -1,0 +1,1 @@
+export function nextFollowUpDate(acceptedAt:Date){const target=new Date(acceptedAt);target.setUTCDate(target.getUTCDate()+8);while(target.getUTCDay()===0||target.getUTCDay()===6)target.setUTCDate(target.getUTCDate()+1);return target}

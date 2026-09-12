@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {nextFollowUpDate} from '../cadence';describe('cadence',()=>it('uses day eight and skips weekends',()=>{expect(nextFollowUpDate(new Date('2026-09-11T12:00:00Z')).toISOString().slice(0,10)).toBe('2026-09-21')}))
