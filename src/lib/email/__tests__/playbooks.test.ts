@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {canEditPlaybookVersion} from '../playbooks';describe('playbook versions',()=>it('keeps published policy immutable',()=>{expect(canEditPlaybookVersion('draft')).toBe(true);expect(canEditPlaybookVersion('published')).toBe(false)}))
