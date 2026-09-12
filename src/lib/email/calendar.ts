@@ -1,0 +1,1 @@
+export function schedulingMode(input:{calendarConnected:boolean;exactRequest:boolean;slotVerified:boolean;hasPhoneEvidence:boolean}){return input.calendarConnected&&input.exactRequest&&input.slotVerified&&input.hasPhoneEvidence?'calendar':'task'}
