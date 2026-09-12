@@ -41,6 +41,7 @@ import { prepareCallMicrophone, releaseCallMicrophone, monitorCallMicrophone } f
 import { DialerMicrophoneControls } from './dialer-microphone-controls'
 import { initializeTwilioDevice } from './initialize-twilio-device'
 import { useDialerRingback } from './use-dialer-ringback'
+import { bindCallRingback } from '@/lib/telephony/call-ringback'
 import {
   DIALER_KEYPAD,
   DIALER_STATUS_DOT_COLOR,
@@ -648,10 +649,10 @@ export function SoftphoneCore({ surface, open,
       callRef.current = call
       callStartRef.current = Date.now()
       let callWasAccepted = false
-      call.on('ringing', (hasEarlyMedia: boolean) => {
+      bindCallRingback(call, { play: playLocalRingback, stop: stopLocalRingback, log })
+      call.on('ringing', () => {
         log('ringing...')
         setStatusLogged('calling')
-        if (!hasEarlyMedia) void playLocalRingback()
       })
       call.on('accept', () => {
         stopLocalRingback()
