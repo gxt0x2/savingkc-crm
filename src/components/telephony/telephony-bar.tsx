@@ -36,7 +36,9 @@ import {
 import { saveManualCallDisposition } from '@/lib/telephony/manual-call-disposition'
 import { findRecoverableDialerAttempt, type RecoverableDialerAttempt } from '@/lib/telephony/dialer-session-recovery'
 import { dialerPauseIsPending, dialerStopIsPending, postDispositionCommand } from '@/lib/telephony/dialer-lifecycle'
-import { MICROPHONE_SILENCE_MESSAGE, verifyMicrophoneInput } from '@/lib/telephony/microphone-preflight'
+import { MICROPHONE_SILENCE_MESSAGE } from '@/lib/telephony/microphone-preflight'
+import { prepareCallMicrophone, releaseCallMicrophone, monitorCallMicrophone } from '@/lib/telephony/selected-microphone'
+import { DialerMicrophoneControls } from './dialer-microphone-controls'
 import { initializeTwilioDevice } from './initialize-twilio-device'
 import { useDialerRingback } from './use-dialer-ringback'
 import {
@@ -454,14 +456,7 @@ export function SoftphoneCore({ surface, open,
     }
   }, [open, initDevice])
 
-  // Auto-open panel on incoming call
-  useEffect(() => {
-    if (status === 'incoming' && !open) {
-      // We can't directly open—parent controls this. Signal via onStatusChange.
-    }
-  }, [status, open])
 
-  // Escape key to close
   useEffect(() => {
     if (!open) return
     function handleKey(e: KeyboardEvent) {
@@ -499,7 +494,6 @@ export function SoftphoneCore({ surface, open,
     }
   }, [searchQuery])
 
-  // Load recent calls
   useEffect(() => {
     if (!open) return
     async function loadRecent() {
@@ -547,7 +541,6 @@ export function SoftphoneCore({ surface, open,
     const controlLossRevisionAtStart = dialerControlLossRevision(pendingSessionId)
     setError(null)
     try {
-      await verifyMicrophoneInput()
       const callerIdForThisCall = callerPlan.mode === 'rotation' && !callerIdLockedByUser
         ? rotatedCallerId
         : (effectiveCallerId || '')
@@ -641,11 +634,13 @@ export function SoftphoneCore({ surface, open,
       if (authorizedRingCount && authorizedRingCount > 0) params.RingCount = String(authorizedRingCount)
       // The event includes whether Twilio/carrier early media exists. When it
       // does not, play the bundled ringback so the agent never waits in silence.
+      await prepareCallMicrophone(deviceRef.current)
       const call = await deviceRef.current.connect({
         params,
         rtcConstraints: { audio: true },
         enableRingingState: true,
       })
+      monitorCallMicrophone(deviceRef.current, call)
       if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) { call.disconnect(); return }
       if (callerPlan.mode === 'rotation' && !callerIdLockedByUser) {
         setAttemptsPlaced((current) => current + 1)
@@ -783,6 +778,7 @@ export function SoftphoneCore({ surface, open,
     } catch (err) {
       stopLocalRingback()
       const msg = extractTwilioErrorMessage(err)
+      if (deviceRef.current) void releaseCallMicrophone(deviceRef.current).catch(() => {})
       log(`makeCall error: ${msg}`)
       setError(msg)
       setStatusLogged('ready')
@@ -881,10 +877,15 @@ export function SoftphoneCore({ surface, open,
     setWorkspaceDispositionPreset(null)
   }
 
-  function acceptIncoming() {
-    callRef.current?.accept()
-    setStatusLogged('on_call')
-    callStartRef.current = Date.now()
+  async function acceptIncoming() {
+    const device = deviceRef.current, call = callRef.current
+    if (!device || !call) return
+    try {
+      await prepareCallMicrophone(device)
+      if (callRef.current !== call) { await releaseCallMicrophone(device); return }
+      monitorCallMicrophone(device, call); call.accept()
+      setStatusLogged('on_call'); callStartRef.current = Date.now()
+    } catch (error) { void releaseCallMicrophone(device).catch(() => {}); setError(extractTwilioErrorMessage(error)) }
   }
 
   function rejectIncoming() {
@@ -1291,6 +1292,7 @@ export function SoftphoneCore({ surface, open,
             below content size and the panel respects max-h cap. Without it
             the body forces the panel past the viewport. */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+          <DialerMicrophoneControls deviceRef={deviceRef} status={status} open={open} />
           {/* Error banner */}
           {error && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
