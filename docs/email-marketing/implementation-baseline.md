@@ -1,6 +1,6 @@
 # Email implementation baseline and model handoff
 
-Checked 2026-09-12. **Local baseline, contracts and EM-003 configuration/auth implementation are complete; live database and provider preflight remain pending.** Reviewable checkpoint: `8190412c` on `codex/email-foundation-20260912`. It does not mark G0 fully passed, authorize SQL against production, or claim the email feature is implemented.
+Checked 2026-09-12. **Local baseline, contracts and EM-003 configuration/auth implementation are complete; the EM-003 migration also passed in a disposable PostgreSQL 16 fixture. Live database and provider preflight remain pending.** Reviewable checkpoint: `8190412c` on `codex/email-foundation-20260912`. It does not mark G0 fully passed, authorize SQL against production, or claim the email feature is implemented.
 
 ## 1. Use this checkout
 
