@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { extractTwilioErrorMessage } from './telephony-bar-support'
 
 function createRingbackAudio() {
@@ -16,6 +16,7 @@ export function useDialerRingback() {
     audioRef.current.pause()
     audioRef.current.currentTime = 0
   }, [])
+  useEffect(() => stop, [stop])
   const play = useCallback(async () => {
     const audio = audioRef.current ?? createRingbackAudio()
     audioRef.current = audio
