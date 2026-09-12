@@ -16,8 +16,16 @@ See [scope and boundaries](recovery-milestone.md). The same React component and 
 - Persist simulated outbound acceptance and weekday follow-up scheduling from actual simulated acceptance. Incoming fixtures cancel pending work and stale drafts in the same transaction. Messages have an explicit per-thread order.
 - Human takeover and callback handoff transfer use current ownership/content revisions. Handoffs retain verbatim inbound evidence, notify the selected local recipient and explicitly show Calendar/CRM as not connected. No automatic Lead or Opportunity is created.
 - All-marketing stops cancel pending work across campaigns and confirmed aliases. Unfinished callback work becomes held for review. Private notification acknowledgment is recipient-scoped.
-- Inbox/Campaigns/More in a light theme; campaign creation, sequence editor, recipient review, simulation launch/pause, filtered inbox, composer, callback form and operational notices are connected to PostgreSQL.
+- Inbox/Campaigns/More in the approved white/red/grey light theme; campaign creation, sequence editor, recipient review, simulation launch/pause, filtered inbox, composer, callback form and operational notices are connected to PostgreSQL.
 - Production worker remains disabled. Simulation accepts only reserved `.test` addresses, makes no provider/model calls and processes at most one acceptance per tick with shared pilot limits of 2/hour and 10/day.
+
+## Setup foundation continuation
+
+The next local increment restores the approved prototype palette (`#a9202e` accent, white panels, grey canvas) and connects owner-only business details, team preferences and advanced member access under More. The old multi-request settings mutation repository is retired. Settings, audit and receipt now commit under the common workspace lock with fresh Email/CRM membership, strict expected revisions and server-computed affected-work hashes. Concurrent owner removals cannot remove the final active CRM-backed owner.
+
+Reducing access cancels pending messages, invalidates drafts, pauses owned active campaigns and holds affected conversations/handoffs for owner review; no AI assignment occurs. Inactive CRM accounts are excluded from assignment and dispatch. Saved acquisitions/backup choices prefill explicit callback handoffs. Reply-review routing, timed escalation and shared CRM ownership remain unfinished.
+
+Business/team saves invalidate old readiness and keep live flags off. Provider readiness, finish and enable commands fail closed even if legacy config JSON claims to be current. The setup UI shows Connections pending; these saved details are not a readiness pass. No new schema migration, canonical Lead/task write or external connection occurred in this increment.
 
 ## Verification
 
@@ -41,7 +49,7 @@ A partial row is intentionally not a completion claim.
 | --- | --- |
 | EM-001 | Partial: source baseline exists; deployed schema and release verification remain pending. |
 | EM-002 | Local contracts and harnesses implemented; schemas do not prove action implementations. |
-| EM-003 | Partial: pilot commands recheck membership and commit atomically. Older settings service still needs transaction and readiness repair. |
+| EM-003 | Partial: pilot commands recheck membership and commit atomically. Settings now share the transaction ledger, role-change holds and fail-closed readiness; real provider readiness and shared CRM authorization remain unfinished. |
 | EM-004 | Partial: identity schema and resolver tested locally. Real import/link commands remain unfinished. |
 | EM-005 | Partial: transaction-backed simulation publication, exact review and frozen versions tested. Live readiness/publication remain unfinished. |
 | EM-006 | Partial: simulation ledger is connected. Production lease fencing, event queue and remote reconciliation remain unfinished. |
@@ -58,13 +66,13 @@ A partial row is intentionally not a completion claim.
 | EM-017 | Pending: simulation is not the required configured-provider journey. |
 | EM-018 | Utility only: fabricated recipient fixtures; real imports/segments/verification jobs are unfinished. |
 | EM-019 | Partial: weekday scheduling, pilot pacing and pause work locally. Durable scheduler/resume and production pacing are unfinished. |
-| EM-020 | Partial: shared light-theme Email component and CRM page exist. Complete setup wizard and signed-in CRM-shell verification are unfinished. |
+| EM-020 | Partial: approved white/red/grey Email component, CRM page and business/team setup exist. Complete provider onboarding and signed-in CRM-shell verification are unfinished. |
 | EM-021 | Not implemented: no live audience mapping/import pages; campaign recipient review is fixture-backed. |
 | EM-022 | Partial: campaign list, sequence edit, recipient review and simulated start/pause are connected. Full live detail/revision workflows remain unfinished. |
 | EM-023 | Partial: filtered local inbox, human composer and review controls are connected. Shared Conversations, AI review and full access/pagination states remain unfinished. |
 | EM-024 | Partial: evidenced local callback handoff exists. CRM handoff page and Google Calendar integration are unfinished. |
 | EM-025 | Not implemented: no playbook editor or evaluation review UI. |
-| EM-026 | Not implemented: connections/settings/brand wizard remains unfinished. |
+| EM-026 | Partial: business/team setup and advanced team access are connected locally. Provider subscriptions, sender/brand/phone setup and finish/enable gates remain unfinished. |
 | EM-027 | Utility only: no truthful production outcome reporting or exports. |
 | EM-028 | Utility only: legacy guard helper is not wired into existing sending paths. |
 | EM-029 | Utility only: no complete replay, retention or recovery UI. |
@@ -77,7 +85,7 @@ A partial row is intentionally not a completion claim.
 
 ## Next implementation order
 
-1. Repair older configuration/settings transactions and readiness authority before connecting them to the wizard. Complete canonical Lead/task/history and shared Conversations ownership integration against an isolated fixture of the actual CRM contracts.
+1. Complete canonical Lead/task/history and shared Conversations ownership integration against an isolated fixture of the actual CRM contracts.
 2. Implement provider connection, durable remote dispatch/reconciliation, signed webhook capture and full suppression/preferences. Keep live dispatch disabled until controlled provider evidence exists.
 3. Complete the setup wizard, AI policy/evaluations, Calendar/push/response-line integrations and remaining views. Preserve everyday-language sales voice, verified facts, Lead → human-qualified Opportunity distinctions and weekday cadence.
 4. Run full local integration and release checks, then prepare the exact controlled external test/release for authorization. No production schema, subscriptions, provider connection, customer send or deployment was performed in this milestone.

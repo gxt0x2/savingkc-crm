@@ -80,3 +80,7 @@ These are interaction references, not a recommendation to subscribe. Preserve Sa
 ## 7. Acceptance and implementation
 
 04 contains the updated routes/action references. T57–T62 in06 verify this revision; EM-035 reconciles the integrated UX and implements saved views. Base packets consume this contract from the start rather than intentionally building obsolete navigation. The updated walkthrough uses fabricated sample conversations/campaigns and local interactions. It proves design intent only; production search, counts, cadence scheduling, ownership, subscriptions and sending remain unbuilt and require the existing implementation/release gates.
+
+## Approved visual palette
+
+The portal uses the approved white, red and grey light theme. Match the focused prototype: white panels, `#f6f7f9` canvas, `#eef1f5` secondary surfaces, `#202631` text, `#576274` secondary text, `#dce1e8` borders, `#a9202e` primary actions and selection indicators, and `#fff0f2` selection tint. Do not substitute green or introduce an automatic dark theme. Use labels alongside color for operational states.

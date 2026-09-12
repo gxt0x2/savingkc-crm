@@ -1,3 +1,4 @@
+import type { EmailWorkspaceConfig } from '../config'
 import type { EmailCommand } from '../contracts'
 
 export type PilotConfig = Extract<
@@ -68,7 +69,24 @@ export interface PilotDraft {
   controller_revision: number
   state: string
 }
+export interface PilotSettings {
+  revision: number
+  config: EmailWorkspaceConfig
+  members: {
+    id: string
+    name: string
+    roles: string[]
+    active: boolean
+    crm_active: boolean
+    revision: number
+    affectedWorkHash: string
+    affectedThreads: number
+  }[]
+  readiness: { state: 'blocked'; sendingEnabled: false; blockers: string[] }
+}
 export interface PilotState {
+  routing: { acquisitionOwnerId: string; backupId: string } | null
+  settings: PilotSettings | null
   mode: 'simulation' | 'disabled'
   paused: boolean
   actorId: string

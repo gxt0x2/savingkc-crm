@@ -11,6 +11,7 @@ import {
   type PilotThread,
 } from '@/lib/email/workflow/types'
 import styles from './email-workspace.module.css'
+import { EmailSetup } from './email-setup'
 
 const views: [InboxView, string][] = [
   ['action', 'Needs action'],
@@ -22,6 +23,24 @@ const views: [InboxView, string][] = [
   ['all', 'All conversations'],
 ]
 const friendly: Record<string, string> = {
+  STALE_SETTINGS:
+    'Settings changed in another session. Refresh, review the saved details and try again.',
+  STALE_MEMBERSHIP:
+    'This person’s access changed. Refresh before changing it again.',
+  AFFECTED_WORK_CHANGED:
+    'Affected conversations changed. Refresh and review the current work before changing access.',
+  LAST_OWNER: 'Keep at least one active Email owner.',
+  TEAM_MEMBER_INACTIVE:
+    'This CRM account is inactive. Choose an active team member.',
+  TEAM_ROLE_REQUIRED: 'Choose an active team member with the required role.',
+  DISTINCT_BACKUP_REQUIRED: 'Choose a different person as backup.',
+  INVALID_TEAM_HOURS:
+    'Choose weekday hours starting at 8:30 AM or later, with the end after the start.',
+  INVALID_PRIMARY_DOMAIN:
+    'Enter the company domain without https:// or a path.',
+  HTTPS_PRIVACY_URL_REQUIRED: 'Use an https:// address for the privacy page.',
+  PROVIDER_READINESS_UNAVAILABLE:
+    'Sending remains off. The provider and delivery checks are not connected yet.',
   EMAIL_SETUP_REQUIRED:
     'Email is not connected yet. The local build is available for testing; live sending remains off.',
   EMAIL_UNAVAILABLE:
@@ -136,6 +155,7 @@ export function EmailWorkspace({
   const [phone, setPhone] = useState('')
   const [timeText, setTimeText] = useState('')
   const [owner, setOwner] = useState('')
+  const [backup, setBackup] = useState('')
   const [showSimulation, setShowSimulation] = useState(false)
   const [simulationBody, setSimulationBody] = useState(
     'I might consider selling. Call me at 816-555-0101. Tomorrow afternoon works.',
@@ -187,6 +207,10 @@ export function EmailWorkspace({
       setNotice(
         'Saved. ' +
           ({
+            settings_saved: 'Setup details saved. Sending remains disabled.',
+            roles_saved: 'Team access updated.',
+            work_held:
+              'Access updated. Affected work is held for owner review.',
             draft: 'Draft updated.',
             simulation_active:
               'Practice campaign started. Delivery is simulated.',
@@ -308,7 +332,15 @@ export function EmailWorkspace({
     setCallback(false)
     setPhone('')
     setTimeText('')
-    setOwner(data?.actorId ?? '')
+    const assigned =
+      data?.routing?.acquisitionOwnerId ??
+      (data?.members.some((m) => m.id === data.actorId) ? data.actorId : '')
+    setOwner(assigned)
+    setBackup(
+      data?.routing?.backupId ??
+        data?.members.find((m) => m.id !== assigned)?.id ??
+        '',
+    )
     setNotice('')
     setError('')
   }
@@ -660,7 +692,7 @@ export function EmailWorkspace({
                               payload: {
                                 threadId: selected.id,
                                 ownerId: owner,
-                                backupId: data.actorId,
+                                backupId: backup,
                                 reason: 'Human-reviewed callback request',
                                 requestedContact: {
                                   ...(phone ? { phone } : {}),
@@ -694,6 +726,26 @@ export function EmailWorkspace({
                             >
                               {data.members.map((m) => (
                                 <option key={m.id} value={m.id}>
+                                  {m.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label htmlFor="email-callback-backup">
+                            Backup agent
+                            <select
+                              id="email-callback-backup"
+                              value={backup}
+                              onChange={(e) => setBackup(e.target.value)}
+                              required
+                            >
+                              <option value="">Choose a backup</option>
+                              {data.members.map((m) => (
+                                <option
+                                  key={m.id}
+                                  value={m.id}
+                                  disabled={m.id === owner}
+                                >
                                   {m.name}
                                 </option>
                               ))}
@@ -1160,8 +1212,9 @@ export function EmailWorkspace({
                     not connected in this build.
                   </p>
                   <p>
-                    The guided subscription and connection wizard is still being
-                    built.
+                    Business and team setup are available below for workspace
+                    owners. Subscription and provider connection steps are still
+                    being built.
                   </p>
                 </section>
                 <section>
@@ -1178,7 +1231,11 @@ export function EmailWorkspace({
                   {data.notifications.length ? (
                     data.notifications.map((n) => (
                       <div className={styles.notification} key={n.id}>
-                        <span>{n.kind}</span>
+                        <span>
+                          {n.kind === 'team_member_work_held'
+                            ? 'Team access changed — work needs review'
+                            : n.kind}
+                        </span>
                         {n.acknowledged_at ? (
                           <small>Acknowledged</small>
                         ) : (
@@ -1202,7 +1259,12 @@ export function EmailWorkspace({
                   )}
                 </section>
               </div>
-              {canManage && (
+              {data.settings && (
+                <EmailSetup settings={data.settings} busy={busy} act={act} />
+              )}
+              {data.roles.some((r) =>
+                ['owner', 'marketer', 'reviewer', 'acquisitions'].includes(r),
+              ) && (
                 <section className={styles.operations}>
                   <h3>Operations</h3>
                   <p>

@@ -1,62 +1,27 @@
 import 'server-only'
-import { createHash, randomUUID } from 'node:crypto'
-import type {
-  Sql,
-  TransactionSql,
-  PendingQuery,
-  ParameterOrFragment,
-  Row,
-} from 'postgres'
+import { randomUUID } from 'node:crypto'
+import type { Sql } from 'postgres'
 import { emailCommandSchema } from '../contracts'
+import { emailWorkspaceConfigSchema } from '../config'
 import { pilotFollowUp, pilotFollowUpExpires, pilotSendSlot } from './schedule'
+import {
+  WorkflowError,
+  check,
+  json,
+  workflowHash,
+  type Tx,
+  type Member,
+  type Context,
+  type Result,
+} from './core'
+export { WorkflowError, workflowHash } from './core'
+import {
+  applySettingsCommand,
+  isSettingsCommand,
+  readSettings,
+} from '../commands/settings'
 import type { PilotConfig, PilotReview, PilotState } from './types'
 
-// postgres 3.4.8 uses Omit for TransactionSql, which drops its runtime call
-// signatures. Restore the query signatures at this one adapter boundary.
-type Tx = Pick<TransactionSql, 'json' | 'array' | 'unsafe'> & {
-  <T extends readonly object[] = Row[]>(
-    template: TemplateStringsArray,
-    ...parameters: readonly ParameterOrFragment<never>[]
-  ): PendingQuery<T>
-}
-type Member = { workspace_id: string; auth_user_id: string; roles: string[] }
-type Context = { tx: Tx; member: Member; now: Date }
-type Result = {
-  entityId: string
-  state: string
-  revision?: number
-  bodyHash?: string
-}
-export class WorkflowError extends Error {
-  constructor(
-    public code: string,
-    public status = 409,
-  ) {
-    super(code)
-  }
-}
-function check(
-  condition: unknown,
-  code: string,
-  status = 409,
-): asserts condition {
-  if (!condition) throw new WorkflowError(code, status)
-}
-function stable(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
-  if (value !== null && typeof value === 'object')
-    return `{${Object.entries(value)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`)
-      .join(',')}}`
-  return JSON.stringify(value)
-}
-export function workflowHash(value: unknown) {
-  return createHash('sha256').update(stable(value)).digest('hex')
-}
-function json(value: unknown) {
-  return JSON.parse(JSON.stringify(value))
-}
 function canManage(member: Member) {
   return member.roles.some((r) => ['owner', 'marketer'].includes(r))
 }
@@ -71,7 +36,7 @@ function canWork(member: Member) {
 async function membership(tx: Tx, subject: string) {
   const [member] = await tx<
     Member[]
-  >`select workspace_id,auth_user_id,roles from em_memberships where auth_user_id=${subject} and active`
+  >`select m.workspace_id,m.auth_user_id,m.roles from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.user_id=m.auth_user_id where m.auth_user_id=${subject} and m.active and p.is_active=true`
   check(member, 'NO_EMAIL_MEMBERSHIP', 403)
   return member
 }
@@ -148,7 +113,11 @@ async function transact(
     const [workspace] =
       await tx`select execution_mode from em_workspaces where id=${initial.workspace_id} for update`
     const member = await membership(tx, subject)
-    check(workspace?.execution_mode === 'simulation', 'WORKSPACE_NOT_READY')
+    check(
+      isSettingsCommand(input.command) ||
+        workspace?.execution_mode === 'simulation',
+      'WORKSPACE_NOT_READY',
+    )
     const [prior] =
       await tx`select payload_hash,result from em_command_receipts where workspace_id=${member.workspace_id} and actor_id=${subject} and idempotency_key=${input.idempotencyKey}`
     const hash = workflowHash(input)
@@ -310,7 +279,9 @@ export async function executePilotCommand(
   return transact(sql, subject, command, now, async (context) => {
     const { tx, member } = context
     const ws = member.workspace_id
-    if (command.command.startsWith('CAM-') || command.command === 'SET-PAUSE')
+    if (isSettingsCommand(command.command))
+      return applySettingsCommand(context, command)
+    if (command.command.startsWith('CAM-'))
       check(canManage(member), 'FORBIDDEN', 403)
     switch (command.command) {
       case 'CAM-CREATE': {
@@ -453,10 +424,6 @@ export async function executePilotCommand(
           state: 'paused',
         }
       }
-      case 'SET-PAUSE': {
-        await tx`update em_workspaces set send_enabled=false,ai_auto_enabled=false,pause_reason=${command.payload.reason},revision=revision+1 where id=${ws}`
-        return { entityId: ws, state: 'paused' }
-      }
       case 'THR-TAKEOVER': {
         check(canWork(member), 'FORBIDDEN', 403)
         const thread = await threadFor(context, command.payload.threadId)
@@ -543,7 +510,7 @@ export async function executePilotCommand(
           command.expectedRevision,
         )
         const members =
-          await tx`select auth_user_id,roles from em_memberships where workspace_id=${ws} and auth_user_id in (${p.ownerId},${p.backupId}) and active`
+          await tx`select m.auth_user_id,m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id and a.user_id=m.auth_user_id where m.workspace_id=${ws} and m.auth_user_id in (${p.ownerId},${p.backupId}) and m.active and a.is_active=true`
         check(
           [p.ownerId, p.backupId].every((id) =>
             members.some(
@@ -556,6 +523,7 @@ export async function executePilotCommand(
           ),
           'ASSIGNEE_UNAVAILABLE',
         )
+        check(p.ownerId !== p.backupId, 'DISTINCT_BACKUP_REQUIRED', 400)
         for (const evidence of p.factEvidence) {
           check(
             evidence.source === 'message' &&
@@ -763,11 +731,11 @@ export async function simulateDelivery(
         const [address] =
           await tx`select normalized_address,verification_state,verification_expires_at from em_addresses where workspace_id=${ws} and id=${intent.address_id}`
         const [responsible] =
-          await tx`select auth_user_id from em_memberships where workspace_id=${ws} and auth_user_id=${intent.responsible_user_id} and active`
+          await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.user_id=m.auth_user_id where m.workspace_id=${ws} and m.auth_user_id=${intent.responsible_user_id} and m.active and p.is_active=true and m.roles && array['owner','marketer','reviewer','acquisitions']::text[]`
         const controllerActive =
           intent.controller !== 'human' ||
           (
-            await tx`select auth_user_id from em_memberships where workspace_id=${ws} and auth_user_id=${intent.controller_user_id} and active`
+            await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.user_id=m.auth_user_id where m.workspace_id=${ws} and m.auth_user_id=${intent.controller_user_id} and m.active and p.is_active=true and m.roles && array['owner','reviewer','acquisitions']::text[]`
           ).length > 0
         const stale =
           intent.expected_content_revision !== intent.content_revision ||
@@ -874,7 +842,7 @@ export async function readPilotState(
     const member = await membership(tx, subject),
       ws = member.workspace_id
     const [workspace] =
-      await tx`select execution_mode,pause_reason from em_workspaces where id=${ws}`
+      await tx`select execution_mode,pause_reason,config from em_workspaces where id=${ws}`
     const team = canSeeTeam(member)
     const threads =
       await tx`select t.*,p.display_name as name,a.normalized_address as email,c.name as campaign_name,
@@ -903,7 +871,20 @@ export async function readPilotState(
       ? await tx`select id,name from em_audiences where workspace_id=${ws} and state='ready' order by name`
       : []
     const members =
-      await tx`select m.auth_user_id as id,coalesce(p.name,'Team member') as name from em_memberships m left join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.active and m.roles && array['owner','acquisitions']::text[] order by name`
+      await tx`select m.auth_user_id as id,coalesce(p.name,'Team member') as name from em_memberships m left join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.active and p.is_active=true and p.user_id=m.auth_user_id and m.roles && array['owner','acquisitions']::text[] order by name`
+    const configuredTeam = emailWorkspaceConfigSchema.parse(
+      workspace.config,
+    ).team
+    const routing =
+      configuredTeam &&
+      [configuredTeam.acquisitionOwnerId, configuredTeam.backupId].every((id) =>
+        members.some((m) => m.id === id),
+      )
+        ? {
+            acquisitionOwnerId: configuredTeam.acquisitionOwnerId,
+            backupId: configuredTeam.backupId,
+          }
+        : null
     const notifications =
       await tx`select id,thread_id,kind,acknowledged_at from em_notifications where workspace_id=${ws} and recipient_id=${subject} order by created_at desc limit 100`
     const activity = canManage(member)
@@ -921,8 +902,12 @@ export async function readPilotState(
       drafts,
       audiences,
       members,
+      routing,
       notifications,
       activity,
+      settings: member.roles.includes('owner')
+        ? await readSettings({ tx, member, now })
+        : null,
     }) as PilotState
   }) as Promise<PilotState>
 }

@@ -185,3 +185,85 @@ test('unavailable state is visible and refresh recovers; wrong-origin writes are
   })
   expect(response.status()).toBe(403)
 })
+
+test('owner saves business and team setup; unavailable connections cannot enable sending', async ({
+  page,
+}) => {
+  const browserErrors: string[] = []
+  page.on('pageerror', (error) => browserErrors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  const setup = page.getByRole('region', { name: 'Email setup', exact: true })
+  await page
+    .getByLabel('Business name', { exact: true })
+    .fill('SavingKC practice business')
+  await page
+    .getByLabel('Main company domain', { exact: true })
+    .fill('savingkc.test')
+  await page
+    .getByLabel('Business mailing address', { exact: true })
+    .fill('100 Sample Street, Example City')
+  await page
+    .getByLabel('Contact shown to readers', { exact: true })
+    .fill('team@savingkc.test')
+  await page
+    .getByLabel('Privacy page URL', { exact: true })
+    .fill('https://savingkc.test/privacy')
+  await page
+    .getByRole('button', { name: 'Save business details', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Setup details saved. Sending remains disabled.',
+  )
+  await expect(
+    setup.getByRole('button', { name: '1. Business · Saved', exact: true }),
+  ).toBeVisible()
+  await setup.getByRole('button', { name: /2. Team/ }).click()
+  await page
+    .getByRole('combobox', { name: 'Reply reviewer', exact: true })
+    .selectOption({ label: 'Demo owner' })
+  await page
+    .getByRole('combobox', { name: 'Acquisitions owner', exact: true })
+    .selectOption({ label: 'Demo agent' })
+  await page
+    .getByRole('combobox', { name: 'Backup agent', exact: true })
+    .selectOption({ label: 'Demo owner' })
+  await page
+    .getByRole('button', { name: 'Save team responsibilities', exact: true })
+    .click()
+  await expect(
+    setup.getByRole('button', { name: '2. Team · Saved', exact: true }),
+  ).toBeVisible()
+  await page.reload()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await expect(page.getByLabel('Business name', { exact: true })).toHaveValue(
+    'SavingKC practice business',
+  )
+  await setup.getByRole('button', { name: /2. Team/ }).click()
+  await expect(
+    page.getByRole('combobox', { name: 'Acquisitions owner', exact: true }),
+  ).toHaveValue('00000000-0000-4000-8000-000000000002')
+  await page.screenshot({
+    path: 'test-results/email-local/setup-desktop.png',
+    fullPage: true,
+  })
+  await setup.getByRole('button', { name: /3. Connections/ }).click()
+  await expect(
+    setup.getByText('Sending disabled.', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    setup.getByRole('button', { name: /enable|finish/i }),
+  ).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await setup.getByRole('button', { name: /1. Business/ }).click()
+  await page.screenshot({
+    path: 'test-results/email-local/setup-mobile.png',
+    fullPage: true,
+  })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true)
+  expect(browserErrors).toEqual([])
+})

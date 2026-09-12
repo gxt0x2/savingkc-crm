@@ -803,3 +803,385 @@ withDb('manual stop is not reported as a seller unsubscribe', async (db) => {
   assert.equal(stopped.state, 'stopped')
   assert.equal(stopped.outcome, 'unclassified')
 })
+
+const business = {
+  name: 'SavingKC practice',
+  address: '100 Sample Street, Example City',
+  primaryDomain: 'savingkc.test',
+  timezone: 'America/Chicago',
+  programs: ['seller_outreach'],
+  contact: 'team@savingkc.test',
+  privacyUrl: 'https://savingkc.test/privacy',
+}
+withDb(
+  'settings save is atomic, replayable and rejects stale revisions and nonowners',
+  async (db) => {
+    const command = {
+      command: 'SET-BUSINESS',
+      idempotencyKey: randomUUID(),
+      expectedRevision: 0,
+      payload: business,
+    }
+    await rejects(executePilotCommand(db.sql, agent, command, now), 'FORBIDDEN')
+    const results = await Promise.all([
+      executePilotCommand(db.sql, owner, command, now),
+      executePilotCommand(db.sql, owner, command, now),
+    ])
+    assert.deepEqual(results[0], results[1])
+    const state = await readPilotState(db.sql, owner, now)
+    assert.equal(state.settings?.config.business?.name, business.name)
+    assert.equal(state.settings?.revision, 1)
+    assert.equal((await readPilotState(db.sql, agent, now)).settings, null)
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        { ...command, idempotencyKey: randomUUID() },
+        now,
+      ),
+      'STALE_SETTINGS',
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        { ...command, payload: { ...business, name: 'Changed' } },
+        now,
+      ),
+      'IDEMPOTENCY_MISMATCH',
+    )
+    assert.equal(
+      (await db.sql`select count(*)::int as n from em_audit_events`)[0].n,
+      1,
+    )
+    await db.sql
+      .unsafe(`create function fail_setup_audit() returns trigger language plpgsql as $$ begin raise exception 'injected audit failure'; end $$;
+    create trigger fail_setup_audit before insert on em_audit_events for each row execute function fail_setup_audit();`)
+    await assert.rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        {
+          ...command,
+          idempotencyKey: randomUUID(),
+          expectedRevision: 1,
+          payload: { ...business, name: 'Must roll back' },
+        },
+        now,
+      ),
+      /injected audit failure/,
+    )
+    assert.equal(
+      (await readPilotState(db.sql, owner, now)).settings?.config.business
+        ?.name,
+      business.name,
+    )
+    assert.equal(
+      (await db.sql`select count(*)::int as n from em_command_receipts`)[0].n,
+      1,
+    )
+  },
+)
+withDb(
+  'settings ignores forged readiness; pause works for operators even in disabled mode',
+  async (db) => {
+    const runId = randomUUID()
+    await db.sql`update em_workspaces set config=${db.sql.json({ readiness: { runId, state: 'current', configHash: 'forged-config-hash', checkedAt: now.toISOString() } })},execution_mode='disabled'`
+    for (const command of ['SET-ENABLE', 'SET-FINISH'])
+      await rejects(
+        executePilotCommand(
+          db.sql,
+          owner,
+          {
+            command,
+            idempotencyKey: randomUUID(),
+            payload: {
+              readinessRunId: runId,
+              configHash: 'forged-config-hash',
+            },
+          },
+          now,
+        ),
+        'PROVIDER_READINESS_UNAVAILABLE',
+      )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        {
+          command: 'SET-AUTOMATION',
+          idempotencyKey: randomUUID(),
+          expectedRevision: 0,
+          payload: {
+            mode: 'bounded_auto',
+            playbookVersionId: randomUUID(),
+            maxReplies: 1,
+            language: 'en',
+            allowedActions: [],
+          },
+        },
+        now,
+      ),
+      'AUTOMATION_READINESS_REQUIRED',
+    )
+    await executePilotCommand(
+      db.sql,
+      agent,
+      {
+        command: 'SET-PAUSE',
+        idempotencyKey: randomUUID(),
+        payload: { reason: 'Operator saw a problem' },
+      },
+      now,
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        reader,
+        {
+          command: 'SET-PAUSE',
+          idempotencyKey: randomUUID(),
+          payload: { reason: 'No access' },
+        },
+        now,
+      ),
+      'FORBIDDEN',
+    )
+    const [ws] = await db.sql`select * from em_workspaces`
+    assert.equal(ws.send_enabled, false)
+    assert.equal(ws.ai_auto_enabled, false)
+    assert.equal(ws.setup_completed_at, null)
+    assert.equal(ws.pause_reason, 'Operator saw a problem')
+  },
+)
+withDb(
+  'team setup validates actual CRM roles, weekday hours, distinct backup and manual calendar',
+  async (db) => {
+    const payload = {
+      reviewerId: owner,
+      acquisitionOwnerId: agent,
+      backupId: owner,
+      hours: {
+        timezone: 'America/Chicago',
+        weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        startLocal: '09:00',
+        endLocal: '17:00',
+      },
+      sla: { urgentMinutes: 15, ordinaryMinutes: 120 },
+      calendarMode: 'manual',
+    }
+    const make = (patch = {}) => ({
+      command: 'SET-TEAM',
+      idempotencyKey: randomUUID(),
+      expectedRevision: 0,
+      payload: { ...payload, ...patch },
+    })
+    await rejects(
+      executePilotCommand(db.sql, owner, make({ reviewerId: reader }), now),
+      'TEAM_ROLE_REQUIRED',
+    )
+    await rejects(
+      executePilotCommand(db.sql, owner, make({ backupId: agent }), now),
+      'DISTINCT_BACKUP_REQUIRED',
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        make({ hours: { ...payload.hours, startLocal: '08:00' } }),
+        now,
+      ),
+      'INVALID_TEAM_HOURS',
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        make({ hours: { ...payload.hours, endLocal: '25:00' } }),
+        now,
+      ),
+      'INVALID_TEAM_HOURS',
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        make({ calendarMode: 'connected' }),
+        now,
+      ),
+      'CALENDAR_NOT_CONNECTED',
+    )
+    await executePilotCommand(db.sql, owner, make(), now)
+    assert.equal(
+      (await readPilotState(db.sql, owner, now)).settings?.config.team
+        ?.acquisitionOwnerId,
+      agent,
+    )
+    assert.deepEqual((await readPilotState(db.sql, agent, now)).routing, {
+      acquisitionOwnerId: agent,
+      backupId: owner,
+    })
+    await db.sql`update agent_profiles set is_active=false where id=${agent}`
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        agent,
+        {
+          command: 'SET-PAUSE',
+          idempotencyKey: randomUUID(),
+          payload: { reason: 'Inactive CRM account' },
+        },
+        now,
+      ),
+      'NO_EMAIL_MEMBERSHIP',
+    )
+  },
+)
+withDb(
+  'simultaneous owner removals serialize and retain one active owner',
+  async (db) => {
+    await db.sql`update em_memberships set roles=array['owner'] where auth_user_id=${agent}`
+    const settings = (await readPilotState(db.sql, owner, now)).settings!
+    const remove = (id: string) => {
+      const m = settings.members.find((m) => m.id === id)!
+      return {
+        command: 'SET-ROLES',
+        idempotencyKey: randomUUID(),
+        expectedRevision: m.revision,
+        payload: {
+          authUserId: id,
+          roles: ['reader'],
+          active: true,
+          affectedWorkHash: m.affectedWorkHash,
+        },
+      }
+    }
+    const results = await Promise.allSettled([
+      executePilotCommand(db.sql, owner, remove(agent), now),
+      executePilotCommand(db.sql, agent, remove(owner), now),
+    ])
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1)
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_memberships where active and roles @> array['owner']`
+      )[0].n,
+      1,
+    )
+  },
+)
+withDb(
+  'role reduction reviews current work and cancels pending work without AI reassignment',
+  async (db) => {
+    const { thread } = await launched(db)
+    // Give the agent ownership of a live practice conversation and queued work.
+    await db.sql`update em_threads set responsible_user_id=${agent} where id=${thread.id}`
+    const stale = (
+      await readPilotState(db.sql, owner, now)
+    ).settings!.members.find((m) => m.id === agent)!
+    await simulateInbound(
+      db.sql,
+      owner,
+      {
+        threadId: thread.id,
+        eventId: randomUUID(),
+        body: 'Could we speak tomorrow?',
+      },
+      now,
+    )
+    const make = (m: typeof stale) => ({
+      command: 'SET-ROLES',
+      idempotencyKey: randomUUID(),
+      expectedRevision: m.revision,
+      payload: {
+        authUserId: agent,
+        roles: ['reader'],
+        active: true,
+        affectedWorkHash: m.affectedWorkHash,
+      },
+    })
+    await rejects(
+      executePilotCommand(db.sql, owner, make(stale), now),
+      'AFFECTED_WORK_CHANGED',
+    )
+    await executePilotCommand(
+      db.sql,
+      agent,
+      {
+        command: 'THR-TAKEOVER',
+        idempotencyKey: randomUUID(),
+        payload: { threadId: thread.id, expectedControllerRevision: 0 },
+      },
+      now,
+    )
+    const current = (
+      await readPilotState(db.sql, owner, now)
+    ).settings!.members.find((m) => m.id === agent)!
+    await executePilotCommand(db.sql, owner, make(current), now)
+    const [saved] = await db.sql`select * from em_threads where id=${thread.id}`
+    assert.equal(saved.controller, 'none')
+    assert.equal(saved.state, 'needs_review')
+    assert.equal(
+      (await db.sql`select count(*)::int as n from em_membership_holds`)[0].n,
+      1,
+    )
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_send_intents where thread_id=${thread.id} and state='queued'`
+      )[0].n,
+      0,
+    )
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_notifications where recipient_id=${owner} and kind='team_member_work_held'`
+      )[0].n,
+      1,
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        agent,
+        {
+          command: 'THR-TAKEOVER',
+          idempotencyKey: randomUUID(),
+          payload: {
+            threadId: thread.id,
+            expectedControllerRevision: saved.controller_revision,
+          },
+        },
+        now,
+      ),
+      'FORBIDDEN',
+    )
+  },
+)
+
+withDb(
+  'CRM deactivation blocks queued dispatch and invalidates callback routing choices',
+  async (db) => {
+    const { thread } = await launched(db)
+    await db.sql`update em_threads set responsible_user_id=${agent}`
+    await db.sql`update agent_profiles set is_active=false where id=${agent}`
+    await simulateDelivery(
+      db.sql,
+      owner,
+      randomUUID(),
+      new Date(now.getTime() + 1_000),
+    )
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_send_intents where state='held' and cancellation_reason='readiness_changed'`
+      )[0].n,
+      1,
+    )
+    const state = await readPilotState(db.sql, owner, now)
+    assert.equal(
+      state.members.some((m) => m.id === agent),
+      false,
+    )
+    assert.equal(state.routing, null)
+    assert.equal(
+      state.threads.some((t) => t.id === thread.id),
+      true,
+    )
+  },
+)
