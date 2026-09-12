@@ -1,0 +1,2 @@
+export type LeadBridgeFacts={positiveSellerInterest:boolean;identityConfirmed:boolean;propertyConfirmed:boolean;existingStage?:string}
+export function leadBridgeDecision(f:LeadBridgeFacts){if(!f.positiveSellerInterest)return 'NO_LEAD';if(!f.identityConfirmed||!f.propertyConfirmed)return 'REVIEW';if(['qualified','appointment','offer','contract','closed'].includes(f.existingStage??''))return 'PRESERVE_EXISTING';return 'CREATE_OR_LINK_LEAD'}
