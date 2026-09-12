@@ -14,7 +14,7 @@ type InitializeTwilioDeviceOptions = {
 export async function initializeTwilioDevice(options: InitializeTwilioDeviceOptions): Promise<TwilioDevice> {
   options.log('checking microphone...')
   await verifyMicrophoneInput()
-  options.log('microphone ready')
+  options.log('microphone access granted; input signal not yet tested')
   options.log('fetching token...')
 
   const { Device } = await import('@twilio/voice-sdk')

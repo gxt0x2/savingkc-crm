@@ -45,8 +45,8 @@ const checks = [
   },
   {
     file: 'src/components/telephony/telephony-bar.tsx',
-    needle: 'await verifyMicrophoneInput()',
-    why: 'The browser must prove a live microphone track exists before it can place a call.',
+    needle: 'await prepareCallMicrophone(deviceRef.current)',
+    why: 'The dialer must bind and verify the actual Twilio input stream before it can place a call.',
   },
 ]
 
