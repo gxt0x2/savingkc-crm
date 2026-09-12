@@ -245,14 +245,14 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
 
   const dialerColumn = <aside
     aria-label="Persistent live dialer controls"
-    className="prospecting-dialer-control-surface min-w-0 self-start overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm lg:col-span-2 2xl:sticky 2xl:top-3 2xl:col-span-1"
+    className="prospecting-dialer-control-surface min-w-0 self-start overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm lg:sticky lg:top-3"
   >
     <ColumnHeader label="Live Dialer" tone="dialer" />
     <div className="min-h-0">{callRail || <div className="grid min-h-40 place-items-center p-5 text-center text-xs text-[var(--ck-text-muted)]">Live dialer controls load with the calling session.</div>}</div>
   </aside>
 
   return <section aria-label="Seller answer workspace" className="min-w-0">
-    <div className="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]">
+    <div className="grid min-w-0 grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]">
       {contactColumn}
       {informationColumn}
       {dialerColumn}
