@@ -5,6 +5,7 @@ Overall: **Approved design; EM-001/EM-002 baseline plus EM-003 local configurati
 
 ## Implementation baseline · 2026-09-12
 
+- Reviewable checkpoint: `8190412c` (`Add email workspace configuration foundation`) on `codex/email-foundation-20260912`. It includes EM-001/EM-002 local foundation work and EM-003 local implementation. The working tree was clean after the commit; no remote push, migration or deployment occurred.
 - Authoritative implementation checkout: `/Users/ernestdodson/Documents/New project/savingkc-crm-email-foundation`, branch `codex/email-foundation-20260912`, starting SHA `d03bb95e16e92da67530d62bc911589951833ba0` fetched from main. Original unrelated edits remain untouched.
 - [Baseline and exact model handoff](implementation-baseline.md) records canonical CRM identities, lifecycle/qualification rules, shared Conversations controls and all existing email send paths. These current-source findings supersede older checkout assumptions in the design.
 - Locked dependencies installed; Next 16.3.4 guides read. Six selected existing CRM test files passed: **41 tests**, exit 0. This is baseline regression evidence, not evidence the email product works.
