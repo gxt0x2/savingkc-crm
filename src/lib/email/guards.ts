@@ -1,0 +1,2 @@
+export type DispatchFacts={sendEnabled:boolean;readinessCurrent:boolean;suppressed:boolean;eligible:boolean;policyExpiresAt:Date;now:Date}
+export function dispatchBlockReason(f:DispatchFacts){if(!f.sendEnabled)return 'WORKSPACE_PAUSED';if(!f.readinessCurrent)return 'READINESS_STALE';if(f.suppressed)return 'SUPPRESSED';if(!f.eligible)return 'INELIGIBLE';if(f.policyExpiresAt<=f.now)return 'POLICY_EXPIRED';return null}
