@@ -1174,7 +1174,7 @@ export async function readPilotState(
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
       h.revision as handoff_revision,h.scheduled_for,h.clarification_question,h.clarification_reviewer_id,h.access_hold_reason,
-      (extract(epoch from l.updated_at)*1000)::bigint as lead_revision,
+      (extract(epoch from l.updated_at)*1000)::float8 as lead_revision,
       coalesce((select jsonb_agg(jsonb_build_object('id',rh.id,'revision',rh.revision,'thread_id',rh.thread_id) order by rh.id)
         from em_handoffs rh where rh.lead_id=t.lead_id and rh.id<>h.id and rh.state<>'completed'),'[]'::jsonb) as open_related_handoffs,
       case when t.lead_id is null then '[]'::jsonb else coalesce((

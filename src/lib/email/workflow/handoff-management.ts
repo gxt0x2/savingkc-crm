@@ -15,6 +15,13 @@ const ACCESS_HOLDS = new Set([
   'clarification_required',
 ])
 
+function canReleaseAccessHold(h: {
+  state: string
+  access_hold_reason: string | null
+}) {
+  return h.state === 'held' && ACCESS_HOLDS.has(h.access_hold_reason ?? '')
+}
+
 /** Explicit human decisions under the shared Email transaction and Lead lock. */
 export async function manageHandoff(
   context: Context,
@@ -233,8 +240,7 @@ async function reassignHandoffs(
     await tx`select id from em_crm_projection_repairs where workspace_id=${member.workspace_id}
       and thread_id=${h.thread_id} and state='pending'`
   check(!repair, 'CALLBACK_HELD')
-  const releasing =
-    h.state === 'held' && ACCESS_HOLDS.has(h.access_hold_reason ?? '')
+  const releasing = canReleaseAccessHold(h)
   if (thread.state === 'stopped')
     check(h.access_hold_reason === 'marketing_stopped', 'CALLBACK_HELD')
   else check(!['stopped', 'done'].includes(thread.state), 'CALLBACK_HELD')
@@ -249,7 +255,7 @@ async function reassignHandoffs(
     'CRM_RECORD_HELD',
   )
   const siblings =
-    await tx`select id,revision,thread_id,crm_task_id,crm_task_key,state,crm_sync_state,access_hold_reason
+    await tx`select id,revision,thread_id,crm_task_id,crm_task_key,lead_id,state,crm_sync_state,access_hold_reason
       from em_handoffs where lead_id=${h.lead_id} and id<>${h.id} and state<>'completed' for update`
   if (siblings.length) {
     const related = p.relatedHandoffs ?? []
@@ -282,16 +288,19 @@ async function reassignHandoffs(
   )
   for (const sibling of siblings) {
     check(
-      sibling.crm_sync_state === 'synced' && sibling.crm_task_key,
+      sibling.crm_sync_state === 'synced' &&
+        sibling.crm_task_key &&
+        sibling.lead_id === h.lead_id,
       'MULTIPLE_HANDOFFS_REQUIRE_REVIEW',
     )
+    const releaseSibling = canReleaseAccessHold(sibling)
     await assignCallback(
       context,
       sibling,
       ownerName,
       `${command.idempotencyKey}:${sibling.id}`,
       p.reason,
-      false,
+      releaseSibling,
     )
     await transfer(
       context,
@@ -299,9 +308,13 @@ async function reassignHandoffs(
       p.newOwnerId,
       p.backupId,
       `${command.idempotencyKey}:${sibling.id}`,
-      'Callback assigned — acceptance needed',
-      sibling.state !== 'held',
+      releaseSibling
+        ? 'Callback released — acceptance needed'
+        : 'Callback assigned — acceptance needed',
+      sibling.state !== 'held' || releaseSibling,
     )
+    if (releaseSibling)
+      await tx`update em_handoffs set access_hold_reason=null,clarification_question=null,clarification_reviewer_id=null where id=${sibling.id}`
   }
   await tx`update leads set assigned_agent=${ownerName},updated_at=${now} where id=${h.lead_id}`
   const [actor] =

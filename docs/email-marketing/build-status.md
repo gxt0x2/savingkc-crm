@@ -27,7 +27,7 @@ See [scope and boundaries](recovery-milestone.md). The same React component and 
 
 The setup increment restored the approved prototype palette (`#a9202e` accent, white panels, grey canvas) and connected owner-only business details, team preferences and advanced member access under More. The old multi-request settings mutation repository is retired. Settings, audit and receipt now commit under the common workspace lock with fresh Email membership and an existing CRM profile, strict expected revisions and server-computed affected-work hashes. Concurrent owner removals cannot remove the final active CRM-backed owner.
 
-Reducing access cancels pending messages, invalidates drafts, pauses owned active campaigns and holds affected conversations/handoffs for owner review; no AI assignment occurs. Inactive Email memberships and missing CRM profiles are excluded from assignment and dispatch. Saved acquisitions/backup choices prefill explicit callback handoffs. Reply-review routing, timed escalation and shared CRM ownership remain unfinished.
+Reducing access cancels pending messages, invalidates drafts, pauses owned active campaigns and holds affected conversations/handoffs for owner review; no AI assignment occurs. Inactive Email memberships and missing CRM profiles are excluded from assignment and dispatch. Saved acquisitions/backup choices prefill explicit callback handoffs. Local return-for-clarification, multi-handoff shared ownership, access-hold release, four-pillar qualification and simulated backup escalation are connected against the disposable fixture. Hosted signed-in CRM-shell verification of those paths remains unfinished.
 
 Business/team saves invalidate old readiness and keep live flags off. Provider readiness, finish and enable commands fail closed even if legacy config JSON claims to be current. The setup UI shows Connections pending; these saved details are not a readiness pass. No external connection occurred in this increment.
 
@@ -41,7 +41,7 @@ The bridge records exact replay evidence and attribution. Subsequent inbound and
 
 CRM history and callback-hold failures cannot roll back an unsubscribe or its local send cancellations. Each optional projection has a separate savepoint. Failed updates become durable repair jobs with an owner notification and a visible Inbox warning. Owner-only `OPS-REPLAY` retries only these internal CRM updates with a current failure-code check, audit and receipt; it cannot retry a provider send or an initial held handoff.
 
-The fixture now uses the actual CRM entity projection migration and exact work-item functions, distinct auth/profile IDs, and a deliberately reduced Conversations projection. A private canonical identity claim and BEFORE INSERT guard serialize Email with other Lead intake for known person/property pairs. The three new migrations remain local drafts; live schema compatibility, all CRM writer behavior, shared ownership reconciliation and signed-in production verification are still pending.
+The fixture now uses the actual CRM entity projection migration and exact work-item functions, distinct auth/profile IDs, and a deliberately reduced Conversations projection. A private canonical identity claim and BEFORE INSERT guard serialize Email with other Lead intake for known person/property pairs. The three new migrations remain local drafts; live schema compatibility, remaining CRM writer behavior, and signed-in production verification are still pending. Local multi-handoff shared ownership now requires an exact related-handoff revision list.
 
 ## Verification
 
@@ -167,8 +167,8 @@ Local-only continuation of the remaining EM-014/024 handoff gaps. New migration 
 Implemented against the existing Email transaction and Lead lock:
 
 - HAN-RETURN holds the callback for an eligible reviewer, cancels queued sends, and does not change the Lead stage or resume a sequence.
-- HAN-REASSIGN accepts an exact `relatedHandoffs` revision list when one Lead has multiple open Email callbacks; a single-handoff command still fails closed.
-- Linked holds from reduced access, marketing stop or clarification can be released to an eligible owner. Marketing stays stopped.
+- HAN-REASSIGN accepts an exact `relatedHandoffs` revision list when one Lead has multiple open Email callbacks; a single-handoff command still fails closed. Access/clarification holds on any listed sibling are released in the same Lead lock.
+- Linked holds from reduced access, marketing stop or clarification can be released to an eligible owner, including as part of a multi-handoff shared move. Marketing stays stopped.
 - HAN-QUALIFY writes verified TIMELINE/CONDITION/MOTIVATION/PRICE evidence through the existing save function and `evaluateQualification`. The Lead `updated_at` clock is the concurrency token. Later stages are preserved. No PPC conversion or Email-only shortcut.
 - Unacknowledged owner callback notices escalate to the saved backup after five Chicago operating minutes. NTF-ACK and reassignment cancel the escalation. Push is not implemented.
 

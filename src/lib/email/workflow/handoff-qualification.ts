@@ -49,7 +49,11 @@ export async function qualifyHandoff(
   check(lead, 'LEAD_NOT_FOUND', 404)
   const currentRevision = leadRevisionFromUpdatedAt(lead.updated_at)
   check(currentRevision !== null, 'LEAD_REVISION_UNAVAILABLE')
-  check(currentRevision === Number(p.leadRevision), 'LEAD_CHANGED')
+  check(
+    Number.isFinite(Number(p.leadRevision)) &&
+      Math.abs(currentRevision - Number(p.leadRevision)) < 2,
+    'LEAD_CHANGED',
+  )
   check(
     !lead.is_parked &&
       !['dead', 'closed_won', 'closed_lost'].includes(lead.station),

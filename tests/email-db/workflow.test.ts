@@ -4089,12 +4089,73 @@ withDb(
   async (db) => {
     const first = await reviewedCallback(db)
     const firstHandoff = await executePilotCommand(db.sql, owner, first, now)
-    const second = await reviewedCallback(db)
-    const secondHandoff = await executePilotCommand(db.sql, owner, second, now)
+    await simulateDelivery(db.sql, owner, randomUUID(), now)
     const firstThread = (await readPilotState(db.sql, owner, now)).threads.find(
       (t) => t.id === first.payload.threadId,
     )!
-    await db.sql`update em_threads set lead_id=${firstThread.lead_id} where id=${second.payload.threadId}`
+    const secondThread = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id !== first.payload.threadId && t.has_outbound,
+    )!
+    const inbound = (await readPilotState(db.sql, owner, now)).messages
+      .filter((m) => m.thread_id === secondThread.id && m.direction === 'inbound')
+      .at(-1)
+    if (!inbound) {
+      await simulateInbound(
+        db.sql,
+        owner,
+        {
+          threadId: secondThread.id,
+          eventId: randomUUID(),
+          body: 'I would consider selling this property. Please call me.',
+        },
+        new Date(now.getTime() + 2000),
+      )
+    }
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'THR-TAKEOVER',
+        idempotencyKey: randomUUID(),
+        payload: {
+          threadId: secondThread.id,
+          expectedControllerRevision: secondThread.controller_revision,
+        },
+      },
+      now,
+    )
+    const afterTakeover = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === secondThread.id,
+    )!
+    const secondInbound = (await readPilotState(db.sql, owner, now)).messages
+      .filter((m) => m.thread_id === secondThread.id && m.direction === 'inbound')
+      .at(-1)!
+    const secondHandoff = await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'THR-HANDOFF',
+        expectedRevision: afterTakeover.content_revision,
+        idempotencyKey: randomUUID(),
+        payload: {
+          threadId: secondThread.id,
+          ownerId: agent,
+          backupId: owner,
+          reason: 'Second callback on the same seller',
+          positiveSellerInterest: true,
+          requestedContact: {},
+          factEvidence: [
+            {
+              source: 'message',
+              messageId: secondInbound.id,
+              quote: secondInbound.text_body,
+            },
+          ],
+        },
+      },
+      now,
+    )
+    await db.sql`update em_threads set lead_id=${firstThread.lead_id} where id=${secondThread.id}`
     await db.sql`update em_handoffs set lead_id=${firstThread.lead_id} where id=${secondHandoff.entityId}`
     const [secondTask] =
       await db.sql`select crm_task_id from em_handoffs where id=${secondHandoff.entityId}`
@@ -4119,19 +4180,50 @@ withDb(
       },
     }
     await rejects(executePilotCommand(db.sql, owner, command, now), 'MULTIPLE_HANDOFFS_REQUIRE_REVIEW')
+    const sibling = related[0]
+    await executePilotCommand(
+      db.sql,
+      agent,
+      {
+        command: 'HAN-RETURN',
+        idempotencyKey: randomUUID(),
+        expectedRevision: sibling.revision,
+        payload: {
+          handoffId: sibling.id,
+          question: 'Which listing did this second reply refer to?',
+          reviewerId: owner,
+        },
+      },
+      now,
+    )
+    const afterReturn = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === first.payload.threadId,
+    )!
+    const relatedAfter = afterReturn.open_related_handoffs ?? []
+    assert.equal(relatedAfter.length, 1)
+    assert.equal(relatedAfter[0].revision, sibling.revision + 1)
     command.payload.relatedHandoffs = related.map((item) => ({
       handoffId: item.id,
       expectedRevision: item.revision,
     }))
+    await rejects(executePilotCommand(db.sql, owner, command, now), 'MULTIPLE_HANDOFFS_REQUIRE_REVIEW')
+    command.payload.relatedHandoffs = relatedAfter.map((item) => ({
+      handoffId: item.id,
+      expectedRevision: item.revision,
+    }))
+    command.expectedRevision = afterReturn.handoff_revision
+    command.payload.contentRevision = afterReturn.content_revision
+    command.payload.controllerRevision = afterReturn.controller_revision
     const result = await executePilotCommand(db.sql, owner, command, now)
     assert.equal(result.state, 'callback_reassigned')
     const [lead] = await db.sql`select assigned_agent from leads where id=${current.lead_id}`
     assert.equal(lead.assigned_agent, 'Demo owner')
-    const owners = await db.sql`select owner_id from em_handoffs where lead_id=${current.lead_id} and state<>'completed'`
+    const owners = await db.sql`select owner_id,state,access_hold_reason from em_handoffs where lead_id=${current.lead_id} and state<>'completed'`
     assert.equal(owners.length, 2)
-    assert.ok(owners.every((row) => row.owner_id === owner))
-    const tasks = await db.sql`select assigned_to from work_items where lead_id=${current.lead_id}`
-    assert.ok(tasks.every((row) => row.assigned_to === 'Demo owner'))
+    assert.ok(owners.every((row) => row.owner_id === owner && row.state === 'needs_contact' && row.access_hold_reason === null))
+    const tasks = await db.sql`select assigned_to,status from work_items where lead_id=${current.lead_id}`
+    assert.ok(tasks.length >= 2)
+    assert.ok(tasks.every((row) => row.assigned_to === 'Demo owner' && row.status === 'pending'))
   },
 )
 
