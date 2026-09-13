@@ -4,6 +4,7 @@ import type { EmailCommand } from '@/lib/email/contracts'
 import styles from './email-workspace.module.css'
 type Job = {
   can_retry?: boolean
+  can_acknowledge?: boolean
   id: string
   kind: string
   state: string
@@ -22,8 +23,10 @@ const reason: Record<string, string> = {
   REPLY_RATE_LIMIT: 'Waiting for Resend’s rate limit to clear.',
   REPLY_PROVIDER_UNAVAILABLE: 'Resend could not be reached.',
   unmatched_reply: 'No unique conversation match. Automatic sending is paused.',
+  unmatched_delivery: 'A delivery event did not match a known send.',
   event_reducer_pending: 'This event type needs review.',
   unsupported_payload: 'The provider payload needs review.',
+  ignored_diagnostic: 'Open and click events are stored only as diagnostics.',
 }
 export function EmailReceivingStatus({
   localSimulation,
@@ -63,6 +66,22 @@ export function EmailReceivingStatus({
       alive.current = false
     }
   }, [refresh])
+  async function acknowledge(job: Job) {
+    setBusy(true)
+    try {
+      await act({
+        command: 'OPS-ACK',
+        idempotencyKey: crypto.randomUUID(),
+        payload: {
+          incidentKey: `resend_event_review:${job.id}`,
+          note: 'Owner reviewed the quarantined provider event.',
+        },
+      })
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
   async function retry(job: Job) {
     setBusy(true)
     try {
@@ -135,6 +154,11 @@ export function EmailReceivingStatus({
               {job.can_retry && !localSimulation && (
                 <button disabled={busy} onClick={() => void retry(job)}>
                   Retry retrieval
+                </button>
+              )}
+              {job.can_acknowledge && (
+                <button disabled={busy} onClick={() => void acknowledge(job)}>
+                  Acknowledge review
                 </button>
               )}
             </article>

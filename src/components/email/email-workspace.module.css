@@ -270,6 +270,10 @@
   flex-wrap: wrap;
   margin: 18px 0;
 }
+.views input {
+  min-width: 160px;
+  padding: 7px 9px;
+}
 .views button {
   background: transparent;
   border-color: transparent;

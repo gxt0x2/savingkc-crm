@@ -31,7 +31,7 @@ export async function changeCallback(
     h.crm_sync_state === 'synced' &&
       h.state !== 'held' &&
       h.state !== 'completed' &&
-      !['stopped', 'done'].includes(h.thread_state),
+      h.thread_state !== 'done',
     'CALLBACK_HELD',
   )
   const [repair] =
@@ -122,9 +122,9 @@ export async function changeCallback(
       )},${now})`
   }
   if (change.completeNote) {
-    await tx`update em_threads set state='done' where workspace_id=${member.workspace_id} and id=${h.thread_id}`
+    await tx`update em_threads set state='done' where workspace_id=${member.workspace_id} and id=${h.thread_id} and state<>'stopped'`
   } else if (change.dueAt) {
-    await tx`update em_threads set state='waiting' where workspace_id=${member.workspace_id} and id=${h.thread_id}`
+    await tx`update em_threads set state='waiting' where workspace_id=${member.workspace_id} and id=${h.thread_id} and state not in ('stopped','done')`
   }
   return {
     entityId: h.id,

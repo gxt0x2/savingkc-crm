@@ -99,6 +99,33 @@ export function pilotFollowUpExpires(acceptedAt: Date) {
   )
 }
 
+/** Add operating minutes inside saved weekday hours, defaulting to
+ * 08:30–17:00 Chicago. Used for callback due times and acknowledgment
+ * escalation. */
+export function pilotOperatingDeadline(
+  now: Date,
+  minutes: number,
+  team?: {
+    hours: { weekdays: string[]; startLocal: string; endLocal: string }
+    sla?: { urgentMinutes: number }
+  },
+) {
+  checkFiniteMinutes(minutes)
+  return pilotCallbackDue(now, {
+    hours: team?.hours ?? {
+      weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      startLocal: '08:30',
+      endLocal: '17:00',
+    },
+    sla: { urgentMinutes: minutes },
+  })
+}
+
+function checkFiniteMinutes(minutes: number) {
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 24 * 60)
+    throw new Error('INVALID_CALLBACK_TIME')
+}
+
 /** Response SLA for a callback request. This is a task due time, not a booked
  * call. Use saved weekday hours, defaulting to 08:30-17:00 Chicago. */
 export function pilotCallbackDue(

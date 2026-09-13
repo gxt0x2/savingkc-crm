@@ -52,6 +52,7 @@ export function practiceReply(body: string) {
   return {
     phone,
     time,
+    askedForCall: explicitCall,
     interest,
     body: optedOut
       ? ''

@@ -4,9 +4,17 @@ import { z } from 'zod'
 import type { Sql } from 'postgres'
 import { decryptEmailSecret, encryptEmailSecret } from '../secrets'
 import { connectionMasterKey } from '../connections/service'
+import { webhookSecretAad } from '../connections/aad'
 import { check, json, type Tx } from '../workflow/core'
 import { workflowErrorResponse } from '../workflow/http'
+import { suppress } from '../workflow/service'
 import { readWebhookBody, verifyResendWebhook } from './verify'
+import {
+  isDeliveryEvent,
+  isDiagnosticEvent,
+  reduceDeliveryEvent,
+} from './reduce'
+export { webhookSecretAad } from '../connections/aad'
 
 const envelope = z
   .object({
@@ -21,9 +29,6 @@ const received = z.object({
   to: z.array(z.string().email()).max(100),
   received_for: z.array(z.string().email()).max(100).optional(),
 })
-export function webhookSecretAad(workspace: string, endpoint: string) {
-  return `${workspace}/${endpoint}/resend-webhook/1`
-}
 export function createResendWebhookHttp(deps: {
   database: () => Sql
   endpointId: () => string | undefined
@@ -49,7 +54,11 @@ export function createResendWebhookHttp(deps: {
       const secret = decryptEmailSecret(
         binding.encrypted_secret,
         key,
-        webhookSecretAad(binding.workspace_id, binding.id),
+        webhookSecretAad(
+          binding.workspace_id,
+          binding.id,
+          Number(binding.key_version ?? 1),
+        ),
       )
       const raw = await readWebhookBody(request)
       const verified = verifyResendWebhook(raw, request.headers, secret)
@@ -75,9 +84,9 @@ export function createResendWebhookHttp(deps: {
           return
         }
         const eventId = randomUUID()
-        const isReceived =
-          parsed.success && parsed.data.type === 'email.received'
-        const incoming = isReceived
+        const eventType = parsed.success ? parsed.data.type : 'unknown'
+        const isReceived = eventType === 'email.received'
+        const incoming = isReceived && parsed.success
           ? received.safeParse(parsed.data.data)
           : null
         const addresses = incoming?.success
@@ -97,26 +106,68 @@ export function createResendWebhookHttp(deps: {
           incoming?.success && matches.length === 1
             ? matches[0].thread_id
             : null
+        const delivery =
+          parsed.success && isDeliveryEvent(eventType)
+            ? await reduceDeliveryEvent(tx, {
+                workspaceId: binding.workspace_id,
+                connectionId: binding.connection_id,
+                eventId,
+                providerEventId: verified.id,
+                type: eventType,
+                providerEmailId: parsed.data.data.email_id ?? null,
+                occurredAt: new Date(parsed.data.created_at),
+                now: new Date(),
+              })
+            : null
+        const diagnostic = isDiagnosticEvent(eventType)
         const holdReason = !parsed.success
           ? 'unsupported_payload'
           : isReceived
             ? matched
               ? 'awaiting_reply_content'
               : 'unmatched_reply'
-            : 'event_reducer_pending'
+            : delivery?.matched
+              ? null
+              : diagnostic
+                ? 'ignored_diagnostic'
+                : delivery
+                  ? delivery.holdReason
+                  : 'event_reducer_pending'
+        const threadId = matched ?? (delivery?.matched ? delivery.threadId : null)
+        const reduced = Boolean(delivery?.matched) || diagnostic
         await tx`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,state,encrypted_payload,endpoint_id,provider_email_id,provider_created_at,hold_reason,thread_id)
-          values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${parsed.success ? parsed.data.type : 'unknown'},${hash},${matched ? 'pending' : 'quarantined'},${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${parsed.success ? (parsed.data.data.email_id ?? null) : null},${parsed.success ? new Date(parsed.data.created_at) : null},${holdReason},${matched})`
-        // Unknown routing or an unsupported event holds the workspace. Never guess by From alone.
-        if (!matched)
+          values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${eventType},${hash},${
+            matched || reduced ? 'processed' : 'quarantined'
+          },${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${parsed.success ? (parsed.data.data.email_id ?? null) : null},${parsed.success ? new Date(parsed.data.created_at) : null},${holdReason},${threadId})`
+        if (delivery?.matched && delivery.suppressionReason)
+          await suppress(
+            {
+              tx,
+              now: new Date(),
+              member: {
+                workspace_id: binding.workspace_id,
+                auth_user_id: null,
+                roles: [],
+              },
+            },
+            delivery.addressId,
+            delivery.suppressionReason,
+          )
+        // Unknown routing or an unreduced event holds the workspace. Never guess by From alone.
+        if (!matched && !reduced)
           await tx`update em_workspaces set pause_reason=coalesce(pause_reason,'Resend event needs review'),revision=revision+1 where id=${binding.workspace_id}`
-        await tx`update em_send_intents set state='cancelled',cancellation_reason=${holdReason} where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state in ('queued','held')`
-        await tx`update em_drafts set state='stale' where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state='current'`
-        await tx`update em_ai_generations set state='stale' where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state in ('queued','running','ready')`
+        if (isReceived || (!matched && !reduced)) {
+          await tx`update em_send_intents set state='cancelled',cancellation_reason=${holdReason} where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state in ('queued','held')`
+          await tx`update em_drafts set state='stale' where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state='current'`
+          await tx`update em_ai_generations set state='stale' where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state in ('queued','running','ready')`
+        }
         if (matched) {
+          await tx`update em_provider_events set state='pending' where id=${eventId}`
           await tx`update em_threads set inbound_pending=true,content_revision=content_revision+1,state=case when state in ('stopped','done') then state else 'needs_review' end where workspace_id=${binding.workspace_id} and id=${matched}`
           await tx`update em_enrollments set state=case when state in ('suppressed','completed','failed') then state else 'held' end where workspace_id=${binding.workspace_id} and id=(select enrollment_id from em_threads where id=${matched})`
         }
-        await tx`insert into em_jobs(workspace_id,kind,dedupe_key,entity_id,state) values(${binding.workspace_id},${matched ? 'resend_receive_content' : 'resend_event_review'},${`resend:${binding.connection_id}:${verified.id}`},${eventId},${matched ? 'ready' : 'dead'})`
+        if (!reduced || matched)
+          await tx`insert into em_jobs(workspace_id,kind,dedupe_key,entity_id,state) values(${binding.workspace_id},${matched ? 'resend_receive_content' : 'resend_event_review'},${`resend:${binding.connection_id}:${verified.id}`},${eventId},${matched ? 'ready' : 'dead'})`
       })
       return Response.json(
         { ok: true },

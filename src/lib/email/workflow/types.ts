@@ -113,6 +113,20 @@ export interface PilotThread {
     estimated_cost_usd: number | string | null
   } | null
   crm_owner_name?: string | null
+  lead_revision?: number | null
+  clarification_question?: string | null
+  clarification_reviewer_id?: string | null
+  access_hold_reason?:
+    | 'team_role_changed'
+    | 'marketing_stopped'
+    | 'clarification_required'
+    | null
+  open_related_handoffs?: {
+    id: string
+    revision: number
+    thread_id: string
+  }[]
+  qualification_missing?: string[]
   callback_owner_changed?: boolean
   open_task_count?: number
   open_tasks?: {
@@ -188,7 +202,60 @@ export interface PilotSettings {
     affectedWorkHash: string
     affectedThreads: number
   }[]
+  practiceRecipients?: { id: string; email: string }[]
+  lastSimulationRunId?: string | null
+  configHash?: string
   readiness: { state: 'blocked'; sendingEnabled: false; blockers: string[] }
+}
+export interface PilotPlaybook {
+  id: string
+  name: string
+  program: string
+  revision: number
+  draft_hash: string | null
+  published_version_id: string | null
+  last_eval_id: string | null
+  last_eval_passed: boolean | null
+  last_eval_kind: string | null
+  last_eval_critical_failed: number | null
+  last_eval_fixture_hash: string | null
+  last_eval_cases: {
+    id: string
+    critical: boolean
+    passed: boolean
+    expectedIntent: string
+    expectedAction: string
+    proposedIntent: string
+    proposedAction: string
+  }[]
+  draft_allowed_actions: string[]
+  published_allowed_actions: string[]
+}
+export interface PilotSavedView {
+  id: string
+  name: string
+  revision: number
+  query: {
+    view: string
+    ownerId?: string
+    campaignId?: string
+    search?: string
+    outcomes?: string[]
+    controllers?: ('ai' | 'human' | 'none')[]
+  }
+}
+export interface PilotSchedulingPolicy {
+  enabled: boolean
+  duration_minutes: number
+  buffer_minutes: number
+  max_daily_bookings: number
+  revision: number
+}
+export interface PilotResponseLine {
+  id: string
+  state: string
+  routing_policy: string
+  revision: number
 }
 export interface PilotState {
   ai_available?: boolean
@@ -206,6 +273,7 @@ export interface PilotState {
   drafts: PilotDraft[]
   audiences: { id: string; name: string }[]
   members: { id: string; name: string }[]
+  reviewers: { id: string; name: string }[]
   notifications: {
     id: string
     thread_id: string
@@ -213,6 +281,10 @@ export interface PilotState {
     acknowledged_at: string | null
   }[]
   activity: { id: string; action: string; created_at: string }[]
+  playbooks?: PilotPlaybook[]
+  inboxViews?: PilotSavedView[]
+  scheduling?: PilotSchedulingPolicy | null
+  responseLine?: PilotResponseLine | null
 }
 
 export type InboxView = 'action' | 'waiting' | 'scheduled' | 'done' | 'all'

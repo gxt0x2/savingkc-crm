@@ -1,6 +1,11 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { EmailCommand } from '@/lib/email/contracts'
+import {
+  INTENDED_OUTREACH_DOMAINS,
+  PRIMARY_BUSINESS_DOMAIN,
+  intendedOutreachOpsLabel,
+} from '@/lib/email/domains/intended'
 import styles from './email-workspace.module.css'
 type Domain = {
   id: string
@@ -56,7 +61,7 @@ const errors: Record<string, string> = {
   PRIMARY_DOMAIN_OR_SUBDOMAIN_FORBIDDEN:
     'Use a separately registered outreach domain. The main company domain and its subdomains are blocked.',
   INVALID_EMAIL_DOMAIN:
-    'Enter a domain name only, such as example-outreach.com.',
+    'Enter a domain name only, such as talktosavingkc.com.',
   BUSINESS_SETUP_REQUIRED: 'Save the main company domain in Business first.',
   HTTPS_BRAND_URL_REQUIRED: 'Use an HTTPS brand-page URL.',
   BRAND_DOMAIN_MISMATCH: 'The brand page must live on this outreach domain.',
@@ -193,8 +198,14 @@ export function EmailDomains() {
       </div>
       <p>
         Use a separately registered domain. Main company domain:{' '}
-        <strong>{data?.primaryDomain ?? 'Save it in Business first'}</strong>.
+        <strong>{data?.primaryDomain ?? 'Save it in Business first'}</strong>.{' '}
+        {PRIMARY_BUSINESS_DOMAIN} is excluded from campaign senders.
       </p>
+      <ul aria-label="Intended outreach domains">
+        {INTENDED_OUTREACH_DOMAINS.map((domain) => (
+          <li key={domain.name}>{intendedOutreachOpsLabel(domain)}</li>
+        ))}
+      </ul>
       {notice && <p role="status">{notice}</p>}
       {!data ? (
         <p>Loading sender setup…</p>
@@ -225,7 +236,7 @@ export function EmailDomains() {
                   name="domain"
                   required
                   maxLength={253}
-                  placeholder="example-outreach.com"
+                  placeholder="talktosavingkc.com"
                   disabled={!enabled || busy}
                 />
               </label>
@@ -235,7 +246,7 @@ export function EmailDomains() {
                   name="brandUrl"
                   required
                   type="url"
-                  placeholder="https://example-outreach.com"
+                  placeholder="https://talktosavingkc.com"
                   disabled={!enabled || busy}
                 />
               </label>
@@ -245,9 +256,9 @@ export function EmailDomains() {
                 Resend.
               </label>
               <p>
-                This creates or reconciles a Resend domain record. DNS and brand
-                hosting remain separate steps; no domain is purchased and no
-                email is sent.
+                This creates or reconciles a local domain record only when a
+                checked practice connection exists. It does not write Cloudflare
+                DNS, add a live Resend domain, or send mail.
               </p>
               <button className={styles.primary} disabled={!enabled || busy}>
                 Set up owned domain
