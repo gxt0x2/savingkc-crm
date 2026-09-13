@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -5,6 +6,17 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import net from 'node:net'
 import postgres from 'postgres'
+
+function postgresBin() {
+  if (process.env.EMAIL_TEST_PG_BIN) return process.env.EMAIL_TEST_PG_BIN
+  for (const candidate of [
+    '/usr/lib/postgresql/16/bin',
+    '/opt/homebrew/opt/postgresql@16/bin',
+  ]) {
+    if (existsSync(path.join(candidate, 'initdb'))) return candidate
+  }
+  return '/opt/homebrew/opt/postgresql@16/bin'
+}
 
 export const fixtureOwner = '00000000-0000-4000-8000-000000000001'
 export const fixtureAgent = '00000000-0000-4000-8000-000000000002'
@@ -27,8 +39,7 @@ async function freePort() {
 
 export async function startDisposableDatabase() {
   const directory = await mkdtemp(path.join(tmpdir(), 'savingkc-email-test-'))
-  const bin =
-    process.env.EMAIL_TEST_PG_BIN || '/opt/homebrew/opt/postgresql@16/bin'
+  const bin = postgresBin()
   const port = await freePort()
   let started = false,
     sql
@@ -124,6 +135,9 @@ export async function startDisposableDatabase() {
       '20260913140000_email_webhook_capture.sql',
       '20260913150000_email_received_content.sql',
       '20260913160000_email_public_unsubscribe.sql',
+      '20260913170000_email_handoff_management.sql',
+      '20260913180000_email_provider_lifecycle.sql',
+      '20260913190000_email_productization.sql',
     ]) {
       await sql.unsafe(
         await readFile(path.join(root, 'supabase/migrations', name), 'utf8'),

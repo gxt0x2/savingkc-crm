@@ -255,7 +255,11 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
     .getByLabel('Practice incoming reply', { exact: true })
     .fill('Please unsubscribe me.')
   await receive.click()
-  await expect(page.getByText('Unsubscribed', { exact: true })).toBeVisible()
+  await expect(
+    page.getByLabel('Selected conversation').getByText('Unsubscribed', {
+      exact: true,
+    }),
+  ).toBeVisible()
   await expect(page.getByLabel('Reply draft', { exact: true })).toHaveCount(0)
   await page.reload()
   await page
@@ -803,6 +807,18 @@ test('mock-backed sender setup rejects the main domain and shows provider DNS wi
     name: 'Sender domains',
     exact: true,
   })
+  await expect(section).toContainText(
+    'talktosavingkc.com — Cloudflare DNS-only records in place; Resend verified, send and receive',
+  )
+  await expect(section).toContainText(
+    'savingkcteam.com — Cloudflare DNS-only records in place; send verified, receive pending',
+  )
+  await expect(section).toContainText(
+    'yourkchomebuyer.com — Cloudflare DNS-only records in place; Resend verified, send and receive',
+  )
+  await expect(section).toContainText(
+    'Sending stays off until the Email product API key and release auth.',
+  )
   await section.getByText('Add an owned domain', { exact: true }).click()
   await section
     .getByLabel('Owned outreach domain', { exact: true })
@@ -853,10 +869,132 @@ test('receiving operations explains identity holds without exposing a live provi
   await page.route('**/api/email/receiving',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({total:1,jobs:[{id:'11111111-1111-4111-8111-111111111111',kind:'resend_receive_content',state:'dead',attempts:1,run_after:'2026-09-14T15:00:00Z',lease_until:null,last_error:'REPLY_IDENTITY_REVIEW',hold_reason:'REPLY_IDENTITY_REVIEW',can_retry:false}]})}))
   await page.goto('/')
   await page.getByRole('button',{name:'More',exact:true}).click()
+  await page.getByRole('button',{name:'Operations',exact:true}).click()
   const receiving=page.getByRole('region',{name:'Receiving replies',exact:true})
   await expect(receiving).toContainText('Sender or conversation match needs review.')
   await expect(receiving).toContainText('Practice workspace. Live receiving is not connected.')
   await expect(receiving.getByRole('button',{name:'Retry retrieval'})).toHaveCount(0)
   await expect(receiving.getByRole('button',{name:'Retrieve next reply'})).toHaveCount(0)
   await page.screenshot({path:'test-results/email-local/receiving-operations.png',fullPage:true,animations:'disabled'})
+})
+
+test('setup productization stays fail-closed and keeps personal views local', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: 'AI rules', exact: true }).click()
+  const ai = page.getByRole('region', { name: 'Ari reply rules', exact: true })
+  await ai.getByRole('button', { name: 'Save draft-only rules', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText(
+    'Draft-only reply rules saved',
+  )
+  await ai
+    .getByRole('button', { name: 'Run deterministic examples', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Deterministic examples passed',
+  )
+  await ai
+    .getByRole('button', { name: 'Publish draft-only version', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Published for human review only',
+  )
+  await ai
+    .getByRole('button', { name: 'Save as draft-only default', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Setup details saved. Sending remains disabled.',
+  )
+
+  await page.getByRole('button', { name: 'Sending & phone', exact: true }).click()
+  const sending = page.getByRole('region', {
+    name: 'Sending and phone',
+    exact: true,
+  })
+  await sending
+    .getByRole('combobox', { name: 'Agent calendar owner' })
+    .selectOption({ label: 'Demo owner' })
+  await sending
+    .getByRole('button', { name: 'Save manual calendar policy', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Google Calendar booking stays off',
+  )
+  await sending
+    .getByRole('button', { name: 'Record a push test', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('Push is not configured')
+
+  await page
+    .getByRole('button', { name: 'Setup & settings', exact: true })
+    .click()
+  const setup = page.getByRole('region', { name: 'Email setup', exact: true })
+  await setup.getByRole('button', { name: /4. AI rules/ }).click()
+  await expect(
+    setup.getByRole('button', { name: 'Save draft-only rules', exact: true }),
+  ).toBeVisible()
+  await setup.getByRole('button', { name: /5. Calendar/ }).click()
+  await expect(
+    setup.getByRole('button', {
+      name: 'Save manual calendar policy',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await setup.getByRole('button', { name: /6. Phone/ }).click()
+  await expect(
+    setup.getByRole('button', {
+      name: 'Save intended response line',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await setup.getByRole('button', { name: /3. Connections/ }).click()
+  await setup.getByText('Hosted secrets this screen expects', { exact: true }).click()
+  await expect(setup).toContainText('EMAIL_CREDENTIALS_KEY_V1')
+  await expect(setup).toContainText('present-not-live')
+  await expect(setup).toContainText('Email foundation routes are not live')
+  await expect(setup).toContainText('SavingKC Email CRM')
+  await expect(setup).toContainText('EMAIL_RESEND_WEBHOOK_ENDPOINT_ID')
+  await expect(setup).toContainText('EMAIL_PREFERENCE_KEY_V*')
+  await expect(setup).toContainText('POST /api/webhooks/email/resend')
+  await expect(setup).toContainText(
+    'https://crm.savingkc.com/api/webhooks/email/resend',
+  )
+  await expect(setup).toContainText('RESEND_API_KEY')
+  await expect(setup).toContainText('Keep EMAIL_LIVE_DISPATCH_ENABLED')
+  await setup.getByRole('button', { name: /7. Readiness/ }).click()
+  await setup
+    .getByRole('button', { name: 'Record local checklist', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('Local checklist saved')
+  await setup.getByRole('button', { name: 'Finish setup', exact: true }).click()
+  await expect(
+    page.getByText(
+      'Sending remains off. The provider and delivery checks are not connected yet.',
+    ),
+  ).toBeVisible()
+  await setup
+    .getByRole('button', { name: 'Enable sending', exact: true })
+    .click()
+  await expect(
+    page.getByText(
+      'Sending remains off. The provider and delivery checks are not connected yet.',
+    ),
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click()
+  await page.getByPlaceholder('Weekday callbacks').fill('Needs a reply')
+  await page.getByRole('button', { name: 'Save view', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText(
+    'Your personal view is saved',
+  )
+  await expect(
+    page.getByRole('button', { name: 'Needs a reply', exact: true }),
+  ).toBeVisible()
+  await page.screenshot({
+    path: 'test-results/email-local/productization-desktop.png',
+    fullPage: true,
+    animations: 'disabled',
+  })
 })

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { checkResendConnection } from '../connections/resend-check'
 import { connectionMasterKey } from '../connections/service'
+import { credentialKeyring, currentCredentialVersion } from '../secrets'
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
@@ -59,5 +60,13 @@ describe('Resend setup capability probe', () => {
     expect(connectionMasterKey()).toBeNull()
     vi.stubEnv('EMAIL_CREDENTIALS_KEY_V1', 'ab'.repeat(32))
     expect(connectionMasterKey()?.length).toBe(32)
+  })
+  it('selects the newest configured credential version without dropping older keys', () => {
+    vi.stubEnv('EMAIL_CREDENTIALS_KEY_V1', 'ab'.repeat(32))
+    vi.stubEnv('EMAIL_CREDENTIALS_KEY_V2', 'cd'.repeat(32))
+    const keys = credentialKeyring()
+    expect(currentCredentialVersion(keys)).toBe(2)
+    expect(keys.get(1)?.equals(Buffer.from('ab'.repeat(32), 'hex'))).toBe(true)
+    expect(connectionMasterKey()?.equals(keys.get(2)!)).toBe(true)
   })
 })

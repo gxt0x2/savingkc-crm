@@ -17,9 +17,12 @@ export function EmailHandoffActions({
   busy: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<'assign' | 'return'>('assign')
   const [newOwner, setNewOwner] = useState(t.handoff_owner_id ?? '')
   const [backup, setBackup] = useState(t.handoff_backup_id ?? '')
+  const [reviewer, setReviewer] = useState(data.reviewers[0]?.id ?? '')
   const [reason, setReason] = useState('')
+  const [question, setQuestion] = useState('')
   const [interest, setInterest] = useState(false)
   const [phone, setPhone] = useState(t.requested_contact?.phone ?? '')
   const [timing, setTiming] = useState(
@@ -35,15 +38,23 @@ export function EmailHandoffActions({
     .filter((m) => m.thread_id === t.id && m.direction === 'inbound')
     .at(-1)
   const resolve = t.handoff_state === 'held' && !t.lead_id && !t.crm_task_id
+  const release =
+    t.handoff_state === 'held' &&
+    t.crm_sync_state === 'synced' &&
+    Boolean(t.access_hold_reason)
+  const related = t.open_related_handoffs ?? []
   const allowed =
     data.roles.some((r) => ['owner', 'reviewer'].includes(r)) ||
     (data.roles.includes('acquisitions') && t.handoff_owner_id === data.actorId)
   const available =
     allowed &&
     t.handoff_id &&
-    !['stopped', 'done'].includes(t.state) &&
+    t.state !== 'done' &&
     (resolve ||
-      (t.crm_sync_state === 'synced' && t.callback_task_state === 'pending'))
+      release ||
+      (t.crm_sync_state === 'synced' &&
+        (t.callback_task_state === 'pending' ||
+          t.callback_task_state === 'blocked')))
   if (!available) return null
   const changed =
     reviewed &&
@@ -69,167 +80,264 @@ export function EmailHandoffActions({
               crmOwner: t.crm_owner_name ?? null,
             })
             setInterest(false)
+            setMode('assign')
           }
           setOpen(!open)
         }}
       >
         {resolve
           ? 'Review held request'
-          : t.callback_owner_changed
-            ? 'Resolve assignment'
-            : 'Change assignment'}
+          : release
+            ? 'Release held callback'
+            : t.callback_owner_changed
+              ? 'Resolve assignment'
+              : 'Change assignment'}
       </button>
       {open && (
         <form
           className={styles.drawerForm}
           onSubmit={async (e) => {
             e.preventDefault()
-            if (!reviewed || changed) return
-            const common = {
-              handoffId: t.handoff_id!,
-              backupId: backup,
-              reason,
-              contentRevision: reviewed.content,
-              controllerRevision: reviewed.controller,
-            }
+            if (!reviewed || changed || !t.handoff_id) return
             const result =
-              resolve && inbound
+              mode === 'return'
                 ? await act({
-                    command: 'HAN-RESOLVE',
+                    command: 'HAN-RETURN',
                     idempotencyKey: crypto.randomUUID(),
                     expectedRevision: reviewed.handoff,
                     payload: {
-                      ...common,
-                      ownerId: newOwner,
-                      positiveSellerInterest: interest,
-                      requestedContact: {
-                        ...(phone.trim() ? { phone: phone.trim() } : {}),
-                        ...(timing.trim()
-                          ? { requestedTimeText: timing.trim() }
+                      handoffId: t.handoff_id,
+                      question,
+                      reviewerId: reviewer,
+                    },
+                  })
+                : resolve && inbound
+                  ? await act({
+                      command: 'HAN-RESOLVE',
+                      idempotencyKey: crypto.randomUUID(),
+                      expectedRevision: reviewed.handoff,
+                      payload: {
+                        handoffId: t.handoff_id,
+                        backupId: backup,
+                        reason,
+                        contentRevision: reviewed.content,
+                        controllerRevision: reviewed.controller,
+                        ownerId: newOwner,
+                        positiveSellerInterest: interest,
+                        requestedContact: {
+                          ...(phone.trim() ? { phone: phone.trim() } : {}),
+                          ...(timing.trim()
+                            ? { requestedTimeText: timing.trim() }
+                            : {}),
+                        },
+                        factEvidence: [
+                          {
+                            source: 'message',
+                            messageId: inbound.id,
+                            quote: inbound.text_body,
+                          },
+                        ],
+                      },
+                    })
+                  : await act({
+                      command: 'HAN-REASSIGN',
+                      idempotencyKey: crypto.randomUUID(),
+                      expectedRevision: reviewed.handoff,
+                      payload: {
+                        handoffId: t.handoff_id,
+                        backupId: backup,
+                        reason,
+                        contentRevision: reviewed.content,
+                        controllerRevision: reviewed.controller,
+                        newOwnerId: newOwner,
+                        expectedCrmOwner: reviewed.crmOwner,
+                        ...(related.length
+                          ? {
+                              relatedHandoffs: related.map((item) => ({
+                                handoffId: item.id,
+                                expectedRevision: item.revision,
+                              })),
+                            }
                           : {}),
                       },
-                      factEvidence: [
-                        {
-                          source: 'message',
-                          messageId: inbound.id,
-                          quote: inbound.text_body,
-                        },
-                      ],
-                    },
-                  })
-                : await act({
-                    command: 'HAN-REASSIGN',
-                    idempotencyKey: crypto.randomUUID(),
-                    expectedRevision: reviewed.handoff,
-                    payload: {
-                      ...common,
-                      newOwnerId: newOwner,
-                      expectedCrmOwner: reviewed.crmOwner,
-                    },
-                  })
+                    })
             if (result) {
               setOpen(false)
               setReason('')
+              setQuestion('')
             }
           }}
         >
+          {!resolve && (
+            <label>
+              Action
+              <select
+                aria-label="Handoff action"
+                value={mode}
+                onChange={(e) => setMode(e.target.value as typeof mode)}
+              >
+                <option value="assign">
+                  {release
+                    ? 'Release hold and assign'
+                    : 'Assign Lead and callbacks'}
+                </option>
+                <option value="return">Return for clarification</option>
+              </select>
+            </label>
+          )}
           <p>
-            {resolve
-              ? 'Review the latest seller reply, then retry linking this saved request.'
-              : `CRM owner: ${t.crm_owner_name ?? 'Unassigned'}. This changes the Lead and this Email callback together. Other tasks keep their assignments.`}
+            {mode === 'return'
+              ? 'Holds this callback for a reviewer. Marketing stays stopped and old sequence sends are not resumed.'
+              : resolve
+                ? 'Review the latest seller reply, then retry linking this saved request.'
+                : release
+                  ? `Release the ${t.access_hold_reason?.replaceAll('_', ' ')} hold and assign an eligible owner. Sending stays off.`
+                  : `CRM owner: ${t.crm_owner_name ?? 'Unassigned'}. This changes the Lead and every listed open Email callback together.`}
           </p>
+          {related.length > 0 && mode === 'assign' && (
+            <p>
+              {related.length} other open Email callback
+              {related.length === 1 ? '' : 's'} will move with this Lead.
+            </p>
+          )}
+          {t.clarification_question && (
+            <p>Open question: {t.clarification_question}</p>
+          )}
           {changed && (
             <p role="alert">
               The conversation or assignment changed. Close and reopen this form
               to review it again.
             </p>
           )}
-          <label>
-            Callback owner
-            <select
-              aria-label="Callback owner"
-              value={newOwner}
-              onChange={(e) => setNewOwner(e.target.value)}
-              required
-            >
-              <option value="">Choose an agent</option>
-              {data.members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Backup
-            <select
-              aria-label="Callback backup"
-              value={backup}
-              onChange={(e) => setBackup(e.target.value)}
-              required
-            >
-              <option value="">Choose a backup</option>
-              {data.members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {resolve && (
+          {mode === 'return' ? (
             <>
-              <blockquote>
-                {inbound?.text_body ?? 'No seller reply available.'}
-              </blockquote>
-              <label className={styles.checkboxLine}>
-                <input
-                  type="checkbox"
-                  checked={interest}
-                  onChange={(e) => setInterest(e.target.checked)}
-                />
-                I confirmed seller interest in this reply.
+              <label>
+                Reviewer
+                <select
+                  aria-label="Clarification reviewer"
+                  value={reviewer}
+                  onChange={(e) => setReviewer(e.target.value)}
+                  required
+                >
+                  <option value="">Choose a reviewer</option>
+                  {(data.reviewers ?? []).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
-                Phone from reply
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  maxLength={100}
-                />
-              </label>
-              <label>
-                Requested time from reply
-                <input
-                  value={timing}
-                  onChange={(e) => setTiming(e.target.value)}
+                Question
+                <textarea
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  required
                   maxLength={2000}
+                  rows={2}
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                Callback owner
+                <select
+                  aria-label="Callback owner"
+                  value={newOwner}
+                  onChange={(e) => setNewOwner(e.target.value)}
+                  required
+                >
+                  <option value="">Choose an agent</option>
+                  {data.members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Backup
+                <select
+                  aria-label="Callback backup"
+                  value={backup}
+                  onChange={(e) => setBackup(e.target.value)}
+                  required
+                >
+                  <option value="">Choose a backup</option>
+                  {data.members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {resolve && (
+                <>
+                  <blockquote>
+                    {inbound?.text_body ?? 'No seller reply available.'}
+                  </blockquote>
+                  <label className={styles.checkboxLine}>
+                    <input
+                      type="checkbox"
+                      checked={interest}
+                      onChange={(e) => setInterest(e.target.checked)}
+                    />
+                    I confirmed seller interest in this reply.
+                  </label>
+                  <label>
+                    Phone from reply
+                    <input
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      maxLength={100}
+                    />
+                  </label>
+                  <label>
+                    Requested time from reply
+                    <input
+                      value={timing}
+                      onChange={(e) => setTiming(e.target.value)}
+                      maxLength={2000}
+                    />
+                  </label>
+                </>
+              )}
+              <label>
+                Reason
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  required
+                  maxLength={2000}
+                  rows={2}
                 />
               </label>
             </>
           )}
-          <label>
-            Reason
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              required
-              maxLength={2000}
-              rows={2}
-            />
-          </label>
           <button
             className={styles.primary}
             disabled={
               busy ||
               !!changed ||
-              !reason.trim() ||
-              !newOwner ||
-              !backup ||
-              newOwner === backup ||
-              (resolve && !inbound)
+              (mode === 'return'
+                ? !question.trim() || !reviewer
+                : !reason.trim() ||
+                  !newOwner ||
+                  !backup ||
+                  newOwner === backup ||
+                  (resolve && !inbound))
             }
           >
-            {resolve ? 'Save review & retry' : 'Assign Lead & callback'}
+            {mode === 'return'
+              ? 'Return for clarification'
+              : resolve
+                ? 'Save review & retry'
+                : release
+                  ? 'Release & assign'
+                  : related.length
+                    ? 'Assign Lead & open callbacks'
+                    : 'Assign Lead & callback'}
           </button>
         </form>
       )}

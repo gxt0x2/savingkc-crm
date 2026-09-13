@@ -19,3 +19,4 @@ export async function POST() {
 }
 
 export const DELETE = POST
+export const PATCH = POST

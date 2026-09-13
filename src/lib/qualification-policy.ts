@@ -1,38 +1,20 @@
 import { supabase } from '@/lib/supabase-lazy'
+import {
+  QUALIFICATION_PILLARS,
+  evaluateQualification,
+  type QualificationEvidenceRow,
+  type QualificationPillar,
+  type QualificationStatus,
+} from './qualification-policy-core'
 
-export const QUALIFICATION_PILLARS = ['TIMELINE', 'CONDITION', 'MOTIVATION', 'PRICE'] as const
-
-export type QualificationPillar = (typeof QUALIFICATION_PILLARS)[number]
-
-export type QualificationStatus = {
-  qualified: boolean
-  pillars: Record<QualificationPillar, boolean>
-  missing: QualificationPillar[]
-}
-
-export type QualificationEvidenceRow = {
-  pillar: QualificationPillar
-  evidence: string | null
-  status: 'needs_review' | 'verified'
-}
-
-const EMPTY_PILLARS: Record<QualificationPillar, boolean> = {
-  TIMELINE: false,
-  CONDITION: false,
-  MOTIVATION: false,
-  PRICE: false,
-}
-
-export function evaluateQualification(rows: readonly QualificationEvidenceRow[] | null | undefined): QualificationStatus {
-  const pillars = { ...EMPTY_PILLARS }
-  for (const row of rows ?? []) {
-    if (!QUALIFICATION_PILLARS.includes(row.pillar)) continue
-    pillars[row.pillar] = row.status === 'verified' && Boolean(row.evidence?.trim())
-  }
-
-  const missing = QUALIFICATION_PILLARS.filter((pillar) => !pillars[pillar])
-  return { qualified: missing.length === 0, pillars, missing }
-}
+export {
+  QUALIFICATION_PILLARS,
+  evaluateQualification,
+  qualificationError,
+  type QualificationEvidenceRow,
+  type QualificationPillar,
+  type QualificationStatus,
+} from './qualification-policy-core'
 
 export async function getLeadQualificationStatus(leadId: string): Promise<QualificationStatus> {
   const statuses = await getLeadQualificationStatuses([leadId])
@@ -63,8 +45,4 @@ export async function getLeadQualificationStatuses(leadIds: string[]): Promise<M
   }
 
   return new Map(ids.map((leadId) => [leadId, evaluateQualification(rowsByLead.get(leadId))]))
-}
-
-export function qualificationError(status: QualificationStatus): string {
-  return `Qualification incomplete. Verify ${status.missing.join(', ')} before moving this record to Opportunities.`
 }

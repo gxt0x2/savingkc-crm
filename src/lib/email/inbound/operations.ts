@@ -22,6 +22,8 @@ export async function readReceivingWork(sql: Sql, subject: string) {
           j.state === 'dead' &&
           j.kind === 'resend_receive_content' &&
           RETRIEVAL_RETRY_CODES.includes(j.last_error),
+        can_acknowledge:
+          j.state === 'dead' && j.kind === 'resend_event_review',
       })),
       total: totals.total,
     }

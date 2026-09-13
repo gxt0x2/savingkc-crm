@@ -43,6 +43,10 @@ v1.2 adds [the focused workspace and cadence contract](08-focused-workspace-and-
 | [06 Tests and release](06-tests-and-release.md) | 62 acceptance cases, integrated milestones, production setup and rollback |
 | [07 Sales and response operations](07-sales-voice-and-response-operations.md) | Everyday Black Swan voice, personalization, alerts, calendar and response phone |
 | [08 Focused workspace and cadence](08-focused-workspace-and-cadence.md) | Inbox views, recipient workflow, concurrent campaigns and visible drip schedule |
+| [17 Setup productization](17-productization.md) | Local setup wizard, draft-only AI checks, manual calendar/phone/push and saved views |
+| [18 Local #3 packet-complete](18-local-3-packet-complete.md) | Local-software report for #3; packets stay Partial |
+| [19 Outreach DNS ops-verify](19-outreach-dns-ops-verify.md) | Robin-landed Resend/DNS snapshot; not sending-ready |
+| [20 Hosted secrets contract](20-hosted-secrets-contract.md) | Exact Email env names for Robin; live send stays gated |
 | [35 implementation packets](tasks/README.md) | Dependency-ordered, bounded work for smaller coding models; EM-030 remains final release verification |
 | [Design manifest](design-manifest.json) | Machine-readable task dependencies and action/test coverage |
 | [Build status](build-status.md) | Evidence of what is designed, built, tested or still pending |
