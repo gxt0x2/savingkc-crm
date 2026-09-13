@@ -4,7 +4,9 @@ Approved by Ernest after reviewing the September 12 inbox screenshots. This supe
 
 ## Agent workspace
 
-Keep Inbox, Campaigns and More in the white/red/grey theme. The inbox has a conversation list, selected conversation, and a Details column that opens from the right. On narrow screens Details becomes a fixed panel; Escape closes it and restores focus. Each section scrolls independently. Long message history must not push the composer down the page.
+Keep Inbox, Campaigns and More in the white/red/grey theme. The inbox has a conversation list, selected conversation, and a Details column that starts expanded for each selected conversation. The column has distinct labeled icon tabs: Contact, Property, Follow-ups, Notes, and Ari’s Insights. Show one tab panel at a time; preserve unsaved notes and task entries between tabs. Arrow keys, Home and End move between tabs. On narrow screens Details becomes a fixed panel; Escape closes it and restores focus. Each panel scrolls independently beneath the visible tab strip. Long message history must not push the composer down the page.
+
+Ari’s Insights currently presents the saved next step, seller reply and available practice suggestion, with a clear notice that live AI insights are not connected. Open follow-up selects that tab; Edit this reply transfers the exact suggestion to the composer. Do not invent seller motivation, property intelligence or model-generated findings.
 
 Show one primary queue per conversation, evaluated against the server's displayed time:
 

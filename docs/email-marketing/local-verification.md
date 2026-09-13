@@ -49,3 +49,7 @@ The unit total is 50. Database and browser totals are reported separately; they 
 Desktop and mobile screenshots for revision 1.3 were inspected after disabling screenshot-time animations. Desktop keeps the composer within the conversation; earlier history stays in its own scroll container. Mobile Details uses its own fixed panel and scroll area. The new suggestion is deterministic practice copy, not live AI. No production migration, deployment, model call, external notification or Calendar booking was performed.
 
 The final presentation follow-up forces a thin visible history scrollbar and styles the independent list/Details scrollbars. A fresh local browser inspection confirms `overflow-y: scroll`, a thin scrollbar and bounded history after that CSS change.
+
+## Tabbed Details continuation
+
+The Details column now starts expanded and uses Contact, Property, Follow-ups, Notes and Ari’s Insights tabs with visible icons and names. The updated browser suite passes all four cases, including initial expansion, tab navigation, unsaved-note preservation, follow-up saving, keyboard Home/End and mobile Escape. Desktop/mobile screenshots were inspected. TypeScript and targeted ESLint pass. Ari’s Insights exposes saved context and practice copy only; live AI remains unavailable. This continuation changes the UI and its tests, not the database/provider integration.

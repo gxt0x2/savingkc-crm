@@ -13,6 +13,41 @@ import {
 import { chicagoDateTime } from '@/lib/email/workflow/schedule'
 import styles from './email-workspace.module.css'
 
+const detailTabs = [
+  ['contact', 'Contact'],
+  ['property', 'Property'],
+  ['followups', 'Follow-ups'],
+  ['notes', 'Notes'],
+  ['ari', 'Ari’s Insights'],
+] as const
+type DetailTab = (typeof detailTabs)[number][0]
+
+function DetailIcon({ tab }: { tab: DetailTab }) {
+  const paths: Record<DetailTab, string> = {
+    contact:
+      'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M20 8v6 M17 11h6',
+    property: 'M3 10 12 3l9 7 M5 9v12h14V9 M9 21v-8h6v8',
+    followups: 'M4 5h16v16H4z M8 3v4 M16 3v4 M4 10h16 M8 14h3 M8 17h6',
+    notes: 'M5 3h14v18H5z M8 7h8 M8 11h8 M8 15h5',
+    ari: 'm12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z',
+  }
+  return (
+    <svg
+      aria-hidden="true"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={paths[tab]} />
+    </svg>
+  )
+}
+
 type Act = (
   command: EmailCommand,
 ) => Promise<{ entityId: string; state: string } | null>
@@ -56,7 +91,8 @@ export function EmailThreadPanel({
     revision: t.content_revision,
     controller: t.controller_revision,
   })
-  const [details, setDetails] = useState(false)
+  const [details, setDetails] = useState(true)
+  const [detailTab, setDetailTab] = useState<DetailTab>('contact')
   const [composing, setComposing] = useState(false)
   const [older, setOlder] = useState(false)
   const [note, setNote] = useState('')
@@ -103,7 +139,17 @@ export function EmailThreadPanel({
     t.crm_sync_state === 'synced' &&
     t.callback_task_state === 'pending' &&
     !hasCrmIssue(t)
-  const openDetails = () => {
+  const selectDetailTab = (tab: DetailTab) => {
+    setDetailTab(tab)
+    if (tab === 'followups' && !schedule && !outcome) {
+      setScheduleRevision({
+        thread: t.content_revision,
+        handoff: t.handoff_revision ?? 0,
+      })
+    }
+  }
+  const openDetails = (tab: DetailTab = detailTab) => {
+    setDetailTab(tab)
     setDetails(true)
     setScheduleRevision({
       thread: t.content_revision,
@@ -355,7 +401,10 @@ export function EmailThreadPanel({
                 </button>
               )}
               {taskEditable && (
-                <button disabled={blocked} onClick={openDetails}>
+                <button
+                  disabled={blocked}
+                  onClick={() => openDetails('followups')}
+                >
                   {t.scheduled_for
                     ? 'Update follow-up / record outcome'
                     : 'Set follow-up / record outcome'}
@@ -572,17 +621,61 @@ export function EmailThreadPanel({
           className={styles.contextDrawer}
           aria-label="Contact and property"
         >
-          <header className={styles.row}>
-            <h3>Details</h3>
-            <button
-              ref={drawerClose}
-              onClick={closeDetails}
-              aria-label="Close details"
+          <div className={styles.drawerTop}>
+            <header className={styles.row}>
+              <h3>Details</h3>
+              <button
+                ref={drawerClose}
+                onClick={closeDetails}
+                aria-label="Close details"
+              >
+                ×
+              </button>
+            </header>
+            <div
+              role="tablist"
+              aria-label="Contact details sections"
+              className={styles.detailTabs}
             >
-              ×
-            </button>
-          </header>
-          <section>
+              {detailTabs.map(([id, label], index) => (
+                <button
+                  key={id}
+                  role="tab"
+                  id={`details-tab-${id}`}
+                  aria-controls={`details-panel-${id}`}
+                  aria-selected={detailTab === id}
+                  tabIndex={detailTab === id ? 0 : -1}
+                  onClick={() => selectDetailTab(id)}
+                  onKeyDown={(event) => {
+                    let next = index
+                    if (event.key === 'ArrowRight')
+                      next = (index + 1) % detailTabs.length
+                    else if (event.key === 'ArrowLeft')
+                      next = (index - 1 + detailTabs.length) % detailTabs.length
+                    else if (event.key === 'Home') next = 0
+                    else if (event.key === 'End') next = detailTabs.length - 1
+                    else return
+                    event.preventDefault()
+                    selectDetailTab(detailTabs[next][0])
+                    document
+                      .getElementById(`details-tab-${detailTabs[next][0]}`)
+                      ?.focus()
+                  }}
+                >
+                  <DetailIcon tab={id} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <section
+            role="tabpanel"
+            id="details-panel-contact"
+            aria-labelledby="details-tab-contact"
+            hidden={detailTab !== 'contact'}
+            tabIndex={0}
+            className={styles.detailPanel}
+          >
             <h4>Contact</h4>
             <p>{t.name}</p>
             <p>{t.email}</p>
@@ -613,8 +706,40 @@ export function EmailThreadPanel({
                 Open CRM record
               </Link>
             )}
+            <details>
+              <summary>Source & controls</summary>
+              <p>Campaign: {t.campaign_name}</p>
+              <p>First-touch source: {t.lead_source ?? 'Email outreach'}</p>
+              <p>CRM: {t.crm_sync_state ?? 'Not linked'}</p>
+              {canWork && t.state !== 'stopped' && (
+                <button
+                  className={styles.danger}
+                  disabled={blocked}
+                  onClick={() =>
+                    act({
+                      command: 'SUP-ADD',
+                      idempotencyKey: crypto.randomUUID(),
+                      payload: {
+                        addressIds: [t.address_id],
+                        scope: 'all_marketing',
+                        reason: 'manual',
+                      },
+                    })
+                  }
+                >
+                  Stop marketing
+                </button>
+              )}
+            </details>
           </section>
-          <section>
+          <section
+            role="tabpanel"
+            id="details-panel-property"
+            aria-labelledby="details-tab-property"
+            hidden={detailTab !== 'property'}
+            tabIndex={0}
+            className={styles.detailPanel}
+          >
             <h4>Property</h4>
             {t.property ? (
               <>
@@ -658,7 +783,14 @@ export function EmailThreadPanel({
               <p>Confirm the property match before showing property details.</p>
             )}
           </section>
-          <section>
+          <section
+            role="tabpanel"
+            id="details-panel-followups"
+            aria-labelledby="details-tab-followups"
+            hidden={detailTab !== 'followups'}
+            tabIndex={0}
+            className={styles.detailPanel}
+          >
             <h4>Follow-up & calendar</h4>
             <p>
               {t.scheduled_for
@@ -743,6 +875,7 @@ export function EmailThreadPanel({
                   <label>
                     Call outcome
                     <textarea
+                      aria-label="Call outcome"
                       rows={2}
                       required
                       value={outcome}
@@ -760,7 +893,14 @@ export function EmailThreadPanel({
               </>
             )}
           </section>
-          <section>
+          <section
+            role="tabpanel"
+            id="details-panel-notes"
+            aria-labelledby="details-tab-notes"
+            hidden={detailTab !== 'notes'}
+            tabIndex={0}
+            className={styles.detailPanel}
+          >
             <h4>Notes</h4>
             {canWork && t.lead_id ? (
               <form
@@ -778,6 +918,7 @@ export function EmailThreadPanel({
                 <label>
                   Add a note
                   <textarea
+                    aria-label="Add a note"
                     rows={2}
                     value={note}
                     required
@@ -801,31 +942,64 @@ export function EmailThreadPanel({
               </article>
             ))}
           </section>
-          <details>
-            <summary>Source & controls</summary>
-            <p>Campaign: {t.campaign_name}</p>
-            <p>First-touch source: {t.lead_source ?? 'Email outreach'}</p>
-            <p>CRM: {t.crm_sync_state ?? 'Not linked'}</p>
-            {canWork && t.state !== 'stopped' && (
-              <button
-                className={styles.danger}
-                disabled={blocked}
-                onClick={() =>
-                  act({
-                    command: 'SUP-ADD',
-                    idempotencyKey: crypto.randomUUID(),
-                    payload: {
-                      addressIds: [t.address_id],
-                      scope: 'all_marketing',
-                      reason: 'manual',
-                    },
-                  })
-                }
-              >
-                Stop marketing
-              </button>
+
+          <section
+            role="tabpanel"
+            id="details-panel-ari"
+            aria-labelledby="details-tab-ari"
+            hidden={detailTab !== 'ari'}
+            tabIndex={0}
+            className={styles.detailPanel}
+          >
+            <h4>Ari’s Insights</h4>
+            <div className={styles.insightStatus}>
+              <strong>Live insights aren’t connected yet</strong>
+              <p>
+                The context below comes from this saved conversation. It is not
+                an AI assessment.
+              </p>
+            </div>
+            <div className={styles.insightCard}>
+              <h4>Next step</h4>
+              <p>{title}</p>
+              <p>Assigned to {owner?.name ?? 'an unassigned agent'}.</p>
+              {taskEditable && (
+                <button onClick={() => openDetails('followups')}>
+                  Open follow-up
+                </button>
+              )}
+            </div>
+            <div className={styles.insightCard}>
+              <h4>Seller’s latest reply</h4>
+              {inbound ? (
+                <blockquote>{inbound.text_body}</blockquote>
+              ) : (
+                <p>No reply received yet.</p>
+              )}
+            </div>
+            {proposal?.body && (
+              <div className={styles.insightCard}>
+                <h4>Prepared practice reply</h4>
+                <p>{proposal.body}</p>
+                {owns && (
+                  <button
+                    disabled={blocked || Boolean(t.reply_queued)}
+                    onClick={() => {
+                      setEditor({
+                        body: proposal.body,
+                        revision: t.content_revision,
+                        controller: t.controller_revision,
+                      })
+                      closeDetails()
+                      requestAnimationFrame(() => composer.current?.focus())
+                    }}
+                  >
+                    Edit this reply
+                  </button>
+                )}
+              </div>
             )}
-          </details>
+          </section>
         </aside>
       )}
     </div>

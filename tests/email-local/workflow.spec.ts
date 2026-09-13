@@ -63,20 +63,37 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await expect(page.getByRole('status')).toContainText(
     'The Lead and callback review task are linked',
   )
-  await page.getByRole('button', { name: 'Details', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: 'Details', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true')
   const drawer = page.getByRole('complementary', {
     name: 'Contact and property',
   })
   await expect(
     drawer.getByText('Lead · Contacted', { exact: true }),
   ).toBeVisible()
+  await drawer.getByRole('tab', { name: 'Property', exact: true }).click()
+  await expect(
+    drawer.getByRole('tabpanel', { name: 'Property', exact: true }),
+  ).toBeVisible()
+  await drawer.getByRole('tab', { name: 'Ari’s Insights', exact: true }).click()
+  await expect(
+    drawer.getByRole('tabpanel', { name: 'Ari’s Insights', exact: true }),
+  ).toContainText('Live insights aren’t connected yet')
+  await drawer.getByRole('tab', { name: 'Notes', exact: true }).click()
   await drawer
     .getByLabel('Add a note', { exact: true })
     .fill('Seller prefers afternoon calls.')
+  await drawer.getByRole('tab', { name: 'Contact', exact: true }).click()
+  await drawer.getByRole('tab', { name: 'Notes', exact: true }).click()
+  await expect(drawer.getByLabel('Add a note', { exact: true })).toHaveValue(
+    'Seller prefers afternoon calls.',
+  )
   await drawer.getByRole('button', { name: 'Save note', exact: true }).click()
   await expect(
     drawer.getByText('Seller prefers afternoon calls.', { exact: true }),
   ).toBeVisible()
+  await drawer.getByRole('tab', { name: 'Follow-ups', exact: true }).click()
   await drawer
     .getByLabel('Follow-up time (Chicago)', { exact: true })
     .fill('2026-09-15T14:00')
@@ -150,7 +167,17 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await expect(page.getByRole('region', { name: 'Next action' })).toContainText(
     'Callback held for review',
   )
-  await page.getByRole('button', { name: 'Details', exact: true }).click()
+  await expect(drawer).toBeVisible()
+  await drawer.getByRole('tab', { name: 'Contact', exact: true }).focus()
+  await page.keyboard.press('End')
+  await expect(
+    drawer.getByRole('tab', { name: 'Ari’s Insights', exact: true }),
+  ).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect(
+    drawer.getByRole('tab', { name: 'Contact', exact: true }),
+  ).toBeFocused()
+  await drawer.getByRole('tab', { name: 'Notes', exact: true }).click()
   await expect(
     drawer.getByText('Seller prefers afternoon calls.', { exact: true }),
   ).toBeVisible()
