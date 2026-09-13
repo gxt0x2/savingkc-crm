@@ -87,6 +87,15 @@ export const EMAIL_CONNECTIONS_SECRET_CONTRACT = {
   hostedPresence: 'present-not-live',
 } as const
 
+/** CRM production redeploy is not Email foundation route liveness. */
+export const EMAIL_HOSTED_DEPLOY_SNAPSHOT = {
+  productionHost: 'crm.savingkc.com',
+  deploymentId: 'EtBjRSLjZBgodpWYcsddzqZVCS8e',
+  state: 'Ready',
+  envSecretsApply: true,
+  emailFoundationRoutesLive: false,
+} as const
+
 export const EMAIL_FLAGS_MUST_STAY_OFF = [
   'EMAIL_LIVE_DISPATCH_ENABLED',
   'EMAIL_CONTROLLED_PROVIDER_EVIDENCE',
@@ -107,7 +116,7 @@ export const EMAIL_HOSTED_SECRET_PRESENCE = {
     environments: ['production', 'preview'],
     servingEmailRoutes: false,
     reason:
-      'Set encrypted on savingkc-crm Prod/Preview. No Email-route deploy under release auth, so the running app does not serve this key.',
+      'Set encrypted on savingkc-crm Prod/Preview. crm.savingkc.com production redeploy Ready (EtBjRSLjZBgodpWYcsddzqZVCS8e) applies env names. Email foundation routes are not live, so this key is not serving Email.',
   },
   RESEND_API_KEY: {
     name: 'RESEND_API_KEY',

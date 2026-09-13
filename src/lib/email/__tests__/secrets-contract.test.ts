@@ -9,6 +9,7 @@ import {
   EMAIL_RESEND_WEBHOOK_AFTER_RELEASE_URL,
   EMAIL_RESEND_WEBHOOK_PATH,
   EMAIL_RESEND_WEBHOOK_SECRET_PATTERN,
+  EMAIL_HOSTED_DEPLOY_SNAPSHOT,
   EMAIL_HOSTED_SECRET_PRESENCE,
   EMAIL_SECRETS_NOT_THIS_PRODUCT,
   emailHostedSecretNames,
@@ -90,6 +91,13 @@ describe('Email hosted secret contract', () => {
       servingEmail: false,
     })
     expect(emailHostedSecretsAreLive()).toBe(false)
+    expect(EMAIL_HOSTED_DEPLOY_SNAPSHOT).toMatchObject({
+      productionHost: 'crm.savingkc.com',
+      deploymentId: 'EtBjRSLjZBgodpWYcsddzqZVCS8e',
+      state: 'Ready',
+      envSecretsApply: true,
+      emailFoundationRoutesLive: false,
+    })
   })
   it('does not treat hosted secrets as a live-send unlock', () => {
     expect(EMAIL_FLAGS_MUST_STAY_OFF).toEqual([
