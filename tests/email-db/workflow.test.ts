@@ -2196,3 +2196,74 @@ withDb(
     )
   },
 )
+
+withDb(
+  'Calendar lists only open work for the linked Lead in due order',
+  async (db) => {
+    const command = await reviewedCallback(db)
+    command.payload.ownerId = owner
+    command.payload.backupId = agent
+    await executePilotCommand(db.sql, owner, command, now)
+    const [thread] =
+      await db.sql`select lead_id from em_threads where id=${command.payload.threadId}`
+    const create = async (
+      title: string,
+      kind: string,
+      due: string | null,
+      lead: string | null = thread.lead_id,
+    ) => {
+      const [row] =
+        await db.sql`select create_work_item_v2(${owner},${randomUUID()},${lead}::uuid,${kind},${title},'Saved task context',${due}::timestamptz,'Demo agent','acquisitions',null,'normal',false,'{}'::jsonb) as result`
+      return row.result.workItem
+    }
+    const overdue = await create(
+      'Overdue callback',
+      'callback',
+      '2026-09-14T14:00:00Z',
+    )
+    const appointment = await create(
+      'Property walkthrough',
+      'appointment',
+      '2026-09-15T20:00:00Z',
+    )
+    const undated = await create('Research property', 'task', null)
+    const completed = await create(
+      'Finished research',
+      'task',
+      '2026-09-14T13:00:00Z',
+    )
+    await db.sql`update lead_activities set metadata=metadata || '{"status":"completed"}'::jsonb where id=${completed.source_id}`
+    await db.sql`update lead_activities set metadata=metadata || '{"status":"blocked"}'::jsonb where id=${overdue.source_id}`
+    await create(
+      'Unlinked task must stay out',
+      'follow_up',
+      '2026-09-14T12:00:00Z',
+      null,
+    )
+    const state = await readPilotState(db.sql, owner, now)
+    const current = state.threads.find(
+      (t) => t.id === command.payload.threadId,
+    )!
+    assert.equal(current.open_task_count, 4)
+    assert.equal(current.open_tasks?.length, 4)
+    assert.equal(current.open_tasks?.[0].key, overdue.work_item_key)
+    assert.equal(current.open_tasks?.[0].status, 'blocked')
+    assert.equal(current.open_tasks?.at(-1)?.key, undated.work_item_key)
+    assert.equal(
+      current.open_tasks?.find((t) => t.key === appointment.work_item_key)
+        ?.assigned_to,
+      'Demo agent',
+    )
+    assert.equal(
+      current.open_tasks?.find((t) => t.key === appointment.work_item_key)
+        ?.notes,
+      'Saved task context',
+    )
+    assert.equal(
+      current.open_tasks?.some((t) => t.key === completed.work_item_key),
+      false,
+    )
+    for (const other of state.threads.filter((t) => t.id !== current.id))
+      assert.equal(other.open_tasks?.length, 0)
+  },
+)

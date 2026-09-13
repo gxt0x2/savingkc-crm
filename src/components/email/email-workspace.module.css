@@ -1263,3 +1263,71 @@
 .valuationCard span {
   font-size: 11px;
 }
+
+.agenda {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+.agenda .row h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.agendaScope {
+  color: var(--muted);
+  font-size: 10px !important;
+}
+.agendaFilters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+.agendaFilters select {
+  width: 100%;
+  font-size: 12px;
+  padding: 7px;
+}
+.agendaItems {
+  max-height: 235px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #99a2af #f0f2f5;
+  overscroll-behavior: contain;
+}
+.agendaItem {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  margin: 0 3px 7px 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f7f9fa;
+}
+.agendaItem strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.agendaItem span {
+  font-size: 11px;
+}
+.agendaItem small {
+  font-size: 10px;
+}
+.agendaItem .agendaStatus {
+  color: #376244;
+}
+.agendaItem .agendaAttention {
+  color: #a9202e;
+  font-weight: 600;
+}
+.agendaItem details {
+  padding: 3px 0;
+  font-size: 11px;
+}
+.agendaItem p {
+  white-space: pre-wrap;
+}
+.calendarUnavailable {
+  margin-top: 8px;
+}

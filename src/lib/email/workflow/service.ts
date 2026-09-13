@@ -1015,6 +1015,10 @@ export async function readPilotState(
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
       h.revision as handoff_revision,h.scheduled_for,
+      (select count(*)::int from work_items wi where wi.lead_id=t.lead_id and wi.status in ('pending','blocked')) as open_task_count,
+      coalesce((select jsonb_agg(jsonb_build_object('key',wi.work_item_key,'source_id',wi.source_id,'title',wi.title,'kind',wi.kind,'status',wi.status,'due_at',wi.due_at,'assigned_to',wi.assigned_to,
+        'notes',coalesce(wi.source_metadata->>'email_task_notes',wi.source_metadata->>'notes')) order by wi.due_at nulls last,wi.work_item_key)
+        from (select * from work_items where lead_id=t.lead_id and status in ('pending','blocked') order by due_at nulls last,work_item_key limit 50) wi),'[]'::jsonb) as open_tasks,
       w.title as callback_title,
       (select metadata->>'email_task_notes' from lead_activities where id=h.crm_task_id) as callback_notes,
       exists(select 1 from em_messages m where m.thread_id=t.id and m.direction='outbound') as has_outbound,

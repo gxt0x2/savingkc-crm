@@ -122,6 +122,17 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
     .click()
   await expect(page.getByRole('status')).toContainText('Follow-up task saved')
   await expect(drawer).toContainText('Sep 15, 2:00 PM CT')
+  const agenda = drawer.getByRole('region', {
+    name: 'Scheduled and upcoming work',
+  })
+  await expect(agenda).toContainText('Call seller to confirm timing')
+  await expect(agenda).toContainText('Sep 15, 2:00 PM CT')
+  await agenda.getByLabel('Filter task type').selectOption('callback')
+  await agenda.getByLabel('Filter assignee').selectOption('Demo owner')
+  await expect(agenda.getByRole('article')).toHaveCount(1)
+  await expect(agenda).toContainText(
+    'Google Calendar events are not connected.',
+  )
   await page
     .getByRole('button', { name: 'Local testing controls', exact: true })
     .click()

@@ -12,6 +12,7 @@ import {
 } from '@/lib/email/workflow/presentation'
 import { chicagoDateTime } from '@/lib/email/workflow/schedule'
 import styles from './email-workspace.module.css'
+import { EmailCalendarAgenda } from './email-calendar-agenda'
 
 const detailTabs = [
   ['next', 'Next step'],
@@ -874,6 +875,7 @@ export function EmailThreadPanel({
               </p>
               <small>Calendar not connected. No appointment booked.</small>
             </div>
+            <EmailCalendarAgenda thread={t} asOf={data.asOf} />
             {taskEditable && (
               <>
                 <form

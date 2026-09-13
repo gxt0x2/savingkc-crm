@@ -92,6 +92,17 @@ export interface PilotThread {
   callback_due_at: string | null
   requested_contact: { phone?: string; requestedTimeText?: string } | null
   handoff_revision?: number | null
+  open_task_count?: number
+  open_tasks?: {
+    key: string
+    source_id: string
+    title: string
+    kind: string
+    status: 'pending' | 'blocked'
+    due_at: string | null
+    assigned_to: string | null
+    notes: string | null
+  }[]
   callback_title?: string | null
   callback_notes?: string | null
   scheduled_for?: string | null
