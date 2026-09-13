@@ -47,6 +47,7 @@ v1.2 adds [the focused workspace and cadence contract](08-focused-workspace-and-
 | [Design manifest](design-manifest.json) | Machine-readable task dependencies and action/test coverage |
 | [Build status](build-status.md) | Evidence of what is designed, built, tested or still pending |
 | [Implementation baseline](implementation-baseline.md) | Current checkout, CRM integration corrections, 41 existing tests passed, missing live checks and exact next-model handoff |
+| [Hosted database connection](hosted-database.md) | Local simulation vs hosted Atlas `EMAIL_DATABASE_URL`; production must not use simulation mode |
 
 ## Important implementation findings
 
