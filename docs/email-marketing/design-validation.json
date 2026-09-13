@@ -3,7 +3,7 @@
   "scope": "Design references and coverage only; no application/provider verification",
   "passed": true,
   "pages": 19,
-  "actions": 88,
+  "actions": 89,
   "packets": 35,
   "acceptance_cases": 62,
   "ai_seed_cases": 40,

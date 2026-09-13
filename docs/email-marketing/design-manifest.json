@@ -1,5 +1,5 @@
 {
-  "specVersion": "1.2",
+  "specVersion": "1.3",
   "date": "2026-09-12",
   "state": "design_only",
   "tasks": [
@@ -461,7 +461,8 @@
         "src/lib/email/drafts.ts",
         "src/lib/email/commands/threads.ts",
         "src/lib/email/__tests__/threads.test.ts",
-        "tests/email-db/ownership.test.ts"
+        "tests/email-db/ownership.test.ts",
+        "src/lib/email/workflow/service.ts"
       ],
       "actions": [
         "THR-READ",
@@ -476,7 +477,8 @@
         "REV-APPROVE",
         "REV-REJECT",
         "REV-ASSIGN",
-        "REV-RESOLVE"
+        "REV-RESOLVE",
+        "THR-NOTE"
       ],
       "tests": [
         "T27",

@@ -248,6 +248,7 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
   command('THR-DRAFT', z.object({ threadId: uuid, body: longText, contentRevision: revision, controllerRevision: revision }).strict()),
   command('THR-SEND', z.object({ draftId: uuid, bodyHash: hash, contentRevision: revision, controllerRevision: revision }).strict()),
   command('THR-REGENERATE', z.object({ threadId: uuid, instruction: z.string().trim().min(1).max(500).optional() }).strict()),
+  command('THR-NOTE', z.object({ threadId: uuid, body: shortText }).strict()),
   command('THR-SNOOZE', z.object({ threadId: uuid, until: isoDateTime.optional() }).strict()),
   command('THR-CLOSE', z.object({ threadId: uuid, closed: z.boolean(), reason: shortText }).strict()),
   command('THR-TAG', z.object({ threadId: uuid, tags: z.array(z.string().trim().min(1).max(64)).max(20) }).strict()),
@@ -281,10 +282,12 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
   command('HAN-SCHEDULE', z.object({
     handoffId: uuid, mode: z.enum(['task', 'calendar']), startAt: isoDateTime,
     timezone: nonEmpty.max(100), phoneEvidence: evidenceList.optional(), slotToken: hash.optional(),
+    contentRevision: revision.optional(),
   }).strict()),
   command('HAN-OUTCOME', z.object({
     handoffId: uuid, outcome: z.enum(['conversation_complete', 'follow_up', 'no_contact', 'not_qualified']),
     note: shortText, nextAction: z.string().trim().min(1).max(2_000).optional(), completedAt: isoDateTime.optional(),
+    contentRevision: revision.optional(),
   }).strict()),
   command('HAN-QUALIFY', z.object({
     handoffId: uuid, leadId: uuid, leadRevision: revision, assessment: qualificationAssessmentSchema,

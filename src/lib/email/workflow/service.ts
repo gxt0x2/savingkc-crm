@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
 import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
+import { changeCallback } from './callback-actions'
 import { emailCommandSchema } from '../contracts'
 import { emailWorkspaceConfigSchema } from '../config'
 import { pilotFollowUp, pilotFollowUpExpires, pilotSendSlot } from './schedule'
@@ -65,6 +66,7 @@ async function requireHuman(
   check(canWork(context.member), 'FORBIDDEN', 403)
   const thread = await threadFor(context, id)
   check(thread.state !== 'stopped', 'THREAD_STOPPED')
+  check(thread.state !== 'done', 'THREAD_DONE')
   check(
     thread.controller === 'human' &&
       thread.controller_user_id === context.member.auth_user_id,
@@ -488,6 +490,10 @@ export async function executePilotCommand(
         const [restriction] =
           await tx`select id from em_suppressions where workspace_id=${ws} and address_id=${thread.address_id}`
         check(!restriction, 'MARKETING_STOPPED')
+        const [queued] =
+          await tx`select id from em_send_intents where workspace_id=${ws} and thread_id=${thread.id}
+          and origin='human' and state='queued'`
+        check(!queued, 'REPLY_ALREADY_QUEUED')
         const id = await queueIntent(context, {
           threadId: thread.id,
           key: `draft:${draft.id}`,
@@ -599,6 +605,101 @@ export async function executePilotCommand(
           ],
         }
       }
+      case 'THR-NOTE': {
+        check(canWork(member), 'FORBIDDEN', 403)
+        const thread = await threadFor(context, command.payload.threadId)
+        check(thread.lead_id, 'LINK_LEAD_FIRST')
+        const [actor] =
+          await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id
+          where m.workspace_id=${ws} and m.auth_user_id=${subject}`
+        const [note] =
+          await tx`insert into lead_activities(lead_id,activity_type,description,agent,metadata,created_at)
+          values(${thread.lead_id},'note',${command.payload.body},${actor.full_name},
+          ${tx.json({ origin: 'email_marketing', em_thread_id: thread.id })},${now}) returning id`
+        return { entityId: note.id, state: 'note_saved' }
+      }
+      case 'HAN-SCHEDULE':
+      case 'HAN-OUTCOME':
+      case 'HAN-ACCEPT': {
+        const p = command.payload
+        const [h] =
+          await tx`select thread_id from em_handoffs where workspace_id=${ws} and id=${p.handoffId}`
+        check(h, 'HANDOFF_NOT_FOUND', 404)
+        const revision = 'contentRevision' in p ? p.contentRevision : undefined
+        if (command.command !== 'HAN-ACCEPT')
+          check(revision !== undefined, 'REVISION_REQUIRED')
+        await requireHuman(context, h.thread_id, revision)
+        if (command.command === 'HAN-SCHEDULE') {
+          const p = command.payload
+          check(p.mode === 'task', 'CALENDAR_NOT_CONNECTED')
+          check(p.timezone === 'America/Chicago', 'CHICAGO_TIMEZONE_REQUIRED')
+          const start = new Date(p.startAt)
+          const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: p.timezone,
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+          }).formatToParts(start)
+          const part = (name: string) =>
+            parts.find((p) => p.type === name)?.value ?? ''
+          check(
+            start > now &&
+              !['Sat', 'Sun'].includes(part('weekday')) &&
+              Number(part('hour')) * 60 + Number(part('minute')) >= 510,
+            'INVALID_CALLBACK_TIME',
+          )
+          await invalidate(context, h.thread_id, 'callback_scheduled')
+          return changeCallback(
+            context,
+            p.handoffId,
+            command.expectedRevision,
+            { dueAt: start },
+            command.idempotencyKey,
+          )
+        }
+        if (command.command === 'HAN-OUTCOME') {
+          check(
+            command.payload.outcome === 'conversation_complete',
+            'OUTCOME_NOT_SUPPORTED',
+          )
+          await invalidate(context, h.thread_id, 'callback_completed')
+          return changeCallback(
+            context,
+            p.handoffId,
+            command.expectedRevision,
+            { completeNote: command.payload.note },
+            command.idempotencyKey,
+          )
+        }
+        return changeCallback(
+          context,
+          p.handoffId,
+          command.expectedRevision,
+          { accept: true },
+          command.idempotencyKey,
+        )
+      }
+      case 'THR-CLOSE': {
+        check(command.payload.closed, 'REOPEN_NOT_SUPPORTED')
+        check(canWork(member), 'FORBIDDEN', 403)
+        const t = await threadFor(context, command.payload.threadId)
+        check(t.controller_user_id === subject, 'TAKE_OVER_FIRST')
+        check(t.state !== 'stopped', 'THREAD_STOPPED')
+        check(
+          command.expectedRevision === t.content_revision,
+          'NEW_REPLY_REVIEW_REQUIRED',
+        )
+        const [open] =
+          await tx`select id from em_handoffs where workspace_id=${ws} and thread_id=${t.id} and state<>'completed'`
+        check(!open, 'FINISH_CALLBACK_FIRST')
+        await invalidate(context, t.id, 'thread_closed')
+        await tx`update em_threads set state=${command.payload.closed ? 'done' : 'human'} where id=${t.id}`
+        return {
+          entityId: t.id,
+          state: command.payload.closed ? 'conversation_done' : 'human',
+        }
+      }
       case 'SUP-ADD': {
         check(canWork(member), 'FORBIDDEN', 403)
         check(
@@ -683,7 +784,7 @@ async function suppress(
     for (const thread of threads) {
       await invalidate(context, thread.id, 'marketing_stopped')
       await tx`update em_threads set state='stopped',outcome=case when ${reason}='unsubscribe' then 'unsubscribed' else outcome end,controller_revision=controller_revision+1 where workspace_id=${ws} and id=${thread.id}`
-      await tx`update em_handoffs set state='held' where workspace_id=${ws} and thread_id=${thread.id}`
+      await tx`update em_handoffs set state='held',revision=revision+1 where workspace_id=${ws} and thread_id=${thread.id} and state<>'completed'`
       await projectCrmChanges(context, thread.id, {
         history: true,
         holdReason: 'marketing_stopped',
@@ -913,6 +1014,15 @@ export async function readPilotState(
       h.id as handoff_id,h.state as handoff_state,h.requested_contact,
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
+      h.revision as handoff_revision,h.scheduled_for,
+      exists(select 1 from em_messages m where m.thread_id=t.id and m.direction='outbound') as has_outbound,
+      exists(select 1 from em_send_intents i where i.thread_id=t.id and i.origin='human' and i.state='queued') as reply_queued,
+      (select min(i.not_before) from em_send_intents i where i.thread_id=t.id and i.state='queued') as next_email_at,
+      (select to_jsonb(cp) from em_party_properties ep join crm_properties cp on cp.id=ep.canonical_property_id
+       where ep.workspace_id=t.workspace_id and ep.party_id=t.party_id and ep.relationship='owner'
+       and (select count(*) from em_party_properties ep2 where ep2.workspace_id=t.workspace_id and ep2.party_id=t.party_id and ep2.relationship='owner')=1) as property,
+      coalesce((select jsonb_agg(jsonb_build_object('id',n.id,'body',n.description,'author',n.agent,'created_at',n.created_at) order by n.created_at desc,n.id)
+        from (select * from lead_activities where lead_id=t.lead_id and activity_type='note' order by created_at desc,id limit 30) n),'[]'::jsonb) as notes,
       coalesce(r.history_required,false) as crm_history_repair_required,
       coalesce(r.callback_hold_required,false) as crm_callback_repair_required,
       r.id as crm_repair_id,r.last_error_code as crm_repair_error_code,

@@ -4,15 +4,12 @@ import type {
   PilotThread,
 } from '../../src/lib/email/workflow/types'
 
-test('campaign → review → simulated acceptance → reply → takeover → callback → opt-out survives reload', async ({
+test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubscribe', async ({
   page,
 }) => {
-  const browserErrors: string[] = []
-  page.on('pageerror', (error) => browserErrors.push(error.message))
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
   await page.goto('/')
-  await expect(
-    page.getByText('Local practice workspace', { exact: true }),
-  ).toBeVisible()
   await page.getByRole('button', { name: 'Campaigns', exact: true }).click()
   await page
     .getByLabel('Campaign name', { exact: true })
@@ -27,9 +24,6 @@ test('campaign → review → simulated acceptance → reply → takeover → ca
   await expect(
     page.getByRole('heading', { name: '2 ready · 1 excluded' }),
   ).toBeVisible()
-  await expect(
-    page.getByText('Address verification required', { exact: true }),
-  ).toBeVisible()
   await page
     .getByRole('button', { name: 'Start reviewed simulation', exact: true })
     .click()
@@ -43,179 +37,144 @@ test('campaign → review → simulated acceptance → reply → takeover → ca
       exact: true,
     })
     .click()
-  await expect(page.getByRole('status')).toHaveText(
-    'One message accepted by the simulated transport.',
-  )
+  await expect(page.getByRole('status')).toContainText('One message accepted')
   await page.getByRole('button', { name: 'Inbox', exact: true }).click()
-  await page.getByRole('button', { name: /All conversations/ }).click()
+  await page.getByRole('button', { name: /^All/ }).click()
   await page
     .getByRole('region', { name: 'Conversations', exact: true })
     .getByRole('button')
     .first()
     .click()
-  await page
-    .getByRole('button', {
-      name: 'Receive practice reply in selected conversation',
-      exact: true,
-    })
-    .click()
+  const receive = page.getByRole('button', {
+    name: 'Receive practice reply in selected conversation',
+    exact: true,
+  })
+  await receive.click()
   await expect(page.getByRole('status')).toContainText(
     'Pending sequence messages are stopped',
   )
-  const messageCards = page
-    .getByRole('region', { name: 'Selected conversation' })
-    .locator('article')
-  await expect(messageCards.nth(0)).toContainText('SavingKC · simulated')
-  await expect(messageCards.nth(1)).toContainText('I might consider selling')
   await page.getByRole('button', { name: 'Take over', exact: true }).click()
-  await page
-    .getByLabel('Reply draft', { exact: true })
-    .fill('Would 2 PM work for a quick call?')
-  await page
-    .getByRole('button', { name: 'Save reply draft', exact: true })
-    .click()
   await expect(
-    page.getByRole('button', { name: 'Queue simulated reply', exact: true }),
-  ).toBeEnabled()
-  // A later inbound must invalidate the saved reply through the actual API.
+    page.getByText('Practice suggestion · Live AI is not connected'),
+  ).toBeVisible()
   await page
-    .getByRole('button', {
-      name: 'Receive practice reply in selected conversation',
-      exact: true,
-    })
-    .click()
-  await expect(
-    page.getByRole('button', { name: 'Queue simulated reply', exact: true }),
-  ).toHaveCount(0)
-  await page
-    .getByRole('button', { name: 'Arrange callback', exact: true })
-    .click()
-  await page
-    .getByLabel('Phone from this reply', { exact: true })
-    .fill('816-555-0101')
-  await page
-    .getByLabel('Seller’s exact time wording', { exact: true })
-    .fill('Tomorrow afternoon')
-  await page.getByRole('checkbox', { name: /I read the current reply/ }).check()
-  await page
-    .getByLabel('Practice incoming reply', { exact: true })
-    .fill(
-      'I would consider selling. Call me at 816-555-0101. Tomorrow afternoon works.',
-    )
-  await page
-    .getByRole('button', {
-      name: 'Receive practice reply in selected conversation',
-      exact: true,
-    })
-    .click()
-  await expect(page.getByRole('main').getByRole('alert')).toContainText(
-    'A new reply arrived. Read the latest message, then reset this review before saving the handoff.',
-  )
-  await expect(
-    page.getByRole('checkbox', { name: /I read the current reply/ }),
-  ).not.toBeChecked()
-  await expect(
-    page.getByRole('button', { name: 'Save callback handoff', exact: true }),
-  ).toBeDisabled()
-  await expect(
-    page.getByLabel('Phone from this reply', { exact: true }),
-  ).toHaveValue('816-555-0101')
-  await expect(
-    page.getByLabel('Seller’s exact time wording', { exact: true }),
-  ).toHaveValue('Tomorrow afternoon')
-  await page
-    .getByRole('button', { name: 'Review latest reply', exact: true })
-    .click()
-  await expect(
-    page.getByRole('checkbox', { name: /I read the current reply/ }),
-  ).not.toBeChecked()
-  await expect(
-    page.getByRole('button', { name: 'Save callback handoff', exact: true }),
-  ).toBeEnabled()
-  await page.getByRole('checkbox', { name: /I read the current reply/ }).check()
-  await page
-    .getByRole('button', { name: 'Save callback handoff', exact: true })
+    .getByRole('button', { name: 'Create Lead & callback', exact: true })
     .click()
   await expect(page.getByRole('status')).toContainText(
     'The Lead and callback review task are linked',
   )
+  await page.getByRole('button', { name: 'Details', exact: true }).click()
+  const drawer = page.getByRole('complementary', {
+    name: 'Contact and property',
+  })
   await expect(
-    page.getByText('Lead · Contacted', { exact: true }),
+    drawer.getByText('Lead · Contacted', { exact: true }),
   ).toBeVisible()
+  await drawer
+    .getByLabel('Add a note', { exact: true })
+    .fill('Seller prefers afternoon calls.')
+  await drawer.getByRole('button', { name: 'Save note', exact: true }).click()
   await expect(
-    page.getByText('Review callback by', { exact: true }),
+    drawer.getByText('Seller prefers afternoon calls.', { exact: true }),
   ).toBeVisible()
+  await drawer
+    .getByLabel('Follow-up time (Chicago)', { exact: true })
+    .fill('2026-09-15T14:00')
+  await drawer
+    .getByRole('button', { name: 'Save follow-up', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('Follow-up task saved')
+  await expect(drawer).toContainText('Sep 15, 2:00 PM CT')
+  await page
+    .getByRole('button', { name: 'Local testing controls', exact: true })
+    .click()
   await page.screenshot({
     path: 'test-results/email-local/inbox-desktop.png',
     fullPage: true,
+    animations: 'disabled',
   })
-  await page.getByRole('button', { name: 'More', exact: true }).click()
-  await expect(
-    page.getByText('Callback task ready', { exact: true }),
-  ).toBeVisible()
   await page
-    .getByRole('button', { name: 'Acknowledge', exact: true })
-    .first()
+    .getByRole('button', { name: 'Local testing controls', exact: true })
     .click()
-  await expect(page.getByText('Acknowledged', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Inbox', exact: true }).click()
+  await drawer.getByRole('button', { name: 'Close details' }).click()
+  await page.getByRole('button', { name: /^Scheduled/ }).click()
   await expect(
-    page.getByRole('heading', { name: 'Inbox', exact: true }),
-  ).toBeVisible()
-  if (
-    !(await page
-      .getByLabel('Practice incoming reply', { exact: true })
-      .isVisible())
+    page.getByRole('region', { name: 'Conversations' }),
+  ).toContainText('Jamie Sample')
+  // A changed conversation must invalidate a typed reply without silently replacing it.
+  await page.getByRole('button', { name: 'Edit reply', exact: true }).click()
+  await page
+    .getByLabel('Reply draft', { exact: true })
+    .fill('Would 2 PM work for a quick call?')
+  await receive.click()
+  await expect(
+    page.getByRole('button', { name: 'Queue simulated reply', exact: true }),
+  ).toBeDisabled()
+  await expect(page.getByLabel('Reply draft', { exact: true })).toHaveValue(
+    'Would 2 PM work for a quick call?',
   )
-    await page.getByText('Local testing controls', { exact: true }).click()
+  await page.getByRole('button', { name: 'Edit reply', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Approve & queue reply', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('Reply queued')
+  await expect(
+    page.getByRole('button', { name: 'Queue simulated reply', exact: true }),
+  ).toBeDisabled()
+  // Longer history scrolls inside the thread, leaving the composer in place.
+  for (let i = 0; i < 4; i++) await receive.click()
+  await page.getByRole('button', { name: /Show .* earlier messages/ }).click()
+  const history = page.getByLabel('Email history', { exact: true })
+  const composer = page.getByLabel('Reply composer', { exact: true })
+  const before = await composer.boundingBox()
+  await history.evaluate((el) => {
+    el.scrollTop = 0
+  })
+  const after = await composer.boundingBox()
+  expect(Math.abs((before?.y ?? 0) - (after?.y ?? 0))).toBeLessThan(2)
+  expect(
+    await history.evaluate((el) => el.scrollHeight > el.clientHeight),
+  ).toBe(true)
   await page
     .getByLabel('Practice incoming reply', { exact: true })
     .fill('Please unsubscribe me.')
-  await page
-    .getByRole('button', {
-      name: 'Receive practice reply in selected conversation',
-      exact: true,
-    })
-    .click()
+  await receive.click()
   await expect(page.getByText('Unsubscribed', { exact: true })).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: 'Save reply draft', exact: true }),
-  ).toHaveCount(0)
+  await expect(page.getByLabel('Reply draft', { exact: true })).toHaveCount(0)
   await page.reload()
-  await page.getByRole('button', { name: /Closed & stopped/ }).click()
   await page
     .getByRole('region', { name: 'Conversations', exact: true })
     .getByRole('button')
+    .first()
     .click()
-  await expect(page.getByText('Unsubscribed', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Next action' })).toContainText(
+    'Callback held for review',
+  )
+  await page.getByRole('button', { name: 'Details', exact: true }).click()
   await expect(
-    page.getByText('Callback held for review', {
-      exact: true,
-    }),
+    drawer.getByText('Seller prefers afternoon calls.', { exact: true }),
   ).toBeVisible()
-  await page.getByRole('button', { name: /Needs action/ }).click()
-  await expect(
-    page
-      .getByRole('region', { name: 'Conversations', exact: true })
-      .getByRole('button'),
-  ).toHaveCount(1)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({
     path: 'test-results/email-local/inbox-mobile.png',
     fullPage: true,
+    animations: 'disabled',
   })
+  await page.keyboard.press('Escape')
+  await expect(drawer).toHaveCount(0)
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
+      () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true)
-  expect(browserErrors).toEqual([])
-  const theme = await page.getByRole('main').evaluate((el) => ({
-    accent: getComputedStyle(el).getPropertyValue('--accent').trim(),
-    background: getComputedStyle(el).backgroundColor,
-  }))
-  expect(theme.accent).toBe('#a9202e')
-  expect(theme.background).toBe('rgb(246, 247, 249)')
+  expect(errors).toEqual([])
+  expect(
+    await page
+      .getByRole('main')
+      .evaluate((el) =>
+        getComputedStyle(el).getPropertyValue('--accent').trim(),
+      ),
+  ).toBe('#a9202e')
 })
 
 test('unavailable state is visible and refresh recovers; wrong-origin writes are rejected', async ({
@@ -473,9 +432,7 @@ test('mock-backed UI contract: CRM repair stays visible until an owner retry res
   await expect(selected).toContainText(
     'Marketing is stopped. The callback hold has not reached CRM.',
   )
-  await expect(
-    selected.getByText('Callback held for review', { exact: true }),
-  ).toHaveCount(0)
+  await expect(selected.getByText(/Callback held for review/)).toHaveCount(0)
   await expect(
     selected.getByRole('button', { name: 'Retry CRM update', exact: true }),
   ).toHaveCount(0)
@@ -491,7 +448,7 @@ test('mock-backed UI contract: CRM repair stays visible until an owner retry res
   await expect(page.getByRole('status')).toContainText(
     'CRM still needs repair. The pending update is saved',
   )
-  await expect(selected).toContainText('CRM update needs attention')
+  await expect(selected).toContainText('Resolve issue')
   await expect(retryButton).toBeVisible()
   expect(replayCommands).toHaveLength(1)
   expect(replayCommands[0]).toMatchObject({
@@ -499,8 +456,7 @@ test('mock-backed UI contract: CRM repair stays visible until an owner retry res
     payload: {
       jobId: repairId,
       expectedFailureCode: failureCode,
-      reason:
-        'Owner reviewed the pending CRM update and requested a retry.',
+      reason: 'Owner reviewed the pending CRM update and requested a retry.',
     },
   })
 
@@ -509,12 +465,12 @@ test('mock-backed UI contract: CRM repair stays visible until an owner retry res
     'CRM history and callback updates are current.',
   )
   await expect(retryButton).toHaveCount(0)
-  await expect(selected).not.toContainText('CRM update needs attention')
-  await expect(
-    selected.getByText('Callback held for review', { exact: true }),
-  ).toBeVisible()
+  await expect(selected).not.toContainText(
+    'The callback hold has not reached CRM',
+  )
+  await expect(selected.getByText(/Callback held for review/)).toBeVisible()
   await expect(selected).toContainText(
-    'Marketing was stopped, so the linked callback task is blocked',
+    'Callback held for review. Resolve the hold before calling.',
   )
   expect(replayCommands).toHaveLength(2)
 

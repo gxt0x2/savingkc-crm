@@ -8,6 +8,10 @@ The previous checkpoint `3334191e` contained useful contracts, migrations and is
 
 Authoritative checkout: `/Users/ernestdodson/Documents/New project/savingkc-crm-email-foundation`, branch `codex/email-foundation-20260912`. The unrelated main checkout is untouched.
 
+## Action workspace continuation
+
+[Revision 1.3](09-action-workspace.md) implements exclusive To do / Waiting on seller / Scheduled / Done / All queues, a compact next-action panel, a bounded email history, and a right-side contact/property/notes/follow-up drawer. Practice suggestions are clearly labeled deterministic examples; live AI remains unconnected. Human approval invokes the existing evidenced Lead bridge. Canonical notes, manual task scheduling and callback completion are persisted with receipts, current revision/ownership checks and rollback on projection failure. A completed callback does not qualify an Opportunity or return to pending on later unsubscribe.
+
 ## Current connected milestone
 
 See [scope and boundaries](recovery-milestone.md). The same React component and transaction service back the CRM Email route and the isolated local practice app. The practice harness supplies a fabricated test identity; this is not signed-in CRM-shell verification.
@@ -16,7 +20,7 @@ See [scope and boundaries](recovery-milestone.md). The same React component and 
 - Persist simulated outbound acceptance and weekday follow-up scheduling from actual simulated acceptance. Incoming fixtures cancel pending work and stale drafts in the same transaction. Messages have an explicit per-thread order.
 - Human takeover and callback handoff transfer use current ownership/content revisions. A human-confirmed seller reply with one confirmed person/property creates or links a canonical Lead, projects message history and creates one governed callback review task. Ambiguity and owner/stage conflicts are held with an explicit reason. Opportunity qualification remains human-only and is not implemented in Email.
 - All-marketing stops cancel pending work across campaigns and confirmed aliases. Unfinished callback work becomes held for review. Private notification acknowledgment is recipient-scoped.
-- Inbox/Campaigns/More in the approved white/red/grey light theme; campaign creation, sequence editor, recipient review, simulation launch/pause, filtered inbox, composer, callback form and operational notices are connected to PostgreSQL.
+- Inbox/Campaigns/More in the approved white/red/grey light theme; campaign creation, sequence editor, recipient review, simulation launch/pause, filtered inbox, composer, action panel and Details drawer and operational notices are connected to PostgreSQL.
 - Production worker remains disabled. Simulation accepts only reserved `.test` addresses, makes no provider/model calls and processes at most one acceptance per tick with shared pilot limits of 2/hour and 10/day.
 
 ## Setup foundation continuation
@@ -51,7 +55,7 @@ npm run test:email:local-ui
 npm run dev:email:local
 ```
 
-The harness creates its own temporary PostgreSQL cluster, applies eight named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
+The harness creates its own temporary PostgreSQL cluster, applies nine named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
 
 ## Packet audit
 
@@ -81,8 +85,8 @@ A partial row is intentionally not a completion claim.
 | EM-020 | Partial: approved white/red/grey Email component, CRM page and business/team setup exist. Complete provider onboarding and signed-in CRM-shell verification are unfinished. |
 | EM-021 | Not implemented: no live audience mapping/import pages; campaign recipient review is fixture-backed. |
 | EM-022 | Partial: campaign list, sequence edit, recipient review and simulated start/pause are connected. Full live detail/revision workflows remain unfinished. |
-| EM-023 | Partial: filtered local inbox, human composer and review controls are connected. Shared Conversations, AI review and full access/pagination states remain unfinished. |
-| EM-024 | Partial: evidenced local callback handoff, linked Lead/task status and honest CRM review states work. Accept/reassign/outcome/retry and Google Calendar integration are unfinished. |
+| EM-023 | Partial: exclusive local queues, bounded history, prepared practice replies, CRM notes and human composer are connected. Shared Conversations, AI review and full access/pagination states remain unfinished. |
+| EM-024 | Partial: evidenced local callback handoff, linked Lead/task status and honest CRM review states work. Manual accept, schedule and completion now work locally; reassignment, general outcomes/retry and Google Calendar integration remain unfinished. |
 | EM-025 | Not implemented: no playbook editor or evaluation review UI. |
 | EM-026 | Partial: business/team setup and advanced team access are connected locally. Provider subscriptions, sender/brand/phone setup and finish/enable gates remain unfinished. |
 | EM-027 | Utility only: no truthful production outcome reporting or exports. |
@@ -93,11 +97,11 @@ A partial row is intentionally not a completion claim.
 | EM-032 | Partial: recipient-scoped local notifications and acknowledgment work. Push, escalation and automatic phone detection remain unfinished. |
 | EM-033 | Partial: weekday 7–10-calendar-day schedule and explicit callback evidence work locally. Calendar booking is unfinished. |
 | EM-034 | Not implemented: no response-number provisioning or routing integration. |
-| EM-035 | Partial: focused light UI, counts and campaign cadence exist. Saved views, comprehensive filters and full integration remain unfinished. |
+| EM-035 | Partial: focused light UI, exclusive queue counts, next-action panel, details drawer and campaign cadence exist. Saved views, comprehensive filters and full integration remain unfinished. |
 
 ## Next implementation order
 
-1. Finish handoff acceptance/reassignment/outcomes/retry and shared Conversations ownership reconciliation, preserving the completed local Lead/task/history bridge. Add qualification only through the existing human four-pillar policy and a true current Lead revision.
+1. Finish handoff reassignment, held-handoff resolution, other outcomes/retry and shared Conversations ownership reconciliation, preserving the completed local Lead/task/history bridge. Add qualification only through the existing human four-pillar policy and a true current Lead revision.
 2. Implement provider connection, durable remote dispatch/reconciliation, signed webhook capture and full suppression/preferences. Keep live dispatch disabled until controlled provider evidence exists.
 3. Complete the setup wizard, AI policy/evaluations, Calendar/push/response-line integrations and remaining views. Preserve everyday-language sales voice, verified facts, Lead → human-qualified Opportunity distinctions and weekday cadence.
 4. Run full local integration and release checks, then prepare the exact controlled external test/release for authorization. No production schema, subscriptions, provider connection, customer send or deployment was performed in this milestone.

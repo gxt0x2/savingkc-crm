@@ -91,6 +91,30 @@ export interface PilotThread {
   callback_task_state: PilotCallbackTaskState | null
   callback_due_at: string | null
   requested_contact: { phone?: string; requestedTimeText?: string } | null
+  handoff_revision?: number | null
+  scheduled_for?: string | null
+  reply_queued?: boolean
+  has_outbound?: boolean
+  next_email_at?: string | null
+  property?: {
+    id: string
+    address: string
+    city: string | null
+    state: string | null
+    zip: string | null
+    county: string | null
+    property_type: string | null
+    bedrooms: number | null
+    bathrooms: number | null
+    sqft: number | null
+    year_built: number | null
+  } | null
+  notes?: {
+    id: string
+    body: string
+    author: string | null
+    created_at: string
+  }[]
 }
 export interface PilotMessage {
   id: string
@@ -146,48 +170,37 @@ export interface PilotState {
   activity: { id: string; action: string; created_at: string }[]
 }
 
-export type InboxView =
-  | 'action'
-  | 'review'
-  | 'calls'
-  | 'ai'
-  | 'waiting'
-  | 'stopped'
-  | 'all'
-export function matchesView(thread: PilotThread, view: InboxView) {
-  const crmNeedsReview =
+export type InboxView = 'action' | 'waiting' | 'scheduled' | 'done' | 'all'
+
+// One primary work queue per conversation. Restrictions remain independent.
+export function primaryView(
+  thread: PilotThread,
+  asOf: string,
+): Exclude<InboxView, 'all'> {
+  const issue =
     thread.crm_history_repair_required ||
     thread.crm_callback_repair_required ||
-    thread.crm_sync_state === 'pending' ||
-    thread.crm_sync_state === 'review_required' ||
-    thread.crm_sync_state === 'dependency_unavailable'
-  const openCallbackTask =
-    thread.callback_task_state === 'pending' ||
+    ['pending', 'review_required', 'dependency_unavailable'].includes(
+      thread.crm_sync_state ?? '',
+    ) ||
+    thread.handoff_state === 'held' ||
     thread.callback_task_state === 'blocked'
-  switch (view) {
-    case 'action':
-      return (
-        thread.state === 'needs_review' ||
-        thread.state === 'human' ||
-        thread.handoff_state === 'held' ||
-        crmNeedsReview ||
-        openCallbackTask
-      )
-    case 'review':
-      return (
-        thread.state === 'needs_review' ||
-        thread.handoff_state === 'held' ||
-        crmNeedsReview
-      )
-    case 'calls':
-      return thread.handoff_id !== null || thread.crm_task_id !== null
-    case 'ai':
-      return false // No evaluated automatic actions exist in this pilot.
-    case 'waiting':
-      return thread.state === 'waiting'
-    case 'stopped':
-      return thread.state === 'stopped'
-    case 'all':
-      return true
-  }
+  if (issue) return 'action'
+  if (thread.state === 'stopped' || thread.state === 'done') return 'done'
+  if (thread.state === 'needs_review') return 'action'
+  if (thread.scheduled_for && thread.callback_task_state === 'pending')
+    return new Date(thread.scheduled_for) > new Date(asOf)
+      ? 'scheduled'
+      : 'action'
+  if (thread.callback_task_state === 'pending') return 'action'
+  if (thread.reply_queued) return 'scheduled'
+  if (thread.state === 'human') return 'action'
+  return thread.has_outbound ? 'waiting' : 'scheduled'
+}
+export function matchesView(
+  thread: PilotThread,
+  view: InboxView,
+  asOf = new Date().toISOString(),
+) {
+  return view === 'all' || primaryView(thread, asOf) === view
 }

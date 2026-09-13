@@ -51,6 +51,24 @@ export function pilotFollowUp(acceptedAt: Date) {
     local.hour < 9 || local.hour >= 17 ? 0 : local.minute,
   )
 }
+
+/** A datetime-local control is explicitly Chicago, independent of browser zone. */
+export function chicagoDateTime(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value))
+    throw new Error('INVALID_CALLBACK_TIME')
+  const [year, month, day, hour, minute] = value.split(/[-T:]/).map(Number)
+  const date = localTime(year, month, day, hour, minute)
+  const actual = parts(date)
+  if (
+    actual.year !== year ||
+    actual.month !== month ||
+    actual.day !== day ||
+    actual.hour !== hour ||
+    actual.minute !== minute
+  )
+    throw new Error('INVALID_CALLBACK_TIME')
+  return date
+}
 export function pilotSendSlot(now: Date) {
   const p = parts(now)
   const day = new Date(

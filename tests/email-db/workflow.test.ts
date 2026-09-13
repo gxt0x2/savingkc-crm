@@ -33,6 +33,209 @@ const withDb = (name: string, run: (db: Database) => Promise<void>) =>
       await db.stop()
     }
   })
+
+withDb(
+  'focused actions persist canonical notes and fenced manual callbacks without qualification',
+  async (db) => {
+    const command = await reviewedCallback(db)
+    command.payload.ownerId = owner
+    command.payload.backupId = agent
+    const result = await executePilotCommand(db.sql, owner, command, now)
+    const threadId = command.payload.threadId
+    const [thread] = await db.sql`select * from em_threads where id=${threadId}`
+    const note = {
+      command: 'THR-NOTE',
+      idempotencyKey: randomUUID(),
+      payload: { threadId, body: 'Seller prefers afternoons.' },
+    }
+    await rejects(executePilotCommand(db.sql, reader, note, now), 'FORBIDDEN')
+    await executePilotCommand(db.sql, owner, note, now)
+    await executePilotCommand(db.sql, owner, note, now)
+    assert.equal(
+      (await db.sql`select * from lead_activities where activity_type='note'`)
+        .length,
+      1,
+    )
+    const schedule = {
+      command: 'HAN-SCHEDULE',
+      expectedRevision: 0,
+      idempotencyKey: randomUUID(),
+      payload: {
+        handoffId: result.entityId,
+        mode: 'task',
+        startAt: '2026-09-15T19:00:00Z',
+        timezone: 'America/Chicago',
+        contentRevision: thread.content_revision,
+      },
+    }
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        { ...schedule, payload: { ...schedule.payload, mode: 'calendar' } },
+        now,
+      ),
+      'CALENDAR_NOT_CONNECTED',
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        {
+          ...schedule,
+          payload: { ...schedule.payload, startAt: '2026-09-19T19:00:00Z' },
+        },
+        now,
+      ),
+      'INVALID_CALLBACK_TIME',
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        {
+          ...schedule,
+          payload: { ...schedule.payload, startAt: '2026-09-15T12:00:00Z' },
+        },
+        now,
+      ),
+      'INVALID_CALLBACK_TIME',
+    )
+    const first = await executePilotCommand(db.sql, owner, schedule, now)
+    assert.deepEqual(
+      await executePilotCommand(db.sql, owner, schedule, now),
+      first,
+    )
+    assert.equal(first.state, 'callback_scheduled')
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        { ...schedule, idempotencyKey: randomUUID() },
+        now,
+      ),
+      'HANDOFF_CHANGED',
+    )
+    const state = await readPilotState(db.sql, owner, now)
+    assert.ok(state.threads.find((t) => t.id === threadId)?.property?.address)
+    assert.equal(state.threads.find((t) => t.id === threadId)?.notes?.length, 1)
+    assert.equal(
+      new Date(
+        state.threads.find((t) => t.id === threadId)!.scheduled_for!,
+      ).toISOString(),
+      '2026-09-15T19:00:00.000Z',
+    )
+    const [work] = await db.sql`select * from work_items`
+    assert.equal(
+      new Date(work.due_at).toISOString(),
+      '2026-09-15T19:00:00.000Z',
+    )
+    await simulateInbound(
+      db.sql,
+      owner,
+      {
+        threadId,
+        eventId: randomUUID(),
+        body: 'Actually, I have another question.',
+      },
+      now,
+    )
+    const outcome = {
+      command: 'HAN-OUTCOME',
+      expectedRevision: 1,
+      idempotencyKey: randomUUID(),
+      payload: {
+        handoffId: result.entityId,
+        outcome: 'conversation_complete',
+        note: 'Spoke with seller; no further follow-up requested.',
+        contentRevision: thread.content_revision,
+      },
+    }
+    await rejects(
+      executePilotCommand(db.sql, owner, outcome, now),
+      'NEW_REPLY_REVIEW_REQUIRED',
+    )
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        ...outcome,
+        payload: {
+          ...outcome.payload,
+          contentRevision: thread.content_revision + 1,
+        },
+      },
+      now,
+    )
+    assert.equal(
+      (await db.sql`select status from work_items`)[0].status,
+      'completed',
+    )
+    assert.equal(
+      (await db.sql`select station from leads`)[0].station,
+      'contacted',
+    )
+    assert.equal(
+      (await db.sql`select state from em_threads where id=${threadId}`)[0]
+        .state,
+      'done',
+    )
+    await simulateInbound(
+      db.sql,
+      owner,
+      { threadId, eventId: randomUUID(), body: 'Unsubscribe me.' },
+      now,
+    )
+    assert.equal(
+      (await db.sql`select state from em_handoffs`)[0].state,
+      'completed',
+    )
+    assert.equal(
+      (await db.sql`select status from work_items`)[0].status,
+      'completed',
+    )
+  },
+)
+
+withDb(
+  'callback update checks current canonical owner and rolls back a broken task projection',
+  async (db) => {
+    const command = await reviewedCallback(db)
+    command.payload.ownerId = owner
+    command.payload.backupId = agent
+    const result = await executePilotCommand(db.sql, owner, command, now)
+    const [t] =
+      await db.sql`select * from em_threads where id=${command.payload.threadId}`
+    const schedule = {
+      command: 'HAN-SCHEDULE',
+      expectedRevision: 0,
+      idempotencyKey: randomUUID(),
+      payload: {
+        handoffId: result.entityId,
+        mode: 'task',
+        startAt: '2026-09-15T19:00:00Z',
+        timezone: 'America/Chicago',
+        contentRevision: t.content_revision,
+      },
+    }
+    await db.sql`update leads set assigned_agent='Demo agent' where id=${t.lead_id}`
+    await rejects(
+      executePilotCommand(db.sql, owner, schedule, now),
+      'CALLBACK_OWNER_CHANGED',
+    )
+    await db.sql`update leads set assigned_agent='Demo owner' where id=${t.lead_id}`
+    await db.sql
+      .unsafe(`create function fixture_fail_update() returns trigger language plpgsql as $$ begin raise exception 'fixture task outage'; end $$;
+    create trigger fixture_update_failure before update on work_items for each row execute function fixture_fail_update()`)
+    await assert.rejects(
+      executePilotCommand(db.sql, owner, schedule, now),
+      /fixture task outage/,
+    )
+    const [h] = await db.sql`select revision,scheduled_for from em_handoffs`
+    assert.equal(h.revision, 0)
+    assert.equal(h.scheduled_for, null)
+  },
+)
 function config(audienceId: string): PilotConfig {
   return {
     audienceId,
