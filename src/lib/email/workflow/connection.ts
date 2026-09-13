@@ -38,3 +38,10 @@ export function emailDatabase() {
   hostedConnection ??= emailPostgres(process.env.EMAIL_DATABASE_URL)
   return hostedConnection
 }
+
+/** Select storage explicitly; command and worker guards still govern effects. */
+export function workflowDatabase() {
+  return process.env.EMAIL_WORKFLOW_MODE === 'simulation'
+    ? pilotDatabase()
+    : emailDatabase()
+}

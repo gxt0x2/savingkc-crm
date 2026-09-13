@@ -188,13 +188,15 @@ export interface PilotSettings {
     affectedWorkHash: string
     affectedThreads: number
   }[]
-  readiness: { state: 'blocked'; sendingEnabled: false; blockers: string[] }
+  readiness: { state: 'blocked' | 'ready'; sendingEnabled: boolean; blockers: string[] }
 }
 export interface PilotState {
   ai_available?: boolean
+  sendingEnabled?: boolean
+  senders?: { id: string; name: string; address: string }[]
   routing: { acquisitionOwnerId: string; backupId: string } | null
   settings: PilotSettings | null
-  mode: 'simulation' | 'disabled'
+  mode: 'simulation' | 'disabled' | 'hosted'
   paused: boolean
   pauseReason?: string | null
   actorId: string

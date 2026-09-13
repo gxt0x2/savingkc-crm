@@ -1,4 +1,5 @@
 import 'server-only'
+import { readHostedReadiness } from '../setup/readiness'
 import type { EmailCommand } from '../contracts'
 import { emailWorkspaceConfigSchema } from '../config'
 import { projectCrmChanges } from '../crm-repairs'
@@ -60,7 +61,7 @@ export async function readSettings(context: Context): Promise<PilotSettings> {
   const { tx, member } = context
   check(member.roles.includes('owner'), 'FORBIDDEN', 403)
   const [workspace] =
-    await tx`select config,revision from em_workspaces where id=${member.workspace_id}`
+    await tx`select config,revision,execution_mode from em_workspaces where id=${member.workspace_id}`
   const config = emailWorkspaceConfigSchema.parse(workspace.config)
   const rows =
     await tx`select m.auth_user_id as id,m.roles,m.active,m.revision,coalesce(p.full_name,'Team member') as name,
@@ -75,14 +76,15 @@ export async function readSettings(context: Context): Promise<PilotSettings> {
       affectedThreads: work.count,
     })
   }
+  const hosted = workspace.execution_mode === 'hosted' ? await readHostedReadiness(tx, member.workspace_id) : null
   return json({
     revision: workspace.revision,
     config,
     members,
     readiness: {
-      state: 'blocked',
-      sendingEnabled: false,
-      blockers: [
+      state: hosted?.ready ? 'ready' : 'blocked',
+      sendingEnabled: hosted?.sendingEnabled ?? false,
+      blockers: hosted?.blockers ?? [
         'Provider connection and sender-domain verification',
         'Canonical CRM and shared Conversations integration',
         'Controlled delivery, reply and opt-out checks',
