@@ -45,7 +45,7 @@ export async function manageHandoff(
   check(newOwner !== p.backupId, 'DISTINCT_BACKUP_REQUIRED')
   const members =
     await tx`select m.auth_user_id,m.roles,a.full_name from em_memberships m
-    join agent_profiles a on a.id=m.agent_profile_id where m.workspace_id=${ws} and m.active`
+    join agent_profiles a on a.id=m.agent_profile_id and a.is_active is distinct from false and (a.user_id is null or a.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.active`
   const eligible = (id: string) =>
     members.find(
       (m) =>

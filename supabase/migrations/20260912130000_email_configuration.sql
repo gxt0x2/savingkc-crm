@@ -103,15 +103,18 @@ DECLARE v_workspace_id uuid;
 BEGIN
   IF to_regclass('auth.users') IS NULL
     OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'agent_profiles' AND column_name = 'email')
-    OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'agent_profiles' AND column_name = 'full_name') THEN
-    RAISE EXCEPTION 'email configuration requires auth.users and the current CRM agent_profiles email/full_name contract';
+    OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'agent_profiles' AND column_name = 'full_name')
+    OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'agent_profiles' AND column_name = 'is_active')
+    OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'agent_profiles' AND column_name = 'user_id') THEN
+    RAISE EXCEPTION 'email configuration requires auth.users and the current CRM agent_profiles email/full_name/is_active/user_id contract';
   END IF;
   INSERT INTO public.em_workspaces (singleton) VALUES (true) ON CONFLICT (singleton) DO UPDATE SET singleton = EXCLUDED.singleton RETURNING id INTO v_workspace_id;
   INSERT INTO public.em_memberships (workspace_id, auth_user_id, agent_profile_id, roles)
   SELECT v_workspace_id, u.id, p.id, ARRAY['owner']::text[]
   FROM public.agent_profiles p
-  JOIN auth.users u ON lower(u.email) = lower(p.email)
-  WHERE COALESCE(p.is_admin, false) OR lower(COALESCE(p.role, '')) = 'owner'
+  JOIN auth.users u ON (p.user_id = u.id OR (p.user_id IS NULL AND lower(u.email) = lower(p.email)))
+  WHERE p.is_active IS DISTINCT FROM false
+    AND (COALESCE(p.is_admin, false) OR lower(COALESCE(p.role, '')) = 'owner')
   ON CONFLICT (workspace_id, auth_user_id) DO NOTHING;
 END $$;
 

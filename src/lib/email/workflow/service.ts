@@ -5,6 +5,12 @@ import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
 import { changeCallback, validateCallbackTime } from './callback-actions'
 import { manageHandoff } from './handoff-management'
+import { draftWithAri } from '../ai/drafting'
+import {
+  configuredEmailAiProvider,
+  emailAiAvailable,
+  type EmailAiProvider,
+} from '../ai/provider'
 import { emailCommandSchema } from '../contracts'
 import { emailWorkspaceConfigSchema } from '../config'
 import { pilotFollowUp, pilotFollowUpExpires, pilotSendSlot } from './schedule'
@@ -40,7 +46,7 @@ function canWork(member: Member) {
 async function membership(tx: Tx, subject: string) {
   const [member] = await tx<
     Member[]
-  >`select m.workspace_id,m.auth_user_id,m.roles from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.auth_user_id=${subject} and m.active`
+  >`select m.workspace_id,m.auth_user_id,m.roles from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.auth_user_id=${subject} and m.active`
   check(member, 'NO_EMAIL_MEMBERSHIP', 403)
   return member
 }
@@ -58,7 +64,7 @@ async function threadFor(context: Context, id: string) {
   )
   return thread
 }
-async function requireHuman(
+export async function requireHuman(
   context: Context,
   id: string,
   contentRevision?: number,
@@ -83,19 +89,28 @@ async function requireHuman(
       thread.controller_revision === controllerRevision,
       'OWNERSHIP_CHANGED',
     )
-  const [mismatch] = await context.tx`select h.id from em_handoffs h
-    join leads l on l.id=h.lead_id
-    join em_memberships m on m.workspace_id=h.workspace_id and m.auth_user_id=h.owner_id
-    join agent_profiles p on p.id=m.agent_profile_id
+  const assignments =
+    await context.tx`select h.id,l.assigned_agent,p.full_name,w.assigned_to
+    from em_handoffs h join leads l on l.id=h.lead_id
+    left join em_memberships m on m.workspace_id=h.workspace_id and m.auth_user_id=h.owner_id and m.active
+    left join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
     left join work_items w on w.work_item_key=h.crm_task_key
-    where h.workspace_id=${context.member.workspace_id} and h.thread_id=${id} and h.crm_sync_state='synced' and h.state<>'completed'
-      and (l.assigned_agent is distinct from p.full_name or w.assigned_to is distinct from p.full_name)`
-  check(!mismatch, 'CALLBACK_OWNER_CHANGED')
+    where h.workspace_id=${context.member.workspace_id} and h.thread_id=${id} and h.crm_sync_state='synced' and h.state<>'completed' for update of l`
+  check(
+    assignments.every(
+      (a) =>
+        a.full_name &&
+        a.assigned_agent === a.full_name &&
+        a.assigned_to === a.full_name,
+    ),
+    'CALLBACK_OWNER_CHANGED',
+  )
   return thread
 }
 async function invalidate(context: Context, threadId: string, reason: string) {
   await context.tx`update em_send_intents set state='cancelled',cancellation_reason=${reason} where workspace_id=${context.member.workspace_id} and thread_id=${threadId} and state in ('queued','held')`
   await context.tx`update em_drafts set state='stale' where workspace_id=${context.member.workspace_id} and thread_id=${threadId} and state='current'`
+  await context.tx`update em_ai_generations set state='stale' where workspace_id=${context.member.workspace_id} and thread_id=${threadId} and state in ('queued','running','ready')`
 }
 async function notify(
   context: Context,
@@ -111,7 +126,7 @@ async function notify(
 /** The workspace lock is the common serialization point for this bounded pilot.
  * Receipt, audit and business writes commit together. No provider I/O occurs
  * within this transaction. Production remote workers remain disabled. */
-async function transact(
+export async function transact(
   sql: Sql,
   subject: string,
   input: { command: string; idempotencyKey: string },
@@ -285,10 +300,20 @@ export async function executePilotCommand(
   subject: string,
   raw: unknown,
   now = new Date(),
+  aiProvider?: EmailAiProvider | null,
 ): Promise<Result> {
   const parsed = emailCommandSchema.safeParse(raw)
   check(parsed.success, 'INVALID_COMMAND', 400)
   const command = parsed.data
+  if (command.command === 'THR-REGENERATE')
+    return draftWithAri(
+      sql,
+      subject,
+      command,
+      now,
+      aiProvider === undefined ? configuredEmailAiProvider() : aiProvider,
+      { transact, requireHuman },
+    )
   return transact(sql, subject, command, now, async (context) => {
     const { tx, member } = context
     const ws = member.workspace_id
@@ -528,7 +553,7 @@ export async function executePilotCommand(
           command.expectedRevision,
         )
         const members =
-          await tx`select m.auth_user_id,m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id in (${p.ownerId},${p.backupId}) and m.active`
+          await tx`select m.auth_user_id,m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id and a.is_active is distinct from false and (a.user_id is null or a.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.auth_user_id in (${p.ownerId},${p.backupId}) and m.active`
         check(
           [p.ownerId, p.backupId].every((id) =>
             members.some(
@@ -619,7 +644,7 @@ export async function executePilotCommand(
         const thread = await threadFor(context, command.payload.threadId)
         check(thread.lead_id, 'LINK_LEAD_FIRST')
         const [actor] =
-          await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id
+          await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
           where m.workspace_id=${ws} and m.auth_user_id=${subject}`
         const [note] =
           await tx`insert into lead_activities(lead_id,activity_type,description,agent,metadata,created_at)
@@ -914,11 +939,11 @@ export async function simulateDelivery(
         const [address] =
           await tx`select normalized_address,verification_state,verification_expires_at from em_addresses where workspace_id=${ws} and id=${intent.address_id}`
         const [responsible] =
-          await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id=${intent.responsible_user_id} and m.active and m.roles && array['owner','marketer','reviewer','acquisitions']::text[]`
+          await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.auth_user_id=${intent.responsible_user_id} and m.active and m.roles && array['owner','marketer','reviewer','acquisitions']::text[]`
         const controllerActive =
           intent.controller !== 'human' ||
           (
-            await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id=${intent.controller_user_id} and m.active and m.roles && array['owner','reviewer','acquisitions']::text[]`
+            await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.auth_user_id=${intent.controller_user_id} and m.active and m.roles && array['owner','reviewer','acquisitions']::text[]`
           ).length > 0
         const stale =
           intent.expected_content_revision !== intent.content_revision ||
@@ -1034,6 +1059,9 @@ export async function readPilotState(
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
       h.revision as handoff_revision,h.scheduled_for,
+      (select jsonb_build_object('id',g.id,'state',g.state,'model',g.model,'output',g.output,'created_at',g.created_at,'estimated_cost_usd',g.estimated_cost_usd,
+        'input_tokens',g.input_tokens,'output_tokens',g.output_tokens,'content_revision',g.content_revision,'controller_revision',g.controller_revision,'failure_code',g.failure_code)
+        from em_ai_generations g where g.workspace_id=t.workspace_id and g.thread_id=t.id order by g.created_at desc,g.id desc limit 1) as ai_generation,
       l.assigned_agent as crm_owner_name,
       (h.crm_sync_state='synced' and h.state<>'completed' and
         (l.assigned_agent is distinct from ho.full_name or w.assigned_to is distinct from ho.full_name)) as callback_owner_changed,
@@ -1061,7 +1089,7 @@ export async function readPilotState(
       join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id
       left join em_handoffs h on h.thread_id=t.id and h.workspace_id=t.workspace_id
       left join em_memberships hm on hm.workspace_id=t.workspace_id and hm.auth_user_id=h.owner_id
-      left join agent_profiles ho on ho.id=hm.agent_profile_id
+      left join agent_profiles ho on ho.id=hm.agent_profile_id and ho.is_active is distinct from false and (ho.user_id is null or ho.user_id=hm.auth_user_id)
       left join em_crm_projection_repairs r on r.thread_id=t.id and r.workspace_id=t.workspace_id and r.state='pending'
       left join leads l on l.id=t.lead_id
       left join work_items w on w.source_kind='activity' and w.source_id=h.crm_task_id
@@ -1085,7 +1113,7 @@ export async function readPilotState(
       ? await tx`select id,name from em_audiences where workspace_id=${ws} and state='ready' order by name`
       : []
     const members =
-      await tx`select m.auth_user_id as id,coalesce(p.full_name,'Team member') as name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.active and m.roles && array['owner','acquisitions']::text[] order by name`
+      await tx`select m.auth_user_id as id,coalesce(p.full_name,'Team member') as name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.active and m.roles && array['owner','acquisitions']::text[] order by name`
     const configuredTeam = emailWorkspaceConfigSchema.parse(
       workspace.config,
     ).team
@@ -1105,6 +1133,7 @@ export async function readPilotState(
       ? await tx`select id,action,created_at from em_audit_events where workspace_id=${ws} order by created_at desc,id desc limit 30`
       : []
     return json({
+      ai_available: emailAiAvailable(),
       mode: workspace.execution_mode,
       paused: !!workspace.pause_reason,
       actorId: subject,
@@ -1124,4 +1153,21 @@ export async function readPilotState(
         : null,
     }) as PilotState
   }) as Promise<PilotState>
+}
+
+/** Private durable generation URL; rechecks current thread access on every read. */
+export async function readPilotGeneration(
+  sql: Sql,
+  subject: string,
+  id: string,
+) {
+  return sql.begin(async (transaction) => {
+    const tx = transaction as unknown as Tx
+    const member = await membership(tx, subject)
+    const [generation] =
+      await tx`select * from em_ai_generations where workspace_id=${member.workspace_id} and id=${id}`
+    check(generation, 'GENERATION_NOT_FOUND', 404)
+    await threadFor({ tx, member, now: new Date() }, generation.thread_id)
+    return json(generation)
+  })
 }

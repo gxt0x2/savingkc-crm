@@ -55,7 +55,7 @@ npm run test:email:local-ui
 npm run dev:email:local
 ```
 
-The harness creates its own temporary PostgreSQL cluster, applies nine named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
+The harness creates its own temporary PostgreSQL cluster, applies ten named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
 
 ## Packet audit
 
@@ -111,3 +111,12 @@ A partial row is intentionally not a completion claim.
 The owner authorized continued implementation on 2026-09-12 without repeated permission requests. Acceptance is now visible; reassignment updates the canonical Lead and its callback together with owner/revision checks and a private new-owner notice. A changed CRM owner is exposed for explicit reconciliation. An unlinked held handoff can be freshly reviewed against the latest inbound message and retried with preserved audit evidence. No-contact/follow-up outcomes require a dated next action; completed/not-fit outcomes finish only the callback and retain the CRM stage. Header Alerts replaces the buried notification list, with recipient-scoped acknowledgment and periodic visible-page refresh. Verified locally: 48 database cases, 50 unit tests, four browser stories, TypeScript, scoped ESLint and design validation.
 
 Remaining in this area: general return-for-clarification, shared ownership changes involving multiple open handoffs, release from restriction/access holds, human qualification integration, timed escalation and hosted CRM-shell verification. Live schema discovery and provider setup are the next active work. No customer send, production schema change or deployment has occurred.
+
+
+## AI drafting and live schema preflight continuation
+
+Ari now has a durable, human-reviewed generation path with exact evidence validation, one provider call per reserved generation, revision/ownership checks, opt-out invalidation, and persisted model/output/usage/cost. The bounded pilot reserves $0.02 per attempt with limits of 10 per hour and 50 per rolling day; failures retain their reservation. No automatic reply, qualification or booking is enabled. Provider errors expose only allowlisted diagnoses. This advances EM-015/016/023; the broader evaluation/publication and autonomy packets remain partial.
+
+Verified: 53 database cases, 57 unit cases, four browser stories (AI disabled), TypeScript and scoped ESLint. The real AI connection reached Vercel AI Gateway using existing OIDC, but the account rejected openai/gpt-5.6-luna with HTTP 403 because paid AI credits are required. No generated reply, provider usage or actual cost was returned, so inference success remains unverified. Local artifacts are in test-results/email-readiness; they contain fabricated data only except aggregate live-schema evidence. Do not describe Ari as operational yet.
+
+Read-only production schema and aggregate checks confirm agent_profiles has is_active and user_id; access and assignment now honor them. Four profiles exist, three have explicit user mappings, none are explicitly inactive. Three stored Google connections include Calendar scope, but their stored access tokens are expired; refresh/access and per-agent calendars still require runtime verification. Stored scope is not proof of a working connection. The installed source constraint excludes email_marketing; the draft bridge migration widens the existing single-column constraint while preserving every existing source. No Email migrations have been deployed. Legacy/API credentials exported by the CLI did not authorize REST reads; the existing CLI management credential did authorize the dedicated read-only query endpoint. No credential was rotated or disclosed.

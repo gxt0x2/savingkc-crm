@@ -14,6 +14,7 @@ import { chicagoDateTime } from '@/lib/email/workflow/schedule'
 import styles from './email-workspace.module.css'
 import { EmailCalendarAgenda } from './email-calendar-agenda'
 import { EmailHandoffActions } from './email-handoff-actions'
+import { EmailAriDraft } from './email-ari-draft'
 
 const detailTabs = [
   ['next', 'Next step'],
@@ -680,44 +681,72 @@ export function EmailThreadPanel({
                         : 'Set follow-up / record outcome'}
                     </button>
                   )}
-                  {owns && proposal?.body && !t.reply_queued && (
-                    <div className={styles.suggestion}>
-                      <small>
-                        Practice suggestion · Live AI is not connected
-                      </small>
-                      <p>{proposal.body}</p>
-                      <div className={styles.actions}>
-                        <button
-                          className={styles.primary}
-                          disabled={blocked}
-                          onClick={() => queueReply(proposal.body)}
-                        >
-                          Approve & queue reply
-                        </button>
-                        <button
-                          disabled={blocked}
-                          onClick={() => {
-                            setEditor({
-                              body: proposal.body,
-                              revision: t.content_revision,
-                              controller: t.controller_revision,
-                            })
-                            if (
-                              window.matchMedia(
-                                '(max-width: 1150px), (max-height: 780px)',
-                              ).matches
-                            )
-                              closeDetails()
-                            requestAnimationFrame(() =>
-                              composer.current?.focus(),
-                            )
-                          }}
-                        >
-                          Edit reply
-                        </button>
-                      </div>
-                    </div>
+                  {owns && inbound && !t.reply_queued && (
+                    <EmailAriDraft
+                      data={data}
+                      thread={t}
+                      busy={blocked}
+                      act={act}
+                      approve={(body) =>
+                        queueReply(
+                          body,
+                          t.content_revision,
+                          t.controller_revision,
+                        )
+                      }
+                      edit={(body) => {
+                        setEditor({
+                          body,
+                          revision: t.content_revision,
+                          controller: t.controller_revision,
+                        })
+                        setComposing(true)
+                        if (window.innerWidth <= 760) setDetails(false)
+                        window.setTimeout(() => composer.current?.focus(), 0)
+                      }}
+                    />
                   )}
+                  {owns &&
+                    proposal?.body &&
+                    !data.ai_available &&
+                    !t.reply_queued && (
+                      <div className={styles.suggestion}>
+                        <small>
+                          Practice suggestion · Live AI is not connected
+                        </small>
+                        <p>{proposal.body}</p>
+                        <div className={styles.actions}>
+                          <button
+                            className={styles.primary}
+                            disabled={blocked}
+                            onClick={() => queueReply(proposal.body)}
+                          >
+                            Approve & queue reply
+                          </button>
+                          <button
+                            disabled={blocked}
+                            onClick={() => {
+                              setEditor({
+                                body: proposal.body,
+                                revision: t.content_revision,
+                                controller: t.controller_revision,
+                              })
+                              if (
+                                window.matchMedia(
+                                  '(max-width: 1150px), (max-height: 780px)',
+                                ).matches
+                              )
+                                closeDetails()
+                              requestAnimationFrame(() =>
+                                composer.current?.focus(),
+                              )
+                            }}
+                          >
+                            Edit reply
+                          </button>
+                        </div>
+                      </div>
+                    )}
                 </>
               )}
               <EmailHandoffActions
@@ -1211,15 +1240,47 @@ export function EmailThreadPanel({
             className={styles.detailPanel}
           >
             <div className={styles.insightStatus}>
-              <strong>Live insights aren’t connected yet</strong>
+              <strong>
+                {data.ai_available
+                  ? 'Ari’s saved analysis'
+                  : 'Live insights aren’t connected yet'}
+              </strong>
               <p>
-                The context below comes from this saved conversation. It is not
-                an AI assessment.
+                {data.ai_available
+                  ? 'Prepare a reply in Next step. Ari’s analysis stays tied to the conversation it reviewed.'
+                  : 'The context below comes from this saved conversation. It is not an AI assessment.'}
               </p>
             </div>
             <button onClick={() => selectDetailTab('next')}>
               Go to Next step
             </button>
+            {t.ai_generation && (
+              <div className={styles.insightCard}>
+                <h4>Saved generation · {t.ai_generation.state}</h4>
+                <small>{time(t.ai_generation.created_at)}</small>
+                {t.ai_generation.state === 'ready' &&
+                  t.ai_generation.output && (
+                    <>
+                      <p>{t.ai_generation.output.summary}</p>
+                      <p>{t.ai_generation.output.reason}</p>
+                      {t.ai_generation.output.evidence.map((e, i) => (
+                        <blockquote key={i}>{e.quote}</blockquote>
+                      ))}
+                    </>
+                  )}
+                <details>
+                  <summary>Generation details</summary>
+                  <p>Model: {t.ai_generation.model}</p>
+                  <p>
+                    Estimated cost:{' '}
+                    {t.ai_generation.estimated_cost_usd === null
+                      ? 'Unavailable'
+                      : `$${Number(t.ai_generation.estimated_cost_usd).toFixed(5)}`}
+                  </p>
+                  <p>Reference: {t.ai_generation.id}</p>
+                </details>
+              </div>
+            )}
             <div className={styles.insightCard}>
               <h4>Seller’s latest reply</h4>
               {inbound ? (

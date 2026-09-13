@@ -52,7 +52,7 @@ export async function changeCallback(
     'CALLBACK_HELD',
   )
   const [owner] =
-    await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id
+    await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
     where m.workspace_id=${member.workspace_id} and m.auth_user_id=${member.auth_user_id} and m.active`
   const [lead] =
     await tx`select assigned_agent,station,is_parked from leads where id=${h.lead_id} for update`

@@ -7,6 +7,7 @@ import {
   executePilotCommand,
   getPilotReview,
   readPilotState,
+  readPilotGeneration,
   WorkflowError,
 } from './service'
 
@@ -70,13 +71,18 @@ export function createWorkflowHttp(dependencies: WorkflowHttpDependencies) {
         const subject = await dependencies.subject(request)
         if (!subject) throw new WorkflowError('SIGN_IN_REQUIRED', 401)
         const campaignId = new URL(request.url).searchParams.get('review')
+        const generationId = new URL(request.url).searchParams.get('generation')
+        if (generationId && !z.string().uuid().safeParse(generationId).success)
+          throw new WorkflowError('INVALID_GENERATION', 400)
         if (campaignId && !z.string().uuid().safeParse(campaignId).success)
           throw new WorkflowError('INVALID_CAMPAIGN', 400)
         const sql = dependencies.database(),
           now = dependencies.now?.() ?? new Date()
-        const data = campaignId
-          ? await getPilotReview(sql, subject, campaignId, now)
-          : await readPilotState(sql, subject, now)
+        const data = generationId
+          ? await readPilotGeneration(sql, subject, generationId)
+          : campaignId
+            ? await getPilotReview(sql, subject, campaignId, now)
+            : await readPilotState(sql, subject, now)
         return Response.json(data, { headers })
       } catch (error) {
         return workflowErrorResponse(error)

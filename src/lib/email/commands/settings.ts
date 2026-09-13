@@ -65,7 +65,7 @@ export async function readSettings(context: Context): Promise<PilotSettings> {
   const rows =
     await tx`select m.auth_user_id as id,m.roles,m.active,m.revision,coalesce(p.full_name,'Team member') as name,
     (p.id is not null) as crm_active
-    from em_memberships m left join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${member.workspace_id} order by m.auth_user_id`
+    from em_memberships m left join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${member.workspace_id} order by m.auth_user_id`
   const members = []
   for (const row of rows) {
     const work = await affectedWork(context, row.id)
@@ -129,7 +129,7 @@ export async function applySettingsCommand(
     const { roles, active } = command.payload
     if (active) {
       const [profile] =
-        await tx`select id from agent_profiles where id=${target.agent_profile_id}`
+        await tx`select id from agent_profiles where id=${target.agent_profile_id} and is_active is distinct from false and (user_id is null or user_id=${target.auth_user_id})`
       check(profile, 'TEAM_MEMBER_INACTIVE')
     }
     const removesOwner =
@@ -138,7 +138,7 @@ export async function applySettingsCommand(
       (!active || !roles.includes('owner'))
     if (removesOwner) {
       const [owners] =
-        await tx`select count(*)::int as count from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id<>${target.auth_user_id} and m.active and m.roles @> array['owner']::text[]`
+        await tx`select count(*)::int as count from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.auth_user_id<>${target.auth_user_id} and m.active and m.roles @> array['owner']::text[]`
       check(owners.count > 0, 'LAST_OWNER')
     }
     const work = await affectedWork(context, target.auth_user_id)
@@ -234,7 +234,7 @@ export async function applySettingsCommand(
         [p.backupId, ['owner', 'acquisitions']],
       ] as const) {
         const [assignee] =
-          await tx`select m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id
+          await tx`select m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id and a.is_active is distinct from false and (a.user_id is null or a.user_id=m.auth_user_id)
           where m.workspace_id=${ws} and m.auth_user_id=${subject} and m.active`
         check(
           assignee && allowed.some((r) => assignee.roles.includes(r)),

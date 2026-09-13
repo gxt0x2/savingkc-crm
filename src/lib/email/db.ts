@@ -29,11 +29,26 @@ export function getEmailAdminDb() {
     ): Promise<EmailMembership | null> {
       const { data, error } = await db
         .from('em_memberships')
-        .select('id,workspace_id,auth_user_id,roles,active,revision')
+        .select(
+          'id,workspace_id,auth_user_id,roles,active,revision,agent_profile_id',
+        )
         .eq('auth_user_id', subject)
         .eq('active', true)
         .maybeSingle()
       if (error) throw error
+      if (!data?.agent_profile_id) return null
+      const { data: profile, error: profileError } = await db
+        .from('agent_profiles')
+        .select('id,is_active,user_id')
+        .eq('id', data.agent_profile_id)
+        .maybeSingle()
+      if (profileError) throw profileError
+      if (
+        !profile ||
+        profile.is_active === false ||
+        (profile.user_id && profile.user_id !== subject)
+      )
+        return null
       return data
         ? {
             id: data.id,

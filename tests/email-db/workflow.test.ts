@@ -2643,3 +2643,318 @@ withDb(
     )
   },
 )
+
+withDb(
+  'live CRM inactive and mismatched profiles cannot read, act or receive new handoffs',
+  async (db) => {
+    const command = await reviewedCallback(db)
+    await db.sql`update agent_profiles set is_active=false where email='agent@savingkc.test'`
+    await rejects(readPilotState(db.sql, agent, now), 'NO_EMAIL_MEMBERSHIP')
+    await rejects(
+      executePilotCommand(db.sql, owner, command, now),
+      'ASSIGNEE_UNAVAILABLE',
+    )
+    assert.equal(
+      (await readPilotState(db.sql, owner, now)).members.some(
+        (m) => m.id === agent,
+      ),
+      false,
+    )
+    await db.sql`update agent_profiles set is_active=true,user_id=${reader} where email='agent@savingkc.test'`
+    await rejects(readPilotState(db.sql, agent, now), 'NO_EMAIL_MEMBERSHIP')
+    await rejects(
+      executePilotCommand(db.sql, owner, command, now),
+      'ASSIGNEE_UNAVAILABLE',
+    )
+    await db.sql`update agent_profiles set user_id=${agent} where email='agent@savingkc.test'`
+    const result = await executePilotCommand(db.sql, owner, command, now)
+    assert.equal(result.state, 'handoff_saved_crm_synced')
+    await db.sql`update agent_profiles set is_active=false where email='agent@savingkc.test'`
+    const state = await readPilotState(db.sql, owner, now)
+    assert.equal(
+      state.threads.find((t) => t.id === command.payload.threadId)!
+        .callback_owner_changed,
+      true,
+    )
+    assert.equal(
+      state.settings!.members.find((m) => m.id === agent)!.crm_active,
+      false,
+    )
+  },
+)
+
+withDb(
+  'Ari stores one generation for concurrent retries and never queues a message itself',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const t = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    const command = {
+      command: 'THR-REGENERATE',
+      idempotencyKey: randomUUID(),
+      payload: {
+        threadId: t.id,
+        contentRevision: t.content_revision,
+        controllerRevision: t.controller_revision,
+      },
+    }
+    let calls = 0
+    const provider = {
+      model: 'fixture-only',
+      async generate(input: {
+        messages: { id: string; direction: string; body: string }[]
+      }) {
+        calls++
+        const latest = input.messages
+          .filter((m) => m.direction === 'inbound')
+          .at(-1)!
+        return {
+          output: {
+            decision: 'reply',
+            body: 'What time would work for a quick call?',
+            summary: 'The seller asked to talk.',
+            reason: 'Clarify a call time.',
+            evidence: [{ messageId: latest.id, quote: latest.body }],
+          },
+          inputTokens: 300,
+          outputTokens: 100,
+        }
+      },
+    }
+    await rejects(
+      executePilotCommand(db.sql, reader, command, now, provider),
+      'FORBIDDEN',
+    )
+    const results = await Promise.all([
+      executePilotCommand(db.sql, owner, command, now, provider),
+      executePilotCommand(db.sql, owner, command, now, provider),
+    ])
+    assert.equal(calls, 1)
+    assert.equal(results[0].entityId, results[1].entityId)
+    const final = await executePilotCommand(
+      db.sql,
+      owner,
+      command,
+      now,
+      provider,
+    )
+    assert.equal(final.state, 'ai_ready')
+    assert.equal(calls, 1)
+    const [generation] = await db.sql`select * from em_ai_generations`
+    assert.equal(generation.state, 'ready')
+    assert.equal(generation.input_tokens, 300)
+    assert.equal(
+      generation.output.body,
+      'What time would work for a quick call?',
+    )
+    assert.equal(
+      (await db.sql`select * from em_send_intents where origin='human'`).length,
+      0,
+    )
+    assert.equal(
+      (await readPilotState(db.sql, owner, now)).threads.find(
+        (x) => x.id === t.id,
+      )!.ai_generation!.id,
+      generation.id,
+    )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        {
+          ...command,
+          idempotencyKey: randomUUID(),
+          payload: { ...command.payload, contentRevision: 0 },
+        },
+        now,
+        provider,
+      ),
+      'NEW_REPLY_REVIEW_REQUIRED',
+    )
+    const http = createWorkflowHttp({
+      subject: async () => reader,
+      database: () => db.sql,
+      now: () => now,
+    })
+    const response = await http.GET(
+      new Request(
+        `http://localhost/api/email/workspace?generation=${generation.id}`,
+      ),
+    )
+    assert.equal(response.status, 404)
+  },
+)
+
+withDb(
+  'new inbound during Ari inference preserves stale output and blocks approval',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const t = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    let started!: () => void, finish!: () => void
+    const entered = new Promise<void>((r) => (started = r)),
+      hold = new Promise<void>((r) => (finish = r))
+    const pending = executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'THR-REGENERATE',
+        idempotencyKey: randomUUID(),
+        payload: {
+          threadId: t.id,
+          contentRevision: t.content_revision,
+          controllerRevision: t.controller_revision,
+        },
+      },
+      now,
+      {
+        model: 'fixture-only',
+        async generate(input) {
+          started()
+          await hold
+          const m = input.messages.at(-1)!
+          return {
+            output: {
+              decision: 'reply',
+              body: 'What time works for a call?',
+              summary: 'Call requested.',
+              reason: 'Confirm time.',
+              evidence: [{ messageId: m.id, quote: m.body }],
+            },
+          }
+        },
+      },
+    )
+    await entered
+    await simulateInbound(
+      db.sql,
+      owner,
+      {
+        threadId: t.id,
+        eventId: randomUUID(),
+        body: 'Please stop emailing me.',
+      },
+      new Date(now.getTime() + 1000),
+    )
+    finish()
+    const result = await pending
+    assert.equal(result.state, 'ai_stale')
+    const [generation] = await db.sql`select * from em_ai_generations`
+    assert.equal(generation.state, 'stale')
+    assert.ok(generation.output.body)
+    assert.equal(generation.estimated_cost_usd, null)
+    assert.equal(
+      (await db.sql`select * from em_send_intents where origin='human'`).length,
+      0,
+    )
+  },
+)
+
+withDb(
+  'Ari failure persists unknown usage and request replay cannot repeat a charge',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const t = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    const command = {
+      command: 'THR-REGENERATE',
+      idempotencyKey: randomUUID(),
+      payload: {
+        threadId: t.id,
+        contentRevision: t.content_revision,
+        controllerRevision: t.controller_revision,
+      },
+    }
+    let calls = 0
+    const provider = {
+      model: 'fixture-only',
+      async generate() {
+        calls++
+        throw Error('private provider credential must not be retained')
+      },
+    }
+    assert.equal(
+      (await executePilotCommand(db.sql, owner, command, now, provider)).state,
+      'ai_failed',
+    )
+    assert.equal(
+      (await executePilotCommand(db.sql, owner, command, now, provider)).state,
+      'ai_failed',
+    )
+    assert.equal(calls, 1)
+    const [g] = await db.sql`select * from em_ai_generations`
+    assert.equal(g.failure_code, 'AI_GENERATION_FAILED')
+    assert.equal(g.estimated_cost_usd, null)
+    assert.equal(Number(g.reserved_cost_usd), 0.02)
+  },
+)
+
+withDb(
+  'Ari requires a connection, current authority and shared hourly allowance',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const t = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    const command = {
+      command: 'THR-REGENERATE',
+      idempotencyKey: randomUUID(),
+      payload: {
+        threadId: t.id,
+        contentRevision: t.content_revision,
+        controllerRevision: t.controller_revision,
+      },
+    }
+    await rejects(
+      executePilotCommand(db.sql, owner, command, now, null),
+      'AI_NOT_CONNECTED',
+    )
+    let calls = 0
+    const provider = {
+      model: 'fixture-only',
+      async generate() {
+        calls++
+        return {
+          output: {
+            decision: 'review',
+            body: '',
+            summary: 'Review needed.',
+            reason: 'Human judgment required.',
+            evidence: [],
+          },
+        }
+      },
+    }
+    for (let i = 0; i < 10; i++)
+      await executePilotCommand(
+        db.sql,
+        owner,
+        {
+          ...command,
+          idempotencyKey: randomUUID(),
+          payload: { ...command.payload, instruction: `Review variation ${i}` },
+        },
+        now,
+        provider,
+      )
+    await rejects(
+      executePilotCommand(
+        db.sql,
+        owner,
+        {
+          ...command,
+          idempotencyKey: randomUUID(),
+          payload: { ...command.payload, instruction: 'One too many' },
+        },
+        now,
+        provider,
+      ),
+      'AI_BUDGET_REACHED',
+    )
+    assert.equal(calls, 10)
+    assert.equal((await db.sql`select * from em_ai_generations`).length, 10)
+  },
+)

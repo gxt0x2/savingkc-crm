@@ -4,6 +4,7 @@ import { createWorkflowHttp } from '@/lib/email/workflow/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 const handlers = createWorkflowHttp({
   subject: async (request) =>
     (await resolveAuthenticatedActor(request))?.subject ?? null,

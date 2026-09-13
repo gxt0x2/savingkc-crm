@@ -24,6 +24,13 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  AI_NOT_CONNECTED: 'Ari is not connected yet. Your draft has not changed.',
+  AI_BUDGET_REACHED:
+    'The small AI pilot allowance has been reached. You can still write replies manually.',
+  AI_CONTEXT_TOO_LARGE:
+    'This conversation is too long for the current AI pilot. Review and write the reply manually.',
+  REPLY_REQUIRED:
+    'Wait for a seller reply before asking Ari to draft a response.',
   NEXT_ACTION_REQUIRED:
     'Choose the next action and its due date before saving this outcome.',
   INVALID_OUTCOME_TIME: 'The outcome cannot be recorded in the future.',
@@ -294,6 +301,12 @@ export function EmailWorkspace({
             callback_not_fit:
               'Email callback closed as not a fit. The CRM stage stays unchanged.',
             callback_accepted: 'Callback accepted.',
+            ai_ready: 'Ari’s suggestion is ready for review.',
+            ai_running: 'Ari is already preparing this reply.',
+            ai_queued: 'Ari’s draft request is saved.',
+            ai_failed: 'Ari could not finish. No reply was queued.',
+            ai_stale:
+              'The conversation changed while Ari was working. The saved result cannot be approved.',
             callback_reassigned:
               'Lead and callback assigned. The new owner has an acceptance notification.',
             conversation_done: 'Conversation marked done.',

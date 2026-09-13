@@ -92,6 +92,25 @@ export interface PilotThread {
   callback_due_at: string | null
   requested_contact: { phone?: string; requestedTimeText?: string } | null
   handoff_revision?: number | null
+  ai_generation?: {
+    id: string
+    state: 'queued' | 'running' | 'ready' | 'stale' | 'failed'
+    model: string
+    output: {
+      decision: 'reply' | 'review' | 'stop'
+      body: string
+      summary: string
+      reason: string
+      evidence: { messageId: string; quote: string }[]
+    } | null
+    content_revision: number
+    controller_revision: number
+    created_at: string
+    failure_code: string | null
+    input_tokens: number | null
+    output_tokens: number | null
+    estimated_cost_usd: number | string | null
+  } | null
   crm_owner_name?: string | null
   callback_owner_changed?: boolean
   open_task_count?: number
@@ -164,6 +183,7 @@ export interface PilotSettings {
   readiness: { state: 'blocked'; sendingEnabled: false; blockers: string[] }
 }
 export interface PilotState {
+  ai_available?: boolean
   routing: { acquisitionOwnerId: string; backupId: string } | null
   settings: PilotSettings | null
   mode: 'simulation' | 'disabled'

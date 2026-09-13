@@ -84,7 +84,7 @@ export async function startDisposableDatabase() {
     await sql.unsafe(`create role anon; create role authenticated; create role service_role bypassrls;
       create schema auth;
       create table auth.users(id uuid primary key,email text not null unique);
-      create table agent_profiles(id uuid primary key,email text not null unique,full_name text,is_admin boolean,role text);`)
+      create table agent_profiles(id uuid primary key,email text not null unique,full_name text,is_admin boolean,role text,is_active boolean default true,user_id uuid);`)
     await sql`insert into auth.users(id,email) values
       (${fixtureOwner},'owner@savingkc.test'),
       (${fixtureAgent},'agent@savingkc.test'),
@@ -94,7 +94,10 @@ export async function startDisposableDatabase() {
       (${fixtureAgentProfile},'agent@savingkc.test','Demo agent',false,'agent'),
       (${fixtureReaderProfile},'reader@savingkc.test','Demo reader',false,'agent')`
     await sql.unsafe(
-      await readFile(path.join(root, 'tests/email-local/crm-fixture.sql'), 'utf8'),
+      await readFile(
+        path.join(root, 'tests/email-local/crm-fixture.sql'),
+        'utf8',
+      ),
     )
     await sql.unsafe(
       await readFile(
@@ -115,6 +118,7 @@ export async function startDisposableDatabase() {
       '20260912181000_email_crm_identity_guard.sql',
       '20260912182000_email_crm_projection_repairs.sql',
       '20260913010000_email_action_workspace.sql',
+      '20260913020000_email_ai_generations.sql',
     ]) {
       await sql.unsafe(
         await readFile(path.join(root, 'supabase/migrations', name), 'utf8'),
@@ -152,8 +156,7 @@ export async function startDisposableDatabase() {
           ${person.id},'email',${email},${email},true,${verification},
           'not_applicable'
         )`
-      const [canonicalProperty] =
-        await sql`insert into crm_properties(
+      const [canonicalProperty] = await sql`insert into crm_properties(
           normalized_address,address,city,state,zip,county,parcel_id,
           property_type,bedrooms,bathrooms,sqft,year_built
         ) values(
@@ -161,8 +164,7 @@ export async function startDisposableDatabase() {
           ${propertyAddress},'Kansas City','MO','64111','Jackson',${parcelId},
           'single_family',3,2,1400,1950
         ) returning id`
-      const [party] =
-        await sql`insert into em_parties(
+      const [party] = await sql`insert into em_parties(
           workspace_id,display_name,kind,identity_state,canonical_person_id,
           identity_evidence
         ) values(
