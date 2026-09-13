@@ -25,6 +25,7 @@ The local harness applies eighteen named Email migrations including `20260913190
 - `npm run test:email:workflow` — 88 passed (serial, PostgreSQL 16, `LC_ALL=C`)
 - `npm run test:email:local-ui` — 8 browser stories passed
 - Manual practice-app walkthrough: save → deterministic examples → case drilldown → publish → draft-only default → Readiness stays blocked. Live send was not enabled.
+- Ops-verify follow-up: 106 unit tests, 3 productization DB cases, 8 browser stories (including intended-domain ops copy). Connections/Readiness show landed DNS with `sendingReady=false`.
 
 ## Robin vs Ernest (authoritative)
 
