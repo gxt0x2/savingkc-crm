@@ -298,7 +298,9 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
     contentRevision: revision.optional(),
   }).strict()),
   command('HAN-QUALIFY', z.object({
-    handoffId: uuid, leadId: uuid, leadRevision: revision, assessment: qualificationAssessmentSchema,
+    handoffId: uuid, leadId: uuid,
+    leadRevision: z.number().min(0).transform((n) => Math.round(n)),
+    assessment: qualificationAssessmentSchema,
     nextAction: nonEmpty.max(2_000), evidenceIds: z.array(uuid).min(1).max(100),
   }).strict()),
   command('HAN-RETURN', z.object({ handoffId: uuid, question: shortText, reviewerId: uuid }).strict()),

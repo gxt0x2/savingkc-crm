@@ -50,6 +50,28 @@ describe('email command contracts', () => {
     }).success).toBe(false)
   })
 
+  it('accepts a fractional Lead clock and stores it as integer milliseconds', () => {
+    const parsed = emailCommandSchema.safeParse({
+      command: 'HAN-QUALIFY', idempotencyKey: key,
+      payload: {
+        handoffId: id, leadId: id, leadRevision: 1_725_000_000_000.4,
+        assessment: {
+          personAuthority: { state: 'confirmed', evidenceIds: [id] }, propertyRef: '123 Main Street',
+          timeline: { state: 'verified', evidenceIds: [id], note: '30 days' },
+          condition: { state: 'verified', evidenceIds: [id], note: 'Fair' },
+          motivation: { state: 'verified', evidenceIds: [id], note: 'Inherited' },
+          price: { state: 'verified', evidenceIds: [id], note: '$100,000' },
+          whyWorthPursuing: 'Seller asked to discuss a possible sale.',
+        },
+        nextAction: 'Call after 2 PM', evidenceIds: [id],
+      },
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success && parsed.data.command === 'HAN-QUALIFY') {
+      expect(parsed.data.payload.leadRevision).toBe(1_725_000_000_000)
+    }
+  })
+
   it('does not let an acquisitions qualification omit one of the four evidence pillars', () => {
     expect(emailCommandSchema.safeParse({
       command: 'HAN-QUALIFY', idempotencyKey: key,

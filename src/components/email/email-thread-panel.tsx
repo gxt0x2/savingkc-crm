@@ -136,7 +136,7 @@ export function EmailThreadPanel({
     qualifyNext.trim() &&
     Boolean(t.property?.address) &&
     t.lead_id &&
-    t.lead_revision != null
+    Number.isFinite(Number(t.lead_revision))
   const [localError, setLocalError] = useState('')
   const [working, setWorking] = useState(false)
   const scheduleRequest = useRef<{ fingerprint: string; key: string } | null>(
@@ -1381,7 +1381,7 @@ export function EmailThreadPanel({
                         payload: {
                           handoffId: t.handoff_id,
                           leadId: t.lead_id,
-                          leadRevision: Number(t.lead_revision),
+                          leadRevision: Math.round(Number(t.lead_revision)),
                           nextAction: qualifyNext.trim(),
                           evidenceIds: [inbound.id],
                           assessment: {

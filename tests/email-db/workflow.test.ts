@@ -4024,7 +4024,7 @@ async function qualifyPayload(
     payload: {
       handoffId,
       leadId: t.lead_id!,
-      leadRevision: Number(t.lead_revision),
+      leadRevision: Math.round(Number(t.lead_revision)),
       nextAction: 'Call to confirm next steps',
       evidenceIds: [inbound.id],
       assessment: {
@@ -4342,7 +4342,7 @@ withDb(
       handoff.entityId,
       initial.payload.threadId,
     )
-    stale.payload.leadRevision = stale.payload.leadRevision - 1
+    stale.payload.leadRevision = stale.payload.leadRevision - 1_000
     await rejects(executePilotCommand(db.sql, agent, stale, now), 'LEAD_CHANGED')
     const command = await qualifyPayload(
       db,
