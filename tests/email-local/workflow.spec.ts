@@ -77,6 +77,21 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await expect(
     drawer.getByRole('tab', { name: 'Next step', exact: true }),
   ).toHaveAttribute('aria-selected', 'true')
+  await drawer
+    .getByRole('button', { name: 'Accept callback', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('Callback accepted')
+  await expect(
+    drawer.getByRole('button', { name: 'Callback accepted', exact: true }),
+  ).toBeDisabled()
+  await page.getByRole('button', { name: /^Alerts/ }).click()
+  const alerts = page.getByRole('region', { name: 'Your Email alerts' })
+  await expect(alerts).toBeVisible()
+  await alerts
+    .getByRole('button', { name: /^Open / })
+    .first()
+    .click()
+  await expect(alerts).toBeHidden()
   await expect(
     page
       .getByRole('region', { name: 'Selected conversation' })
@@ -138,6 +153,20 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await expect(agenda).toContainText(
     'Google Calendar events are not connected.',
   )
+  await drawer.getByText('Record call outcome', { exact: true }).click()
+  await drawer
+    .getByLabel('Call result', { exact: true })
+    .selectOption('no_contact')
+  await expect(
+    drawer.getByLabel('Next action time (Chicago)', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    drawer.getByRole('button', {
+      name: 'Save outcome & follow-up',
+      exact: true,
+    }),
+  ).toBeDisabled()
+  await drawer.getByText('Record call outcome', { exact: true }).click()
   await page
     .getByRole('button', { name: 'Local testing controls', exact: true })
     .click()

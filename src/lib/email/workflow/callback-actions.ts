@@ -12,6 +12,12 @@ export async function changeCallback(
     accept?: boolean
     title?: string
     note?: string
+    outcome?:
+      | 'conversation_complete'
+      | 'follow_up'
+      | 'no_contact'
+      | 'not_qualified'
+    outcomeNote?: string
   },
   key: string,
 ) {
@@ -49,7 +55,13 @@ export async function changeCallback(
     await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id
     where m.workspace_id=${member.workspace_id} and m.auth_user_id=${member.auth_user_id} and m.active`
   const [lead] =
-    await tx`select assigned_agent from leads where id=${h.lead_id} for update`
+    await tx`select assigned_agent,station,is_parked from leads where id=${h.lead_id} for update`
+  check(
+    lead &&
+      !lead.is_parked &&
+      !['dead', 'closed_won', 'closed_lost'].includes(lead.station),
+    'CRM_RECORD_HELD',
+  )
   check(
     owner?.full_name &&
       lead?.assigned_agent === owner.full_name &&
@@ -67,6 +79,13 @@ export async function changeCallback(
           status: 'completed',
           completed_at: now.toISOString(),
           completion_note: change.completeNote,
+        }
+      : {}),
+    ...(change.outcome
+      ? {
+          email_outcome: change.outcome,
+          email_outcome_note: change.outcomeNote,
+          email_outcome_at: now.toISOString(),
         }
       : {}),
     last_changed_by: member.auth_user_id,
@@ -88,9 +107,21 @@ export async function changeCallback(
   await tx`update em_handoffs set revision=revision+1,state=${change.completeNote ? 'completed' : 'acknowledged'},
     scheduled_for=${change.dueAt ?? (change.completeNote ? null : h.scheduled_for)},
     callback_due_at=${change.dueAt ?? h.callback_due_at} where id=${h.id}`
-  if (change.completeNote) {
+  await tx`update em_notifications set acknowledged_at=coalesce(acknowledged_at,${now})
+    where workspace_id=${member.workspace_id} and thread_id=${h.thread_id} and recipient_id=${member.auth_user_id}
+    and logical_key like 'handoff:%'`
+  if (change.outcomeNote || change.completeNote) {
     await tx`insert into lead_activities(lead_id,activity_type,description,agent,metadata,created_at)
-      values(${h.lead_id},'note',${change.completeNote},${owner.full_name},${tx.json({ origin: 'email_marketing', em_thread_id: h.thread_id })},${now})`
+      values(${h.lead_id},'note',${change.outcomeNote ?? change.completeNote!},${owner.full_name},${tx.json(
+        {
+          origin: 'email_marketing',
+          em_thread_id: h.thread_id,
+          em_handoff_id: h.id,
+          email_outcome: change.outcome ?? 'conversation_complete',
+        },
+      )},${now})`
+  }
+  if (change.completeNote) {
     await tx`update em_threads set state='done' where workspace_id=${member.workspace_id} and id=${h.thread_id}`
   } else if (change.dueAt) {
     await tx`update em_threads set state='waiting' where workspace_id=${member.workspace_id} and id=${h.thread_id}`
@@ -98,10 +129,30 @@ export async function changeCallback(
   return {
     entityId: h.id,
     revision: h.revision + 1,
-    state: change.completeNote
-      ? 'callback_completed'
-      : change.dueAt
-        ? 'callback_scheduled'
-        : 'callback_accepted',
+    state:
+      change.outcome === 'not_qualified'
+        ? 'callback_not_fit'
+        : change.completeNote
+          ? 'callback_completed'
+          : change.dueAt
+            ? 'callback_scheduled'
+            : 'callback_accepted',
   }
+}
+
+export function validateCallbackTime(start: Date, now: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(start)
+  const part = (name: string) => parts.find((p) => p.type === name)?.value ?? ''
+  check(
+    start > now &&
+      !['Sat', 'Sun'].includes(part('weekday')) &&
+      Number(part('hour')) * 60 + Number(part('minute')) >= 510,
+    'INVALID_CALLBACK_TIME',
+  )
 }

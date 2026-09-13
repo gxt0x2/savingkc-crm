@@ -278,7 +278,11 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
   command('INB-DELETEVIEW', z.object({ viewId: uuid, expectedRevision: revision }).strict()),
 
   command('HAN-ACCEPT', z.object({ handoffId: uuid }).strict()),
-  command('HAN-REASSIGN', z.object({ handoffId: uuid, newOwnerId: uuid, reason: shortText }).strict()),
+  command('HAN-REASSIGN', z.object({ handoffId: uuid, newOwnerId: uuid, backupId: uuid, reason: shortText,
+    expectedCrmOwner: z.string().nullable(), contentRevision: revision, controllerRevision: revision }).strict()),
+  command('HAN-RESOLVE', z.object({ handoffId: uuid, ownerId: uuid, backupId: uuid, reason: shortText,
+    positiveSellerInterest: z.boolean(), requestedContact: z.object({ phone: z.string().trim().min(1).max(100).optional(), requestedTimeText: shortText.optional() }).strict(),
+    factEvidence: evidenceList, contentRevision: revision, controllerRevision: revision }).strict()),
   command('HAN-SCHEDULE', z.object({
     title: nonEmpty.max(200).optional(), note: z.string().trim().max(2000).optional(),
     handoffId: uuid, mode: z.enum(['task', 'calendar']), startAt: isoDateTime,
@@ -287,7 +291,7 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
   }).strict()),
   command('HAN-OUTCOME', z.object({
     handoffId: uuid, outcome: z.enum(['conversation_complete', 'follow_up', 'no_contact', 'not_qualified']),
-    note: shortText, nextAction: z.string().trim().min(1).max(2_000).optional(), completedAt: isoDateTime.optional(),
+    note: shortText, nextAction: z.string().trim().min(1).max(200).optional(), nextDueAt: isoDateTime.optional(), completedAt: isoDateTime.optional(),
     contentRevision: revision.optional(),
   }).strict()),
   command('HAN-QUALIFY', z.object({

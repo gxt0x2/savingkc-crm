@@ -13,6 +13,7 @@ import {
 import { chicagoDateTime } from '@/lib/email/workflow/schedule'
 import styles from './email-workspace.module.css'
 import { EmailCalendarAgenda } from './email-calendar-agenda'
+import { EmailHandoffActions } from './email-handoff-actions'
 
 const detailTabs = [
   ['next', 'Next step'],
@@ -104,6 +105,13 @@ export function EmailThreadPanel({
   const [taskTitle, setTaskTitle] = useState(t.callback_title ?? 'Call seller')
   const [taskNote, setTaskNote] = useState(t.callback_notes ?? '')
   const [outcome, setOutcome] = useState('')
+  const [outcomeKind, setOutcomeKind] = useState<
+    'conversation_complete' | 'follow_up' | 'no_contact' | 'not_qualified'
+  >('conversation_complete')
+  const [nextAction, setNextAction] = useState('')
+  const [outcomeDue, setOutcomeDue] = useState('')
+  const outcomeRemainsOpen =
+    outcomeKind === 'follow_up' || outcomeKind === 'no_contact'
   const [localError, setLocalError] = useState('')
   const [working, setWorking] = useState(false)
   const [scheduleRevision, setScheduleRevision] = useState({
@@ -551,14 +559,16 @@ export function EmailThreadPanel({
                 <>
                   <p>
                     {t.state === 'stopped' ? 'Marketing is stopped. ' : ''}
-                    {t.crm_callback_repair_required
-                      ? 'The callback hold has not reached CRM. Review this task before calling.'
-                      : t.crm_history_repair_required
-                        ? 'Some conversation history has not reached CRM.'
-                        : t.handoff_state === 'held' ||
-                            t.callback_task_state === 'blocked'
-                          ? 'Callback held for review. Resolve the hold before calling.'
-                          : `Review ${t.crm_sync_reason?.replaceAll('_', ' ') ?? 'the CRM connection'} before continuing.`}
+                    {t.callback_owner_changed
+                      ? 'CRM and callback ownership differ. Review the current assignment before acting.'
+                      : t.crm_callback_repair_required
+                        ? 'The callback hold has not reached CRM. Review this task before calling.'
+                        : t.crm_history_repair_required
+                          ? 'Some conversation history has not reached CRM.'
+                          : t.handoff_state === 'held' ||
+                              t.callback_task_state === 'blocked'
+                            ? 'Callback held for review. Resolve the hold before calling.'
+                            : `Review ${t.crm_sync_reason?.replaceAll('_', ' ') ?? 'the CRM connection'} before continuing.`}
                   </p>
                   {repair && data.roles.includes('owner') && (
                     <button
@@ -645,6 +655,23 @@ export function EmailThreadPanel({
                   )}
                   {taskEditable && (
                     <button
+                      disabled={blocked || t.handoff_state === 'acknowledged'}
+                      onClick={() =>
+                        act({
+                          command: 'HAN-ACCEPT',
+                          idempotencyKey: crypto.randomUUID(),
+                          expectedRevision: t.handoff_revision ?? 0,
+                          payload: { handoffId: t.handoff_id! },
+                        })
+                      }
+                    >
+                      {t.handoff_state === 'acknowledged'
+                        ? 'Callback accepted'
+                        : 'Accept callback'}
+                    </button>
+                  )}
+                  {taskEditable && (
+                    <button
                       disabled={blocked}
                       onClick={() => openDetails('followups')}
                     >
@@ -693,6 +720,13 @@ export function EmailThreadPanel({
                   )}
                 </>
               )}
+              <EmailHandoffActions
+                key={t.handoff_id}
+                data={data}
+                thread={t}
+                act={act}
+                busy={blocked}
+              />
             </section>
           </section>
           <section
@@ -1010,20 +1044,60 @@ export function EmailThreadPanel({
                     className={styles.drawerForm}
                     onSubmit={async (e) => {
                       e.preventDefault()
+                      setLocalError('')
+                      let nextDueAt: string | undefined
+                      if (outcomeRemainsOpen) {
+                        try {
+                          nextDueAt = chicagoDateTime(outcomeDue).toISOString()
+                        } catch {
+                          setLocalError('Choose a valid Chicago date and time.')
+                          return
+                        }
+                      }
                       const r = await act({
                         command: 'HAN-OUTCOME',
                         idempotencyKey: crypto.randomUUID(),
                         expectedRevision: scheduleRevision.handoff,
                         payload: {
                           handoffId: t.handoff_id!,
-                          outcome: 'conversation_complete',
+                          outcome: outcomeKind,
                           note: outcome,
+                          ...(outcomeRemainsOpen
+                            ? { nextAction, nextDueAt }
+                            : {}),
                           contentRevision: scheduleRevision.thread,
                         },
                       })
-                      if (r) setOutcome('')
+                      if (r) {
+                        setOutcome('')
+                        setOutcomeDue('')
+                        setNextAction('')
+                        setScheduleRevision({
+                          thread: t.content_revision,
+                          handoff: scheduleRevision.handoff + 1,
+                        })
+                      }
                     }}
                   >
+                    <label>
+                      Result
+                      <select
+                        aria-label="Call result"
+                        value={outcomeKind}
+                        onChange={(e) =>
+                          setOutcomeKind(e.target.value as typeof outcomeKind)
+                        }
+                      >
+                        <option value="conversation_complete">
+                          Conversation complete
+                        </option>
+                        <option value="follow_up">Follow-up needed</option>
+                        <option value="no_contact">No contact</option>
+                        <option value="not_qualified">
+                          Not a fit for this outreach
+                        </option>
+                      </select>
+                    </label>
                     <label>
                       Call outcome
                       <textarea
@@ -1035,11 +1109,44 @@ export function EmailThreadPanel({
                         maxLength={2000}
                       />
                     </label>
-                    <button disabled={blocked || !outcome.trim()}>
-                      Complete callback
+                    {outcomeRemainsOpen && (
+                      <>
+                        <label>
+                          Next action
+                          <input
+                            value={nextAction}
+                            onChange={(e) => setNextAction(e.target.value)}
+                            required
+                            maxLength={200}
+                          />
+                        </label>
+                        <label>
+                          Next action time (Chicago)
+                          <input
+                            type="datetime-local"
+                            value={outcomeDue}
+                            onChange={(e) => setOutcomeDue(e.target.value)}
+                            required
+                          />
+                        </label>
+                      </>
+                    )}
+                    <button
+                      disabled={
+                        blocked ||
+                        !outcome.trim() ||
+                        (outcomeRemainsOpen &&
+                          (!nextAction.trim() || !outcomeDue))
+                      }
+                    >
+                      {outcomeRemainsOpen
+                        ? 'Save outcome & follow-up'
+                        : 'Complete callback'}
                     </button>
                     <small>
-                      Completes this task. Does not qualify an Opportunity.
+                      {outcomeRemainsOpen
+                        ? 'Keeps this callback open with its next action.'
+                        : 'Completes this callback only. The CRM stage stays unchanged.'}
                     </small>
                   </form>
                 </details>

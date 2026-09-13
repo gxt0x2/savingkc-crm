@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { EmailCommand } from '@/lib/email/contracts'
 import {
   matchesView,
@@ -13,6 +13,7 @@ import {
 import styles from './email-workspace.module.css'
 import { EmailSetup } from './email-setup'
 import { EmailThreadPanel } from './email-thread-panel'
+import { EmailNotifications } from './email-notifications'
 import { nextWork } from '@/lib/email/workflow/presentation'
 
 const views: [InboxView, string][] = [
@@ -23,6 +24,19 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  NEXT_ACTION_REQUIRED:
+    'Choose the next action and its due date before saving this outcome.',
+  INVALID_OUTCOME_TIME: 'The outcome cannot be recorded in the future.',
+  ASSIGNEE_UNAVAILABLE:
+    'Choose an active acquisitions agent and a different backup.',
+  ASSIGNEE_AMBIGUOUS:
+    'Two active profiles share this name. Resolve the team profiles before assigning.',
+  CRM_RECORD_HELD:
+    'This CRM record is parked or closed. Review it in the CRM before continuing.',
+  MULTIPLE_HANDOFFS_REQUIRE_REVIEW:
+    'This Lead has another open Email handoff. Review both assignments together before changing the owner.',
+  HANDOFF_NOT_RESOLVABLE:
+    'This request has already been linked or its status changed. Refresh to see the current action.',
   CALLBACK_OWNER_REQUIRED: 'This callback belongs to another agent.',
   CALLBACK_OWNER_CHANGED:
     'CRM ownership changed. Resolve the assignment before updating this task.',
@@ -183,11 +197,13 @@ export function EmailWorkspace({
     'I might consider selling. Call me at 816-555-0101. Tomorrow afternoon works.',
   )
 
+  const requestSequence = useRef(0)
   const refresh = useCallback(async () => {
+    const request = ++requestSequence.current
     const response = await fetch('/api/email/workspace', { cache: 'no-store' })
     const body = await response.json()
     if (!response.ok) throw new Error(body.error?.code ?? body.error)
-    setData(body)
+    if (request === requestSequence.current) setData(body)
     return body as PilotState
   }, [])
   useEffect(() => {
@@ -204,7 +220,27 @@ export function EmailWorkspace({
     }
   }, [refresh])
 
+  useEffect(() => {
+    if (busy || loading) return
+    let active = true
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      refresh().catch((e) => {
+        if (active)
+          setError(
+            friendly[e.message] ??
+              'Email refresh failed. Your saved work is unchanged.',
+          )
+      })
+    }, 30000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [busy, loading, refresh])
+
   async function act(command: EmailCommand) {
+    ++requestSequence.current
     setBusy(true)
     setError('')
     setNotice('')
@@ -255,7 +291,11 @@ export function EmailWorkspace({
               'Follow-up task saved. No calendar invitation was sent.',
             callback_completed:
               'Callback completed. The record remains at its current CRM stage.',
+            callback_not_fit:
+              'Email callback closed as not a fit. The CRM stage stays unchanged.',
             callback_accepted: 'Callback accepted.',
+            callback_reassigned:
+              'Lead and callback assigned. The new owner has an acceptance notification.',
             conversation_done: 'Conversation marked done.',
             crm_repair_resolved:
               'CRM history and callback updates are current.',
@@ -399,6 +439,22 @@ export function EmailWorkspace({
           ))}
         </nav>
         <div className={styles.headerRight}>
+          {data && (
+            <EmailNotifications
+              data={data}
+              busy={busy}
+              act={act}
+              openThread={(id) => {
+                setSection('inbox')
+                setView('all')
+                setMine(false)
+                setOnlyUnsubscribed(false)
+                setSearch('')
+                setCampaignFilter('')
+                setThreadId(id)
+              }}
+            />
+          )}
           <span className={styles.mode}>
             {data?.paused ? 'Paused' : 'Live sending off'}
           </span>
@@ -974,38 +1030,6 @@ export function EmailWorkspace({
                     question. Don’t invent pain or infer selling intent from an
                     email open.
                   </p>
-                </section>
-                <section>
-                  <h3>Notifications</h3>
-                  {data.notifications.length ? (
-                    data.notifications.map((n) => (
-                      <div className={styles.notification} key={n.id}>
-                        <span>
-                          {n.kind === 'team_member_work_held'
-                            ? 'Team access changed — work needs review'
-                            : n.kind}
-                        </span>
-                        {n.acknowledged_at ? (
-                          <small>Acknowledged</small>
-                        ) : (
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              act({
-                                command: 'NTF-ACK',
-                                idempotencyKey: crypto.randomUUID(),
-                                payload: { eventId: n.id, eventRevision: 0 },
-                              })
-                            }
-                          >
-                            Acknowledge
-                          </button>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <p>No notifications assigned to you.</p>
-                  )}
                 </section>
               </div>
               {data.settings && (

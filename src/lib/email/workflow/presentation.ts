@@ -67,6 +67,7 @@ export function practiceReply(body: string) {
 
 export function hasCrmIssue(thread: PilotThread) {
   return (
+    thread.callback_owner_changed ||
     thread.crm_history_repair_required ||
     thread.crm_callback_repair_required ||
     ['pending', 'review_required', 'dependency_unavailable'].includes(

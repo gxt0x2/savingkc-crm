@@ -92,6 +92,8 @@ export interface PilotThread {
   callback_due_at: string | null
   requested_contact: { phone?: string; requestedTimeText?: string } | null
   handoff_revision?: number | null
+  crm_owner_name?: string | null
+  callback_owner_changed?: boolean
   open_task_count?: number
   open_tasks?: {
     key: string
@@ -192,6 +194,7 @@ export function primaryView(
   asOf: string,
 ): Exclude<InboxView, 'all'> {
   const issue =
+    thread.callback_owner_changed ||
     thread.crm_history_repair_required ||
     thread.crm_callback_repair_required ||
     ['pending', 'review_required', 'dependency_unavailable'].includes(

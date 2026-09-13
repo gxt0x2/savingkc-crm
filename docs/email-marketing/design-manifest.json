@@ -521,6 +521,7 @@
         "THR-HANDOFF",
         "HAN-ACCEPT",
         "HAN-REASSIGN",
+        "HAN-RESOLVE",
         "HAN-OUTCOME",
         "HAN-QUALIFY",
         "HAN-RETURN"

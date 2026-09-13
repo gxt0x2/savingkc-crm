@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
 import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
-import { changeCallback } from './callback-actions'
+import { changeCallback, validateCallbackTime } from './callback-actions'
+import { manageHandoff } from './handoff-management'
 import { emailCommandSchema } from '../contracts'
 import { emailWorkspaceConfigSchema } from '../config'
 import { pilotFollowUp, pilotFollowUpExpires, pilotSendSlot } from './schedule'
@@ -82,6 +83,14 @@ async function requireHuman(
       thread.controller_revision === controllerRevision,
       'OWNERSHIP_CHANGED',
     )
+  const [mismatch] = await context.tx`select h.id from em_handoffs h
+    join leads l on l.id=h.lead_id
+    join em_memberships m on m.workspace_id=h.workspace_id and m.auth_user_id=h.owner_id
+    join agent_profiles p on p.id=m.agent_profile_id
+    left join work_items w on w.work_item_key=h.crm_task_key
+    where h.workspace_id=${context.member.workspace_id} and h.thread_id=${id} and h.crm_sync_state='synced' and h.state<>'completed'
+      and (l.assigned_agent is distinct from p.full_name or w.assigned_to is distinct from p.full_name)`
+  check(!mismatch, 'CALLBACK_OWNER_CHANGED')
   return thread
 }
 async function invalidate(context: Context, threadId: string, reason: string) {
@@ -618,6 +627,15 @@ export async function executePilotCommand(
           ${tx.json({ origin: 'email_marketing', em_thread_id: thread.id })},${now}) returning id`
         return { entityId: note.id, state: 'note_saved' }
       }
+      case 'HAN-REASSIGN':
+      case 'HAN-RESOLVE': {
+        check(canWork(member), 'FORBIDDEN', 403)
+        const [h] =
+          await tx`select thread_id from em_handoffs where workspace_id=${ws} and id=${command.payload.handoffId}`
+        check(h, 'HANDOFF_NOT_FOUND', 404)
+        await threadFor(context, h.thread_id)
+        return manageHandoff(context, command)
+      }
       case 'HAN-SCHEDULE':
       case 'HAN-OUTCOME':
       case 'HAN-ACCEPT': {
@@ -634,21 +652,7 @@ export async function executePilotCommand(
           check(p.mode === 'task', 'CALENDAR_NOT_CONNECTED')
           check(p.timezone === 'America/Chicago', 'CHICAGO_TIMEZONE_REQUIRED')
           const start = new Date(p.startAt)
-          const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: p.timezone,
-            weekday: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-            hourCycle: 'h23',
-          }).formatToParts(start)
-          const part = (name: string) =>
-            parts.find((p) => p.type === name)?.value ?? ''
-          check(
-            start > now &&
-              !['Sat', 'Sun'].includes(part('weekday')) &&
-              Number(part('hour')) * 60 + Number(part('minute')) >= 510,
-            'INVALID_CALLBACK_TIME',
-          )
+          validateCallbackTime(start, now)
           await invalidate(context, h.thread_id, 'callback_scheduled')
           return changeCallback(
             context,
@@ -659,16 +663,31 @@ export async function executePilotCommand(
           )
         }
         if (command.command === 'HAN-OUTCOME') {
+          const p = command.payload
+          const remainsOpen =
+            p.outcome === 'follow_up' || p.outcome === 'no_contact'
           check(
-            command.payload.outcome === 'conversation_complete',
-            'OUTCOME_NOT_SUPPORTED',
+            !p.completedAt || new Date(p.completedAt) <= now,
+            'INVALID_OUTCOME_TIME',
           )
-          await invalidate(context, h.thread_id, 'callback_completed')
+          check(
+            !remainsOpen || (p.nextDueAt && p.nextAction),
+            'NEXT_ACTION_REQUIRED',
+          )
+          const dueAt = remainsOpen ? new Date(p.nextDueAt!) : undefined
+          if (dueAt) validateCallbackTime(dueAt, now)
+          await invalidate(context, h.thread_id, 'callback_outcome')
           return changeCallback(
             context,
             p.handoffId,
             command.expectedRevision,
-            { completeNote: command.payload.note },
+            {
+              outcome: p.outcome,
+              outcomeNote: p.note,
+              ...(remainsOpen
+                ? { dueAt, title: p.nextAction }
+                : { completeNote: p.note }),
+            },
             command.idempotencyKey,
           )
         }
@@ -1015,6 +1034,9 @@ export async function readPilotState(
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
       h.revision as handoff_revision,h.scheduled_for,
+      l.assigned_agent as crm_owner_name,
+      (h.crm_sync_state='synced' and h.state<>'completed' and
+        (l.assigned_agent is distinct from ho.full_name or w.assigned_to is distinct from ho.full_name)) as callback_owner_changed,
       (select count(*)::int from work_items wi where wi.lead_id=t.lead_id and wi.status in ('pending','blocked')) as open_task_count,
       coalesce((select jsonb_agg(jsonb_build_object('key',wi.work_item_key,'source_id',wi.source_id,'title',wi.title,'kind',wi.kind,'status',wi.status,'due_at',wi.due_at,'assigned_to',wi.assigned_to,
         'notes',coalesce(wi.source_metadata->>'email_task_notes',wi.source_metadata->>'notes')) order by wi.due_at nulls last,wi.work_item_key)
@@ -1038,6 +1060,8 @@ export async function readPilotState(
       join em_addresses a on a.id=t.address_id and a.workspace_id=t.workspace_id
       join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id
       left join em_handoffs h on h.thread_id=t.id and h.workspace_id=t.workspace_id
+      left join em_memberships hm on hm.workspace_id=t.workspace_id and hm.auth_user_id=h.owner_id
+      left join agent_profiles ho on ho.id=hm.agent_profile_id
       left join em_crm_projection_repairs r on r.thread_id=t.id and r.workspace_id=t.workspace_id and r.state='pending'
       left join leads l on l.id=t.lead_id
       left join work_items w on w.source_kind='activity' and w.source_id=h.crm_task_id
