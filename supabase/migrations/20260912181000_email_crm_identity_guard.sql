@@ -133,6 +133,10 @@ BEGIN
     -- A terminal or parked Email Lead no longer reserves the pair. Deleting
     -- the claim in this transaction lets the new intake proceed; rollback
     -- restores the old claim automatically if the new insert fails.
+    -- hygiene-approved-destructive: transactional release of one parked or
+    -- terminal Email person/property claim so a later intake can proceed.
+    -- The same insert transaction rolls the claim back if the new Lead fails.
+    -- No customer, message, or campaign rows are purged.
     DELETE FROM public.em_crm_identity_claims
     WHERE person_id = resolved_person_id
       AND property_id = resolved_property_id;

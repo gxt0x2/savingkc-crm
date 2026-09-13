@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { EMAIL_COMMAND_IDS, emailCommandResultSchema, emailCommandSchema } from '../contracts'
 
 const id = '123e4567-e89b-12d3-a456-426614174000'
-const key = '123e4567-e89b-12d3-a456-426614174001'
+const idempotencyKey = '123e4567-e89b-12d3-a456-426614174001'
 const documentedServerCommands = [
   'SET-BUSINESS', 'SVC-CONNECT', 'SVC-SIGNUP', 'SVC-CHECK', 'SVC-DISCONNECT', 'SET-TEAM', 'SET-AUTOMATION', 'SET-BUDGET', 'SET-READINESS', 'SET-FINISH', 'SET-ENABLE', 'SET-PAUSE',
   'AUD-CREATE', 'AUD-UPLOAD', 'AUD-MAP', 'AUD-REFRESH', 'AUD-RESOLVE', 'AUD-VERIFY', 'AUD-EXCLUDE', 'AUD-PREPARE', 'AUD-ARCHIVE',
@@ -23,25 +23,25 @@ describe('email command contracts', () => {
 
   it('rejects client workspace authority and unknown envelope keys', () => {
     expect(emailCommandSchema.safeParse({
-      command: 'SET-PAUSE', idempotencyKey: key, payload: { reason: 'Investigating a delivery incident' }, workspaceId: id,
+      command: 'SET-PAUSE', idempotencyKey, payload: { reason: 'Investigating a delivery incident' }, workspaceId: id,
     }).success).toBe(false)
   })
 
   it('rejects extra action payload fields instead of passing them through to handlers', () => {
     expect(emailCommandSchema.safeParse({
-      command: 'CAM-PAUSE', idempotencyKey: key, payload: { reason: 'A complaint needs review', bypassSuppression: true },
+      command: 'CAM-PAUSE', idempotencyKey, payload: { reason: 'A complaint needs review', bypassSuppression: true },
     }).success).toBe(false)
   })
 
   it('does not permit credentials in the dedicated connection command', () => {
     expect(emailCommandSchema.safeParse({
-      command: 'SVC-CONNECT', idempotencyKey: key, payload: { apiKey: 'must-not-be-accepted-here' },
+      command: 'SVC-CONNECT', idempotencyKey, payload: { apiKey: 'must-not-be-accepted-here' },
     }).success).toBe(false)
   })
 
   it('requires immutable launch evidence and a stable idempotency key', () => {
     expect(emailCommandSchema.safeParse({
-      command: 'CAM-LAUNCH', idempotencyKey: key,
+      command: 'CAM-LAUNCH', idempotencyKey,
       payload: { draftHash: 'draft-hash', audienceHash: 'audience-hash', readinessRunId: id, approvedMaxRecipients: 25, estimateHash: 'estimate-hash' },
     }).success).toBe(true)
     expect(emailCommandSchema.safeParse({
@@ -52,7 +52,7 @@ describe('email command contracts', () => {
 
   it('does not let an acquisitions qualification omit one of the four evidence pillars', () => {
     expect(emailCommandSchema.safeParse({
-      command: 'HAN-QUALIFY', idempotencyKey: key,
+      command: 'HAN-QUALIFY', idempotencyKey,
       payload: {
         handoffId: id, leadId: id, leadRevision: 1,
         assessment: {
@@ -67,7 +67,7 @@ describe('email command contracts', () => {
 
   it('uses strict durable result envelopes', () => {
     expect(emailCommandResultSchema.safeParse({
-      ok: true, requestId: key, entityId: id, revision: 1, state: 'queued',
+      ok: true, requestId: idempotencyKey, entityId: id, revision: 1, state: 'queued',
       invalidates: ['email:campaigns'], unknown: true,
     }).success).toBe(false)
   })
