@@ -47,9 +47,9 @@ Push device tests also use the existing CRM pair `NEXT_PUBLIC_VAPID_PUBLIC_KEY` 
 | Item | Contract |
 | --- | --- |
 | Method + path | `POST /api/webhooks/email/resend` |
-| Public URL after hosted Email routes deploy | `https://<host>/api/webhooks/email/resend` |
+| Public URL after hosted Email routes deploy | `https://crm.savingkc.com/api/webhooks/email/resend` |
 | Signing secret format | `^whsec_[A-Za-z0-9+/=_-]{16,200}$` |
-| Secret created? | **No.** Do not create it until Email routes are live under release auth. |
+| Secret created? | **No.** Do not create it from this VM. Robin creates it after Email routes are live. |
 | Route without binding | Fails closed `WEBHOOK_NOT_CONFIGURED` (needs endpoint UUID + decrypt key + active checked connection). |
 
 Release-gated. This VM does not create the Resend webhook.
@@ -69,7 +69,7 @@ Even if Robin wires every secret above:
 1. `EMAIL_CREDENTIALS_KEY_V1` is already set on Prod/Preview. Leave it. Do not commit it. It is not live until Email routes deploy.
 2. Optionally create `EMAIL_PREFERENCE_KEY_V1` and set `EMAIL_PUBLIC_ORIGIN`.
 3. Hold `SavingKC Email CRM` for an owner to paste on Connections after Email routes can read the master key. Do not treat `RESEND_API_KEY` as Email connected.
-4. After hosted Email routes deploy under release auth, create the webhook against `https://<host>/api/webhooks/email/resend`. Not before.
+4. After hosted Email routes deploy under release auth, create the webhook against `https://crm.savingkc.com/api/webhooks/email/resend`. Not from this VM.
 5. Do not set the three flags above. Do not prod-migrate. Do not customer-send. Redeploy of Conversations/CRM is Robin’s ops lane and still does not unlock live send.
 
 Code source of truth: `src/lib/email/secrets-contract.ts`, `src/lib/email/secrets.ts`, `src/lib/email/connections/service.ts`, `src/app/api/webhooks/email/resend/route.ts`.

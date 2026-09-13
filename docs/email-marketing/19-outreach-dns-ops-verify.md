@@ -23,7 +23,7 @@ Robin landed Resend domain add + Cloudflare DNS-only email records for the three
 ## Still required for a controlled external test
 
 - Resend API key `SavingKC Email CRM` pasted on Connections after hosted Email routes can read `EMAIL_CREDENTIALS_KEY_V1` (master key is present-but-not-live on Prod/Preview; not a live Email connection)
-- Webhook secret for `POST /api/webhooks/email/resend` — **not created**. Needs public `https://<host>/api/webhooks/email/resend` after hosted Email routes deploy (release-gated)
+- Webhook secret for `POST /api/webhooks/email/resend` — **not created**. After-release URL is `https://crm.savingkc.com/api/webhooks/email/resend`. Do not create it from this VM.
 - Authenticated Ari Prepare-with-Ari retest (ops credits reported; this VM `AI_NOT_CONNECTED` — prior 403 not retested)
 - Ernest release auth for live send
 

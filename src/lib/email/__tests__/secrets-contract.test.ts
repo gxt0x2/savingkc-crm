@@ -6,6 +6,7 @@ import {
   EMAIL_PREFERENCE_KEY_FAMILY,
   EMAIL_RESEND_KEY_PATTERN,
   EMAIL_RESEND_PRODUCT_KEY_LABEL,
+  EMAIL_RESEND_WEBHOOK_AFTER_RELEASE_URL,
   EMAIL_RESEND_WEBHOOK_PATH,
   EMAIL_RESEND_WEBHOOK_SECRET_PATTERN,
   EMAIL_HOSTED_SECRET_PRESENCE,
@@ -59,6 +60,12 @@ describe('Email hosted secret contract', () => {
     expect(
       EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.publicUrlTemplate,
     ).toBe('https://<host>/api/webhooks/email/resend')
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.afterReleaseUrl).toBe(
+      EMAIL_RESEND_WEBHOOK_AFTER_RELEASE_URL,
+    )
+    expect(EMAIL_RESEND_WEBHOOK_AFTER_RELEASE_URL).toBe(
+      'https://crm.savingkc.com/api/webhooks/email/resend',
+    )
     expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.existsOffChat).toBe(
       true,
     )

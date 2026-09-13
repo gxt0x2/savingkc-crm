@@ -310,11 +310,11 @@ export function EmailConnections() {
           <li>
             Webhook path {EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.method}{' '}
             <code>{EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.path}</code> ·
-            public URL{' '}
+            after-release URL{' '}
             <code>
-              {EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.publicUrlTemplate}
-            </code>{' '}
-            after hosted Email routes deploy. Signing secret format{' '}
+              {EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.afterReleaseUrl}
+            </code>
+            . Do not create it from this screen. Signing secret format{' '}
             <code>
               {EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.secretFormat}
             </code>

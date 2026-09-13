@@ -957,6 +957,9 @@ test('setup productization stays fail-closed and keeps personal views local', as
   await expect(setup).toContainText('EMAIL_RESEND_WEBHOOK_ENDPOINT_ID')
   await expect(setup).toContainText('EMAIL_PREFERENCE_KEY_V*')
   await expect(setup).toContainText('POST /api/webhooks/email/resend')
+  await expect(setup).toContainText(
+    'https://crm.savingkc.com/api/webhooks/email/resend',
+  )
   await expect(setup).toContainText('RESEND_API_KEY')
   await expect(setup).toContainText('Keep EMAIL_LIVE_DISPATCH_ENABLED')
   await setup.getByRole('button', { name: /7. Readiness/ }).click()
