@@ -72,6 +72,7 @@ export async function requireHuman(
 ) {
   check(canWork(context.member), 'FORBIDDEN', 403)
   const thread = await threadFor(context, id)
+  check(!thread.inbound_pending, 'REPLY_CONTENT_PENDING')
   check(thread.state !== 'stopped', 'THREAD_STOPPED')
   check(thread.state !== 'done', 'THREAD_DONE')
   check(
@@ -1199,6 +1200,7 @@ export async function readPilotState(
       ai_available: emailAiAvailable(),
       mode: workspace.execution_mode,
       paused: !!workspace.pause_reason,
+      pauseReason: workspace.pause_reason,
       actorId: subject,
       roles: member.roles,
       asOf: now.toISOString(),

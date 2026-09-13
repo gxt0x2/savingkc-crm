@@ -1,0 +1,17 @@
+# Signed Resend intake checkpoint
+
+Implemented locally: POST /api/webhooks/email/resend, encrypted event capture, exact-alias holds, duplicate protection and durable retrieval/review jobs. This is a partial EM-012 checkpoint, not live receiving or a completed retrieval worker.
+
+The endpoint reads at most 2 MiB, verifies the unmodified UTF-8 body and Svix headers using the installed Resend SDK (including timestamp tolerance), and acknowledges only after committing the event, hold and job. Same event ID and identical body return 200; a conflicting body returns 409 without changes. Bad signatures return 401, oversized bodies 413, missing/revoked configuration or failed storage 503. Database failure rolls back all intake changes. Private responses contain no payload, SQL or secrets.
+
+Endpoint identity comes from EMAIL_RESEND_WEBHOOK_ENDPOINT_ID and an active database binding to a checked service connection. The signing secret and payload use versioned AES-256-GCM encryption with separate workspace/entity AAD. The same EMAIL_CREDENTIALS_KEY_V1 protects these records. New tables and existing provider events are denied to anon/authenticated browser roles. Endpoint/connection state and revision are rechecked under the shared workspace lock before mutations. The proxy bypass applies only to the exact webhook path, and preview write protection remains intact.
+
+For email.received, exact receiving aliases within the bound connection/workspace can hold one thread. received_for takes precedence over the display To list when present. Sender From alone never establishes correlation or seller identity. The intake cancels pending sends, stales drafts/generations, increments the content revision and sets inbound_pending. Human actions and Ari generation remain blocked until full content can be processed. Existing stopped/done thread and suppressed/completed/failed enrollment states remain protected.
+
+Unmatched, ambiguous or unsupported events are encrypted and quarantined, create a review job and conservatively pause the workspace. This includes delivery events until their reducer is implemented. The pause reason appears in Operations. This checkpoint has no automatic release from these holds. Do not subscribe a live endpoint until retrieval, delivery reduction and review/recovery flows are ready.
+
+Remaining: owner-facing secret provisioning/rotation, stable alias provisioning from actual send identity, full-body retrieval and sanitization, worker leases/retries, RFC-ID reconciliation, message/CRM projection, opt-out interpretation, provider-event review UI, controlled provider acceptance, and hosted deployment. Endpoint records default inactive; no endpoint/secret/domain/API key was created remotely. The disposable local UI harness does not expose this provider route.
+
+Verification uses locally signed fixtures and real disposable PostgreSQL transactions. It covers bad/old/future signatures, encrypted capture, duplicate and conflicting delivery, drip cancellation, pending content, unknown aliases, revoked connection, payload limits, browser-role denial and storage rollback. Proxy tests cover anonymous exact-route access and lookalike-route denial.
+
+References: [Resend signature verification](https://resend.com/docs/webhooks/verify-webhooks-requests) and [received event metadata](https://resend.com/docs/webhooks/emails/received). A signed provider webhook authenticates transport, not the original sender's assertions.

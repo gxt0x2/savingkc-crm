@@ -13,6 +13,8 @@ const PUBLIC_PAGE_EXACT = new Set([
 
 // API routes that must remain reachable without a CRM session.
 const PUBLIC_API_EXACT = new Set([
+  // Resend authenticates the raw payload with its endpoint signing secret.
+  '/api/webhooks/email/resend',
   '/api/availability',
   '/api/book',
   '/api/buyers/intake',

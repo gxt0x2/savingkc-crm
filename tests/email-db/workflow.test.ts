@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import {
   startDisposableDatabase,
   fixtureOwner as owner,
@@ -3773,4 +3773,60 @@ withDb('general scheduler creates independent CRM work, fences authority and pre
   assert.equal(task.state,'task_created')
   const state = await readPilotState(db.sql,owner,now)
   assert.equal(state.threads.find(t=>t.id===thread.id)?.open_tasks?.length,3)
+})
+
+withDb('signed Resend webhook captures encrypted event, holds drip once and queues body retrieval', async db => {
+  const {connectService} = await import('../../src/lib/email/connections/service')
+  const {createResendWebhookHttp,webhookSecretAad} = await import('../../src/lib/email/inbound/capture')
+  const {encryptEmailSecret,decryptEmailSecret} = await import('../../src/lib/email/secrets')
+  const launchedState = await launched(db)
+  const thread = launchedState.thread
+  const key = Buffer.alloc(32,7), secret = `whsec_${Buffer.alloc(32,9).toString('base64')}`
+  const [ws] = await db.sql`select id,revision from em_workspaces limit 1`
+  const connection = await connectService(db.sql,owner,{provider:'resend',kind:'email',secret:'re_fixture_webhook_123456789',expectedRevision:ws.revision,accountLabel:'Webhook fixture',idempotencyKey:randomUUID()},async()=>({domainsRead:true,receivingRead:true,sendingVerified:false}),key,now)
+  const endpoint = randomUUID()
+  await db.sql`insert into em_webhook_endpoints(id,workspace_id,connection_id,encrypted_secret,active) values(${endpoint},${ws.id},${connection.connectionId},${db.sql.json({...encryptEmailSecret(secret,key,webhookSecretAad(ws.id,endpoint),1)})},true)`
+  await db.sql`insert into em_reply_aliases(workspace_id,connection_id,thread_id,address) values(${ws.id},${connection.connectionId},${thread.id},'reply-token@outreach.test')`
+  const handler = createResendWebhookHttp({database:()=>db.sql,endpointId:()=>endpoint,key:()=>key})
+  const event = {type:'email.received',created_at:new Date().toISOString(),data:{email_id:randomUUID(),from:'seller@example.test',to:['reply-token@outreach.test'],message_id:'<rfc-id@example.test>'}}
+  const raw = JSON.stringify(event), eventId = 'msg_fixture_verified'
+  const request = (body=raw,id=eventId,offset=0,signingSecret=secret) => {
+    const date = new Date(Date.now()+offset), timestamp = Math.floor(date.getTime()/1000).toString()
+    return new Request('http://localhost/api/webhooks/email/resend',{method:'POST',headers:{'svix-id':id,'svix-timestamp':timestamp,'svix-signature':`v1,${createHmac('sha256',Buffer.from(signingSecret.slice(6),'base64')).update(`${id}.${timestamp}.${body}`).digest('base64')}`},body})
+  }
+  assert.equal((await handler(request(raw,eventId,0,`whsec_${Buffer.alloc(32,1).toString('base64')}`))).status,401)
+  assert.equal((await handler(request(raw,eventId,-600000))).status,401)
+  assert.equal((await handler(request(raw,eventId,600000))).status,401)
+  assert.equal((await db.sql`select * from em_provider_events`).length,0)
+  assert.equal((await handler(request())).status,200)
+  assert.equal((await handler(request())).status,200)
+  const [saved] = await db.sql`select * from em_provider_events`
+  assert.equal(decryptEmailSecret(saved.encrypted_payload,key,`${ws.id}/${saved.id}/resend-event/1`),raw)
+  assert.equal(saved.provider_email_id,event.data.email_id)
+  assert.equal((await db.sql`select * from em_jobs where kind='resend_receive_content'`).length,1)
+  const [after] = await db.sql`select * from em_threads where id=${thread.id}`
+  assert.equal(after.content_revision,thread.content_revision+1)
+  assert.equal(after.inbound_pending,true)
+  await rejects(executePilotCommand(db.sql,owner,{command:'THR-DRAFT',idempotencyKey:randomUUID(),payload:{threadId:thread.id,contentRevision:after.content_revision,controllerRevision:after.controller_revision,body:'Do not send before loading the reply.'}},now),'REPLY_CONTENT_PENDING')
+  assert.equal((await db.sql`select * from em_send_intents where thread_id=${thread.id} and state='queued'`).length,0)
+  assert.equal((await handler(request(JSON.stringify({...event,created_at:'2026-01-01T00:00:00Z'})))).status,409)
+  assert.equal((await db.sql`select * from em_provider_events`).length,1)
+  assert.equal((await readPilotState(db.sql,owner,now)).threads.find(t=>t.id===thread.id)?.inbound_pending,true)
+  const unknown = JSON.stringify({...event,data:{...event.data,email_id:randomUUID(),to:['unknown@outreach.test']}})
+  assert.equal((await handler(request(unknown,'msg_unknown'))).status,200)
+  const [paused] = await db.sql`select pause_reason from em_workspaces where id=${ws.id}`
+  assert.equal(paused.pause_reason,'Resend event needs review')
+  assert.equal((await db.sql`select * from em_jobs where kind='resend_event_review' and state='dead'`).length,1)
+  await db.sql`update em_service_connections set state='revoked' where id=${connection.connectionId}`
+  assert.equal((await handler(request(raw,'msg_revoked'))).status,503)
+  const oversized = new Request('http://localhost/api/webhooks/email/resend',{method:'POST',headers:{'content-length':'2097153'},body:'x'})
+  await db.sql`update em_service_connections set state='checked' where id=${connection.connectionId}`
+  assert.equal((await handler(oversized)).status,413)
+  const largeBody = new Request('http://localhost/api/webhooks/email/resend',{method:'POST',body:'x'.repeat(2097153)})
+  assert.equal((await handler(largeBody)).status,413)
+  await assert.rejects(db.sql.begin(async tx=>{ await tx`set local role authenticated`; await tx`select * from em_webhook_endpoints` }))
+  await assert.rejects(db.sql.begin(async tx=>{ await tx`set local role authenticated`; await tx`select encrypted_payload from em_provider_events` }))
+  await db.sql`drop table em_jobs`
+  assert.equal((await handler(request(unknown,'msg_storage_failure'))).status,503)
+  assert.equal((await db.sql`select * from em_provider_events where provider_event_id='msg_storage_failure'`).length,0)
 })

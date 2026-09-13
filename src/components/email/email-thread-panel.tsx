@@ -142,7 +142,7 @@ export function EmailThreadPanel({
   const canWork = data.roles.some((r) =>
     ['owner', 'reviewer', 'acquisitions'].includes(r),
   )
-  const blocked = busy || working
+  const blocked = busy || working || Boolean(t.inbound_pending)
   const stale =
     editor.revision !== t.content_revision ||
     editor.controller !== t.controller_revision
@@ -611,6 +611,12 @@ export function EmailThreadPanel({
                     messages or calls.
                   </small>
                 </>
+              ) : t.inbound_pending ? (
+                <p>
+                  A reply arrived. Automated follow-ups are held while its full
+                  content is retrieved. Review will resume when the message is
+                  available.
+                </p>
               ) : t.state === 'done' ? (
                 <p>No remaining work. A new reply will return here.</p>
               ) : t.state === 'stopped' ? (
@@ -948,6 +954,12 @@ export function EmailThreadPanel({
             tabIndex={0}
             className={styles.detailPanel}
           >
+            {t.inbound_pending && (
+              <p role="status">
+                A reply arrived. Scheduling and replies are held until its full
+                content is available.
+              </p>
+            )}
             <div className={styles.calendarSummary}>
               <h4 className={styles.taskHeading}>Schedule follow-up</h4>
               <p>

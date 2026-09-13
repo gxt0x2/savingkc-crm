@@ -24,6 +24,8 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  REPLY_CONTENT_PENDING:
+    'A reply arrived. Wait for its full content before acting.',
   TASK_ASSIGNEE_UNAVAILABLE:
     'Choose an active team member with access to work this conversation.',
   INVALID_TASK_TIME: 'Choose a future date and time.',
@@ -1046,6 +1048,9 @@ export function EmailWorkspace({
               ) && (
                 <section className={styles.operations}>
                   <h3>Operations</h3>
+                  {data.paused && data.pauseReason && (
+                    <p role="status">Paused: {data.pauseReason}</p>
+                  )}
                   <p>
                     Real sending is disabled. The local transport processes at
                     most one due message per action.

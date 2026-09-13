@@ -57,6 +57,7 @@ export type PilotCallbackTaskState =
   | 'completed'
   | 'cancelled'
 export interface PilotThread {
+  inbound_pending?: boolean
   id: string
   campaign_id: string
   campaign_name: string
@@ -188,6 +189,7 @@ export interface PilotState {
   settings: PilotSettings | null
   mode: 'simulation' | 'disabled'
   paused: boolean
+  pauseReason?: string | null
   actorId: string
   roles: string[]
   asOf: string
