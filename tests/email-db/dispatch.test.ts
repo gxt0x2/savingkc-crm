@@ -437,3 +437,48 @@ test("uncertain delivery is visible and prevents a second provider intent", () =
       "uncertain",
     );
   }));
+import { refreshActiveSenderDomain } from "../../src/lib/email/dispatch/domain-refresh";
+test("worker refreshes existing active sender verification without creating or unpausing domains", () =>
+  withDB(async (db) => {
+    await ready(db);
+    await db.sql`update em_workspaces set config=jsonb_set(config,'{business,primaryDomain}','"example.com"') where id=${db.workspaceId}`;
+    await db.sql`update em_domains set name_ascii='outreach-example.com',last_verified_at=${new Date(now.getTime() - 13 * 3600000)},last_checked_at=null where workspace_id=${db.workspaceId}`;
+    const [d] =
+      await db.sql`select * from em_domains where workspace_id=${db.workspaceId}`;
+    let reads = 0;
+    const provider = {
+      get: async () => {
+        reads++;
+        return {
+          id: d.provider_domain_id,
+          name: d.name_ascii,
+          status: "verified",
+          capabilities: { sending: "enabled", receiving: "enabled" },
+          records: [],
+        };
+      },
+      find: async () => {
+        throw Error("Must use existing provider ID");
+      },
+      create: async () => {
+        throw Error("Must never create domains");
+      },
+    };
+    const refreshed = await refreshActiveSenderDomain(
+      db.sql,
+      owner,
+      now,
+      provider,
+    );
+    assert.equal(refreshed.state, "checked", JSON.stringify(refreshed));
+    const [saved] =
+      await db.sql`select paused,state,last_verified_at from em_domains where id=${d.id}`;
+    assert.equal(saved.paused, false);
+    assert.equal(saved.state, "provider_verified");
+    assert.ok(new Date(saved.last_verified_at) >= now);
+    await refreshActiveSenderDomain(db.sql, owner, now, provider);
+    assert.equal(reads, 1);
+    await db.sql`update em_domains set paused=true,last_verified_at=${new Date(now.getTime() - 13 * 3600000)},last_checked_at=null where id=${d.id}`;
+    await refreshActiveSenderDomain(db.sql, owner, now, provider);
+    assert.equal(reads, 1);
+  }));
