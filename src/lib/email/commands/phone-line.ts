@@ -1,6 +1,12 @@
 import 'server-only'
 import type { EmailCommand } from '../contracts'
 import {
+  RESERVED_ADS_NUMBER_ID,
+  canSaveResponseLine,
+  canTestResponseLine,
+  responseLineStateAfterSave,
+} from '../phone-line'
+import {
   WorkflowError,
   check,
   json,
@@ -10,7 +16,6 @@ import {
 
 const commands = new Set(['TEL-SAVE', 'TEL-TEST'])
 export const isPhoneLineCommand = (command: string) => commands.has(command)
-const reservedAdsNumber = '00000000-0000-4000-8000-0000000000ad'
 
 export async function applyPhoneLineCommand(
   context: Context,
@@ -20,15 +25,32 @@ export async function applyPhoneLineCommand(
     ws = member.workspace_id
   check(isPhoneLineCommand(command.command), 'ACTION_NOT_IMPLEMENTED', 400)
   check(member.roles.includes('owner'), 'FORBIDDEN', 403)
-  if (command.command !== 'TEL-SAVE')
+  if (command.command !== 'TEL-SAVE') {
+    const [line] =
+      command.command === 'TEL-TEST'
+        ? await tx`select state from em_response_lines where workspace_id=${ws} and id=${command.payload.lineId}`
+        : []
+    check(
+      canTestResponseLine(line?.state ?? ''),
+      'RESPONSE_LINE_NOT_PROVISIONED',
+    )
     throw new WorkflowError('RESPONSE_LINE_NOT_PROVISIONED')
+  }
   const p = command.payload
   check(
-    p.existingProviderNumberId !== reservedAdsNumber,
+    p.existingProviderNumberId !== RESERVED_ADS_NUMBER_ID,
     'RESERVED_NUMBER_PROTECTED',
     400,
   )
-  check(p.purpose === 'email_response', 'EMAIL_RESPONSE_PURPOSE_REQUIRED', 400)
+  check(
+    canSaveResponseLine({
+      existingProviderNumberId: p.existingProviderNumberId,
+      purpose: p.purpose,
+      purchase: false,
+    }),
+    'EMAIL_RESPONSE_PURPOSE_REQUIRED',
+    400,
+  )
   check(p.hours.timezone === 'America/Chicago', 'CHICAGO_TIMEZONE_REQUIRED', 400)
   await tx`insert into em_response_lines(workspace_id,existing_provider_number_id,purpose,routing_policy,hours,voicemail,caller_id_policy,state,revision)
     values(${ws},${p.existingProviderNumberId},${p.purpose},${p.routingPolicy},${tx.json(json(p.hours))},${p.voicemail},${p.callerIdPolicy},'intended',0)
@@ -40,6 +62,6 @@ export async function applyPhoneLineCommand(
   return {
     entityId: saved.id,
     revision: saved.revision,
-    state: 'response_line_intended',
+    state: `response_line_${responseLineStateAfterSave()}`,
   }
 }

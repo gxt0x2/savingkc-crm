@@ -1350,8 +1350,14 @@ export async function readPilotState(
     const playbooks = member.roles.includes('owner')
       ? await tx`select b.id,b.name,b.program,b.revision,d.content_hash as draft_hash,
         (select v.id from em_playbook_versions v where v.playbook_id=b.id order by v.version_number desc limit 1) as published_version_id,
+        (select r.id from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_id,
         (select r.passed from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_passed,
-        (select r.kind from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_kind
+        (select r.kind from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_kind,
+        (select r.critical_failed from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_critical_failed,
+        (select r.fixture_set_hash from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_fixture_hash,
+        coalesce((select r.cases from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1),'[]'::jsonb) as last_eval_cases,
+        coalesce(d.policy->'allowedActions','[]'::jsonb) as draft_allowed_actions,
+        coalesce((select v.policy->'allowedActions' from em_playbook_versions v where v.playbook_id=b.id order by v.version_number desc limit 1),'[]'::jsonb) as published_allowed_actions
         from em_playbooks b left join em_playbook_drafts d on d.playbook_id=b.id
         where b.workspace_id=${ws} order by b.created_at desc`
       : []

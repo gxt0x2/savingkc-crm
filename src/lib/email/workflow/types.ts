@@ -214,8 +214,22 @@ export interface PilotPlaybook {
   revision: number
   draft_hash: string | null
   published_version_id: string | null
+  last_eval_id: string | null
   last_eval_passed: boolean | null
   last_eval_kind: string | null
+  last_eval_critical_failed: number | null
+  last_eval_fixture_hash: string | null
+  last_eval_cases: {
+    id: string
+    critical: boolean
+    passed: boolean
+    expectedIntent: string
+    expectedAction: string
+    proposedIntent: string
+    proposedAction: string
+  }[]
+  draft_allowed_actions: string[]
+  published_allowed_actions: string[]
 }
 export interface PilotSavedView {
   id: string

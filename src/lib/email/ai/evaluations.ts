@@ -30,6 +30,35 @@ export function loadSeedFixtures(): FixtureCase[] {
   return fixtures.cases
 }
 
+/** Visible new-message text only. Quoted history cannot change classification. */
+export function visibleFixtureText(text: string) {
+  return text
+    .split(/\n(?:On .+wrote:|From:|--\s*$)/im)[0]
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('>'))
+    .join('\n')
+    .trim()
+}
+
+/** Practice expansions only. Publication still uses the 40 seed fixtures. */
+export function expandSeedFixtures(): FixtureCase[] {
+  return loadSeedFixtures().flatMap((fixture) => [
+    fixture,
+    {
+      ...fixture,
+      id: `${fixture.id}-quoted`,
+      text: `> Old quoted appointment at 816-555-9999\n${fixture.text}`,
+      context: `${fixture.context}; quoted history present`,
+    },
+    {
+      ...fixture,
+      id: `${fixture.id}-turn`,
+      text: fixture.text,
+      context: `${fixture.context}; prior assistant reply in thread`,
+    },
+  ])
+}
+
 export function canPublishAiPolicy(cases: EvaluationCase[]) {
   return cases.length > 0 && cases.every((c) => !c.critical || c.passed)
 }
@@ -46,7 +75,7 @@ export function canPublishAutomaticPolicy(input: {
 
 /** Deterministic handling from visible text and context. Never books, dials or qualifies. */
 export function classifyFixture(fixture: FixtureCase) {
-  const text = fixture.text
+  const text = visibleFixtureText(fixture.text)
   const context = fixture.context.toLowerCase()
   const lower = text.toLowerCase()
   if (
@@ -158,4 +187,14 @@ export function evaluateDeterministicFixtures(
 
 export function modelEvaluationUnavailable(modelId: string) {
   return modelId !== DETERMINISTIC_MODEL_ID
+}
+
+export function deterministicRepeatability() {
+  return {
+    requiredRuns: 3,
+    kind: 'deterministic' as const,
+    identical: true,
+    modelBacked: false,
+    note: 'The same algorithm produces the same result. This is not three billed model runs.',
+  }
 }

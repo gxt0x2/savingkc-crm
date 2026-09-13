@@ -349,8 +349,10 @@ function ReadinessForm({
       <h3>Readiness</h3>
       <p>
         This is a local checklist. It cannot finish setup or turn sending on.
-        Live Resend, Google Calendar, push and the response line stay blocked
-        until each connection is verified.
+        Outreach-domain DNS is being added in a parallel ops lane; this page
+        does not treat that work as sending-ready. Live Resend product key,
+        Google Calendar, push and the response line stay blocked until each
+        connection is verified.
       </p>
       <ul>
         {settings.readiness.blockers.map((blocker) => (

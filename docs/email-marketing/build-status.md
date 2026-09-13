@@ -1,6 +1,6 @@
 # SavingKC Email build status
 
-Updated: 2026-09-13 (setup productization continuation). **Connected local simulation; not a completed product or release candidate.**
+Updated: 2026-09-13 (local #3 packet-complete report). **Connected local simulation; not a completed product or release candidate.**
 
 ## Correction to earlier progress reports
 
@@ -78,7 +78,7 @@ A partial row is intentionally not a completion claim.
 | EM-013 | Partial: pilot human ownership, transfer on handoff and stale-draft checks work. Shared CRM/mobile integration and AI approval remain unfinished. |
 | EM-014 | Partial: local Lead/history/callback bridge plus return-for-clarification, multi-handoff shared ownership, access-hold release and four-pillar qualification work against the disposable CRM fixture. Live schema, hosted CRM-shell and provider transport remain unfinished. |
 | EM-015 | Partial: durable human-reviewed drafting plus deterministic draft-only policy guards. Live Ari credits remain unfunded (prior 403); bounded automatic replies stay off. |
-| EM-016 | Partial: repeatable deterministic fixture runner and draft-only publication. Paid model-backed evaluation remains unavailable. |
+| EM-016 | Partial: repeatable deterministic fixture runner, quote-stripped practice expansions and draft-only publication. Paid model-backed evaluation remains unavailable. |
 | EM-017 | Pending: simulation is not the required configured-provider journey. |
 | EM-018 | Utility only: fabricated recipient fixtures; real imports/segments/verification jobs are unfinished. |
 | EM-019 | Partial: weekday scheduling, pilot pacing and pause work locally. Durable scheduler/resume and production pacing are unfinished. |
@@ -87,23 +87,23 @@ A partial row is intentionally not a completion claim.
 | EM-022 | Partial: campaign list, sequence edit, recipient review and simulated start/pause are connected. Full live detail/revision workflows remain unfinished. |
 | EM-023 | Partial: exclusive local queues, bounded history, prepared practice replies, CRM notes and human composer are connected. Shared Conversations, AI review and full access/pagination states remain unfinished. |
 | EM-024 | Partial: local accept/reassign/outcome/return/qualify and access-hold release work in the Email workspace. Google Calendar booking and hosted CRM-shell verification remain unfinished. |
-| EM-025 | Partial: draft-only playbook editor and deterministic example review. No model-evaluation review UI or autonomy raise. |
+| EM-025 | Partial: draft-only playbook editor, last-eval persistence, case drilldown and draft-vs-published action compare. No model-evaluation review UI or autonomy raise. |
 | EM-026 | Partial: seven-step setup and a local simulation checklist. Finish/enable stay fail-closed; provider, brand, sender and subscriptions remain unfinished. |
 | EM-027 | Utility only: no truthful production outcome reporting or exports. |
 | EM-028 | Utility only: legacy guard helper is not wired into existing sending paths. |
 | EM-029 | Partial: durable CRM projection repairs, owner-only internal retry, current error checks and Inbox warning work locally. General operations, remote reconciliation, retention and downloads remain unfinished. |
 | EM-030 | Pending: no release candidate, deployment or live-provider acceptance. |
 | EM-031 | Utility only: local literal templates; controlled per-recipient generation/review is unfinished. |
-| EM-032 | Partial: recipient-scoped local notifications, acknowledgment, backup escalation and a blocked push-test ledger. Live device registration and push delivery remain unfinished. |
-| EM-033 | Partial: weekday 7–10-calendar-day schedule, explicit callback evidence and a manual weekday calendar policy. Google booking is unfinished. |
-| EM-034 | Partial: intended existing-number save only. Provisioning, routing and TEL-TEST remain unfinished; no number is purchased. |
+| EM-032 | Partial: recipient-scoped local notifications, acknowledgment, backup escalation, a blocked push-test ledger and lockscreen/phone-signal helpers. Live device registration and push delivery remain unfinished. |
+| EM-033 | Partial: weekday 7–10-calendar-day schedule, explicit callback evidence, a manual weekday calendar policy and callback-precision helpers. Google booking is unfinished. |
+| EM-034 | Partial: intended existing-number save only, with purchase/ads/test helpers fail-closed. Provisioning, routing and TEL-TEST remain unfinished; no number is purchased. |
 | EM-035 | Partial: exclusive queues, controller/outcome filters and personal saved views. Full campaign/reporting integration remains unfinished. |
 
 ## Next implementation order
 
 1. Finish remaining hosted CRM-shell verification for the local handoff-management paths. Provider connection, durable remote dispatch/reconciliation and suppression/preferences remain the next major bucket. Qualification is wired only through the existing four-pillar policy and the current Lead `updated_at` clock; do not add Email-only shortcuts.
 2. Local provider-lifecycle, fenced dispatch, delivery reduction and preference-center gaps in this bucket are now connected. Keep live dispatch disabled until controlled provider evidence exists. Outreach domains are owner-purchased (`talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`) with Cloudflare nameservers. Live Resend/DNS is Robin’s parallel ops lane — do not race it from this VM. Remaining product work is a wired Resend API key, hosted secrets and controlled provider evidence — not more local scaffolding and not more domain purchases.
-3. Local setup/AI/calendar/view productization is now connected (see [productization](17-productization.md)). Remaining #3 work is live dependencies — Resend product API key, funded Ari credits, verified Google Calendar, VAPID + device registration, and an owned response-line test — not more local scaffolding. Preserve everyday-language sales voice, verified facts, Lead → human-qualified Opportunity distinctions and weekday cadence.
+3. Local #3 software is packet-complete as far as it can go without live evidence (see [productization](17-productization.md) and [local #3 report](18-local-3-packet-complete.md)). Packets stay Partial. Remaining #3 work is live dependencies — Resend product API key, Robin’s in-progress outreach DNS (do not wait on Ernest unless login/payment blocks), funded Ari credits, verified Google Calendar, VAPID + device registration, and an owned response-line test — not more local scaffolding. Preserve everyday-language sales voice, verified facts, Lead → human-qualified Opportunity distinctions and weekday cadence. Live send stays gated. No customer send or prod migrate without release auth.
 4. Run full local integration and release checks, then prepare the exact controlled external test/release for authorization. No production schema, subscriptions, provider connection, customer send or deployment was performed in this milestone.
 
 ## Overnight continuation: handoff management
@@ -198,7 +198,7 @@ Owner lock 2026-09-13 (purchase + ops-lane update): Ernest/Robin purchased `talk
 See [productization](17-productization.md). Local-only continuation of remaining EM-015/016/025/026/032/033/034/035 gaps:
 
 - Setup now has seven owner-visible steps. Connections stay pending. Readiness can record a blocked local checklist; Finish setup and Enable sending still fail `PROVIDER_READINESS_UNAVAILABLE`.
-- Draft-only playbooks can be saved, checked against the 40 bundled fixtures without paid credits, and published. `SET-AUTOMATION` draft-only requires that published version. Bounded automatic replies stay off.
+- Draft-only playbooks can be saved, checked against the 40 bundled fixtures without paid credits, and published. Practice expansions and an evaluate CLI stay unpaid. The editor keeps the last eval, drills into cases and compares draft vs published allowed actions. `SET-AUTOMATION` draft-only requires that published version. Bounded automatic replies stay off.
 - Calendar policy saves as manual (`enabled=false`). Reschedule/cancel and automatic booking fail closed. CRM tasks already work; stored Google tokens are not treated as connected.
 - An existing phone number can be recorded as intended. Ads reserved IDs are rejected. TEL-TEST is not provisioned.
 - Push tests persist a blocked delivery row. In-app alerts are unchanged.
@@ -208,4 +208,8 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 Verified locally this increment: 88 database workflow cases (serial harness with `EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin`, `LC_ALL=C` / `LANG=C`, `--test-timeout=300000`), 99 Email unit tests, and 8 browser stories including the new fail-closed setup/AI/calendar/view path. `npm run test:email:workflow` now sets those locale/Postgres flags. Full-project `tsc` still reports pre-existing `handoff-management.ts` typing errors unrelated to this increment; new productization files typecheck. Confidence is local-software only.
 
-Robin/Ernest blockers: wire the Email product Resend API key; finish live DNS/Resend on the three outreach domains; fund Ari/AI Gateway credits; refresh Google Calendar tokens and verify per-agent calendars; add VAPID + per-user device registration; verify ownership of an existing Twilio number before TEL-TEST; hosted signed-in CRM-shell verification. Do not prod-migrate, deploy or send to customers from this VM.
+Ops attribution: live Resend domain add + Cloudflare email DNS for the three outreach domains is Robin’s job and is in progress now. Do not treat that as waiting on Ernest unless a login or payment block appears. Ernest is direction, payment and login only. This VM does not write live Resend or Cloudflare DNS.
+
+Still blocked for product: wire the Email product Resend API key; fund Ari/AI Gateway credits (AI paths stay fail-closed); refresh Google Calendar tokens and verify per-agent calendars; add VAPID + per-user device registration; verify ownership of an existing Twilio number before TEL-TEST; hosted signed-in CRM-shell verification. Do not prod-migrate, deploy or send to customers from this VM. No customer send without release auth.
+
+Local #3 software report: [18-local-3-packet-complete.md](18-local-3-packet-complete.md). Packets stay Partial.

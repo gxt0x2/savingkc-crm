@@ -26,6 +26,54 @@ export function canEnableAutomaticBooking(input: {
   )
 }
 
+export type CallbackPrecision =
+  | 'exact'
+  | 'range_or_date'
+  | 'phone_only'
+  | 'clarify'
+
+export function callbackRequestPrecision(input: {
+  phone?: string | null
+  timeText?: string | null
+  timezone?: string | null
+  slotVerified?: boolean
+}) {
+  const time = input.timeText?.trim() ?? ''
+  const phone = Boolean(input.phone?.trim())
+  if (
+    input.slotVerified &&
+    phone &&
+    time &&
+    input.timezone === 'America/Chicago' &&
+    /\d{1,2}:\d{2}/.test(time)
+  )
+    return 'exact' as const
+  if (phone && !time) return 'phone_only' as const
+  if (
+    time &&
+    (/\b(after|before|morning|afternoon|evening|tomorrow|next friday)\b/i.test(
+      time,
+    ) ||
+      !/\d{1,2}:\d{2}/.test(time))
+  )
+    return 'range_or_date' as const
+  return 'clarify' as const
+}
+
+export function automaticBookingAllowed(input: {
+  precision: CallbackPrecision
+  policyEnabled: boolean
+  calendarConnected: boolean
+  tokenFresh: boolean
+}) {
+  return (
+    input.precision === 'exact' &&
+    input.policyEnabled &&
+    input.calendarConnected &&
+    input.tokenFresh
+  )
+}
+
 export function defaultCallbackPolicy() {
   return {
     durationMinutes: 15,

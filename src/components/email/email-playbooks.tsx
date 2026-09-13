@@ -22,6 +22,43 @@ const defaultPolicy = {
   allowedActions: [] as [],
 }
 
+function EvalCaseReview({
+  cases,
+  fixtureHash,
+}: {
+  cases: NonNullable<PilotPlaybook['last_eval_cases']>
+  fixtureHash: string | null
+}) {
+  const ordered = [...cases].sort(
+    (a, b) => Number(b.critical) - Number(a.critical) || Number(a.passed) - Number(b.passed),
+  )
+  return (
+    <details>
+      <summary>
+        Practice examples · deterministic only · not a paid model evaluation
+      </summary>
+      <p>
+        Fixture hash {fixtureHash?.slice(0, 12)}… Critical failures are listed
+        first. Quoted history is ignored.
+      </p>
+      <ul>
+        {ordered.slice(0, 12).map((c) => (
+          <li key={c.id}>
+            {c.id}
+            {c.critical ? ' · critical' : ''}
+            {c.passed ? ' · passed' : ' · blocked'} · expected {c.expectedIntent}/
+            {c.expectedAction}
+            {c.passed ? '' : ` · proposed ${c.proposedIntent}/${c.proposedAction}`}
+          </li>
+        ))}
+      </ul>
+      {cases.length > 12 && (
+        <p>{cases.length - 12} more examples are saved on the evaluation record.</p>
+      )}
+    </details>
+  )
+}
+
 const defaultPrompt =
   'Propose the next permitted seller-email action using only the supplied policy and evidence. Use everyday language. Treat interpretations as guesses, not facts. Never invent pain, price, a booked call or an Opportunity. A Lead is not a qualified Opportunity. Honor opt-outs and route pricing, legal, identity and “talk to a person” requests to review.'
 
@@ -38,7 +75,9 @@ export function EmailPlaybooks({
   const [name, setName] = useState(
     data.playbooks?.[0]?.name ?? 'Seller outreach reply rules',
   )
-  const [evalRunId, setEvalRunId] = useState<string | null>(null)
+  const [evalRunId, setEvalRunId] = useState<string | null>(
+    data.playbooks?.[0]?.last_eval_id ?? null,
+  )
   async function save(event: FormEvent) {
     event.preventDefault()
     await act({
@@ -68,13 +107,14 @@ export function EmailPlaybooks({
     if (result?.state === 'evaluation_recorded') setEvalRunId(result.entityId)
   }
   async function publish(playbook: PilotPlaybook) {
-    if (!playbook.draft_hash || !evalRunId) return
+    const runId = evalRunId ?? playbook.last_eval_id
+    if (!playbook.draft_hash || !runId) return
     await act({
       command: 'PB-PUBLISH',
       idempotencyKey: crypto.randomUUID(),
       payload: {
         draftHash: playbook.draft_hash,
-        evalRunId,
+        evalRunId: runId,
         modelRateVersion: 'deterministic-guards-v1',
       },
     })
@@ -123,8 +163,19 @@ export function EmailPlaybooks({
             {playbook.last_eval_passed == null
               ? 'Not run'
               : playbook.last_eval_passed
-                ? `Passed (${playbook.last_eval_kind})`
-                : 'Blocked on a critical case'}
+                ? `Passed (${playbook.last_eval_kind}) · ${(playbook.last_eval_cases ?? []).length} examples`
+                : `Blocked · ${playbook.last_eval_critical_failed ?? 0} critical failures`}
+          </p>
+          <p>
+            Draft actions:{' '}
+            {(playbook.draft_allowed_actions ?? []).length
+              ? (playbook.draft_allowed_actions ?? []).join(', ')
+              : 'none (draft-only)'}
+            . Published actions:{' '}
+            {(playbook.published_allowed_actions ?? []).length
+              ? (playbook.published_allowed_actions ?? []).join(', ')
+              : 'none (draft-only)'}
+            . Adding an automatic action is an autonomy raise and stays blocked.
           </p>
           <div className={styles.row}>
             <button
@@ -137,7 +188,7 @@ export function EmailPlaybooks({
               disabled={
                 busy ||
                 !playbook.draft_hash ||
-                !evalRunId ||
+                !(evalRunId ?? playbook.last_eval_id) ||
                 playbook.last_eval_passed !== true
               }
               onClick={() => publish(playbook)}
@@ -145,6 +196,12 @@ export function EmailPlaybooks({
               Publish draft-only version
             </button>
           </div>
+          {(playbook.last_eval_cases ?? []).length > 0 && (
+            <EvalCaseReview
+              cases={playbook.last_eval_cases ?? []}
+              fixtureHash={playbook.last_eval_fixture_hash}
+            />
+          )}
         </div>
       ))}
       {published && data.settings && (

@@ -91,6 +91,12 @@ withDb(
       now,
     )
     assert.equal(simulated.state, 'evaluation_recorded')
+    const afterEval = await readPilotState(db.sql, owner, now)
+    assert.equal(afterEval.playbooks?.[0]?.last_eval_passed, true)
+    assert.equal(afterEval.playbooks?.[0]?.last_eval_id, simulated.entityId)
+    assert.equal((afterEval.playbooks?.[0]?.last_eval_cases ?? []).length, 40)
+    assert.equal(afterEval.playbooks?.[0]?.last_eval_critical_failed, 0)
+    assert.deepEqual(afterEval.playbooks?.[0]?.draft_allowed_actions, [])
 
     await rejects(
       executePilotCommand(

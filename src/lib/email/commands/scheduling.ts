@@ -1,6 +1,6 @@
 import 'server-only'
 import type { EmailCommand } from '../contracts'
-import { canEnableAutomaticBooking } from '../calendar'
+import { automaticBookingAllowed, canEnableAutomaticBooking } from '../calendar'
 import {
   WorkflowError,
   check,
@@ -44,6 +44,15 @@ export async function applySchedulingCommand(
       tokenFresh: false,
       hoursValid: true,
       alertsConfigured: p.alertCheckIds.length > 0,
+    }),
+    'CALENDAR_NOT_CONNECTED',
+  )
+  check(
+    !automaticBookingAllowed({
+      precision: 'exact',
+      policyEnabled: p.enabled,
+      calendarConnected: false,
+      tokenFresh: false,
     }),
     'CALENDAR_NOT_CONNECTED',
   )

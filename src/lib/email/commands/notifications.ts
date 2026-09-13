@@ -1,5 +1,6 @@
 import 'server-only'
 import type { EmailCommand } from '../contracts'
+import { canUseUnscopedPushFeed } from '../notifications'
 import { check, type Context, type Result } from '../workflow/core'
 
 export function pushConfigured() {
@@ -16,6 +17,7 @@ export async function applyNotificationTest(
   const { tx, member, now } = context,
     ws = member.workspace_id
   check(command.payload.channel === 'push', 'UNSUPPORTED_ALERT_CHANNEL', 400)
+  check(!canUseUnscopedPushFeed(), 'PUSH_UNSCOPED_FEED_FORBIDDEN')
   const configured = pushConfigured()
   const eventKey = `push-test:${command.idempotencyKey}`
   const [delivery] =
