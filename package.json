@@ -56,7 +56,8 @@
     "test:email:workflow": "EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin LC_ALL=C LANG=C node --test-concurrency=1 --test-timeout=300000 --conditions=react-server --import tsx --test tests/email-db/workflow.test.ts tests/email-db/productization.test.ts",
     "dev:email:local": "node tests/email-local/start.mjs",
     "test:email:local-ui": "EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin LC_ALL=C LANG=C playwright test --config tests/email-local/playwright.config.ts",
-    "test:email:evaluate": "tsx scripts/email/evaluate-playbook.ts"
+    "test:email:evaluate": "tsx scripts/email/evaluate-playbook.ts",
+    "test:email:ari-retest": "tsx --conditions=react-server scripts/email/retest-ari-gateway.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.35",

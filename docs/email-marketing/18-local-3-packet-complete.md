@@ -27,6 +27,7 @@ The local harness applies eighteen named Email migrations including `20260913190
 - Manual practice-app walkthrough: save → deterministic examples → case drilldown → publish → draft-only default → Readiness stays blocked. Live send was not enabled.
 - Ops-verify follow-up: intended-domain ops copy with `sendingReady=false`. Latest snapshot: buyer send+receive verified; team receive pending.
 - Wizard-finish follow-up: Connections lists `EMAIL_CREDENTIALS_KEY_V1`, `SavingKC Email CRM`, `EMAIL_RESEND_WEBHOOK_ENDPOINT_ID`, `EMAIL_PREFERENCE_KEY_V*`, and `POST /api/webhooks/email/resend`. Hosted presence is `present-not-live`. Live send stayed off.
+- Ari Prepare-with-Ari retest: **FAIL** / `AI_NOT_CONNECTED`. Model `openai/gpt-5.6-luna` is in the public catalog with reservation-safe pricing. No OIDC or `AI_GATEWAY_API_KEY` on this VM. No generation, $0. See [Ari retest](21-ari-gateway-retest.md).
 
 ## Robin vs Ernest (authoritative)
 
@@ -35,7 +36,7 @@ The local harness applies eighteen named Email migrations including `20260913190
 | Live Resend domain add + Cloudflare email DNS for `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` | **Robin** | Landed. `talktosavingkc.com` and `yourkchomebuyer.com` send+receive verified; `savingkcteam.com` send verified / receive pending. See [ops-verify](19-outreach-dns-ops-verify.md). This VM did not write those records. |
 | Direction, payment, login, and live-send release auth | **Ernest** | Release auth is still required for live send. Login/payment only if a block appears. |
 | Resend Email product API key + hosted secrets | **Robin (parallel)** | **Present-but-not-live.** `EMAIL_CREDENTIALS_KEY_V1` set Prod/Preview; `RESEND_API_KEY` set Prod/Preview/Dev (Conversations only). No Email-route deploy. Named key `SavingKC Email CRM` exists off-chat. Webhook secret is not created. See [hosted-secrets](20-hosted-secrets-contract.md). Does not unlock live send. |
-| Funded Ari / AI Gateway credits | Product / billing | Unfunded (prior HTTP 403). AI paths stay fail-closed. |
+| Funded Ari / AI Gateway credits | Product / billing | Ops reports ~$4.97 Free Credit on `gxt0x2s-projects`. This VM retest **FAIL** / `AI_NOT_CONNECTED` (no OIDC or gateway key; Vercel CLI logged out). No generation, $0 usage. Prior 403 not retested. See [Ari retest](21-ari-gateway-retest.md). |
 | Google Calendar token refresh + per-agent calendars | Product / live verify | Stored CRM tokens are expired/unverified for Email. |
 | VAPID + per-user push devices | Product / live verify | `NTF-TEST` records blocked rows only. |
 | Existing Twilio number ownership + real `TEL-TEST` | Product / live verify | Intended save only. No purchase. |
@@ -48,7 +49,7 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 | Packet | Local now | Still missing |
 | --- | --- | --- |
-| EM-015 | Durable human-reviewed drafting plus deterministic draft-only policy guards | Live Ari credits / bounded automatic replies |
+| EM-015 | Durable human-reviewed drafting plus deterministic draft-only policy guards | Authenticated Prepare-with-Ari (this VM `AI_NOT_CONNECTED`) / bounded automatic replies |
 | EM-016 | Deterministic runner, 40-seed publish gate, quote-stripped expansions, CLI report | Paid 3-run model evaluation |
 | EM-025 | Editor, last-eval persistence, case drilldown, version-compare of allowed actions | Model-eval review UI / autonomy raise |
 | EM-026 | Seven-step setup and a blocked simulation checklist | Finish/enable, brand, live provider |
@@ -59,10 +60,10 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 ## Honesty limits
 
-- Do not claim Ari works. Credits are unfunded.
+- Do not claim Ari works. Credits are ops-reported; this VM could not authenticate (`AI_NOT_CONNECTED`). No real generation.
 - Do not claim Calendar is connected or that a callback is a booked appointment.
 - Do not claim sending-ready from purchased domains or from Robin’s landed DNS. Ops-verified is not product-ready. Do not claim the webhook is live; the signing secret is not created. Do not treat hosted `EMAIL_CREDENTIALS_KEY_V1` or `RESEND_API_KEY` as a live Email connection — they are present-but-not-live.
 - Do not treat a deterministic fixture pass as a paid model evaluation.
 - A Lead is not an Opportunity unless a human qualifies it.
 
-Local #3 software is finished. Remaining work is Email-route deploy under release auth (hosted secrets are present-but-not-live), a Connections-pasted product key, funded Ari credits, live Calendar/push/phone verify, and Ernest release auth — not more local scaffolding.
+Local #3 software is finished. Remaining work is Email-route deploy under release auth (hosted secrets are present-but-not-live), a Connections-pasted product key, an authenticated Ari generation (this VM `AI_NOT_CONNECTED`), live Calendar/push/phone verify, and Ernest release auth — not more local scaffolding.
