@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import styles from './email-workspace.module.css'
+import { EmailDomains } from './email-domains'
 
 type Connection = {
   id: string
@@ -301,6 +302,7 @@ export function EmailConnections() {
           </>
         )}
       </section>
+      <EmailDomains />
       <section>
         <h4>Ari</h4>
         <p>

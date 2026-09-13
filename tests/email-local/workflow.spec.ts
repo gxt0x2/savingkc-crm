@@ -686,3 +686,133 @@ test('mock-backed connection UI clears the key and makes disconnect impact expli
     page.getByRole('button', { name: 'Disconnect & pause email', exact: true }),
   ).toHaveCount(0)
 })
+
+test('mock-backed sender setup rejects the main domain and shows provider DNS without enabling sending', async ({
+  page,
+}) => {
+  const connectionId = '00000000-0000-4000-8000-000000000091',
+    domainId = '00000000-0000-4000-8000-000000000092',
+    senderId = '00000000-0000-4000-8000-000000000093'
+  const state = {
+    configured: true,
+    revision: 0,
+    primaryDomain: 'savingkc.com',
+    connections: [{ id: connectionId, account_label: 'Fixture Resend' }],
+    domains: [] as Record<string, unknown>[],
+    senders: [] as Record<string, unknown>[],
+  }
+  await page.route('**/api/email/domains', async (route) => {
+    if (route.request().method() === 'POST') {
+      const command = route.request().postDataJSON()
+      if (command.command === 'DOM-ADD') {
+        if (command.payload.domain === 'mail.savingkc.com') {
+          await route.fulfill({
+            status: 400,
+            json: { error: { code: 'PRIMARY_DOMAIN_OR_SUBDOMAIN_FORBIDDEN' } },
+          })
+          return
+        }
+        expect(command.payload).toMatchObject({
+          domain: 'savingkc-outreach.com',
+          connectionId,
+          brandUrl: 'https://savingkc-outreach.com',
+        })
+        state.domains = [
+          {
+            id: domainId,
+            name: 'savingkc-outreach.com',
+            state: 'needs_dns',
+            connection_state: 'checked',
+            sending_state: 'enabled',
+            receiving_state: 'enabled',
+            paused: true,
+            revision: 1,
+            brand_url: 'https://savingkc-outreach.com',
+            failure_code: null,
+            dns_records: [
+              {
+                record: 'DKIM',
+                type: 'TXT',
+                name: 'resend._domainkey',
+                value: 'fixture-provider-dkim',
+                status: 'not_started',
+              },
+            ],
+          },
+        ]
+        await route.fulfill({ json: { ...state, entityId: domainId } })
+        return
+      }
+      if (command.command === 'SND-SAVE') {
+        expect(command.payload.state).toBe('paused')
+        state.senders = [
+          {
+            id: senderId,
+            domain_id: domainId,
+            from_name: command.payload.fromName,
+            local_part: command.payload.localPart,
+            signature: command.payload.signature,
+            hourly_limit: 5,
+            daily_limit: 20,
+            state: 'paused',
+            revision: 0,
+          },
+        ]
+        await route.fulfill({ json: { ...state, entityId: senderId } })
+        return
+      }
+    }
+    await route.fulfill({ json: state })
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: /3. Connections/ }).click()
+  const section = page.getByRole('region', {
+    name: 'Sender domains',
+    exact: true,
+  })
+  await section.getByText('Add an owned domain', { exact: true }).click()
+  await section
+    .getByLabel('Owned outreach domain', { exact: true })
+    .fill('mail.savingkc.com')
+  await section
+    .getByLabel('Brand page on this domain', { exact: true })
+    .fill('https://savingkc-outreach.com')
+  await section
+    .getByLabel(
+      'I own this domain and want to set up sending and receiving in Resend.',
+    )
+    .check()
+  await section
+    .getByRole('button', { name: 'Set up owned domain', exact: true })
+    .click()
+  await expect(section).toContainText(
+    'The main company domain and its subdomains are blocked.',
+  )
+  await section
+    .getByLabel('Owned outreach domain', { exact: true })
+    .fill('savingkc-outreach.com')
+  await section
+    .getByRole('button', { name: 'Set up owned domain', exact: true })
+    .click()
+  await expect(section).toContainText('DNS setup needed · Sending paused')
+  await section.getByText('DNS & next steps', { exact: true }).click()
+  await expect(
+    section.getByText('fixture-provider-dkim', { exact: true }),
+  ).toBeVisible()
+  await section.getByText('Add sender', { exact: true }).click()
+  await section
+    .getByRole('button', { name: 'Save sender', exact: true })
+    .click()
+  await expect(section).toContainText('hello@savingkc-outreach.com · paused')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({
+    path: 'test-results/email-local/senders-mobile.png',
+    fullPage: true,
+  })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true)
+})

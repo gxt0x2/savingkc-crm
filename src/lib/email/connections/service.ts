@@ -32,7 +32,7 @@ export function connectionMasterKey(): Buffer | null {
     ? Buffer.from(value, 'hex')
     : null
 }
-async function ownerWorkspace(tx: Tx, subject: string) {
+export async function ownerWorkspace(tx: Tx, subject: string) {
   const [member] = await tx`select m.workspace_id from em_memberships m
     join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false
       and (p.user_id is null or p.user_id=m.auth_user_id)
@@ -181,7 +181,17 @@ async function disconnectImpact(tx: Tx, workspaceId: string) {
     await tx`select id,revision,state from em_campaigns where workspace_id=${workspaceId} and state='active' order by id`
   const intents =
     await tx`select id,state from em_send_intents where workspace_id=${workspaceId} and state in ('queued','held') order by id`
-  return { campaigns, intents, hash: workflowHash({ campaigns, intents }) }
+  const domains =
+    await tx`select id,connection_id,revision,paused from em_domains where workspace_id=${workspaceId} order by id`
+  const senders =
+    await tx`select id,domain_id,revision,state from em_senders where workspace_id=${workspaceId} order by id`
+  return {
+    campaigns,
+    intents,
+    domains,
+    senders,
+    hash: workflowHash({ campaigns, intents, domains, senders }),
+  }
 }
 const disconnectSchema = z
   .object({
@@ -221,6 +231,8 @@ export async function disconnectService(
     )
     check(connection.state !== 'revoked', 'CONNECTION_ALREADY_REVOKED')
     await tx`update em_service_connections set state='revoked',encrypted_secret=null,capabilities='{}'::jsonb where id=${connection.id}`
+    await tx`update em_domains set paused=true,state='held',failure_code='DOMAIN_CONNECTION_REQUIRED',check_token=null,revision=revision+1 where workspace_id=${ws.id} and connection_id=${connection.id}`
+    await tx`update em_senders set state='paused',revision=revision+1 where workspace_id=${ws.id} and state='active' and domain_id in (select id from em_domains where connection_id=${connection.id} and workspace_id=${ws.id})`
     await tx`update em_workspaces set send_enabled=false,ai_auto_enabled=false,setup_completed_at=null,pause_reason='Provider connection disconnected',revision=revision+1 where id=${ws.id}`
     await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail)
       values(${ws.id},${subject},'SVC-DISCONNECT',${connection.id},${input.idempotencyKey},${tx.json({ reason: input.reason, pausedWorkspace: true, activeCampaigns: impact.campaigns.length, queuedMessages: impact.intents.length })})`

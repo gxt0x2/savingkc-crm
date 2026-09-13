@@ -208,6 +208,13 @@ export async function applySettingsCommand(
         'HTTPS_PRIVACY_URL_REQUIRED',
         400,
       )
+      if (
+        config.business?.primaryDomain &&
+        config.business.primaryDomain !== p.primaryDomain.toLowerCase()
+      ) {
+        await tx`update em_domains set paused=true,state='held',failure_code='BUSINESS_DOMAIN_CHANGED',check_token=null,revision=revision+1 where workspace_id=${ws}`
+        await tx`update em_senders set state='paused',revision=revision+1 where workspace_id=${ws} and state='active'`
+      }
       config.business = { ...p, primaryDomain: p.primaryDomain.toLowerCase() }
       break
     }

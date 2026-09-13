@@ -55,7 +55,7 @@ npm run test:email:local-ui
 npm run dev:email:local
 ```
 
-The harness creates its own temporary PostgreSQL cluster, applies eleven named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
+The harness creates its own temporary PostgreSQL cluster, applies twelve named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
 
 ## Packet audit
 
@@ -129,3 +129,12 @@ EM-007 now has owner-only credential intake and masked connection records, AES-2
 The Connections tab replaces its placeholder with this flow and clear Ari/Calendar/response-number status. Redundant More cards were removed. Verification: 57 database cases passed before disconnect was added; all six connection/disconnect database cases then passed (59 cases now present), 64 unit tests, five browser stories including mocked credential-clear/disconnect interaction, TypeScript and scoped ESLint. The mock UI case does not constitute a real Resend connection. No Resend key was available through the existing workspace/deployment access, so real account checks remain pending. No provider account was created, no subscription purchased, and no customer email sent.
 
 Remaining service work: credential rotation with key-version migration, authenticated webhook secret lifecycle, historical account replacement review, real sender domains/readiness, and production secret deployment. Calendar tokens and CRM service secrets were not available in the local environment; their presence in deployed infrastructure does not mean they are exportable. These are access/configuration dependencies, not evidence that production credentials are broken.
+
+
+## Sender-domain continuation
+
+EM-008 now has owner-only DOM-ADD/VERIFY/PAUSE and SND-SAVE through /api/email/domains, an independent-domain validator, provider-returned DNS snapshots, durable creation reservations, and read-only reconciliation for uncertain creation. Duplicate requests, even with different keys, never create the same workspace/domain twice. New domain requests explicitly enable sending and receiving capabilities; existing domains are read without silently changing their settings. Domain records remain paused; provider DNS verification does not imply brand-host, receiving-route or launch readiness.
+
+Sender drafts save paused or retired. Activation is blocked pending the controlled sender-test/readiness workflow. Once referenced by a conversation, domain/address/from-name cannot be swapped. Disconnecting the connection or changing the main company domain holds related setup; no remote account or DNS record is deleted. Sender setup now appears within Connections, with clear errors and actual provider DNS values. Real Resend browser access was checked and requires sign-in; no domain was created remotely.
+
+Verified: 64 database cases, 69 unit cases, six browser stories (the credential and domain submission stories use explicit mocks), TypeScript and scoped ESLint. All provider calls in automated tests are fixtures. Remaining EM-008 work includes controlled sender tests, actual brand/DNS/receiving verification, delivery integration, domain health and full hosted acceptance. Latest image artifacts are in test-results/email-local, including senders-mobile.png. These are local UI evidence, not production or provider proof.

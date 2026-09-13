@@ -3335,3 +3335,411 @@ withDb(
     )
   },
 )
+
+async function domainFixture(db: Database) {
+  const { connectService } = await import(
+    '../../src/lib/email/connections/service'
+  )
+  const key = Buffer.alloc(32, 6)
+  let [{ revision }] = await db.sql`select revision from em_workspaces limit 1`
+  await executePilotCommand(
+    db.sql,
+    owner,
+    {
+      command: 'SET-BUSINESS',
+      idempotencyKey: randomUUID(),
+      expectedRevision: revision,
+      payload: {
+        name: 'Fixture company',
+        address: '123 Test Street',
+        primaryDomain: 'savingkc.com',
+        timezone: 'America/Chicago',
+        programs: ['seller_outreach'],
+        contact: 'Fixture contact',
+        privacyUrl: 'https://savingkc.com/privacy',
+      },
+    },
+    now,
+  )
+  ;[{ revision }] = await db.sql`select revision from em_workspaces limit 1`
+  const connected = await connectService(
+    db.sql,
+    owner,
+    {
+      kind: 'email',
+      provider: 'resend',
+      secret: 're_fixture_domain_key_123456789',
+      expectedRevision: revision,
+      accountLabel: 'Domain fixture',
+      idempotencyKey: randomUUID(),
+    },
+    async () => ({
+      domainsRead: true,
+      receivingRead: true,
+      sendingVerified: false as const,
+    }),
+    key,
+    now,
+  )
+  const domain = {
+    id: randomUUID(),
+    name: 'savingkc-outreach.com',
+    status: 'not_started',
+    capabilities: { sending: 'enabled', receiving: 'enabled' },
+    records: [
+      {
+        record: 'DKIM',
+        name: 'resend._domainkey',
+        type: 'TXT',
+        value: 'fixture-provider-dkim',
+        status: 'not_started',
+      },
+    ],
+  }
+  const provider = {
+    create: async () => domain,
+    find: async () => domain,
+    get: async () => domain,
+  }
+  const command = {
+    command: 'DOM-ADD',
+    idempotencyKey: randomUUID(),
+    expectedRevision: revision,
+    payload: {
+      domain: domain.name,
+      connectionId: connected.connectionId,
+      brandUrl: 'https://savingkc-outreach.com',
+    },
+  }
+  return { key, connected, domain, provider, command }
+}
+
+withDb(
+  'domain setup rejects the primary domain and deduplicates creation across request keys',
+  async (db) => {
+    const { executeDomainCommand } = await import(
+      '../../src/lib/email/domains/service'
+    )
+    const f = await domainFixture(db)
+    let creates = 0,
+      release!: () => void,
+      started!: () => void
+    const gate = new Promise<void>((resolve) => {
+        release = resolve
+      }),
+      began = new Promise<void>((resolve) => {
+        started = resolve
+      })
+    const provider = {
+      ...f.provider,
+      create: async () => {
+        creates++
+        started()
+        await gate
+        return f.domain
+      },
+    }
+    await rejects(
+      executeDomainCommand(db.sql, reader, f.command, provider, f.key, now),
+      'FORBIDDEN',
+    )
+    await rejects(
+      executeDomainCommand(
+        db.sql,
+        owner,
+        {
+          ...f.command,
+          payload: { ...f.command.payload, domain: 'mail.savingkc.com' },
+        },
+        provider,
+        f.key,
+        now,
+      ),
+      'PRIMARY_DOMAIN_OR_SUBDOMAIN_FORBIDDEN',
+    )
+    const pending = executeDomainCommand(
+      db.sql,
+      owner,
+      f.command,
+      provider,
+      f.key,
+      now,
+    )
+    await began
+    const retry = await executeDomainCommand(
+      db.sql,
+      owner,
+      { ...f.command, idempotencyKey: randomUUID() },
+      provider,
+      f.key,
+      now,
+    )
+    assert.equal(retry.domains[0].state, 'creating')
+    release()
+    const saved = await pending
+    assert.equal(creates, 1)
+    assert.equal(saved.domains[0].state, 'needs_dns')
+    assert.equal(saved.domains[0].paused, true)
+    assert.equal(saved.domains[0].dns_records[0].value, 'fixture-provider-dkim')
+    await executeDomainCommand(db.sql, owner, f.command, provider, f.key, now)
+    assert.equal(creates, 1)
+    assert.equal(
+      JSON.stringify(saved).includes('re_fixture_domain_key_123456789'),
+      false,
+    )
+  },
+)
+
+withDb(
+  'uncertain domain creation is reconciled by reading and never blindly created again',
+  async (db) => {
+    const { executeDomainCommand } = await import(
+      '../../src/lib/email/domains/service'
+    )
+    const f = await domainFixture(db)
+    let creates = 0,
+      finds = 0,
+      found = false
+    const provider = {
+      ...f.provider,
+      create: async () => {
+        creates++
+        throw Error('timed out')
+      },
+      find: async () => {
+        finds++
+        return found ? { ...f.domain, status: 'verified' } : null
+      },
+    }
+    const uncertain = await executeDomainCommand(
+      db.sql,
+      owner,
+      f.command,
+      provider,
+      f.key,
+      now,
+    )
+    assert.equal(uncertain.domains[0].state, 'uncertain')
+    await executeDomainCommand(
+      db.sql,
+      owner,
+      { ...f.command, idempotencyKey: randomUUID() },
+      provider,
+      f.key,
+      now,
+    )
+    assert.equal(creates, 1)
+    found = true
+    const verified = await executeDomainCommand(
+      db.sql,
+      owner,
+      {
+        command: 'DOM-VERIFY',
+        idempotencyKey: randomUUID(),
+        expectedRevision: uncertain.domains[0].revision,
+        payload: { domainId: uncertain.entityId },
+      },
+      provider,
+      f.key,
+      now,
+    )
+    assert.equal(verified.domains[0].state, 'provider_verified')
+    assert.equal(verified.domains[0].paused, true)
+    assert.equal(creates, 1)
+    assert.equal(finds, 2)
+    await rejects(
+      executeDomainCommand(
+        db.sql,
+        owner,
+        {
+          command: 'DOM-PAUSE',
+          idempotencyKey: randomUUID(),
+          expectedRevision: verified.domains[0].revision,
+          payload: {
+            domainId: verified.entityId,
+            paused: false,
+            reason: 'Try activating',
+          },
+        },
+        provider,
+        f.key,
+        now,
+      ),
+      'DOMAIN_READINESS_REQUIRED',
+    )
+    const [ws] = await db.sql`select send_enabled from em_workspaces limit 1`
+    assert.equal(ws.send_enabled, false)
+  },
+)
+
+withDb(
+  'sender activation is blocked and used identities cannot be swapped',
+  async (db) => {
+    const { executeDomainCommand } = await import(
+      '../../src/lib/email/domains/service'
+    )
+    const f = await domainFixture(db)
+    const domain = await executeDomainCommand(
+      db.sql,
+      owner,
+      f.command,
+      f.provider,
+      f.key,
+      now,
+    )
+    const command = {
+      command: 'SND-SAVE',
+      idempotencyKey: randomUUID(),
+      expectedRevision: domain.revision,
+      payload: {
+        domainId: domain.entityId,
+        fromName: 'Fixture sender',
+        localPart: 'hello',
+        signature: 'Fixture company',
+        hourlyLimit: 5,
+        dailyLimit: 20,
+        state: 'paused',
+      },
+    }
+    await rejects(
+      executeDomainCommand(
+        db.sql,
+        owner,
+        { ...command, payload: { ...command.payload, state: 'active' } },
+        f.provider,
+        f.key,
+        now,
+      ),
+      'SENDER_TEST_REQUIRED',
+    )
+    const sender = await executeDomainCommand(
+      db.sql,
+      owner,
+      command,
+      f.provider,
+      f.key,
+      now,
+    )
+    const handoff = await reviewedCallback(db)
+    await db.sql`update em_threads set sender_id=${sender.entityId} where id=${handoff.payload.threadId}`
+    await rejects(
+      executeDomainCommand(
+        db.sql,
+        owner,
+        {
+          ...command,
+          idempotencyKey: randomUUID(),
+          expectedRevision: 0,
+          payload: {
+            ...command.payload,
+            senderId: sender.entityId,
+            localPart: 'another',
+          },
+        },
+        f.provider,
+        f.key,
+        now,
+      ),
+      'SENDER_IDENTITY_IN_USE',
+    )
+    const retired = await executeDomainCommand(
+      db.sql,
+      owner,
+      {
+        ...command,
+        idempotencyKey: randomUUID(),
+        expectedRevision: 0,
+        payload: {
+          ...command.payload,
+          senderId: sender.entityId,
+          state: 'retired',
+        },
+      },
+      f.provider,
+      f.key,
+      now,
+    )
+    assert.equal(retired.senders[0].state, 'retired')
+    const [thread] =
+      await db.sql`select sender_id from em_threads where id=${handoff.payload.threadId}`
+    assert.equal(thread.sender_id, sender.entityId)
+  },
+)
+
+withDb(
+  'disconnect during domain creation cannot mark a revoked provider ready',
+  async (db) => {
+    const { executeDomainCommand } = await import(
+      '../../src/lib/email/domains/service'
+    )
+    const { readConnections, disconnectService } = await import(
+      '../../src/lib/email/connections/service'
+    )
+    const f = await domainFixture(db)
+    let release!: () => void, started!: () => void
+    const gate = new Promise<void>((resolve) => {
+        release = resolve
+      }),
+      began = new Promise<void>((resolve) => {
+        started = resolve
+      })
+    const pending = executeDomainCommand(
+      db.sql,
+      owner,
+      f.command,
+      {
+        ...f.provider,
+        create: async () => {
+          started()
+          await gate
+          return { ...f.domain, status: 'verified' }
+        },
+      },
+      f.key,
+      now,
+    )
+    await began
+    const snapshot = await readConnections(db.sql, owner, f.key)
+    await disconnectService(db.sql, owner, {
+      connectionId: f.connected.connectionId,
+      expectedRevision: snapshot.revision,
+      confirmedAffectedHash: snapshot.disconnectImpact.hash,
+      reason: 'Cancel setup',
+      idempotencyKey: randomUUID(),
+    })
+    release()
+    const result = await pending
+    assert.equal(result.domains[0].state, 'held')
+    assert.equal(result.domains[0].paused, true)
+    assert.equal(result.domains[0].connection_state, 'revoked')
+  },
+)
+
+withDb(
+  'changing the main company domain invalidates saved sender setup',
+  async (db) => {
+    const { executeDomainCommand } = await import(
+      '../../src/lib/email/domains/service'
+    )
+    const f = await domainFixture(db)
+    await executeDomainCommand(db.sql, owner, f.command, f.provider, f.key, now)
+    const [ws] = await db.sql`select revision,config from em_workspaces limit 1`
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'SET-BUSINESS',
+        idempotencyKey: randomUUID(),
+        expectedRevision: ws.revision,
+        payload: {
+          ...ws.config.business,
+          primaryDomain: 'savingkc-outreach.com',
+        },
+      },
+      now,
+    )
+    const [domain] = await db.sql`select state,paused from em_domains`
+    assert.equal(domain.state, 'held')
+    assert.equal(domain.paused, true)
+  },
+)
