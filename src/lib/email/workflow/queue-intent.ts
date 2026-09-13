@@ -1,6 +1,6 @@
 import "server-only";
 import { freezeHostedEnvelope } from "../providers/frozen-envelope";
-import { workflowHash, type Context } from "./core";
+import { check, workflowHash, type Context } from "./core";
 
 export async function queueIntent(
   context: Context,
@@ -19,6 +19,11 @@ export async function queueIntent(
 ) {
   const [workspace] =
     await context.tx`select execution_mode from em_workspaces where id=${context.member.workspace_id}`;
+  if (workspace.execution_mode === "hosted") {
+    const [unresolved] =
+      await context.tx`select id from em_send_intents where workspace_id=${context.member.workspace_id} and thread_id=${input.threadId} and state in ('dispatching','uncertain') limit 1`;
+    check(!unresolved, "DELIVERY_RECONCILIATION_REQUIRED");
+  }
   const hosted =
     workspace.execution_mode === "hosted"
       ? await freezeHostedEnvelope(

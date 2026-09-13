@@ -21,7 +21,9 @@ type Setup = {
 };
 export function EmailHostedSetup({
   onChange,
+  revision,
 }: {
+  revision: number;
   onChange: () => Promise<unknown>;
 }) {
   const [data, setData] = useState<Setup | null>(null),
@@ -39,7 +41,7 @@ export function EmailHostedSetup({
   }, []);
   useEffect(() => {
     refresh().catch((e) => setError(e.message));
-  }, [refresh]);
+  }, [refresh, revision]);
   async function act(payload: object) {
     setBusy(true);
     setError("");

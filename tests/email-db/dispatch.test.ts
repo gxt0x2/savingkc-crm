@@ -368,3 +368,72 @@ test("provider acceptance survives a follow-up preparation failure", () =>
       await db.sql`select state from em_threads where id=${intent.thread_id}`;
     assert.equal(thread.state, "needs_review");
   }));
+test("disabled receiving after review prevents provider I/O", () =>
+  withDB(async (db) => {
+    const intent = await ready(db);
+    await db.sql`update em_domains set receiving_state='disabled' where workspace_id=${db.workspaceId}`;
+    let sends = 0;
+    await processNextDispatch(db.sql, owner, {
+      now,
+      send: async () => {
+        sends++;
+        return { state: "accepted", providerId: randomUUID() };
+      },
+    });
+    assert.equal(sends, 0);
+    const [saved] =
+      await db.sql`select state from em_send_intents where id=${intent.id}`;
+    assert.equal(saved.state, "held");
+  }));
+import { queueIntent } from "../../src/lib/email/workflow/queue-intent";
+import { readPilotState } from "../../src/lib/email/workflow/service";
+test("uncertain delivery is visible and prevents a second provider intent", () =>
+  withDB(async (db) => {
+    const intent = await ready(db);
+    await processNextDispatch(db.sql, owner, {
+      now,
+      send: async () => ({ state: "uncertain", code: "TEST_TIMEOUT" }),
+    });
+    const before = (
+      await db.sql`select id from em_send_intents where thread_id=${intent.thread_id}`
+    ).length;
+    await assert.rejects(
+      db.sql.begin(async (transaction) =>
+        queueIntent(
+          {
+            tx: transaction as unknown as Tx,
+            now,
+            member: {
+              workspace_id: db.workspaceId,
+              auth_user_id: owner,
+              roles: ["owner"],
+            },
+          },
+          {
+            threadId: intent.thread_id,
+            key: randomUUID(),
+            body: "A second send",
+            subject: "Follow up",
+            step: 0,
+            origin: "human",
+            contentRevision: 1,
+            controllerRevision: 1,
+            due: now,
+            expires: new Date(now.getTime() + 3600000),
+          },
+        ),
+      ),
+      /DELIVERY_RECONCILIATION_REQUIRED/,
+    );
+    assert.equal(
+      (
+        await db.sql`select id from em_send_intents where thread_id=${intent.thread_id}`
+      ).length,
+      before,
+    );
+    const state = await readPilotState(db.sql, owner, now);
+    assert.equal(
+      state.threads.find((t) => t.id === intent.thread_id)?.sending_issue,
+      "uncertain",
+    );
+  }));

@@ -1130,6 +1130,7 @@ export async function readPilotState(
         from (select * from work_items where lead_id=t.lead_id and status in ('pending','blocked') order by due_at nulls last,work_item_key limit 50) wi),'[]'::jsonb) as open_tasks,
       w.title as callback_title,
       (select metadata->>'email_task_notes' from lead_activities where id=h.crm_task_id) as callback_notes,
+      (select case when i.state in ('held','uncertain','rejected') or (i.state='dispatching' and i.first_attempt_at<${now}::timestamptz-interval '2 minutes') then i.state else null end from em_send_intents i where i.workspace_id=t.workspace_id and i.thread_id=t.id order by i.created_at desc,i.id desc limit 1) as sending_issue,
       exists(select 1 from em_messages m where m.thread_id=t.id and m.direction='outbound') as has_outbound,
       exists(select 1 from em_send_intents i where i.thread_id=t.id and i.origin='human' and i.state='queued') as reply_queued,
       (select min(i.not_before) from em_send_intents i where i.thread_id=t.id and i.state='queued') as next_email_at,

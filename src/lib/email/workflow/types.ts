@@ -128,6 +128,7 @@ export interface PilotThread {
   callback_title?: string | null
   callback_notes?: string | null
   scheduled_for?: string | null
+  sending_issue?: string | null
   reply_queued?: boolean
   has_outbound?: boolean
   next_email_at?: string | null
@@ -225,6 +226,7 @@ export function primaryView(
   asOf: string,
 ): Exclude<InboxView, 'all'> {
   const issue =
+    thread.sending_issue ||
     thread.callback_owner_changed ||
     thread.crm_history_repair_required ||
     thread.crm_callback_repair_required ||

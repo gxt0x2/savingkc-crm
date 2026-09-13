@@ -45,7 +45,7 @@ export async function processNextDispatch(
       await tx`select i.*,t.address_id,t.party_id,t.sender_id,t.content_revision,t.controller_revision,t.controller,t.inbound_pending,
       t.enrollment_id,v.config as campaign_config,t.state as thread_state,t.responsible_user_id,t.controller_user_id,c.state as campaign_state,
       s.state as sender_state,s.hourly_limit,s.daily_limit,d.paused as domain_paused,d.state as domain_state,
-      d.last_verified_at,cn.encrypted_secret,cn.state as connection_state,a.verification_state,a.verification_expires_at
+      d.last_verified_at,d.sending_state,d.receiving_state,cn.encrypted_secret,cn.state as connection_state,a.verification_state,a.verification_expires_at
       from em_send_intents i join em_threads t on t.workspace_id=i.workspace_id and t.id=i.thread_id
       join em_campaigns c on c.workspace_id=t.workspace_id and c.id=t.campaign_id
       join em_enrollments e on e.id=t.enrollment_id and e.workspace_id=t.workspace_id
@@ -99,8 +99,15 @@ export async function processNextDispatch(
       workflowHash(payload) !== intent.provider_payload_hash ||
       workflowHash(intent.frozen_payload) !== intent.payload_hash ||
       intent.connection_state !== "checked" ||
-      (!options.allowlistedTest &&
-        (intent.sender_state !== "active" || intent.domain_paused)) ||
+      (intent.sender_state !== "active" &&
+        !(
+          intent.is_test &&
+          options.allowlistedTest &&
+          intent.sender_state === "paused"
+        )) ||
+      (intent.domain_paused && !(intent.is_test && options.allowlistedTest)) ||
+      intent.sending_state !== "enabled" ||
+      intent.receiving_state !== "enabled" ||
       intent.domain_state !== "provider_verified" ||
       !intent.last_verified_at ||
       new Date(intent.last_verified_at).getTime() <=
