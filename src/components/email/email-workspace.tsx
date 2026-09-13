@@ -85,8 +85,6 @@ const friendly: Record<string, string> = {
     'Sending remains off. The provider and delivery checks are not connected yet.',
   EMAIL_SETUP_REQUIRED:
     'Email is not connected yet. The local build is available for testing; live sending remains off.',
-  EMAIL_HOSTED_SETUP_REQUIRED:
-    'Hosted Email storage is not connected yet. Live sending remains off.',
   EMAIL_UNAVAILABLE:
     'Email could not be loaded. Your saved work has not been cleared. Try again.',
   SIGN_IN_REQUIRED: 'Sign in to the CRM to open Email.',
