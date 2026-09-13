@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
 import { z } from 'zod'
 import { ownerWorkspace } from '../connections/access'
-import { check, json, workflowHash, type Tx } from '../workflow/core'
+import { check, workflowHash, type Tx } from '../workflow/core'
 
 export function liveDispatchBlockReason(input?: {
   enabledEnv?: string | undefined

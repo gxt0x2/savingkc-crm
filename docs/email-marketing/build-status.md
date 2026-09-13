@@ -188,3 +188,7 @@ See [provider lifecycle](16-provider-lifecycle.md). Local-only continuation of r
 - Simulated outbound frozen payloads include List-Unsubscribe headers when preference keys exist. The public success page can record a program note after one-click stop; it cannot resubscribe.
 
 The local harness applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`. No production migration, Resend account, DNS write, domain purchase or customer send.
+
+Verified locally this increment: 85 database workflow cases (serial harness with `EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin`, `LC_ALL=C` / `LANG=C`, `--test-concurrency=1`) and 98 Email/proxy unit tests. Live sending remains off.
+
+Owner lock 2026-09-13: intended outreach domains `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` may appear in later copy/fixtures after Ernest/Robin purchase them. They are not purchased, not on Cloudflare, and are not treated as ready here. The existing Resend signup under `ernest@savingkc.com` has no API key in Email. Ari credits remain unfunded.

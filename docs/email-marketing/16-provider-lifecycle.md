@@ -15,9 +15,11 @@ Local-only continuation of build-status next implementation order #2. This incre
 
 ## Still blocked
 
-- A real Resend API key, independent sending domain, DNS records and hosted webhook URL
+- A Resend API key wired into Email. A signup-only account exists at `ernest@savingkc.com`; that is not a product connection or sending proof.
+- Independent sending domains and Cloudflare DNS. Intended names for later owner purchase only: `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` (third TLD still unconfirmed). None are purchased or DNS-ready in this increment.
 - Production preference and credential key deployment
 - Controlled provider evidence that would allow live dispatch
 - Hosted signed-in CRM-shell verification
+- Funded Ari / AI Gateway credits (prior HTTP 403 for missing paid credits still stands)
 
-Cash floor remains no. The disposable harness now applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`.
+Cash floor remains no. This increment does not buy domains, write Cloudflare DNS, or treat the existing Resend signup as readiness. The disposable harness now applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`.

@@ -244,7 +244,9 @@ export function EmailConnections() {
       </div>
       <p>
         Connect your existing services here. Sending stays off until sender
-        setup and delivery checks pass.
+        setup and delivery checks pass. Planned outreach domains
+        (talktosavingkc.com, savingkcteam.com, yourkchomebuyer.com) are owner
+        purchases only and are not registered or DNS-ready from this screen.
       </p>
       {notice && <p role="status">{notice}</p>}
       <section aria-label="Resend connection">

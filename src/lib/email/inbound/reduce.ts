@@ -1,5 +1,5 @@
 import 'server-only'
-import { check, json, type Tx } from '../workflow/core'
+import { check, type Tx } from '../workflow/core'
 
 export const deliveryEventTypes = [
   'email.sent',
