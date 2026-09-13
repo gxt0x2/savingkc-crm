@@ -20,12 +20,13 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 ## Local verification (this increment)
 
-- `npx vitest run src/lib/email/__tests__` — 40 files / 106 passed
+- `npx vitest run src/lib/email/__tests__` — 41 files / 108 passed
 - `npx tsx scripts/email/evaluate-playbook.ts` — 40 seeds + 120 expansions, 0 billed attempts, 0 failures
 - `npm run test:email:workflow` — 88 passed (serial, PostgreSQL 16, `LC_ALL=C`)
 - `npm run test:email:local-ui` — 8 browser stories passed
 - Manual practice-app walkthrough: save → deterministic examples → case drilldown → publish → draft-only default → Readiness stays blocked. Live send was not enabled.
-- Ops-verify follow-up: 106 unit tests, 3 productization DB cases, 8 browser stories (including intended-domain ops copy). Connections/Readiness show landed DNS with `sendingReady=false`.
+- Ops-verify follow-up: intended-domain ops copy with `sendingReady=false`.
+- Wizard-finish follow-up: 108 unit tests, 8 browser stories (setup steps 4–6 embed the real forms; Connections lists `EMAIL_CREDENTIALS_KEY_V1`). Live send stayed off.
 
 ## Robin vs Ernest (authoritative)
 
