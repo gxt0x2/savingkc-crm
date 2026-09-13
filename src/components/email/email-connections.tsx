@@ -11,6 +11,7 @@ import {
   EMAIL_CONNECTIONS_SECRET_CONTRACT,
   EMAIL_FLAGS_MUST_STAY_OFF,
   EMAIL_HOSTED_SECRETS,
+  EMAIL_HOSTED_SECRET_PRESENCE,
   EMAIL_RESEND_PRODUCT_KEY_LABEL,
   EMAIL_SECRETS_NOT_THIS_PRODUCT,
 } from '@/lib/email/secrets-contract'
@@ -274,7 +275,18 @@ export function EmailConnections() {
           {EMAIL_CONNECTIONS_SECRET_CONTRACT.credentialsKey} is present (
           {EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.intake}). Do not use{' '}
           {EMAIL_SECRETS_NOT_THIS_PRODUCT[0]} for Email — that env belongs to
-          Conversations.
+          Conversations. Hosted names may be present and still not live (
+          {EMAIL_CONNECTIONS_SECRET_CONTRACT.hostedPresence}):{' '}
+          <code>{EMAIL_HOSTED_SECRET_PRESENCE.EMAIL_CREDENTIALS_KEY_V1.name}</code>{' '}
+          is set on {EMAIL_HOSTED_SECRET_PRESENCE.EMAIL_CREDENTIALS_KEY_V1.project}{' '}
+          {EMAIL_HOSTED_SECRET_PRESENCE.EMAIL_CREDENTIALS_KEY_V1.environments.join(
+            '/',
+          )}
+          ; <code>{EMAIL_HOSTED_SECRET_PRESENCE.RESEND_API_KEY.name}</code> is
+          set on Conversations{' '}
+          {EMAIL_HOSTED_SECRET_PRESENCE.RESEND_API_KEY.environments.join('/')}.
+          Neither is serving Email routes until those routes deploy under
+          release auth.
         </p>
         <ul>
           <li>

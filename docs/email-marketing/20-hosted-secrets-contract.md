@@ -4,6 +4,18 @@ Updated: 2026-09-13. Source: existing EM-007 / 03 §2 / Connections packet. **Wi
 
 Robin is hosting the Email product secrets in parallel. This document is the exact name/format contract already in code. Do not invent a new env name. Do not set the live-dispatch flags. Do not create the Resend webhook until hosted Email routes deploy under release auth.
 
+## Hosted presence (ops, present-but-not-live)
+
+Ops reports these **names** as set on project `savingkc-crm`. This is not a live Email connection and does not unlock send. No Email-route deploy under release auth.
+
+| Name | Project / envs | Product | Live for Email? |
+| --- | --- | --- | --- |
+| `EMAIL_CREDENTIALS_KEY_V1` | savingkc-crm · Prod / Preview (encrypted) | Email master key | **No.** Present in hosted env; not serving Email routes. |
+| `RESEND_API_KEY` | savingkc-crm · Prod / Preview / Dev (encrypted) | Conversations / TC / broadcasts | **No.** Email Connections does not read it. |
+| Webhook signing secret | not created | Email intake | **No.** Wait for `POST /api/webhooks/email/resend` after Email routes deploy. |
+
+A later CRM/Conversations redeploy can apply env names without making Email foundation routes live. Treat hosted presence as `present-not-live` until those routes deploy under release auth.
+
 ## Resend API key (product path)
 
 | Item | Contract |
@@ -16,7 +28,7 @@ Robin is hosting the Email product secrets in parallel. This document is the exa
 | Rotation | Optional `EMAIL_CREDENTIALS_KEY_V2` (same format). Keep V1 until every stored secret is rewritten. |
 | What a checked key is | Domain + receiving access check. Not sending, billing, DNS or inbound-routing readiness. |
 
-**`RESEND_API_KEY` is not this product.** That env is used by Conversations / TC drafts / broadcasts. Email Connections does not read it. Putting a Resend key only in `RESEND_API_KEY` does not connect Email.
+**`RESEND_API_KEY` is not this product.** That env is used by Conversations / TC drafts / broadcasts. It is now set encrypted on savingkc-crm Prod/Preview/Dev. Email Connections does not read it. Putting a Resend key only in `RESEND_API_KEY` does not connect Email.
 
 The local practice workspace still refuses a real key paste even if `EMAIL_CREDENTIALS_KEY_V1` is present. A named key that exists off-chat is not a live Email connection.
 
@@ -54,10 +66,10 @@ Even if Robin wires every secret above:
 
 ## What Robin can do now without this VM
 
-1. Keep wiring `EMAIL_CREDENTIALS_KEY_V1` (64 hex) in hosted Email/prod env. Do not commit it.
+1. `EMAIL_CREDENTIALS_KEY_V1` is already set on Prod/Preview. Leave it. Do not commit it. It is not live until Email routes deploy.
 2. Optionally create `EMAIL_PREFERENCE_KEY_V1` and set `EMAIL_PUBLIC_ORIGIN`.
-3. Hold `SavingKC Email CRM` for an owner to paste on Connections after the master key is present. Do not put it in `RESEND_API_KEY` and call Email connected.
+3. Hold `SavingKC Email CRM` for an owner to paste on Connections after Email routes can read the master key. Do not treat `RESEND_API_KEY` as Email connected.
 4. After hosted Email routes deploy under release auth, create the webhook against `https://<host>/api/webhooks/email/resend`. Not before.
-5. Do not set the three flags above. Do not prod-migrate. Do not customer-send.
+5. Do not set the three flags above. Do not prod-migrate. Do not customer-send. Redeploy of Conversations/CRM is Robin’s ops lane and still does not unlock live send.
 
 Code source of truth: `src/lib/email/secrets-contract.ts`, `src/lib/email/secrets.ts`, `src/lib/email/connections/service.ts`, `src/app/api/webhooks/email/resend/route.ts`.

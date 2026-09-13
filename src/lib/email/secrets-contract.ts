@@ -7,9 +7,10 @@
  * `EMAIL_CREDENTIALS_KEY_V*`. Live send stays gated even if these secrets exist.
  *
  * Named Resend key "SavingKC Email CRM" exists off-chat. Robin is wiring it
- * into product/hosted secrets. That is not a live Email connection and does
- * not unlock send. The webhook signing secret is not created until hosted
- * Email routes deploy under release auth.
+ * into product/hosted secrets. Hosted env names may be present and still not
+ * live: Email foundation routes have not deployed under release auth. That is
+ * not a live Email connection and does not unlock send. The webhook signing
+ * secret is not created until those routes deploy.
  */
 export const EMAIL_RESEND_PRODUCT_KEY_LABEL = 'SavingKC Email CRM'
 export const EMAIL_RESEND_KEY_PATTERN = '^re_[A-Za-z0-9_-]{12,200}$'
@@ -79,6 +80,7 @@ export const EMAIL_CONNECTIONS_SECRET_CONTRACT = {
     secretFormat: EMAIL_RESEND_WEBHOOK_SECRET_PATTERN,
     releaseGated: true,
   },
+  hostedPresence: 'present-not-live',
 } as const
 
 export const EMAIL_FLAGS_MUST_STAY_OFF = [
@@ -89,8 +91,38 @@ export const EMAIL_FLAGS_MUST_STAY_OFF = [
 
 export const EMAIL_SECRETS_NOT_THIS_PRODUCT = ['RESEND_API_KEY'] as const
 
+/** Ops snapshot of hosted env names. No values. Not product readiness. */
+export const EMAIL_HOSTED_PROJECT = 'savingkc-crm'
+
+export const EMAIL_HOSTED_SECRET_PRESENCE = {
+  EMAIL_CREDENTIALS_KEY_V1: {
+    name: 'EMAIL_CREDENTIALS_KEY_V1',
+    product: 'email',
+    presence: 'present-not-live',
+    project: EMAIL_HOSTED_PROJECT,
+    environments: ['production', 'preview'],
+    servingEmailRoutes: false,
+    reason:
+      'Set encrypted on savingkc-crm Prod/Preview. No Email-route deploy under release auth, so the running app does not serve this key.',
+  },
+  RESEND_API_KEY: {
+    name: 'RESEND_API_KEY',
+    product: 'conversations',
+    presence: 'present-not-live',
+    project: EMAIL_HOSTED_PROJECT,
+    environments: ['production', 'preview', 'development'],
+    servingEmail: false,
+    reason:
+      'Set encrypted on savingkc-crm Prod/Preview/Dev for Conversations/TC/broadcasts. Email Connections does not read it.',
+  },
+} as const
+
 export function emailHostedSecretNames() {
   return EMAIL_HOSTED_SECRETS.map((row) => row.name)
+}
+
+export function emailHostedSecretsAreLive() {
+  return false
 }
 
 export function emailLiveSendUnlockedByHostedSecrets() {
