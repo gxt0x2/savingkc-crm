@@ -1018,33 +1018,19 @@ export function EmailWorkspace({
                   <p>Setup and troubleshooting, outside the daily inbox.</p>
                 </div>
               </div>
-              <div className={styles.cards}>
-                <section>
-                  <h3>Setup & connections</h3>
-                  <p>
-                    Local database:{' '}
-                    {data.mode === 'simulation' ? 'connected' : 'disabled'}.
-                  </p>
-                  <p>
-                    Resend, sender domains, Calendar, response phone and push:
-                    not connected in this build.
-                  </p>
-                  <p>
-                    Business and team setup are available below for workspace
-                    owners. Subscription and provider connection steps are still
-                    being built.
-                  </p>
-                </section>
-                <section>
-                  <h3>AI rules</h3>
-                  <p>Human review only. No AI model is called.</p>
-                  <p>
-                    Use everyday language, supported facts and one useful
-                    question. Don’t invent pain or infer selling intent from an
-                    email open.
-                  </p>
-                </section>
-              </div>
+              <details className={styles.operations}>
+                <summary>Ari’s reply rules</summary>
+                <p>
+                  Human approval is required. Use everyday language, supported
+                  facts and one useful question. Don’t invent pain or infer
+                  selling intent from an email open.
+                </p>
+                <p>
+                  {data.ai_available
+                    ? 'AI credentials are available; individual draft results show whether the provider completed the request.'
+                    : 'AI access is not configured. You can write and review drafts manually.'}
+                </p>
+              </details>
               {data.settings && (
                 <EmailSetup settings={data.settings} busy={busy} act={act} />
               )}

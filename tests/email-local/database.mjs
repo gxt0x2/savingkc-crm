@@ -119,6 +119,7 @@ export async function startDisposableDatabase() {
       '20260912182000_email_crm_projection_repairs.sql',
       '20260913010000_email_action_workspace.sql',
       '20260913020000_email_ai_generations.sql',
+      '20260913030000_email_service_connections.sql',
     ]) {
       await sql.unsafe(
         await readFile(path.join(root, 'supabase/migrations', name), 'utf8'),

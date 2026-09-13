@@ -361,12 +361,32 @@ test('owner saves business and team setup; unavailable connections cannot enable
   })
   await setup.getByRole('button', { name: /3. Connections/ }).click()
   await expect(
-    setup.getByText('Sending disabled.', { exact: true }),
+    setup.getByText(
+      'Secure credential storage needs configuration. Do not paste a real key into this practice workspace.',
+      { exact: true },
+    ),
   ).toBeVisible()
   await expect(
     setup.getByRole('button', { name: /enable|finish/i }),
   ).toHaveCount(0)
+  await expect(setup.getByLabel('Resend API key')).toBeDisabled()
+  await expect(
+    setup.getByRole('button', { name: 'Check & save connection' }),
+  ).toBeDisabled()
+  await page.screenshot({
+    path: 'test-results/email-local/connections-desktop.png',
+    fullPage: true,
+  })
   await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({
+    path: 'test-results/email-local/connections-mobile.png',
+    fullPage: true,
+  })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true)
   await setup.getByRole('button', { name: /1. Business/ }).click()
   await page.screenshot({
     path: 'test-results/email-local/setup-mobile.png',
@@ -574,4 +594,95 @@ test('mock-backed UI contract: CRM repair stays visible until an owner retry res
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true)
+})
+
+test('mock-backed connection UI clears the key and makes disconnect impact explicit', async ({
+  page,
+}) => {
+  const connectionId = '00000000-0000-4000-8000-000000000098'
+  const state = {
+    configured: true,
+    revision: 0,
+    ai: { configured: false, lastState: null, failureCode: null },
+    disconnectImpact: {
+      hash: 'a'.repeat(64),
+      activeCampaigns: 2,
+      queuedMessages: 3,
+    },
+    connections: [] as Record<string, unknown>[],
+  }
+  let submissions = 0,
+    disconnects = 0
+  await page.route('**/api/email/connections', async (route) => {
+    const request = route.request()
+    if (request.method() === 'POST') {
+      submissions++
+      expect(request.postDataJSON().secret).toBe(
+        're_fixture_browser_private_123456',
+      )
+      await expect(page.getByLabel('Resend API key')).toHaveValue('')
+      state.connections = [
+        {
+          id: connectionId,
+          provider: 'resend',
+          account_label: 'Fixture account',
+          masked_secret: 're_f••••3456',
+          state: 'checked',
+          failure_code: null,
+          checked_at: '2026-09-14T15:00:00Z',
+        },
+      ]
+      await route.fulfill({ json: { ...state, connectionId } })
+      return
+    }
+    if (request.method() === 'DELETE') {
+      disconnects++
+      expect(request.postDataJSON()).toMatchObject({
+        connectionId,
+        confirmedAffectedHash: state.disconnectImpact.hash,
+        reason: 'Replace fixture key',
+      })
+      state.connections[0].state = 'revoked'
+      state.revision++
+    }
+    await route.fulfill({ json: state })
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: /3. Connections/ }).click()
+  await page.getByLabel('Account label').fill('Fixture account')
+  await page
+    .getByLabel('Resend API key')
+    .fill('re_fixture_browser_private_123456')
+  await page
+    .getByRole('button', { name: 'Check & save connection', exact: true })
+    .click()
+  await expect(
+    page.getByText(
+      'Read access checked. Sender setup and delivery checks are still required.',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  expect(submissions).toBe(1)
+  expect(await page.locator('body').innerText()).not.toContain(
+    're_fixture_browser_private_123456',
+  )
+  await page.getByText('Disconnect', { exact: true }).click()
+  await expect(
+    page.getByText(/2 active campaigns and 3 queued messages/),
+  ).toBeVisible()
+  await page.getByLabel('Reason', { exact: true }).fill('Replace fixture key')
+  await page
+    .getByRole('button', { name: 'Disconnect & pause email', exact: true })
+    .click()
+  await expect(
+    page.getByText(
+      'Disconnected locally. Email work is paused. Existing conversation history is preserved.',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  expect(disconnects).toBe(1)
+  await expect(
+    page.getByRole('button', { name: 'Disconnect & pause email', exact: true }),
+  ).toHaveCount(0)
 })

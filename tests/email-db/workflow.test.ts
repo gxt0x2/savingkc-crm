@@ -2958,3 +2958,380 @@ withDb(
     assert.equal((await db.sql`select * from em_ai_generations`).length, 10)
   },
 )
+
+withDb(
+  'service connection checks once, encrypts credentials and returns masked owner-only results',
+  async (db) => {
+    const { connectService, readConnections } = await import(
+      '../../src/lib/email/connections/service'
+    )
+    const { decryptEmailSecret } = await import('../../src/lib/email/secrets')
+    const key = Buffer.alloc(32, 7),
+      secret = 're_fixture_private_resend_key_123456789'
+    const [{ revision }] =
+      await db.sql`select revision from em_workspaces limit 1`
+    const request = {
+      kind: 'email',
+      provider: 'resend',
+      secret,
+      expectedRevision: revision,
+      accountLabel: 'Fixture account',
+      idempotencyKey: randomUUID(),
+    }
+    let calls = 0,
+      release!: () => void,
+      started!: () => void
+    const gate = new Promise<void>((resolve) => {
+        release = resolve
+      }),
+      began = new Promise<void>((resolve) => {
+        started = resolve
+      })
+    const checker = async () => {
+      calls++
+      started()
+      await gate
+      return {
+        domainsRead: true,
+        receivingRead: true,
+        sendingVerified: false as const,
+      }
+    }
+    const pending = connectService(db.sql, owner, request, checker, key, now)
+    await began
+    const replay = await connectService(
+      db.sql,
+      owner,
+      request,
+      checker,
+      key,
+      now,
+    )
+    assert.equal(replay.connections[0].state, 'checking')
+    release()
+    const result = await pending
+    assert.equal(calls, 1)
+    assert.equal(result.connections[0].state, 'checked')
+    assert.equal(JSON.stringify(result).includes(secret), false)
+    const [saved] = await db.sql`select * from em_service_connections`
+    assert.equal(
+      decryptEmailSecret(
+        saved.encrypted_secret,
+        key,
+        `${saved.workspace_id}/${saved.id}/resend/1`,
+      ),
+      secret,
+    )
+    assert.equal(
+      JSON.stringify(await db.sql`select * from em_audit_events`).includes(
+        secret,
+      ),
+      false,
+    )
+    assert.equal(
+      JSON.stringify(await db.sql`select * from em_command_receipts`).includes(
+        secret,
+      ),
+      false,
+    )
+    await rejects(readConnections(db.sql, reader, key), 'FORBIDDEN')
+    await rejects(
+      connectService(
+        db.sql,
+        reader,
+        { ...request, idempotencyKey: randomUUID() },
+        checker,
+        key,
+        now,
+      ),
+      'FORBIDDEN',
+    )
+    await rejects(
+      connectService(
+        db.sql,
+        owner,
+        { ...request, secret: 're_different_private_resend_123456' },
+        checker,
+        key,
+        now,
+      ),
+      'IDEMPOTENCY_MISMATCH',
+    )
+    const [ws] =
+      await db.sql`select send_enabled,ai_auto_enabled from em_workspaces limit 1`
+    assert.equal(ws.send_enabled, false)
+    assert.equal(ws.ai_auto_enabled, false)
+  },
+)
+
+withDb(
+  'failed service replacement preserves a checked connection and never stores raw errors',
+  async (db) => {
+    const { connectService } = await import(
+      '../../src/lib/email/connections/service'
+    )
+    const key = Buffer.alloc(32, 8),
+      secret = 're_fixture_secret_one_123456'
+    const [{ revision }] =
+      await db.sql`select revision from em_workspaces limit 1`
+    const request = {
+      kind: 'email',
+      provider: 'resend',
+      secret,
+      expectedRevision: revision,
+      accountLabel: 'First fixture',
+      idempotencyKey: randomUUID(),
+    }
+    const checker = async () => ({
+      domainsRead: true,
+      receivingRead: true,
+      sendingVerified: false as const,
+    })
+    const good = await connectService(db.sql, owner, request, checker, key, now)
+    const failed = await connectService(
+      db.sql,
+      owner,
+      {
+        ...request,
+        secret: 're_fixture_secret_two_987654',
+        idempotencyKey: randomUUID(),
+      },
+      async () => {
+        throw Error('private provider error ' + secret)
+      },
+      key,
+      now,
+    )
+    const rows =
+      await db.sql`select id,state,encrypted_secret,failure_code from em_service_connections`
+    assert.equal(rows.find((r) => r.id === good.connectionId)?.state, 'checked')
+    assert.ok(rows.find((r) => r.id === good.connectionId)?.encrypted_secret)
+    assert.equal(
+      rows.find((r) => r.id === failed.connectionId)?.encrypted_secret,
+      null,
+    )
+    assert.equal(
+      rows.find((r) => r.id === failed.connectionId)?.failure_code,
+      'SERVICE_CHECK_FAILED',
+    )
+    assert.equal(JSON.stringify(failed).includes(secret), false)
+    await rejects(
+      connectService(
+        db.sql,
+        owner,
+        { ...request, idempotencyKey: randomUUID() },
+        checker,
+        null,
+        now,
+      ),
+      'CREDENTIAL_STORAGE_REQUIRED',
+    )
+  },
+)
+
+withDb(
+  'service validation loses authority when the CRM owner profile becomes inactive',
+  async (db) => {
+    const { connectService } = await import(
+      '../../src/lib/email/connections/service'
+    )
+    const [{ revision }] =
+      await db.sql`select revision from em_workspaces limit 1`
+    const request = {
+      kind: 'email',
+      provider: 'resend',
+      secret: 're_fixture_key_private_123456',
+      expectedRevision: revision,
+      accountLabel: 'Fixture',
+      idempotencyKey: randomUUID(),
+    }
+    await rejects(
+      connectService(
+        db.sql,
+        owner,
+        request,
+        async () => {
+          await db.sql`update agent_profiles set is_active=false where id=(select agent_profile_id from em_memberships where auth_user_id=${owner})`
+          return {
+            domainsRead: true,
+            receivingRead: true,
+            sendingVerified: false as const,
+          }
+        },
+        Buffer.alloc(32, 9),
+        now,
+      ),
+      'FORBIDDEN',
+    )
+    const [saved] =
+      await db.sql`select state,failure_code,encrypted_secret from em_service_connections`
+    assert.equal(saved.state, 'failed')
+    assert.equal(saved.failure_code, 'SERVICE_REVIEW_CHANGED')
+    assert.equal(saved.encrypted_secret, null)
+  },
+)
+
+withDb(
+  'credential endpoint rejects cross-origin and unauthenticated requests before storage',
+  async (db) => {
+    const { createConnectionHttp } = await import(
+      '../../src/lib/email/connections/http'
+    )
+    const handlers = createConnectionHttp({
+      subject: async () => owner,
+      database: () => db.sql,
+    })
+    const cross = await handlers.POST(
+      new Request('https://crm.test/api/email/connections', {
+        method: 'POST',
+        headers: {
+          origin: 'https://attacker.test',
+          'content-type': 'application/json',
+        },
+        body: '{}',
+      }),
+    )
+    assert.equal(cross.status, 403)
+    const anonymous = createConnectionHttp({
+      subject: async () => null,
+      database: () => {
+        throw Error('must not query')
+      },
+    })
+    assert.equal(
+      (
+        await anonymous.GET(
+          new Request('https://crm.test/api/email/connections'),
+        )
+      ).status,
+      401,
+    )
+    assert.equal((await db.sql`select * from em_service_connections`).length, 0)
+  },
+)
+
+withDb(
+  'disconnect rejects stale impact, clears the key, pauses work and safely replays',
+  async (db) => {
+    const { connectService, disconnectService } = await import(
+      '../../src/lib/email/connections/service'
+    )
+    const [{ revision }] =
+      await db.sql`select revision from em_workspaces limit 1`
+    const connected = await connectService(
+      db.sql,
+      owner,
+      {
+        kind: 'email',
+        provider: 'resend',
+        secret: 're_fixture_disconnect_key_123456',
+        expectedRevision: revision,
+        accountLabel: 'Fixture',
+        idempotencyKey: randomUUID(),
+      },
+      async () => ({
+        domainsRead: true,
+        receivingRead: true,
+        sendingVerified: false as const,
+      }),
+      Buffer.alloc(32, 3),
+      now,
+    )
+    const command = {
+      connectionId: connected.connectionId,
+      expectedRevision: connected.revision,
+      confirmedAffectedHash: connected.disconnectImpact.hash,
+      reason: 'Test disconnect',
+      idempotencyKey: randomUUID(),
+    }
+    await rejects(
+      disconnectService(db.sql, owner, {
+        ...command,
+        confirmedAffectedHash: '0'.repeat(64),
+      }),
+      'CONNECTION_IMPACT_CHANGED',
+    )
+    await rejects(disconnectService(db.sql, reader, command), 'FORBIDDEN')
+    await disconnectService(db.sql, owner, command)
+    await disconnectService(db.sql, owner, command)
+    const [saved] =
+      await db.sql`select state,encrypted_secret from em_service_connections`
+    assert.equal(saved.state, 'revoked')
+    assert.equal(saved.encrypted_secret, null)
+    const [ws] =
+      await db.sql`select pause_reason,send_enabled,ai_auto_enabled,revision from em_workspaces limit 1`
+    assert.equal(ws.pause_reason, 'Provider connection disconnected')
+    assert.equal(ws.send_enabled, false)
+    assert.equal(ws.ai_auto_enabled, false)
+    assert.equal(ws.revision, revision + 1)
+    assert.equal(
+      (
+        await db.sql`select id from em_audit_events where action='SVC-DISCONNECT'`
+      ).length,
+      1,
+    )
+  },
+)
+
+withDb(
+  'disconnect during capability check cannot restore a revoked key',
+  async (db) => {
+    const { connectService, readConnections, disconnectService } = await import(
+      '../../src/lib/email/connections/service'
+    )
+    const key = Buffer.alloc(32, 4)
+    const [{ revision }] =
+      await db.sql`select revision from em_workspaces limit 1`
+    let release!: () => void, started!: () => void
+    const gate = new Promise<void>((resolve) => {
+        release = resolve
+      }),
+      began = new Promise<void>((resolve) => {
+        started = resolve
+      })
+    const pending = connectService(
+      db.sql,
+      owner,
+      {
+        kind: 'email',
+        provider: 'resend',
+        secret: 're_fixture_revocation_key_123456',
+        expectedRevision: revision,
+        accountLabel: 'Fixture',
+        idempotencyKey: randomUUID(),
+      },
+      async () => {
+        started()
+        await gate
+        return {
+          domainsRead: true,
+          receivingRead: true,
+          sendingVerified: false as const,
+        }
+      },
+      key,
+      now,
+    )
+    await began
+    const snapshot = await readConnections(db.sql, owner, key)
+    await disconnectService(db.sql, owner, {
+      connectionId: snapshot.connections[0].id,
+      expectedRevision: snapshot.revision,
+      confirmedAffectedHash: snapshot.disconnectImpact.hash,
+      reason: 'Cancel pending setup',
+      idempotencyKey: randomUUID(),
+    })
+    release()
+    await pending
+    const [saved] =
+      await db.sql`select state,encrypted_secret from em_service_connections`
+    assert.equal(saved.state, 'revoked')
+    assert.equal(saved.encrypted_secret, null)
+    assert.equal(
+      (
+        await db.sql`select id from em_audit_events where action='SVC-CHECK' and detail->>'state'='checked'`
+      ).length,
+      0,
+    )
+  },
+)

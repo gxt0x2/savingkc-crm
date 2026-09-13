@@ -55,7 +55,7 @@ npm run test:email:local-ui
 npm run dev:email:local
 ```
 
-The harness creates its own temporary PostgreSQL cluster, applies ten named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
+The harness creates its own temporary PostgreSQL cluster, applies eleven named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
 
 ## Packet audit
 
@@ -120,3 +120,12 @@ Ari now has a durable, human-reviewed generation path with exact evidence valida
 Verified: 53 database cases, 57 unit cases, four browser stories (AI disabled), TypeScript and scoped ESLint. The real AI connection reached Vercel AI Gateway using existing OIDC, but the account rejected openai/gpt-5.6-luna with HTTP 403 because paid AI credits are required. No generated reply, provider usage or actual cost was returned, so inference success remains unverified. Local artifacts are in test-results/email-readiness; they contain fabricated data only except aggregate live-schema evidence. Do not describe Ari as operational yet.
 
 Read-only production schema and aggregate checks confirm agent_profiles has is_active and user_id; access and assignment now honor them. Four profiles exist, three have explicit user mappings, none are explicitly inactive. Three stored Google connections include Calendar scope, but their stored access tokens are expired; refresh/access and per-agent calendars still require runtime verification. Stored scope is not proof of a working connection. The installed source constraint excludes email_marketing; the draft bridge migration widens the existing single-column constraint while preserving every existing source. No Email migrations have been deployed. Legacy/API credentials exported by the CLI did not authorize REST reads; the existing CLI management credential did authorize the dedicated read-only query endpoint. No credential was rotated or disclosed.
+
+
+## Secure service setup continuation
+
+EM-007 now has owner-only credential intake and masked connection records, AES-256-GCM storage under EMAIL_CREDENTIALS_KEY_V1 (64 hex characters), an idempotent read-only Resend capability check, preserved prior connections on failed replacement, and explicit disconnect with current affected-work review. Disconnect clears the saved key and pauses the workspace; an in-flight check cannot restore it. Account labels are owner supplied; checked read permissions are not sending, billing, DNS or inbound-routing readiness. The local practice API refuses real-key submissions even if an encryption key is present in its environment.
+
+The Connections tab replaces its placeholder with this flow and clear Ari/Calendar/response-number status. Redundant More cards were removed. Verification: 57 database cases passed before disconnect was added; all six connection/disconnect database cases then passed (59 cases now present), 64 unit tests, five browser stories including mocked credential-clear/disconnect interaction, TypeScript and scoped ESLint. The mock UI case does not constitute a real Resend connection. No Resend key was available through the existing workspace/deployment access, so real account checks remain pending. No provider account was created, no subscription purchased, and no customer email sent.
+
+Remaining service work: credential rotation with key-version migration, authenticated webhook secret lifecycle, historical account replacement review, real sender domains/readiness, and production secret deployment. Calendar tokens and CRM service secrets were not available in the local environment; their presence in deployed infrastructure does not mean they are exportable. These are access/configuration dependencies, not evidence that production credentials are broken.

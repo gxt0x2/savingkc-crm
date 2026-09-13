@@ -3,6 +3,7 @@ import type { EmailCommand } from '@/lib/email/contracts'
 import type { EmailWorkspaceConfig } from '@/lib/email/config'
 import type { PilotSettings } from '@/lib/email/workflow/types'
 import styles from './email-workspace.module.css'
+import { EmailConnections } from './email-connections'
 
 type Props = {
   settings: PilotSettings
@@ -366,25 +367,7 @@ export function EmailSetup(props: Props) {
         <BusinessForm key={settings.revision} {...props} />
       )}
       {step === 'team' && <TeamForm key={settings.revision} {...props} />}
-      {step === 'connections' && (
-        <div className={styles.form}>
-          <h3>Connections are still being built</h3>
-          <p>
-            Separate sender domains, Resend, Google Calendar, a response number
-            and notification delivery will be configured here. No subscription
-            has been purchased or connected.
-          </p>
-          <ul>
-            {settings.readiness.blockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-          </ul>
-          <p>
-            <strong>Sending disabled.</strong> Saving business and team details
-            does not pass these checks.
-          </p>
-        </div>
-      )}
+      {step === 'connections' && <EmailConnections />}
       <details>
         <summary>Advanced: team access</summary>
         <p>
