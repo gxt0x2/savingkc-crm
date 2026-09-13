@@ -9,7 +9,10 @@ import type {
 
 // postgres 3.4.8 uses Omit for TransactionSql, which drops its runtime call
 // signatures. Restore the query signatures at this one adapter boundary.
-export type Tx = Pick<TransactionSql, 'json' | 'array' | 'unsafe'> & {
+export type Tx = Pick<
+  TransactionSql,
+  'json' | 'array' | 'unsafe' | 'savepoint'
+> & {
   <T extends readonly object[] = Row[]>(
     template: TemplateStringsArray,
     ...parameters: readonly ParameterOrFragment<never>[]
@@ -26,6 +29,7 @@ export type Result = {
   state: string
   revision?: number
   bodyHash?: string
+  invalidates?: string[]
 }
 export class WorkflowError extends Error {
   constructor(

@@ -33,6 +33,29 @@ export interface PilotCampaign {
   approved: number
   next_send: string | null
 }
+export type PilotCrmSyncState =
+  | 'not_connected'
+  | 'pending'
+  | 'synced'
+  | 'review_required'
+  | 'dependency_unavailable'
+export type PilotCrmSyncReason =
+  | 'seller_interest_unconfirmed'
+  | 'identity_unconfirmed'
+  | 'contact_identity_conflict'
+  | 'property_unconfirmed'
+  | 'property_ambiguous'
+  | 'existing_record_held'
+  | 'owner_conflict'
+  | 'governed_transition_required'
+  | 'canonical_dependency_missing'
+  | 'schema_incompatible'
+  | 'legacy_handoff_requires_review'
+export type PilotCallbackTaskState =
+  | 'pending'
+  | 'blocked'
+  | 'completed'
+  | 'cancelled'
 export interface PilotThread {
   id: string
   campaign_id: string
@@ -49,8 +72,24 @@ export interface PilotThread {
   state: string
   outcome: string
   last_message_at: string | null
+  lead_id: string | null
+  lead_stage: string | null
+  lead_classification: string | null
+  lead_source: string | null
   handoff_id: string | null
   handoff_state: string | null
+  handoff_owner_id: string | null
+  handoff_backup_id: string | null
+  crm_sync_state: PilotCrmSyncState | null
+  crm_sync_reason: PilotCrmSyncReason | null
+  crm_task_id: string | null
+  crm_task_key: string | null
+  crm_history_repair_required: boolean
+  crm_callback_repair_required: boolean
+  crm_repair_id: string | null
+  crm_repair_error_code: string | null
+  callback_task_state: PilotCallbackTaskState | null
+  callback_due_at: string | null
   requested_contact: { phone?: string; requestedTimeText?: string } | null
 }
 export interface PilotMessage {
@@ -116,17 +155,32 @@ export type InboxView =
   | 'stopped'
   | 'all'
 export function matchesView(thread: PilotThread, view: InboxView) {
+  const crmNeedsReview =
+    thread.crm_history_repair_required ||
+    thread.crm_callback_repair_required ||
+    thread.crm_sync_state === 'pending' ||
+    thread.crm_sync_state === 'review_required' ||
+    thread.crm_sync_state === 'dependency_unavailable'
+  const openCallbackTask =
+    thread.callback_task_state === 'pending' ||
+    thread.callback_task_state === 'blocked'
   switch (view) {
     case 'action':
       return (
         thread.state === 'needs_review' ||
         thread.state === 'human' ||
-        thread.handoff_state === 'held'
+        thread.handoff_state === 'held' ||
+        crmNeedsReview ||
+        openCallbackTask
       )
     case 'review':
-      return thread.state === 'needs_review' || thread.handoff_state === 'held'
+      return (
+        thread.state === 'needs_review' ||
+        thread.handoff_state === 'held' ||
+        crmNeedsReview
+      )
     case 'calls':
-      return thread.handoff_id !== null
+      return thread.handoff_id !== null || thread.crm_task_id !== null
     case 'ai':
       return false // No evaluated automatic actions exist in this pilot.
     case 'waiting':

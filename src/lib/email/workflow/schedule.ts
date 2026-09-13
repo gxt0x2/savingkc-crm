@@ -80,3 +80,74 @@ export function pilotFollowUpExpires(acceptedAt: Date) {
     0,
   )
 }
+
+/** Response SLA for a callback request. This is a task due time, not a booked
+ * call. Use saved weekday hours, defaulting to 08:30-17:00 Chicago. */
+export function pilotCallbackDue(
+  now: Date,
+  team?: {
+    hours: { weekdays: string[]; startLocal: string; endLocal: string }
+    sla: { urgentMinutes: number }
+  },
+) {
+  if (!Number.isFinite(now.getTime())) throw new Error('INVALID_CALLBACK_TIME')
+  const local = parts(now)
+  const day = new Date(Date.UTC(local.year, local.month - 1, local.day))
+  const toMinutes = (value: string) => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return Number.NaN
+    const [hour, minute] = value.split(':').map(Number)
+    return hour * 60 + minute
+  }
+  const start = team ? toMinutes(team.hours.startLocal) : 8 * 60 + 30
+  const end = team ? toMinutes(team.hours.endLocal) : 17 * 60
+  const weekdays = [
+    'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+  ]
+  const allowed = team?.hours.weekdays ?? weekdays.slice(1, 6)
+  if (
+    !allowed.length ||
+    !allowed.every((day) => weekdays.slice(1, 6).includes(day)) ||
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 510 ||
+    end > 1439 ||
+    start >= end
+  )
+    throw new Error('INVALID_CALLBACK_HOURS')
+  const open = () =>
+    ![0, 6].includes(day.getUTCDay()) &&
+    allowed.includes(weekdays[day.getUTCDay()])
+  let minutes = local.hour * 60 + local.minute + (team?.sla.urgentMinutes ?? 30)
+  if (open() && minutes >= start && minutes <= end)
+    return localTime(
+      day.getUTCFullYear(),
+      day.getUTCMonth() + 1,
+      day.getUTCDate(),
+      Math.floor(minutes / 60),
+      minutes % 60,
+    )
+  if (open() && minutes < start)
+    return localTime(
+      day.getUTCFullYear(),
+      day.getUTCMonth() + 1,
+      day.getUTCDate(),
+      Math.floor(start / 60),
+      start % 60,
+    )
+  do day.setUTCDate(day.getUTCDate() + 1)
+  while (!open())
+  minutes = start
+  return localTime(
+    day.getUTCFullYear(),
+    day.getUTCMonth() + 1,
+    day.getUTCDate(),
+    Math.floor(minutes / 60),
+    minutes % 60,
+  )
+}

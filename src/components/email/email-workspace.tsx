@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { EmailCommand } from '@/lib/email/contracts'
 import {
@@ -16,12 +17,18 @@ import { EmailSetup } from './email-setup'
 const views: [InboxView, string][] = [
   ['action', 'Needs action'],
   ['review', 'Needs review'],
-  ['calls', 'Calls & appointments'],
+  ['calls', 'Callback work'],
   ['ai', 'AI handling'],
   ['waiting', 'Waiting'],
   ['stopped', 'Closed & stopped'],
   ['all', 'All conversations'],
 ]
+type CallbackReviewSnapshot = {
+  threadId: string
+  contentRevision: number
+  messageId: string
+  messageBody: string
+}
 const friendly: Record<string, string> = {
   STALE_SETTINGS:
     'Settings changed in another session. Refresh, review the saved details and try again.',
@@ -31,7 +38,7 @@ const friendly: Record<string, string> = {
     'Affected conversations changed. Refresh and review the current work before changing access.',
   LAST_OWNER: 'Keep at least one active Email owner.',
   TEAM_MEMBER_INACTIVE:
-    'This CRM account is inactive. Choose an active team member.',
+    'This team member is unavailable. Choose an active team member.',
   TEAM_ROLE_REQUIRED: 'Choose an active team member with the required role.',
   DISTINCT_BACKUP_REQUIRED: 'Choose a different person as backup.',
   INVALID_TEAM_HOURS:
@@ -54,7 +61,7 @@ const friendly: Record<string, string> = {
   OWNERSHIP_CHANGED:
     'Another action changed who controls this conversation. Refresh before continuing.',
   NEW_REPLY_REVIEW_REQUIRED:
-    'A new reply arrived. Read it and save a fresh draft.',
+    'A new reply arrived. Read the latest message before saving a draft or callback handoff.',
   THREAD_STOPPED:
     'Marketing is stopped for this person. This conversation cannot send.',
   WORKSPACE_PAUSED:
@@ -62,11 +69,24 @@ const friendly: Record<string, string> = {
   TAKE_OVER_FIRST:
     'Take over this conversation before drafting a response or arranging a call.',
   HANDOFF_ALREADY_EXISTS: 'This conversation already has a callback handoff.',
+  CRM_REPAIR_CHANGED:
+    'The pending CRM update changed. Refresh and review its current status.',
+  CRM_REPAIR_NOT_FOUND: 'This pending CRM update is no longer available.',
   FORBIDDEN: 'Your Email role cannot perform this action.',
   PHONE_EVIDENCE_REQUIRED:
     'The phone number must appear in the selected seller message.',
   TIME_EVIDENCE_REQUIRED:
     'Use the exact time wording from the selected seller message.',
+  CRM_IDENTITY_REVIEW_REQUIRED:
+    'Confirm the seller’s identity before creating or linking a CRM Lead.',
+  CRM_PROPERTY_REVIEW_REQUIRED:
+    'Confirm which property this seller is discussing before creating or linking a CRM Lead.',
+  CRM_DEPENDENCY_UNAVAILABLE:
+    'The callback handoff is saved, but CRM linking needs attention.',
+  STALE_LEAD_REVISION:
+    'The CRM Lead changed. Refresh and review it before continuing.',
+  QUALIFICATION_INCOMPLETE:
+    'Keep this record as a Lead until a human verifies all four qualification areas.',
 }
 function formatTime(value: string | null) {
   if (!value) return 'None'
@@ -79,6 +99,156 @@ function formatTime(value: string | null) {
       minute: '2-digit',
     }).format(new Date(value)) + ' CT'
   )
+}
+function formatStage(value: string | null) {
+  if (!value) return 'Linked CRM record'
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+function callbackTaskLabel(value: PilotThread['callback_task_state']) {
+  return value ? formatStage(value) : 'Status unavailable'
+}
+function leadLabel(thread: PilotThread) {
+  const stage = thread.lead_stage
+  if (stage === 'contacted') return 'Lead · Contacted'
+  if (
+    stage &&
+    [
+      'qualified',
+      'appointment_set',
+      'offer_made',
+      'under_contract',
+      'closed_won',
+      'closed_lost',
+    ].includes(stage)
+  )
+    return `Opportunity · ${formatStage(stage)}`
+  if (stage === 'dead' || thread.lead_classification === 'dead')
+    return 'Not a lead · Dead'
+  if (stage === 'new') return 'New CRM record · Review required'
+  if (thread.lead_classification === 'lead')
+    return `Lead · ${formatStage(stage)}`
+  return formatStage(stage)
+}
+const crmReasonCopy: Record<string, string> = {
+  seller_interest_unconfirmed:
+    'Selling interest was not confirmed. Review the seller’s message before creating a Lead or callback task.',
+  identity_unconfirmed:
+    'Confirm the seller’s identity before creating or linking a Lead.',
+  contact_identity_conflict:
+    'This email conflicts with another CRM identity. Resolve the match before linking records.',
+  property_unconfirmed:
+    'Confirm which property the seller is discussing before creating or linking a Lead.',
+  property_ambiguous:
+    'More than one property or CRM record could match. Choose the correct record before linking it.',
+  existing_record_held:
+    'The existing CRM record is parked or closed. It was left unchanged for human review.',
+  owner_conflict:
+    'Confirm the existing CRM owner before creating this callback task.',
+  governed_transition_required:
+    'The existing CRM record is still New. A human must use the governed Lead transition before this handoff can continue.',
+  canonical_dependency_missing:
+    'A required CRM service is unavailable. The local handoff remains saved for review.',
+  schema_incompatible:
+    'The CRM schema is not ready for this handoff. The local handoff remains saved for review.',
+  legacy_handoff_requires_review:
+    'This older handoff needs a human review before CRM records can be linked.',
+}
+function crmPresentation(thread: PilotThread) {
+  if (thread.crm_history_repair_required || thread.crm_callback_repair_required)
+    return {
+      title: 'CRM update needs attention',
+      detail:
+        (thread.state === 'stopped' ? 'Marketing is stopped. ' : '') +
+        (thread.crm_callback_repair_required
+          ? 'The callback hold has not reached CRM. Review this task before calling. The pending update is saved for repair.'
+          : 'Some conversation history has not reached CRM. The pending update is saved for repair.'),
+      attention: true,
+    }
+  if (thread.crm_sync_state === 'synced') {
+    if (
+      thread.handoff_state === 'held' ||
+      thread.callback_task_state === 'blocked'
+    )
+      return {
+        title: 'Callback held for review',
+        detail:
+          thread.state === 'stopped'
+            ? 'Marketing was stopped, so the linked callback task is blocked until a person resolves it.'
+            : 'A team role or assignment changed, so the linked callback task is blocked until a person resolves ownership.',
+        attention: true,
+      }
+    if (!thread.lead_id || !thread.crm_task_id)
+      return {
+        title: 'CRM details need review',
+        detail:
+          'CRM reported this handoff as linked, but the Lead or callback task reference is missing.',
+        attention: true,
+      }
+    return {
+      title: 'CRM record linked · Callback review task created',
+      detail:
+        'The task is an internal follow-up obligation. It is not a booked appointment or an automatic call.',
+      attention: false,
+    }
+  }
+  if (thread.crm_sync_state === 'dependency_unavailable')
+    return {
+      title: 'CRM connection needs attention',
+      detail:
+        crmReasonCopy[thread.crm_sync_reason ?? ''] ??
+        'The local handoff is saved, but CRM could not link a Lead or create the callback task.',
+      attention: true,
+    }
+  if (
+    thread.crm_sync_state === 'review_required' ||
+    thread.crm_sync_state === 'pending'
+  )
+    return {
+      title:
+        thread.crm_sync_state === 'pending'
+          ? 'CRM work is still pending'
+          : 'CRM review needed',
+      detail:
+        crmReasonCopy[thread.crm_sync_reason ?? ''] ??
+        'Review the current CRM record before this handoff continues.',
+      attention: true,
+    }
+  return {
+    title: 'Local callback handoff',
+    detail:
+      'CRM linking was not run for this practice result. No callback task or calendar booking was created.',
+    attention: false,
+  }
+}
+function threadWorkLabel(thread: PilotThread) {
+  if (thread.crm_history_repair_required || thread.crm_callback_repair_required)
+    return thread.state === 'stopped'
+      ? 'Marketing stopped · CRM update needs attention'
+      : 'CRM update needs attention'
+  const callbackOpen =
+    thread.callback_task_state === 'pending' ||
+    thread.callback_task_state === 'blocked'
+  if (
+    thread.state === 'stopped' &&
+    (thread.handoff_state === 'held' || callbackOpen)
+  )
+    return 'Marketing stopped · callback held'
+  if (
+    thread.crm_sync_state === 'pending' ||
+    thread.crm_sync_state === 'review_required' ||
+    thread.crm_sync_state === 'dependency_unavailable'
+  )
+    return 'CRM review'
+  if (callbackOpen && thread.callback_due_at)
+    return `Review callback by ${formatTime(thread.callback_due_at)}`
+  if (thread.handoff_state === 'held') return 'Callback held'
+  if (thread.crm_task_id) return 'Callback review task'
+  if (thread.handoff_id) return 'Callback handoff'
+  if (thread.state === 'stopped') return 'Marketing stopped'
+  return thread.state.replaceAll('_', ' ')
 }
 function pilotDefaults(audienceId: string): PilotConfig {
   return {
@@ -152,8 +322,11 @@ export function EmailWorkspace({
   const [newName, setNewName] = useState('')
   const [draftBody, setDraftBody] = useState('')
   const [callback, setCallback] = useState(false)
+  const [callbackReview, setCallbackReview] =
+    useState<CallbackReviewSnapshot | null>(null)
   const [phone, setPhone] = useState('')
   const [timeText, setTimeText] = useState('')
+  const [positiveSellerInterest, setPositiveSellerInterest] = useState(false)
   const [owner, setOwner] = useState('')
   const [backup, setBackup] = useState('')
   const [showSimulation, setShowSimulation] = useState(false)
@@ -220,8 +393,18 @@ export function EmailWorkspace({
             marketing_stopped:
               'Marketing stopped across campaigns and confirmed aliases.',
             handoff_saved_calendar_not_connected:
-              'Callback handoff saved. No calendar booking or CRM Lead was created.',
+              'Local callback handoff saved. CRM linking and calendar booking were not run.',
+            handoff_saved_crm_synced:
+              'Handoff saved. The Lead and callback review task are linked in CRM. No appointment was booked.',
+            handoff_saved_crm_review:
+              'Handoff saved. CRM review is required before CRM can finish linking the record or create the callback task.',
+            handoff_saved_crm_dependency_blocked:
+              'Handoff saved locally. CRM linking is unavailable and no callback task was created.',
             acknowledged: 'Notification acknowledged.',
+            crm_repair_resolved:
+              'CRM history and callback updates are current.',
+            crm_repair_pending:
+              'CRM still needs repair. The pending update is saved, and marketing restrictions remain in effect.',
             paused: 'Sending paused.',
           }[body.state as string] ?? ''),
       )
@@ -302,9 +485,25 @@ export function EmailWorkspace({
   )
   const visible = scoped.filter((t) => matchesView(t, view))
   const selected = visible.find((t) => t.id === threadId)
+  const selectedCrm = selected?.handoff_id ? crmPresentation(selected) : null
+  const selectedHandoffOwner = data?.members.find(
+    (member) => member.id === selected?.handoff_owner_id,
+  )
+  const selectedHandoffBackup = data?.members.find(
+    (member) => member.id === selected?.handoff_backup_id,
+  )
   const messages =
     data?.messages.filter((m) => m.thread_id === selected?.id) ?? []
   const latestInbound = messages.filter((m) => m.direction === 'inbound').at(-1)
+  const callbackReviewIsCurrent = Boolean(
+    callbackReview &&
+      selected &&
+      latestInbound &&
+      callbackReview.threadId === selected.id &&
+      callbackReview.contentRevision === selected.content_revision &&
+      callbackReview.messageId === latestInbound.id &&
+      callbackReview.messageBody === latestInbound.text_body,
+  )
   const savedDraft = data?.drafts.findLast(
     (d) => d.thread_id === selected?.id && d.state === 'current',
   )
@@ -330,8 +529,10 @@ export function EmailWorkspace({
       )?.body ?? '',
     )
     setCallback(false)
+    setCallbackReview(null)
     setPhone('')
     setTimeText('')
+    setPositiveSellerInterest(false)
     const assigned =
       data?.routing?.acquisitionOwnerId ??
       (data?.members.some((m) => m.id === data.actorId) ? data.actorId : '')
@@ -343,6 +544,17 @@ export function EmailWorkspace({
     )
     setNotice('')
     setError('')
+  }
+  function reviewCurrentReply() {
+    if (!selected || !latestInbound) return
+    setCallbackReview({
+      threadId: selected.id,
+      contentRevision: selected.content_revision,
+      messageId: latestInbound.id,
+      messageBody: latestInbound.text_body,
+    })
+    setPositiveSellerInterest(false)
+    setCallback(true)
   }
   function selectCampaign(id: string) {
     const selected = data?.campaigns.find((c) => c.id === id)
@@ -543,13 +755,7 @@ export function EmailWorkspace({
                     >
                       <span className={styles.row}>
                         <strong>{t.name}</strong>
-                        <small>
-                          {t.handoff_state === 'held'
-                            ? 'Contact on hold'
-                            : t.handoff_id
-                              ? 'Callback'
-                              : t.state.replaceAll('_', ' ')}
-                        </small>
+                        <small>{threadWorkLabel(t)}</small>
                       </span>
                       <span>{t.subject}</span>
                       <small>
@@ -589,18 +795,117 @@ export function EmailWorkspace({
                                 : 'Not assigned to a person'}
                         </span>
                       </div>
-                      {selected.handoff_id && (
-                        <div className={styles.banner}>
-                          <strong>
-                            {selected.handoff_state === 'held'
-                              ? 'Callback needs review — marketing stopped'
-                              : 'Callback handoff saved'}
-                          </strong>
-                          <span>
-                            {selected.requested_contact?.phone}{' '}
-                            {selected.requested_contact?.requestedTimeText} · No
-                            calendar booking. CRM sync is not connected.
-                          </span>
+                      {selected.handoff_id && selectedCrm && (
+                        <div
+                          className={`${styles.crmCard} ${selectedCrm.attention ? styles.crmAttention : ''}`}
+                        >
+                          <div className={styles.row}>
+                            <strong>{selectedCrm.title}</strong>
+                            {selected.lead_id && (
+                              <span className={styles.badge}>
+                                {leadLabel(selected)}
+                              </span>
+                            )}
+                          </div>
+                          <p>{selectedCrm.detail}</p>
+                          {selected.crm_repair_id &&
+                            selected.crm_repair_error_code &&
+                            data.roles.includes('owner') && (
+                              <div>
+                                <p>
+                                  Retry updates the existing CRM history and
+                                  callback task. It sends no messages or calls.
+                                </p>
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    act({
+                                      command: 'OPS-REPLAY',
+                                      idempotencyKey: crypto.randomUUID(),
+                                      payload: {
+                                        jobId: selected.crm_repair_id!,
+                                        expectedFailureCode:
+                                          selected.crm_repair_error_code!,
+                                        reason:
+                                          'Owner reviewed the pending CRM update and requested a retry.',
+                                      },
+                                    })
+                                  }
+                                >
+                                  Retry CRM update
+                                </button>
+                              </div>
+                            )}
+                          <dl className={styles.crmFacts}>
+                            <div>
+                              <dt>Assigned to</dt>
+                              <dd>
+                                {selectedHandoffOwner?.name ??
+                                  'Assignment unavailable'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Phone</dt>
+                              <dd>
+                                {selected.requested_contact?.phone ??
+                                  'Not provided'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Backup</dt>
+                              <dd>
+                                {selectedHandoffBackup?.name ??
+                                  'Backup unavailable'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Seller’s timing</dt>
+                              <dd>
+                                {selected.requested_contact
+                                  ?.requestedTimeText ?? 'Not provided'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Internal task</dt>
+                              <dd>
+                                {selected.crm_task_id
+                                  ? `Callback review · ${callbackTaskLabel(selected.callback_task_state)}`
+                                  : 'Not created'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Review callback by</dt>
+                              <dd>
+                                {selected.callback_due_at
+                                  ? formatTime(selected.callback_due_at)
+                                  : 'Not set'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Calendar</dt>
+                              <dd>No appointment booked</dd>
+                            </div>
+                          </dl>
+                          {selected.lead_source && (
+                            <small>
+                              First-touch source:{' '}
+                              {formatStage(selected.lead_source)}
+                            </small>
+                          )}
+                          {selected.lead_id && !localSimulation && (
+                            <Link
+                              className={styles.crmLink}
+                              href={`/leads/${selected.lead_id}`}
+                            >
+                              Open Lead
+                            </Link>
+                          )}
+                          {selected.state === 'stopped' && (
+                            <p className={styles.stopNote}>
+                              Marketing is stopped. The callback obligation
+                              stays visible until a person resolves it.
+                            </p>
+                          )}
                         </div>
                       )}
                       <div className={styles.messages}>
@@ -655,9 +960,17 @@ export function EmailWorkspace({
                         {owns && latestInbound && !selected.handoff_id && (
                           <button
                             disabled={busy}
-                            onClick={() => setCallback(!callback)}
+                            onClick={() => {
+                              if (callback) {
+                                setCallback(false)
+                                setCallbackReview(null)
+                                setPositiveSellerInterest(false)
+                              } else reviewCurrentReply()
+                            }}
                           >
-                            Arrange callback
+                            {callback
+                              ? 'Close callback form'
+                              : 'Arrange callback'}
                           </button>
                         )}
                         {canWork && selected.state !== 'stopped' && (
@@ -685,15 +998,18 @@ export function EmailWorkspace({
                           className={styles.form}
                           onSubmit={async (e) => {
                             e.preventDefault()
+                            if (!callbackReview || !callbackReviewIsCurrent)
+                              return
                             const result = await act({
                               command: 'THR-HANDOFF',
-                              expectedRevision: selected.content_revision,
+                              expectedRevision: callbackReview.contentRevision,
                               idempotencyKey: crypto.randomUUID(),
                               payload: {
                                 threadId: selected.id,
                                 ownerId: owner,
                                 backupId: backup,
                                 reason: 'Human-reviewed callback request',
+                                positiveSellerInterest,
                                 requestedContact: {
                                   ...(phone ? { phone } : {}),
                                   ...(timeText
@@ -703,13 +1019,17 @@ export function EmailWorkspace({
                                 factEvidence: [
                                   {
                                     source: 'message',
-                                    messageId: latestInbound.id,
-                                    quote: latestInbound.text_body,
+                                    messageId: callbackReview.messageId,
+                                    quote: callbackReview.messageBody,
                                   },
                                 ],
                               },
                             })
-                            if (result) setCallback(false)
+                            if (result) {
+                              setCallback(false)
+                              setCallbackReview(null)
+                              setPositiveSellerInterest(false)
+                            }
                           }}
                         >
                           <h3>Arrange a call</h3>
@@ -717,6 +1037,45 @@ export function EmailWorkspace({
                             This saves a handoff, not an appointment. Copy the
                             phone and preferred time from the seller’s message.
                           </p>
+                          {!callbackReviewIsCurrent && (
+                            <div className={styles.error} role="alert">
+                              A new reply arrived. Read the latest message, then
+                              reset this review before saving the handoff.
+                              <button
+                                type="button"
+                                onClick={reviewCurrentReply}
+                              >
+                                Review latest reply
+                              </button>
+                            </div>
+                          )}
+                          <label className={styles.confirmation}>
+                            <span className={styles.checkboxLine}>
+                              <input
+                                type="checkbox"
+                                checked={
+                                  callbackReviewIsCurrent &&
+                                  positiveSellerInterest
+                                }
+                                disabled={!callbackReviewIsCurrent}
+                                onChange={(event) =>
+                                  setPositiveSellerInterest(
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                              <span>
+                                I read the current reply and it clearly says
+                                this person would consider selling.
+                              </span>
+                            </span>
+                            <small>
+                              Leave this unchecked if the message only provides
+                              a phone number or asks for contact. The handoff
+                              will still be saved for CRM review, but it will
+                              not create a Lead or callback task.
+                            </small>
+                          </label>
                           <label>
                             Assigned agent
                             <select
@@ -765,7 +1124,10 @@ export function EmailWorkspace({
                               onChange={(e) => setTimeText(e.target.value)}
                             />
                           </label>
-                          <button className={styles.primary} disabled={busy}>
+                          <button
+                            className={styles.primary}
+                            disabled={busy || !callbackReviewIsCurrent}
+                          >
                             Save callback handoff
                           </button>
                         </form>

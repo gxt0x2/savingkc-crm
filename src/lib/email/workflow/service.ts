@@ -1,6 +1,8 @@
 import 'server-only'
 import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
+import { projectEmailHandoffToCrm } from '../crm-adapter'
+import { projectCrmChanges } from '../crm-repairs'
 import { emailCommandSchema } from '../contracts'
 import { emailWorkspaceConfigSchema } from '../config'
 import { pilotFollowUp, pilotFollowUpExpires, pilotSendSlot } from './schedule'
@@ -36,7 +38,7 @@ function canWork(member: Member) {
 async function membership(tx: Tx, subject: string) {
   const [member] = await tx<
     Member[]
-  >`select m.workspace_id,m.auth_user_id,m.roles from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.user_id=m.auth_user_id where m.auth_user_id=${subject} and m.active and p.is_active=true`
+  >`select m.workspace_id,m.auth_user_id,m.roles from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.auth_user_id=${subject} and m.active`
   check(member, 'NO_EMAIL_MEMBERSHIP', 403)
   return member
 }
@@ -504,13 +506,14 @@ export async function executePilotCommand(
       case 'THR-HANDOFF': {
         const p = command.payload
         check(command.expectedRevision !== undefined, 'REVISION_REQUIRED', 400)
+        check(p.factEvidence.length === 1, 'ONE_MESSAGE_EVIDENCE_REQUIRED', 400)
         const thread = await requireHuman(
           context,
           p.threadId,
           command.expectedRevision,
         )
         const members =
-          await tx`select m.auth_user_id,m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id and a.user_id=m.auth_user_id where m.workspace_id=${ws} and m.auth_user_id in (${p.ownerId},${p.backupId}) and m.active and a.is_active=true`
+          await tx`select m.auth_user_id,m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id in (${p.ownerId},${p.backupId}) and m.active`
         check(
           [p.ownerId, p.backupId].every((id) =>
             members.some(
@@ -539,6 +542,12 @@ export async function executePilotCommand(
             'EVIDENCE_CHANGED',
           )
         }
+        const [latestInbound] =
+          await tx`select id from em_messages where workspace_id=${ws} and thread_id=${thread.id} and direction='inbound' order by sequence desc limit 1`
+        check(
+          latestInbound?.id === p.factEvidence[0].messageId,
+          'NEW_REPLY_REVIEW_REQUIRED',
+        )
         const quoted = p.factEvidence.map((e) => e.quote).join(' ')
         if (p.requestedContact.phone)
           check(
@@ -554,21 +563,40 @@ export async function executePilotCommand(
             'TIME_EVIDENCE_REQUIRED',
           )
         const [handoff] =
-          await tx`insert into em_handoffs(workspace_id,thread_id,owner_id,backup_id,reason,requested_contact,fact_evidence,created_at)
-          values(${ws},${thread.id},${p.ownerId},${p.backupId},${p.reason},${tx.json(json(p.requestedContact))},${tx.json(json(p.factEvidence))},${now}) on conflict(thread_id) do nothing returning id`
+          await tx`insert into em_handoffs(workspace_id,thread_id,owner_id,backup_id,reason,requested_contact,fact_evidence,seller_interest_confirmed,crm_sync_state,created_at)
+          values(${ws},${thread.id},${p.ownerId},${p.backupId},${p.reason},${tx.json(json(p.requestedContact))},${tx.json(json(p.factEvidence))},${p.positiveSellerInterest},'pending',${now}) on conflict(thread_id) do nothing returning id`
         check(handoff, 'HANDOFF_ALREADY_EXISTS')
         await invalidate(context, thread.id, 'handoff')
         await tx`update em_threads set responsible_user_id=${p.ownerId},controller_user_id=${p.ownerId},outcome='call_requested',controller_revision=controller_revision+1 where workspace_id=${ws} and id=${thread.id}`
+        const evidence = p.factEvidence[0]
+        const bridge = await projectEmailHandoffToCrm(context, {
+          handoffId: handoff.id,
+          threadId: thread.id,
+          ownerId: p.ownerId,
+          positiveSellerInterest: p.positiveSellerInterest,
+          evidenceMessageId: evidence.messageId!,
+          evidenceQuote: evidence.quote!,
+          requestedContact: p.requestedContact,
+        })
         await notify(
           context,
           thread.id,
           p.ownerId,
-          'Callback needs a time',
+          bridge.state === 'handoff_saved_crm_synced'
+            ? 'Callback task ready'
+            : bridge.state === 'handoff_saved_crm_review'
+              ? 'CRM review needed'
+              : 'CRM connection needs attention',
           `handoff:${handoff.id}`,
         )
         return {
           entityId: handoff.id,
-          state: 'handoff_saved_calendar_not_connected',
+          state: bridge.state,
+          invalidates: [
+            'email:workspace',
+            ...(bridge.leadId ? [`crm:lead:${bridge.leadId}`] : []),
+            ...(bridge.leadId ? ['crm:conversations', 'crm:work-items'] : []),
+          ],
         }
       }
       case 'SUP-ADD': {
@@ -594,6 +622,36 @@ export async function executePilotCommand(
           await tx`update em_notifications set acknowledged_at=coalesce(acknowledged_at,${now}) where workspace_id=${ws} and id=${command.payload.eventId} and recipient_id=${subject} returning id`
         check(notice, 'NOTIFICATION_NOT_FOUND', 404)
         return { entityId: notice.id, state: 'acknowledged' }
+      }
+      case 'OPS-REPLAY': {
+        check(member.roles.includes('owner'), 'FORBIDDEN', 403)
+        const p = command.payload
+        const [repair] =
+          await tx`select * from em_crm_projection_repairs where workspace_id=${ws} and id=${p.jobId} for update`
+        check(repair, 'CRM_REPAIR_NOT_FOUND', 404)
+        check(
+          repair.state === 'pending' &&
+            repair.last_error_code === p.expectedFailureCode,
+          'CRM_REPAIR_CHANGED',
+        )
+        await projectCrmChanges(context, repair.thread_id, {})
+        const [next] =
+          await tx`select state from em_crm_projection_repairs where workspace_id=${ws} and id=${repair.id}`
+        await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail,created_at)
+          values(${ws},${subject},'CRM-REPAIR-ATTEMPT',${repair.id},${command.idempotencyKey},
+            ${tx.json({ reason: p.reason, priorFailureCode: p.expectedFailureCode, state: next.state })},${now})`
+        return {
+          entityId: repair.id,
+          state:
+            next.state === 'resolved'
+              ? 'crm_repair_resolved'
+              : 'crm_repair_pending',
+          invalidates: [
+            'email:workspace',
+            'crm:conversations',
+            'crm:work-items',
+          ],
+        }
       }
       default:
         throw new WorkflowError('ACTION_NOT_IMPLEMENTED', 422)
@@ -626,6 +684,10 @@ async function suppress(
       await invalidate(context, thread.id, 'marketing_stopped')
       await tx`update em_threads set state='stopped',outcome=case when ${reason}='unsubscribe' then 'unsubscribed' else outcome end,controller_revision=controller_revision+1 where workspace_id=${ws} and id=${thread.id}`
       await tx`update em_handoffs set state='held' where workspace_id=${ws} and thread_id=${thread.id}`
+      await projectCrmChanges(context, thread.id, {
+        history: true,
+        holdReason: 'marketing_stopped',
+      })
     }
     await tx`update em_enrollments set state='suppressed' where workspace_id=${ws} and address_id=${alias.id} and state in ('queued','waiting_reply','held','replied')`
   }
@@ -687,6 +749,7 @@ export async function simulateInbound(
       // inbound stays on human review; no AI classification claim is made.
       if (/\b(unsubscribe|stop emailing|remove me)\b/i.test(input.body))
         await suppress(context, thread.address_id, 'unsubscribe', message.id)
+      else await projectCrmChanges(context, thread.id, { history: true })
       return { entityId: message.id, state: 'received_sequence_stopped' }
     },
   )
@@ -731,11 +794,11 @@ export async function simulateDelivery(
         const [address] =
           await tx`select normalized_address,verification_state,verification_expires_at from em_addresses where workspace_id=${ws} and id=${intent.address_id}`
         const [responsible] =
-          await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.user_id=m.auth_user_id where m.workspace_id=${ws} and m.auth_user_id=${intent.responsible_user_id} and m.active and p.is_active=true and m.roles && array['owner','marketer','reviewer','acquisitions']::text[]`
+          await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id=${intent.responsible_user_id} and m.active and m.roles && array['owner','marketer','reviewer','acquisitions']::text[]`
         const controllerActive =
           intent.controller !== 'human' ||
           (
-            await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.user_id=m.auth_user_id where m.workspace_id=${ws} and m.auth_user_id=${intent.controller_user_id} and m.active and p.is_active=true and m.roles && array['owner','reviewer','acquisitions']::text[]`
+            await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id=${intent.controller_user_id} and m.active and m.roles && array['owner','reviewer','acquisitions']::text[]`
           ).length > 0
         const stale =
           intent.expected_content_revision !== intent.content_revision ||
@@ -793,6 +856,7 @@ export async function simulateDelivery(
         await tx`update em_send_intents set state='accepted_simulated',accepted_at=${now} where workspace_id=${ws} and id=${intent.id}`
         await tx`update em_threads set content_revision=content_revision+1,last_message_at=${now},state='waiting' where workspace_id=${ws} and id=${intent.thread_id}`
         await tx`update em_drafts set state='stale' where workspace_id=${ws} and thread_id=${intent.thread_id} and state='current'`
+        await projectCrmChanges(context, intent.thread_id, { history: true })
         if (intent.origin === 'sequence' && intent.step === 0) {
           const due = pilotFollowUp(now)
           // The last permitted slot ends on local calendar day 10, even across DST.
@@ -846,11 +910,21 @@ export async function readPilotState(
     const team = canSeeTeam(member)
     const threads =
       await tx`select t.*,p.display_name as name,a.normalized_address as email,c.name as campaign_name,
-      h.id as handoff_id,h.state as handoff_state,h.requested_contact
+      h.id as handoff_id,h.state as handoff_state,h.requested_contact,
+      h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
+      h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
+      coalesce(r.history_required,false) as crm_history_repair_required,
+      coalesce(r.callback_hold_required,false) as crm_callback_repair_required,
+      r.id as crm_repair_id,r.last_error_code as crm_repair_error_code,
+      w.status as callback_task_state,w.due_at as callback_due_at,
+      l.station as lead_stage,l.classification as lead_classification,l.source as lead_source
       from em_threads t join em_parties p on p.id=t.party_id and p.workspace_id=t.workspace_id
       join em_addresses a on a.id=t.address_id and a.workspace_id=t.workspace_id
       join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id
       left join em_handoffs h on h.thread_id=t.id and h.workspace_id=t.workspace_id
+      left join em_crm_projection_repairs r on r.thread_id=t.id and r.workspace_id=t.workspace_id and r.state='pending'
+      left join leads l on l.id=t.lead_id
+      left join work_items w on w.source_kind='activity' and w.source_id=h.crm_task_id
       where t.workspace_id=${ws} and (${team} or t.responsible_user_id=${subject} or t.controller_user_id=${subject})
       order by t.last_message_at desc nulls last,t.id limit 500`
     const ids = threads.map((t) => t.id)
@@ -871,7 +945,7 @@ export async function readPilotState(
       ? await tx`select id,name from em_audiences where workspace_id=${ws} and state='ready' order by name`
       : []
     const members =
-      await tx`select m.auth_user_id as id,coalesce(p.name,'Team member') as name from em_memberships m left join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.active and p.is_active=true and p.user_id=m.auth_user_id and m.roles && array['owner','acquisitions']::text[] order by name`
+      await tx`select m.auth_user_id as id,coalesce(p.full_name,'Team member') as name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.active and m.roles && array['owner','acquisitions']::text[] order by name`
     const configuredTeam = emailWorkspaceConfigSchema.parse(
       workspace.config,
     ).team

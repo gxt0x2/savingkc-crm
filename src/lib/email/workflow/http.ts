@@ -118,7 +118,7 @@ export function createWorkflowHttp(dependencies: WorkflowHttpDependencies) {
             entityId: result.entityId,
             revision: result.revision ?? 0,
             state: result.state,
-            invalidates: ['email:workspace'],
+            invalidates: result.invalidates ?? ['email:workspace'],
           }),
           { headers },
         )

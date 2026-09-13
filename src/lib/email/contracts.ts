@@ -254,6 +254,7 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
   command('THR-LINK', z.object({ threadId: uuid, partyId: uuid, propertyRef: nonEmpty.max(500).optional(), leadId: uuid.optional(), evidence: evidenceList }).strict()),
   command('THR-HANDOFF', z.object({
     threadId: uuid, ownerId: uuid, backupId: uuid, reason: shortText,
+    positiveSellerInterest: z.boolean().default(false),
     requestedContact: z.object({
       phone: z.string().trim().min(3).max(50).optional(),
       requestedTimeText: z.string().trim().min(1).max(500).optional(),

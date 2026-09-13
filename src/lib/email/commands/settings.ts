@@ -1,6 +1,7 @@
 import 'server-only'
 import type { EmailCommand } from '../contracts'
 import { emailWorkspaceConfigSchema } from '../config'
+import { projectCrmChanges } from '../crm-repairs'
 import {
   check,
   json,
@@ -62,8 +63,8 @@ export async function readSettings(context: Context): Promise<PilotSettings> {
     await tx`select config,revision from em_workspaces where id=${member.workspace_id}`
   const config = emailWorkspaceConfigSchema.parse(workspace.config)
   const rows =
-    await tx`select m.auth_user_id as id,m.roles,m.active,m.revision,coalesce(p.name,'Team member') as name,
-    coalesce(p.is_active,false) and p.user_id=m.auth_user_id as crm_active
+    await tx`select m.auth_user_id as id,m.roles,m.active,m.revision,coalesce(p.full_name,'Team member') as name,
+    (p.id is not null) as crm_active
     from em_memberships m left join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${member.workspace_id} order by m.auth_user_id`
   const members = []
   for (const row of rows) {
@@ -128,7 +129,7 @@ export async function applySettingsCommand(
     const { roles, active } = command.payload
     if (active) {
       const [profile] =
-        await tx`select id from agent_profiles where id=${target.agent_profile_id} and user_id=${target.auth_user_id} and is_active=true`
+        await tx`select id from agent_profiles where id=${target.agent_profile_id}`
       check(profile, 'TEAM_MEMBER_INACTIVE')
     }
     const removesOwner =
@@ -137,7 +138,7 @@ export async function applySettingsCommand(
       (!active || !roles.includes('owner'))
     if (removesOwner) {
       const [owners] =
-        await tx`select count(*)::int as count from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.user_id=m.auth_user_id where m.workspace_id=${ws} and m.auth_user_id<>${target.auth_user_id} and m.active and p.is_active=true and m.roles @> array['owner']::text[]`
+        await tx`select count(*)::int as count from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id<>${target.auth_user_id} and m.active and m.roles @> array['owner']::text[]`
       check(owners.count > 0, 'LAST_OWNER')
     }
     const work = await affectedWork(context, target.auth_user_id)
@@ -161,6 +162,10 @@ export async function applySettingsCommand(
         await tx`update em_drafts set state='stale' where workspace_id=${ws} and thread_id=any(${tx.array(work.ids)}::uuid[]) and state='current'`
         await tx`update em_threads set controller='none',controller_user_id=null,controller_revision=controller_revision+1,state=case when state='stopped' then state else 'needs_review' end where workspace_id=${ws} and id=any(${tx.array(work.ids)}::uuid[])`
         await tx`update em_handoffs set state='held' where workspace_id=${ws} and thread_id=any(${tx.array(work.ids)}::uuid[])`
+        for (const threadId of work.ids)
+          await projectCrmChanges(context, threadId, {
+            holdReason: 'team_role_changed',
+          })
         await tx`insert into em_notifications(workspace_id,thread_id,recipient_id,kind,logical_key,created_at)
           select ${ws},t.id,m.auth_user_id,'team_member_work_held',${command.idempotencyKey}||':'||t.id||':'||m.auth_user_id,${now}
           from em_threads t cross join em_memberships m where t.workspace_id=${ws} and t.id=any(${tx.array(work.ids)}::uuid[])
@@ -229,8 +234,8 @@ export async function applySettingsCommand(
         [p.backupId, ['owner', 'acquisitions']],
       ] as const) {
         const [assignee] =
-          await tx`select m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id and a.user_id=m.auth_user_id
-          where m.workspace_id=${ws} and m.auth_user_id=${subject} and m.active and a.is_active=true`
+          await tx`select m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id
+          where m.workspace_id=${ws} and m.auth_user_id=${subject} and m.active`
         check(
           assignee && allowed.some((r) => assignee.roles.includes(r)),
           'TEAM_ROLE_REQUIRED',
