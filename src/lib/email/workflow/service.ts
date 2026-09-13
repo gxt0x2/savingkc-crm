@@ -639,6 +639,69 @@ export async function executePilotCommand(
           ],
         }
       }
+      case 'THR-SCHEDULE': {
+        const p = command.payload
+        const thread = await requireHuman(
+          context,
+          p.threadId,
+          p.contentRevision,
+          p.controllerRevision,
+        )
+        check(thread.lead_id, 'LINK_LEAD_FIRST')
+        const [held] =
+          await tx`select id from em_crm_projection_repairs where workspace_id=${ws} and thread_id=${thread.id} and state='pending' limit 1`
+        check(!held, 'CALLBACK_HELD')
+        const [lead] =
+          await tx`select id,is_parked,station from leads where id=${thread.lead_id} for update`
+        check(
+          lead &&
+            !lead.is_parked &&
+            !['dead', 'closed_won', 'closed_lost'].includes(lead.station),
+          'CRM_RECORD_HELD',
+        )
+        const [assignee] = await tx`select p.full_name from em_memberships m
+          join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
+          where m.workspace_id=${ws} and m.auth_user_id=${p.assigneeId} and m.active
+          and m.roles && array['owner','reviewer','acquisitions']::text[]`
+        check(assignee?.full_name, 'TASK_ASSIGNEE_UNAVAILABLE', 403)
+        const [actor] =
+          await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id=${subject}`
+        const start = new Date(p.startAt)
+        if (['callback', 'follow_up', 'appointment'].includes(p.kind))
+          validateCallbackTime(start, now)
+        else check(start > now, 'INVALID_TASK_TIME')
+        const [created] =
+          await tx`select create_work_item_v2(${actor.full_name},${`email-schedule:${ws}:${command.idempotencyKey}`},${thread.lead_id},${p.kind},${p.title},${p.note},${start},${assignee.full_name},'acquisitions','acquisitions','normal',false,
+          ${tx.json({ origin: 'email_marketing', em_thread_id: thread.id, email_task_notes: p.note, calendar_booking_verified: false })}) as result`
+        const task = created?.result?.workItem
+        check(
+          task?.source_id &&
+            task.lead_id === thread.lead_id &&
+            task.assigned_to === assignee.full_name &&
+            task.kind === p.kind &&
+            new Date(task.due_at).getTime() === start.getTime(),
+          'CRM_TASK_CREATE_FAILED',
+        )
+        await notify(
+          context,
+          thread.id,
+          p.assigneeId,
+          'task_assigned',
+          `scheduled-task:${task.source_id}`,
+        )
+        return {
+          entityId: task.source_id,
+          state:
+            p.kind === 'appointment'
+              ? 'appointment_task_created'
+              : 'task_created',
+          invalidates: [
+            'email:workspace',
+            'crm:work-items',
+            `crm:lead:${thread.lead_id}`,
+          ],
+        }
+      }
       case 'THR-NOTE': {
         check(canWork(member), 'FORBIDDEN', 403)
         const thread = await threadFor(context, command.payload.threadId)

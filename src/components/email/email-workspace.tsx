@@ -24,6 +24,9 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  TASK_ASSIGNEE_UNAVAILABLE:
+    'Choose an active team member with access to work this conversation.',
+  INVALID_TASK_TIME: 'Choose a future date and time.',
   AI_NOT_CONNECTED: 'Ari is not connected yet. Your draft has not changed.',
   AI_BUDGET_REACHED:
     'The small AI pilot allowance has been reached. You can still write replies manually.',
@@ -53,7 +56,7 @@ const friendly: Record<string, string> = {
     'This callback is held or completed. Review its current status.',
   INVALID_CALLBACK_TIME:
     'Choose a future weekday time at 8:30 AM or later in Chicago.',
-  LINK_LEAD_FIRST: 'Link the CRM Lead before saving notes.',
+  LINK_LEAD_FIRST: 'Link the CRM Lead before saving notes or scheduled work.',
   FINISH_CALLBACK_FIRST:
     'Finish the open callback task before marking this conversation done.',
   REPLY_ALREADY_QUEUED:
@@ -294,6 +297,10 @@ export function EmailWorkspace({
               'Handoff saved locally. CRM linking is unavailable and no callback task was created.',
             acknowledged: 'Notification acknowledged.',
             note_saved: 'Note saved to the CRM record.',
+            task_created:
+              'Task saved to Upcoming. The assignee has an in-app alert.',
+            appointment_task_created:
+              'CRM appointment saved to Upcoming. No Google Calendar event or invitation was created.',
             callback_scheduled:
               'Follow-up task saved. No calendar invitation was sent.',
             callback_completed:

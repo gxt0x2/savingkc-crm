@@ -125,6 +125,7 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await drawer.getByRole('tab', { name: 'Calendar', exact: true }).click()
   await expect(drawer.getByLabel('Title', { exact: true })).toBeHidden()
   await drawer.getByRole('button', { name: 'Scheduler', exact: true }).click()
+  await drawer.getByRole('combobox', { name: 'Schedule', exact: true }).selectOption('callback')
   await drawer
     .getByLabel('Title', { exact: true })
     .fill('Call seller to confirm timing')
@@ -153,6 +154,37 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await expect(agenda).toContainText(
     'Google Calendar events are not connected.',
   )
+  await drawer.getByRole('button', { name: 'Scheduler', exact: true }).click()
+  await drawer.getByRole('combobox', { name: 'Schedule', exact: true }).selectOption('new')
+  await drawer.getByRole('combobox', { name: 'Type', exact: true }).selectOption('appointment')
+  await drawer.getByLabel('Title', { exact: true }).fill('Property walkthrough')
+  await drawer
+    .getByLabel('Date and time (Chicago)', { exact: true })
+    .fill('2026-09-16T14:00')
+  await drawer
+    .getByRole('button', { name: 'Save appointment', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('CRM appointment saved')
+  await agenda.getByLabel('Filter task type').selectOption('')
+  await expect(agenda).toContainText('Property walkthrough')
+  await expect(agenda).toContainText(
+    'CRM appointment task · no Calendar booking verified',
+  )
+  await expect(agenda.getByRole('article')).toHaveCount(2)
+  await drawer.getByRole('button', { name: 'Scheduler', exact: true }).click()
+  await drawer.getByRole('combobox', { name: 'Type', exact: true }).selectOption('task')
+  await drawer
+    .getByLabel('Title', { exact: true })
+    .fill('Review property details')
+  await drawer
+    .getByLabel('Date and time (Chicago)', { exact: true })
+    .fill('2026-09-17T10:00')
+  await drawer.getByRole('button', { name: 'Create task', exact: true }).click()
+  await expect(agenda).toContainText('Review property details')
+  await expect(agenda.getByRole('article')).toHaveCount(3)
+  await drawer.getByRole('button', { name: 'Scheduler', exact: true }).click()
+  await page.screenshot({ path: 'test-results/email-local/scheduler-desktop.png', fullPage: true, animations: 'disabled' })
+  await drawer.getByRole('button', { name: 'Scheduler', exact: true }).click()
   await drawer.getByText('Record call outcome', { exact: true }).click()
   await drawer
     .getByLabel('Call result', { exact: true })

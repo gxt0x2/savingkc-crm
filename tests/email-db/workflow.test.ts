@@ -3743,3 +3743,34 @@ withDb(
     assert.equal(domain.paused, true)
   },
 )
+
+withDb('general scheduler creates independent CRM work, fences authority and prevents duplicate saves', async db => {
+  const handoff = await reviewedCallback(db)
+  handoff.payload.ownerId = owner
+  handoff.payload.backupId = agent
+  await executePilotCommand(db.sql, owner, handoff, now)
+  const [thread] = await db.sql`select * from em_threads where id=${handoff.payload.threadId}`
+  const command = {command:'THR-SCHEDULE',idempotencyKey:randomUUID(),payload:{threadId:thread.id,contentRevision:thread.content_revision,controllerRevision:thread.controller_revision,kind:'appointment',title:'Property walkthrough',note:'Meet at the property',assigneeId:agent,startAt:'2026-09-16T19:00:00Z',timezone:'America/Chicago'}}
+  await rejects(executePilotCommand(db.sql, reader, command, now), 'FORBIDDEN')
+  await rejects(executePilotCommand(db.sql, agent, command, now), 'THREAD_NOT_FOUND')
+  await rejects(executePilotCommand(db.sql, owner, {...command,payload:{...command.payload,contentRevision:0}}, now), 'NEW_REPLY_REVIEW_REQUIRED')
+  await rejects(executePilotCommand(db.sql, owner, {...command,payload:{...command.payload,assigneeId:reader}}, now), 'TASK_ASSIGNEE_UNAVAILABLE')
+  await rejects(executePilotCommand(db.sql, owner, {...command,payload:{...command.payload,startAt:'2026-09-19T19:00:00Z'}}, now), 'INVALID_CALLBACK_TIME')
+  const saved = await executePilotCommand(db.sql, owner, command, now)
+  assert.equal(saved.state,'appointment_task_created')
+  assert.deepEqual(await executePilotCommand(db.sql, owner, command, now),saved)
+  const [item] = await db.sql`select * from work_items where source_id=${saved.entityId}`
+  assert.equal(item.assigned_to,'Demo agent')
+  assert.equal(item.lead_id,thread.lead_id)
+  assert.equal(item.kind,'appointment')
+  assert.equal(item.source_metadata.calendar_booking_verified,false)
+  const alerts = await db.sql`select * from em_notifications where kind='task_assigned'`
+  assert.equal(alerts.length,1)
+  assert.equal(alerts[0].recipient_id,agent)
+  assert.equal((await db.sql`select * from work_items where lead_id=${thread.lead_id}`).length,2)
+  await db.sql`update em_handoffs set state='completed' where thread_id=${thread.id}`
+  const task = await executePilotCommand(db.sql, owner, {...command,idempotencyKey:randomUUID(),payload:{...command.payload,kind:'task',title:'Research property'}},now)
+  assert.equal(task.state,'task_created')
+  const state = await readPilotState(db.sql,owner,now)
+  assert.equal(state.threads.find(t=>t.id===thread.id)?.open_tasks?.length,3)
+})

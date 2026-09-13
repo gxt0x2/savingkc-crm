@@ -104,6 +104,13 @@ export function EmailThreadPanel({
   const [schedule, setSchedule] = useState('')
   const [schedulerOpen, setSchedulerOpen] = useState(false)
   const [taskTitle, setTaskTitle] = useState(t.callback_title ?? 'Call seller')
+  const [scheduleMode, setScheduleMode] = useState<'new' | 'callback'>('new')
+  const [taskKind, setTaskKind] = useState<
+    'follow_up' | 'callback' | 'appointment' | 'task' | 'send_offer'
+  >('follow_up')
+  const [taskAssignee, setTaskAssignee] = useState(
+    t.handoff_owner_id ?? data.actorId,
+  )
   const [taskNote, setTaskNote] = useState(t.callback_notes ?? '')
   const [outcome, setOutcome] = useState('')
   const [outcomeKind, setOutcomeKind] = useState<
@@ -115,8 +122,12 @@ export function EmailThreadPanel({
     outcomeKind === 'follow_up' || outcomeKind === 'no_contact'
   const [localError, setLocalError] = useState('')
   const [working, setWorking] = useState(false)
+  const scheduleRequest = useRef<{ fingerprint: string; key: string } | null>(
+    null,
+  )
   const [scheduleRevision, setScheduleRevision] = useState({
     thread: t.content_revision,
+    controller: t.controller_revision,
     handoff: t.handoff_revision ?? 0,
   })
   const history = useRef<HTMLDivElement>(null)
@@ -159,6 +170,7 @@ export function EmailThreadPanel({
     if (tab === 'followups' && !schedule && !outcome) {
       setScheduleRevision({
         thread: t.content_revision,
+        controller: t.controller_revision,
         handoff: t.handoff_revision ?? 0,
       })
     }
@@ -166,9 +178,13 @@ export function EmailThreadPanel({
   const openDetails = (tab: DetailTab = detailTab) => {
     setDetailTab(tab)
     setDetails(true)
-    if (tab === 'followups') setSchedulerOpen(true)
+    if (tab === 'followups') {
+      setSchedulerOpen(true)
+      setScheduleMode(taskEditable ? 'callback' : 'new')
+    }
     setScheduleRevision({
       thread: t.content_revision,
+      controller: t.controller_revision,
       handoff: t.handoff_revision ?? 0,
     })
   }
@@ -947,126 +963,242 @@ export function EmailThreadPanel({
               </p>
               <small>Calendar not connected. No appointment booked.</small>
             </div>
+            <>
+              <button
+                type="button"
+                className={styles.schedulerToggle}
+                aria-expanded={schedulerOpen}
+                aria-controls="email-scheduler"
+                onClick={() => setSchedulerOpen(!schedulerOpen)}
+              >
+                <span>Scheduler</span>
+                <span aria-hidden="true">{schedulerOpen ? '−' : '+'}</span>
+              </button>
+              <div id="email-scheduler" hidden={!schedulerOpen}>
+                <form
+                  className={styles.drawerForm}
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (!canWork || !owns || !t.lead_id || hasCrmIssue(t))
+                      return
+                    setLocalError('')
+                    let start: Date
+                    try {
+                      start = chicagoDateTime(schedule)
+                    } catch {
+                      setLocalError('Choose a valid Chicago date and time.')
+                      return
+                    }
+                    const fingerprint = JSON.stringify([
+                      t.id,
+                      scheduleMode,
+                      scheduleRevision,
+                      taskTitle,
+                      taskNote,
+                      taskKind,
+                      taskAssignee,
+                      schedule,
+                    ])
+                    if (scheduleRequest.current?.fingerprint !== fingerprint)
+                      scheduleRequest.current = {
+                        fingerprint,
+                        key: crypto.randomUUID(),
+                      }
+                    const result = await act(
+                      scheduleMode === 'new'
+                        ? {
+                            command: 'THR-SCHEDULE',
+                            idempotencyKey: scheduleRequest.current.key,
+                            payload: {
+                              threadId: t.id,
+                              contentRevision: scheduleRevision.thread,
+                              controllerRevision: scheduleRevision.controller,
+                              title: taskTitle,
+                              note: taskNote,
+                              kind: taskKind,
+                              assigneeId: taskAssignee,
+                              startAt: start.toISOString(),
+                              timezone: 'America/Chicago',
+                            },
+                          }
+                        : {
+                            command: 'HAN-SCHEDULE',
+                            idempotencyKey: scheduleRequest.current.key,
+                            expectedRevision: scheduleRevision.handoff,
+                            payload: {
+                              handoffId: t.handoff_id!,
+                              mode: 'task',
+                              title: taskTitle,
+                              note: taskNote,
+                              startAt: start.toISOString(),
+                              timezone: 'America/Chicago',
+                              contentRevision: scheduleRevision.thread,
+                            },
+                          },
+                    )
+                    if (result) {
+                      scheduleRequest.current = null
+                      setSchedule('')
+                      setSchedulerOpen(false)
+                      setScheduleRevision({
+                        thread: t.content_revision,
+                        controller: t.controller_revision,
+                        handoff:
+                          scheduleRevision.handoff +
+                          (scheduleMode === 'callback' ? 1 : 0),
+                      })
+                    }
+                  }}
+                >
+                  <p>
+                    {!t.lead_id
+                      ? 'Link this conversation to a Lead before saving scheduled work.'
+                      : !owns
+                        ? 'Take over this conversation to schedule work.'
+                        : hasCrmIssue(t)
+                          ? 'Resolve the CRM review before scheduling work.'
+                          : 'Save work for this Lead. The assignee receives an in-app alert.'}
+                  </p>
+                  {(!t.lead_id || !owns || hasCrmIssue(t)) && (
+                    <button
+                      type="button"
+                      onClick={() => selectDetailTab('next')}
+                    >
+                      Review next step
+                    </button>
+                  )}
+                  {taskEditable && (
+                    <label>
+                      Schedule
+                      <select
+                        value={scheduleMode}
+                        onChange={(e) =>
+                          setScheduleMode(e.target.value as 'new' | 'callback')
+                        }
+                      >
+                        <option value="new">New task or appointment</option>
+                        <option value="callback">
+                          Reschedule existing callback
+                        </option>
+                      </select>
+                    </label>
+                  )}
+                  <label>
+                    Title
+                    <input
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      required
+                      maxLength={200}
+                      placeholder="Describe the action"
+                    />
+                  </label>
+                  <div className={styles.attachedLead}>
+                    <small>Attached to Lead</small>
+                    <strong>{t.name}</strong>
+                  </div>
+                  {scheduleMode === 'new' ? (
+                    <div className={styles.agendaFilters}>
+                      <label>
+                        Type
+                        <select
+                          value={taskKind}
+                          onChange={(e) =>
+                            setTaskKind(e.target.value as typeof taskKind)
+                          }
+                        >
+                          <option value="follow_up">Follow-up</option>
+                          <option value="callback">Callback</option>
+                          <option value="appointment">Appointment</option>
+                          <option value="task">Research / task</option>
+                          <option value="send_offer">Send offer</option>
+                        </select>
+                      </label>
+                      <label>
+                        Assigned to
+                        <select
+                          value={taskAssignee}
+                          onChange={(e) => setTaskAssignee(e.target.value)}
+                        >
+                          {data.members.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                              {m.id === data.actorId ? ' (me)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  ) : (
+                    <small>Callback · {owner?.name ?? 'Unassigned'}</small>
+                  )}
+                  {scheduleMode === 'new' && taskKind === 'appointment' && (
+                    <p>
+                      CRM appointment only. Google Calendar is not connected; no
+                      invitation will be sent.
+                    </p>
+                  )}
+                  <label>
+                    {scheduleMode === 'callback'
+                      ? 'Follow-up time (Chicago)'
+                      : 'Date and time (Chicago)'}
+                    <input
+                      type="datetime-local"
+                      required
+                      value={schedule}
+                      onChange={(e) => setSchedule(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Notes (optional)
+                    <textarea
+                      aria-label="Task notes"
+                      rows={2}
+                      maxLength={2000}
+                      value={taskNote}
+                      onChange={(e) => setTaskNote(e.target.value)}
+                      placeholder="Additional details…"
+                    />
+                  </label>
+                  <div className={styles.taskFooter}>
+                    <button
+                      type="button"
+                      disabled={blocked}
+                      onClick={() => {
+                        setSchedule('')
+                        setTaskTitle(t.callback_title ?? 'Call seller')
+                        setTaskNote(t.callback_notes ?? '')
+                        setSchedulerOpen(false)
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className={styles.primary}
+                      disabled={
+                        blocked ||
+                        !schedule ||
+                        !taskTitle.trim() ||
+                        !canWork ||
+                        !owns ||
+                        !t.lead_id ||
+                        hasCrmIssue(t) ||
+                        (scheduleMode === 'callback' && !taskEditable)
+                      }
+                    >
+                      {scheduleMode === 'callback'
+                        ? 'Save follow-up'
+                        : taskKind === 'appointment'
+                          ? 'Save appointment'
+                          : 'Create task'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </>
             <EmailCalendarAgenda thread={t} asOf={data.asOf} />
             {taskEditable && (
               <>
-                <button
-                  type="button"
-                  className={styles.schedulerToggle}
-                  aria-expanded={schedulerOpen}
-                  aria-controls="email-scheduler"
-                  onClick={() => setSchedulerOpen(!schedulerOpen)}
-                >
-                  <span>Scheduler</span>
-                  <span aria-hidden="true">{schedulerOpen ? '−' : '+'}</span>
-                </button>
-                <div id="email-scheduler" hidden={!schedulerOpen}>
-                  <form
-                    className={styles.drawerForm}
-                    onSubmit={async (e) => {
-                      e.preventDefault()
-                      setLocalError('')
-                      let start: Date
-                      try {
-                        start = chicagoDateTime(schedule)
-                      } catch {
-                        setLocalError('Choose a valid Chicago date and time.')
-                        return
-                      }
-                      const result = await act({
-                        command: 'HAN-SCHEDULE',
-                        idempotencyKey: crypto.randomUUID(),
-                        expectedRevision: scheduleRevision.handoff,
-                        payload: {
-                          handoffId: t.handoff_id!,
-                          mode: 'task',
-                          title: taskTitle,
-                          note: taskNote,
-                          startAt: start.toISOString(),
-                          timezone: 'America/Chicago',
-                          contentRevision: scheduleRevision.thread,
-                        },
-                      })
-                      if (result) {
-                        setSchedule('')
-                        setSchedulerOpen(false)
-                        setScheduleRevision({
-                          thread: t.content_revision,
-                          handoff: scheduleRevision.handoff + 1,
-                        })
-                      }
-                    }}
-                  >
-                    <label>
-                      Title
-                      <input
-                        value={taskTitle}
-                        onChange={(e) => setTaskTitle(e.target.value)}
-                        required
-                        maxLength={200}
-                        placeholder="Describe the action"
-                      />
-                    </label>
-                    <div className={styles.attachedLead}>
-                      <small>Attached to Lead</small>
-                      <strong>{t.name}</strong>
-                    </div>
-                    <div className={styles.taskFacts}>
-                      <div>
-                        <small>Type</small>
-                        <span>Follow-up</span>
-                      </div>
-                      <div>
-                        <small>Assigned to</small>
-                        <span>{owner?.name ?? 'Unassigned'}</span>
-                      </div>
-                      <div>
-                        <small>Role</small>
-                        <span>Acquisitions</span>
-                      </div>
-                    </div>
-                    <label>
-                      Follow-up time (Chicago)
-                      <input
-                        type="datetime-local"
-                        required
-                        value={schedule}
-                        onChange={(e) => setSchedule(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Notes (optional)
-                      <textarea
-                        aria-label="Task notes"
-                        rows={2}
-                        maxLength={2000}
-                        value={taskNote}
-                        onChange={(e) => setTaskNote(e.target.value)}
-                        placeholder="Additional details…"
-                      />
-                    </label>
-                    <div className={styles.taskFooter}>
-                      <button
-                        type="button"
-                        disabled={blocked}
-                        onClick={() => {
-                          setSchedule('')
-                          setTaskTitle(t.callback_title ?? 'Call seller')
-                          setTaskNote(t.callback_notes ?? '')
-                          setSchedulerOpen(false)
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className={styles.primary}
-                        disabled={blocked || !schedule || !taskTitle.trim()}
-                      >
-                        Save follow-up
-                      </button>
-                    </div>
-                  </form>
-                </div>
                 <details className={styles.outcomeDisclosure}>
                   <summary>Record call outcome</summary>
                   <form
@@ -1103,6 +1235,7 @@ export function EmailThreadPanel({
                         setNextAction('')
                         setScheduleRevision({
                           thread: t.content_revision,
+                          controller: t.controller_revision,
                           handoff: scheduleRevision.handoff + 1,
                         })
                       }

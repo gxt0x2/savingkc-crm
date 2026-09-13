@@ -248,6 +248,7 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
   command('THR-DRAFT', z.object({ threadId: uuid, body: longText, contentRevision: revision, controllerRevision: revision }).strict()),
   command('THR-SEND', z.object({ draftId: uuid, bodyHash: hash, contentRevision: revision, controllerRevision: revision }).strict()),
   command('THR-REGENERATE', z.object({ threadId: uuid, contentRevision: revision, controllerRevision: revision, instruction: z.string().trim().min(1).max(500).optional() }).strict()),
+  command('THR-SCHEDULE', z.object({ threadId: uuid, contentRevision: revision, controllerRevision: revision, title: nonEmpty.max(200), note: z.string().trim().max(2000), kind: z.enum(['follow_up', 'callback', 'appointment', 'task', 'send_offer']), assigneeId: uuid, startAt: isoDateTime, timezone: z.literal('America/Chicago') }).strict()),
   command('THR-NOTE', z.object({ threadId: uuid, body: shortText }).strict()),
   command('THR-SNOOZE', z.object({ threadId: uuid, until: isoDateTime.optional() }).strict()),
   command('THR-CLOSE', z.object({ threadId: uuid, closed: z.boolean(), reason: shortText }).strict()),

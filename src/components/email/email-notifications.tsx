@@ -71,9 +71,11 @@ export function EmailNotifications({
               return (
                 <article className={styles.notification} key={n.id}>
                   <strong>
-                    {n.kind === 'team_member_work_held'
-                      ? 'Team access changed — work needs review'
-                      : n.kind}
+                    {n.kind === 'task_assigned'
+                      ? 'New scheduled task assigned to you'
+                      : n.kind === 'team_member_work_held'
+                        ? 'Team access changed — work needs review'
+                        : n.kind}
                   </strong>
                   {thread ? (
                     <button
