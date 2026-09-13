@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {canPublishAiPolicy} from '../ai/evaluations';describe('AI evaluations',()=>it('blocks publication on a failed critical case',()=>{expect(canPublishAiPolicy([{id:'1',critical:true,passed:false}])).toBe(false);expect(canPublishAiPolicy([{id:'1',critical:true,passed:true}])).toBe(true)}))

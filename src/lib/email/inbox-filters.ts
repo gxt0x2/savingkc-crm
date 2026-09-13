@@ -1,0 +1,1 @@
+export type InboxBucket='needs_action'|'needs_review'|'calls_appointments'|'ai_handling'|'waiting'|'closed_stopped'|'all';export function normalizeInboxBucket(value:string):InboxBucket{return ['needs_action','needs_review','calls_appointments','ai_handling','waiting','closed_stopped','all'].includes(value)?value as InboxBucket:'needs_action'}

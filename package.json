@@ -11,6 +11,8 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:email:db": "node tests/email-db/preflight.mjs",
+    "test:email:ui": "node tests/email/require-ui-harness.mjs && playwright test --config tests/email/playwright.config.ts",
     "test:ios:device": "node scripts/mobile/run-ios-device-smoke.mjs",
     "test:smoke:theme": "playwright test tests/smoke/theme-and-nav.spec.ts",
     "test:performance": "playwright test tests/e2e/navigation-performance.spec.ts",
@@ -50,7 +52,10 @@
     "preview": "npm run gate:canonical && vercel deploy --yes",
     "manifest:archive:export": "node scripts/archive/export-manifest-history.mjs",
     "manifest:archive:verify": "node scripts/archive/verify-manifest-history.mjs",
-    "manifest:archive:rehearse": "bash scripts/rehearse-manifest-physical-archive.sh"
+    "manifest:archive:rehearse": "bash scripts/rehearse-manifest-physical-archive.sh",
+    "test:email:workflow": "node --conditions=react-server --import tsx --test tests/email-db/workflow.test.ts",
+    "dev:email:local": "node tests/email-local/start.mjs",
+    "test:email:local-ui": "playwright test --config tests/email-local/playwright.config.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.35",
@@ -71,6 +76,7 @@
     "gpt-tokenizer": "^3.4.0",
     "mcp-handler": "^1.1.0",
     "next": "16.3.4",
+    "parse5": "8.0.1",
     "postgres": "^3.4.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",

@@ -1,0 +1,13 @@
+ALTER TABLE public.em_provider_events ADD COLUMN thread_id uuid;
+ALTER TABLE public.em_provider_events ADD CONSTRAINT em_event_thread_workspace_fk FOREIGN KEY(workspace_id,thread_id) REFERENCES public.em_threads(workspace_id,id);
+ALTER TABLE public.em_provider_events ADD COLUMN encrypted_content jsonb;
+ALTER TABLE public.em_messages DROP CONSTRAINT em_messages_transport_check;
+ALTER TABLE public.em_messages ADD CONSTRAINT em_messages_transport_check CHECK(transport IN ('simulation','resend'));
+ALTER TABLE public.em_messages ADD COLUMN connection_id uuid;
+ALTER TABLE public.em_messages ADD COLUMN provider_email_id uuid;
+ALTER TABLE public.em_messages ADD COLUMN rfc_message_id text;
+ALTER TABLE public.em_messages ADD COLUMN rfc_in_reply_to text;
+ALTER TABLE public.em_messages ADD COLUMN received_at timestamptz;
+ALTER TABLE public.em_messages ADD COLUMN attachment_metadata jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.em_messages ADD CONSTRAINT em_message_connection_workspace_fk FOREIGN KEY(workspace_id,connection_id) REFERENCES public.em_service_connections(workspace_id,id);
+CREATE UNIQUE INDEX em_received_provider_identity ON public.em_messages(connection_id,provider_email_id) WHERE transport='resend' AND direction='inbound';

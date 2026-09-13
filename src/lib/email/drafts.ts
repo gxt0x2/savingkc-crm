@@ -1,0 +1,1 @@
+export function canSendDraft(input:{isController:boolean;contentCurrent:boolean;controllerCurrent:boolean;suppressed:boolean}){return input.isController&&input.contentCurrent&&input.controllerCurrent&&!input.suppressed}

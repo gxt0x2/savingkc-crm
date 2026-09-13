@@ -1,0 +1,3 @@
+export type Controller='ai'|'human'|'none';export type ThreadControl={controller:Controller;ownerId?:string;controllerRevision:number;contentRevision:number}
+export function takeOver(control:ThreadControl,ownerId:string,expected:number):ThreadControl{if(control.controllerRevision!==expected||control.controller==='human')throw new Error('CONTROLLER_CONFLICT');return {...control,controller:'human',ownerId,controllerRevision:expected+1}}
+export function isDraftCurrent(control:ThreadControl,draft:{controllerRevision:number;contentRevision:number}){return control.controllerRevision===draft.controllerRevision&&control.contentRevision===draft.contentRevision}

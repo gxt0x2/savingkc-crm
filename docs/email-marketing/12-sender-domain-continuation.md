@@ -1,0 +1,9 @@
+# Sender-domain continuation
+
+Continue EM-008 with separate sender domains, provider-returned DNS records, durable domain creation/reconciliation and stable sender records. Required shared ownership additions: a new Email-only migration, domain service and HTTP route, private connection-access helper, Connections sender section, and focused DB/browser tests. These extend the original packet's proposed three-file boundary; existing contracts remain DOM-ADD, DOM-VERIFY, DOM-PAUSE and SND-SAVE. No existing production tables will be deployed in this step.
+
+A domain reservation precedes provider I/O. Exactly one creation attempt occurs for a reserved workspace/name, including concurrent requests with different request keys. A timeout or interrupted attempt is uncertain and is reconciled by reading the existing provider domain, never by blind creation retry. New domains request sending and receiving capabilities; existing provider domains are read and linked without silently changing their configuration. DNS values come only from the provider. Brand hosting, DNS verification, receiving routing and controlled delivery are separate states; no domain response enables sending.
+
+Sender records begin paused. Activating requires the controlled sender-test/readiness path, which is not yet implemented and remains blocked. Stable sender identity cannot change once referenced by a thread. Retiring prevents new enrollment but retains domain/history references for incoming routing. All access is owner-only and checked against current active CRM membership and current workspace revision.
+
+The main domain and all domains sharing its registrable domain are rejected, including aliases entered as URLs, ports or email addresses. Primary domain changes invalidate later readiness. No purchases, DNS writes, external emails, calendar events or production migrations occur during implementation/tests.

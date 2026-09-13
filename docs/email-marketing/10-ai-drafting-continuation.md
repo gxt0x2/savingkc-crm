@@ -1,0 +1,13 @@
+# Ari drafting continuation
+
+Authorized 2026-09-12 as part of the overnight build. This is the bounded human-review portion of EM-015/EM-016/EM-023, not automatic dispatch or full playbook publication.
+
+- THR-REGENERATE requires the current human controller, thread content/controller revisions and a current CRM owner. Reserve a durable generation before provider I/O; inference runs outside database locks.
+- Persist immutable input snapshot, prompt policy version/hash, requester, model, output, usage, estimated cost, timestamps and failure/stale status. A retrievable generation ID remains tied to thread authorization.
+- Deduplicate identical current requests. Retries of the same command never call the model twice. Reserve at most $0.02 per request, ten requests/hour and fifty/day; these small test limits cannot be increased from client input. Verify model pricing before a call; disable SDK retries. Unknown usage retains its reservation and is not reported as zero cost.
+- Initially use the existing AI Gateway integration with `openai/gpt-5.6-luna`, verified from the gateway catalog on 2026-09-12 ($0.0000002/input token and $0.0000012/output token). Limit complete input bytes and output tokens. A server flag plus credentials is required; default practice tests use an injected provider and make no model calls.
+- Seller messages are untrusted data. Exclude quoted email history and signatures from extraction; cite exact visible message spans. Everyday-language tactical empathy, one useful question, no invented pain, prices, dates, appointments, facts, scarcity or commitments. Review when uncertain. Unsubscribe or do-not-contact language must never become a suggested reply.
+- Completion rechecks suppression, controller/content revisions, active CRM profile and assignment. Save stale results for audit without putting them into the current composer. No stage changes, calendar invitations, outbound sends or provider secrets in model input.
+- UI exposes one Prepare with Ari action and the saved suggested reply in Next step. Approval uses existing exact-draft human send checks. Ari's Insights shows saved summary/evidence and generation status. Unavailable/failed/pending/stale states are explicit; deterministic practice suggestions stay visibly distinct.
+
+Owned files extend EM-015/EM-023 to `src/lib/email/ai/{drafting,provider}.ts`, `workflow/service.ts`, contracts/types/HTTP, the shared Email panels, one AI-generation migration, and focused unit/DB/browser/provider fixtures. Read-only generation retrieval is owned by the shared authenticated workspace API. No new production credential, schema or deployment is implied by implementation evidence.

@@ -13,6 +13,10 @@ const PUBLIC_PAGE_EXACT = new Set([
 
 // API routes that must remain reachable without a CRM session.
 const PUBLIC_API_EXACT = new Set([
+  // Resend authenticates the raw payload with its endpoint signing secret.
+  '/api/webhooks/email/resend',
+  // The receiving-only worker validates a separate scoped bearer inside its route.
+  '/api/workers/email',
   '/api/availability',
   '/api/book',
   '/api/buyers/intake',
@@ -167,6 +171,7 @@ function isPublicApiRoute(request: NextRequest): boolean {
   if (pathname === '/api/leads') {
     return request.method === 'POST' || request.method === 'OPTIONS'
   }
+  if (request.method === 'POST' && /^\/api\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) return true
   if (PUBLIC_API_EXACT.has(pathname)) return true
   if (PUBLIC_API_PREFIXES.some(prefix => pathname.startsWith(prefix))) return true
   if (isPublicDealApi(request)) return true
@@ -458,6 +463,8 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   if (hasTestBypass(request)) {
     return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
+
+  if (['GET', 'HEAD'].includes(request.method) && /^\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) return NextResponse.next()
 
   // Skip auth for public routes
   if (PUBLIC_PAGE_EXACT.has(pathname) || PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
