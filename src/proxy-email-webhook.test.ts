@@ -36,6 +36,16 @@ describe('Resend webhook route containment', () => {
     expect(response.headers.get('x-middleware-next')).toBe('1')
     expect(mocks.createServerClient).not.toHaveBeenCalled()
   })
+  it('lets the receiving-only worker enforce its dedicated bearer', async () => {
+    const response = await proxy(
+      new NextRequest('https://crm.savingkc.com/api/workers/email', {
+        method: 'POST',
+      }),
+      event,
+    )
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
   it.each([
     '/api/webhooks/email/resend-copy',
     '/api/webhooks/email/resend/admin',

@@ -104,8 +104,8 @@ export function createResendWebhookHttp(deps: {
               ? 'awaiting_reply_content'
               : 'unmatched_reply'
             : 'event_reducer_pending'
-        await tx`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,state,encrypted_payload,endpoint_id,provider_email_id,provider_created_at,hold_reason)
-          values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${parsed.success ? parsed.data.type : 'unknown'},${hash},${matched ? 'pending' : 'quarantined'},${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${parsed.success ? (parsed.data.data.email_id ?? null) : null},${parsed.success ? new Date(parsed.data.created_at) : null},${holdReason})`
+        await tx`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,state,encrypted_payload,endpoint_id,provider_email_id,provider_created_at,hold_reason,thread_id)
+          values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${parsed.success ? parsed.data.type : 'unknown'},${hash},${matched ? 'pending' : 'quarantined'},${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${parsed.success ? (parsed.data.data.email_id ?? null) : null},${parsed.success ? new Date(parsed.data.created_at) : null},${holdReason},${matched})`
         // Unknown routing or an unsupported event holds the workspace. Never guess by From alone.
         if (!matched)
           await tx`update em_workspaces set pause_reason=coalesce(pause_reason,'Resend event needs review'),revision=revision+1 where id=${binding.workspace_id}`

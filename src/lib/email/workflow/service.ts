@@ -4,6 +4,7 @@ import type { Sql } from 'postgres'
 import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
 import { changeCallback, validateCallbackTime } from './callback-actions'
+import { retryReceivedJob } from '../inbound/retry'
 import { manageHandoff } from './handoff-management'
 import { draftWithAri } from '../ai/drafting'
 import {
@@ -835,6 +836,16 @@ export async function executePilotCommand(
       case 'OPS-REPLAY': {
         check(member.roles.includes('owner'), 'FORBIDDEN', 403)
         const p = command.payload
+        const [receiving] =
+          await tx`select id from em_jobs where workspace_id=${ws} and id=${p.jobId} and kind='resend_receive_content'`
+        if (receiving)
+          return retryReceivedJob(
+            context,
+            p.jobId,
+            p.expectedFailureCode,
+            p.reason,
+            command.idempotencyKey,
+          )
         const [repair] =
           await tx`select * from em_crm_projection_repairs where workspace_id=${ws} and id=${p.jobId} for update`
         check(repair, 'CRM_REPAIR_NOT_FOUND', 404)
@@ -868,7 +879,7 @@ export async function executePilotCommand(
   })
 }
 
-async function suppress(
+export async function suppress(
   context: Context,
   addressId: string,
   reason: string,

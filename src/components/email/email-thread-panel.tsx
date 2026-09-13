@@ -363,12 +363,27 @@ export function EmailThreadPanel({
               </div>
               <small>
                 {m.direction === 'inbound'
-                  ? 'Received'
+                  ? m.transport === 'resend'
+                    ? 'Received via Resend'
+                    : 'Received'
                   : localSimulation
                     ? 'Sent · simulated'
                     : 'Sent'}
               </small>
               <MessageBody body={m.text_body} />
+              {!!m.attachment_metadata?.length && (
+                <details>
+                  <summary>
+                    {m.attachment_metadata.length} attachments · not opened
+                  </summary>
+                  {m.attachment_metadata.map((a) => (
+                    <p key={a.id}>
+                      {a.filename} · {a.content_type}
+                    </p>
+                  ))}
+                  <small>Attachment downloads are not enabled.</small>
+                </details>
+              )}
             </article>
           ))}
           {!messages.length && (

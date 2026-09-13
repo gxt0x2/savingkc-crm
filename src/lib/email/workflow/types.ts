@@ -153,6 +153,13 @@ export interface PilotThread {
   }[]
 }
 export interface PilotMessage {
+  transport?: string
+  attachment_metadata?: {
+    id: string
+    filename: string
+    content_type: string
+    size?: number
+  }[]
   id: string
   thread_id: string
   direction: string

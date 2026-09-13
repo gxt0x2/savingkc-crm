@@ -3830,3 +3830,129 @@ withDb('signed Resend webhook captures encrypted event, holds drip once and queu
   assert.equal((await handler(request(unknown,'msg_storage_failure'))).status,503)
   assert.equal((await db.sql`select * from em_provider_events where provider_event_id='msg_storage_failure'`).length,0)
 })
+
+async function receivingFixture(db:Database) {
+  const initial=await reviewedCallback(db)
+  initial.payload.ownerId=owner;initial.payload.backupId=agent
+  await executePilotCommand(db.sql,owner,initial,now)
+  const [thread]=await db.sql`select t.*,a.normalized_address from em_threads t join em_addresses a on a.id=t.address_id where t.id=${initial.payload.threadId}`
+  const {connectService}=await import('../../src/lib/email/connections/service')
+  const {createResendWebhookHttp,webhookSecretAad}=await import('../../src/lib/email/inbound/capture')
+  const {encryptEmailSecret}=await import('../../src/lib/email/secrets')
+  const key=Buffer.alloc(32,7),secret=`whsec_${Buffer.alloc(32,9).toString('base64')}`
+  const [ws]=await db.sql`select id,revision from em_workspaces limit 1`
+  const connection=await connectService(db.sql,owner,{provider:'resend',kind:'email',secret:'re_fixture_receiving_123456789',expectedRevision:ws.revision,accountLabel:'Receiving fixture',idempotencyKey:randomUUID()},async()=>({domainsRead:true,receivingRead:true,sendingVerified:false}),key,now)
+  const endpoint=randomUUID(),connectionId=connection.connectionId
+  await db.sql`insert into em_webhook_endpoints(id,workspace_id,connection_id,encrypted_secret,active) values(${endpoint},${ws.id},${connectionId},${db.sql.json({...encryptEmailSecret(secret,key,webhookSecretAad(ws.id,endpoint),1)})},true)`
+  await db.sql`insert into em_reply_aliases(workspace_id,connection_id,thread_id,address) values(${ws.id},${connectionId},${thread.id},'reply-token@outreach.test')`
+  const content={id:randomUUID(),from:thread.normalized_address,to:['reply-token@outreach.test'],created_at:now.toISOString(),subject:'Re: property',message_id:`<${randomUUID()}@example.test>`,text:'Call me at 816-555-0112 tomorrow.',headers:{'In-Reply-To':'<sent@example.test>'},attachments:[]}
+  const handler=createResendWebhookHttp({database:()=>db.sql,endpointId:()=>endpoint,key:()=>key})
+  async function capture() {
+    const body=JSON.stringify({type:'email.received',created_at:now.toISOString(),data:{email_id:content.id,from:content.from,to:content.to,message_id:content.message_id}}),id=`msg_${randomUUID()}`,timestamp=Math.floor(Date.now()/1000).toString()
+    const signature=`v1,${createHmac('sha256',Buffer.from(secret.slice(6),'base64')).update(`${id}.${timestamp}.${body}`).digest('base64')}`
+    assert.equal((await handler(new Request('http://localhost/api/webhooks/email/resend',{method:'POST',headers:{'svix-id':id,'svix-timestamp':timestamp,'svix-signature':signature},body}))).status,200)
+  }
+  await capture()
+  return {key,thread,content,connectionId,endpoint,capture}
+}
+withDb('receiving worker projects one authentic reply and phone alert into shared Lead history',async db=>{
+  const f=await receivingFixture(db)
+  const {processNextReceivedReply}=await import('../../src/lib/email/inbound/worker')
+  let calls=0
+  const provider={get:async()=>{calls++;return f.content}}
+  const result=await processNextReceivedReply(db.sql,owner,provider,()=>now,f.key)
+  assert.equal(result.state,'received')
+  const [message]=await db.sql`select * from em_messages where transport='resend'`
+  assert.equal(message.text_body,f.content.text)
+  assert.equal(message.rfc_message_id,f.content.message_id)
+  assert.equal(message.rfc_in_reply_to,'<sent@example.test>')
+  assert.equal(message.provider_email_id,f.content.id)
+  assert.equal((await db.sql`select * from lead_activities where metadata->>'em_message_id'=${message.id}`).length,1)
+  assert.equal((await db.sql`select * from em_notifications where kind='Phone number received — review callback'`).length,1)
+  assert.equal((await db.sql`select inbound_pending from em_threads where id=${f.thread.id}`)[0].inbound_pending,false)
+  assert.equal((await processNextReceivedReply(db.sql,owner,provider,()=>now,f.key)).state,'idle')
+  await f.capture()
+  assert.equal((await processNextReceivedReply(db.sql,owner,provider,()=>now,f.key)).state,'already_received')
+  assert.equal((await db.sql`select * from em_messages where transport='resend'`).length,1)
+  assert.equal((await db.sql`select * from lead_activities where metadata->>'em_message_id'=${message.id}`).length,1)
+  assert.equal(calls,2)
+})
+withDb('receiving worker retries temporary failures and never retries before due time',async db=>{
+  const f=await receivingFixture(db)
+  const {processNextReceivedReply}=await import('../../src/lib/email/inbound/worker')
+  const {WorkflowError}=await import('../../src/lib/email/workflow/core')
+  let current=now,calls=0
+  const provider={get:async()=>{calls++;if(calls===1)throw new WorkflowError('REPLY_NOT_READY');return f.content}}
+  assert.equal((await processNextReceivedReply(db.sql,owner,provider,()=>current,f.key)).state,'retry_scheduled')
+  assert.equal((await processNextReceivedReply(db.sql,owner,provider,()=>current,f.key)).state,'idle')
+  assert.equal(calls,1)
+  current=new Date(now.getTime()+61000)
+  assert.equal((await processNextReceivedReply(db.sql,owner,provider,()=>current,f.key)).state,'received')
+})
+withDb('an expired receiving worker cannot commit over a reclaimed lease',async db=>{
+  const f=await receivingFixture(db)
+  const {processNextReceivedReply}=await import('../../src/lib/email/inbound/worker')
+  let current=now,release!:(value:unknown)=>void,started!:()=>void
+  const ready=new Promise<void>(r=>{started=r})
+  const old=processNextReceivedReply(db.sql,owner,{get:async()=>{started();return new Promise(r=>{release=r})}},()=>current,f.key)
+  await ready
+  current=new Date(now.getTime()+91000)
+  assert.equal((await processNextReceivedReply(db.sql,owner,{get:async()=>f.content},()=>current,f.key)).state,'received')
+  release(f.content)
+  assert.equal((await old).state,'lease_lost')
+  assert.equal((await db.sql`select * from em_messages where transport='resend'`).length,1)
+})
+withDb('disconnect or mismatched content holds receiving work without projecting a message',async db=>{
+  const f=await receivingFixture(db)
+  const {processNextReceivedReply}=await import('../../src/lib/email/inbound/worker')
+  const mismatch=await processNextReceivedReply(db.sql,owner,{get:async()=>({...f.content,from:'stranger@example.test'})},()=>now,f.key)
+  assert.equal(mismatch.state,'review_required')
+  assert.equal((await db.sql`select * from em_messages where transport='resend'`).length,0)
+  assert.equal((await db.sql`select inbound_pending from em_threads where id=${f.thread.id}`)[0].inbound_pending,true)
+  await f.capture()
+  const disconnected=await processNextReceivedReply(db.sql,owner,{get:async()=>{await db.sql`update em_service_connections set state='revoked' where id=${f.connectionId}`;return f.content}},()=>now,f.key)
+  assert.equal(disconnected.state,'review_required')
+  assert.equal((await db.sql`select * from em_messages where transport='resend'`).length,0)
+})
+withDb('a retrieved opt-out stops marketing even when CRM history projection fails',async db=>{
+  const f=await receivingFixture(db)
+  const {processNextReceivedReply}=await import('../../src/lib/email/inbound/worker')
+  await db.sql`update lead_activities set description='Damaged history' where lead_id=${f.thread.lead_id} and activity_type='email'`
+  const result=await processNextReceivedReply(db.sql,owner,{get:async()=>({...f.content,text:'Please remove me from your list.'})},()=>now,f.key)
+  assert.equal(result.state,'unsubscribed')
+  assert.equal((await db.sql`select state from em_threads where id=${f.thread.id}`)[0].state,'stopped')
+  assert.equal((await db.sql`select * from em_suppressions where address_id=${f.thread.address_id}`).length,1)
+  assert.equal((await db.sql`select * from em_crm_projection_repairs where thread_id=${f.thread.id} and state='pending'`).length,1)
+})
+withDb('owner receiving retry is audited and replayable without bypassing identity review',async db=>{
+  const f=await receivingFixture(db)
+  const {processNextReceivedReply}=await import('../../src/lib/email/inbound/worker')
+  const {WorkflowError}=await import('../../src/lib/email/workflow/core')
+  const {readReceivingWork,createReceivingHttp}=await import('../../src/lib/email/inbound/operations')
+  await processNextReceivedReply(db.sql,owner,{get:async()=>{throw new WorkflowError('REPLY_CONNECTION_REJECTED')}},()=>now,f.key)
+  const state=await readReceivingWork(db.sql,owner)
+  const job=state.jobs[0]
+  assert.equal(job.can_retry,true)
+  await rejects(readReceivingWork(db.sql,reader),'FORBIDDEN')
+  const retry={command:'OPS-REPLAY',idempotencyKey:randomUUID(),payload:{jobId:job.id,expectedFailureCode:'REPLY_CONNECTION_REJECTED',reason:'Owner verified provider permissions and requested another fetch.'}}
+  await rejects(executePilotCommand(db.sql,agent,retry,now),'FORBIDDEN')
+  assert.equal((await executePilotCommand(db.sql,owner,retry,now)).state,'reply_retry_queued')
+  await executePilotCommand(db.sql,owner,retry,now)
+  assert.equal((await db.sql`select * from em_audit_events where action='RECEIVING-RETRY'`).length,1)
+  assert.equal((await processNextReceivedReply(db.sql,owner,{get:async()=>f.content},()=>now,f.key)).state,'received')
+  const http=createReceivingHttp({database:()=>db.sql,subject:async()=>owner})
+  assert.equal((await http.POST(new Request('http://localhost/api/email/receiving',{method:'POST',headers:{Origin:'https://other.test','Content-Type':'application/json'},body:'{"action":"process_next"}'}))).status,403)
+})
+withDb('multiple pending replies retain the conversation hold until every body is resolved',async db=>{
+  const f=await receivingFixture(db)
+  const {processNextReceivedReply}=await import('../../src/lib/email/inbound/worker')
+  const first={...f.content}
+  f.content.id=randomUUID();f.content.message_id=`<${randomUUID()}@example.test>`;f.content.text='Wednesday is better.'
+  await f.capture()
+  const provider={get:async(_secret:string,id:string)=>id===first.id?first:f.content}
+  await processNextReceivedReply(db.sql,owner,provider,()=>now,f.key)
+  assert.equal((await db.sql`select inbound_pending from em_threads where id=${f.thread.id}`)[0].inbound_pending,true)
+  await processNextReceivedReply(db.sql,owner,provider,()=>now,f.key)
+  assert.equal((await db.sql`select inbound_pending from em_threads where id=${f.thread.id}`)[0].inbound_pending,false)
+  assert.equal((await db.sql`select * from em_messages where transport='resend'`).length,2)
+})

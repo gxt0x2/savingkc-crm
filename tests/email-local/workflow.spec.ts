@@ -848,3 +848,15 @@ test('mock-backed sender setup rejects the main domain and shows provider DNS wi
     ),
   ).toBe(true)
 })
+
+test('receiving operations explains identity holds without exposing a live provider action in practice',async({page})=>{
+  await page.route('**/api/email/receiving',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({total:1,jobs:[{id:'11111111-1111-4111-8111-111111111111',kind:'resend_receive_content',state:'dead',attempts:1,run_after:'2026-09-14T15:00:00Z',lease_until:null,last_error:'REPLY_IDENTITY_REVIEW',hold_reason:'REPLY_IDENTITY_REVIEW',can_retry:false}]})}))
+  await page.goto('/')
+  await page.getByRole('button',{name:'More',exact:true}).click()
+  const receiving=page.getByRole('region',{name:'Receiving replies',exact:true})
+  await expect(receiving).toContainText('Sender or conversation match needs review.')
+  await expect(receiving).toContainText('Practice workspace. Live receiving is not connected.')
+  await expect(receiving.getByRole('button',{name:'Retry retrieval'})).toHaveCount(0)
+  await expect(receiving.getByRole('button',{name:'Retrieve next reply'})).toHaveCount(0)
+  await page.screenshot({path:'test-results/email-local/receiving-operations.png',fullPage:true,animations:'disabled'})
+})

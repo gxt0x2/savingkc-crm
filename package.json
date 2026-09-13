@@ -76,6 +76,7 @@
     "gpt-tokenizer": "^3.4.0",
     "mcp-handler": "^1.1.0",
     "next": "16.3.4",
+    "parse5": "8.0.1",
     "postgres": "^3.4.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",

@@ -1,5 +1,7 @@
 'use client'
 
+import { EmailReceivingStatus } from './email-receiving-status'
+
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { EmailCommand } from '@/lib/email/contracts'
 import {
@@ -303,6 +305,8 @@ export function EmailWorkspace({
               'Task saved to Upcoming. The assignee has an in-app alert.',
             appointment_task_created:
               'CRM appointment saved to Upcoming. No Google Calendar event or invitation was created.',
+            reply_retry_queued:
+              'Reply retrieval queued again. Follow-ups stay held until the full message is verified.',
             callback_scheduled:
               'Follow-up task saved. No calendar invitation was sent.',
             callback_completed:
@@ -1048,6 +1052,13 @@ export function EmailWorkspace({
               ) && (
                 <section className={styles.operations}>
                   <h3>Operations</h3>
+                  {data.roles.includes('owner') && (
+                    <EmailReceivingStatus
+                      localSimulation={localSimulation}
+                      act={act}
+                      onProcessed={refresh}
+                    />
+                  )}
                   {data.paused && data.pauseReason && (
                     <p role="status">Paused: {data.pauseReason}</p>
                   )}
