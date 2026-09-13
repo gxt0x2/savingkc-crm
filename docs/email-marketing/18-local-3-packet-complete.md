@@ -18,6 +18,14 @@ Build-status next implementation order #3 asked for the setup wizard, AI policy/
 
 The local harness applies eighteen named Email migrations including `20260913190000_email_productization.sql`.
 
+## Local verification (this increment)
+
+- `npx vitest run src/lib/email/__tests__` — 40 files / 106 passed
+- `npx tsx scripts/email/evaluate-playbook.ts` — 40 seeds + 120 expansions, 0 billed attempts, 0 failures
+- `npm run test:email:workflow` — 88 passed (serial, PostgreSQL 16, `LC_ALL=C`)
+- `npm run test:email:local-ui` — 8 browser stories passed
+- Manual practice-app walkthrough: save → deterministic examples → case drilldown → publish → draft-only default → Readiness stays blocked. Live send was not enabled.
+
 ## Robin vs Ernest (authoritative)
 
 | Work | Owner | Status |
