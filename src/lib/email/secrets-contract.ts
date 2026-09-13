@@ -20,6 +20,9 @@ export const EMAIL_RESEND_WEBHOOK_METHOD = 'POST'
 export const EMAIL_RESEND_WEBHOOK_PATH = '/api/webhooks/email/resend'
 export const EMAIL_RESEND_WEBHOOK_PUBLIC_URL_TEMPLATE =
   `https://<host>${EMAIL_RESEND_WEBHOOK_PATH}`
+/** After-release public URL. Do not create the Resend webhook from this VM. */
+export const EMAIL_RESEND_WEBHOOK_AFTER_RELEASE_URL =
+  'https://crm.savingkc.com/api/webhooks/email/resend'
 export const EMAIL_CONNECTIONS_INTAKE =
   'Connections UI (SVC-CONNECT / POST /api/email/connections)'
 export const EMAIL_PREFERENCE_KEY_FAMILY = 'EMAIL_PREFERENCE_KEY_V*'
@@ -76,6 +79,7 @@ export const EMAIL_CONNECTIONS_SECRET_CONTRACT = {
     method: EMAIL_RESEND_WEBHOOK_METHOD,
     path: EMAIL_RESEND_WEBHOOK_PATH,
     publicUrlTemplate: EMAIL_RESEND_WEBHOOK_PUBLIC_URL_TEMPLATE,
+    afterReleaseUrl: EMAIL_RESEND_WEBHOOK_AFTER_RELEASE_URL,
     secretCreated: false,
     secretFormat: EMAIL_RESEND_WEBHOOK_SECRET_PATTERN,
     releaseGated: true,
