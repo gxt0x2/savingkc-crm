@@ -173,3 +173,5 @@ Implemented against the existing Email transaction and Lead lock:
 - Unacknowledged owner callback notices escalate to the saved backup after five Chicago operating minutes. NTF-ACK and reassignment cancel the escalation. Push is not implemented.
 
 Hosted signed-in CRM-shell verification remains blocked: this environment has no production CRM session. The isolated practice app still uses a fabricated test identity. No production migration, provider connection, domain purchase or customer send.
+
+Verified locally this increment: 81 database workflow cases (serial harness with `EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin`, `LC_ALL=C` / `LANG=C`, `--test-concurrency=1`) and 87 Email/qualification unit tests. The package script `npm run test:email:workflow` does not set `LC_ALL` or serial concurrency; this environment needed both plus PostgreSQL 16.
