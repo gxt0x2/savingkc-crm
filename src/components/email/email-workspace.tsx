@@ -58,6 +58,7 @@ const friendly: Record<string, string> = {
     'CRM ownership changed. Resolve the assignment before updating this task.',
   HANDOFF_CHANGED:
     'This task changed. Close and reopen Details before saving again.',
+  DELIVERY_RECONCILIATION_REQUIRED: 'The previous send has no confirmed outcome. Check Resend before preparing another send.',
   CALLBACK_HELD:
     'This callback is held or completed. Review its current status.',
   INVALID_CALLBACK_TIME:
@@ -258,7 +259,7 @@ export function EmailWorkspace({
             handoff_saved_crm_review:
               'Handoff saved. CRM review is required before CRM can finish linking the record or create the callback task.',
             handoff_saved_crm_dependency_blocked:
-              'Handoff saved locally. CRM linking is unavailable and no callback task was created.',
+              'Handoff saved in Email. CRM linking is unavailable and no callback task was created.',
             acknowledged: 'Notification acknowledged.',
             note_saved: 'Note saved to the CRM record.',
             task_created:
@@ -1005,7 +1006,7 @@ export function EmailWorkspace({
                     : 'AI access is not configured. You can write and review drafts manually.'}
                 </p>
               </details>
-              {data.settings && data.mode === 'hosted' && <EmailHostedSetup onChange={refresh} />}
+              {data.settings && data.mode === 'hosted' && <EmailHostedSetup onChange={refresh} revision={data.settings.revision} />}
               {data.settings && data.mode === 'hosted' && <EmailRecipientImport onImported={refresh} />}
               {data.settings && (
                 <EmailSetup settings={data.settings} busy={busy} act={act} />

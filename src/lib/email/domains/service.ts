@@ -337,7 +337,7 @@ export async function executeDomainCommand(
         provider_domain_id=coalesce(${snapshot?.id ?? null},provider_domain_id),
         sending_state=${snapshot?.capabilities.sending ?? 'unknown'},receiving_state=${snapshot?.capabilities.receiving ?? 'unknown'},
         dns_records=${tx.json(json(snapshot?.records ?? []))},last_checked_at=${new Date(Math.max(now.getTime(), Date.now()))},last_verified_at=${!changed && !failure && snapshot?.status === 'verified' ? new Date(Math.max(now.getTime(), Date.now())) : null},
-        revision=revision+1,check_token=null,paused=true where id=${r.domainId} and workspace_id=${r.workspaceId} and check_token=${r.token} returning id`
+        revision=revision+1,check_token=null,paused=case when ${state === 'provider_verified' && snapshot?.capabilities.sending === 'enabled' && snapshot?.capabilities.receiving === 'enabled'} then paused else true end where id=${r.domainId} and workspace_id=${r.workspaceId} and check_token=${r.token} returning id`
       if (saved.length)
         await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail)
         values(${r.workspaceId},${subject},'DOM-VERIFY-RESULT',${r.domainId},${command.idempotencyKey},${tx.json({ state, providerDomainId: snapshot?.id ?? null, failureCode: changed ? 'DOMAIN_REVIEW_CHANGED' : failure })})`

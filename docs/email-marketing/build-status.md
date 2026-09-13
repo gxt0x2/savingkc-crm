@@ -1,12 +1,26 @@
 # SavingKC Email build status
 
-Updated: 2026-09-13. **Connected local simulation; not a completed product or release candidate.**
+Updated: 2026-09-13, 22:20 UTC. **Hosted recovery pilot deployed; production acceptance remains blocked on owner inputs and end-to-end proof.**
+
+## Current production checkpoint
+
+PR #662 is merged as `683e20bb`; the signed-in Email page at https://crm.savingkc.com/marketing/email now loads hosted PostgreSQL data. The authenticated worker returned 200 with idle queues. The Resend connection, encrypted credentials, reply webhook, scoped CRM permissions, and team routing are configured. No campaign or email has been sent; sending and autonomous AI remain off.
+
+The recovery adds real one-recipient Resend dispatch, frozen sender/body/reply alias/unsubscribe envelopes, conservative pacing, signed delivery events, controlled-test setup and evidence-backed CSV imports. Unknown identities/verification and existing suppressions remain excluded. Internal CRM task scheduling is implemented; it does not claim a Google Calendar booking.
+
+Pending owner inputs: business mailing address and the $10.59 one-time AI credit purchase approval. Pending acceptance: real controlled delivery to the authorized address, the owner's actual reply, public unsubscribe proof and hosted workflow verification. An unavailable or uncertain provider outcome is not a successful send.
+
+Authoritative release source is `origin/main`; isolated recovery checkout is `/Users/ernestdodson/Documents/New project/savingkc-crm-email-recovery`. See [release evidence and remaining limits](recovery/20260913-production-recovery.md). The 35-packet roadmap is NOT complete: automated Calendar bookings, timed escalation/push, dedicated response phone, autonomous AI, full verification-service imports, reports/exports and broader recovery controls remain beyond this bounded pilot.
+
+## Historical implementation checkpoints
+
+The sections below record earlier local increments and their original limits. They are not the current deployment status.
 
 ## Correction to earlier progress reports
 
 The previous checkpoint `3334191e` contained useful contracts, migrations and isolated helpers. It did not contain a working Email portal, provider worker, Calendar integration or canonical CRM bridge. Earlier statements describing those capabilities as complete were incorrect. This document and the updated packet statuses supersede those claims.
 
-Authoritative checkout: `/Users/ernestdodson/Documents/New project/savingkc-crm-email-foundation`, branch `codex/email-foundation-20260912`. The unrelated main checkout is untouched.
+Historical foundation checkout: `/Users/ernestdodson/Documents/New project/savingkc-crm-email-foundation`, branch `codex/email-foundation-20260912`, preserved. The unrelated dirty main checkout remains untouched.
 
 ## Action workspace continuation
 

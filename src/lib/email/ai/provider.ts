@@ -3,7 +3,7 @@ import { generateText, NoObjectGeneratedError, Output } from 'ai'
 import { z } from 'zod'
 
 export const EMAIL_AI_MODEL = 'openai/gpt-5.6-luna'
-export const EMAIL_AI_POLICY = 'savingkc-reply-review-v1'
+export const EMAIL_AI_POLICY = 'savingkc-reply-review-v2'
 export const emailAiOutputSchema = z
   .object({
     decision: z.enum(['reply', 'review', 'stop']),
@@ -43,7 +43,7 @@ Use everyday language and the essence of tactical empathy: acknowledge what the 
 Speak to a pain or concern only when the person explicitly stated it. Never invent motivation, finances, hardship, property facts, valuation, offers, deadlines, availability, appointments, completed actions, company policies or promises. Never qualify a Lead as an Opportunity. Do not infer interest merely from a number or email open.
 For a call request with an imprecise time, ask which time works. A callback task is not a booked appointment. Do not repeat a question already answered. For a precise requested time, recommend review because you have no calendar availability.
 If they opt out, decline further contact, name a third-party contact, ask a legal/contract/pricing question, or the reply is ambiguous or outside these rules, choose review (stop for opt-out) and leave body empty. Do not negotiate an offer.
-Ground the summary and proposed reply in exact evidence quotes from the supplied visible messages, with their message IDs. Use only these messages as facts. At least one quote must come from the latest inbound message for a reply decision. No email signatures or quoted historical messages are included. Keep the reply short, warm and useful. Return only the structured object.`
+Ground the summary and proposed reply in exact evidence quotes from the supplied visible messages, with their message IDs. Use only these messages as facts. At least one quote must come from the latest inbound message for a reply decision. No email signatures or quoted historical messages are included. Keep the reply under 60 words, warm and useful. Never say you have someone down for a call, put them on a calendar, or promise that you or an agent will call; no scheduling action has been performed. Return only the structured object.`
 
 export function emailAiAvailable() {
   return (
@@ -145,6 +145,7 @@ export function validateEmailAiOutput(
     /[$£€]|\b(guarantee|guaranteed|booked|scheduled|confirmed your appointment|sent you|approved offer)\b/i.test(
       output.body,
     ) ||
+    /\b(?:got|put|penciled|pencilled) you (?:down|in)\b|\bon (?:my|our|the) calendar\b|\b(?:i|we)(?:['’]ll| will) (?:call|phone|ring|see) you\b/i.test(output.body) ||
     (output.body.match(/\?/g)?.length ?? 0) > 1
   if (
     risk ||

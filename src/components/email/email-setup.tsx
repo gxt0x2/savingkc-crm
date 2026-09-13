@@ -101,7 +101,7 @@ function BusinessForm({ settings, busy, act }: Props) {
       </div>
       <p>
         Current program: seller outreach. These details are saved
-        locally; this step does not connect a sender or start a campaign.
+        to this workspace; this step does not connect a sender or start a campaign.
       </p>
       <button className={styles.primary} disabled={busy}>
         Save business details

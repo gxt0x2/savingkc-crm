@@ -1,5 +1,7 @@
 'use client'
 
+import { EmailSendIssue } from './email-send-issue'
+import { EmailMessageBody as MessageBody } from './email-message-body'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import type { EmailCommand } from '@/lib/email/contracts'
@@ -57,20 +59,6 @@ type Act = (
   command: EmailCommand,
 ) => Promise<{ entityId: string; state: string } | null>
 
-function MessageBody({ body }: { body: string }) {
-  const index = body.search(/\n(?:On .+wrote:|From:|>)/i)
-  return (
-    <>
-      <p>{index < 0 ? body : body.slice(0, index)}</p>
-      {index >= 0 && (
-        <details>
-          <summary>Quoted history</summary>
-          <p>{body.slice(index)}</p>
-        </details>
-      )}
-    </>
-  )
-}
 
 export function EmailThreadPanel({
   data,
@@ -143,6 +131,7 @@ export function EmailThreadPanel({
     ['owner', 'reviewer', 'acquisitions'].includes(r),
   )
   const blocked = busy || working || Boolean(t.inbound_pending)
+  const deliveryPending = ['uncertain', 'dispatching'].includes(t.sending_issue ?? '')
   const stale =
     editor.revision !== t.content_revision ||
     editor.controller !== t.controller_revision
@@ -396,7 +385,9 @@ export function EmailThreadPanel({
           </p>
         )}
         <footer className={styles.composer} aria-label="Reply composer">
-          {owns &&
+          {deliveryPending ? (
+            <p>Sending is on hold. Review the previous send in Next step.</p>
+          ) : owns &&
           proposal?.body &&
           !editor.body &&
           !composing &&
@@ -626,6 +617,8 @@ export function EmailThreadPanel({
                     messages or calls.
                   </small>
                 </>
+              ) : t.sending_issue ? (
+                <EmailSendIssue state={t.sending_issue} />
               ) : t.inbound_pending ? (
                 <p>
                   A reply arrived. Automated follow-ups are held while its full

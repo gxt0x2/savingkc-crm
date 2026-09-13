@@ -368,3 +368,117 @@ test("provider acceptance survives a follow-up preparation failure", () =>
       await db.sql`select state from em_threads where id=${intent.thread_id}`;
     assert.equal(thread.state, "needs_review");
   }));
+test("disabled receiving after review prevents provider I/O", () =>
+  withDB(async (db) => {
+    const intent = await ready(db);
+    await db.sql`update em_domains set receiving_state='disabled' where workspace_id=${db.workspaceId}`;
+    let sends = 0;
+    await processNextDispatch(db.sql, owner, {
+      now,
+      send: async () => {
+        sends++;
+        return { state: "accepted", providerId: randomUUID() };
+      },
+    });
+    assert.equal(sends, 0);
+    const [saved] =
+      await db.sql`select state from em_send_intents where id=${intent.id}`;
+    assert.equal(saved.state, "held");
+  }));
+import { queueIntent } from "../../src/lib/email/workflow/queue-intent";
+import { readPilotState } from "../../src/lib/email/workflow/service";
+test("uncertain delivery is visible and prevents a second provider intent", () =>
+  withDB(async (db) => {
+    const intent = await ready(db);
+    await processNextDispatch(db.sql, owner, {
+      now,
+      send: async () => ({ state: "uncertain", code: "TEST_TIMEOUT" }),
+    });
+    const before = (
+      await db.sql`select id from em_send_intents where thread_id=${intent.thread_id}`
+    ).length;
+    await assert.rejects(
+      db.sql.begin(async (transaction) =>
+        queueIntent(
+          {
+            tx: transaction as unknown as Tx,
+            now,
+            member: {
+              workspace_id: db.workspaceId,
+              auth_user_id: owner,
+              roles: ["owner"],
+            },
+          },
+          {
+            threadId: intent.thread_id,
+            key: randomUUID(),
+            body: "A second send",
+            subject: "Follow up",
+            step: 0,
+            origin: "human",
+            contentRevision: 1,
+            controllerRevision: 1,
+            due: now,
+            expires: new Date(now.getTime() + 3600000),
+          },
+        ),
+      ),
+      /DELIVERY_RECONCILIATION_REQUIRED/,
+    );
+    assert.equal(
+      (
+        await db.sql`select id from em_send_intents where thread_id=${intent.thread_id}`
+      ).length,
+      before,
+    );
+    const state = await readPilotState(db.sql, owner, now);
+    assert.equal(
+      state.threads.find((t) => t.id === intent.thread_id)?.sending_issue,
+      "uncertain",
+    );
+  }));
+import { refreshActiveSenderDomain } from "../../src/lib/email/dispatch/domain-refresh";
+test("worker refreshes existing active sender verification without creating or unpausing domains", () =>
+  withDB(async (db) => {
+    await ready(db);
+    await db.sql`update em_workspaces set config=jsonb_set(config,'{business,primaryDomain}','"example.com"') where id=${db.workspaceId}`;
+    await db.sql`update em_domains set name_ascii='outreach-example.com',last_verified_at=${new Date(now.getTime() - 13 * 3600000)},last_checked_at=null where workspace_id=${db.workspaceId}`;
+    const [d] =
+      await db.sql`select * from em_domains where workspace_id=${db.workspaceId}`;
+    let reads = 0;
+    const provider = {
+      get: async () => {
+        reads++;
+        return {
+          id: d.provider_domain_id,
+          name: d.name_ascii,
+          status: "verified",
+          capabilities: { sending: "enabled", receiving: "enabled" },
+          records: [],
+        };
+      },
+      find: async () => {
+        throw Error("Must use existing provider ID");
+      },
+      create: async () => {
+        throw Error("Must never create domains");
+      },
+    };
+    const refreshed = await refreshActiveSenderDomain(
+      db.sql,
+      owner,
+      now,
+      provider,
+    );
+    assert.equal(refreshed.state, "checked", JSON.stringify(refreshed));
+    const [saved] =
+      await db.sql`select paused,state,last_verified_at from em_domains where id=${d.id}`;
+    assert.equal(saved.paused, false);
+    assert.equal(saved.state, "provider_verified");
+    assert.ok(new Date(saved.last_verified_at) >= now);
+    await refreshActiveSenderDomain(db.sql, owner, now, provider);
+    assert.equal(reads, 1);
+    await db.sql`update em_domains set paused=true,last_verified_at=${new Date(now.getTime() - 13 * 3600000)},last_checked_at=null where id=${d.id}`;
+    await refreshActiveSenderDomain(db.sql, owner, now, provider);
+    assert.equal(reads, 1);
+  }));

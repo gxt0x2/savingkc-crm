@@ -81,6 +81,7 @@ export function hasCrmIssue(thread: PilotThread) {
 export function nextWork(thread: PilotThread, asOf: string) {
   if (thread.inbound_pending) return 'Loading received reply'
   if (hasCrmIssue(thread)) return 'Resolve issue'
+  if (thread.sending_issue) return 'Review sending'
   if (thread.state === 'stopped') return 'Marketing stopped'
   if (thread.state === 'done') return 'Done'
   if (thread.state === 'needs_review') return 'Reply received'
