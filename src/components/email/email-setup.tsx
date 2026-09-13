@@ -349,10 +349,11 @@ function ReadinessForm({
       <h3>Readiness</h3>
       <p>
         This is a local checklist. It cannot finish setup or turn sending on.
-        Outreach-domain DNS is being added in a parallel ops lane; this page
-        does not treat that work as sending-ready. Live Resend product key,
+        Outreach-domain DNS has landed in ops (talktosavingkc.com verified;
+        savingkcteam.com and yourkchomebuyer.com partial). This page does not
+        treat that as sending-ready. The Email product API key, hosted secrets,
         Google Calendar, push and the response line stay blocked until each
-        connection is verified.
+        connection is verified and release auth is granted.
       </p>
       <ul>
         {settings.readiness.blockers.map((blocker) => (

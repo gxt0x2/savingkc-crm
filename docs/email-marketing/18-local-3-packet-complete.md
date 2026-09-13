@@ -30,9 +30,9 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 | Work | Owner | Status |
 | --- | --- | --- |
-| Live Resend domain add + Cloudflare email DNS for `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` | **Robin** | In progress now. Do not wait on Ernest. This VM does not write live Resend or Cloudflare DNS. |
-| Direction, payment, login if a login/payment block appears | **Ernest** | Only if a block appears. Not the default owner of DNS/Resend domain add. |
-| Resend Email product API key wired into this product | Product gap | Signup-only account at `ernest@savingkc.com`. Not a product connection. |
+| Live Resend domain add + Cloudflare email DNS for `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` | **Robin** | Landed. `talktosavingkc.com` verified; the other two send-verified / Resend partial. See [ops-verify](19-outreach-dns-ops-verify.md). This VM did not write those records. |
+| Direction, payment, login, and live-send release auth | **Ernest** | Release auth is still required for live send. Login/payment only if a block appears. |
+| Resend Email product API key + hosted secrets | Product gap | Signup-only account at `ernest@savingkc.com`. Not a product connection. Controlled external test stays blocked. |
 | Funded Ari / AI Gateway credits | Product / billing | Unfunded (prior HTTP 403). AI paths stay fail-closed. |
 | Google Calendar token refresh + per-agent calendars | Product / live verify | Stored CRM tokens are expired/unverified for Email. |
 | VAPID + per-user push devices | Product / live verify | `NTF-TEST` records blocked rows only. |
@@ -59,8 +59,8 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 - Do not claim Ari works. Credits are unfunded.
 - Do not claim Calendar is connected or that a callback is a booked appointment.
-- Do not claim sending-ready from purchased domains or from Robin’s in-progress DNS.
+- Do not claim sending-ready from purchased domains or from Robin’s landed DNS. Ops-verified is not product-ready.
 - Do not treat a deterministic fixture pass as a paid model evaluation.
 - A Lead is not an Opportunity unless a human qualifies it.
 
-Remaining #3 work is those live dependencies, not more local scaffolding.
+Remaining #3 work is those live dependencies (API key, hosted secrets, Ari credits, release auth, Calendar, push, response line), not more local scaffolding and not more DNS writes.

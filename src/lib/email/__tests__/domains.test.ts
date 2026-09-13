@@ -3,7 +3,9 @@ import {
   INTENDED_OUTREACH_DOMAINS,
   PRIMARY_BUSINESS_DOMAIN,
   intendedOutreachDomainNames,
+  intendedOutreachOpsLabel,
   intendedOutreachReadiness,
+  outreachSendingUnlocked,
 } from '../domains/intended'
 import {
   assertIndependentSendingDomain,
@@ -26,7 +28,7 @@ describe('sending domains', () => {
     expect(senderCanStartNewEnrollment('retired')).toBe(false)
     expect(senderCanReceive('retired')).toBe(true)
   })
-  it('treats owned outreach names as independent of the business domain and not sending-ready', () => {
+  it('records ops-verified outreach DNS without unlocking live send', () => {
     expect(PRIMARY_BUSINESS_DOMAIN).toBe('savingkc.com')
     expect(intendedOutreachDomainNames()).toEqual([
       'talktosavingkc.com',
@@ -39,17 +41,31 @@ describe('sending domains', () => {
         PRIMARY_BUSINESS_DOMAIN,
       ),
     ).toThrow('PRIMARY_DOMAIN_OR_SUBDOMAIN_FORBIDDEN')
+    expect(outreachSendingUnlocked()).toBe(false)
+    const talk = INTENDED_OUTREACH_DOMAINS.find(
+      (d) => d.name === 'talktosavingkc.com',
+    )!
+    const team = INTENDED_OUTREACH_DOMAINS.find(
+      (d) => d.name === 'savingkcteam.com',
+    )!
+    const buyer = INTENDED_OUTREACH_DOMAINS.find(
+      (d) => d.name === 'yourkchomebuyer.com',
+    )!
+    expect(intendedOutreachReadiness(talk)).toMatchObject({
+      dnsReady: true,
+      resendAdded: true,
+      resendVerify: 'verified',
+      receivingEnabled: true,
+      sendingReady: false,
+    })
+    expect(intendedOutreachReadiness(team).resendVerify).toBe('partial')
+    expect(intendedOutreachReadiness(buyer).resendVerify).toBe('partial')
     for (const domain of INTENDED_OUTREACH_DOMAINS) {
       expect(
         assertIndependentSendingDomain(domain.name, PRIMARY_BUSINESS_DOMAIN),
       ).toBe(domain.name)
-      expect(intendedOutreachReadiness(domain)).toEqual({
-        registrarOwned: true,
-        nameserversOnCloudflare: true,
-        dnsReady: false,
-        resendReady: false,
-        sendingReady: false,
-      })
+      expect(intendedOutreachReadiness(domain).sendingReady).toBe(false)
+      expect(intendedOutreachOpsLabel(domain)).toMatch(/Sending stays off/)
     }
   })
 })

@@ -247,13 +247,15 @@ export function EmailConnections() {
         </button>
       </div>
       <p>
-        Connect your existing services here. Sending stays off until sender
-        setup and delivery checks pass. Owned outreach domains (
-        {intendedOutreachDomainNames().join(', ')}) are registered and use
-        Cloudflare nameservers. Live Resend domain add and email DNS are an
-        ops lane, not this screen. This product does not treat them as
-        sending-ready. {PRIMARY_BUSINESS_DOMAIN} stays the primary business
-        domain and cannot be a campaign sender.
+        Connect your existing services here. Sending stays off until the Email
+        product API key, hosted secrets and release auth are in place. Owned
+        outreach domains ({intendedOutreachDomainNames().join(', ')}) have
+        ops-verified Cloudflare DNS-only records. talktosavingkc.com is Resend
+        verified; savingkcteam.com and yourkchomebuyer.com are send-verified
+        with Resend still rechecking or partial. This screen does not treat
+        that ops work as sending-ready.{' '}
+        {PRIMARY_BUSINESS_DOMAIN} stays the primary business domain and cannot
+        be a campaign sender.
       </p>
       {notice && <p role="status">{notice}</p>}
       <section aria-label="Resend connection">

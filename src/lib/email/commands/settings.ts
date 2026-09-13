@@ -101,7 +101,7 @@ export async function readSettings(context: Context): Promise<PilotSettings> {
       state: 'blocked',
       sendingEnabled: false,
       blockers: [
-        'Resend API key and sender-domain verification are not connected',
+        'Resend product API key is not wired. Outreach DNS is ops-verified (talktosavingkc.com verified; savingkcteam.com and yourkchomebuyer.com partial). Sending stays off',
         playbook
           ? 'Ari draft-only policy is saved; paid model evaluations are still required for automatic replies'
           : 'A published draft-only reply policy has not been saved',

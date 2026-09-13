@@ -807,6 +807,15 @@ test('mock-backed sender setup rejects the main domain and shows provider DNS wi
     name: 'Sender domains',
     exact: true,
   })
+  await expect(section).toContainText(
+    'talktosavingkc.com — Cloudflare DNS-only records in place; Resend verified, send and receive',
+  )
+  await expect(section).toContainText(
+    'savingkcteam.com — Cloudflare DNS-only records in place; send verified, receive enabled, Resend rechecking or partial',
+  )
+  await expect(section).toContainText(
+    'Sending stays off until the Email product API key and release auth.',
+  )
   await section.getByText('Add an owned domain', { exact: true }).click()
   await section
     .getByLabel('Owned outreach domain', { exact: true })

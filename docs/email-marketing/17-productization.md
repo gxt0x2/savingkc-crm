@@ -18,7 +18,7 @@ The local harness applies eighteen named Email migrations including `20260913190
 ## Still blocked
 
 - A Resend Email product API key. Signup-only account at `ernest@savingkc.com` is not a product connection.
-- Robin’s live Resend domain add and Cloudflare email DNS for `talktosavingkc.com`, `savingkcteam.com` and `yourkchomebuyer.com` — **in progress now**. Do not wait on Ernest for those writes unless a login or payment block appears. Ernest is direction, payment and login only. This VM does not write live Resend or Cloudflare DNS. `savingkc.com` stays untouched.
+- Robin’s live Resend domain add and Cloudflare email DNS for the three outreach domains — **landed**. `talktosavingkc.com` is Resend verified (send+receive). `savingkcteam.com` and `yourkchomebuyer.com` are send-verified with receive enabled and Resend still rechecking or partial. See [ops-verify snapshot](19-outreach-dns-ops-verify.md). This is not product readiness. `savingkc.com` stays untouched.
 - Funded Ari / AI Gateway credits (prior HTTP 403). Deterministic examples are not a paid model evaluation. AI paths stay fail-closed.
 - Verified Google Calendar refresh and per-agent calendars. Three stored CRM tokens with Calendar scope remain expired/unverified for Email.
 - VAPID keys plus per-user push device registration.

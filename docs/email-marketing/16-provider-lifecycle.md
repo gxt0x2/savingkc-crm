@@ -16,10 +16,10 @@ Local-only continuation of build-status next implementation order #2. This incre
 ## Still blocked
 
 - A Resend API key wired into Email. A signup-only account exists at `ernest@savingkc.com`; that is not a product connection or sending proof.
-- Independent sending domains and Cloudflare DNS. Owner-purchased outreach names (Cloudflare Registrar, nameservers already on Cloudflare): `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`. Live Resend domain add and email DNS are Robin’s job and are in progress now; do not wait on Ernest unless a login or payment block appears. This increment does not race those writes or invent readiness from them. `savingkc.com` stays the primary business domain and is excluded from campaign senders. This product still does not treat the three names as sending-ready.
+- Independent sending domains and Cloudflare DNS. Owner-purchased outreach names (Cloudflare Registrar, nameservers already on Cloudflare): `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`. Robin has landed Resend domain add + Cloudflare DNS-only records (`talktosavingkc.com` verified; the other two send-verified / Resend partial). See [ops-verify](19-outreach-dns-ops-verify.md). This increment does not invent product readiness from those writes. `savingkc.com` stays the primary business domain and is excluded from campaign senders. Sending stays off until the Email product API key, hosted secrets and release auth.
 - Production preference and credential key deployment
 - Controlled provider evidence that would allow live dispatch
 - Hosted signed-in CRM-shell verification
 - Funded Ari / AI Gateway credits (prior HTTP 403 for missing paid credits still stands)
 
-Cash floor remains no. Do not buy more domains. This increment does not race Robin’s live Resend/DNS writes, invent readiness from that ops lane, or treat the existing Resend signup as a product connection. The disposable harness now applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`.
+Cash floor remains no. Do not buy more domains. This increment does not invent readiness from Robin’s landed Resend/DNS writes or treat the existing Resend signup as a product connection. The disposable harness now applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`.

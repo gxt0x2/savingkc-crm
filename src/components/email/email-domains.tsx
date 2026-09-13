@@ -4,7 +4,7 @@ import type { EmailCommand } from '@/lib/email/contracts'
 import {
   INTENDED_OUTREACH_DOMAINS,
   PRIMARY_BUSINESS_DOMAIN,
-  intendedOutreachReadiness,
+  intendedOutreachOpsLabel,
 } from '@/lib/email/domains/intended'
 import styles from './email-workspace.module.css'
 type Domain = {
@@ -202,17 +202,9 @@ export function EmailDomains() {
         {PRIMARY_BUSINESS_DOMAIN} is excluded from campaign senders.
       </p>
       <ul aria-label="Intended outreach domains">
-        {INTENDED_OUTREACH_DOMAINS.map((domain) => {
-          const readiness = intendedOutreachReadiness(domain)
-          return (
-            <li key={domain.name}>
-              <strong>{domain.name}</strong> — registrar owned, nameservers on
-              Cloudflare. Email DNS {readiness.dnsReady ? 'ready' : 'not ready'}
-              ; Resend {readiness.resendReady ? 'added' : 'not added'}; sending{' '}
-              {readiness.sendingReady ? 'ready' : 'off'}.
-            </li>
-          )
-        })}
+        {INTENDED_OUTREACH_DOMAINS.map((domain) => (
+          <li key={domain.name}>{intendedOutreachOpsLabel(domain)}</li>
+        ))}
       </ul>
       {notice && <p role="status">{notice}</p>}
       {!data ? (
