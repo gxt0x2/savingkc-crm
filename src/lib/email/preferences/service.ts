@@ -20,6 +20,42 @@ function digest(token: string, key: string) {
     .update(token)
     .digest("hex");
 }
+export function currentPreferenceVersion(keys: PreferenceKeys = preferenceKeys()) {
+  return Object.keys(keys)
+    .map(Number)
+    .sort((a, b) => b - a)[0];
+}
+export function listUnsubscribeHeaders(token: string) {
+  const origin = process.env.EMAIL_PUBLIC_ORIGIN?.replace(/\/$/, "");
+  const path = `/api/email/unsubscribe/${token}`;
+  const href = origin ? `${origin}${path}` : path;
+  return {
+    "List-Unsubscribe": `<${href}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+}
+export async function issuePreferenceTokenInTx(
+  tx: Tx,
+  workspaceId: string,
+  issuedBy: string,
+  addressId: string,
+  keys = preferenceKeys(),
+  now = new Date(),
+) {
+  const version = currentPreferenceVersion(keys);
+  check(
+    version && /^[a-f0-9]{64}$/i.test(keys[String(version)]),
+    "PREFERENCE_KEY_REQUIRED",
+    503,
+  );
+  const token = `${version}.${randomBytes(32).toString("base64url")}`;
+  const [address] =
+    await tx`select id from em_addresses where workspace_id=${workspaceId} and id=${addressId}`;
+  check(address, "ADDRESS_NOT_FOUND", 404);
+  await tx`insert into em_preference_tokens(workspace_id,address_id,key_version,token_hash,issued_by,created_at)
+    values(${workspaceId},${addressId},${version},${digest(token, keys[String(version)])},${issuedBy},${now})`;
+  return token;
+}
 /** Server-only issuance; raw tokens belong in outgoing messages, never logs. */
 export async function issuePreferenceToken(
   sql: Sql,
@@ -28,24 +64,47 @@ export async function issuePreferenceToken(
   keys = preferenceKeys(),
   now = new Date(),
 ) {
-  const version = Object.keys(keys)
-    .map(Number)
-    .sort((a, b) => b - a)[0];
-  check(
-    version && /^[a-f0-9]{64}$/i.test(keys[String(version)]),
-    "PREFERENCE_KEY_REQUIRED",
-    503,
-  );
-  const token = `${version}.${randomBytes(32).toString("base64url")}`;
   return sql.begin(async (transaction) => {
     const tx = transaction as unknown as Tx;
     const ws = await ownerWorkspace(tx, subject);
-    const [address] =
-      await tx`select id from em_addresses where workspace_id=${ws.id} and id=${addressId}`;
-    check(address, "ADDRESS_NOT_FOUND", 404);
-    await tx`insert into em_preference_tokens(workspace_id,address_id,key_version,token_hash,issued_by,created_at)
-      values(${ws.id},${addressId},${version},${digest(token, keys[String(version)])},${subject},${now})`;
-    return token;
+    return issuePreferenceTokenInTx(tx, ws.id, subject, addressId, keys, now);
+  });
+}
+async function tokenBinding(tx: Tx, token: string, keys: PreferenceKeys) {
+  if (!preferenceTokenPattern.test(token)) return null;
+  const key = keys[token.split(".")[0]];
+  check(key && /^[a-f0-9]{64}$/i.test(key), "PREFERENCE_KEY_REQUIRED", 503);
+  const [binding] =
+    await tx`select * from em_preference_tokens where token_hash=${digest(token, key)}`;
+  return binding ?? null;
+}
+const programs = ["seller_outreach", "seller_nurture", "buyer_marketing"] as const;
+export async function recordPreference(
+  sql: Sql,
+  token: string,
+  program: string,
+  keys = preferenceKeys(),
+  now = new Date(),
+) {
+  check((programs as readonly string[]).includes(program), "INVALID_PREFERENCE", 400);
+  return sql.begin(async (transaction) => {
+    const tx = transaction as unknown as Tx;
+    const binding = await tokenBinding(tx, token, keys);
+    if (!binding) return false;
+    await tx`select id from em_workspaces where id=${binding.workspace_id} for update`;
+    const [stopped] =
+      await tx`select id from em_suppressions where workspace_id=${binding.workspace_id} and address_id=${binding.address_id} and scope='all_marketing'`;
+    if (!stopped) return "needs_unsubscribe";
+    await tx`insert into em_preference_choices(workspace_id,address_id,token_id,program,created_at)
+      values(${binding.workspace_id},${binding.address_id},${binding.id},${program},${now})
+      on conflict (workspace_id,address_id,program) do nothing`;
+    await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail,created_at)
+      values(${binding.workspace_id},null,'PUBLIC-PREFERENCE',${binding.address_id},${randomUUID()},${tx.json({
+        actor_type: "public_token",
+        token_id: binding.id,
+        program,
+      })},${now})`;
+    return true;
   });
 }
 /** Valid links work even if campaigns pause or their original issuer leaves. */

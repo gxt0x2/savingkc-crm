@@ -36,6 +36,16 @@ describe('Resend webhook route containment', () => {
     expect(response.headers.get('x-middleware-next')).toBe('1')
     expect(mocks.createServerClient).not.toHaveBeenCalled()
   })
+  it('lets the dispatch worker enforce its dedicated bearer without enabling send', async () => {
+    const response = await proxy(
+      new NextRequest('https://crm.savingkc.com/api/workers/email/dispatch', {
+        method: 'POST',
+      }),
+      event,
+    )
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
   it('lets the receiving-only worker enforce its dedicated bearer', async () => {
     const response = await proxy(
       new NextRequest('https://crm.savingkc.com/api/workers/email', {
@@ -62,6 +72,7 @@ describe('Resend webhook route containment', () => {
   it.each([
     '/api/webhooks/email/resend-copy',
     '/api/webhooks/email/resend/admin',
+    '/api/workers/email/dispatch/admin',
   ])('requires CRM authorization for lookalike %s', async (path) => {
     const response = await proxy(
       new NextRequest(`https://crm.savingkc.com${path}`, { method: 'POST' }),

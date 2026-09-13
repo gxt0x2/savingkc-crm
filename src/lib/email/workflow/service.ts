@@ -5,7 +5,17 @@ import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
 import { changeCallback, validateCallbackTime } from './callback-actions'
 import { retryReceivedJob } from '../inbound/retry'
+import { acknowledgeEventReview } from '../inbound/reduce'
+import { reconcileRemoteIntent } from '../dispatch/service'
+import {
+  currentPreferenceVersion,
+  issuePreferenceTokenInTx,
+  listUnsubscribeHeaders,
+  preferenceKeys,
+} from '../preferences/service'
 import { manageHandoff } from './handoff-management'
+import { qualifyHandoff } from './handoff-qualification'
+import { escalateDueHandoffAlerts } from './handoff-escalation'
 import { draftWithAri } from '../ai/drafting'
 import {
   configuredEmailAiProvider,
@@ -284,11 +294,29 @@ async function queueIntent(
     expires: Date
   },
 ) {
+  const [thread] =
+    await context.tx`select address_id from em_threads where workspace_id=${context.member.workspace_id} and id=${input.threadId}`
+  const keys = preferenceKeys()
+  const headers = currentPreferenceVersion(keys)
+    ? listUnsubscribeHeaders(
+        await issuePreferenceTokenInTx(
+          context.tx,
+          context.member.workspace_id,
+          context.member.auth_user_id,
+          thread.address_id,
+          keys,
+          context.now,
+        ),
+      )
+    : null
   const payload = {
     body: input.body,
     subject: input.subject,
     from: 'team@outreach.savingkc.test',
     transport: 'simulation',
+    ...(headers
+      ? { headers }
+      : { headersMissing: 'PREFERENCE_KEY_REQUIRED' }),
   }
   const [intent] =
     await context.tx`insert into em_send_intents(workspace_id,thread_id,logical_key,origin,step,frozen_payload,payload_hash,
@@ -719,13 +747,22 @@ export async function executePilotCommand(
         return { entityId: note.id, state: 'note_saved' }
       }
       case 'HAN-REASSIGN':
-      case 'HAN-RESOLVE': {
+      case 'HAN-RESOLVE':
+      case 'HAN-RETURN': {
         check(canWork(member), 'FORBIDDEN', 403)
         const [h] =
           await tx`select thread_id from em_handoffs where workspace_id=${ws} and id=${command.payload.handoffId}`
         check(h, 'HANDOFF_NOT_FOUND', 404)
         await threadFor(context, h.thread_id)
         return manageHandoff(context, command)
+      }
+      case 'HAN-QUALIFY': {
+        check(canWork(member), 'FORBIDDEN', 403)
+        const [h] =
+          await tx`select thread_id from em_handoffs where workspace_id=${ws} and id=${command.payload.handoffId}`
+        check(h, 'HANDOFF_NOT_FOUND', 404)
+        await requireHuman(context, h.thread_id)
+        return qualifyHandoff(context, command)
       }
       case 'HAN-SCHEDULE':
       case 'HAN-OUTCOME':
@@ -830,9 +867,36 @@ export async function executePilotCommand(
       }
       case 'NTF-ACK': {
         const [notice] =
-          await tx`update em_notifications set acknowledged_at=coalesce(acknowledged_at,${now}) where workspace_id=${ws} and id=${command.payload.eventId} and recipient_id=${subject} returning id`
+          await tx`update em_notifications set acknowledged_at=coalesce(acknowledged_at,${now}) where workspace_id=${ws} and id=${command.payload.eventId} and recipient_id=${subject} returning id,thread_id,logical_key`
         check(notice, 'NOTIFICATION_NOT_FOUND', 404)
+        if (notice.logical_key.startsWith('handoff:'))
+          await tx`update em_notifications set acknowledged_at=coalesce(acknowledged_at,${now})
+            where workspace_id=${ws} and thread_id=${notice.thread_id}
+            and logical_key like 'handoff-escalation:%'`
         return { entityId: notice.id, state: 'acknowledged' }
+      }
+      case 'OPS-RECONCILE': {
+        check(member.roles.includes('owner'), 'FORBIDDEN', 403)
+        return reconcileRemoteIntent(
+          tx,
+          ws,
+          subject,
+          command.payload.intentId,
+          command.payload.providerEvidence,
+          command.idempotencyKey,
+          now,
+        )
+      }
+      case 'OPS-ACK': {
+        check(member.roles.includes('owner'), 'FORBIDDEN', 403)
+        return acknowledgeEventReview(
+          tx,
+          ws,
+          subject,
+          command.payload.incidentKey,
+          command.payload.note,
+          now,
+        )
       }
       case 'OPS-REPLAY': {
         check(member.roles.includes('owner'), 'FORBIDDEN', 403)
@@ -904,7 +968,7 @@ export async function suppress(
     for (const thread of threads) {
       await invalidate(context, thread.id, 'marketing_stopped')
       await tx`update em_threads set state='stopped',outcome=case when ${reason}='unsubscribe' then 'unsubscribed' else outcome end,controller_revision=controller_revision+1 where workspace_id=${ws} and id=${thread.id}`
-      await tx`update em_handoffs set state='held',revision=revision+1 where workspace_id=${ws} and thread_id=${thread.id} and state<>'completed'`
+      await tx`update em_handoffs set state='held',revision=revision+1,access_hold_reason='marketing_stopped' where workspace_id=${ws} and thread_id=${thread.id} and state<>'completed'`
       await projectCrmChanges(context, thread.id, {
         history: true,
         holdReason: 'marketing_stopped',
@@ -994,6 +1058,7 @@ export async function simulateDelivery(
       const [workspace] =
         await tx`select pause_reason from em_workspaces where id=${ws}`
       check(!workspace.pause_reason, 'WORKSPACE_PAUSED')
+      await escalateDueHandoffAlerts(context)
       if (pilotSendSlot(now).getTime() !== now.getTime())
         return { entityId: ws, state: 'outside_weekday_sending_hours' }
       // Bounded to one acceptance per tick: resumption cannot drain a backlog.
@@ -1117,6 +1182,29 @@ export async function simulateDelivery(
   )
 }
 
+/** Test-only acknowledgment escalation. Does not send or resume sequences. */
+export async function simulateHandoffEscalation(
+  sql: Sql,
+  subject: string,
+  requestId: string = randomUUID(),
+  now = new Date(),
+) {
+  return transact(
+    sql,
+    subject,
+    { command: 'LOCAL-ESCALATE', idempotencyKey: requestId },
+    now,
+    async (context) => {
+      check(canManage(context.member), 'FORBIDDEN', 403)
+      const created = await escalateDueHandoffAlerts(context)
+      return {
+        entityId: context.member.workspace_id,
+        state: created ? 'handoff_escalated' : 'no_due_escalations',
+      }
+    },
+  )
+}
+
 export async function readPilotState(
   sql: Sql,
   subject: string,
@@ -1134,7 +1222,18 @@ export async function readPilotState(
       h.id as handoff_id,h.state as handoff_state,h.requested_contact,
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
-      h.revision as handoff_revision,h.scheduled_for,
+      h.revision as handoff_revision,h.scheduled_for,h.clarification_question,h.clarification_reviewer_id,h.access_hold_reason,
+      round(extract(epoch from l.updated_at)*1000)::float8 as lead_revision,
+      coalesce((select jsonb_agg(jsonb_build_object('id',rh.id,'revision',rh.revision,'thread_id',rh.thread_id) order by rh.id)
+        from em_handoffs rh where rh.lead_id=t.lead_id and rh.id<>h.id and rh.state<>'completed'),'[]'::jsonb) as open_related_handoffs,
+      case when t.lead_id is null then '[]'::jsonb else coalesce((
+        select jsonb_agg(missing.pillar order by missing.pillar) from (
+          select unnest(array['TIMELINE','CONDITION','MOTIVATION','PRICE']) as pillar
+          except
+          select pillar from crm_lead_qualification_pillars
+          where lead_id=t.lead_id and status='verified'
+        ) missing
+      ),'[]'::jsonb) end as qualification_missing,
       (select jsonb_build_object('id',g.id,'state',g.state,'model',g.model,'output',g.output,'created_at',g.created_at,'estimated_cost_usd',g.estimated_cost_usd,
         'input_tokens',g.input_tokens,'output_tokens',g.output_tokens,'content_revision',g.content_revision,'controller_revision',g.controller_revision,'failure_code',g.failure_code)
         from em_ai_generations g where g.workspace_id=t.workspace_id and g.thread_id=t.id order by g.created_at desc,g.id desc limit 1) as ai_generation,
@@ -1190,6 +1289,8 @@ export async function readPilotState(
       : []
     const members =
       await tx`select m.auth_user_id as id,coalesce(p.full_name,'Team member') as name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.active and m.roles && array['owner','acquisitions']::text[] order by name`
+    const reviewers =
+      await tx`select m.auth_user_id as id,coalesce(p.full_name,'Team member') as name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.active and m.roles && array['owner','reviewer']::text[] order by name`
     const configuredTeam = emailWorkspaceConfigSchema.parse(
       workspace.config,
     ).team
@@ -1222,6 +1323,7 @@ export async function readPilotState(
       drafts,
       audiences,
       members,
+      reviewers,
       routing,
       notifications,
       activity,

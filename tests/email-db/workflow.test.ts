@@ -13,6 +13,7 @@ import {
   getPilotReview,
   readPilotState,
   simulateDelivery,
+  simulateHandoffEscalation,
   simulateInbound,
 } from '../../src/lib/email/workflow/service'
 import { emailCommandResultSchema } from '../../src/lib/email/contracts'
@@ -3999,6 +4000,455 @@ withDb('public unsubscribe stops outreach after issuer removal and is idempotent
   assert.equal((await db.sql`select * from em_suppressions where address_id=${thread.address_id}`).length, 1)
 })
 
+async function qualifyPayload(
+  db: Database,
+  handoffId: string,
+  threadId: string,
+  extras: Record<string, unknown> = {},
+) {
+  const t = (await readPilotState(db.sql, agent, now)).threads.find(
+    (row) => row.id === threadId,
+  )!
+  const inbound = (await readPilotState(db.sql, agent, now)).messages
+    .filter((m) => m.thread_id === threadId && m.direction === 'inbound')
+    .at(-1)!
+  const verified = {
+    state: 'verified' as const,
+    evidenceIds: [inbound.id],
+    note: 'Confirmed from the seller reply.',
+  }
+  return {
+    command: 'HAN-QUALIFY' as const,
+    idempotencyKey: randomUUID(),
+    expectedRevision: t.handoff_revision,
+    payload: {
+      handoffId,
+      leadId: t.lead_id!,
+      leadRevision: Math.round(Number(t.lead_revision)),
+      nextAction: 'Call to confirm next steps',
+      evidenceIds: [inbound.id],
+      assessment: {
+        personAuthority: { state: 'confirmed' as const, evidenceIds: [inbound.id] },
+        propertyRef: t.property!.address,
+        timeline: verified,
+        condition: verified,
+        motivation: verified,
+        price: verified,
+        whyWorthPursuing: 'Seller asked to discuss a sale of this property.',
+      },
+      ...extras,
+    },
+  }
+}
+
+withDb(
+  'return for clarification holds the callback without changing the Lead or resuming sends',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    const command = {
+      command: 'HAN-RETURN',
+      idempotencyKey: randomUUID(),
+      expectedRevision: 0,
+      payload: {
+        handoffId: handoff.entityId,
+        question: 'Which afternoon window did the seller confirm?',
+        reviewerId: owner,
+      },
+    }
+    await rejects(executePilotCommand(db.sql, reader, command, now), 'FORBIDDEN')
+    const result = await executePilotCommand(db.sql, agent, command, now)
+    assert.equal(result.state, 'returned_for_clarification')
+    assert.deepEqual(await executePilotCommand(db.sql, agent, command, now), result)
+    const [saved] = await db.sql`select * from em_handoffs where id=${handoff.entityId}`
+    assert.equal(saved.state, 'held')
+    assert.equal(saved.access_hold_reason, 'clarification_required')
+    assert.equal(saved.clarification_question, command.payload.question)
+    const [lead] = await db.sql`select station,classification from leads`
+    assert.equal(lead.station, 'contacted')
+    assert.equal(lead.classification, 'lead')
+    assert.equal(
+      (await db.sql`select count(*)::int as n from em_send_intents where thread_id=${initial.payload.threadId} and state='queued'`)[0].n,
+      0,
+    )
+    assert.equal(
+      (await db.sql`select status from work_items`)[0].status,
+      'blocked',
+    )
+    const notices = await readPilotState(db.sql, owner, now)
+    assert.ok(
+      notices.notifications.some((n) =>
+        n.kind.startsWith('Clarification needed'),
+      ),
+    )
+  },
+)
+
+withDb(
+  'shared ownership updates every open Email callback for the same Lead together',
+  async (db) => {
+    const first = await reviewedCallback(db)
+    const firstHandoff = await executePilotCommand(db.sql, owner, first, now)
+    await simulateDelivery(db.sql, owner, randomUUID(), now)
+    const firstThread = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === first.payload.threadId,
+    )!
+    const secondThread = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id !== first.payload.threadId && t.has_outbound,
+    )!
+    const inbound = (await readPilotState(db.sql, owner, now)).messages
+      .filter((m) => m.thread_id === secondThread.id && m.direction === 'inbound')
+      .at(-1)
+    if (!inbound) {
+      await simulateInbound(
+        db.sql,
+        owner,
+        {
+          threadId: secondThread.id,
+          eventId: randomUUID(),
+          body: 'I would consider selling this property. Please call me.',
+        },
+        new Date(now.getTime() + 2000),
+      )
+    }
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'THR-TAKEOVER',
+        idempotencyKey: randomUUID(),
+        payload: {
+          threadId: secondThread.id,
+          expectedControllerRevision: secondThread.controller_revision,
+        },
+      },
+      now,
+    )
+    const afterTakeover = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === secondThread.id,
+    )!
+    const secondInbound = (await readPilotState(db.sql, owner, now)).messages
+      .filter((m) => m.thread_id === secondThread.id && m.direction === 'inbound')
+      .at(-1)!
+    const secondHandoff = await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'THR-HANDOFF',
+        expectedRevision: afterTakeover.content_revision,
+        idempotencyKey: randomUUID(),
+        payload: {
+          threadId: secondThread.id,
+          ownerId: agent,
+          backupId: owner,
+          reason: 'Second callback on the same seller',
+          positiveSellerInterest: true,
+          requestedContact: {},
+          factEvidence: [
+            {
+              source: 'message',
+              messageId: secondInbound.id,
+              quote: secondInbound.text_body,
+            },
+          ],
+        },
+      },
+      now,
+    )
+    await db.sql`update em_threads set lead_id=${firstThread.lead_id} where id=${secondThread.id}`
+    await db.sql`update em_handoffs set lead_id=${firstThread.lead_id} where id=${secondHandoff.entityId}`
+    const [secondTask] =
+      await db.sql`select crm_task_id from em_handoffs where id=${secondHandoff.entityId}`
+    await db.sql`update lead_activities set lead_id=${firstThread.lead_id} where id=${secondTask.crm_task_id}`
+    const current = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === first.payload.threadId,
+    )!
+    const related = current.open_related_handoffs ?? []
+    assert.equal(related.length, 1)
+    const command = {
+      command: 'HAN-REASSIGN',
+      idempotencyKey: randomUUID(),
+      expectedRevision: current.handoff_revision,
+      payload: {
+        handoffId: firstHandoff.entityId,
+        newOwnerId: owner,
+        backupId: agent,
+        reason: 'One owner for both open callbacks',
+        expectedCrmOwner: 'Demo agent',
+        contentRevision: current.content_revision,
+        controllerRevision: current.controller_revision,
+      },
+    }
+    await rejects(executePilotCommand(db.sql, owner, command, now), 'MULTIPLE_HANDOFFS_REQUIRE_REVIEW')
+    const sibling = related[0]
+    await executePilotCommand(
+      db.sql,
+      agent,
+      {
+        command: 'HAN-RETURN',
+        idempotencyKey: randomUUID(),
+        expectedRevision: sibling.revision,
+        payload: {
+          handoffId: sibling.id,
+          question: 'Which listing did this second reply refer to?',
+          reviewerId: owner,
+        },
+      },
+      now,
+    )
+    const afterReturn = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === first.payload.threadId,
+    )!
+    const relatedAfter = afterReturn.open_related_handoffs ?? []
+    assert.equal(relatedAfter.length, 1)
+    assert.equal(relatedAfter[0].revision, sibling.revision + 1)
+    command.payload.relatedHandoffs = related.map((item) => ({
+      handoffId: item.id,
+      expectedRevision: item.revision,
+    }))
+    await rejects(executePilotCommand(db.sql, owner, command, now), 'MULTIPLE_HANDOFFS_REQUIRE_REVIEW')
+    command.payload.relatedHandoffs = relatedAfter.map((item) => ({
+      handoffId: item.id,
+      expectedRevision: item.revision,
+    }))
+    command.expectedRevision = afterReturn.handoff_revision
+    command.payload.contentRevision = afterReturn.content_revision
+    command.payload.controllerRevision = afterReturn.controller_revision
+    const result = await executePilotCommand(db.sql, owner, command, now)
+    assert.equal(result.state, 'callback_reassigned')
+    const [lead] = await db.sql`select assigned_agent from leads where id=${current.lead_id}`
+    assert.equal(lead.assigned_agent, 'Demo owner')
+    const owners = await db.sql`select owner_id,state,access_hold_reason from em_handoffs where lead_id=${current.lead_id} and state<>'completed'`
+    assert.equal(owners.length, 2)
+    assert.ok(owners.every((row) => row.owner_id === owner && row.state === 'needs_contact' && row.access_hold_reason === null))
+    const tasks = await db.sql`select assigned_to,status from work_items where lead_id=${current.lead_id}`
+    assert.ok(tasks.length >= 2)
+    assert.ok(tasks.every((row) => row.assigned_to === 'Demo owner' && row.status === 'pending'))
+  },
+)
+
+withDb(
+  'access-hold release assigns an eligible owner without resuming marketing',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    const readerMember = (
+      await readPilotState(db.sql, owner, now)
+    ).settings!.members.find((m) => m.id === reader)!
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'SET-ROLES',
+        idempotencyKey: randomUUID(),
+        expectedRevision: readerMember.revision,
+        payload: {
+          authUserId: reader,
+          roles: ['acquisitions'],
+          active: true,
+          affectedWorkHash: readerMember.affectedWorkHash,
+        },
+      },
+      now,
+    )
+    const agentMember = (
+      await readPilotState(db.sql, owner, now)
+    ).settings!.members.find((m) => m.id === agent)!
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'SET-ROLES',
+        idempotencyKey: randomUUID(),
+        expectedRevision: agentMember.revision,
+        payload: {
+          authUserId: agent,
+          roles: ['reader'],
+          active: true,
+          affectedWorkHash: agentMember.affectedWorkHash,
+        },
+      },
+      now,
+    )
+    const held = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    assert.equal(held.handoff_state, 'held')
+    assert.equal(held.access_hold_reason, 'team_role_changed')
+    assert.equal(held.callback_task_state, 'blocked')
+    const result = await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'HAN-REASSIGN',
+        idempotencyKey: randomUUID(),
+        expectedRevision: held.handoff_revision,
+        payload: {
+          handoffId: handoff.entityId,
+          newOwnerId: owner,
+          backupId: reader,
+          reason: 'Owner covering after access change',
+          expectedCrmOwner: held.crm_owner_name,
+          contentRevision: held.content_revision,
+          controllerRevision: held.controller_revision,
+        },
+      },
+      now,
+    )
+    assert.equal(result.state, 'callback_released')
+    const current = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    assert.equal(current.handoff_state, 'needs_contact')
+    assert.equal(current.access_hold_reason, null)
+    assert.equal(current.callback_task_state, 'pending')
+    assert.equal(current.handoff_owner_id, owner)
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_send_intents where thread_id=${initial.payload.threadId} and state='queued'`
+      )[0].n,
+      0,
+    )
+  },
+)
+
+withDb(
+  'qualification uses four verified pillars and the current Lead revision',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    const incomplete = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+      {
+        assessment: {
+          personAuthority: { state: 'unknown', evidenceIds: [] },
+          propertyRef: 'not-this-property',
+          timeline: { state: 'unknown', evidenceIds: [] },
+          condition: { state: 'unknown', evidenceIds: [] },
+          motivation: { state: 'unknown', evidenceIds: [] },
+          price: { state: 'unknown', evidenceIds: [] },
+          whyWorthPursuing: 'Not enough evidence.',
+        },
+      },
+    )
+    await rejects(
+      executePilotCommand(db.sql, agent, incomplete, now),
+      'PERSON_AUTHORITY_REQUIRED',
+    )
+    const stale = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+    )
+    stale.payload.leadRevision = stale.payload.leadRevision - 1_000
+    await rejects(executePilotCommand(db.sql, agent, stale, now), 'LEAD_CHANGED')
+    const command = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+    )
+    await rejects(
+      executePilotCommand(db.sql, reader, command, now),
+      'FORBIDDEN',
+    )
+    const result = await executePilotCommand(db.sql, agent, command, now)
+    assert.equal(result.state, 'opportunity_qualified')
+    assert.deepEqual(await executePilotCommand(db.sql, agent, command, now), result)
+    const [lead] = await db.sql`select station,classification,source from leads`
+    assert.equal(lead.station, 'qualified')
+    assert.equal(lead.classification, 'opportunity')
+    assert.equal(lead.source, 'email_marketing')
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from crm_lead_qualification_pillars where status='verified'`
+      )[0].n,
+      4,
+    )
+  },
+)
+
+withDb(
+  'qualification preserves an already advanced Opportunity stage',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const existing = await existingLead(db, initial.payload.threadId)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    assert.equal(handoff.state, 'handoff_saved_crm_synced')
+    const command = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+    )
+    const result = await executePilotCommand(db.sql, agent, command, now)
+    assert.equal(result.state, 'qualification_recorded')
+    const [lead] = await db.sql`select station,source from leads where id=${existing}`
+    assert.equal(lead.station, 'qualified')
+    assert.equal(lead.source, 'legacy_partner')
+  },
+)
+
+withDb(
+  'unacknowledged callback alerts escalate to backup after five operating minutes',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    await executePilotCommand(db.sql, owner, initial, now)
+    const early = await simulateHandoffEscalation(
+      db.sql,
+      owner,
+      randomUUID(),
+      now,
+    )
+    assert.equal(early.state, 'no_due_escalations')
+    const later = new Date(now.getTime() + 5 * 60 * 1000)
+    const result = await simulateHandoffEscalation(
+      db.sql,
+      owner,
+      randomUUID(),
+      later,
+    )
+    assert.equal(result.state, 'handoff_escalated')
+    const replay = await simulateHandoffEscalation(
+      db.sql,
+      owner,
+      randomUUID(),
+      later,
+    )
+    assert.equal(replay.state, 'no_due_escalations')
+    const backupNotices = (await readPilotState(db.sql, owner, later)).notifications
+      .filter((n) => n.kind.includes('backup review'))
+    assert.equal(backupNotices.length, 1)
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_notifications where logical_key like 'handoff-escalation:%'`
+      )[0].n,
+      1,
+    )
+    const ownerState = await readPilotState(db.sql, agent, later)
+    const ownerNotice = ownerState.notifications.find((n) =>
+      n.kind.startsWith('Callback'),
+    )!
+    await executePilotCommand(
+      db.sql,
+      agent,
+      {
+        command: 'NTF-ACK',
+        idempotencyKey: randomUUID(),
+        payload: { eventId: ownerNotice.id, eventRevision: 0 },
+      },
+      later,
+    )
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_notifications where logical_key like 'handoff-escalation:%' and acknowledged_at is null`
+      )[0].n,
+      0,
+    )
+  },
+)
+
+
 withDb('unsubscribe retains old keys, rejects forged links, and commits despite broken CRM history', async (db) => {
   const { issuePreferenceToken, unsubscribeWithToken } = await import('../../src/lib/email/preferences/service')
   const command = await reviewedCallback(db)
@@ -4014,3 +4464,278 @@ withDb('unsubscribe retains old keys, rejects forged links, and commits despite 
   assert.equal((await db.sql`select * from em_suppressions where address_id=${thread.address_id}`).length, 1)
   assert.equal((await db.sql`select state from em_crm_projection_repairs where thread_id=${thread.id}`)[0].state, 'pending')
 })
+
+withDb('credential rotation, webhook secret lifecycle and replacement review stay local', async (db) => {
+  const { connectService, readConnections } = await import('../../src/lib/email/connections/service')
+  const {
+    rotateCredentialSecrets,
+    saveWebhookEndpoint,
+    reviewConnectionReplacement,
+  } = await import('../../src/lib/email/connections/lifecycle')
+  const { decryptEmailSecret } = await import('../../src/lib/email/secrets')
+  const { webhookSecretAad } = await import('../../src/lib/email/connections/aad')
+  const { connectionSecretAad } = await import('../../src/lib/email/connections/aad')
+  const v1 = Buffer.alloc(32, 7),
+    v2 = Buffer.alloc(32, 8)
+  const ring = new Map([[1, v1], [2, v2]])
+  const [{ revision }] = await db.sql`select revision from em_workspaces limit 1`
+  const first = await connectService(
+    db.sql,
+    owner,
+    {
+      kind: 'email',
+      provider: 'resend',
+      secret: 're_fixture_rotate_one_123456',
+      expectedRevision: revision,
+      accountLabel: 'First fixture',
+      idempotencyKey: randomUUID(),
+    },
+    async () => ({ domainsRead: true, receivingRead: true, sendingVerified: false }),
+    v1,
+    now,
+  )
+  const second = await connectService(
+    db.sql,
+    owner,
+    {
+      kind: 'email',
+      provider: 'resend',
+      secret: 're_fixture_rotate_two_987654',
+      expectedRevision: first.revision,
+      accountLabel: 'Second fixture',
+      idempotencyKey: randomUUID(),
+    },
+    async () => ({ domainsRead: true, receivingRead: true, sendingVerified: false }),
+    v1,
+    now,
+  )
+  const signing = `whsec_${Buffer.alloc(32, 5).toString('base64')}`
+  const webhook = await saveWebhookEndpoint(
+    db.sql,
+    owner,
+    {
+      connectionId: first.connectionId,
+      secret: signing,
+      expectedRevision: second.revision,
+      idempotencyKey: randomUUID(),
+    },
+    v1,
+    1,
+    now,
+  )
+  const [inactive] =
+    await db.sql`select active from em_webhook_endpoints where id=${webhook.endpointId}`
+  assert.equal(inactive.active, false)
+  await rotateCredentialSecrets(
+    db.sql,
+    owner,
+    { expectedRevision: second.revision, idempotencyKey: randomUUID() },
+    ring,
+    now,
+  )
+  const [rotated] = await db.sql`select * from em_service_connections where id=${first.connectionId}`
+  assert.equal(rotated.key_version, 2)
+  assert.equal(
+    decryptEmailSecret(
+      rotated.encrypted_secret,
+      v2,
+      connectionSecretAad(rotated.workspace_id, rotated.id, 2),
+    ),
+    're_fixture_rotate_one_123456',
+  )
+  const [hook] = await db.sql`select * from em_webhook_endpoints where id=${webhook.endpointId}`
+  assert.equal(hook.key_version, 2)
+  assert.equal(
+    decryptEmailSecret(hook.encrypted_secret, v2, webhookSecretAad(hook.workspace_id, hook.id, 2)),
+    signing,
+  )
+  const snapshot = await readConnections(db.sql, owner, v2)
+  await reviewConnectionReplacement(
+    db.sql,
+    owner,
+    {
+      connectionId: second.connectionId,
+      replacesConnectionId: first.connectionId,
+      expectedRevision: snapshot.revision,
+      confirmedAffectedHash: snapshot.replacementReview.hash,
+      reason: 'Owner reviewed the newer checked account.',
+      idempotencyKey: randomUUID(),
+    },
+    now,
+  )
+  const [prior] =
+    await db.sql`select superseded_by,replacement_review_reason from em_service_connections where id=${first.connectionId}`
+  assert.equal(prior.superseded_by, second.connectionId)
+  assert.equal((await db.sql`select send_enabled from em_workspaces`)[0].send_enabled, false)
+})
+
+withDb('delivery events reduce when matched and unmatched events stay reviewable', async (db) => {
+  const { connectService } = await import('../../src/lib/email/connections/service')
+  const { createResendWebhookHttp, webhookSecretAad } = await import('../../src/lib/email/inbound/capture')
+  const { encryptEmailSecret } = await import('../../src/lib/email/secrets')
+  const launchedState = await launched(db)
+  const [intent] =
+    await db.sql`select * from em_send_intents where thread_id=${launchedState.thread.id} and state='accepted_simulated'`
+  const providerEmailId = randomUUID()
+  await db.sql`update em_send_intents set provider_message_id=${providerEmailId} where id=${intent.id}`
+  const key = Buffer.alloc(32, 7),
+    secret = `whsec_${Buffer.alloc(32, 9).toString('base64')}`
+  const [ws] = await db.sql`select id,revision from em_workspaces limit 1`
+  const connection = await connectService(
+    db.sql,
+    owner,
+    {
+      provider: 'resend',
+      kind: 'email',
+      secret: 're_fixture_reducer_123456789',
+      expectedRevision: ws.revision,
+      accountLabel: 'Reducer fixture',
+      idempotencyKey: randomUUID(),
+    },
+    async () => ({ domainsRead: true, receivingRead: true, sendingVerified: false }),
+    key,
+    now,
+  )
+  const endpoint = randomUUID()
+  await db.sql`insert into em_webhook_endpoints(id,workspace_id,connection_id,encrypted_secret,active)
+    values(${endpoint},${ws.id},${connection.connectionId},${db.sql.json({
+      ...encryptEmailSecret(secret, key, webhookSecretAad(ws.id, endpoint), 1),
+    })},true)`
+  const handler = createResendWebhookHttp({
+    database: () => db.sql,
+    endpointId: () => endpoint,
+    key: () => key,
+  })
+  const signed = (type: string, emailId: string, id: string) => {
+    const body = JSON.stringify({
+      type,
+      created_at: now.toISOString(),
+      data: { email_id: emailId },
+    })
+    const timestamp = Math.floor(Date.now() / 1000).toString()
+    return new Request('http://localhost/api/webhooks/email/resend', {
+      method: 'POST',
+      headers: {
+        'svix-id': id,
+        'svix-timestamp': timestamp,
+        'svix-signature': `v1,${createHmac('sha256', Buffer.from(secret.slice(6), 'base64')).update(`${id}.${timestamp}.${body}`).digest('base64')}`,
+      },
+      body,
+    })
+  }
+  assert.equal((await handler(signed('email.delivered', providerEmailId, 'evt_delivered'))).status, 200)
+  assert.equal((await db.sql`select pause_reason from em_workspaces where id=${ws.id}`)[0].pause_reason, null)
+  assert.equal((await db.sql`select * from em_delivery_facts where type='email.delivered'`).length, 1)
+  assert.equal((await db.sql`select remote_outcome from em_send_intents where id=${intent.id}`)[0].remote_outcome, 'delivered')
+  assert.equal((await handler(signed('email.opened', providerEmailId, 'evt_opened'))).status, 200)
+  assert.equal((await db.sql`select pause_reason from em_workspaces where id=${ws.id}`)[0].pause_reason, null)
+  assert.equal((await handler(signed('email.bounced', providerEmailId, 'evt_bounced'))).status, 200)
+  assert.equal((await db.sql`select * from em_suppressions where address_id=${launchedState.thread.address_id}`).length, 1)
+  assert.equal((await handler(signed('email.delivered', randomUUID(), 'evt_unknown'))).status, 200)
+  const [paused] = await db.sql`select pause_reason from em_workspaces where id=${ws.id}`
+  assert.equal(paused.pause_reason, 'Resend event needs review')
+  const [review] =
+    await db.sql`select * from em_jobs where kind='resend_event_review' and state='dead'`
+  const ack = await executePilotCommand(
+    db.sql,
+    owner,
+    {
+      command: 'OPS-ACK',
+      idempotencyKey: randomUUID(),
+      payload: {
+        incidentKey: `resend_event_review:${review.id}`,
+        note: 'Owner reviewed the unmatched delivery event.',
+      },
+    },
+    now,
+  )
+  assert.equal(ack.state, 'review_released')
+  assert.equal((await db.sql`select pause_reason from em_workspaces where id=${ws.id}`)[0].pause_reason, null)
+})
+
+withDb('remote dispatch stays fenced and reconcile cannot resend', async (db) => {
+  const { enqueueRemoteDispatch, processNextDispatch } = await import('../../src/lib/email/dispatch/service')
+  await launched(db)
+  const [intent] = await db.sql`select * from em_send_intents where state='queued' limit 1`
+  const [ws] = await db.sql`select revision from em_workspaces limit 1`
+  const queued = await enqueueRemoteDispatch(
+    db.sql,
+    owner,
+    {
+      intentId: intent.id,
+      expectedRevision: ws.revision,
+      idempotencyKey: randomUUID(),
+    },
+    now,
+  )
+  assert.equal(queued.state, 'dispatch_queued')
+  process.env.EMAIL_LIVE_DISPATCH_ENABLED = 'true'
+  process.env.EMAIL_CONTROLLED_PROVIDER_EVIDENCE = 'true'
+  try {
+    await db.sql`update em_workspaces set send_enabled=true`
+    const held = await processNextDispatch(db.sql, owner, () => now)
+    assert.equal(held.state, 'held')
+    assert.equal(held.reason, 'CONTROLLED_PROVIDER_EVIDENCE_REQUIRED')
+  } finally {
+    await db.sql`update em_workspaces set send_enabled=false`
+    delete process.env.EMAIL_LIVE_DISPATCH_ENABLED
+    delete process.env.EMAIL_CONTROLLED_PROVIDER_EVIDENCE
+  }
+  const [saved] = await db.sql`select state,cancellation_reason from em_send_intents where id=${intent.id}`
+  assert.equal(saved.state, 'held')
+  assert.equal(saved.cancellation_reason, 'CONTROLLED_PROVIDER_EVIDENCE_REQUIRED')
+  const reconciled = await executePilotCommand(
+    db.sql,
+    owner,
+    {
+      command: 'OPS-RECONCILE',
+      idempotencyKey: randomUUID(),
+      payload: { intentId: intent.id },
+    },
+    now,
+  )
+  assert.equal(reconciled.state, 'reconciled_held')
+  assert.equal((await db.sql`select state from em_send_intents where id=${intent.id}`)[0].state, 'held')
+  assert.equal((await db.sql`select send_enabled from em_workspaces`)[0].send_enabled, false)
+})
+
+withDb('simulated outbound stores List-Unsubscribe when preference keys exist', async (db) => {
+  const { recordPreference } = await import('../../src/lib/email/preferences/service')
+  const { createPreferencePost } = await import('../../src/lib/email/preferences/http')
+  process.env.EMAIL_PREFERENCE_KEY_V1 = 'ab'.repeat(32)
+  try {
+    const state = await launched(db)
+    const [intent] =
+      await db.sql`select frozen_payload from em_send_intents where thread_id=${state.thread.id} order by created_at limit 1`
+    const headers = intent.frozen_payload.headers
+    assert.match(headers['List-Unsubscribe'], /\/api\/email\/unsubscribe\/1\.[A-Za-z0-9_-]{43}/)
+    assert.equal(headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click')
+    const token = headers['List-Unsubscribe'].slice(1, -1).split('/').pop()
+    const post = createPreferencePost(() => db.sql, { '1': 'ab'.repeat(32) })
+    const stopped = await post(
+      new Request('https://crm.savingkc.test/api/email/unsubscribe/' + token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'List-Unsubscribe=One-Click',
+      }),
+      token,
+    )
+    assert.match(await stopped.text(), /Save program note/)
+    const noted = await recordPreference(
+      db.sql,
+      token,
+      'seller_outreach',
+      { '1': 'ab'.repeat(32) },
+      now,
+    )
+    assert.equal(noted, true)
+    assert.equal(
+      (await db.sql`select program from em_preference_choices where address_id=${state.thread.address_id}`)[0]
+        .program,
+      'seller_outreach',
+    )
+  } finally {
+    delete process.env.EMAIL_PREFERENCE_KEY_V1
+  }
+})
+

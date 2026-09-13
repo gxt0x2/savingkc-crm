@@ -3,14 +3,16 @@ import { createHmac, randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
 import { z } from 'zod'
 import { emailAiAvailable } from '../ai/provider'
-import { encryptEmailSecret, maskSecret } from '../secrets'
+import { currentCredentialVersion, encryptEmailSecret, maskSecret } from '../secrets'
+import { connectionSecretAad } from './aad'
 import {
-  check,
-  json,
-  workflowHash,
-  WorkflowError,
-  type Tx,
-} from '../workflow/core'
+  connectionKeyVersion,
+  connectionMasterKey,
+  ownerWorkspace,
+} from './access'
+import { replacementImpact } from './lifecycle'
+export { connectionMasterKey, ownerWorkspace } from './access'
+import { check, json, workflowHash, WorkflowError, type Tx } from '../workflow/core'
 import { checkResendConnection, type ConnectionChecker } from './resend-check'
 
 export const connectionInputSchema = z
@@ -26,28 +28,6 @@ export const connectionInputSchema = z
     idempotencyKey: z.string().uuid(),
   })
   .strict()
-export function connectionMasterKey(): Buffer | null {
-  const value = process.env.EMAIL_CREDENTIALS_KEY_V1
-  return value && /^[a-f0-9]{64}$/i.test(value)
-    ? Buffer.from(value, 'hex')
-    : null
-}
-export async function ownerWorkspace(tx: Tx, subject: string) {
-  const [member] = await tx`select m.workspace_id from em_memberships m
-    join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false
-      and (p.user_id is null or p.user_id=m.auth_user_id)
-    where m.auth_user_id=${subject} and m.active and 'owner'=any(m.roles)`
-  check(member, 'FORBIDDEN', 403)
-  const [workspace] =
-    await tx`select id,revision from em_workspaces where id=${member.workspace_id} for update`
-  // Access changes share the workspace lock. Recheck after acquiring it.
-  const [fresh] = await tx`select m.auth_user_id from em_memberships m
-    join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false
-      and (p.user_id is null or p.user_id=m.auth_user_id)
-    where m.workspace_id=${workspace.id} and m.auth_user_id=${subject} and m.active and 'owner'=any(m.roles)`
-  check(fresh, 'FORBIDDEN', 403)
-  return workspace
-}
 export async function readConnections(
   sql: Sql,
   subject: string,
@@ -57,16 +37,42 @@ export async function readConnections(
     const tx = transaction as unknown as Tx
     const ws = await ownerWorkspace(tx, subject)
     const rows =
-      await tx`select id,provider,account_label,masked_secret,state,capabilities,failure_code,created_at,checked_at
+      await tx`select id,provider,account_label,masked_secret,state,capabilities,failure_code,created_at,checked_at,key_version,superseded_by,replacement_reviewed_at
       from em_service_connections where workspace_id=${ws.id} order by created_at desc,id limit 50`
+    const webhooks =
+      await tx`select id,connection_id,active,revision,key_version,masked_secret,rotated_at,created_at
+      from em_webhook_endpoints where workspace_id=${ws.id} order by created_at,id`
+    const domains =
+      await tx`select connection_id,count(*)::int as n from em_domains where workspace_id=${ws.id} group by connection_id`
+    const events =
+      await tx`select connection_id,count(*)::int as n from em_provider_events where workspace_id=${ws.id} group by connection_id`
     const [ai] =
       await tx`select state,failure_code from em_ai_generations where workspace_id=${ws.id} order by created_at desc,id desc limit 1`
     const impact = await disconnectImpact(tx, ws.id)
+    const replacement = await replacementImpact(tx, ws.id)
     return {
       disconnectImpact: {
         hash: impact.hash,
         activeCampaigns: impact.campaigns.length,
         queuedMessages: impact.intents.length,
+      },
+      replacementReview: {
+        hash: replacement.hash,
+        historicalAccounts: rows.filter((c) => c.state !== 'checking').length,
+        domainsByConnection: Object.fromEntries(
+          domains.map((d) => [d.connection_id, d.n]),
+        ),
+        eventsByConnection: Object.fromEntries(
+          events.map((e) => [e.connection_id, e.n]),
+        ),
+      },
+      webhooks,
+      credentialStorage: {
+        configured: Boolean(key),
+        currentVersion: currentCredentialVersion(),
+        storedVersions: [
+          ...new Set(rows.map((c) => Number(c.key_version))),
+        ].sort((a, b) => a - b),
       },
       ai: {
         configured: emailAiAvailable(),
@@ -116,16 +122,17 @@ export async function connectService(
       await tx`select count(*)::int as n from em_service_connections
       where workspace_id=${ws.id} and created_at>${new Date(now.getTime() - 3600000)}`
     check(count.n < 10, 'SERVICE_CHECK_LIMIT', 429)
+    const keyVersion = connectionKeyVersion()
     const encrypted = encryptEmailSecret(
       input.secret,
       key,
-      `${ws.id}/${candidateId}/resend/1`,
-      1,
+      connectionSecretAad(ws.id, candidateId, keyVersion),
+      keyVersion,
     )
     await tx`insert into em_service_connections(id,workspace_id,created_by,request_id,request_fingerprint,
-      provider,account_label,masked_secret,encrypted_secret,state,workspace_revision,created_at)
+      provider,account_label,masked_secret,encrypted_secret,state,workspace_revision,created_at,key_version)
       values(${candidateId},${ws.id},${subject},${input.idempotencyKey},${fingerprint},'resend',${input.accountLabel},
-      ${maskSecret(input.secret)},${tx.json(json(encrypted))},'checking',${ws.revision},${now})`
+      ${maskSecret(input.secret)},${tx.json(json(encrypted))},'checking',${ws.revision},${now},${keyVersion})`
     await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail,created_at)
       values(${ws.id},${subject},'SVC-CONNECT',${candidateId},${input.idempotencyKey},${tx.json({ state: 'checking', provider: 'resend' })},${now})`
     return { id: candidateId, created: true, workspace: ws.id as string }

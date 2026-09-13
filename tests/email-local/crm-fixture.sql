@@ -474,3 +474,109 @@ $$;
 CREATE TRIGGER fixture_sync_email_conversation_state_v1
 AFTER INSERT ON public.lead_activities
 FOR EACH ROW EXECUTE FUNCTION public.fixture_sync_email_conversation_state_v1();
+
+-- Exact four-pillar contract from 20260925120000_crm_lead_qualification_pillars.sql,
+-- without the production manifests backfill (that table is outside this fixture).
+CREATE TABLE public.crm_lead_qualification_pillars (
+  lead_id uuid NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
+  pillar text NOT NULL CHECK (pillar IN ('TIMELINE', 'CONDITION', 'MOTIVATION', 'PRICE')),
+  evidence text NOT NULL CHECK (length(btrim(evidence)) BETWEEN 1 AND 2000),
+  status text NOT NULL CHECK (status IN ('needs_review', 'verified')),
+  source_type text NOT NULL CHECK (source_type IN ('operator', 'legacy_manifest', 'imported')),
+  source_reference text,
+  verified_by_email text,
+  verified_by_name text,
+  verified_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (lead_id, pillar),
+  CHECK (
+    status <> 'verified'
+    OR (verified_at IS NOT NULL AND nullif(btrim(verified_by_email), '') IS NOT NULL)
+  )
+);
+
+CREATE OR REPLACE FUNCTION public.save_crm_lead_qualification_v1(
+  p_lead_id uuid,
+  p_pillars jsonb,
+  p_actor_email text,
+  p_actor_name text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  target_pillar text;
+  target_evidence text;
+  saved_pillars text[] := ARRAY[]::text[];
+  verified_count integer;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.leads WHERE id = p_lead_id) THEN
+    RAISE EXCEPTION 'lead not found';
+  END IF;
+  IF jsonb_typeof(p_pillars) <> 'object' THEN
+    RAISE EXCEPTION 'pillars must be an object';
+  END IF;
+  IF nullif(btrim(p_actor_email), '') IS NULL OR nullif(btrim(p_actor_name), '') IS NULL THEN
+    RAISE EXCEPTION 'verified actor required';
+  END IF;
+
+  FOREACH target_pillar IN ARRAY ARRAY['TIMELINE', 'CONDITION', 'MOTIVATION', 'PRICE']
+  LOOP
+    target_evidence := btrim(p_pillars ->> target_pillar);
+    IF nullif(target_evidence, '') IS NULL THEN
+      CONTINUE;
+    END IF;
+    IF length(target_evidence) > 2000 THEN
+      RAISE EXCEPTION '% evidence exceeds 2000 characters', target_pillar;
+    END IF;
+
+    INSERT INTO public.crm_lead_qualification_pillars (
+      lead_id, pillar, evidence, status, source_type, source_reference,
+      verified_by_email, verified_by_name, verified_at
+    ) VALUES (
+      p_lead_id, target_pillar, target_evidence, 'verified', 'operator', NULL,
+      lower(btrim(p_actor_email)), btrim(p_actor_name), now()
+    )
+    ON CONFLICT (lead_id, pillar) DO UPDATE SET
+      evidence = EXCLUDED.evidence,
+      status = EXCLUDED.status,
+      source_type = EXCLUDED.source_type,
+      source_reference = NULL,
+      verified_by_email = EXCLUDED.verified_by_email,
+      verified_by_name = EXCLUDED.verified_by_name,
+      verified_at = EXCLUDED.verified_at;
+
+    saved_pillars := array_append(saved_pillars, target_pillar);
+  END LOOP;
+
+  IF cardinality(saved_pillars) = 0 THEN
+    RAISE EXCEPTION 'at least one pillar is required';
+  END IF;
+
+  INSERT INTO public.lead_activities (
+    lead_id, activity_type, description, agent, metadata
+  ) VALUES (
+    p_lead_id,
+    'qualification',
+    'Qualification evidence verified',
+    btrim(p_actor_name),
+    jsonb_build_object(
+      'source', 'canonical_qualification_v1',
+      'pillars', to_jsonb(saved_pillars),
+      'verified_by_email', lower(btrim(p_actor_email))
+    )
+  );
+
+  SELECT count(*) INTO verified_count
+  FROM public.crm_lead_qualification_pillars
+  WHERE lead_id = p_lead_id AND status = 'verified';
+
+  RETURN jsonb_build_object(
+    'leadId', p_lead_id,
+    'savedPillars', to_jsonb(saved_pillars),
+    'complete', verified_count = 4
+  );
+END
+$$;
