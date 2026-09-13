@@ -92,6 +92,8 @@ export interface PilotThread {
   callback_due_at: string | null
   requested_contact: { phone?: string; requestedTimeText?: string } | null
   handoff_revision?: number | null
+  callback_title?: string | null
+  callback_notes?: string | null
   scheduled_for?: string | null
   reply_queued?: boolean
   has_outbound?: boolean

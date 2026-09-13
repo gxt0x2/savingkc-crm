@@ -654,7 +654,7 @@ export async function executePilotCommand(
             context,
             p.handoffId,
             command.expectedRevision,
-            { dueAt: start },
+            { dueAt: start, title: p.title, note: p.note },
             command.idempotencyKey,
           )
         }
@@ -1015,6 +1015,8 @@ export async function readPilotState(
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
       h.revision as handoff_revision,h.scheduled_for,
+      w.title as callback_title,
+      (select metadata->>'email_task_notes' from lead_activities where id=h.crm_task_id) as callback_notes,
       exists(select 1 from em_messages m where m.thread_id=t.id and m.direction='outbound') as has_outbound,
       exists(select 1 from em_send_intents i where i.thread_id=t.id and i.origin='human' and i.state='queued') as reply_queued,
       (select min(i.not_before) from em_send_intents i where i.thread_id=t.id and i.state='queued') as next_email_at,

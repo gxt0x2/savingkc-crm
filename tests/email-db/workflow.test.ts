@@ -63,6 +63,8 @@ withDb(
       payload: {
         handoffId: result.entityId,
         mode: 'task',
+        title: 'Call seller to confirm timing',
+        note: 'Ask which afternoon time works best.',
         startAt: '2026-09-15T19:00:00Z',
         timezone: 'America/Chicago',
         contentRevision: thread.content_revision,
@@ -125,7 +127,16 @@ withDb(
       ).toISOString(),
       '2026-09-15T19:00:00.000Z',
     )
+    assert.equal(
+      state.threads.find((t) => t.id === threadId)?.callback_title,
+      'Call seller to confirm timing',
+    )
+    assert.equal(
+      state.threads.find((t) => t.id === threadId)?.callback_notes,
+      'Ask which afternoon time works best.',
+    )
     const [work] = await db.sql`select * from work_items`
+    assert.equal(work.title, 'Call seller to confirm timing')
     assert.equal(
       new Date(work.due_at).toISOString(),
       '2026-09-15T19:00:00.000Z',

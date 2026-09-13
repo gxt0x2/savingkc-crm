@@ -45,6 +45,11 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
     .getByRole('button')
     .first()
     .click()
+  expect(
+    (await page
+      .getByRole('region', { name: 'Conversations', exact: true })
+      .boundingBox())!.y,
+  ).toBeLessThan(280)
   const receive = page.getByRole('button', {
     name: 'Receive practice reply in selected conversation',
     exact: true,
@@ -93,7 +98,13 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await expect(
     drawer.getByText('Seller prefers afternoon calls.', { exact: true }),
   ).toBeVisible()
-  await drawer.getByRole('tab', { name: 'Follow-ups', exact: true }).click()
+  await drawer.getByRole('tab', { name: 'Calendar', exact: true }).click()
+  await drawer
+    .getByLabel('Title', { exact: true })
+    .fill('Call seller to confirm timing')
+  await drawer
+    .getByLabel('Task notes', { exact: true })
+    .fill('Ask which afternoon time works best.')
   await drawer
     .getByLabel('Follow-up time (Chicago)', { exact: true })
     .fill('2026-09-15T14:00')

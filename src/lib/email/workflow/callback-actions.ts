@@ -6,7 +6,13 @@ export async function changeCallback(
   context: Context,
   handoffId: string,
   revision: number | undefined,
-  change: { dueAt?: Date; completeNote?: string; accept?: boolean },
+  change: {
+    dueAt?: Date
+    completeNote?: string
+    accept?: boolean
+    title?: string
+    note?: string
+  },
   key: string,
 ) {
   const { tx, member, now } = context
@@ -51,6 +57,8 @@ export async function changeCallback(
     'CALLBACK_OWNER_CHANGED',
   )
   const metadata = {
+    ...(change.title !== undefined ? { title: change.title } : {}),
+    ...(change.note !== undefined ? { email_task_notes: change.note } : {}),
     ...(change.dueAt
       ? { due_date: change.dueAt.toISOString(), email_manual_follow_up: true }
       : {}),
@@ -69,6 +77,7 @@ export async function changeCallback(
     await tx`select * from work_items where work_item_key=${h.crm_task_key}`
   check(
     next?.status === (change.completeNote ? 'completed' : 'pending') &&
+      (!change.title || next.title === change.title) &&
       (!change.dueAt ||
         new Date(next.due_at).getTime() === change.dueAt.getTime()),
     'CRM_CALLBACK_UPDATE_FAILED',

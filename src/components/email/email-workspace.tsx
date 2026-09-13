@@ -382,10 +382,22 @@ export function EmailWorkspace({
   return (
     <main className={styles.workspace}>
       <header className={styles.header}>
-        <div>
-          <div className={styles.eyebrow}>SAVINGKC / OUTREACH</div>
-          <h1>Email</h1>
-        </div>
+        <h1>Email</h1>
+        <nav aria-label="Email workspace" className={styles.nav}>
+          {(['inbox', 'campaigns', 'more'] as const).map((tab) => (
+            <button
+              key={tab}
+              aria-current={section === tab ? 'page' : undefined}
+              onClick={() => setSection(tab)}
+            >
+              {tab === 'inbox'
+                ? 'Inbox'
+                : tab === 'campaigns'
+                  ? 'Campaigns'
+                  : 'More'}
+            </button>
+          ))}
+        </nav>
         <div className={styles.headerRight}>
           <span className={styles.mode}>
             {data?.paused ? 'Paused' : 'Live sending off'}
@@ -401,21 +413,6 @@ export function EmailWorkspace({
           </button>
         </div>
       </header>
-      <nav aria-label="Email workspace" className={styles.nav}>
-        {(['inbox', 'campaigns', 'more'] as const).map((tab) => (
-          <button
-            key={tab}
-            aria-current={section === tab ? 'page' : undefined}
-            onClick={() => setSection(tab)}
-          >
-            {tab === 'inbox'
-              ? 'Inbox'
-              : tab === 'campaigns'
-                ? 'Campaigns'
-                : 'More'}
-          </button>
-        ))}
-      </nav>
       <div className={styles.banner}>
         <strong>
           {data?.mode === 'simulation'
@@ -424,9 +421,12 @@ export function EmailWorkspace({
         </strong>
         <span>
           {data?.mode === 'simulation'
-            ? 'Fabricated contacts. Messages are saved locally; no email, call, push or calendar event is sent.'
+            ? 'Practice only · No messages, calls or calendar events are sent.'
             : 'Your team will work here once the remaining integrations are connected and verified.'}
         </span>
+        {data && (
+          <small className={styles.asOf}>As of {formatTime(data.asOf)}</small>
+        )}
       </div>
       {error && (
         <div role="alert" className={styles.error}>
@@ -454,15 +454,6 @@ export function EmailWorkspace({
         <>
           {section === 'inbox' && (
             <>
-              <div className={styles.heading}>
-                <div>
-                  <h2>Inbox</h2>
-                  <p>Focus on the conversations that need you.</p>
-                </div>
-                <span className={styles.muted}>
-                  As of {formatTime(data.asOf)}
-                </span>
-              </div>
               <div className={styles.filters}>
                 <label>
                   Search

@@ -53,3 +53,7 @@ The final presentation follow-up forces a thin visible history scrollbar and sty
 ## Tabbed Details continuation
 
 The Details column now starts expanded and uses Contact, Property, Follow-ups, Notes and Ari’s Insights tabs with visible icons and names. The updated browser suite passes all four cases, including initial expansion, tab navigation, unsaved-note preservation, follow-up saving, keyboard Home/End and mobile Escape. Desktop/mobile screenshots were inspected. TypeScript and targeted ESLint pass. Ari’s Insights exposes saved context and practice copy only; live AI remains unavailable. This continuation changes the UI and its tests, not the database/provider integration.
+
+## Compact header and task/property cards
+
+Updated four-case browser suite passes, including a geometry assertion that the conversation begins above 280px at the desktop test viewport. Two relevant callback database cases pass with new assertions for saved title/notes and canonical work-item title. All 50 Email unit tests, TypeScript and targeted ESLint pass. Property/card and Calendar/form screenshots were inspected on the local preview. Existing full DB totals above belong to the preceding checkpoint; this change reran the two affected callback cases. No production or provider change.

@@ -16,7 +16,7 @@ import styles from './email-workspace.module.css'
 const detailTabs = [
   ['contact', 'Contact'],
   ['property', 'Property'],
-  ['followups', 'Follow-ups'],
+  ['followups', 'Calendar'],
   ['notes', 'Notes'],
   ['ari', 'Ari’s Insights'],
 ] as const
@@ -97,6 +97,8 @@ export function EmailThreadPanel({
   const [older, setOlder] = useState(false)
   const [note, setNote] = useState('')
   const [schedule, setSchedule] = useState('')
+  const [taskTitle, setTaskTitle] = useState(t.callback_title ?? 'Call seller')
+  const [taskNote, setTaskNote] = useState(t.callback_notes ?? '')
   const [outcome, setOutcome] = useState('')
   const [localError, setLocalError] = useState('')
   const [working, setWorking] = useState(false)
@@ -622,8 +624,7 @@ export function EmailThreadPanel({
           aria-label="Contact and property"
         >
           <div className={styles.drawerTop}>
-            <header className={styles.row}>
-              <h3>Details</h3>
+            <header className={styles.drawerCloseRow}>
               <button
                 ref={drawerClose}
                 onClick={closeDetails}
@@ -676,7 +677,6 @@ export function EmailThreadPanel({
             tabIndex={0}
             className={styles.detailPanel}
           >
-            <h4>Contact</h4>
             <p>{t.name}</p>
             <p>{t.email}</p>
             <p>
@@ -740,22 +740,33 @@ export function EmailThreadPanel({
             tabIndex={0}
             className={styles.detailPanel}
           >
-            <h4>Property</h4>
             {t.property ? (
               <>
-                <p>{t.property.address}</p>
-                <p>
-                  {[t.property.city, t.property.state, t.property.zip]
-                    .filter(Boolean)
-                    .join(', ')}
-                </p>
+                <div className={styles.propertyCard}>
+                  <div className={styles.propertyImage}>
+                    <DetailIcon tab="property" />
+                    <span>Property image unavailable</span>
+                    <small>
+                      {localSimulation
+                        ? 'Fabricated practice property'
+                        : 'Photo source not connected'}
+                    </small>
+                  </div>
+                  <div className={styles.propertyAddress}>
+                    <strong>{t.property.address}</strong>
+                    <p>
+                      {[t.property.city, t.property.state, t.property.zip]
+                        .filter(Boolean)
+                        .join(', ')}
+                    </p>
+                  </div>
+                </div>
                 <dl className={styles.propertyFacts}>
                   {[
-                    ['Type', t.property.property_type],
                     ['Beds', t.property.bedrooms],
                     ['Baths', t.property.bathrooms],
-                    ['Sq ft', t.property.sqft],
-                    ['Year', t.property.year_built],
+                    ['Square feet', t.property.sqft?.toLocaleString('en-US')],
+                    ['Year built', t.property.year_built],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <dt>{label}</dt>
@@ -791,7 +802,7 @@ export function EmailThreadPanel({
             tabIndex={0}
             className={styles.detailPanel}
           >
-            <h4>Follow-up & calendar</h4>
+            <h4 className={styles.taskHeading}>Schedule follow-up</h4>
             <p>
               {t.scheduled_for
                 ? `Follow-up: ${time(t.scheduled_for)}`
@@ -825,6 +836,8 @@ export function EmailThreadPanel({
                       payload: {
                         handoffId: t.handoff_id!,
                         mode: 'task',
+                        title: taskTitle,
+                        note: taskNote,
                         startAt: start.toISOString(),
                         timezone: 'America/Chicago',
                         contentRevision: scheduleRevision.thread,
@@ -840,6 +853,34 @@ export function EmailThreadPanel({
                   }}
                 >
                   <label>
+                    Title
+                    <input
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      required
+                      maxLength={200}
+                      placeholder="Describe the action"
+                    />
+                  </label>
+                  <div className={styles.attachedLead}>
+                    <small>Attached to Lead</small>
+                    <strong>{t.name}</strong>
+                  </div>
+                  <div className={styles.taskFacts}>
+                    <div>
+                      <small>Type</small>
+                      <span>Follow-up</span>
+                    </div>
+                    <div>
+                      <small>Assigned to</small>
+                      <span>{owner?.name ?? 'Unassigned'}</span>
+                    </div>
+                    <div>
+                      <small>Role</small>
+                      <span>Acquisitions</span>
+                    </div>
+                  </div>
+                  <label>
                     Follow-up time (Chicago)
                     <input
                       type="datetime-local"
@@ -848,48 +889,76 @@ export function EmailThreadPanel({
                       onChange={(e) => setSchedule(e.target.value)}
                     />
                   </label>
-                  <small>
-                    Set an internal reminder. Confirm the time with the seller
-                    separately.
-                  </small>
-                  <button disabled={blocked}>Save follow-up</button>
-                </form>
-                <form
-                  className={styles.drawerForm}
-                  onSubmit={async (e) => {
-                    e.preventDefault()
-                    const r = await act({
-                      command: 'HAN-OUTCOME',
-                      idempotencyKey: crypto.randomUUID(),
-                      expectedRevision: scheduleRevision.handoff,
-                      payload: {
-                        handoffId: t.handoff_id!,
-                        outcome: 'conversation_complete',
-                        note: outcome,
-                        contentRevision: scheduleRevision.thread,
-                      },
-                    })
-                    if (r) setOutcome('')
-                  }}
-                >
                   <label>
-                    Call outcome
+                    Notes (optional)
                     <textarea
-                      aria-label="Call outcome"
+                      aria-label="Task notes"
                       rows={2}
-                      required
-                      value={outcome}
-                      onChange={(e) => setOutcome(e.target.value)}
                       maxLength={2000}
+                      value={taskNote}
+                      onChange={(e) => setTaskNote(e.target.value)}
+                      placeholder="Additional details…"
                     />
                   </label>
-                  <button disabled={blocked || !outcome.trim()}>
-                    Complete callback
-                  </button>
-                  <small>
-                    Completes this task. Does not qualify an Opportunity.
-                  </small>
+                  <div className={styles.taskFooter}>
+                    <button
+                      type="button"
+                      disabled={blocked}
+                      onClick={() => {
+                        setSchedule('')
+                        setTaskTitle(t.callback_title ?? 'Call seller')
+                        setTaskNote(t.callback_notes ?? '')
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className={styles.primary}
+                      disabled={blocked || !schedule || !taskTitle.trim()}
+                    >
+                      Save follow-up
+                    </button>
+                  </div>
                 </form>
+                <details className={styles.outcomeDisclosure}>
+                  <summary>Record call outcome</summary>
+                  <form
+                    className={styles.drawerForm}
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      const r = await act({
+                        command: 'HAN-OUTCOME',
+                        idempotencyKey: crypto.randomUUID(),
+                        expectedRevision: scheduleRevision.handoff,
+                        payload: {
+                          handoffId: t.handoff_id!,
+                          outcome: 'conversation_complete',
+                          note: outcome,
+                          contentRevision: scheduleRevision.thread,
+                        },
+                      })
+                      if (r) setOutcome('')
+                    }}
+                  >
+                    <label>
+                      Call outcome
+                      <textarea
+                        aria-label="Call outcome"
+                        rows={2}
+                        required
+                        value={outcome}
+                        onChange={(e) => setOutcome(e.target.value)}
+                        maxLength={2000}
+                      />
+                    </label>
+                    <button disabled={blocked || !outcome.trim()}>
+                      Complete callback
+                    </button>
+                    <small>
+                      Completes this task. Does not qualify an Opportunity.
+                    </small>
+                  </form>
+                </details>
               </>
             )}
           </section>
@@ -901,7 +970,6 @@ export function EmailThreadPanel({
             tabIndex={0}
             className={styles.detailPanel}
           >
-            <h4>Notes</h4>
             {canWork && t.lead_id ? (
               <form
                 className={styles.drawerForm}
@@ -951,7 +1019,6 @@ export function EmailThreadPanel({
             tabIndex={0}
             className={styles.detailPanel}
           >
-            <h4>Ari’s Insights</h4>
             <div className={styles.insightStatus}>
               <strong>Live insights aren’t connected yet</strong>
               <p>
