@@ -29,6 +29,8 @@ Business/team saves invalidate old readiness and keep live flags off. Provider r
 
 ## Canonical CRM bridge continuation
 
+Implementation checkpoint: `41b74b99` (local only). Verification: 39 database tests, 48 unit tests, four browser tests, TypeScript, scoped ESLint, theme/design checks and the isolated production build passed. Three browser cases use the real local API/database; the repair-state UI case uses controlled response mocks backed by separate database repair tests.
+
 This local increment connects the Lead/history/callback portion of EM-014. See [CRM bridge contract and limits](crm-bridge-checkpoint.md). New email-only Leads use `contacted`, classification `lead`, and source `email_marketing`. Existing active records keep their source, owner and stage; conflicting or unowned/New records remain held for a governed human decision. No qualification command was added.
 
 The bridge records exact replay evidence and attribution. Subsequent inbound and human outbound messages continue projecting into canonical `lead_activities` using `email` plus direction, the existing shared Conversations input. Callback review deadlines use the saved team hours and urgent SLA; the default is 30 minutes within weekday 08:30–17:00 Chicago hours. These are internal review deadlines, not appointments. Marketing stops and reduced team access request a hold on the linked task and record a work-item event when the hold succeeds.

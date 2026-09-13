@@ -1,6 +1,6 @@
 # Connected local workflow verification
 
-Date: 2026-09-12. Branch: `codex/email-foundation-20260912`.
+Date: 2026-09-12. Branch: `codex/email-foundation-20260912`. Canonical CRM bridge implementation checkpoint: `41b74b99`.
 
 This is component and local integration evidence, not a completed EM-017/EM-030 acceptance or production release. The first connected milestone follows `3334191e`; the setup/theme continuation follows `35146922`; the canonical CRM bridge continuation follows `a51fc103`.
 
