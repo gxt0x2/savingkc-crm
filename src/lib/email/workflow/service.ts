@@ -1132,7 +1132,7 @@ export async function readPilotState(
       (select metadata->>'email_task_notes' from lead_activities where id=h.crm_task_id) as callback_notes,
       (select case when i.state in ('held','uncertain','rejected') or (i.state='dispatching' and i.first_attempt_at<${now}::timestamptz-interval '2 minutes') then i.state else null end from em_send_intents i where i.workspace_id=t.workspace_id and i.thread_id=t.id order by i.created_at desc,i.id desc limit 1) as sending_issue,
       exists(select 1 from em_messages m where m.thread_id=t.id and m.direction='outbound') as has_outbound,
-      exists(select 1 from em_send_intents i where i.thread_id=t.id and i.origin='human' and i.state='queued') as reply_queued,
+      exists(select 1 from em_send_intents i where i.thread_id=t.id and i.origin='human' and i.state in ('queued','dispatching')) as reply_queued,
       (select min(i.not_before) from em_send_intents i where i.thread_id=t.id and i.state='queued') as next_email_at,
       (select to_jsonb(cp) from em_party_properties ep join crm_properties cp on cp.id=ep.canonical_property_id
        where ep.workspace_id=t.workspace_id and ep.party_id=t.party_id and ep.relationship='owner'

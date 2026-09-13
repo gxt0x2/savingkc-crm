@@ -131,6 +131,7 @@ export function EmailThreadPanel({
     ['owner', 'reviewer', 'acquisitions'].includes(r),
   )
   const blocked = busy || working || Boolean(t.inbound_pending)
+  const deliveryPending = ['uncertain', 'dispatching'].includes(t.sending_issue ?? '')
   const stale =
     editor.revision !== t.content_revision ||
     editor.controller !== t.controller_revision
@@ -384,7 +385,9 @@ export function EmailThreadPanel({
           </p>
         )}
         <footer className={styles.composer} aria-label="Reply composer">
-          {owns &&
+          {deliveryPending ? (
+            <p>Sending is on hold. Review the previous send in Next step.</p>
+          ) : owns &&
           proposal?.body &&
           !editor.body &&
           !composing &&
