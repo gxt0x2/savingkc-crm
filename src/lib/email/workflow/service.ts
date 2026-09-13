@@ -5,6 +5,14 @@ import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
 import { changeCallback, validateCallbackTime } from './callback-actions'
 import { retryReceivedJob } from '../inbound/retry'
+import { acknowledgeEventReview } from '../inbound/reduce'
+import { reconcileRemoteIntent } from '../dispatch/service'
+import {
+  currentPreferenceVersion,
+  issuePreferenceTokenInTx,
+  listUnsubscribeHeaders,
+  preferenceKeys,
+} from '../preferences/service'
 import { manageHandoff } from './handoff-management'
 import { qualifyHandoff } from './handoff-qualification'
 import { escalateDueHandoffAlerts } from './handoff-escalation'
@@ -286,11 +294,29 @@ async function queueIntent(
     expires: Date
   },
 ) {
+  const [thread] =
+    await context.tx`select address_id from em_threads where workspace_id=${context.member.workspace_id} and id=${input.threadId}`
+  const keys = preferenceKeys()
+  const headers = currentPreferenceVersion(keys)
+    ? listUnsubscribeHeaders(
+        await issuePreferenceTokenInTx(
+          context.tx,
+          context.member.workspace_id,
+          context.member.auth_user_id,
+          thread.address_id,
+          keys,
+          context.now,
+        ),
+      )
+    : null
   const payload = {
     body: input.body,
     subject: input.subject,
     from: 'team@outreach.savingkc.test',
     transport: 'simulation',
+    ...(headers
+      ? { headers }
+      : { headersMissing: 'PREFERENCE_KEY_REQUIRED' }),
   }
   const [intent] =
     await context.tx`insert into em_send_intents(workspace_id,thread_id,logical_key,origin,step,frozen_payload,payload_hash,
@@ -848,6 +874,29 @@ export async function executePilotCommand(
             where workspace_id=${ws} and thread_id=${notice.thread_id}
             and logical_key like 'handoff-escalation:%'`
         return { entityId: notice.id, state: 'acknowledged' }
+      }
+      case 'OPS-RECONCILE': {
+        check(member.roles.includes('owner'), 'FORBIDDEN', 403)
+        return reconcileRemoteIntent(
+          tx,
+          ws,
+          subject,
+          command.payload.intentId,
+          command.payload.providerEvidence,
+          command.idempotencyKey,
+          now,
+        )
+      }
+      case 'OPS-ACK': {
+        check(member.roles.includes('owner'), 'FORBIDDEN', 403)
+        return acknowledgeEventReview(
+          tx,
+          ws,
+          subject,
+          command.payload.incidentKey,
+          command.payload.note,
+          now,
+        )
       }
       case 'OPS-REPLAY': {
         check(member.roles.includes('owner'), 'FORBIDDEN', 403)

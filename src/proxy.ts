@@ -17,6 +17,7 @@ const PUBLIC_API_EXACT = new Set([
   '/api/webhooks/email/resend',
   // The receiving-only worker validates a separate scoped bearer inside its route.
   '/api/workers/email',
+  '/api/workers/email/dispatch',
   '/api/availability',
   '/api/book',
   '/api/buyers/intake',

@@ -12,11 +12,31 @@ type Connection = {
   failure_code: string | null
   checked_at: string | null
 }
+type Webhook = {
+  id: string
+  connection_id: string
+  active: boolean
+  revision: number
+  masked_secret: string | null
+  key_version: number
+}
 type State = {
   disconnectImpact: {
     hash: string
     activeCampaigns: number
     queuedMessages: number
+  }
+  replacementReview?: {
+    hash: string
+    historicalAccounts: number
+    domainsByConnection: Record<string, number>
+    eventsByConnection: Record<string, number>
+  }
+  webhooks?: Webhook[]
+  credentialStorage?: {
+    configured: boolean
+    currentVersion: number | null
+    storedVersions: number[]
   }
   ai: {
     configured: boolean
@@ -47,6 +67,12 @@ const reasons: Record<string, string> = {
   REVISION_CONFLICT: 'Setup changed. Refresh this section before connecting.',
   SERVICE_CHECK_LIMIT:
     'Ten connection checks have been attempted in the last hour. Try again later.',
+  CREDENTIAL_KEY_VERSION_REQUIRED:
+    'An older encryption key is still needed to read a saved secret. Keep the previous key until rotation finishes.',
+  CONNECTION_ALREADY_REVIEWED:
+    'This historical account already has a replacement review.',
+  INVALID_WEBHOOK_SECRET:
+    'Paste the Resend webhook signing secret. This does not create a live endpoint.',
 }
 export function EmailConnections() {
   const [data, setData] = useState<State | null>(null),
@@ -126,6 +152,43 @@ export function EmailConnections() {
         )
     } finally {
       payload.secret = ''
+      setBusy(false)
+    }
+  }
+  async function lifecycle(
+    action: string,
+    extra: Record<string, unknown>,
+    ok: string,
+  ) {
+    if (!data || busy) return
+    setBusy(true)
+    const sequence = ++requestSequence.current
+    try {
+      const response = await fetch('/api/email/connections', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          expectedRevision: data.revision,
+          idempotencyKey: crypto.randomUUID(),
+          ...extra,
+        }),
+      })
+      const result = await response.json()
+      if (sequence !== requestSequence.current) return
+      if (!response.ok) {
+        setNotice(
+          reasons[result.error?.code] ??
+            'Could not update this connection. Refresh and review the current records.',
+        )
+        return
+      }
+      setData(result)
+      setNotice(ok)
+    } catch {
+      if (sequence === requestSequence.current)
+        setNotice('The result could not be retrieved. Refresh before trying again.')
+    } finally {
       setBusy(false)
     }
   }
@@ -299,6 +362,165 @@ export function EmailConnections() {
                 )}
               </article>
             ))}
+            {data.configured && (
+              <>
+                <section aria-label="Stored credential versions">
+                  <h4>Stored credential versions</h4>
+                  <p>
+                    Current storage version:{' '}
+                    {data.credentialStorage?.currentVersion ?? 'not configured'}.
+                    Saved records use versions{' '}
+                    {(data.credentialStorage?.storedVersions ?? []).join(', ') ||
+                      'none'}
+                    . Rotation re-encrypts locally and never calls Resend.
+                  </p>
+                  <button
+                    disabled={busy || !data.credentialStorage?.currentVersion}
+                    onClick={() =>
+                      void lifecycle(
+                        'rotate_credentials',
+                        {},
+                        'Stored secrets were re-encrypted with the current key version. Live sending stays off.',
+                      )
+                    }
+                  >
+                    Re-encrypt stored secrets
+                  </button>
+                </section>
+                {data.connections.some((c) => c.state === 'checked') && (
+                  <form
+                    className={styles.form}
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      const form = new FormData(event.currentTarget)
+                      const secretInput = event.currentTarget.elements.namedItem(
+                        'webhookSecret',
+                      ) as HTMLInputElement | null
+                      void lifecycle(
+                        'save_webhook',
+                        {
+                          connectionId: String(form.get('webhookConnectionId')),
+                          secret: secretInput?.value ?? '',
+                          endpointId: String(form.get('webhookEndpointId') || '') || undefined,
+                        },
+                        'Webhook signing secret saved locally and left inactive. No Resend endpoint was created.',
+                      )
+                      if (secretInput) secretInput.value = ''
+                    }}
+                  >
+                    <h4>Webhook signing secret</h4>
+                    <p>
+                      Paste the signing secret from an existing Resend webhook.
+                      New endpoints stay inactive. This does not subscribe a
+                      live URL.
+                    </p>
+                    <label>
+                      Connection
+                      <select
+                        name="webhookConnectionId"
+                        required
+                        disabled={busy}
+                      >
+                        {data.connections
+                          .filter((c) => c.state === 'checked')
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.account_label}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Existing endpoint to rotate
+                      <select name="webhookEndpointId" disabled={busy}>
+                        <option value="">Create a new inactive endpoint</option>
+                        {(data.webhooks ?? []).map((hook) => (
+                          <option key={hook.id} value={hook.id}>
+                            {hook.masked_secret ?? 'masked'} ·{' '}
+                            {hook.active ? 'active' : 'inactive'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Webhook signing secret
+                      <input
+                        type="password"
+                        name="webhookSecret"
+                        autoComplete="off"
+                        spellCheck={false}
+                        required
+                        maxLength={220}
+                        disabled={busy}
+                      />
+                    </label>
+                    <button disabled={busy}>Save webhook secret locally</button>
+                  </form>
+                )}
+                {data.connections.filter((c) =>
+                  ['checked', 'revoked', 'failed'].includes(c.state),
+                ).length > 1 && (
+                  <form
+                    className={styles.form}
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      const form = new FormData(event.currentTarget)
+                      void lifecycle(
+                        'review_replacement',
+                        {
+                          connectionId: String(form.get('replacementId')),
+                          replacesConnectionId: String(form.get('replacedId')),
+                          confirmedAffectedHash: data.replacementReview?.hash,
+                          reason: String(form.get('replacementReason') ?? ''),
+                        },
+                        'Replacement reviewed. Historical provider IDs were not rewritten. Sending stays off.',
+                      )
+                    }}
+                  >
+                    <h4>Historical account replacement</h4>
+                    <p>
+                      Review a newer checked account against an older record.
+                      Domain and event history keep their original connection
+                      IDs.
+                    </p>
+                    <label>
+                      Keep this checked account
+                      <select name="replacementId" required disabled={busy}>
+                        {data.connections
+                          .filter((c) => c.state === 'checked')
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.account_label}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Mark this older account as replaced
+                      <select name="replacedId" required disabled={busy}>
+                        {data.connections
+                          .filter((c) => c.state !== 'checking')
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.account_label} · {c.state}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label>
+                      Replacement reason
+                      <input
+                        name="replacementReason"
+                        required
+                        maxLength={500}
+                        disabled={busy}
+                      />
+                    </label>
+                    <button disabled={busy}>Record replacement review</button>
+                  </form>
+                )}
+              </>
+            )}
           </>
         )}
       </section>

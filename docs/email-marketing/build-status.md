@@ -68,13 +68,13 @@ A partial row is intentionally not a completion claim.
 | EM-003 | Partial: pilot commands recheck membership and commit atomically. Settings now share the transaction ledger, role-change holds and fail-closed readiness; real provider readiness and shared CRM authorization remain unfinished. |
 | EM-004 | Partial: identity schema and resolver tested locally. Real import/link commands remain unfinished. |
 | EM-005 | Partial: transaction-backed simulation publication, exact review and frozen versions tested. Live readiness/publication remain unfinished. |
-| EM-006 | Partial: simulation ledger is connected. Production lease fencing, event queue and remote reconciliation remain unfinished. |
-| EM-007 | Utility only: encryption helpers; secure provider onboarding and rotation are unfinished. |
+| EM-006 | Partial: simulation ledger and fenced remote-dispatch jobs are connected locally. Live send remains hard-gated; hosted worker cadence and provider-backed reconciliation evidence remain unfinished. |
+| EM-007 | Partial: owner credential intake, key-version rotation, webhook secret lifecycle and replacement review work locally. Real Resend account checks and production secret deployment remain unfinished. |
 | EM-008 | Utility only: domain helpers; real sender/domain setup is unfinished. |
-| EM-009 | Partial: local all-marketing suppression, alias cancellation, opt-out fixtures, and opaque public unsubscribe/preferences links work locally. Production preference-key deployment, List-Unsubscribe header wiring on live sends, preference-center UX beyond one-click stop, and release/scope integration remain unfinished. |
+| EM-009 | Partial: local all-marketing suppression, opaque public unsubscribe, post-stop preference-center program notes, and simulated List-Unsubscribe headers work locally. Production preference keys, live send headers and release/auth checks remain unfinished. |
 | EM-010 | Partial: local dispatch guards and shared pilot count caps work. Monetary reservations and provider readiness remain unfinished. |
 | EM-011 | Not implemented: simulated acceptance is not Resend dispatch or reconciliation. |
-| EM-012 | Partial: synthetic inbound transactions and deduplication work. Authenticated provider webhook/retrieval/correlation are unfinished. |
+| EM-012 | Partial: signed intake, reply retrieval, delivery-event reduction and owner review acknowledgment work locally. Hosted endpoint provisioning, alias issuance from live send identity and real Resend traffic remain unfinished. |
 | EM-013 | Partial: pilot human ownership, transfer on handoff and stale-draft checks work. Shared CRM/mobile integration and AI approval remain unfinished. |
 | EM-014 | Partial: local Lead/history/callback bridge plus return-for-clarification, multi-handoff shared ownership, access-hold release and four-pillar qualification work against the disposable CRM fixture. Live schema, hosted CRM-shell and provider transport remain unfinished. |
 | EM-015 | Utility only: no model inference or bounded automatic reply integration. |
@@ -102,7 +102,7 @@ A partial row is intentionally not a completion claim.
 ## Next implementation order
 
 1. Finish remaining hosted CRM-shell verification for the local handoff-management paths. Provider connection, durable remote dispatch/reconciliation and suppression/preferences remain the next major bucket. Qualification is wired only through the existing four-pillar policy and the current Lead `updated_at` clock; do not add Email-only shortcuts.
-2. Implement provider connection, durable remote dispatch/reconciliation, signed webhook capture and full suppression/preferences. Keep live dispatch disabled until controlled provider evidence exists.
+2. Local provider-lifecycle, fenced dispatch, delivery reduction and preference-center gaps in this bucket are now connected. Keep live dispatch disabled until controlled provider evidence exists. Remaining work is the real Resend/DNS/hosted-secret path, not more local scaffolding.
 3. Complete the setup wizard, AI policy/evaluations, Calendar/push/response-line integrations and remaining views. Preserve everyday-language sales voice, verified facts, Lead → human-qualified Opportunity distinctions and weekday cadence.
 4. Run full local integration and release checks, then prepare the exact controlled external test/release for authorization. No production schema, subscriptions, provider connection, customer send or deployment was performed in this milestone.
 
@@ -128,7 +128,7 @@ EM-007 now has owner-only credential intake and masked connection records, AES-2
 
 The Connections tab replaces its placeholder with this flow and clear Ari/Calendar/response-number status. Redundant More cards were removed. Verification: 57 database cases passed before disconnect was added; all six connection/disconnect database cases then passed (59 cases now present), 64 unit tests, five browser stories including mocked credential-clear/disconnect interaction, TypeScript and scoped ESLint. The mock UI case does not constitute a real Resend connection. No Resend key was available through the existing workspace/deployment access, so real account checks remain pending. No provider account was created, no subscription purchased, and no customer email sent.
 
-Remaining service work: credential rotation with key-version migration, authenticated webhook secret lifecycle, historical account replacement review, real sender domains/readiness, and production secret deployment. Calendar tokens and CRM service secrets were not available in the local environment; their presence in deployed infrastructure does not mean they are exportable. These are access/configuration dependencies, not evidence that production credentials are broken.
+Remaining service work after this increment: real sender domains/readiness, a checked Resend account, and production secret deployment. Local key-version rotation, webhook secret lifecycle and historical replacement review are connected and fail closed without those dependencies. Calendar tokens and CRM service secrets were not available in the local environment; their presence in deployed infrastructure does not mean they are exportable. These are access/configuration dependencies, not evidence that production credentials are broken.
 
 
 ## Sender-domain continuation
@@ -175,3 +175,16 @@ Implemented against the existing Email transaction and Lead lock:
 Hosted signed-in CRM-shell verification remains blocked: this environment has no production CRM session. The isolated practice app still uses a fabricated test identity. No production migration, provider connection, domain purchase or customer send.
 
 Verified locally this increment: 81 database workflow cases (serial harness with `EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin`, `LC_ALL=C` / `LANG=C`, `--test-concurrency=1`) and 87 Email/qualification unit tests. The package script `npm run test:email:workflow` does not set `LC_ALL` or serial concurrency; this environment needed both plus PostgreSQL 16.
+
+## Provider lifecycle continuation
+
+See [provider lifecycle](16-provider-lifecycle.md). Local-only continuation of remaining EM-006/007/009/012 gaps:
+
+- Owner rotation of `EMAIL_CREDENTIALS_KEY_V*` re-encrypts saved API keys and webhook secrets after decrypting the stored version. Missing older keys fail closed.
+- Webhook signing secrets can be provisioned or rotated locally. Endpoints stay inactive. No Resend webhook, domain or API key is created.
+- Replacement review records `superseded_by` after an impact hash. Historical `connection_id` values on domains and events are unchanged.
+- Remote `dispatch` jobs use the existing lease fence and always hold. Live send stays disabled even if `EMAIL_LIVE_DISPATCH_ENABLED` is set. `OPS-RECONCILE` cannot resend.
+- Delivery events reduce when they match a known provider message. Bounce/complaint suppress immediately. Unmatched events still pause until owner `OPS-ACK`.
+- Simulated outbound frozen payloads include List-Unsubscribe headers when preference keys exist. The public success page can record a program note after one-click stop; it cannot resubscribe.
+
+The local harness applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`. No production migration, Resend account, DNS write, domain purchase or customer send.

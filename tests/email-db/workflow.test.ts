@@ -4464,3 +4464,278 @@ withDb('unsubscribe retains old keys, rejects forged links, and commits despite 
   assert.equal((await db.sql`select * from em_suppressions where address_id=${thread.address_id}`).length, 1)
   assert.equal((await db.sql`select state from em_crm_projection_repairs where thread_id=${thread.id}`)[0].state, 'pending')
 })
+
+withDb('credential rotation, webhook secret lifecycle and replacement review stay local', async (db) => {
+  const { connectService, readConnections } = await import('../../src/lib/email/connections/service')
+  const {
+    rotateCredentialSecrets,
+    saveWebhookEndpoint,
+    reviewConnectionReplacement,
+  } = await import('../../src/lib/email/connections/lifecycle')
+  const { decryptEmailSecret } = await import('../../src/lib/email/secrets')
+  const { webhookSecretAad } = await import('../../src/lib/email/connections/aad')
+  const { connectionSecretAad } = await import('../../src/lib/email/connections/aad')
+  const v1 = Buffer.alloc(32, 7),
+    v2 = Buffer.alloc(32, 8)
+  const ring = new Map([[1, v1], [2, v2]])
+  const [{ revision }] = await db.sql`select revision from em_workspaces limit 1`
+  const first = await connectService(
+    db.sql,
+    owner,
+    {
+      kind: 'email',
+      provider: 'resend',
+      secret: 're_fixture_rotate_one_123456',
+      expectedRevision: revision,
+      accountLabel: 'First fixture',
+      idempotencyKey: randomUUID(),
+    },
+    async () => ({ domainsRead: true, receivingRead: true, sendingVerified: false }),
+    v1,
+    now,
+  )
+  const second = await connectService(
+    db.sql,
+    owner,
+    {
+      kind: 'email',
+      provider: 'resend',
+      secret: 're_fixture_rotate_two_987654',
+      expectedRevision: first.revision,
+      accountLabel: 'Second fixture',
+      idempotencyKey: randomUUID(),
+    },
+    async () => ({ domainsRead: true, receivingRead: true, sendingVerified: false }),
+    v1,
+    now,
+  )
+  const signing = `whsec_${Buffer.alloc(32, 5).toString('base64')}`
+  const webhook = await saveWebhookEndpoint(
+    db.sql,
+    owner,
+    {
+      connectionId: first.connectionId,
+      secret: signing,
+      expectedRevision: second.revision,
+      idempotencyKey: randomUUID(),
+    },
+    v1,
+    1,
+    now,
+  )
+  const [inactive] =
+    await db.sql`select active from em_webhook_endpoints where id=${webhook.endpointId}`
+  assert.equal(inactive.active, false)
+  await rotateCredentialSecrets(
+    db.sql,
+    owner,
+    { expectedRevision: second.revision, idempotencyKey: randomUUID() },
+    ring,
+    now,
+  )
+  const [rotated] = await db.sql`select * from em_service_connections where id=${first.connectionId}`
+  assert.equal(rotated.key_version, 2)
+  assert.equal(
+    decryptEmailSecret(
+      rotated.encrypted_secret,
+      v2,
+      connectionSecretAad(rotated.workspace_id, rotated.id, 2),
+    ),
+    're_fixture_rotate_one_123456',
+  )
+  const [hook] = await db.sql`select * from em_webhook_endpoints where id=${webhook.endpointId}`
+  assert.equal(hook.key_version, 2)
+  assert.equal(
+    decryptEmailSecret(hook.encrypted_secret, v2, webhookSecretAad(hook.workspace_id, hook.id, 2)),
+    signing,
+  )
+  const snapshot = await readConnections(db.sql, owner, v2)
+  await reviewConnectionReplacement(
+    db.sql,
+    owner,
+    {
+      connectionId: second.connectionId,
+      replacesConnectionId: first.connectionId,
+      expectedRevision: snapshot.revision,
+      confirmedAffectedHash: snapshot.replacementReview.hash,
+      reason: 'Owner reviewed the newer checked account.',
+      idempotencyKey: randomUUID(),
+    },
+    now,
+  )
+  const [prior] =
+    await db.sql`select superseded_by,replacement_review_reason from em_service_connections where id=${first.connectionId}`
+  assert.equal(prior.superseded_by, second.connectionId)
+  assert.equal((await db.sql`select send_enabled from em_workspaces`)[0].send_enabled, false)
+})
+
+withDb('delivery events reduce when matched and unmatched events stay reviewable', async (db) => {
+  const { connectService } = await import('../../src/lib/email/connections/service')
+  const { createResendWebhookHttp, webhookSecretAad } = await import('../../src/lib/email/inbound/capture')
+  const { encryptEmailSecret } = await import('../../src/lib/email/secrets')
+  const launchedState = await launched(db)
+  const [intent] =
+    await db.sql`select * from em_send_intents where thread_id=${launchedState.thread.id} and state='accepted_simulated'`
+  const providerEmailId = randomUUID()
+  await db.sql`update em_send_intents set provider_message_id=${providerEmailId} where id=${intent.id}`
+  const key = Buffer.alloc(32, 7),
+    secret = `whsec_${Buffer.alloc(32, 9).toString('base64')}`
+  const [ws] = await db.sql`select id,revision from em_workspaces limit 1`
+  const connection = await connectService(
+    db.sql,
+    owner,
+    {
+      provider: 'resend',
+      kind: 'email',
+      secret: 're_fixture_reducer_123456789',
+      expectedRevision: ws.revision,
+      accountLabel: 'Reducer fixture',
+      idempotencyKey: randomUUID(),
+    },
+    async () => ({ domainsRead: true, receivingRead: true, sendingVerified: false }),
+    key,
+    now,
+  )
+  const endpoint = randomUUID()
+  await db.sql`insert into em_webhook_endpoints(id,workspace_id,connection_id,encrypted_secret,active)
+    values(${endpoint},${ws.id},${connection.connectionId},${db.sql.json({
+      ...encryptEmailSecret(secret, key, webhookSecretAad(ws.id, endpoint), 1),
+    })},true)`
+  const handler = createResendWebhookHttp({
+    database: () => db.sql,
+    endpointId: () => endpoint,
+    key: () => key,
+  })
+  const signed = (type: string, emailId: string, id: string) => {
+    const body = JSON.stringify({
+      type,
+      created_at: now.toISOString(),
+      data: { email_id: emailId },
+    })
+    const timestamp = Math.floor(Date.now() / 1000).toString()
+    return new Request('http://localhost/api/webhooks/email/resend', {
+      method: 'POST',
+      headers: {
+        'svix-id': id,
+        'svix-timestamp': timestamp,
+        'svix-signature': `v1,${createHmac('sha256', Buffer.from(secret.slice(6), 'base64')).update(`${id}.${timestamp}.${body}`).digest('base64')}`,
+      },
+      body,
+    })
+  }
+  assert.equal((await handler(signed('email.delivered', providerEmailId, 'evt_delivered'))).status, 200)
+  assert.equal((await db.sql`select pause_reason from em_workspaces where id=${ws.id}`)[0].pause_reason, null)
+  assert.equal((await db.sql`select * from em_delivery_facts where type='email.delivered'`).length, 1)
+  assert.equal((await db.sql`select remote_outcome from em_send_intents where id=${intent.id}`)[0].remote_outcome, 'delivered')
+  assert.equal((await handler(signed('email.opened', providerEmailId, 'evt_opened'))).status, 200)
+  assert.equal((await db.sql`select pause_reason from em_workspaces where id=${ws.id}`)[0].pause_reason, null)
+  assert.equal((await handler(signed('email.bounced', providerEmailId, 'evt_bounced'))).status, 200)
+  assert.equal((await db.sql`select * from em_suppressions where address_id=${launchedState.thread.address_id}`).length, 1)
+  assert.equal((await handler(signed('email.delivered', randomUUID(), 'evt_unknown'))).status, 200)
+  const [paused] = await db.sql`select pause_reason from em_workspaces where id=${ws.id}`
+  assert.equal(paused.pause_reason, 'Resend event needs review')
+  const [review] =
+    await db.sql`select * from em_jobs where kind='resend_event_review' and state='dead'`
+  const ack = await executePilotCommand(
+    db.sql,
+    owner,
+    {
+      command: 'OPS-ACK',
+      idempotencyKey: randomUUID(),
+      payload: {
+        incidentKey: `resend_event_review:${review.id}`,
+        note: 'Owner reviewed the unmatched delivery event.',
+      },
+    },
+    now,
+  )
+  assert.equal(ack.state, 'review_released')
+  assert.equal((await db.sql`select pause_reason from em_workspaces where id=${ws.id}`)[0].pause_reason, null)
+})
+
+withDb('remote dispatch stays fenced and reconcile cannot resend', async (db) => {
+  const { enqueueRemoteDispatch, processNextDispatch } = await import('../../src/lib/email/dispatch/service')
+  await launched(db)
+  const [intent] = await db.sql`select * from em_send_intents where state='queued' limit 1`
+  const [ws] = await db.sql`select revision from em_workspaces limit 1`
+  const queued = await enqueueRemoteDispatch(
+    db.sql,
+    owner,
+    {
+      intentId: intent.id,
+      expectedRevision: ws.revision,
+      idempotencyKey: randomUUID(),
+    },
+    now,
+  )
+  assert.equal(queued.state, 'dispatch_queued')
+  process.env.EMAIL_LIVE_DISPATCH_ENABLED = 'true'
+  process.env.EMAIL_CONTROLLED_PROVIDER_EVIDENCE = 'true'
+  try {
+    await db.sql`update em_workspaces set send_enabled=true`
+    const held = await processNextDispatch(db.sql, owner, () => now)
+    assert.equal(held.state, 'held')
+    assert.equal(held.reason, 'CONTROLLED_PROVIDER_EVIDENCE_REQUIRED')
+  } finally {
+    await db.sql`update em_workspaces set send_enabled=false`
+    delete process.env.EMAIL_LIVE_DISPATCH_ENABLED
+    delete process.env.EMAIL_CONTROLLED_PROVIDER_EVIDENCE
+  }
+  const [saved] = await db.sql`select state,cancellation_reason from em_send_intents where id=${intent.id}`
+  assert.equal(saved.state, 'held')
+  assert.equal(saved.cancellation_reason, 'CONTROLLED_PROVIDER_EVIDENCE_REQUIRED')
+  const reconciled = await executePilotCommand(
+    db.sql,
+    owner,
+    {
+      command: 'OPS-RECONCILE',
+      idempotencyKey: randomUUID(),
+      payload: { intentId: intent.id },
+    },
+    now,
+  )
+  assert.equal(reconciled.state, 'reconciled_held')
+  assert.equal((await db.sql`select state from em_send_intents where id=${intent.id}`)[0].state, 'held')
+  assert.equal((await db.sql`select send_enabled from em_workspaces`)[0].send_enabled, false)
+})
+
+withDb('simulated outbound stores List-Unsubscribe when preference keys exist', async (db) => {
+  const { recordPreference } = await import('../../src/lib/email/preferences/service')
+  const { createPreferencePost } = await import('../../src/lib/email/preferences/http')
+  process.env.EMAIL_PREFERENCE_KEY_V1 = 'ab'.repeat(32)
+  try {
+    const state = await launched(db)
+    const [intent] =
+      await db.sql`select frozen_payload from em_send_intents where thread_id=${state.thread.id} order by created_at limit 1`
+    const headers = intent.frozen_payload.headers
+    assert.match(headers['List-Unsubscribe'], /\/api\/email\/unsubscribe\/1\.[A-Za-z0-9_-]{43}/)
+    assert.equal(headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click')
+    const token = headers['List-Unsubscribe'].slice(1, -1).split('/').pop()
+    const post = createPreferencePost(() => db.sql, { '1': 'ab'.repeat(32) })
+    const stopped = await post(
+      new Request('https://crm.savingkc.test/api/email/unsubscribe/' + token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'List-Unsubscribe=One-Click',
+      }),
+      token,
+    )
+    assert.match(await stopped.text(), /Save program note/)
+    const noted = await recordPreference(
+      db.sql,
+      token,
+      'seller_outreach',
+      { '1': 'ab'.repeat(32) },
+      now,
+    )
+    assert.equal(noted, true)
+    assert.equal(
+      (await db.sql`select program from em_preference_choices where address_id=${state.thread.address_id}`)[0]
+        .program,
+      'seller_outreach',
+    )
+  } finally {
+    delete process.env.EMAIL_PREFERENCE_KEY_V1
+  }
+})
+

@@ -3,8 +3,9 @@ vi.mock("server-only", () => ({}));
 vi.mock("../preferences/service", () => ({
   preferenceTokenPattern: /^[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/,
   unsubscribeWithToken: vi.fn(),
+  recordPreference: vi.fn(),
 }));
-import { unsubscribeWithToken } from "../preferences/service";
+import { recordPreference, unsubscribeWithToken } from "../preferences/service";
 import {
   createPreferencePost,
   preferenceConfirmation,
@@ -59,6 +60,32 @@ describe("public email preferences", () => {
     vi.mocked(unsubscribeWithToken).mockResolvedValueOnce(true);
     const success = await post(request(), token);
     expect(success.status).toBe(200);
-    expect(await success.text()).toContain("You’re unsubscribed");
+    const html = await success.text();
+    expect(html).toContain("You’re unsubscribed");
+    expect(html).toContain("Save program note");
+  });
+  it("records a program note only after an explicit preference post", async () => {
+    vi.mocked(recordPreference).mockResolvedValueOnce(true);
+    const saved = await post(
+      request("List-Unsubscribe=Preference&program=seller_outreach"),
+      token,
+    );
+    expect(saved.status).toBe(200);
+    expect(await saved.text()).toContain("Preference saved");
+    expect(recordPreference).toHaveBeenCalledWith(
+      undefined,
+      token,
+      "seller_outreach",
+      undefined,
+    );
+    vi.mocked(recordPreference).mockResolvedValueOnce("needs_unsubscribe");
+    expect(
+      (
+        await post(
+          request("List-Unsubscribe=Preference&program=seller_outreach"),
+          token,
+        )
+      ).status,
+    ).toBe(409);
   });
 });

@@ -1,0 +1,13 @@
+import { createDispatchWorkerHttp } from '@/lib/email/dispatch/worker-http'
+import { pilotDatabase } from '@/lib/email/workflow/connection'
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 45
+const run = createDispatchWorkerHttp({
+  database: pilotDatabase,
+  enabled: () => process.env.EMAIL_DISPATCH_WORKER_ENABLED === 'true',
+  secret: () => process.env.EMAIL_DISPATCH_WORKER_SECRET,
+  ownerId: () => process.env.EMAIL_DISPATCH_WORKER_OWNER_ID,
+})
+export const GET = run
+export const POST = run

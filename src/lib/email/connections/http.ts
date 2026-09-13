@@ -3,6 +3,13 @@ import type { WorkflowHttpDependencies } from '../workflow/http'
 import { sameOrigin, workflowErrorResponse } from '../workflow/http'
 import { WorkflowError } from '../workflow/core'
 import { connectService, disconnectService, readConnections } from './service'
+import {
+  recheckConnection,
+  reviewConnectionReplacement,
+  rotateCredentialSecrets,
+  saveWebhookEndpoint,
+} from './lifecycle'
+import { credentialKeyring } from '../secrets'
 
 /** Dedicated credential endpoint: never log request bodies or provider errors. */
 export function createConnectionHttp(dependencies: WorkflowHttpDependencies) {
@@ -20,13 +27,19 @@ export function createConnectionHttp(dependencies: WorkflowHttpDependencies) {
       }
     },
     async POST(request: Request) {
-      return mutate(request, false)
+      return mutate(request, 'connect')
+    },
+    async PATCH(request: Request) {
+      return mutate(request, 'lifecycle')
     },
     async DELETE(request: Request) {
-      return mutate(request, true)
+      return mutate(request, 'disconnect')
     },
   }
-  async function mutate(request: Request, disconnect: boolean) {
+  async function mutate(
+    request: Request,
+    mode: 'connect' | 'disconnect' | 'lifecycle',
+  ) {
     try {
       if (!sameOrigin(request)) throw new WorkflowError('INVALID_ORIGIN', 403)
       if (!request.headers.get('content-type')?.startsWith('application/json'))
@@ -41,14 +54,32 @@ export function createConnectionHttp(dependencies: WorkflowHttpDependencies) {
       } catch {
         throw new WorkflowError('INVALID_JSON', 400)
       }
-      return Response.json(
-        await (disconnect
-          ? disconnectService(dependencies.database(), subject, input)
-          : connectService(dependencies.database(), subject, input)),
-        { headers: { 'Cache-Control': 'private, no-store' } },
-      )
+      if (mode === 'lifecycle') await applyLifecycle(subject, input)
+      const result =
+        mode === 'connect'
+          ? await connectService(dependencies.database(), subject, input)
+          : mode === 'disconnect'
+            ? await disconnectService(dependencies.database(), subject, input)
+            : await readConnections(dependencies.database(), subject)
+      return Response.json(result, {
+        headers: { 'Cache-Control': 'private, no-store' },
+      })
     } catch (error) {
       return workflowErrorResponse(error)
     }
+  }
+  async function applyLifecycle(subject: string, raw: unknown) {
+    const body =
+      raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : {}
+    const action = String(body.action ?? '')
+    delete body.action
+    const sql = dependencies.database()
+    if (action === 'rotate_credentials')
+      return rotateCredentialSecrets(sql, subject, body, credentialKeyring())
+    if (action === 'save_webhook') return saveWebhookEndpoint(sql, subject, body)
+    if (action === 'review_replacement')
+      return reviewConnectionReplacement(sql, subject, body)
+    if (action === 'recheck') return recheckConnection(sql, subject, body)
+    throw new WorkflowError('INVALID_CONNECTION', 400)
   }
 }
