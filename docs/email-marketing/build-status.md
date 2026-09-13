@@ -18,7 +18,7 @@ See [scope and boundaries](recovery-milestone.md). The same React component and 
 
 - Review exact saved content and recipients, excluding unverified/ambiguous/restricted/already-enrolled rows. Publish campaign versions, enrollments, threads, intents, receipt and audit atomically. Replays reuse the result; changes require a fresh review.
 - Persist simulated outbound acceptance and weekday follow-up scheduling from actual simulated acceptance. Incoming fixtures cancel pending work and stale drafts in the same transaction. Messages have an explicit per-thread order.
-- Human takeover and callback handoff transfer use current ownership/content revisions. A human-confirmed seller reply with one confirmed person/property creates or links a canonical Lead, projects message history and creates one governed callback review task. Ambiguity and owner/stage conflicts are held with an explicit reason. Opportunity qualification remains human-only and is not implemented in Email.
+- Human takeover and callback handoff transfer use current ownership/content revisions. A human-confirmed seller reply with one confirmed person/property creates or links a canonical Lead, projects message history and creates one governed callback review task. Ambiguity and owner/stage conflicts are held with an explicit reason. Opportunity qualification is acquisitions-only through the existing four-pillar policy and a current Lead revision; Email does not invent pillars or call PPC conversion.
 - All-marketing stops cancel pending work across campaigns and confirmed aliases. Unfinished callback work becomes held for review. Private notification acknowledgment is recipient-scoped.
 - Inbox/Campaigns/More in the approved white/red/grey light theme; campaign creation, sequence editor, recipient review, simulation launch/pause, filtered inbox, composer, action panel and Details drawer and operational notices are connected to PostgreSQL.
 - Production worker remains disabled. Simulation accepts only reserved `.test` addresses, makes no provider/model calls and processes at most one acceptance per tick with shared pilot limits of 2/hour and 10/day.
@@ -27,7 +27,7 @@ See [scope and boundaries](recovery-milestone.md). The same React component and 
 
 The setup increment restored the approved prototype palette (`#a9202e` accent, white panels, grey canvas) and connected owner-only business details, team preferences and advanced member access under More. The old multi-request settings mutation repository is retired. Settings, audit and receipt now commit under the common workspace lock with fresh Email membership and an existing CRM profile, strict expected revisions and server-computed affected-work hashes. Concurrent owner removals cannot remove the final active CRM-backed owner.
 
-Reducing access cancels pending messages, invalidates drafts, pauses owned active campaigns and holds affected conversations/handoffs for owner review; no AI assignment occurs. Inactive Email memberships and missing CRM profiles are excluded from assignment and dispatch. Saved acquisitions/backup choices prefill explicit callback handoffs. Reply-review routing, timed escalation and shared CRM ownership remain unfinished.
+Reducing access cancels pending messages, invalidates drafts, pauses owned active campaigns and holds affected conversations/handoffs for owner review; no AI assignment occurs. Inactive Email memberships and missing CRM profiles are excluded from assignment and dispatch. Saved acquisitions/backup choices prefill explicit callback handoffs. Local return-for-clarification, multi-handoff shared ownership, access-hold release, four-pillar qualification and simulated backup escalation are connected against the disposable fixture. Hosted signed-in CRM-shell verification of those paths remains unfinished.
 
 Business/team saves invalidate old readiness and keep live flags off. Provider readiness, finish and enable commands fail closed even if legacy config JSON claims to be current. The setup UI shows Connections pending; these saved details are not a readiness pass. No external connection occurred in this increment.
 
@@ -41,7 +41,7 @@ The bridge records exact replay evidence and attribution. Subsequent inbound and
 
 CRM history and callback-hold failures cannot roll back an unsubscribe or its local send cancellations. Each optional projection has a separate savepoint. Failed updates become durable repair jobs with an owner notification and a visible Inbox warning. Owner-only `OPS-REPLAY` retries only these internal CRM updates with a current failure-code check, audit and receipt; it cannot retry a provider send or an initial held handoff.
 
-The fixture now uses the actual CRM entity projection migration and exact work-item functions, distinct auth/profile IDs, and a deliberately reduced Conversations projection. A private canonical identity claim and BEFORE INSERT guard serialize Email with other Lead intake for known person/property pairs. The three new migrations remain local drafts; live schema compatibility, all CRM writer behavior, shared ownership reconciliation and signed-in production verification are still pending.
+The fixture now uses the actual CRM entity projection migration and exact work-item functions, distinct auth/profile IDs, and a deliberately reduced Conversations projection. A private canonical identity claim and BEFORE INSERT guard serialize Email with other Lead intake for known person/property pairs. The three new migrations remain local drafts; live schema compatibility, remaining CRM writer behavior, and signed-in production verification are still pending. Local multi-handoff shared ownership now requires an exact related-handoff revision list.
 
 ## Verification
 
@@ -55,7 +55,7 @@ npm run test:email:local-ui
 npm run dev:email:local
 ```
 
-The harness creates its own temporary PostgreSQL cluster, applies twelve named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
+The harness creates its own temporary PostgreSQL cluster, applies sixteen named Email migrations plus the canonical entity foundation and scoped CRM prerequisites, and cleans it up on exit. It does not load CRM environment files. Requires PostgreSQL 16 binaries (`EMAIL_TEST_PG_BIN` can override the Homebrew path). Browser tests use installed Google Chrome in a separate automation profile.
 
 ## Packet audit
 
@@ -76,7 +76,7 @@ A partial row is intentionally not a completion claim.
 | EM-011 | Not implemented: simulated acceptance is not Resend dispatch or reconciliation. |
 | EM-012 | Partial: synthetic inbound transactions and deduplication work. Authenticated provider webhook/retrieval/correlation are unfinished. |
 | EM-013 | Partial: pilot human ownership, transfer on handoff and stale-draft checks work. Shared CRM/mobile integration and AI approval remain unfinished. |
-| EM-014 | Partial: canonical Lead creation/link, exact history projection, callback task, attribution, replay and review holds work against the local CRM fixture. Qualification, handoff resolution/retry, live schema and shared owner reconciliation remain unfinished. |
+| EM-014 | Partial: local Lead/history/callback bridge plus return-for-clarification, multi-handoff shared ownership, access-hold release and four-pillar qualification work against the disposable CRM fixture. Live schema, hosted CRM-shell and provider transport remain unfinished. |
 | EM-015 | Utility only: no model inference or bounded automatic reply integration. |
 | EM-016 | Utility only: no complete repeatable model evaluation/publication runner. |
 | EM-017 | Pending: simulation is not the required configured-provider journey. |
@@ -86,7 +86,7 @@ A partial row is intentionally not a completion claim.
 | EM-021 | Not implemented: no live audience mapping/import pages; campaign recipient review is fixture-backed. |
 | EM-022 | Partial: campaign list, sequence edit, recipient review and simulated start/pause are connected. Full live detail/revision workflows remain unfinished. |
 | EM-023 | Partial: exclusive local queues, bounded history, prepared practice replies, CRM notes and human composer are connected. Shared Conversations, AI review and full access/pagination states remain unfinished. |
-| EM-024 | Partial: evidenced local callback handoff, linked Lead/task status and honest CRM review states work. Manual accept, schedule and completion now work locally; reassignment, general outcomes/retry and Google Calendar integration remain unfinished. |
+| EM-024 | Partial: local accept/reassign/outcome/return/qualify and access-hold release work in the Email workspace. Google Calendar booking and hosted CRM-shell verification remain unfinished. |
 | EM-025 | Not implemented: no playbook editor or evaluation review UI. |
 | EM-026 | Partial: business/team setup and advanced team access are connected locally. Provider subscriptions, sender/brand/phone setup and finish/enable gates remain unfinished. |
 | EM-027 | Utility only: no truthful production outcome reporting or exports. |
@@ -94,14 +94,14 @@ A partial row is intentionally not a completion claim.
 | EM-029 | Partial: durable CRM projection repairs, owner-only internal retry, current error checks and Inbox warning work locally. General operations, remote reconciliation, retention and downloads remain unfinished. |
 | EM-030 | Pending: no release candidate, deployment or live-provider acceptance. |
 | EM-031 | Utility only: local literal templates; controlled per-recipient generation/review is unfinished. |
-| EM-032 | Partial: recipient-scoped local notifications and acknowledgment work. Push, escalation and automatic phone detection remain unfinished. |
+| EM-032 | Partial: recipient-scoped local notifications, acknowledgment and simulated backup escalation after five operating minutes work. Push and automatic phone detection remain unfinished. |
 | EM-033 | Partial: weekday 7–10-calendar-day schedule and explicit callback evidence work locally. Calendar booking is unfinished. |
 | EM-034 | Not implemented: no response-number provisioning or routing integration. |
 | EM-035 | Partial: focused light UI, exclusive queue counts, next-action panel, details drawer and campaign cadence exist. Saved views, comprehensive filters and full integration remain unfinished. |
 
 ## Next implementation order
 
-1. Finish handoff reassignment, held-handoff resolution, other outcomes/retry and shared Conversations ownership reconciliation, preserving the completed local Lead/task/history bridge. Add qualification only through the existing human four-pillar policy and a true current Lead revision.
+1. Finish remaining hosted CRM-shell verification for the local handoff-management paths. Provider connection, durable remote dispatch/reconciliation and suppression/preferences remain the next major bucket. Qualification is wired only through the existing four-pillar policy and the current Lead `updated_at` clock; do not add Email-only shortcuts.
 2. Implement provider connection, durable remote dispatch/reconciliation, signed webhook capture and full suppression/preferences. Keep live dispatch disabled until controlled provider evidence exists.
 3. Complete the setup wizard, AI policy/evaluations, Calendar/push/response-line integrations and remaining views. Preserve everyday-language sales voice, verified facts, Lead → human-qualified Opportunity distinctions and weekday cadence.
 4. Run full local integration and release checks, then prepare the exact controlled external test/release for authorization. No production schema, subscriptions, provider connection, customer send or deployment was performed in this milestone.
@@ -110,7 +110,7 @@ A partial row is intentionally not a completion claim.
 
 The owner authorized continued implementation on 2026-09-12 without repeated permission requests. Acceptance is now visible; reassignment updates the canonical Lead and its callback together with owner/revision checks and a private new-owner notice. A changed CRM owner is exposed for explicit reconciliation. An unlinked held handoff can be freshly reviewed against the latest inbound message and retried with preserved audit evidence. No-contact/follow-up outcomes require a dated next action; completed/not-fit outcomes finish only the callback and retain the CRM stage. Header Alerts replaces the buried notification list, with recipient-scoped acknowledgment and periodic visible-page refresh. Verified locally: 48 database cases, 50 unit tests, four browser stories, TypeScript, scoped ESLint and design validation.
 
-Remaining in this area: general return-for-clarification, shared ownership changes involving multiple open handoffs, release from restriction/access holds, human qualification integration, timed escalation and hosted CRM-shell verification. Live schema discovery and provider setup are the next active work. No customer send, production schema change or deployment has occurred.
+Local handoff-management continuation (this increment): HAN-RETURN holds the callback for a reviewer without changing the Lead or resuming sequences; HAN-REASSIGN can move a Lead and every listed open Email callback together; access/restriction holds (`team_role_changed`, `marketing_stopped`, `clarification_required`) can be released to an eligible owner without resuming sends; HAN-QUALIFY writes only through `save_crm_lead_qualification_v1` / `evaluateQualification` and the current Lead `updated_at` clock; unacknowledged callback alerts escalate to the saved backup after five Chicago operating minutes in the local tick. Hosted signed-in CRM-shell verification was not available in this environment. Live schema discovery and provider setup remain the next active work. No customer send, production schema change or deployment has occurred.
 
 
 ## AI drafting and live schema preflight continuation
@@ -159,3 +159,19 @@ Verified locally: 73 database cases, 80 unit/proxy cases and seven browser stori
 EM-009 local public preferences now include opaque versioned tokens (`em_preference_tokens`), HMAC key versions via `EMAIL_PREFERENCE_KEY_V*`, GET confirmation at `/email/unsubscribe/[token]` (no mutation), POST one-click stop at `/api/email/unsubscribe/[token]`, proxy bypass only for those exact method/path patterns, nullable `em_suppressions.created_by` for recipient-initiated stops, and honest `PUBLIC-UNSUBSCRIBE` audit with null actor. Links remain valid after issuer removal; forged/missing tokens fail closed; CRM history projection failures cannot roll back the unsubscribe. The local harness applies fifteen named Email migrations including `20260913160000_email_public_unsubscribe.sql`. No production migration, preference keys, live send headers, or customer email was deployed.
 
 Verified locally: 75 database workflow cases (serial harness with `LC_ALL=C` / PostgreSQL 16), plus preference HTTP and proxy unit coverage for method/path containment. Remaining EM-009 gaps: deploy preference signing keys, wire List-Unsubscribe on real outbound, preference center beyond one-click marketing stop, production schema apply, and release/auth checks.
+
+## Handoff-management gaps continuation
+
+Local-only continuation of the remaining EM-014/024 handoff gaps. New migration `20260913170000_email_handoff_management.sql` stores clarification and access-hold reasons on `em_handoffs`. The disposable fixture now includes `crm_lead_qualification_pillars` and `save_crm_lead_qualification_v1` without the production manifests backfill.
+
+Implemented against the existing Email transaction and Lead lock:
+
+- HAN-RETURN holds the callback for an eligible reviewer, cancels queued sends, and does not change the Lead stage or resume a sequence.
+- HAN-REASSIGN accepts an exact `relatedHandoffs` revision list when one Lead has multiple open Email callbacks; a single-handoff command still fails closed. Access/clarification holds on any listed sibling are released in the same Lead lock.
+- Linked holds from reduced access, marketing stop or clarification can be released to an eligible owner, including as part of a multi-handoff shared move. Marketing stays stopped.
+- HAN-QUALIFY writes verified TIMELINE/CONDITION/MOTIVATION/PRICE evidence through the existing save function and `evaluateQualification`. The Lead `updated_at` clock is the concurrency token (integer milliseconds, 2ms compare window for timestamp precision only). Later stages are preserved. No PPC conversion or Email-only shortcut.
+- Unacknowledged owner callback notices escalate to the saved backup after five Chicago operating minutes. NTF-ACK and reassignment cancel the escalation. Push is not implemented.
+
+Hosted signed-in CRM-shell verification remains blocked: this environment has no production CRM session. The isolated practice app still uses a fabricated test identity. No production migration, provider connection, domain purchase or customer send.
+
+Verified locally this increment: 81 database workflow cases (serial harness with `EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin`, `LC_ALL=C` / `LANG=C`, `--test-concurrency=1`) and 87 Email/qualification unit tests. The package script `npm run test:email:workflow` does not set `LC_ALL` or serial concurrency; this environment needed both plus PostgreSQL 16.

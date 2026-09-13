@@ -49,6 +49,18 @@ const friendly: Record<string, string> = {
     'This CRM record is parked or closed. Review it in the CRM before continuing.',
   MULTIPLE_HANDOFFS_REQUIRE_REVIEW:
     'This Lead has another open Email handoff. Review both assignments together before changing the owner.',
+  REVIEWER_UNAVAILABLE:
+    'Choose an active reviewer or owner to receive the clarification.',
+  QUALIFICATION_INCOMPLETE:
+    'Verify timeline, condition, motivation and price with current evidence before qualifying this Lead.',
+  LEAD_CHANGED:
+    'The Lead changed. Refresh and review the current record before qualifying.',
+  PERSON_AUTHORITY_REQUIRED:
+    'Confirm the person and their authority with message evidence before qualifying.',
+  PROPERTY_EVIDENCE_REQUIRED:
+    'The property on this qualification must match the linked Lead property.',
+  GOVERNED_TRANSITION_REQUIRED:
+    'This Lead is not in a stage Email can qualify. Continue from the CRM record.',
   HANDOFF_NOT_RESOLVABLE:
     'This request has already been linked or its status changed. Refresh to see the current action.',
   CALLBACK_OWNER_REQUIRED: 'This callback belongs to another agent.',

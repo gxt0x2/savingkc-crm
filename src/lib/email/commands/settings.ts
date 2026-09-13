@@ -161,7 +161,7 @@ export async function applySettingsCommand(
         await tx`update em_send_intents set state='cancelled',cancellation_reason='team_role_changed' where workspace_id=${ws} and thread_id=any(${tx.array(work.ids)}::uuid[]) and state in ('queued','held')`
         await tx`update em_drafts set state='stale' where workspace_id=${ws} and thread_id=any(${tx.array(work.ids)}::uuid[]) and state='current'`
         await tx`update em_threads set controller='none',controller_user_id=null,controller_revision=controller_revision+1,state=case when state='stopped' then state else 'needs_review' end where workspace_id=${ws} and id=any(${tx.array(work.ids)}::uuid[])`
-        await tx`update em_handoffs set state='held',revision=revision+1 where workspace_id=${ws} and thread_id=any(${tx.array(work.ids)}::uuid[]) and state<>'completed'`
+        await tx`update em_handoffs set state='held',revision=revision+1,access_hold_reason='team_role_changed' where workspace_id=${ws} and thread_id=any(${tx.array(work.ids)}::uuid[]) and state<>'completed'`
         for (const threadId of work.ids)
           await projectCrmChanges(context, threadId, {
             holdReason: 'team_role_changed',

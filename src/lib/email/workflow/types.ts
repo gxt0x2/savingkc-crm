@@ -113,6 +113,20 @@ export interface PilotThread {
     estimated_cost_usd: number | string | null
   } | null
   crm_owner_name?: string | null
+  lead_revision?: number | null
+  clarification_question?: string | null
+  clarification_reviewer_id?: string | null
+  access_hold_reason?:
+    | 'team_role_changed'
+    | 'marketing_stopped'
+    | 'clarification_required'
+    | null
+  open_related_handoffs?: {
+    id: string
+    revision: number
+    thread_id: string
+  }[]
+  qualification_missing?: string[]
   callback_owner_changed?: boolean
   open_task_count?: number
   open_tasks?: {
@@ -206,6 +220,7 @@ export interface PilotState {
   drafts: PilotDraft[]
   audiences: { id: string; name: string }[]
   members: { id: string; name: string }[]
+  reviewers: { id: string; name: string }[]
   notifications: {
     id: string
     thread_id: string

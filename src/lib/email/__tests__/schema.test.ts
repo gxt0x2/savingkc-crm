@@ -50,6 +50,28 @@ describe('email command contracts', () => {
     }).success).toBe(false)
   })
 
+  it('accepts a fractional Lead clock and stores it as integer milliseconds', () => {
+    const parsed = emailCommandSchema.safeParse({
+      command: 'HAN-QUALIFY', idempotencyKey: key,
+      payload: {
+        handoffId: id, leadId: id, leadRevision: 1_725_000_000_000.4,
+        assessment: {
+          personAuthority: { state: 'confirmed', evidenceIds: [id] }, propertyRef: '123 Main Street',
+          timeline: { state: 'verified', evidenceIds: [id], note: '30 days' },
+          condition: { state: 'verified', evidenceIds: [id], note: 'Fair' },
+          motivation: { state: 'verified', evidenceIds: [id], note: 'Inherited' },
+          price: { state: 'verified', evidenceIds: [id], note: '$100,000' },
+          whyWorthPursuing: 'Seller asked to discuss a possible sale.',
+        },
+        nextAction: 'Call after 2 PM', evidenceIds: [id],
+      },
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success && parsed.data.command === 'HAN-QUALIFY') {
+      expect(parsed.data.payload.leadRevision).toBe(1_725_000_000_000)
+    }
+  })
+
   it('does not let an acquisitions qualification omit one of the four evidence pillars', () => {
     expect(emailCommandSchema.safeParse({
       command: 'HAN-QUALIFY', idempotencyKey: key,
@@ -63,6 +85,25 @@ describe('email command contracts', () => {
         nextAction: 'Call after 2 PM', evidenceIds: [id],
       },
     }).success).toBe(false)
+  })
+
+  it('requires exact sibling handoff revisions when reconciling shared ownership', () => {
+    expect(emailCommandSchema.safeParse({
+      command: 'HAN-REASSIGN', idempotencyKey: key, expectedRevision: 1,
+      payload: {
+        handoffId: id, newOwnerId: id, backupId: key, reason: 'Coverage',
+        expectedCrmOwner: 'Demo owner', contentRevision: 1, controllerRevision: 1,
+        relatedHandoffs: [{ handoffId: id, expectedRevision: 2, extra: true }],
+      },
+    }).success).toBe(false)
+    expect(emailCommandSchema.safeParse({
+      command: 'HAN-REASSIGN', idempotencyKey: key, expectedRevision: 1,
+      payload: {
+        handoffId: id, newOwnerId: id, backupId: key, reason: 'Coverage',
+        expectedCrmOwner: 'Demo owner', contentRevision: 1, controllerRevision: 1,
+        relatedHandoffs: [{ handoffId: key, expectedRevision: 2 }],
+      },
+    }).success).toBe(true)
   })
 
   it('uses strict durable result envelopes', () => {
