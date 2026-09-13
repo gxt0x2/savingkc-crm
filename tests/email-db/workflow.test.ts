@@ -13,6 +13,7 @@ import {
   getPilotReview,
   readPilotState,
   simulateDelivery,
+  simulateHandoffEscalation,
   simulateInbound,
 } from '../../src/lib/email/workflow/service'
 import { emailCommandResultSchema } from '../../src/lib/email/contracts'
@@ -3998,6 +3999,363 @@ withDb('public unsubscribe stops outreach after issuer removal and is idempotent
   assert.equal(await unsubscribeWithToken(db.sql, token, keys, now), true)
   assert.equal((await db.sql`select * from em_suppressions where address_id=${thread.address_id}`).length, 1)
 })
+
+async function qualifyPayload(
+  db: Database,
+  handoffId: string,
+  threadId: string,
+  extras: Record<string, unknown> = {},
+) {
+  const t = (await readPilotState(db.sql, agent, now)).threads.find(
+    (row) => row.id === threadId,
+  )!
+  const inbound = (await readPilotState(db.sql, agent, now)).messages
+    .filter((m) => m.thread_id === threadId && m.direction === 'inbound')
+    .at(-1)!
+  const verified = {
+    state: 'verified' as const,
+    evidenceIds: [inbound.id],
+    note: 'Confirmed from the seller reply.',
+  }
+  return {
+    command: 'HAN-QUALIFY' as const,
+    idempotencyKey: randomUUID(),
+    expectedRevision: t.handoff_revision,
+    payload: {
+      handoffId,
+      leadId: t.lead_id!,
+      leadRevision: Number(t.lead_revision),
+      nextAction: 'Call to confirm next steps',
+      evidenceIds: [inbound.id],
+      assessment: {
+        personAuthority: { state: 'confirmed' as const, evidenceIds: [inbound.id] },
+        propertyRef: t.property!.address,
+        timeline: verified,
+        condition: verified,
+        motivation: verified,
+        price: verified,
+        whyWorthPursuing: 'Seller asked to discuss a sale of this property.',
+      },
+      ...extras,
+    },
+  }
+}
+
+withDb(
+  'return for clarification holds the callback without changing the Lead or resuming sends',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    const command = {
+      command: 'HAN-RETURN',
+      idempotencyKey: randomUUID(),
+      expectedRevision: 0,
+      payload: {
+        handoffId: handoff.entityId,
+        question: 'Which afternoon window did the seller confirm?',
+        reviewerId: owner,
+      },
+    }
+    await rejects(executePilotCommand(db.sql, reader, command, now), 'FORBIDDEN')
+    const result = await executePilotCommand(db.sql, agent, command, now)
+    assert.equal(result.state, 'returned_for_clarification')
+    assert.deepEqual(await executePilotCommand(db.sql, agent, command, now), result)
+    const [saved] = await db.sql`select * from em_handoffs where id=${handoff.entityId}`
+    assert.equal(saved.state, 'held')
+    assert.equal(saved.access_hold_reason, 'clarification_required')
+    assert.equal(saved.clarification_question, command.payload.question)
+    const [lead] = await db.sql`select station,classification from leads`
+    assert.equal(lead.station, 'contacted')
+    assert.equal(lead.classification, 'lead')
+    assert.equal(
+      (await db.sql`select count(*)::int as n from em_send_intents where thread_id=${initial.payload.threadId} and state='queued'`)[0].n,
+      0,
+    )
+    assert.equal(
+      (await db.sql`select status from work_items`)[0].status,
+      'blocked',
+    )
+    const notices = await readPilotState(db.sql, owner, now)
+    assert.ok(
+      notices.notifications.some((n) =>
+        n.kind.startsWith('Clarification needed'),
+      ),
+    )
+  },
+)
+
+withDb(
+  'shared ownership updates every open Email callback for the same Lead together',
+  async (db) => {
+    const first = await reviewedCallback(db)
+    const firstHandoff = await executePilotCommand(db.sql, owner, first, now)
+    const second = await reviewedCallback(db)
+    const secondHandoff = await executePilotCommand(db.sql, owner, second, now)
+    const firstThread = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === first.payload.threadId,
+    )!
+    await db.sql`update em_threads set lead_id=${firstThread.lead_id} where id=${second.payload.threadId}`
+    await db.sql`update em_handoffs set lead_id=${firstThread.lead_id} where id=${secondHandoff.entityId}`
+    const [secondTask] =
+      await db.sql`select crm_task_id from em_handoffs where id=${secondHandoff.entityId}`
+    await db.sql`update lead_activities set lead_id=${firstThread.lead_id} where id=${secondTask.crm_task_id}`
+    const current = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === first.payload.threadId,
+    )!
+    const related = current.open_related_handoffs ?? []
+    assert.equal(related.length, 1)
+    const command = {
+      command: 'HAN-REASSIGN',
+      idempotencyKey: randomUUID(),
+      expectedRevision: current.handoff_revision,
+      payload: {
+        handoffId: firstHandoff.entityId,
+        newOwnerId: owner,
+        backupId: agent,
+        reason: 'One owner for both open callbacks',
+        expectedCrmOwner: 'Demo agent',
+        contentRevision: current.content_revision,
+        controllerRevision: current.controller_revision,
+      },
+    }
+    await rejects(executePilotCommand(db.sql, owner, command, now), 'MULTIPLE_HANDOFFS_REQUIRE_REVIEW')
+    command.payload.relatedHandoffs = related.map((item) => ({
+      handoffId: item.id,
+      expectedRevision: item.revision,
+    }))
+    const result = await executePilotCommand(db.sql, owner, command, now)
+    assert.equal(result.state, 'callback_reassigned')
+    const [lead] = await db.sql`select assigned_agent from leads where id=${current.lead_id}`
+    assert.equal(lead.assigned_agent, 'Demo owner')
+    const owners = await db.sql`select owner_id from em_handoffs where lead_id=${current.lead_id} and state<>'completed'`
+    assert.equal(owners.length, 2)
+    assert.ok(owners.every((row) => row.owner_id === owner))
+    const tasks = await db.sql`select assigned_to from work_items where lead_id=${current.lead_id}`
+    assert.ok(tasks.every((row) => row.assigned_to === 'Demo owner'))
+  },
+)
+
+withDb(
+  'access-hold release assigns an eligible owner without resuming marketing',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    const readerMember = (
+      await readPilotState(db.sql, owner, now)
+    ).settings!.members.find((m) => m.id === reader)!
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'SET-ROLES',
+        idempotencyKey: randomUUID(),
+        expectedRevision: readerMember.revision,
+        payload: {
+          authUserId: reader,
+          roles: ['acquisitions'],
+          active: true,
+          affectedWorkHash: readerMember.affectedWorkHash,
+        },
+      },
+      now,
+    )
+    const agentMember = (
+      await readPilotState(db.sql, owner, now)
+    ).settings!.members.find((m) => m.id === agent)!
+    await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'SET-ROLES',
+        idempotencyKey: randomUUID(),
+        expectedRevision: agentMember.revision,
+        payload: {
+          authUserId: agent,
+          roles: ['reader'],
+          active: true,
+          affectedWorkHash: agentMember.affectedWorkHash,
+        },
+      },
+      now,
+    )
+    const held = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    assert.equal(held.handoff_state, 'held')
+    assert.equal(held.access_hold_reason, 'team_role_changed')
+    assert.equal(held.callback_task_state, 'blocked')
+    const result = await executePilotCommand(
+      db.sql,
+      owner,
+      {
+        command: 'HAN-REASSIGN',
+        idempotencyKey: randomUUID(),
+        expectedRevision: held.handoff_revision,
+        payload: {
+          handoffId: handoff.entityId,
+          newOwnerId: owner,
+          backupId: reader,
+          reason: 'Owner covering after access change',
+          expectedCrmOwner: held.crm_owner_name,
+          contentRevision: held.content_revision,
+          controllerRevision: held.controller_revision,
+        },
+      },
+      now,
+    )
+    assert.equal(result.state, 'callback_released')
+    const current = (await readPilotState(db.sql, owner, now)).threads.find(
+      (t) => t.id === initial.payload.threadId,
+    )!
+    assert.equal(current.handoff_state, 'needs_contact')
+    assert.equal(current.access_hold_reason, null)
+    assert.equal(current.callback_task_state, 'pending')
+    assert.equal(current.handoff_owner_id, owner)
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_send_intents where thread_id=${initial.payload.threadId} and state='queued'`
+      )[0].n,
+      0,
+    )
+  },
+)
+
+withDb(
+  'qualification uses four verified pillars and the current Lead revision',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    const incomplete = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+      {
+        assessment: {
+          personAuthority: { state: 'unknown', evidenceIds: [] },
+          propertyRef: 'not-this-property',
+          timeline: { state: 'unknown', evidenceIds: [] },
+          condition: { state: 'unknown', evidenceIds: [] },
+          motivation: { state: 'unknown', evidenceIds: [] },
+          price: { state: 'unknown', evidenceIds: [] },
+          whyWorthPursuing: 'Not enough evidence.',
+        },
+      },
+    )
+    await rejects(
+      executePilotCommand(db.sql, agent, incomplete, now),
+      'PERSON_AUTHORITY_REQUIRED',
+    )
+    const stale = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+    )
+    stale.payload.leadRevision = stale.payload.leadRevision - 1
+    await rejects(executePilotCommand(db.sql, agent, stale, now), 'LEAD_CHANGED')
+    const command = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+    )
+    await rejects(
+      executePilotCommand(db.sql, reader, command, now),
+      'FORBIDDEN',
+    )
+    const result = await executePilotCommand(db.sql, agent, command, now)
+    assert.equal(result.state, 'opportunity_qualified')
+    assert.deepEqual(await executePilotCommand(db.sql, agent, command, now), result)
+    const [lead] = await db.sql`select station,classification,source from leads`
+    assert.equal(lead.station, 'qualified')
+    assert.equal(lead.classification, 'opportunity')
+    assert.equal(lead.source, 'email_marketing')
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from crm_lead_qualification_pillars where status='verified'`
+      )[0].n,
+      4,
+    )
+  },
+)
+
+withDb(
+  'qualification preserves an already advanced Opportunity stage',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    const existing = await existingLead(db, initial.payload.threadId)
+    const handoff = await executePilotCommand(db.sql, owner, initial, now)
+    assert.equal(handoff.state, 'handoff_saved_crm_synced')
+    const command = await qualifyPayload(
+      db,
+      handoff.entityId,
+      initial.payload.threadId,
+    )
+    const result = await executePilotCommand(db.sql, agent, command, now)
+    assert.equal(result.state, 'qualification_recorded')
+    const [lead] = await db.sql`select station,source from leads where id=${existing}`
+    assert.equal(lead.station, 'qualified')
+    assert.equal(lead.source, 'legacy_partner')
+  },
+)
+
+withDb(
+  'unacknowledged callback alerts escalate to backup after five operating minutes',
+  async (db) => {
+    const initial = await reviewedCallback(db)
+    await executePilotCommand(db.sql, owner, initial, now)
+    const early = await simulateHandoffEscalation(
+      db.sql,
+      owner,
+      randomUUID(),
+      now,
+    )
+    assert.equal(early.state, 'no_due_escalations')
+    const later = new Date(now.getTime() + 5 * 60 * 1000)
+    const result = await simulateHandoffEscalation(
+      db.sql,
+      owner,
+      randomUUID(),
+      later,
+    )
+    assert.equal(result.state, 'handoff_escalated')
+    const replay = await simulateHandoffEscalation(
+      db.sql,
+      owner,
+      randomUUID(),
+      later,
+    )
+    assert.equal(replay.state, 'no_due_escalations')
+    const backupNotices = (await readPilotState(db.sql, owner, later)).notifications
+      .filter((n) => n.kind.includes('backup review'))
+    assert.equal(backupNotices.length, 1)
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_notifications where logical_key like 'handoff-escalation:%'`
+      )[0].n,
+      1,
+    )
+    const ownerState = await readPilotState(db.sql, agent, later)
+    const ownerNotice = ownerState.notifications.find((n) =>
+      n.kind.startsWith('Callback'),
+    )!
+    await executePilotCommand(
+      db.sql,
+      agent,
+      {
+        command: 'NTF-ACK',
+        idempotencyKey: randomUUID(),
+        payload: { eventId: ownerNotice.id, eventRevision: 0 },
+      },
+      later,
+    )
+    assert.equal(
+      (
+        await db.sql`select count(*)::int as n from em_notifications where logical_key like 'handoff-escalation:%' and acknowledged_at is null`
+      )[0].n,
+      0,
+    )
+  },
+)
+
 
 withDb('unsubscribe retains old keys, rejects forged links, and commits despite broken CRM history', async (db) => {
   const { issuePreferenceToken, unsubscribeWithToken } = await import('../../src/lib/email/preferences/service')

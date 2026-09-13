@@ -280,7 +280,9 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
 
   command('HAN-ACCEPT', z.object({ handoffId: uuid }).strict()),
   command('HAN-REASSIGN', z.object({ handoffId: uuid, newOwnerId: uuid, backupId: uuid, reason: shortText,
-    expectedCrmOwner: z.string().nullable(), contentRevision: revision, controllerRevision: revision }).strict()),
+    expectedCrmOwner: z.string().nullable(), contentRevision: revision, controllerRevision: revision,
+    relatedHandoffs: z.array(z.object({ handoffId: uuid, expectedRevision: revision }).strict()).max(50).optional(),
+  }).strict()),
   command('HAN-RESOLVE', z.object({ handoffId: uuid, ownerId: uuid, backupId: uuid, reason: shortText,
     positiveSellerInterest: z.boolean(), requestedContact: z.object({ phone: z.string().trim().min(1).max(100).optional(), requestedTimeText: shortText.optional() }).strict(),
     factEvidence: evidenceList, contentRevision: revision, controllerRevision: revision }).strict()),

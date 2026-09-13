@@ -65,6 +65,25 @@ describe('email command contracts', () => {
     }).success).toBe(false)
   })
 
+  it('requires exact sibling handoff revisions when reconciling shared ownership', () => {
+    expect(emailCommandSchema.safeParse({
+      command: 'HAN-REASSIGN', idempotencyKey: key, expectedRevision: 1,
+      payload: {
+        handoffId: id, newOwnerId: id, backupId: key, reason: 'Coverage',
+        expectedCrmOwner: 'Demo owner', contentRevision: 1, controllerRevision: 1,
+        relatedHandoffs: [{ handoffId: id, expectedRevision: 2, extra: true }],
+      },
+    }).success).toBe(false)
+    expect(emailCommandSchema.safeParse({
+      command: 'HAN-REASSIGN', idempotencyKey: key, expectedRevision: 1,
+      payload: {
+        handoffId: id, newOwnerId: id, backupId: key, reason: 'Coverage',
+        expectedCrmOwner: 'Demo owner', contentRevision: 1, controllerRevision: 1,
+        relatedHandoffs: [{ handoffId: key, expectedRevision: 2 }],
+      },
+    }).success).toBe(true)
+  })
+
   it('uses strict durable result envelopes', () => {
     expect(emailCommandResultSchema.safeParse({
       ok: true, requestId: key, entityId: id, revision: 1, state: 'queued',

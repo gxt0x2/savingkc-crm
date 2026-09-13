@@ -118,8 +118,25 @@ export function EmailThreadPanel({
   >('conversation_complete')
   const [nextAction, setNextAction] = useState('')
   const [outcomeDue, setOutcomeDue] = useState('')
+  const [qualifyOpen, setQualifyOpen] = useState(false)
+  const [qualifyWhy, setQualifyWhy] = useState('')
+  const [qualifyNext, setQualifyNext] = useState('')
+  const [qualifyPillars, setQualifyPillars] = useState({
+    timeline: '',
+    condition: '',
+    motivation: '',
+    price: '',
+  })
   const outcomeRemainsOpen =
     outcomeKind === 'follow_up' || outcomeKind === 'no_contact'
+  const qualifyReady =
+    Boolean(inbound) &&
+    Object.values(qualifyPillars).every((value) => value.trim()) &&
+    qualifyWhy.trim() &&
+    qualifyNext.trim() &&
+    Boolean(t.property?.address) &&
+    t.lead_id &&
+    t.lead_revision != null
   const [localError, setLocalError] = useState('')
   const [working, setWorking] = useState(false)
   const scheduleRequest = useRef<{ fingerprint: string; key: string } | null>(
@@ -1336,6 +1353,128 @@ export function EmailThreadPanel({
                       {outcomeRemainsOpen
                         ? 'Keeps this callback open with its next action.'
                         : 'Completes this callback only. The CRM stage stays unchanged.'}
+                    </small>
+                  </form>
+                </details>
+                <details
+                  className={styles.outcomeDisclosure}
+                  open={qualifyOpen}
+                  onToggle={(e) =>
+                    setQualifyOpen((e.target as HTMLDetailsElement).open)
+                  }
+                >
+                  <summary>Qualify as Opportunity</summary>
+                  <form
+                    className={styles.drawerForm}
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      if (!qualifyReady || !t.handoff_id || !t.lead_id || !inbound)
+                        return
+                      const evidence = {
+                        state: 'verified' as const,
+                        evidenceIds: [inbound.id],
+                      }
+                      const r = await act({
+                        command: 'HAN-QUALIFY',
+                        idempotencyKey: crypto.randomUUID(),
+                        expectedRevision: scheduleRevision.handoff,
+                        payload: {
+                          handoffId: t.handoff_id,
+                          leadId: t.lead_id,
+                          leadRevision: Number(t.lead_revision),
+                          nextAction: qualifyNext.trim(),
+                          evidenceIds: [inbound.id],
+                          assessment: {
+                            personAuthority: {
+                              state: 'confirmed',
+                              evidenceIds: [inbound.id],
+                            },
+                            propertyRef: t.property?.address ?? '',
+                            timeline: {
+                              ...evidence,
+                              note: qualifyPillars.timeline.trim(),
+                            },
+                            condition: {
+                              ...evidence,
+                              note: qualifyPillars.condition.trim(),
+                            },
+                            motivation: {
+                              ...evidence,
+                              note: qualifyPillars.motivation.trim(),
+                            },
+                            price: {
+                              ...evidence,
+                              note: qualifyPillars.price.trim(),
+                            },
+                            whyWorthPursuing: qualifyWhy.trim(),
+                          },
+                        },
+                      })
+                      if (r) {
+                        setQualifyOpen(false)
+                        setQualifyWhy('')
+                        setQualifyNext('')
+                      }
+                    }}
+                  >
+                    <p>
+                      Uses the existing human four-pillar policy and the current
+                      Lead revision. Unknown facts cannot be invented to
+                      qualify.
+                    </p>
+                    {(
+                      [
+                        ['timeline', 'Timeline'],
+                        ['condition', 'Condition'],
+                        ['motivation', 'Motivation'],
+                        ['price', 'Price'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label key={key}>
+                        {label}
+                        <textarea
+                          aria-label={`${label} evidence`}
+                          rows={2}
+                          required
+                          value={qualifyPillars[key]}
+                          onChange={(e) =>
+                            setQualifyPillars((current) => ({
+                              ...current,
+                              [key]: e.target.value,
+                            }))
+                          }
+                          maxLength={2000}
+                        />
+                      </label>
+                    ))}
+                    <label>
+                      Why this is worth pursuing
+                      <textarea
+                        aria-label="Why this is worth pursuing"
+                        rows={2}
+                        required
+                        value={qualifyWhy}
+                        onChange={(e) => setQualifyWhy(e.target.value)}
+                        maxLength={2000}
+                      />
+                    </label>
+                    <label>
+                      Next action
+                      <input
+                        aria-label="Qualification next action"
+                        value={qualifyNext}
+                        onChange={(e) => setQualifyNext(e.target.value)}
+                        required
+                        maxLength={2000}
+                      />
+                    </label>
+                    <button disabled={blocked || !qualifyReady}>
+                      Qualify as Opportunity
+                    </button>
+                    <small>
+                      Missing verified evidence:{' '}
+                      {(t.qualification_missing ?? []).join(', ') ||
+                        'none stored yet — complete all four fields above.'}
                     </small>
                   </form>
                 </details>
