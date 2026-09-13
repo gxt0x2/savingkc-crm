@@ -165,7 +165,7 @@ export async function applySettingsCommand(
     const [playbook] =
       await tx`select id from em_playbook_versions where workspace_id=${ws} limit 1`
     const [calendar] =
-      await tx`select id from em_scheduling_policies where workspace_id=${ws}`
+      await tx`select workspace_id from em_scheduling_policies where workspace_id=${ws}`
     const [line] =
       await tx`select id from em_response_lines where workspace_id=${ws}`
     const blockers = [

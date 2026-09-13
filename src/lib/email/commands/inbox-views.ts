@@ -1,7 +1,13 @@
 import 'server-only'
 import type { EmailCommand } from '../contracts'
 import { inboxQueryAllowlisted } from '../inbox-filters'
-import { check, json, type Context, type Result } from '../workflow/core'
+import {
+  WorkflowError,
+  check,
+  json,
+  type Context,
+  type Result,
+} from '../workflow/core'
 
 const commands = new Set(['INB-SAVEVIEW', 'INB-DELETEVIEW'])
 export const isInboxViewCommand = (command: string) => commands.has(command)
@@ -21,6 +27,8 @@ export async function applyInboxViewCommand(
     await tx`delete from em_inbox_views where workspace_id=${ws} and id=${view.id} and owner_id=${member.auth_user_id}`
     return { entityId: view.id, revision: view.revision, state: 'view_deleted' }
   }
+  if (command.command !== 'INB-SAVEVIEW')
+    throw new WorkflowError('ACTION_NOT_IMPLEMENTED', 400)
   const p = command.payload
   check(p.queryVersion === 1, 'UNSUPPORTED_QUERY_VERSION', 400)
   check(inboxQueryAllowlisted(p.query), 'INVALID_INBOX_QUERY', 400)

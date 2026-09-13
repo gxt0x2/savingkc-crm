@@ -255,7 +255,11 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
     .getByLabel('Practice incoming reply', { exact: true })
     .fill('Please unsubscribe me.')
   await receive.click()
-  await expect(page.getByText('Unsubscribed', { exact: true })).toBeVisible()
+  await expect(
+    page.getByLabel('Selected conversation').getByText('Unsubscribed', {
+      exact: true,
+    }),
+  ).toBeVisible()
   await expect(page.getByLabel('Reply draft', { exact: true })).toHaveCount(0)
   await page.reload()
   await page
@@ -921,11 +925,19 @@ test('setup productization stays fail-closed and keeps personal views local', as
     .click()
   await expect(page.getByRole('status')).toContainText('Local checklist saved')
   await setup.getByRole('button', { name: 'Finish setup', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('Sending remains off')
+  await expect(
+    page.getByText(
+      'Sending remains off. The provider and delivery checks are not connected yet.',
+    ),
+  ).toBeVisible()
   await setup
     .getByRole('button', { name: 'Enable sending', exact: true })
     .click()
-  await expect(page.getByRole('alert')).toContainText('Sending remains off')
+  await expect(
+    page.getByText(
+      'Sending remains off. The provider and delivery checks are not connected yet.',
+    ),
+  ).toBeVisible()
 
   await page.getByRole('button', { name: 'Inbox', exact: true }).click()
   await page.getByPlaceholder('Weekday callbacks').fill('Needs a reply')

@@ -172,8 +172,6 @@ const friendly: Record<string, string> = {
     'The callback handoff is saved, but CRM linking needs attention.',
   STALE_LEAD_REVISION:
     'The CRM Lead changed. Refresh and review it before continuing.',
-  QUALIFICATION_INCOMPLETE:
-    'Keep this record as a Lead until a human verifies all four qualification areas.',
 }
 function formatTime(value: string | null) {
   if (!value) return 'None'
@@ -482,7 +480,7 @@ export function EmailWorkspace({
         (controllerFilter === 'human'
           ? t.controller === 'human'
           : t.controller !== 'human')) &&
-      `${t.name} ${t.email} ${t.subject} ${data?.messages`
+      `${t.name} ${t.email} ${t.subject} ${data?.messages
         .filter((m) => m.thread_id === t.id)
         .map((m) => m.text_body)
         .join(' ')}`
@@ -695,16 +693,29 @@ export function EmailWorkspace({
                   </button>
                 )}
               </div>
-              <div className={styles.filters}>
-                <label>
-                  Save this view
-                  <input
-                    maxLength={100}
-                    value={viewName}
-                    onChange={(e) => setViewName(e.target.value)}
-                    placeholder="Weekday callbacks"
-                  />
-                </label>
+              <div className={styles.views} aria-label="Inbox views">
+                {views.map(([key, label]) => (
+                  <button
+                    key={key}
+                    aria-pressed={view === key}
+                    onClick={() => setView(key)}
+                  >
+                    {label}
+                    <span>
+                      {
+                        scoped.filter((t) => matchesView(t, key, data.asOf))
+                          .length
+                      }
+                    </span>
+                  </button>
+                ))}
+                <input
+                  aria-label="Save this view"
+                  maxLength={100}
+                  value={viewName}
+                  onChange={(e) => setViewName(e.target.value)}
+                  placeholder="Weekday callbacks"
+                />
                 <button
                   disabled={busy || !viewName.trim()}
                   onClick={() =>
@@ -752,7 +763,11 @@ export function EmailWorkspace({
                   <span key={saved.id} className={styles.row}>
                     <button
                       onClick={() => {
-                        setView(workspaceViewFromQuery(saved.query.view as InboxBucket))
+                        setView(
+                          workspaceViewFromQuery(
+                            saved.query.view as InboxBucket,
+                          ),
+                        )
                         setCampaignFilter(saved.query.campaignId ?? '')
                         setSearch(saved.query.search ?? '')
                         setOnlyUnsubscribed(
@@ -796,23 +811,6 @@ export function EmailWorkspace({
                       ×
                     </button>
                   </span>
-                ))}
-              </div>
-              <div className={styles.views} aria-label="Inbox views">
-                {views.map(([key, label]) => (
-                  <button
-                    key={key}
-                    aria-pressed={view === key}
-                    onClick={() => setView(key)}
-                  >
-                    {label}
-                    <span>
-                      {
-                        scoped.filter((t) => matchesView(t, key, data.asOf))
-                          .length
-                      }
-                    </span>
-                  </button>
                 ))}
               </div>
               <label className={styles.restrictionFilter}>

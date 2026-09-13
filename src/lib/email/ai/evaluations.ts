@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import fixtures from '../../../../docs/email-marketing/ai-fixtures.json'
+import { DETERMINISTIC_MODEL_ID } from './constants'
 export {
   DETERMINISTIC_FIXTURE_SET_ID,
   DETERMINISTIC_MODEL_ID,
@@ -108,7 +109,8 @@ export function classifyFixture(fixture: FixtureCase) {
     context.includes('human takeover') ||
     context.includes('identity unresolved') ||
     context.includes('provider suspended') ||
-    context.includes('belongs to my sister')
+    context.includes('belongs to my sister') ||
+    /\bbelongs to my sister\b/i.test(text)
   )
     return { intent: 'selling_interest', action: 'review' }
   if (/\bmaybe next spring\b/i.test(text))

@@ -39,7 +39,9 @@ export function defaultCallbackPolicy() {
         'wednesday',
         'thursday',
         'friday',
-      ] as const,
+      ] as Array<
+        'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday'
+      >,
       startLocal: '08:30',
       endLocal: '17:00',
     },

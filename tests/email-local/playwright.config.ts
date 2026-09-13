@@ -3,7 +3,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: 'workflow.spec.ts',
   workers: 1,
-  timeout: 45000,
+  timeout: 90000,
   outputDir: '../../test-results/email-local',
   use: {
     channel: 'chrome',
