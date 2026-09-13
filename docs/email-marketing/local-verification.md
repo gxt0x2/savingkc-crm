@@ -1,6 +1,6 @@
 # Connected local workflow verification
 
-Date: 2026-09-12. Branch: `codex/email-foundation-20260912`. Action workspace continuation follows CRM bridge checkpoint `41b74b99` and checkpoint notes `9ba1caf8`.
+Date: 2026-09-12. Branch: `codex/email-foundation-20260912`. Action workspace implementation checkpoint: `f4c99d5e`, following CRM bridge `41b74b99` and checkpoint notes `9ba1caf8`.
 
 This is component and local integration evidence, not a completed EM-017/EM-030 acceptance or production release. The first connected milestone follows `3334191e`; the setup/theme continuation follows `35146922`; the canonical CRM bridge continuation follows `a51fc103`.
 
@@ -47,3 +47,5 @@ The unit total is 50. Database and browser totals are reported separately; they 
 ## Action workspace verification scope
 
 Desktop and mobile screenshots for revision 1.3 were inspected after disabling screenshot-time animations. Desktop keeps the composer within the conversation; earlier history stays in its own scroll container. Mobile Details uses its own fixed panel and scroll area. The new suggestion is deterministic practice copy, not live AI. No production migration, deployment, model call, external notification or Calendar booking was performed.
+
+The final presentation follow-up forces a thin visible history scrollbar and styles the independent list/Details scrollbars. A fresh local browser inspection confirms `overflow-y: scroll`, a thin scrollbar and bounded history after that CSS change.

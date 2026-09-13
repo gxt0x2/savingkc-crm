@@ -738,7 +738,7 @@
 .messages {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: scroll;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   display: flex;
@@ -746,6 +746,12 @@
   gap: 10px;
   padding: 14px 16px;
   background: #fafbfc;
+}
+.messages,
+.contextDrawer,
+.threadList {
+  scrollbar-width: thin;
+  scrollbar-color: #99a2af #f0f2f5;
 }
 .incoming,
 .outgoing {
