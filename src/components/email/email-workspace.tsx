@@ -1,5 +1,7 @@
 'use client'
-
+import { EmailRecipientImport } from './email-recipient-import'
+import { pilotDefaults } from './campaign-defaults'
+import { EmailHostedSetup } from './email-hosted-setup'
 import { EmailReceivingStatus } from './email-receiving-status'
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
@@ -135,49 +137,7 @@ function formatTime(value: string | null) {
     }).format(new Date(value)) + ' CT'
   )
 }
-function pilotDefaults(audienceId: string): PilotConfig {
-  return {
-    audienceId,
-    senderIds: ['00000000-0000-4000-8000-000000000004'],
-    playbookVersionId: '00000000-0000-4000-8000-000000000005',
-    mode: 'draft_only',
-    copyMode: 'template',
-    draftGenerationBudget: 0,
-    steps: [
-      {
-        id: '00000000-0000-4000-8000-000000000006',
-        delayMinCalendarDays: 0,
-        delayMaxCalendarDays: 0,
-        targetCalendarDay: 0,
-        subject: 'A question about your property',
-        bodyTemplate:
-          'Hi there,\n\nWould selling your property be something you would consider, or is keeping it the better fit right now?\n\nSavingKC\nLocal practice message — no email will be sent.',
-      },
-      {
-        id: '00000000-0000-4000-8000-000000000007',
-        delayMinCalendarDays: 7,
-        delayMaxCalendarDays: 10,
-        targetCalendarDay: 8,
-        subject: 'Re: A question about your property',
-        bodyTemplate:
-          'Hi there,\n\nIt sounds like this may not be a priority right now. Would you prefer I leave it here?\n\nSavingKC\nLocal practice message — no email will be sent.',
-      },
-    ],
-    timezone: 'America/Chicago',
-    weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-    startLocal: '09:00',
-    endLocal: '17:00',
-    dailyLimit: 10,
-    hourlyLimit: 2,
-    maxRecipients: 10,
-    dailyCostCap: 0,
-    totalCostCap: 0,
-    recontactDays: 90,
-    expiresAt: '2026-12-31T23:59:59.000Z',
-    replyActions: [],
-    requiredPermissionBasis: 'Fabricated local practice recipients only',
-  }
-}
+
 
 export function EmailWorkspace({
   localSimulation = false,
@@ -424,7 +384,7 @@ export function EmailWorkspace({
     setConfig(
       selected?.draft_config.steps
         ? (selected.draft_config as PilotConfig)
-        : pilotDefaults(data?.audiences[0]?.id ?? ''),
+        : pilotDefaults(data?.audiences[0]?.id ?? '', data),
     )
     setReview(null)
     setCampaignTab('Summary')
@@ -438,7 +398,7 @@ export function EmailWorkspace({
     })
     if (result) {
       setCampaignId(result.entityId)
-      setConfig(pilotDefaults(data?.audiences[0]?.id ?? ''))
+      setConfig(pilotDefaults(data?.audiences[0]?.id ?? '', data))
       setCampaignTab('Sequence')
       setReview(null)
       setNewName('')
@@ -482,7 +442,7 @@ export function EmailWorkspace({
             />
           )}
           <span className={styles.mode}>
-            {data?.paused ? 'Paused' : 'Live sending off'}
+            {data?.paused ? 'Paused' : data?.sendingEnabled ? 'Sending enabled' : 'Live sending off'}
           </span>
           <button
             disabled={busy}
@@ -499,12 +459,12 @@ export function EmailWorkspace({
         <strong>
           {data?.mode === 'simulation'
             ? 'Local practice workspace'
-            : 'Email setup pending'}
+            : data?.mode === 'hosted' ? 'Email workspace' : 'Email setup pending'}
         </strong>
         <span>
           {data?.mode === 'simulation'
             ? 'Practice only · No messages, calls or calendar events are sent.'
-            : 'Your team will work here once the remaining integrations are connected and verified.'}
+            : data?.mode === 'hosted' ? 'Review replies in Inbox. Manage connections and sending controls in More.' : 'Your team will work here once the remaining integrations are connected and verified.'}
         </span>
         {data && (
           <small className={styles.asOf}>As of {formatTime(data.asOf)}</small>
@@ -734,7 +694,7 @@ export function EmailWorkspace({
                           <p>
                             {campaign.state === 'draft'
                               ? 'Draft — save before reviewing'
-                              : 'Frozen published version · simulated transport'}
+                              : (data.mode === 'hosted' ? 'Published campaign version' : 'Frozen published version · simulated transport')}
                           </p>
                         </div>
                         {campaign.state === 'active' && (
@@ -816,6 +776,7 @@ export function EmailWorkspace({
                               ))}
                             </select>
                           </label>
+                          {data.mode === 'hosted' && <label>Sender<select disabled={campaign.state !== 'draft'} value={config.senderIds[0] ?? ''} onChange={e => {setConfig({...config,senderIds:[e.target.value]});setReview(null)}}><option value="">Choose a tested sender</option>{(data.senders ?? []).map(s => <option key={s.id} value={s.id}>{s.name} · {s.address}</option>)}</select></label>}
                           {config.steps.map((step, index) => (
                             <fieldset
                               key={step.id}
@@ -934,7 +895,7 @@ export function EmailWorkspace({
                                         <span>{r.email}</span>
                                         <small>
                                           {r.eligible
-                                            ? 'Ready for local practice'
+                                            ? (data.mode === 'hosted' ? 'Eligible for reviewed campaign' : 'Ready for local practice')
                                             : r.reasons.join(' · ')}
                                         </small>
                                       </div>
@@ -977,7 +938,7 @@ export function EmailWorkspace({
                                       })
                                     }
                                   >
-                                    Start reviewed simulation
+                                    {data.mode === 'hosted' ? 'Start reviewed campaign' : 'Start reviewed simulation'}
                                   </button>
                                 </>
                               )}
@@ -1044,6 +1005,8 @@ export function EmailWorkspace({
                     : 'AI access is not configured. You can write and review drafts manually.'}
                 </p>
               </details>
+              {data.settings && data.mode === 'hosted' && <EmailHostedSetup onChange={refresh} />}
+              {data.settings && data.mode === 'hosted' && <EmailRecipientImport onImported={refresh} />}
               {data.settings && (
                 <EmailSetup settings={data.settings} busy={busy} act={act} />
               )}
@@ -1063,8 +1026,7 @@ export function EmailWorkspace({
                     <p role="status">Paused: {data.pauseReason}</p>
                   )}
                   <p>
-                    Real sending is disabled. The local transport processes at
-                    most one due message per action.
+                    Sending follows the workspace controls and campaign limits.
                   </p>
                   <button
                     className={styles.danger}

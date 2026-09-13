@@ -1,4 +1,7 @@
 import 'server-only'
+import { commandAllowedInMode } from './mode'
+import { queueIntent } from './queue-intent'
+import { readHostedReadiness } from '../setup/readiness'
 import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
 import { projectEmailHandoffToCrm } from '../crm-adapter'
@@ -146,7 +149,7 @@ export async function transact(
     const member = await membership(tx, subject)
     check(
       isSettingsCommand(input.command) ||
-        workspace?.execution_mode === 'simulation',
+        commandAllowedInMode(input.command, workspace?.execution_mode),
       'WORKSPACE_NOT_READY',
     )
     const [prior] =
@@ -158,7 +161,7 @@ export async function transact(
     }
     const result = await handler({ tx, member, now })
     await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail,created_at)
-      values(${member.workspace_id},${subject},${input.command},${result.entityId},${input.idempotencyKey},${tx.json({ state: result.state, transport: 'simulation' })},${now})`
+      values(${member.workspace_id},${subject},${input.command},${result.entityId},${input.idempotencyKey},${tx.json({ state: result.state, transport: workspace.execution_mode })},${now})`
     await tx`insert into em_command_receipts(workspace_id,actor_id,idempotency_key,command,payload_hash,result)
       values(${member.workspace_id},${subject},${input.idempotencyKey},${input.command},${hash},${tx.json(json(result))})`
     return result
@@ -173,6 +176,7 @@ async function review(
   const [campaign] =
     await tx`select * from em_campaigns where workspace_id=${member.workspace_id} and id=${campaignId}`
   check(campaign, 'CAMPAIGN_NOT_FOUND', 404)
+  const [workspace] = await tx`select execution_mode,revision,send_enabled from em_workspaces where id=${member.workspace_id}`
   const config = campaign.draft_config as PilotConfig
   check(config.audienceId && config.steps?.length === 2, 'SAVE_SEQUENCE_FIRST')
   const [snapshot] =
@@ -211,7 +215,7 @@ async function review(
       new Date(r.verification_expires_at) <= now
     )
       reasons.push('Address verification required')
-    if (!String(r.normalized_address).endsWith('.test'))
+    if (workspace.execution_mode === 'simulation' && !String(r.normalized_address).endsWith('.test'))
       reasons.push('Local pilot accepts fabricated .test addresses only')
     if (seenAddresses.has(r.address_id) || seenParties.has(r.party_id))
       reasons.push('Duplicate person or address')
@@ -236,6 +240,7 @@ async function review(
   const draftHash = workflowHash({
     campaignId,
     revision: campaign.revision,
+    workspaceRevision: workspace.revision,
     config,
     audienceHash,
   })
@@ -269,34 +274,6 @@ export async function getPilotReview(
   }) as Promise<PilotReview>
 }
 
-async function queueIntent(
-  context: Context,
-  input: {
-    threadId: string
-    key: string
-    body: string
-    subject: string
-    step: number
-    origin: 'sequence' | 'human'
-    contentRevision: number
-    controllerRevision: number
-    due: Date
-    expires: Date
-  },
-) {
-  const payload = {
-    body: input.body,
-    subject: input.subject,
-    from: 'team@outreach.savingkc.test',
-    transport: 'simulation',
-  }
-  const [intent] =
-    await context.tx`insert into em_send_intents(workspace_id,thread_id,logical_key,origin,step,frozen_payload,payload_hash,
-    expected_content_revision,expected_controller_revision,not_before,expires_at)
-    values(${context.member.workspace_id},${input.threadId},${input.key},${input.origin},${input.step},${context.tx.json(payload)},${workflowHash(payload)},
-    ${input.contentRevision},${input.controllerRevision},${input.due},${input.expires}) returning id`
-  return intent.id as string
-}
 
 export async function executePilotCommand(
   sql: Sql,
@@ -387,6 +364,11 @@ export async function executePilotCommand(
         }
       }
       case 'CAM-LAUNCH': {
+        const [execution] = await tx`select execution_mode from em_workspaces where id=${ws}`
+        if (execution.execution_mode === 'hosted') {
+          const readiness = await readHostedReadiness(tx, ws)
+          check(readiness.ready && readiness.sendingEnabled, 'HOSTED_LAUNCH_NOT_READY')
+        }
         check(command.entityId, 'CAMPAIGN_REQUIRED', 400)
         const [campaign] =
           await tx`select * from em_campaigns where workspace_id=${ws} and id=${command.entityId}`
@@ -451,7 +433,7 @@ export async function executePilotCommand(
         return {
           entityId: campaign.id,
           revision: Number(saved.revision),
-          state: 'simulation_active',
+          state: execution.execution_mode === 'hosted' ? 'active' : 'simulation_active',
         }
       }
       case 'CAM-PAUSE': {
@@ -544,7 +526,8 @@ export async function executePilotCommand(
           expires: new Date(now.getTime() + 7 * 86400000),
         })
         await tx`update em_drafts set state='sent' where workspace_id=${ws} and id=${draft.id}`
-        return { entityId: id, state: 'queued_simulation' }
+        const [mode] = await tx`select execution_mode from em_workspaces where id=${ws}`
+        return { entityId: id, state: mode.execution_mode === 'hosted' ? 'queued' : 'queued_simulation' }
       }
       case 'THR-HANDOFF': {
         const p = command.payload
@@ -1127,7 +1110,7 @@ export async function readPilotState(
     const member = await membership(tx, subject),
       ws = member.workspace_id
     const [workspace] =
-      await tx`select execution_mode,pause_reason,config from em_workspaces where id=${ws}`
+      await tx`select execution_mode,pause_reason,config,send_enabled from em_workspaces where id=${ws}`
     const team = canSeeTeam(member)
     const threads =
       await tx`select t.*,p.display_name as name,a.normalized_address as email,c.name as campaign_name,
@@ -1173,7 +1156,7 @@ export async function readPilotState(
       order by t.last_message_at desc nulls last,t.id limit 500`
     const ids = threads.map((t) => t.id)
     const messages = ids.length
-      ? await tx`select id,thread_id,direction,text_body,occurred_at from em_messages where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) order by thread_id,sequence`
+      ? await tx`select id,thread_id,direction,text_body,occurred_at,transport from em_messages where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) order by thread_id,sequence`
       : []
     const drafts = ids.length
       ? await tx`select id,thread_id,body,body_hash,content_revision,controller_revision,state from em_drafts where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) and author_id=${subject} order by created_at`
@@ -1209,6 +1192,8 @@ export async function readPilotState(
       ? await tx`select id,action,created_at from em_audit_events where workspace_id=${ws} order by created_at desc,id desc limit 30`
       : []
     return json({
+      senders: canManage(member) ? await tx`select s.id,s.from_name as name,s.local_part||'@'||d.name_ascii as address from em_senders s join em_domains d on d.id=s.domain_id and d.workspace_id=s.workspace_id where s.workspace_id=${ws} and s.state='active' and not d.paused order by s.id` : [],
+      sendingEnabled: workspace.send_enabled,
       ai_available: emailAiAvailable(),
       mode: workspace.execution_mode,
       paused: !!workspace.pause_reason,

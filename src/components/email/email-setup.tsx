@@ -100,7 +100,7 @@ function BusinessForm({ settings, busy, act }: Props) {
         </label>
       </div>
       <p>
-        Current practice program: seller outreach. These details are saved
+        Current program: seller outreach. These details are saved
         locally; this step does not connect a sender or start a campaign.
       </p>
       <button className={styles.primary} disabled={busy}>

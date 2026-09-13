@@ -1,11 +1,11 @@
 import { createReceivingHttp } from '@/lib/email/inbound/operations'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
-import { pilotDatabase } from '@/lib/email/workflow/connection'
+import { workflowDatabase } from '@/lib/email/workflow/connection'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 const handlers = createReceivingHttp({
-  database: pilotDatabase,
+  database: workflowDatabase,
   subject: async (request) =>
     (await resolveAuthenticatedActor(request))?.subject ?? null,
 })

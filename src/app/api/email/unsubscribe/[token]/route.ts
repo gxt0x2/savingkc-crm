@@ -1,8 +1,8 @@
 import { createPreferencePost } from "@/lib/email/preferences/http";
-import { pilotDatabase } from "@/lib/email/workflow/connection";
+import { workflowDatabase } from "@/lib/email/workflow/connection";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const post = createPreferencePost(pilotDatabase);
+const post = createPreferencePost(workflowDatabase);
 export async function POST(
   request: Request,
   context: { params: Promise<{ token: string }> },

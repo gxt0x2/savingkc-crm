@@ -9,24 +9,24 @@ export function createReceivingWorkerHttp(deps: {
   database: () => Sql
   enabled: () => boolean
   secret: () => string | undefined
+  cronSecret?: () => string | undefined
   ownerId: () => string | undefined
-  process?: typeof processNextReceivedReply
+  process?: (sql: Sql, owner: string) => Promise<unknown>
 }) {
   return async function run(request: Request) {
     try {
-      const secret = deps.secret(),
+      const secrets = [deps.secret(), deps.cronSecret?.()].filter((value): value is string => Boolean(value && value.length >= 32)),
         supplied = request.headers
           .get('authorization')
           ?.match(/^Bearer (\S+)$/)?.[1]
       if (
-        !secret ||
-        secret.length < 32 ||
+        secrets.length === 0 ||
         !supplied ||
         supplied.length > 1024 ||
-        !timingSafeEqual(
+        !secrets.some(secret => timingSafeEqual(
           createHash('sha256').update(secret).digest(),
           createHash('sha256').update(supplied).digest(),
-        )
+        ))
       )
         throw new WorkflowError('UNAUTHORIZED', 401)
       if (!deps.enabled())

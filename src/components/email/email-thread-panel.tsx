@@ -463,7 +463,7 @@ export function EmailThreadPanel({
                     queueReply(editor.body, editor.revision, editor.controller)
                   }
                 >
-                  Queue simulated reply
+                  {localSimulation ? 'Queue simulated reply' : 'Approve and queue reply'}
                 </button>
                 <button
                   disabled={
@@ -658,7 +658,7 @@ export function EmailThreadPanel({
                   ) : (
                     <p>
                       {t.reply_queued
-                        ? 'Your reply is queued for simulated delivery.'
+                        ? (localSimulation ? 'Your reply is queued for simulated delivery.' : 'Your approved reply is queued for delivery.')
                         : t.state === 'waiting'
                           ? 'No human action is due.'
                           : 'Read the latest reply and choose the next step.'}
