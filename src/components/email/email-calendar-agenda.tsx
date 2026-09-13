@@ -24,6 +24,7 @@ export function EmailCalendarAgenda({
 }) {
   const [kind, setKind] = useState('')
   const [assignee, setAssignee] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const tasks = thread.open_tasks ?? []
   const types = Array.from(
     new Set([...tasks.map((task) => task.kind), ...(kind ? [kind] : [])]),
@@ -40,13 +41,28 @@ export function EmailCalendarAgenda({
       (!assignee || (task.assigned_to ?? '__unassigned') === assignee),
   )
   return (
-    <section aria-label="Scheduled and upcoming work" className={styles.agenda}>
+    <section aria-label="Upcoming" className={styles.agenda}>
       <div className={styles.row}>
-        <h4>Scheduled & upcoming</h4>
-        <small>{thread.open_task_count ?? tasks.length} open</small>
+        <h4>
+          Upcoming <small>({thread.open_task_count ?? tasks.length})</small>
+        </h4>
+        {(tasks.length > 0 || kind || assignee) && (
+          <button
+            type="button"
+            className={styles.agendaFilterToggle}
+            aria-expanded={filtersOpen}
+            aria-controls="upcoming-filters"
+            onClick={() => setFiltersOpen(!filtersOpen)}
+          >
+            Filters
+            {kind || assignee
+              ? ` · ${Number(!!kind) + Number(!!assignee)}`
+              : ''}
+          </button>
+        )}
       </div>
       <p className={styles.agendaScope}>For this Lead · Chicago time</p>
-      {(tasks.length > 0 || kind || assignee) && (
+      <div id="upcoming-filters" hidden={!filtersOpen}>
         <div className={styles.agendaFilters}>
           <label>
             Type
@@ -79,7 +95,7 @@ export function EmailCalendarAgenda({
             </select>
           </label>
         </div>
-      )}
+      </div>
       <div
         className={styles.agendaItems}
         tabIndex={visible.length ? 0 : undefined}
@@ -96,7 +112,10 @@ export function EmailCalendarAgenda({
                   ? 'Scheduled'
                   : 'Needs a date'
           return (
-            <article key={task.key} className={styles.agendaItem}>
+            <article
+              key={task.key}
+              className={`${styles.agendaItem} ${status === 'Scheduled' ? styles.agendaScheduled : ''}`}
+            >
               <small
                 className={
                   task.status === 'blocked' || overdue

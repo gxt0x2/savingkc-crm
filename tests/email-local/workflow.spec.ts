@@ -108,6 +108,8 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
     drawer.getByText('Seller prefers afternoon calls.', { exact: true }),
   ).toBeVisible()
   await drawer.getByRole('tab', { name: 'Calendar', exact: true }).click()
+  await expect(drawer.getByLabel('Title', { exact: true })).toBeHidden()
+  await drawer.getByRole('button', { name: 'Scheduler', exact: true }).click()
   await drawer
     .getByLabel('Title', { exact: true })
     .fill('Call seller to confirm timing')
@@ -121,12 +123,15 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
     .getByRole('button', { name: 'Save follow-up', exact: true })
     .click()
   await expect(page.getByRole('status')).toContainText('Follow-up task saved')
+  await expect(drawer.getByLabel('Title', { exact: true })).toBeHidden()
   await expect(drawer).toContainText('Sep 15, 2:00 PM CT')
   const agenda = drawer.getByRole('region', {
-    name: 'Scheduled and upcoming work',
+    name: 'Upcoming',
   })
   await expect(agenda).toContainText('Call seller to confirm timing')
   await expect(agenda).toContainText('Sep 15, 2:00 PM CT')
+  await expect(agenda.getByLabel('Filter task type')).toBeHidden()
+  await agenda.getByRole('button', { name: 'Filters', exact: true }).click()
   await agenda.getByLabel('Filter task type').selectOption('callback')
   await agenda.getByLabel('Filter assignee').selectOption('Demo owner')
   await expect(agenda.getByRole('article')).toHaveCount(1)

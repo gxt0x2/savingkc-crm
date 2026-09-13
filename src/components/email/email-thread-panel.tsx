@@ -100,6 +100,7 @@ export function EmailThreadPanel({
   const [older, setOlder] = useState(false)
   const [note, setNote] = useState('')
   const [schedule, setSchedule] = useState('')
+  const [schedulerOpen, setSchedulerOpen] = useState(false)
   const [taskTitle, setTaskTitle] = useState(t.callback_title ?? 'Call seller')
   const [taskNote, setTaskNote] = useState(t.callback_notes ?? '')
   const [outcome, setOutcome] = useState('')
@@ -156,6 +157,7 @@ export function EmailThreadPanel({
   const openDetails = (tab: DetailTab = detailTab) => {
     setDetailTab(tab)
     setDetails(true)
+    if (tab === 'followups') setSchedulerOpen(true)
     setScheduleRevision({
       thread: t.content_revision,
       handoff: t.handoff_revision ?? 0,
@@ -673,8 +675,15 @@ export function EmailThreadPanel({
                               revision: t.content_revision,
                               controller: t.controller_revision,
                             })
-                            if (window.matchMedia('(max-width: 1150px), (max-height: 780px)').matches) closeDetails()
-                            requestAnimationFrame(() => composer.current?.focus())
+                            if (
+                              window.matchMedia(
+                                '(max-width: 1150px), (max-height: 780px)',
+                              ).matches
+                            )
+                              closeDetails()
+                            requestAnimationFrame(() =>
+                              composer.current?.focus(),
+                            )
                           }}
                         >
                           Edit reply
@@ -878,109 +887,123 @@ export function EmailThreadPanel({
             <EmailCalendarAgenda thread={t} asOf={data.asOf} />
             {taskEditable && (
               <>
-                <form
-                  className={styles.drawerForm}
-                  onSubmit={async (e) => {
-                    e.preventDefault()
-                    setLocalError('')
-                    let start: Date
-                    try {
-                      start = chicagoDateTime(schedule)
-                    } catch {
-                      setLocalError('Choose a valid Chicago date and time.')
-                      return
-                    }
-                    const result = await act({
-                      command: 'HAN-SCHEDULE',
-                      idempotencyKey: crypto.randomUUID(),
-                      expectedRevision: scheduleRevision.handoff,
-                      payload: {
-                        handoffId: t.handoff_id!,
-                        mode: 'task',
-                        title: taskTitle,
-                        note: taskNote,
-                        startAt: start.toISOString(),
-                        timezone: 'America/Chicago',
-                        contentRevision: scheduleRevision.thread,
-                      },
-                    })
-                    if (result) {
-                      setSchedule('')
-                      setScheduleRevision({
-                        thread: t.content_revision,
-                        handoff: scheduleRevision.handoff + 1,
-                      })
-                    }
-                  }}
+                <button
+                  type="button"
+                  className={styles.schedulerToggle}
+                  aria-expanded={schedulerOpen}
+                  aria-controls="email-scheduler"
+                  onClick={() => setSchedulerOpen(!schedulerOpen)}
                 >
-                  <label>
-                    Title
-                    <input
-                      value={taskTitle}
-                      onChange={(e) => setTaskTitle(e.target.value)}
-                      required
-                      maxLength={200}
-                      placeholder="Describe the action"
-                    />
-                  </label>
-                  <div className={styles.attachedLead}>
-                    <small>Attached to Lead</small>
-                    <strong>{t.name}</strong>
-                  </div>
-                  <div className={styles.taskFacts}>
-                    <div>
-                      <small>Type</small>
-                      <span>Follow-up</span>
-                    </div>
-                    <div>
-                      <small>Assigned to</small>
-                      <span>{owner?.name ?? 'Unassigned'}</span>
-                    </div>
-                    <div>
-                      <small>Role</small>
-                      <span>Acquisitions</span>
-                    </div>
-                  </div>
-                  <label>
-                    Follow-up time (Chicago)
-                    <input
-                      type="datetime-local"
-                      required
-                      value={schedule}
-                      onChange={(e) => setSchedule(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Notes (optional)
-                    <textarea
-                      aria-label="Task notes"
-                      rows={2}
-                      maxLength={2000}
-                      value={taskNote}
-                      onChange={(e) => setTaskNote(e.target.value)}
-                      placeholder="Additional details…"
-                    />
-                  </label>
-                  <div className={styles.taskFooter}>
-                    <button
-                      type="button"
-                      disabled={blocked}
-                      onClick={() => {
+                  <span>Scheduler</span>
+                  <span aria-hidden="true">{schedulerOpen ? '−' : '+'}</span>
+                </button>
+                <div id="email-scheduler" hidden={!schedulerOpen}>
+                  <form
+                    className={styles.drawerForm}
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      setLocalError('')
+                      let start: Date
+                      try {
+                        start = chicagoDateTime(schedule)
+                      } catch {
+                        setLocalError('Choose a valid Chicago date and time.')
+                        return
+                      }
+                      const result = await act({
+                        command: 'HAN-SCHEDULE',
+                        idempotencyKey: crypto.randomUUID(),
+                        expectedRevision: scheduleRevision.handoff,
+                        payload: {
+                          handoffId: t.handoff_id!,
+                          mode: 'task',
+                          title: taskTitle,
+                          note: taskNote,
+                          startAt: start.toISOString(),
+                          timezone: 'America/Chicago',
+                          contentRevision: scheduleRevision.thread,
+                        },
+                      })
+                      if (result) {
                         setSchedule('')
-                        setTaskTitle(t.callback_title ?? 'Call seller')
-                        setTaskNote(t.callback_notes ?? '')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className={styles.primary}
-                      disabled={blocked || !schedule || !taskTitle.trim()}
-                    >
-                      Save follow-up
-                    </button>
-                  </div>
-                </form>
+                        setSchedulerOpen(false)
+                        setScheduleRevision({
+                          thread: t.content_revision,
+                          handoff: scheduleRevision.handoff + 1,
+                        })
+                      }
+                    }}
+                  >
+                    <label>
+                      Title
+                      <input
+                        value={taskTitle}
+                        onChange={(e) => setTaskTitle(e.target.value)}
+                        required
+                        maxLength={200}
+                        placeholder="Describe the action"
+                      />
+                    </label>
+                    <div className={styles.attachedLead}>
+                      <small>Attached to Lead</small>
+                      <strong>{t.name}</strong>
+                    </div>
+                    <div className={styles.taskFacts}>
+                      <div>
+                        <small>Type</small>
+                        <span>Follow-up</span>
+                      </div>
+                      <div>
+                        <small>Assigned to</small>
+                        <span>{owner?.name ?? 'Unassigned'}</span>
+                      </div>
+                      <div>
+                        <small>Role</small>
+                        <span>Acquisitions</span>
+                      </div>
+                    </div>
+                    <label>
+                      Follow-up time (Chicago)
+                      <input
+                        type="datetime-local"
+                        required
+                        value={schedule}
+                        onChange={(e) => setSchedule(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Notes (optional)
+                      <textarea
+                        aria-label="Task notes"
+                        rows={2}
+                        maxLength={2000}
+                        value={taskNote}
+                        onChange={(e) => setTaskNote(e.target.value)}
+                        placeholder="Additional details…"
+                      />
+                    </label>
+                    <div className={styles.taskFooter}>
+                      <button
+                        type="button"
+                        disabled={blocked}
+                        onClick={() => {
+                          setSchedule('')
+                          setTaskTitle(t.callback_title ?? 'Call seller')
+                          setTaskNote(t.callback_notes ?? '')
+                          setSchedulerOpen(false)
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className={styles.primary}
+                        disabled={blocked || !schedule || !taskTitle.trim()}
+                      >
+                        Save follow-up
+                      </button>
+                    </div>
+                  </form>
+                </div>
                 <details className={styles.outcomeDisclosure}>
                   <summary>Record call outcome</summary>
                   <form

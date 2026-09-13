@@ -1273,6 +1273,10 @@
   margin: 0;
   font-size: 13px;
 }
+.agenda .row h4 small {
+  display: inline;
+  font-weight: 400;
+}
 .agendaScope {
   color: var(--muted);
   font-size: 10px !important;
@@ -1307,6 +1311,25 @@
 .agendaItem strong {
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+.agendaItem.agendaScheduled {
+  background: #fff5db;
+  border-color: #ecd69f;
+}
+.agenda .agendaFilterToggle {
+  padding: 3px 7px;
+  min-height: 0;
+  font-size: 11px;
+}
+.schedulerToggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  text-align: left;
+  font-weight: 600;
 }
 .agendaItem span {
   font-size: 11px;
