@@ -10,6 +10,7 @@ import {
   type Result,
 } from '../workflow/core'
 import type { PilotSettings } from '../workflow/types'
+import { intendedOutreachOpsBrief } from '../domains/intended'
 
 const settingsCommands = new Set([
   'SET-BUSINESS',
@@ -101,7 +102,7 @@ export async function readSettings(context: Context): Promise<PilotSettings> {
       state: 'blocked',
       sendingEnabled: false,
       blockers: [
-        'Resend product API key is not wired. Outreach DNS is ops-verified (talktosavingkc.com verified; savingkcteam.com and yourkchomebuyer.com partial). Sending stays off',
+        `Resend product API key is not wired. Outreach DNS is ops-verified (${intendedOutreachOpsBrief()}). Sending stays off`,
         playbook
           ? 'Ari draft-only policy is saved; paid model evaluations are still required for automatic replies'
           : 'A published draft-only reply policy has not been saved',

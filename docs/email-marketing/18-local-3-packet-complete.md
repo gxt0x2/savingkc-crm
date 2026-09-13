@@ -25,16 +25,16 @@ The local harness applies eighteen named Email migrations including `20260913190
 - `npm run test:email:workflow` — 88 passed (serial, PostgreSQL 16, `LC_ALL=C`)
 - `npm run test:email:local-ui` — 8 browser stories passed
 - Manual practice-app walkthrough: save → deterministic examples → case drilldown → publish → draft-only default → Readiness stays blocked. Live send was not enabled.
-- Ops-verify follow-up: intended-domain ops copy with `sendingReady=false`.
-- Wizard-finish follow-up: 108 unit tests, 8 browser stories (setup steps 4–6 embed the real forms; Connections lists `EMAIL_CREDENTIALS_KEY_V1`). Live send stayed off.
+- Ops-verify follow-up: intended-domain ops copy with `sendingReady=false`. Latest snapshot: buyer send+receive verified; team receive pending.
+- Wizard-finish follow-up: Connections lists `EMAIL_CREDENTIALS_KEY_V1`, `SavingKC Email CRM`, `EMAIL_RESEND_WEBHOOK_ENDPOINT_ID`, `EMAIL_PREFERENCE_KEY_V*`, and `POST /api/webhooks/email/resend`. Live send stayed off.
 
 ## Robin vs Ernest (authoritative)
 
 | Work | Owner | Status |
 | --- | --- | --- |
-| Live Resend domain add + Cloudflare email DNS for `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` | **Robin** | Landed. `talktosavingkc.com` verified; the other two send-verified / Resend partial. See [ops-verify](19-outreach-dns-ops-verify.md). This VM did not write those records. |
+| Live Resend domain add + Cloudflare email DNS for `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` | **Robin** | Landed. `talktosavingkc.com` and `yourkchomebuyer.com` send+receive verified; `savingkcteam.com` send verified / receive pending. See [ops-verify](19-outreach-dns-ops-verify.md). This VM did not write those records. |
 | Direction, payment, login, and live-send release auth | **Ernest** | Release auth is still required for live send. Login/payment only if a block appears. |
-| Resend Email product API key + hosted secrets | **Robin (parallel)** | Exact names in [hosted-secrets contract](20-hosted-secrets-contract.md). Need `EMAIL_CREDENTIALS_KEY_V1` (64 hex) before an owner can paste `re_…` on Connections. Do not use `RESEND_API_KEY`. Wiring secrets does not unlock live send. |
+| Resend Email product API key + hosted secrets | **Robin (parallel)** | Named key `SavingKC Email CRM` exists off-chat. Exact names in [hosted-secrets contract](20-hosted-secrets-contract.md): Connections UI paste, `EMAIL_CREDENTIALS_KEY_V1`, `EMAIL_PREFERENCE_KEY_V*`, `EMAIL_RESEND_WEBHOOK_ENDPOINT_ID`, `POST /api/webhooks/email/resend`. Webhook secret is not created. Do not use `RESEND_API_KEY`. Wiring secrets does not unlock live send. |
 | Funded Ari / AI Gateway credits | Product / billing | Unfunded (prior HTTP 403). AI paths stay fail-closed. |
 | Google Calendar token refresh + per-agent calendars | Product / live verify | Stored CRM tokens are expired/unverified for Email. |
 | VAPID + per-user push devices | Product / live verify | `NTF-TEST` records blocked rows only. |
@@ -61,7 +61,7 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 - Do not claim Ari works. Credits are unfunded.
 - Do not claim Calendar is connected or that a callback is a booked appointment.
-- Do not claim sending-ready from purchased domains or from Robin’s landed DNS. Ops-verified is not product-ready.
+- Do not claim sending-ready from purchased domains or from Robin’s landed DNS. Ops-verified is not product-ready. Do not claim the webhook is live; the signing secret is not created.
 - Do not treat a deterministic fixture pass as a paid model evaluation.
 - A Lead is not an Opportunity unless a human qualifies it.
 

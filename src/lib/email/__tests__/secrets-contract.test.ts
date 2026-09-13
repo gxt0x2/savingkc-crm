@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  EMAIL_CONNECTIONS_SECRET_CONTRACT,
   EMAIL_FLAGS_MUST_STAY_OFF,
   EMAIL_HOSTED_SECRETS,
+  EMAIL_PREFERENCE_KEY_FAMILY,
   EMAIL_RESEND_KEY_PATTERN,
+  EMAIL_RESEND_PRODUCT_KEY_LABEL,
+  EMAIL_RESEND_WEBHOOK_PATH,
+  EMAIL_RESEND_WEBHOOK_SECRET_PATTERN,
   EMAIL_SECRETS_NOT_THIS_PRODUCT,
   emailHostedSecretNames,
   emailLiveSendUnlockedByHostedSecrets,
@@ -22,6 +27,42 @@ describe('Email hosted secret contract', () => {
       EMAIL_HOSTED_SECRETS.find((row) => row.name === 'EMAIL_CREDENTIALS_KEY_V1')
         ?.requiredNow,
     ).toBe(true)
+  })
+  it('documents Connections intake, preference family and webhook path', () => {
+    expect(EMAIL_RESEND_PRODUCT_KEY_LABEL).toBe('SavingKC Email CRM')
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.intake).toMatch(
+      /POST \/api\/email\/connections/,
+    )
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.credentialsKey).toBe(
+      'EMAIL_CREDENTIALS_KEY_V1',
+    )
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.preferenceKeyFamily).toBe(
+      EMAIL_PREFERENCE_KEY_FAMILY,
+    )
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.webhookEndpointId).toBe(
+      'EMAIL_RESEND_WEBHOOK_ENDPOINT_ID',
+    )
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook).toMatchObject({
+      method: 'POST',
+      path: EMAIL_RESEND_WEBHOOK_PATH,
+      secretCreated: false,
+      releaseGated: true,
+    })
+    expect(EMAIL_RESEND_WEBHOOK_PATH).toBe('/api/webhooks/email/resend')
+    expect(
+      new RegExp(EMAIL_RESEND_WEBHOOK_SECRET_PATTERN).test(
+        'whsec_fixture_secret_ok',
+      ),
+    ).toBe(true)
+    expect(
+      EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.publicUrlTemplate,
+    ).toBe('https://<host>/api/webhooks/email/resend')
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.existsOffChat).toBe(
+      true,
+    )
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.liveSendUnlocked).toBe(
+      false,
+    )
   })
   it('does not treat hosted secrets as a live-send unlock', () => {
     expect(EMAIL_FLAGS_MUST_STAY_OFF).toEqual([

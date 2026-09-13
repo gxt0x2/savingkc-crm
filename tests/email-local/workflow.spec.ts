@@ -811,7 +811,10 @@ test('mock-backed sender setup rejects the main domain and shows provider DNS wi
     'talktosavingkc.com — Cloudflare DNS-only records in place; Resend verified, send and receive',
   )
   await expect(section).toContainText(
-    'savingkcteam.com — Cloudflare DNS-only records in place; send verified, receive enabled, Resend rechecking or partial',
+    'savingkcteam.com — Cloudflare DNS-only records in place; send verified, receive pending',
+  )
+  await expect(section).toContainText(
+    'yourkchomebuyer.com — Cloudflare DNS-only records in place; Resend verified, send and receive',
   )
   await expect(section).toContainText(
     'Sending stays off until the Email product API key and release auth.',
@@ -949,6 +952,10 @@ test('setup productization stays fail-closed and keeps personal views local', as
   await setup.getByRole('button', { name: /3. Connections/ }).click()
   await setup.getByText('Hosted secrets this screen expects', { exact: true }).click()
   await expect(setup).toContainText('EMAIL_CREDENTIALS_KEY_V1')
+  await expect(setup).toContainText('SavingKC Email CRM')
+  await expect(setup).toContainText('EMAIL_RESEND_WEBHOOK_ENDPOINT_ID')
+  await expect(setup).toContainText('EMAIL_PREFERENCE_KEY_V*')
+  await expect(setup).toContainText('POST /api/webhooks/email/resend')
   await expect(setup).toContainText('RESEND_API_KEY')
   await expect(setup).toContainText('Keep EMAIL_LIVE_DISPATCH_ENABLED')
   await setup.getByRole('button', { name: /7. Readiness/ }).click()

@@ -5,6 +5,7 @@ import type { EmailCommand } from '@/lib/email/contracts'
 import type { EmailWorkspaceConfig } from '@/lib/email/config'
 import type { PilotSettings, PilotState } from '@/lib/email/workflow/types'
 import styles from './email-workspace.module.css'
+import { intendedOutreachOpsBrief } from '@/lib/email/domains/intended'
 import { EmailConnections } from './email-connections'
 import { EmailIntegrations } from './email-integrations'
 import { EmailPlaybooks } from './email-playbooks'
@@ -351,11 +352,10 @@ function ReadinessForm({
       <h3>Readiness</h3>
       <p>
         This is a local checklist. It cannot finish setup or turn sending on.
-        Outreach-domain DNS has landed in ops (talktosavingkc.com verified;
-        savingkcteam.com and yourkchomebuyer.com partial). This page does not
-        treat that as sending-ready. The Email product API key, hosted secrets,
-        Google Calendar, push and the response line stay blocked until each
-        connection is verified and release auth is granted.
+        Outreach-domain DNS has landed in ops ({intendedOutreachOpsBrief()}).
+        This page does not treat that as sending-ready. The Email product API
+        key, hosted secrets, Google Calendar, push and the response line stay
+        blocked until each connection is verified and release auth is granted.
       </p>
       <ul>
         {settings.readiness.blockers.map((blocker) => (

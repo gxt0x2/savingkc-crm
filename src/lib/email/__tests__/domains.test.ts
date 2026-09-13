@@ -3,6 +3,7 @@ import {
   INTENDED_OUTREACH_DOMAINS,
   PRIMARY_BUSINESS_DOMAIN,
   intendedOutreachDomainNames,
+  intendedOutreachOpsBrief,
   intendedOutreachOpsLabel,
   intendedOutreachReadiness,
   outreachSendingUnlocked,
@@ -58,8 +59,28 @@ describe('sending domains', () => {
       receivingEnabled: true,
       sendingReady: false,
     })
-    expect(intendedOutreachReadiness(team).resendVerify).toBe('partial')
-    expect(intendedOutreachReadiness(buyer).resendVerify).toBe('partial')
+    expect(intendedOutreachReadiness(team)).toMatchObject({
+      resendVerify: 'partial',
+      receivingEnabled: false,
+      sendingReady: false,
+    })
+    expect(intendedOutreachReadiness(buyer)).toMatchObject({
+      resendVerify: 'verified',
+      receivingEnabled: true,
+      sendingReady: false,
+    })
+    expect(intendedOutreachOpsLabel(talk)).toMatch(
+      /Resend verified, send and receive/,
+    )
+    expect(intendedOutreachOpsLabel(team)).toMatch(
+      /send verified, receive pending/,
+    )
+    expect(intendedOutreachOpsLabel(buyer)).toMatch(
+      /Resend verified, send and receive/,
+    )
+    expect(intendedOutreachOpsBrief()).toBe(
+      'talktosavingkc.com and yourkchomebuyer.com send+receive verified; savingkcteam.com send verified / receive pending',
+    )
     for (const domain of INTENDED_OUTREACH_DOMAINS) {
       expect(
         assertIndependentSendingDomain(domain.name, PRIMARY_BUSINESS_DOMAIN),

@@ -8,6 +8,7 @@ export const PRIMARY_BUSINESS_DOMAIN = 'savingkc.com'
  * unlock live send, or write DNS from this VM. `savingkc.com` is unchanged.
  */
 export type OpsResendVerify = 'verified' | 'partial'
+export type OpsReceiveCapability = 'enabled' | 'pending'
 
 export type IntendedOutreachDomain = {
   name: string
@@ -19,7 +20,7 @@ export type IntendedOutreachDomain = {
   receivingMxReady: boolean
   resendVerify: OpsResendVerify
   sendCapability: 'verified'
-  receiveCapability: 'enabled'
+  receiveCapability: OpsReceiveCapability
   sendingReady: false
 }
 
@@ -38,7 +39,6 @@ const OPS_BASE = {
   cloudflareDnsWritten: true,
   resendDomainAdded: true,
   sendCapability: 'verified',
-  receiveCapability: 'enabled',
   sendingReady: false,
 } as const
 
@@ -49,6 +49,7 @@ export const INTENDED_OUTREACH_DOMAINS: readonly IntendedOutreachDomain[] = [
     emailAuthenticationReady: true,
     receivingMxReady: true,
     resendVerify: 'verified',
+    receiveCapability: 'enabled',
   },
   {
     name: 'savingkcteam.com',
@@ -56,13 +57,15 @@ export const INTENDED_OUTREACH_DOMAINS: readonly IntendedOutreachDomain[] = [
     emailAuthenticationReady: true,
     receivingMxReady: true,
     resendVerify: 'partial',
+    receiveCapability: 'pending',
   },
   {
     name: 'yourkchomebuyer.com',
     ...OPS_BASE,
     emailAuthenticationReady: true,
     receivingMxReady: true,
-    resendVerify: 'partial',
+    resendVerify: 'verified',
+    receiveCapability: 'enabled',
   },
 ]
 
@@ -89,12 +92,38 @@ export function intendedOutreachReadiness(domain: IntendedOutreachDomain) {
   }
 }
 
+export function intendedOutreachStatusPhrase(domain: IntendedOutreachDomain) {
+  if (
+    domain.resendVerify === 'verified' &&
+    domain.receiveCapability === 'enabled'
+  ) {
+    return 'Resend verified, send and receive'
+  }
+  if (domain.receiveCapability === 'pending') {
+    return 'send verified, receive pending'
+  }
+  return 'send verified, receive enabled, Resend rechecking or partial'
+}
+
 export function intendedOutreachOpsLabel(domain: IntendedOutreachDomain) {
-  const resend =
-    domain.resendVerify === 'verified'
-      ? 'Resend verified, send and receive'
-      : 'send verified, receive enabled, Resend rechecking or partial'
-  return `${domain.name} — Cloudflare DNS-only records in place; ${resend}. Sending stays off until the Email product API key and release auth.`
+  return `${domain.name} — Cloudflare DNS-only records in place; ${intendedOutreachStatusPhrase(domain)}. Sending stays off until the Email product API key and release auth.`
+}
+
+/** Short ops snapshot for readiness copy. Not product readiness. */
+export function intendedOutreachOpsBrief() {
+  const full = INTENDED_OUTREACH_DOMAINS.filter(
+    (domain) =>
+      domain.resendVerify === 'verified' &&
+      domain.receiveCapability === 'enabled',
+  ).map((domain) => domain.name)
+  const pending = INTENDED_OUTREACH_DOMAINS.filter(
+    (domain) => domain.receiveCapability === 'pending',
+  ).map((domain) => domain.name)
+  const parts: string[] = []
+  if (full.length) parts.push(`${full.join(' and ')} send+receive verified`)
+  if (pending.length)
+    parts.push(`${pending.join(' and ')} send verified / receive pending`)
+  return parts.join('; ')
 }
 
 /** Ops DNS is not product readiness. Live send stays gated. */

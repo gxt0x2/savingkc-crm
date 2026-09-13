@@ -5,10 +5,13 @@ import { EmailDomains } from './email-domains'
 import {
   PRIMARY_BUSINESS_DOMAIN,
   intendedOutreachDomainNames,
+  intendedOutreachOpsBrief,
 } from '@/lib/email/domains/intended'
 import {
+  EMAIL_CONNECTIONS_SECRET_CONTRACT,
   EMAIL_FLAGS_MUST_STAY_OFF,
   EMAIL_HOSTED_SECRETS,
+  EMAIL_RESEND_PRODUCT_KEY_LABEL,
   EMAIL_SECRETS_NOT_THIS_PRODUCT,
 } from '@/lib/email/secrets-contract'
 
@@ -255,10 +258,9 @@ export function EmailConnections() {
         Connect your existing services here. Sending stays off until the Email
         product API key, hosted secrets and release auth are in place. Owned
         outreach domains ({intendedOutreachDomainNames().join(', ')}) have
-        ops-verified Cloudflare DNS-only records. talktosavingkc.com is Resend
-        verified; savingkcteam.com and yourkchomebuyer.com are send-verified
-        with Resend still rechecking or partial. This screen does not treat
-        that ops work as sending-ready.{' '}
+        ops-verified Cloudflare DNS-only records (
+        {intendedOutreachOpsBrief()}). This screen does not treat that ops
+        work as sending-ready.{' '}
         {PRIMARY_BUSINESS_DOMAIN} stays the primary business domain and cannot
         be a campaign sender.
       </p>
@@ -266,18 +268,46 @@ export function EmailConnections() {
         <summary>Hosted secrets this screen expects</summary>
         <p>
           Robin can wire these hosted names in parallel. They do not unlock
-          live send. The Resend product key is an owner-pasted <code>re_</code>
-          value on this form after {EMAIL_HOSTED_SECRETS[0].name} is present.
-          Do not use {EMAIL_SECRETS_NOT_THIS_PRODUCT[0]} for Email — that env
-          belongs to Conversations.
+          live send. The named Resend key {EMAIL_RESEND_PRODUCT_KEY_LABEL}{' '}
+          exists off-chat.
+          Paste it here as <code>re_</code> after{' '}
+          {EMAIL_CONNECTIONS_SECRET_CONTRACT.credentialsKey} is present (
+          {EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.intake}). Do not use{' '}
+          {EMAIL_SECRETS_NOT_THIS_PRODUCT[0]} for Email — that env belongs to
+          Conversations.
         </p>
         <ul>
+          <li>
+            Resend API key via Connections UI · format{' '}
+            <code>
+              {EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.format}
+            </code>
+          </li>
           {EMAIL_HOSTED_SECRETS.map((row) => (
             <li key={row.name}>
               <code>{row.name}</code> · {row.format} · {row.requiredFor}
               {row.requiredNow ? ' Required before a key can be stored.' : ''}
             </li>
           ))}
+          <li>
+            <code>
+              {EMAIL_CONNECTIONS_SECRET_CONTRACT.preferenceKeyFamily}
+            </code>{' '}
+            · 64 hex HMAC keys for unsubscribe tokens
+          </li>
+          <li>
+            Webhook path {EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.method}{' '}
+            <code>{EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.path}</code> ·
+            public URL{' '}
+            <code>
+              {EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.publicUrlTemplate}
+            </code>{' '}
+            after hosted Email routes deploy. Signing secret format{' '}
+            <code>
+              {EMAIL_CONNECTIONS_SECRET_CONTRACT.webhook.secretFormat}
+            </code>
+            . Secret is not created yet (release-gated).
+          </li>
         </ul>
         <p>
           Keep {EMAIL_FLAGS_MUST_STAY_OFF.join(', ')} unset. Env flags are not

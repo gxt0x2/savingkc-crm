@@ -17,8 +17,8 @@ The local harness applies eighteen named Email migrations including `20260913190
 
 ## Still blocked
 
-- A Resend Email product API key pasted on Connections after `EMAIL_CREDENTIALS_KEY_V1` is hosted. Signup-only account at `ernest@savingkc.com` is not a product connection. Robin is wiring hosted secrets in parallel; see [hosted-secrets contract](20-hosted-secrets-contract.md). `RESEND_API_KEY` is not this product.
-- Robin’s live Resend domain add and Cloudflare email DNS for the three outreach domains — **landed**. `talktosavingkc.com` is Resend verified (send+receive). `savingkcteam.com` and `yourkchomebuyer.com` are send-verified with receive enabled and Resend still rechecking or partial. See [ops-verify snapshot](19-outreach-dns-ops-verify.md). This is not product readiness. `savingkc.com` stays untouched.
+- A Resend Email product API key pasted on Connections after `EMAIL_CREDENTIALS_KEY_V1` is hosted. Named key `SavingKC Email CRM` exists off-chat; Robin is wiring it. That is not a live Email connection. Signup-only account at `ernest@savingkc.com` is not a product connection. See [hosted-secrets contract](20-hosted-secrets-contract.md). `RESEND_API_KEY` is not this product. Webhook secret for `POST /api/webhooks/email/resend` is **not created** until hosted Email routes deploy (`https://<host>/api/webhooks/email/resend`).
+- Robin’s live Resend domain add and Cloudflare email DNS for the three outreach domains — **landed**. `talktosavingkc.com` and `yourkchomebuyer.com` are send+receive verified. `savingkcteam.com` is send verified / receive pending. See [ops-verify snapshot](19-outreach-dns-ops-verify.md). This is not product readiness. `savingkc.com` stays untouched.
 - Funded Ari / AI Gateway credits (prior HTTP 403). Deterministic examples are not a paid model evaluation. AI paths stay fail-closed.
 - Verified Google Calendar refresh and per-agent calendars. Three stored CRM tokens with Calendar scope remain expired/unverified for Email.
 - VAPID keys plus per-user push device registration.

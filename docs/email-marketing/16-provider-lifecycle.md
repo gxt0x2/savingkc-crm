@@ -16,7 +16,7 @@ Local-only continuation of build-status next implementation order #2. This incre
 ## Still blocked
 
 - A Resend API key wired into Email. A signup-only account exists at `ernest@savingkc.com`; that is not a product connection or sending proof.
-- Independent sending domains and Cloudflare DNS. Owner-purchased outreach names (Cloudflare Registrar, nameservers already on Cloudflare): `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`. Robin has landed Resend domain add + Cloudflare DNS-only records (`talktosavingkc.com` verified; the other two send-verified / Resend partial). See [ops-verify](19-outreach-dns-ops-verify.md). This increment does not invent product readiness from those writes. `savingkc.com` stays the primary business domain and is excluded from campaign senders. Sending stays off until the Email product API key, hosted secrets and release auth.
+- Independent sending domains and Cloudflare DNS. Owner-purchased outreach names (Cloudflare Registrar, nameservers already on Cloudflare): `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`. Robin has landed Resend domain add + Cloudflare DNS-only records (`talktosavingkc.com` and `yourkchomebuyer.com` send+receive verified; `savingkcteam.com` send verified / receive pending). See [ops-verify](19-outreach-dns-ops-verify.md). This increment does not invent product readiness from those writes. `savingkc.com` stays the primary business domain and is excluded from campaign senders. Sending stays off until the Email product API key, hosted secrets and release auth.
 - Production preference and credential key deployment
 - Controlled provider evidence that would allow live dispatch
 - Hosted signed-in CRM-shell verification

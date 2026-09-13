@@ -8,9 +8,9 @@ Robin landed Resend domain add + Cloudflare DNS-only email records for the three
 
 | Domain | Resend | Send | Receive | Notes |
 | --- | --- | --- | --- | --- |
-| `talktosavingkc.com` | Verified | Enabled | Enabled | CF DNS-only records in place |
-| `savingkcteam.com` | Rechecking / partial | Verified | Enabled | Apex MX added |
-| `yourkchomebuyer.com` | Rechecking / partial | Verified | Enabled | Partial verify |
+| `talktosavingkc.com` | Verified | Verified | Verified | CF DNS-only records in place |
+| `yourkchomebuyer.com` | Verified | Verified | Verified | Send + receive verified |
+| `savingkcteam.com` | Send verified | Verified | Pending | Receive still pending |
 
 ## Record pattern (all three)
 
@@ -22,8 +22,9 @@ Robin landed Resend domain add + Cloudflare DNS-only email records for the three
 
 ## Still required for a controlled external test
 
-- Resend API key wired into the Email product + hosted secrets
-- Funded Ari / AI Gateway credits (still unfunded; AI paths stay fail-closed)
+- Resend API key `SavingKC Email CRM` pasted on Connections after `EMAIL_CREDENTIALS_KEY_V1` is hosted (key exists off-chat; not a live Email connection)
+- Webhook secret for `POST /api/webhooks/email/resend` — **not created**. Needs public `https://<host>/api/webhooks/email/resend` after hosted Email routes deploy (release-gated)
+- Funded / retested Ari path (prior HTTP 403 not treated as success)
 - Ernest release auth for live send
 
-Do not enable live customer send or production migrate from this snapshot. The local catalog in `src/lib/email/domains/intended.ts` records these ops flags with `sendingReady: false`.
+Do not enable live customer send or production migrate from this snapshot. The local catalog in `src/lib/email/domains/intended.ts` records these ops flags with `sendingReady: false`. See [hosted-secrets contract](20-hosted-secrets-contract.md).
