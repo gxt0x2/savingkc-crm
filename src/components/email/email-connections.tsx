@@ -548,16 +548,22 @@ export function EmailConnections() {
       <section>
         <h4>Google Calendar</h4>
         <p>
-          Existing CRM connections will be reused when access is verified. CRM
-          follow-up tasks already work; Google events are not connected to Email
-          yet.
+          CRM follow-up tasks already work. Email does not book Google events.
+          Stored Calendar tokens from other CRM work are not treated as a live
+          Email connection; refresh and per-agent calendars still need a
+          verified check.
+        </p>
+        <p>
+          Save the weekday callback policy under More → Sending & phone.
+          Automatic booking stays off.
         </p>
       </section>
       <section>
         <h4>Caller number & notifications</h4>
         <p>
-          Private Email alerts are available in the header. External
-          notifications and a dedicated response number still need setup.
+          Private Email alerts are in the header. Push tests record a blocked
+          attempt until a device is registered. An intended response number can
+          be saved without buying or routing a live line.
         </p>
       </section>
     </div>

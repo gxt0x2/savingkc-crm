@@ -75,17 +75,44 @@ export async function readSettings(context: Context): Promise<PilotSettings> {
       affectedThreads: work.count,
     })
   }
+  const [playbook] =
+    await tx`select id from em_playbook_versions where workspace_id=${member.workspace_id} order by published_at desc limit 1`
+  const [calendar] =
+    await tx`select enabled from em_scheduling_policies where workspace_id=${member.workspace_id}`
+  const [line] =
+    await tx`select state from em_response_lines where workspace_id=${member.workspace_id}`
+  const [run] =
+    await tx`select id from em_readiness_runs where workspace_id=${member.workspace_id} order by created_at desc limit 1`
+  const practiceRecipients =
+    await tx`select id,normalized_address as email from em_addresses where workspace_id=${member.workspace_id} and normalized_address like '%.test' order by normalized_address limit 20`
+  const configHash = workflowHash({
+    business: config.business ?? null,
+    team: config.team ?? null,
+    automation: config.automation ?? null,
+  })
   return json({
     revision: workspace.revision,
     config,
     members,
+    practiceRecipients,
+    lastSimulationRunId: run?.id ?? null,
+    configHash,
     readiness: {
       state: 'blocked',
       sendingEnabled: false,
       blockers: [
-        'Provider connection and sender-domain verification',
-        'Canonical CRM and shared Conversations integration',
-        'Controlled delivery, reply and opt-out checks',
+        'Resend API key and sender-domain verification are not connected',
+        playbook
+          ? 'Ari draft-only policy is saved; paid model evaluations are still required for automatic replies'
+          : 'A published draft-only reply policy has not been saved',
+        calendar?.enabled
+          ? 'Calendar booking was marked enabled without a verified Google connection'
+          : 'Google Calendar tokens are not verified; callbacks stay as CRM tasks',
+        line
+          ? 'A response number is intended only; live routing has not been tested'
+          : 'No email-response phone line has been saved',
+        'Push device registration is not verified',
+        'Controlled delivery, reply and opt-out checks have not run against a live provider',
       ],
     },
   }) as PilotSettings
@@ -115,10 +142,52 @@ export async function applySettingsCommand(
       await tx`update em_workspaces set send_enabled=false,ai_auto_enabled=false,pause_reason=${command.payload.reason},revision=revision+1 where id=${ws} returning revision`
     return { entityId: ws, revision: saved.revision, state: 'paused' }
   }
-  // No provider readiness authority exists yet. Even a forged/stale JSON
-  // "current" record must never enable sending or finish the setup wizard.
-  if (['SET-ENABLE', 'SET-FINISH', 'SET-READINESS'].includes(command.command)) {
+  // Finish and enable stay fail-closed without live provider evidence.
+  // A simulation checklist can be recorded; it never becomes current readiness.
+  if (['SET-ENABLE', 'SET-FINISH'].includes(command.command)) {
     check(false, 'PROVIDER_READINESS_UNAVAILABLE')
+  }
+  if (command.command === 'SET-READINESS') {
+    check(command.payload.kind === 'simulation', 'PROVIDER_READINESS_UNAVAILABLE')
+    check(command.payload.maximumTestSends === 0, 'SIMULATION_SENDS_FORBIDDEN', 400)
+    const config = emailWorkspaceConfigSchema.parse(workspace.config)
+    const currentHash = workflowHash({
+      business: config.business ?? null,
+      team: config.team ?? null,
+      automation: config.automation ?? null,
+    })
+    check(command.payload.configHash === currentHash, 'STALE_SETTINGS')
+    for (const id of command.payload.testRecipientIds) {
+      const [address] =
+        await tx`select normalized_address from em_addresses where workspace_id=${ws} and id=${id}`
+      check(address?.normalized_address?.endsWith('.test'), 'PRACTICE_RECIPIENT_REQUIRED', 400)
+    }
+    const [playbook] =
+      await tx`select id from em_playbook_versions where workspace_id=${ws} limit 1`
+    const [calendar] =
+      await tx`select id from em_scheduling_policies where workspace_id=${ws}`
+    const [line] =
+      await tx`select id from em_response_lines where workspace_id=${ws}`
+    const blockers = [
+      'Provider connection and sender-domain verification',
+      playbook ? null : 'Published draft-only reply policy',
+      calendar ? null : 'Saved weekday calendar policy',
+      line ? null : 'Intended email-response number',
+      'Verified Google Calendar access',
+      'Provisioned response-line routing',
+      'Push device registration',
+      'Controlled live delivery and reply checks',
+    ].filter((row): row is string => Boolean(row))
+    const [run] =
+      await tx`insert into em_readiness_runs(workspace_id,kind,config_hash,state,blockers,created_by,created_at)
+      values(${ws},'simulation',${currentHash},'blocked',${tx.json(blockers)},${member.auth_user_id},${now}) returning id`
+    delete config.readiness
+    await tx`update em_workspaces set config=${tx.json(json(config))},send_enabled=false,ai_auto_enabled=false,setup_completed_at=null,revision=revision+1 where id=${ws}`
+    return {
+      entityId: run.id,
+      revision: workspace.revision + 1,
+      state: 'simulation_checklist_blocked',
+    }
   }
   const config = emailWorkspaceConfigSchema.parse(workspace.config)
   if (command.command === 'SET-ROLES') {
@@ -256,13 +325,22 @@ export async function applySettingsCommand(
       config.team = p
       break
     }
-    case 'SET-AUTOMATION':
+    case 'SET-AUTOMATION': {
       check(
         command.payload.mode === 'draft_only',
         'AUTOMATION_READINESS_REQUIRED',
       )
+      const [version] =
+        await tx`select id,policy from em_playbook_versions where workspace_id=${ws} and id=${command.payload.playbookVersionId}`
+      check(version, 'PLAYBOOK_NOT_PUBLISHED')
+      check(
+        ((version.policy as { allowedActions?: string[] }).allowedActions ?? [])
+          .length === 0,
+        'AUTOMATION_READINESS_REQUIRED',
+      )
       config.automation = command.payload
       break
+    }
     default:
       check(false, 'ACTION_NOT_IMPLEMENTED', 400)
   }

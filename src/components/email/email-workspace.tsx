@@ -16,7 +16,14 @@ import styles from './email-workspace.module.css'
 import { EmailSetup } from './email-setup'
 import { EmailThreadPanel } from './email-thread-panel'
 import { EmailNotifications } from './email-notifications'
+import { EmailPlaybooks } from './email-playbooks'
+import { EmailIntegrations } from './email-integrations'
 import { nextWork } from '@/lib/email/workflow/presentation'
+import {
+  queryViewFromWorkspace,
+  workspaceViewFromQuery,
+  type InboxBucket,
+} from '@/lib/email/inbox-filters'
 
 const views: [InboxView, string][] = [
   ['action', 'To do'],
@@ -95,6 +102,39 @@ const friendly: Record<string, string> = {
   HTTPS_PRIVACY_URL_REQUIRED: 'Use an https:// address for the privacy page.',
   PROVIDER_READINESS_UNAVAILABLE:
     'Sending remains off. The provider and delivery checks are not connected yet.',
+  MODEL_EVALUATION_UNAVAILABLE:
+    'Automatic replies stay off. A paid model evaluation has not passed.',
+  PLAYBOOK_NOT_PUBLISHED:
+    'Publish a draft-only reply policy before saving it as the default.',
+  PLAYBOOK_DRAFT_NOT_FOUND: 'Save the reply rules again, then rerun the check.',
+  EVALUATION_NOT_FOUND: 'Run the deterministic examples before publishing.',
+  EVALUATION_NOT_CURRENT:
+    'The practice check did not pass every critical example.',
+  EVALUATION_DRAFT_MISMATCH:
+    'The practice check belongs to a different draft. Run the examples again.',
+  AUTOMATION_READINESS_REQUIRED:
+    'Automatic replies stay off. Keep the policy on draft-only review.',
+  CALENDAR_NOT_CONNECTED:
+    'Google Calendar is not verified. Callbacks stay as CRM tasks.',
+  RESPONSE_LINE_NOT_PROVISIONED:
+    'The response number is intended only. Live routing has not been tested.',
+  RESERVED_NUMBER_PROTECTED:
+    'That number is reserved for ads or a personal line.',
+  PUSH_NOT_CONFIGURED:
+    'Push is not configured. The blocked attempt was saved; in-app alerts still work.',
+  PUSH_DEVICE_UNVERIFIED:
+    'No device is registered for this person. The blocked push attempt was saved.',
+  SAVED_VIEW_NOT_FOUND: 'That saved view is no longer available.',
+  SAVED_VIEW_NAME_TAKEN: 'Choose a different name for this saved view.',
+  STALE_SAVED_VIEW: 'This saved view changed. Refresh and try again.',
+  PRACTICE_RECIPIENT_REQUIRED:
+    'Local checks only use reserved .test practice recipients.',
+  SIMULATION_SENDS_FORBIDDEN:
+    'A local checklist cannot send a test message.',
+  LANGUAGE_NOT_EVALUATED:
+    'Only English examples have been checked. Other languages stay on review.',
+  UNKNOWN_FIXTURE_SET: 'Use the bundled practice examples for this check.',
+  STALE_PLAYBOOK: 'These reply rules changed. Refresh and save again.',
   EMAIL_SETUP_REQUIRED:
     'Email is not connected yet. The local build is available for testing; live sending remains off.',
   EMAIL_UNAVAILABLE:
@@ -205,9 +245,15 @@ export function EmailWorkspace({
   const [section, setSection] = useState<'inbox' | 'campaigns' | 'more'>(
     'inbox',
   )
+  const [morePanel, setMorePanel] = useState<
+    'setup' | 'ai' | 'sending' | 'operations'
+  >('setup')
   const [view, setView] = useState<InboxView>('action')
   const [mine, setMine] = useState(true)
   const [onlyUnsubscribed, setOnlyUnsubscribed] = useState(false)
+  const [controllerFilter, setControllerFilter] = useState('')
+  const [outcomeFilter, setOutcomeFilter] = useState('')
+  const [viewName, setViewName] = useState('')
   const [search, setSearch] = useState('')
   const [campaignFilter, setCampaignFilter] = useState('')
   const [threadId, setThreadId] = useState<string | null>(null)
@@ -340,6 +386,26 @@ export function EmailWorkspace({
             crm_repair_pending:
               'CRM still needs repair. The pending update is saved, and marketing restrictions remain in effect.',
             paused: 'Sending paused.',
+            playbook_draft_saved:
+              'Draft-only reply rules saved. Automatic sending stays off.',
+            evaluation_recorded:
+              'Deterministic examples passed. This is not a paid model evaluation.',
+            evaluation_blocked:
+              'A critical practice example failed. Automatic replies stay off.',
+            playbook_published_draft_only:
+              'Published for human review only. Existing campaigns stay on their current rules.',
+            view_saved: 'Your personal view is saved.',
+            view_deleted: 'Saved view removed. Built-in queues are unchanged.',
+            calendar_policy_saved_manual:
+              'Weekday callback policy saved. Google Calendar booking stays off.',
+            response_line_intended:
+              'Intended response line saved. No number was purchased or tested.',
+            push_not_configured:
+              'Push is not configured. The blocked test was saved.',
+            push_device_unverified:
+              'No registered device. The blocked push test was saved.',
+            simulation_checklist_blocked:
+              'Local checklist saved. Finish and enable stay blocked without live provider evidence.',
           }[body.state as string] ?? ''),
       )
       return body as { entityId: string; state: string }
@@ -411,7 +477,12 @@ export function EmailWorkspace({
         t.controller_user_id === data?.actorId) &&
       (!campaignFilter || t.campaign_id === campaignFilter) &&
       (!onlyUnsubscribed || t.outcome === 'unsubscribed') &&
-      `${t.name} ${t.email} ${t.subject} ${data?.messages
+      (!outcomeFilter || t.outcome === outcomeFilter) &&
+      (!controllerFilter ||
+        (controllerFilter === 'human'
+          ? t.controller === 'human'
+          : t.controller !== 'human')) &&
+      `${t.name} ${t.email} ${t.subject} ${data?.messages`
         .filter((m) => m.thread_id === t.id)
         .map((m) => m.text_body)
         .join(' ')}`
@@ -581,17 +652,151 @@ export function EmailWorkspace({
                     ))}
                   </select>
                 </label>
-                {(search || campaignFilter || !mine) && (
+                <label>
+                  Controller
+                  <select
+                    value={controllerFilter}
+                    onChange={(e) => setControllerFilter(e.target.value)}
+                  >
+                    <option value="">Any controller</option>
+                    <option value="human">Human</option>
+                    <option value="sequence">Sequence</option>
+                  </select>
+                </label>
+                <label>
+                  Outcome
+                  <select
+                    value={outcomeFilter}
+                    onChange={(e) => setOutcomeFilter(e.target.value)}
+                  >
+                    <option value="">Any outcome</option>
+                    <option value="unsubscribed">Unsubscribed</option>
+                    <option value="interested">Interested</option>
+                    <option value="not_interested">Not interested</option>
+                  </select>
+                </label>
+                {(search ||
+                  campaignFilter ||
+                  !mine ||
+                  controllerFilter ||
+                  outcomeFilter ||
+                  onlyUnsubscribed) && (
                   <button
                     onClick={() => {
                       setSearch('')
                       setCampaignFilter('')
                       setMine(true)
+                      setControllerFilter('')
+                      setOutcomeFilter('')
+                      setOnlyUnsubscribed(false)
                     }}
                   >
                     Clear filters
                   </button>
                 )}
+              </div>
+              <div className={styles.filters}>
+                <label>
+                  Save this view
+                  <input
+                    maxLength={100}
+                    value={viewName}
+                    onChange={(e) => setViewName(e.target.value)}
+                    placeholder="Weekday callbacks"
+                  />
+                </label>
+                <button
+                  disabled={busy || !viewName.trim()}
+                  onClick={() =>
+                    act({
+                      command: 'INB-SAVEVIEW',
+                      idempotencyKey: crypto.randomUUID(),
+                      payload: {
+                        name: viewName.trim(),
+                        queryVersion: 1,
+                        query: {
+                          view: queryViewFromWorkspace(view),
+                          ...(mine && data.actorId
+                            ? { ownerId: data.actorId }
+                            : {}),
+                          ...(campaignFilter
+                            ? { campaignId: campaignFilter }
+                            : {}),
+                          ...(search ? { search } : {}),
+                          ...(onlyUnsubscribed || outcomeFilter
+                            ? {
+                                outcomes: [
+                                  onlyUnsubscribed
+                                    ? 'unsubscribed'
+                                    : outcomeFilter,
+                                ],
+                              }
+                            : {}),
+                          ...(controllerFilter
+                            ? {
+                                controllers: [
+                                  controllerFilter === 'human'
+                                    ? 'human'
+                                    : 'ai',
+                                ],
+                              }
+                            : {}),
+                        },
+                      },
+                    })
+                  }
+                >
+                  Save view
+                </button>
+                {(data.inboxViews ?? []).map((saved) => (
+                  <span key={saved.id} className={styles.row}>
+                    <button
+                      onClick={() => {
+                        setView(workspaceViewFromQuery(saved.query.view as InboxBucket))
+                        setCampaignFilter(saved.query.campaignId ?? '')
+                        setSearch(saved.query.search ?? '')
+                        setOnlyUnsubscribed(
+                          saved.query.outcomes?.includes('unsubscribed') ??
+                            false,
+                        )
+                        setOutcomeFilter(
+                          saved.query.outcomes?.find(
+                            (o) => o !== 'unsubscribed',
+                          ) ?? '',
+                        )
+                        setControllerFilter(
+                          saved.query.controllers?.[0] === 'human'
+                            ? 'human'
+                            : saved.query.controllers?.[0]
+                              ? 'sequence'
+                              : '',
+                        )
+                        setMine(
+                          !saved.query.ownerId ||
+                            saved.query.ownerId === data.actorId,
+                        )
+                      }}
+                    >
+                      {saved.name}
+                    </button>
+                    <button
+                      disabled={busy}
+                      aria-label={`Remove ${saved.name}`}
+                      onClick={() =>
+                        act({
+                          command: 'INB-DELETEVIEW',
+                          idempotencyKey: crypto.randomUUID(),
+                          payload: {
+                            viewId: saved.id,
+                            expectedRevision: saved.revision,
+                          },
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
               </div>
               <div className={styles.views} aria-label="Inbox views">
                 {views.map(([key, label]) => (
@@ -1043,23 +1248,40 @@ export function EmailWorkspace({
                   <p>Setup and troubleshooting, outside the daily inbox.</p>
                 </div>
               </div>
-              <details className={styles.operations}>
-                <summary>Ari’s reply rules</summary>
-                <p>
-                  Human approval is required. Use everyday language, supported
-                  facts and one useful question. Don’t invent pain or infer
-                  selling intent from an email open.
-                </p>
-                <p>
-                  {data.ai_available
-                    ? 'AI credentials are available; individual draft results show whether the provider completed the request.'
-                    : 'AI access is not configured. You can write and review drafts manually.'}
-                </p>
-              </details>
-              {data.settings && (
-                <EmailSetup settings={data.settings} busy={busy} act={act} />
+              <nav className={styles.views} aria-label="More destinations">
+                {(
+                  [
+                    ['setup', 'Setup & settings'],
+                    ['ai', 'AI rules'],
+                    ['sending', 'Sending & phone'],
+                    ['operations', 'Operations'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    aria-pressed={morePanel === key}
+                    onClick={() => setMorePanel(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+              {morePanel === 'ai' && (
+                <EmailPlaybooks data={data} busy={busy} act={act} />
               )}
-              {data.roles.some((r) =>
+              {morePanel === 'sending' && (
+                <EmailIntegrations data={data} busy={busy} act={act} />
+              )}
+              {morePanel === 'setup' && data.settings && (
+                <EmailSetup
+                  settings={data.settings}
+                  busy={busy}
+                  act={act}
+                  workspace={data}
+                />
+              )}
+              {morePanel === 'operations' &&
+                data.roles.some((r) =>
                 ['owner', 'marketer', 'reviewer', 'acquisitions'].includes(r),
               ) && (
                 <section className={styles.operations}>

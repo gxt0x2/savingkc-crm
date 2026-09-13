@@ -42,7 +42,34 @@ import {
   isSettingsCommand,
   readSettings,
 } from '../commands/settings'
+import {
+  applyPlaybookCommand,
+  isPlaybookCommand,
+} from '../commands/playbooks'
+import {
+  applyInboxViewCommand,
+  isInboxViewCommand,
+} from '../commands/inbox-views'
+import {
+  applySchedulingCommand,
+  isSchedulingCommand,
+} from '../commands/scheduling'
+import {
+  applyPhoneLineCommand,
+  isPhoneLineCommand,
+} from '../commands/phone-line'
+import { applyNotificationTest } from '../commands/notifications'
 import type { PilotConfig, PilotReview, PilotState } from './types'
+
+function isProductizationCommand(command: string) {
+  return (
+    isPlaybookCommand(command) ||
+    isInboxViewCommand(command) ||
+    isSchedulingCommand(command) ||
+    isPhoneLineCommand(command) ||
+    command === 'NTF-TEST'
+  )
+}
 
 function canManage(member: Member) {
   return member.roles.some((r) => ['owner', 'marketer'].includes(r))
@@ -156,6 +183,7 @@ export async function transact(
     const member = await membership(tx, subject)
     check(
       isSettingsCommand(input.command) ||
+        isProductizationCommand(input.command) ||
         workspace?.execution_mode === 'simulation',
       'WORKSPACE_NOT_READY',
     )
@@ -350,6 +378,16 @@ export async function executePilotCommand(
     const ws = member.workspace_id
     if (isSettingsCommand(command.command))
       return applySettingsCommand(context, command)
+    if (isPlaybookCommand(command.command))
+      return applyPlaybookCommand(context, command)
+    if (isInboxViewCommand(command.command))
+      return applyInboxViewCommand(context, command)
+    if (isSchedulingCommand(command.command))
+      return applySchedulingCommand(context, command)
+    if (isPhoneLineCommand(command.command))
+      return applyPhoneLineCommand(context, command)
+    if (command.command === 'NTF-TEST')
+      return applyNotificationTest(context, command)
     if (command.command.startsWith('CAM-'))
       check(canManage(member), 'FORBIDDEN', 403)
     switch (command.command) {
@@ -1309,6 +1347,20 @@ export async function readPilotState(
     const activity = canManage(member)
       ? await tx`select id,action,created_at from em_audit_events where workspace_id=${ws} order by created_at desc,id desc limit 30`
       : []
+    const playbooks = member.roles.includes('owner')
+      ? await tx`select b.id,b.name,b.program,b.revision,d.content_hash as draft_hash,
+        (select v.id from em_playbook_versions v where v.playbook_id=b.id order by v.version_number desc limit 1) as published_version_id,
+        (select r.passed from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_passed,
+        (select r.kind from em_evaluation_runs r where r.playbook_id=b.id order by r.created_at desc limit 1) as last_eval_kind
+        from em_playbooks b left join em_playbook_drafts d on d.playbook_id=b.id
+        where b.workspace_id=${ws} order by b.created_at desc`
+      : []
+    const inboxViews =
+      await tx`select id,name,revision,query from em_inbox_views where workspace_id=${ws} and owner_id=${subject} order by name`
+    const [scheduling] =
+      await tx`select enabled,duration_minutes,buffer_minutes,max_daily_bookings,revision from em_scheduling_policies where workspace_id=${ws}`
+    const [responseLine] =
+      await tx`select id,state,routing_policy,revision from em_response_lines where workspace_id=${ws}`
     return json({
       ai_available: emailAiAvailable(),
       mode: workspace.execution_mode,
@@ -1327,6 +1379,10 @@ export async function readPilotState(
       routing,
       notifications,
       activity,
+      playbooks,
+      inboxViews,
+      scheduling: scheduling ?? null,
+      responseLine: responseLine ?? null,
       settings: member.roles.includes('owner')
         ? await readSettings({ tx, member, now })
         : null,

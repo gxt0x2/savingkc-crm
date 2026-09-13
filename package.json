@@ -53,7 +53,7 @@
     "manifest:archive:export": "node scripts/archive/export-manifest-history.mjs",
     "manifest:archive:verify": "node scripts/archive/verify-manifest-history.mjs",
     "manifest:archive:rehearse": "bash scripts/rehearse-manifest-physical-archive.sh",
-    "test:email:workflow": "node --conditions=react-server --import tsx --test tests/email-db/workflow.test.ts",
+    "test:email:workflow": "EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin LC_ALL=C LANG=C node --test-concurrency=1 --test-timeout=120000 --conditions=react-server --import tsx --test tests/email-db/workflow.test.ts tests/email-db/productization.test.ts",
     "dev:email:local": "node tests/email-local/start.mjs",
     "test:email:local-ui": "playwright test --config tests/email-local/playwright.config.ts"
   },

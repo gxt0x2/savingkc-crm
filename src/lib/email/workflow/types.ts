@@ -202,7 +202,46 @@ export interface PilotSettings {
     affectedWorkHash: string
     affectedThreads: number
   }[]
+  practiceRecipients?: { id: string; email: string }[]
+  lastSimulationRunId?: string | null
+  configHash?: string
   readiness: { state: 'blocked'; sendingEnabled: false; blockers: string[] }
+}
+export interface PilotPlaybook {
+  id: string
+  name: string
+  program: string
+  revision: number
+  draft_hash: string | null
+  published_version_id: string | null
+  last_eval_passed: boolean | null
+  last_eval_kind: string | null
+}
+export interface PilotSavedView {
+  id: string
+  name: string
+  revision: number
+  query: {
+    view: string
+    ownerId?: string
+    campaignId?: string
+    search?: string
+    outcomes?: string[]
+    controllers?: ('ai' | 'human' | 'none')[]
+  }
+}
+export interface PilotSchedulingPolicy {
+  enabled: boolean
+  duration_minutes: number
+  buffer_minutes: number
+  max_daily_bookings: number
+  revision: number
+}
+export interface PilotResponseLine {
+  id: string
+  state: string
+  routing_policy: string
+  revision: number
 }
 export interface PilotState {
   ai_available?: boolean
@@ -228,6 +267,10 @@ export interface PilotState {
     acknowledged_at: string | null
   }[]
   activity: { id: string; action: string; created_at: string }[]
+  playbooks?: PilotPlaybook[]
+  inboxViews?: PilotSavedView[]
+  scheduling?: PilotSchedulingPolicy | null
+  responseLine?: PilotResponseLine | null
 }
 
 export type InboxView = 'action' | 'waiting' | 'scheduled' | 'done' | 'all'

@@ -1,7 +1,9 @@
+'use client'
+
 import { useState, type FormEvent } from 'react'
 import type { EmailCommand } from '@/lib/email/contracts'
 import type { EmailWorkspaceConfig } from '@/lib/email/config'
-import type { PilotSettings } from '@/lib/email/workflow/types'
+import type { PilotSettings, PilotState } from '@/lib/email/workflow/types'
 import styles from './email-workspace.module.css'
 import { EmailConnections } from './email-connections'
 
@@ -9,6 +11,7 @@ type Props = {
   settings: PilotSettings
   busy: boolean
   act(command: EmailCommand): Promise<unknown>
+  workspace?: Pick<PilotState, 'playbooks' | 'scheduling' | 'responseLine'>
 }
 const weekdays: NonNullable<EmailWorkspaceConfig['team']>['hours']['weekdays'] =
   ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
@@ -334,11 +337,110 @@ function MemberForm({
   )
 }
 
-export function EmailSetup(props: Props) {
-  const [step, setStep] = useState<'business' | 'team' | 'connections'>(
-    'business',
+function ReadinessForm({
+  settings,
+  busy,
+  act,
+  workspace,
+}: Props) {
+  const recipient = settings.practiceRecipients?.[0]
+  return (
+    <div className={styles.form} aria-label="Readiness checklist">
+      <h3>Readiness</h3>
+      <p>
+        This is a local checklist. It cannot finish setup or turn sending on.
+        Live Resend, Google Calendar, push and the response line stay blocked
+        until each connection is verified.
+      </p>
+      <ul>
+        {settings.readiness.blockers.map((blocker) => (
+          <li key={blocker}>{blocker}</li>
+        ))}
+      </ul>
+      <p>
+        Last local checklist:{' '}
+        {settings.lastSimulationRunId
+          ? 'Recorded and still blocked'
+          : 'Not run'}
+      </p>
+      <button
+        disabled={busy || !settings.configHash || !recipient}
+        onClick={() =>
+          act({
+            command: 'SET-READINESS',
+            idempotencyKey: crypto.randomUUID(),
+            payload: {
+              kind: 'simulation',
+              configHash: settings.configHash!,
+              testRecipientIds: recipient ? [recipient.id] : [],
+              maximumTestSends: 0,
+            },
+          })
+        }
+      >
+        Record local checklist
+      </button>
+      <div className={styles.row}>
+        <button
+          disabled={busy || !settings.lastSimulationRunId || !settings.configHash}
+          onClick={() =>
+            act({
+              command: 'SET-FINISH',
+              idempotencyKey: crypto.randomUUID(),
+              payload: {
+                readinessRunId: settings.lastSimulationRunId!,
+                configHash: settings.configHash!,
+              },
+            })
+          }
+        >
+          Finish setup
+        </button>
+        <button
+          disabled={busy || !settings.lastSimulationRunId || !settings.configHash}
+          onClick={() =>
+            act({
+              command: 'SET-ENABLE',
+              idempotencyKey: crypto.randomUUID(),
+              payload: {
+                readinessRunId: settings.lastSimulationRunId!,
+                configHash: settings.configHash!,
+              },
+            })
+          }
+        >
+          Enable sending
+        </button>
+      </div>
+      <p>
+        {workspace?.playbooks?.some((p) => p.published_version_id)
+          ? 'Draft-only reply rules are published for review.'
+          : 'Publish draft-only reply rules before treating AI setup as saved.'}{' '}
+        {workspace?.scheduling
+          ? 'Manual calendar policy is saved.'
+          : 'Calendar policy is still needed.'}{' '}
+        {workspace?.responseLine
+          ? 'An intended response line is saved, not tested.'
+          : 'No response line is saved.'}
+      </p>
+    </div>
   )
+}
+
+export function EmailSetup(props: Props) {
+  const [step, setStep] = useState<
+    | 'business'
+    | 'team'
+    | 'connections'
+    | 'ai'
+    | 'calendar'
+    | 'phone'
+    | 'readiness'
+  >('business')
   const { settings } = props
+  const aiSaved = Boolean(settings.config.automation?.playbookVersionId)
+  const calendarSaved = Boolean(props.workspace?.scheduling)
+  const phoneSaved = Boolean(props.workspace?.responseLine)
   return (
     <section className={styles.operations} aria-label="Email setup">
       <h3>Setup & settings</h3>
@@ -362,12 +464,65 @@ export function EmailSetup(props: Props) {
         >
           3. Connections · Pending
         </button>
+        <button aria-pressed={step === 'ai'} onClick={() => setStep('ai')}>
+          4. AI rules · {aiSaved ? 'Saved' : 'Needed'}
+        </button>
+        <button
+          aria-pressed={step === 'calendar'}
+          onClick={() => setStep('calendar')}
+        >
+          5. Calendar · {calendarSaved ? 'Manual' : 'Needed'}
+        </button>
+        <button aria-pressed={step === 'phone'} onClick={() => setStep('phone')}>
+          6. Phone · {phoneSaved ? 'Intended' : 'Needed'}
+        </button>
+        <button
+          aria-pressed={step === 'readiness'}
+          onClick={() => setStep('readiness')}
+        >
+          7. Readiness · Blocked
+        </button>
       </nav>
       {step === 'business' && (
         <BusinessForm key={settings.revision} {...props} />
       )}
       {step === 'team' && <TeamForm key={settings.revision} {...props} />}
       {step === 'connections' && <EmailConnections />}
+      {step === 'ai' && (
+        <div className={styles.form}>
+          <h3>AI rules</h3>
+          <p>
+            Use More → Ari’s reply rules to save, check and publish a
+            draft-only policy. Bounded automatic replies stay off without paid
+            model evaluations.
+          </p>
+          <p>
+            {aiSaved
+              ? 'A draft-only default is saved. Sending and automatic replies remain off.'
+              : 'No published draft-only policy is set as the workspace default yet.'}
+          </p>
+        </div>
+      )}
+      {step === 'calendar' && (
+        <div className={styles.form}>
+          <h3>Calendar</h3>
+          <p>
+            Use More → Sending & phone to save the weekday callback policy.
+            Google events are not booked from Email. Stored CRM tokens are not
+            treated as a live connection.
+          </p>
+        </div>
+      )}
+      {step === 'phone' && (
+        <div className={styles.form}>
+          <h3>Response line</h3>
+          <p>
+            Use More → Sending & phone to record an existing number. This
+            product does not buy, provision or route a live line.
+          </p>
+        </div>
+      )}
+      {step === 'readiness' && <ReadinessForm {...props} />}
       <details>
         <summary>Advanced: team access</summary>
         <p>

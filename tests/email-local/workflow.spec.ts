@@ -853,10 +853,92 @@ test('receiving operations explains identity holds without exposing a live provi
   await page.route('**/api/email/receiving',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({total:1,jobs:[{id:'11111111-1111-4111-8111-111111111111',kind:'resend_receive_content',state:'dead',attempts:1,run_after:'2026-09-14T15:00:00Z',lease_until:null,last_error:'REPLY_IDENTITY_REVIEW',hold_reason:'REPLY_IDENTITY_REVIEW',can_retry:false}]})}))
   await page.goto('/')
   await page.getByRole('button',{name:'More',exact:true}).click()
+  await page.getByRole('button',{name:'Operations',exact:true}).click()
   const receiving=page.getByRole('region',{name:'Receiving replies',exact:true})
   await expect(receiving).toContainText('Sender or conversation match needs review.')
   await expect(receiving).toContainText('Practice workspace. Live receiving is not connected.')
   await expect(receiving.getByRole('button',{name:'Retry retrieval'})).toHaveCount(0)
   await expect(receiving.getByRole('button',{name:'Retrieve next reply'})).toHaveCount(0)
   await page.screenshot({path:'test-results/email-local/receiving-operations.png',fullPage:true,animations:'disabled'})
+})
+
+test('setup productization stays fail-closed and keeps personal views local', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: 'AI rules', exact: true }).click()
+  const ai = page.getByRole('region', { name: 'Ari reply rules', exact: true })
+  await ai.getByRole('button', { name: 'Save draft-only rules', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText(
+    'Draft-only reply rules saved',
+  )
+  await ai
+    .getByRole('button', { name: 'Run deterministic examples', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Deterministic examples passed',
+  )
+  await ai
+    .getByRole('button', { name: 'Publish draft-only version', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Published for human review only',
+  )
+  await ai
+    .getByRole('button', { name: 'Save as draft-only default', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Setup details saved. Sending remains disabled.',
+  )
+
+  await page.getByRole('button', { name: 'Sending & phone', exact: true }).click()
+  const sending = page.getByRole('region', {
+    name: 'Sending and phone',
+    exact: true,
+  })
+  await sending
+    .getByRole('combobox', { name: 'Agent calendar owner' })
+    .selectOption({ label: 'Demo owner' })
+  await sending
+    .getByRole('button', { name: 'Save manual calendar policy', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText(
+    'Google Calendar booking stays off',
+  )
+  await sending
+    .getByRole('button', { name: 'Record a push test', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('Push is not configured')
+
+  await page
+    .getByRole('button', { name: 'Setup & settings', exact: true })
+    .click()
+  const setup = page.getByRole('region', { name: 'Email setup', exact: true })
+  await setup.getByRole('button', { name: /7. Readiness/ }).click()
+  await setup
+    .getByRole('button', { name: 'Record local checklist', exact: true })
+    .click()
+  await expect(page.getByRole('status')).toContainText('Local checklist saved')
+  await setup.getByRole('button', { name: 'Finish setup', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Sending remains off')
+  await setup
+    .getByRole('button', { name: 'Enable sending', exact: true })
+    .click()
+  await expect(page.getByRole('alert')).toContainText('Sending remains off')
+
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click()
+  await page.getByPlaceholder('Weekday callbacks').fill('Needs a reply')
+  await page.getByRole('button', { name: 'Save view', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText(
+    'Your personal view is saved',
+  )
+  await expect(
+    page.getByRole('button', { name: 'Needs a reply', exact: true }),
+  ).toBeVisible()
+  await page.screenshot({
+    path: 'test-results/email-local/productization-desktop.png',
+    fullPage: true,
+    animations: 'disabled',
+  })
 })
