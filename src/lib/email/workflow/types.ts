@@ -110,6 +110,7 @@ export interface PilotThread {
     bathrooms: number | null
     sqft: number | null
     year_built: number | null
+    zestimate?: number | null
   } | null
   notes?: {
     id: string

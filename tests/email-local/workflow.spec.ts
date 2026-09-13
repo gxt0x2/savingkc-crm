@@ -75,6 +75,15 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
     name: 'Contact and property',
   })
   await expect(
+    drawer.getByRole('tab', { name: 'Next step', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true')
+  await expect(
+    page
+      .getByRole('region', { name: 'Selected conversation' })
+      .getByRole('region', { name: 'Next action' }),
+  ).toHaveCount(0)
+  await drawer.getByRole('tab', { name: 'Contact', exact: true }).click()
+  await expect(
     drawer.getByText('Lead · Contacted', { exact: true }),
   ).toBeVisible()
   await drawer.getByRole('tab', { name: 'Property', exact: true }).click()
@@ -129,6 +138,8 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   await expect(
     page.getByRole('region', { name: 'Conversations' }),
   ).toContainText('Jamie Sample')
+  await page.getByRole('button', { name: 'Details', exact: true }).click()
+  await drawer.getByRole('tab', { name: 'Next step', exact: true }).click()
   // A changed conversation must invalidate a typed reply without silently replacing it.
   await page.getByRole('button', { name: 'Edit reply', exact: true }).click()
   await page
@@ -186,7 +197,7 @@ test('focused workspace: prepared reply, CRM handoff, notes, schedule and unsubs
   ).toBeFocused()
   await page.keyboard.press('Home')
   await expect(
-    drawer.getByRole('tab', { name: 'Contact', exact: true }),
+    drawer.getByRole('tab', { name: 'Next step', exact: true }),
   ).toBeFocused()
   await drawer.getByRole('tab', { name: 'Notes', exact: true }).click()
   await expect(
@@ -464,7 +475,7 @@ test('mock-backed UI contract: CRM repair stays visible until an owner retry res
     .first()
     .click()
   const selected = page.getByRole('region', {
-    name: 'Selected conversation',
+    name: 'Next action',
     exact: true,
   })
   await expect(selected).toContainText(

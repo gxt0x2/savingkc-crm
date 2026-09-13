@@ -14,6 +14,7 @@ import { chicagoDateTime } from '@/lib/email/workflow/schedule'
 import styles from './email-workspace.module.css'
 
 const detailTabs = [
+  ['next', 'Next step'],
   ['contact', 'Contact'],
   ['property', 'Property'],
   ['followups', 'Calendar'],
@@ -24,6 +25,7 @@ type DetailTab = (typeof detailTabs)[number][0]
 
 function DetailIcon({ tab }: { tab: DetailTab }) {
   const paths: Record<DetailTab, string> = {
+    next: 'M4 12h16 M13 5l7 7-7 7',
     contact:
       'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M20 8v6 M17 11h6',
     property: 'M3 10 12 3l9 7 M5 9v12h14V9 M9 21v-8h6v8',
@@ -92,7 +94,7 @@ export function EmailThreadPanel({
     controller: t.controller_revision,
   })
   const [details, setDetails] = useState(true)
-  const [detailTab, setDetailTab] = useState<DetailTab>('contact')
+  const [detailTab, setDetailTab] = useState<DetailTab>('next')
   const [composing, setComposing] = useState(false)
   const [older, setOlder] = useState(false)
   const [note, setNote] = useState('')
@@ -300,149 +302,6 @@ export function EmailThreadPanel({
             </button>
           </div>
         </header>
-        <section
-          className={`${styles.nextAction} ${hasCrmIssue(t) ? styles.crmAttention : ''}`}
-          aria-label="Next action"
-        >
-          <div className={styles.row}>
-            <strong>{title}</strong>
-            <small>{owner?.name ?? 'Owner needs assignment'}</small>
-          </div>
-          {hasCrmIssue(t) ? (
-            <>
-              <p>
-                {t.state === 'stopped' ? 'Marketing is stopped. ' : ''}
-                {t.crm_callback_repair_required
-                  ? 'The callback hold has not reached CRM. Review this task before calling.'
-                  : t.crm_history_repair_required
-                    ? 'Some conversation history has not reached CRM.'
-                    : t.handoff_state === 'held' ||
-                        t.callback_task_state === 'blocked'
-                      ? 'Callback held for review. Resolve the hold before calling.'
-                      : `Review ${t.crm_sync_reason?.replaceAll('_', ' ') ?? 'the CRM connection'} before continuing.`}
-              </p>
-              {repair && data.roles.includes('owner') && (
-                <button
-                  disabled={blocked}
-                  onClick={() =>
-                    act({
-                      command: 'OPS-REPLAY',
-                      idempotencyKey: crypto.randomUUID(),
-                      payload: {
-                        jobId: t.crm_repair_id!,
-                        expectedFailureCode: t.crm_repair_error_code!,
-                        reason:
-                          'Owner reviewed the pending CRM update and requested a retry.',
-                      },
-                    })
-                  }
-                >
-                  Retry CRM update
-                </button>
-              )}
-              <small>
-                Repairs update existing CRM records only; they send no messages
-                or calls.
-              </small>
-            </>
-          ) : t.state === 'done' ? (
-            <p>No remaining work. A new reply will return here.</p>
-          ) : t.state === 'stopped' ? (
-            <p>Marketing is stopped. The message history remains available.</p>
-          ) : (
-            <>
-              {t.scheduled_for ? (
-                <p>
-                  {time(t.scheduled_for)} · Manual follow-up task, no calendar
-                  invitation.
-                </p>
-              ) : t.requested_contact?.requestedTimeText ? (
-                <p>
-                  Seller asked for “{t.requested_contact.requestedTimeText}”.
-                  Confirm a specific time.
-                </p>
-              ) : proposal?.phone ? (
-                <p>
-                  Phone provided: {proposal.phone}. Contact details are ready
-                  for your approval.
-                </p>
-              ) : (
-                <p>
-                  {t.reply_queued
-                    ? 'Your reply is queued for simulated delivery.'
-                    : t.state === 'waiting'
-                      ? 'No human action is due.'
-                      : 'Read the latest reply and choose the next step.'}
-                </p>
-              )}
-              {canWork && !owns && (
-                <button
-                  className={styles.primary}
-                  disabled={blocked}
-                  onClick={() =>
-                    act({
-                      command: 'THR-TAKEOVER',
-                      idempotencyKey: crypto.randomUUID(),
-                      payload: {
-                        threadId: t.id,
-                        expectedControllerRevision: t.controller_revision,
-                      },
-                    })
-                  }
-                >
-                  Take over
-                </button>
-              )}
-              {owns && proposal?.phone && !t.handoff_id && (
-                <button
-                  className={styles.primary}
-                  disabled={blocked}
-                  onClick={handoff}
-                >
-                  Create Lead & callback
-                </button>
-              )}
-              {taskEditable && (
-                <button
-                  disabled={blocked}
-                  onClick={() => openDetails('followups')}
-                >
-                  {t.scheduled_for
-                    ? 'Update follow-up / record outcome'
-                    : 'Set follow-up / record outcome'}
-                </button>
-              )}
-              {owns && proposal?.body && !t.reply_queued && (
-                <div className={styles.suggestion}>
-                  <small>Practice suggestion · Live AI is not connected</small>
-                  <p>{proposal.body}</p>
-                  <div className={styles.actions}>
-                    <button
-                      className={styles.primary}
-                      disabled={blocked}
-                      onClick={() => queueReply(proposal.body)}
-                    >
-                      Approve & queue reply
-                    </button>
-                    <button
-                      disabled={blocked}
-                      onClick={() => {
-                        setEditor({
-                          body: proposal.body,
-                          revision: t.content_revision,
-                          controller: t.controller_revision,
-                        })
-                        composer.current?.focus()
-                      }}
-                    >
-                      Edit reply
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </section>
         <div
           className={styles.messages}
           aria-label="Email history"
@@ -671,6 +530,163 @@ export function EmailThreadPanel({
           </div>
           <section
             role="tabpanel"
+            id="details-panel-next"
+            aria-labelledby="details-tab-next"
+            hidden={detailTab !== 'next'}
+            tabIndex={0}
+            className={styles.detailPanel}
+          >
+            <section
+              className={`${styles.nextAction} ${hasCrmIssue(t) ? styles.crmAttention : ''}`}
+              aria-label="Next action"
+            >
+              <div className={styles.row}>
+                <strong>{title}</strong>
+                <small>{owner?.name ?? 'Owner needs assignment'}</small>
+              </div>
+              {hasCrmIssue(t) ? (
+                <>
+                  <p>
+                    {t.state === 'stopped' ? 'Marketing is stopped. ' : ''}
+                    {t.crm_callback_repair_required
+                      ? 'The callback hold has not reached CRM. Review this task before calling.'
+                      : t.crm_history_repair_required
+                        ? 'Some conversation history has not reached CRM.'
+                        : t.handoff_state === 'held' ||
+                            t.callback_task_state === 'blocked'
+                          ? 'Callback held for review. Resolve the hold before calling.'
+                          : `Review ${t.crm_sync_reason?.replaceAll('_', ' ') ?? 'the CRM connection'} before continuing.`}
+                  </p>
+                  {repair && data.roles.includes('owner') && (
+                    <button
+                      disabled={blocked}
+                      onClick={() =>
+                        act({
+                          command: 'OPS-REPLAY',
+                          idempotencyKey: crypto.randomUUID(),
+                          payload: {
+                            jobId: t.crm_repair_id!,
+                            expectedFailureCode: t.crm_repair_error_code!,
+                            reason:
+                              'Owner reviewed the pending CRM update and requested a retry.',
+                          },
+                        })
+                      }
+                    >
+                      Retry CRM update
+                    </button>
+                  )}
+                  <small>
+                    Repairs update existing CRM records only; they send no
+                    messages or calls.
+                  </small>
+                </>
+              ) : t.state === 'done' ? (
+                <p>No remaining work. A new reply will return here.</p>
+              ) : t.state === 'stopped' ? (
+                <p>
+                  Marketing is stopped. The message history remains available.
+                </p>
+              ) : (
+                <>
+                  {t.scheduled_for ? (
+                    <p>
+                      {time(t.scheduled_for)} · Manual follow-up task, no
+                      calendar invitation.
+                    </p>
+                  ) : t.requested_contact?.requestedTimeText ? (
+                    <p>
+                      Seller asked for “{t.requested_contact.requestedTimeText}
+                      ”. Confirm a specific time.
+                    </p>
+                  ) : proposal?.phone ? (
+                    <p>
+                      Phone provided: {proposal.phone}. Contact details are
+                      ready for your approval.
+                    </p>
+                  ) : (
+                    <p>
+                      {t.reply_queued
+                        ? 'Your reply is queued for simulated delivery.'
+                        : t.state === 'waiting'
+                          ? 'No human action is due.'
+                          : 'Read the latest reply and choose the next step.'}
+                    </p>
+                  )}
+                  {canWork && !owns && (
+                    <button
+                      className={styles.primary}
+                      disabled={blocked}
+                      onClick={() =>
+                        act({
+                          command: 'THR-TAKEOVER',
+                          idempotencyKey: crypto.randomUUID(),
+                          payload: {
+                            threadId: t.id,
+                            expectedControllerRevision: t.controller_revision,
+                          },
+                        })
+                      }
+                    >
+                      Take over
+                    </button>
+                  )}
+                  {owns && proposal?.phone && !t.handoff_id && (
+                    <button
+                      className={styles.primary}
+                      disabled={blocked}
+                      onClick={handoff}
+                    >
+                      Create Lead & callback
+                    </button>
+                  )}
+                  {taskEditable && (
+                    <button
+                      disabled={blocked}
+                      onClick={() => openDetails('followups')}
+                    >
+                      {t.scheduled_for
+                        ? 'Update follow-up / record outcome'
+                        : 'Set follow-up / record outcome'}
+                    </button>
+                  )}
+                  {owns && proposal?.body && !t.reply_queued && (
+                    <div className={styles.suggestion}>
+                      <small>
+                        Practice suggestion · Live AI is not connected
+                      </small>
+                      <p>{proposal.body}</p>
+                      <div className={styles.actions}>
+                        <button
+                          className={styles.primary}
+                          disabled={blocked}
+                          onClick={() => queueReply(proposal.body)}
+                        >
+                          Approve & queue reply
+                        </button>
+                        <button
+                          disabled={blocked}
+                          onClick={() => {
+                            setEditor({
+                              body: proposal.body,
+                              revision: t.content_revision,
+                              controller: t.controller_revision,
+                            })
+                            if (window.matchMedia('(max-width: 1150px), (max-height: 780px)').matches) closeDetails()
+                            requestAnimationFrame(() => composer.current?.focus())
+                          }}
+                        >
+                          Edit reply
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          </section>
+          <section
+            role="tabpanel"
             id="details-panel-contact"
             aria-labelledby="details-tab-contact"
             hidden={detailTab !== 'contact'}
@@ -774,6 +790,47 @@ export function EmailThreadPanel({
                     </div>
                   ))}
                 </dl>
+                <div className={styles.valuationCard}>
+                  <small>Zestimate</small>
+                  <strong>
+                    {!localSimulation &&
+                    typeof t.property.zestimate === 'number' &&
+                    Number.isFinite(t.property.zestimate) &&
+                    t.property.zestimate > 0
+                      ? new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          maximumFractionDigits: 0,
+                        }).format(t.property.zestimate)
+                      : 'Not available'}
+                  </strong>
+                  <small>
+                    {localSimulation
+                      ? 'No Zillow valuation for this practice property.'
+                      : 'Saved CRM value; freshness has not been verified.'}
+                  </small>
+                  <a
+                    href="https://www.zillow.com/zestimate/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    About the Zestimate
+                  </a>
+                  {localSimulation ? (
+                    <span className={styles.muted}>
+                      Zillow property link unavailable for fabricated addresses.
+                    </span>
+                  ) : (
+                    <a
+                      target="_blank"
+                      rel="noreferrer"
+                      className={styles.crmLink}
+                      href={`https://www.zillow.com/homes/${encodeURIComponent([t.property.address, t.property.city, t.property.state, t.property.zip].filter(Boolean).join(' ')).replace(/%20/g, '-')}_rb/`}
+                    >
+                      Find property on Zillow ↗
+                    </a>
+                  )}
+                </div>
                 {localSimulation ? (
                   <small>
                     Street View is unavailable for fabricated practice
@@ -802,19 +859,21 @@ export function EmailThreadPanel({
             tabIndex={0}
             className={styles.detailPanel}
           >
-            <h4 className={styles.taskHeading}>Schedule follow-up</h4>
-            <p>
-              {t.scheduled_for
-                ? `Follow-up: ${time(t.scheduled_for)}`
-                : t.crm_task_id
-                  ? `Review callback by ${time(t.callback_due_at)}`
-                  : 'No callback task yet.'}
-            </p>
-            <p>
-              Seller’s timing:{' '}
-              {t.requested_contact?.requestedTimeText ?? 'Not specified'}
-            </p>
-            <small>Calendar not connected. No appointment booked.</small>
+            <div className={styles.calendarSummary}>
+              <h4 className={styles.taskHeading}>Schedule follow-up</h4>
+              <p>
+                {t.scheduled_for
+                  ? `Follow-up: ${time(t.scheduled_for)}`
+                  : t.crm_task_id
+                    ? `Review callback by ${time(t.callback_due_at)}`
+                    : 'No callback task yet.'}
+              </p>
+              <p>
+                Seller’s timing:{' '}
+                {t.requested_contact?.requestedTimeText ?? 'Not specified'}
+              </p>
+              <small>Calendar not connected. No appointment booked.</small>
+            </div>
             {taskEditable && (
               <>
                 <form
@@ -1026,16 +1085,9 @@ export function EmailThreadPanel({
                 an AI assessment.
               </p>
             </div>
-            <div className={styles.insightCard}>
-              <h4>Next step</h4>
-              <p>{title}</p>
-              <p>Assigned to {owner?.name ?? 'an unassigned agent'}.</p>
-              {taskEditable && (
-                <button onClick={() => openDetails('followups')}>
-                  Open follow-up
-                </button>
-              )}
-            </div>
+            <button onClick={() => selectDetailTab('next')}>
+              Go to Next step
+            </button>
             <div className={styles.insightCard}>
               <h4>Seller’s latest reply</h4>
               {inbound ? (
@@ -1044,28 +1096,6 @@ export function EmailThreadPanel({
                 <p>No reply received yet.</p>
               )}
             </div>
-            {proposal?.body && (
-              <div className={styles.insightCard}>
-                <h4>Prepared practice reply</h4>
-                <p>{proposal.body}</p>
-                {owns && (
-                  <button
-                    disabled={blocked || Boolean(t.reply_queued)}
-                    onClick={() => {
-                      setEditor({
-                        body: proposal.body,
-                        revision: t.content_revision,
-                        controller: t.controller_revision,
-                      })
-                      closeDetails()
-                      requestAnimationFrame(() => composer.current?.focus())
-                    }}
-                  >
-                    Edit this reply
-                  </button>
-                )}
-              </div>
-            )}
           </section>
         </aside>
       )}

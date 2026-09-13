@@ -57,3 +57,7 @@ The Details column now starts expanded and uses Contact, Property, Follow-ups, N
 ## Compact header and task/property cards
 
 Updated four-case browser suite passes, including a geometry assertion that the conversation begins above 280px at the desktop test viewport. Two relevant callback database cases pass with new assertions for saved title/notes and canonical work-item title. All 50 Email unit tests, TypeScript and targeted ESLint pass. Property/card and Calendar/form screenshots were inspected on the local preview. Existing full DB totals above belong to the preceding checkpoint; this change reran the two affected callback cases. No production or provider change.
+
+## Next step default and Calendar highlight
+
+All four updated browser cases pass with Next step selected by default and repair actions moved out of the message history. TypeScript, targeted ESLint and design validation pass. Local screenshots `next-step-default.png`, `calendar-green.png` and `zestimate-property.png` show the revised panels; Next step and Calendar were visually inspected. A separate narrow-screen check confirms Edit reply closes the overlay and focuses the composer. Zestimate consumes an existing optional canonical property field; the fixture has no live valuation or verified Zillow page. Exact page matching and value freshness are not verified by this UI checkpoint.

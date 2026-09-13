@@ -1214,3 +1214,52 @@
     margin-left: 0;
   }
 }
+
+/* Next step owns the action; Calendar owns the scheduling form. */
+.workspace .detailTabs button:nth-child(n + 4) {
+  grid-column: span 2;
+}
+.contextDrawer .nextAction {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  max-height: none;
+  overflow: visible;
+}
+.contextDrawer .nextAction .row {
+  align-items: start;
+  flex-direction: column;
+  gap: 3px;
+}
+.contextDrawer .nextAction > button {
+  margin: 6px 0;
+}
+.contextDrawer .nextAction .suggestion {
+  margin-top: 10px;
+}
+.calendarSummary {
+  background: #eaf5ec;
+  border: 1px solid #c5dfcb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.valuationCard {
+  display: grid;
+  gap: 6px;
+  background: #f1f3f5;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.valuationCard > strong {
+  font-size: 20px;
+}
+.valuationCard a {
+  color: #37506f;
+  font-size: 12px;
+}
+.valuationCard span {
+  font-size: 11px;
+}
