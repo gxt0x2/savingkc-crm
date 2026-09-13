@@ -6,7 +6,7 @@ Robin is hosting the Email product secrets in parallel. This document is the exa
 
 ## Hosted presence (ops, present-but-not-live)
 
-Ops reports these **names** as set on project `savingkc-crm`. This is not a live Email connection and does not unlock send. No Email-route deploy under release auth.
+Ops reports these **names** as set on project `savingkc-crm`. Production redeploy on `crm.savingkc.com` is Ready (`EtBjRSLjZBgodpWYcsddzqZVCS8e`) so env secrets apply. That is **not** Email foundation route liveness and does not unlock send.
 
 | Name | Project / envs | Product | Live for Email? |
 | --- | --- | --- | --- |
@@ -14,7 +14,7 @@ Ops reports these **names** as set on project `savingkc-crm`. This is not a live
 | `RESEND_API_KEY` | savingkc-crm · Prod / Preview / Dev (encrypted) | Conversations / TC / broadcasts | **No.** Email Connections does not read it. |
 | Webhook signing secret | not created | Email intake | **No.** Wait for `POST /api/webhooks/email/resend` after Email routes deploy. |
 
-A later CRM/Conversations redeploy can apply env names without making Email foundation routes live. Treat hosted presence as `present-not-live` until those routes deploy under release auth.
+The 2026-09-13 CRM production redeploy applied env names without making Email foundation routes live. Treat hosted presence as `present-not-live` until those routes exist under release auth.
 
 ## Resend API key (product path)
 

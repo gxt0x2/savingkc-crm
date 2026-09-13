@@ -953,6 +953,7 @@ test('setup productization stays fail-closed and keeps personal views local', as
   await setup.getByText('Hosted secrets this screen expects', { exact: true }).click()
   await expect(setup).toContainText('EMAIL_CREDENTIALS_KEY_V1')
   await expect(setup).toContainText('present-not-live')
+  await expect(setup).toContainText('Email foundation routes are not live')
   await expect(setup).toContainText('SavingKC Email CRM')
   await expect(setup).toContainText('EMAIL_RESEND_WEBHOOK_ENDPOINT_ID')
   await expect(setup).toContainText('EMAIL_PREFERENCE_KEY_V*')

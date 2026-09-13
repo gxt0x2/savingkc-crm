@@ -7,9 +7,10 @@ Updated: 2026-09-13. Open #3 PR: [#658](https://github.com/gxt0x2/savingkc-crm/p
 | Item | Status |
 | --- | --- |
 | #3 local software (setup / AI policy-evals / calendar-push-phone / views) | Finished as software. Packets stay **Partial**. |
-| Open PR | **#658** (ready). #655 did not land. #659 is a draft twin. |
+| Open PR | **#658** (ready). #655 is closed and did not land. #659 is a draft twin. |
 | Ari Prepare-with-Ari retest | **FAIL** / `AI_NOT_CONNECTED`. Model `openai/gpt-5.6-luna`. No generation. $0. |
 | After-release webhook URL | `https://crm.savingkc.com/api/webhooks/email/resend` — **not created** from this VM |
+| crm.savingkc.com prod redeploy | Ready (`EtBjRSLjZBgodpWYcsddzqZVCS8e`) — env secrets apply. Email foundation routes are **not** live. |
 | Live send / prod Email migrate | Still forbidden |
 
 **This is a local-software report, not packet completion and not a release.** EM-015, EM-016, EM-025, EM-026, EM-032, EM-033, EM-034 and EM-035 stay **Partial**. Required live evidence is missing, so those packets must not be marked complete.

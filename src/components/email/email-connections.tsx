@@ -11,6 +11,7 @@ import {
   EMAIL_CONNECTIONS_SECRET_CONTRACT,
   EMAIL_FLAGS_MUST_STAY_OFF,
   EMAIL_HOSTED_SECRETS,
+  EMAIL_HOSTED_DEPLOY_SNAPSHOT,
   EMAIL_HOSTED_SECRET_PRESENCE,
   EMAIL_RESEND_PRODUCT_KEY_LABEL,
   EMAIL_SECRETS_NOT_THIS_PRODUCT,
@@ -285,8 +286,9 @@ export function EmailConnections() {
           ; <code>{EMAIL_HOSTED_SECRET_PRESENCE.RESEND_API_KEY.name}</code> is
           set on Conversations{' '}
           {EMAIL_HOSTED_SECRET_PRESENCE.RESEND_API_KEY.environments.join('/')}.
-          Neither is serving Email routes until those routes deploy under
-          release auth.
+          {EMAIL_HOSTED_DEPLOY_SNAPSHOT.productionHost} production is{' '}
+          {EMAIL_HOSTED_DEPLOY_SNAPSHOT.state} so env secrets apply. Email
+          foundation routes are not live.
         </p>
         <ul>
           <li>
