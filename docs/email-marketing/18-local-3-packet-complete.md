@@ -8,7 +8,7 @@ Build-status next implementation order #3 asked for the setup wizard, AI policy/
 
 ## What local #3 now covers
 
-- Seven-step setup (Business, Team, Connections, AI rules, Calendar, Phone, Readiness). Finish and enable stay `PROVIDER_READINESS_UNAVAILABLE`.
+- Seven-step setup (Business, Team, Connections, AI rules, Calendar, Phone, Readiness). Steps 4–6 run the real AI / calendar / phone-push forms. Finish and enable stay `PROVIDER_READINESS_UNAVAILABLE`.
 - Draft-only playbooks: save, deterministic simulate (40 seed fixtures), publish only with a passing run and empty `allowedActions`. Last eval id, case drilldown and draft-vs-published action compare survive refresh.
 - Practice expansions (quoted history + extra turn) and `scripts/email/evaluate-playbook.ts`. Publication still uses the original 40 seeds. Deterministic “three-run” identity is algorithm repeatability, not three billed model runs.
 - Manual weekday calendar policy (`enabled=false`). Precision helpers never book a date-only or phone-only request. Automatic booking stays off without a live, fresh Google connection.
@@ -33,7 +33,7 @@ The local harness applies eighteen named Email migrations including `20260913190
 | --- | --- | --- |
 | Live Resend domain add + Cloudflare email DNS for `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` | **Robin** | Landed. `talktosavingkc.com` verified; the other two send-verified / Resend partial. See [ops-verify](19-outreach-dns-ops-verify.md). This VM did not write those records. |
 | Direction, payment, login, and live-send release auth | **Ernest** | Release auth is still required for live send. Login/payment only if a block appears. |
-| Resend Email product API key + hosted secrets | Product gap | Signup-only account at `ernest@savingkc.com`. Not a product connection. Controlled external test stays blocked. |
+| Resend Email product API key + hosted secrets | **Robin (parallel)** | Exact names in [hosted-secrets contract](20-hosted-secrets-contract.md). Need `EMAIL_CREDENTIALS_KEY_V1` (64 hex) before an owner can paste `re_…` on Connections. Do not use `RESEND_API_KEY`. Wiring secrets does not unlock live send. |
 | Funded Ari / AI Gateway credits | Product / billing | Unfunded (prior HTTP 403). AI paths stay fail-closed. |
 | Google Calendar token refresh + per-agent calendars | Product / live verify | Stored CRM tokens are expired/unverified for Email. |
 | VAPID + per-user push devices | Product / live verify | `NTF-TEST` records blocked rows only. |
@@ -64,4 +64,4 @@ The local harness applies eighteen named Email migrations including `20260913190
 - Do not treat a deterministic fixture pass as a paid model evaluation.
 - A Lead is not an Opportunity unless a human qualifies it.
 
-Remaining #3 work is those live dependencies (API key, hosted secrets, Ari credits, release auth, Calendar, push, response line), not more local scaffolding and not more DNS writes.
+Local #3 software is finished. Remaining work is Robin’s hosted-secret wiring (fail-closed), funded Ari credits, live Calendar/push/phone verify, and Ernest release auth — not more local scaffolding.

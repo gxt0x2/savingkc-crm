@@ -12,10 +12,12 @@ export function EmailIntegrations({
   data,
   busy,
   act,
+  focus = 'all',
 }: {
   data: PilotState
   busy: boolean
   act: (command: EmailCommand) => Promise<unknown>
+  focus?: 'all' | 'calendar' | 'phone'
 }) {
   const members = data.members
   const [agentId, setAgentId] = useState(members[0]?.id ?? '')
@@ -59,6 +61,7 @@ export function EmailIntegrations({
         Google Calendar bookings, push delivery and a live response number stay
         off until each connection is verified. CRM tasks already work.
       </p>
+      {(focus === 'all' || focus === 'calendar') && (
       <form className={styles.form} onSubmit={saveCalendar}>
         <h4>Callback calendar policy</h4>
         <p>
@@ -89,6 +92,8 @@ export function EmailIntegrations({
         </p>
         <button disabled={busy || !agentId}>Save manual calendar policy</button>
       </form>
+      )}
+      {(focus === 'all' || focus === 'phone') && (
       <form className={styles.form} onSubmit={saveLine}>
         <h4>Email-response number</h4>
         <p>
@@ -114,6 +119,8 @@ export function EmailIntegrations({
           Save intended response line
         </button>
       </form>
+      )}
+      {(focus === 'all' || focus === 'phone') && (
       <div className={styles.form}>
         <h4>Push alerts</h4>
         <p>
@@ -136,6 +143,7 @@ export function EmailIntegrations({
           Record a push test
         </button>
       </div>
+      )}
     </section>
   )
 }

@@ -6,12 +6,14 @@ import type { EmailWorkspaceConfig } from '@/lib/email/config'
 import type { PilotSettings, PilotState } from '@/lib/email/workflow/types'
 import styles from './email-workspace.module.css'
 import { EmailConnections } from './email-connections'
+import { EmailIntegrations } from './email-integrations'
+import { EmailPlaybooks } from './email-playbooks'
 
 type Props = {
   settings: PilotSettings
   busy: boolean
-  act(command: EmailCommand): Promise<unknown>
-  workspace?: Pick<PilotState, 'playbooks' | 'scheduling' | 'responseLine'>
+  act(command: EmailCommand): Promise<{ entityId: string; state: string } | null>
+  workspace?: PilotState
 }
 const weekdays: NonNullable<EmailWorkspaceConfig['team']>['hours']['weekdays'] =
   ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
@@ -491,39 +493,28 @@ export function EmailSetup(props: Props) {
       )}
       {step === 'team' && <TeamForm key={settings.revision} {...props} />}
       {step === 'connections' && <EmailConnections />}
-      {step === 'ai' && (
-        <div className={styles.form}>
-          <h3>AI rules</h3>
-          <p>
-            Use More → Ari’s reply rules to save, check and publish a
-            draft-only policy. Bounded automatic replies stay off without paid
-            model evaluations.
-          </p>
-          <p>
-            {aiSaved
-              ? 'A draft-only default is saved. Sending and automatic replies remain off.'
-              : 'No published draft-only policy is set as the workspace default yet.'}
-          </p>
-        </div>
+      {step === 'ai' && props.workspace && (
+        <EmailPlaybooks
+          data={props.workspace}
+          busy={props.busy}
+          act={props.act}
+        />
       )}
-      {step === 'calendar' && (
-        <div className={styles.form}>
-          <h3>Calendar</h3>
-          <p>
-            Use More → Sending & phone to save the weekday callback policy.
-            Google events are not booked from Email. Stored CRM tokens are not
-            treated as a live connection.
-          </p>
-        </div>
+      {step === 'calendar' && props.workspace && (
+        <EmailIntegrations
+          data={props.workspace}
+          busy={props.busy}
+          act={props.act}
+          focus="calendar"
+        />
       )}
-      {step === 'phone' && (
-        <div className={styles.form}>
-          <h3>Response line</h3>
-          <p>
-            Use More → Sending & phone to record an existing number. This
-            product does not buy, provision or route a live line.
-          </p>
-        </div>
+      {step === 'phone' && props.workspace && (
+        <EmailIntegrations
+          data={props.workspace}
+          busy={props.busy}
+          act={props.act}
+          focus="phone"
+        />
       )}
       {step === 'readiness' && <ReadinessForm {...props} />}
       <details>

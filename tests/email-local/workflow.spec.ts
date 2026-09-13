@@ -928,6 +928,29 @@ test('setup productization stays fail-closed and keeps personal views local', as
     .getByRole('button', { name: 'Setup & settings', exact: true })
     .click()
   const setup = page.getByRole('region', { name: 'Email setup', exact: true })
+  await setup.getByRole('button', { name: /4. AI rules/ }).click()
+  await expect(
+    setup.getByRole('button', { name: 'Save draft-only rules', exact: true }),
+  ).toBeVisible()
+  await setup.getByRole('button', { name: /5. Calendar/ }).click()
+  await expect(
+    setup.getByRole('button', {
+      name: 'Save manual calendar policy',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await setup.getByRole('button', { name: /6. Phone/ }).click()
+  await expect(
+    setup.getByRole('button', {
+      name: 'Save intended response line',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await setup.getByRole('button', { name: /3. Connections/ }).click()
+  await setup.getByText('Hosted secrets this screen expects', { exact: true }).click()
+  await expect(setup).toContainText('EMAIL_CREDENTIALS_KEY_V1')
+  await expect(setup).toContainText('RESEND_API_KEY')
+  await expect(setup).toContainText('Keep EMAIL_LIVE_DISPATCH_ENABLED')
   await setup.getByRole('button', { name: /7. Readiness/ }).click()
   await setup
     .getByRole('button', { name: 'Record local checklist', exact: true })

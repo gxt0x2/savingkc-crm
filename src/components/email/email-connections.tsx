@@ -6,6 +6,11 @@ import {
   PRIMARY_BUSINESS_DOMAIN,
   intendedOutreachDomainNames,
 } from '@/lib/email/domains/intended'
+import {
+  EMAIL_FLAGS_MUST_STAY_OFF,
+  EMAIL_HOSTED_SECRETS,
+  EMAIL_SECRETS_NOT_THIS_PRODUCT,
+} from '@/lib/email/secrets-contract'
 
 type Connection = {
   id: string
@@ -257,6 +262,28 @@ export function EmailConnections() {
         {PRIMARY_BUSINESS_DOMAIN} stays the primary business domain and cannot
         be a campaign sender.
       </p>
+      <details>
+        <summary>Hosted secrets this screen expects</summary>
+        <p>
+          Robin can wire these hosted names in parallel. They do not unlock
+          live send. The Resend product key is an owner-pasted <code>re_</code>
+          value on this form after {EMAIL_HOSTED_SECRETS[0].name} is present.
+          Do not use {EMAIL_SECRETS_NOT_THIS_PRODUCT[0]} for Email — that env
+          belongs to Conversations.
+        </p>
+        <ul>
+          {EMAIL_HOSTED_SECRETS.map((row) => (
+            <li key={row.name}>
+              <code>{row.name}</code> · {row.format} · {row.requiredFor}
+              {row.requiredNow ? ' Required before a key can be stored.' : ''}
+            </li>
+          ))}
+        </ul>
+        <p>
+          Keep {EMAIL_FLAGS_MUST_STAY_OFF.join(', ')} unset. Env flags are not
+          controlled provider evidence.
+        </p>
+      </details>
       {notice && <p role="status">{notice}</p>}
       <section aria-label="Resend connection">
         <h4>Email · Resend</h4>
