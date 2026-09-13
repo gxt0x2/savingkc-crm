@@ -3956,3 +3956,61 @@ withDb('multiple pending replies retain the conversation hold until every body i
   assert.equal((await db.sql`select inbound_pending from em_threads where id=${f.thread.id}`)[0].inbound_pending,false)
   assert.equal((await db.sql`select * from em_messages where transport='resend'`).length,2)
 })
+
+withDb('public unsubscribe stops outreach after issuer removal and is idempotent with honest attribution', async (db) => {
+  const { issuePreferenceToken, unsubscribeWithToken } = await import('../../src/lib/email/preferences/service')
+  const { preferenceConfirmation, createPreferencePost } = await import('../../src/lib/email/preferences/http')
+  const command = await reviewedCallback(db)
+  const handoff = await executePilotCommand(db.sql, owner, command, now)
+  const [thread] = await db.sql`select * from em_threads where id=${command.payload.threadId}`
+  const keys = { '1': 'ab'.repeat(32), '2': 'cd'.repeat(32) }
+  await rejects(issuePreferenceToken(db.sql, reader, thread.address_id, keys, now), 'FORBIDDEN')
+  const token = await issuePreferenceToken(db.sql, owner, thread.address_id, keys, now)
+  assert.match(token, /^2\./)
+  const confirmation = preferenceConfirmation(token)
+  assert.equal(confirmation.status, 200)
+  assert.match(await confirmation.text(), /method="post"/)
+  assert.equal((await db.sql`select * from em_suppressions`).length, 0)
+  const [stored] = await db.sql`select * from em_preference_tokens`
+  assert.ok(!JSON.stringify(stored).includes(token))
+  await db.sql`update em_memberships set active=false where auth_user_id=${owner}`
+  const post = createPreferencePost(() => db.sql, keys)
+  const response = await post(new Request('https://crm.savingkc.test/api/email/unsubscribe/'+token, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click',
+  }), token)
+  assert.equal(response.status, 200)
+  assert.match(await response.text(), /You’re unsubscribed/)
+  const [suppression] = await db.sql`select * from em_suppressions where address_id=${thread.address_id}`
+  assert.equal(suppression.created_by, null)
+  assert.equal(suppression.reason, 'unsubscribe')
+  assert.equal((await db.sql`select state from em_threads where id=${thread.id}`)[0].state, 'stopped')
+  assert.equal((await db.sql`select state from em_handoffs where id=${handoff.entityId}`)[0].state, 'held')
+  const [event] = await db.sql`select * from work_item_events where action='email_hold'`
+  assert.equal(event.actor, 'public_unsubscribe')
+  const revision = (await db.sql`select restriction_revision from em_addresses where id=${thread.address_id}`)[0].restriction_revision
+  assert.equal(await unsubscribeWithToken(db.sql, token, keys, now), true)
+  assert.equal((await db.sql`select restriction_revision from em_addresses where id=${thread.address_id}`)[0].restriction_revision, revision)
+  const audits = await db.sql`select * from em_audit_events where action='PUBLIC-UNSUBSCRIBE'`
+  assert.equal(audits.length, 1)
+  assert.equal(audits[0].actor_id, null)
+  // If a later explicit consent workflow releases suppression, the old link still works.
+  await db.sql`delete from em_suppressions where address_id=${thread.address_id}`
+  assert.equal(await unsubscribeWithToken(db.sql, token, keys, now), true)
+  assert.equal((await db.sql`select * from em_suppressions where address_id=${thread.address_id}`).length, 1)
+})
+
+withDb('unsubscribe retains old keys, rejects forged links, and commits despite broken CRM history', async (db) => {
+  const { issuePreferenceToken, unsubscribeWithToken } = await import('../../src/lib/email/preferences/service')
+  const command = await reviewedCallback(db)
+  await executePilotCommand(db.sql, owner, command, now)
+  const [thread] = await db.sql`select * from em_threads where id=${command.payload.threadId}`
+  const old = { '1': 'ab'.repeat(32) }, rotated = { ...old, '2': 'cd'.repeat(32) }
+  const token = await issuePreferenceToken(db.sql, owner, thread.address_id, old, now)
+  assert.equal(await unsubscribeWithToken(db.sql, '1.'+'x'.repeat(43), rotated, now), false)
+  assert.equal(await unsubscribeWithToken(db.sql, 'invalid', rotated, now), false)
+  await rejects(unsubscribeWithToken(db.sql, token, {}, now), 'PREFERENCE_KEY_REQUIRED')
+  await db.sql`update lead_activities set description='Broken projection' where activity_type='email'`
+  assert.equal(await unsubscribeWithToken(db.sql, token, rotated, now), true)
+  assert.equal((await db.sql`select * from em_suppressions where address_id=${thread.address_id}`).length, 1)
+  assert.equal((await db.sql`select state from em_crm_projection_repairs where thread_id=${thread.id}`)[0].state, 'pending')
+})

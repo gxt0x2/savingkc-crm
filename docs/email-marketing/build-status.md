@@ -1,6 +1,6 @@
 # SavingKC Email build status
 
-Updated: 2026-09-12. **Connected local simulation; not a completed product or release candidate.**
+Updated: 2026-09-13. **Connected local simulation; not a completed product or release candidate.**
 
 ## Correction to earlier progress reports
 
@@ -71,7 +71,7 @@ A partial row is intentionally not a completion claim.
 | EM-006 | Partial: simulation ledger is connected. Production lease fencing, event queue and remote reconciliation remain unfinished. |
 | EM-007 | Utility only: encryption helpers; secure provider onboarding and rotation are unfinished. |
 | EM-008 | Utility only: domain helpers; real sender/domain setup is unfinished. |
-| EM-009 | Partial: local all-marketing suppression, alias cancellation and opt-out fixtures work. Public preferences and full scope/release integration are unfinished. |
+| EM-009 | Partial: local all-marketing suppression, alias cancellation, opt-out fixtures, and opaque public unsubscribe/preferences links work locally. Production preference-key deployment, List-Unsubscribe header wiring on live sends, preference-center UX beyond one-click stop, and release/scope integration remain unfinished. |
 | EM-010 | Partial: local dispatch guards and shared pilot count caps work. Monetary reservations and provider readiness remain unfinished. |
 | EM-011 | Not implemented: simulated acceptance is not Resend dispatch or reconciliation. |
 | EM-012 | Partial: synthetic inbound transactions and deduplication work. Authenticated provider webhook/retrieval/correlation are unfinished. |
@@ -152,3 +152,10 @@ Intake verification: 66 database cases, 72 unit/proxy cases, TypeScript and scop
 See [retrieval and recovery](15-reply-retrieval-worker.md). EM-006/012/029 now include a bounded receiving GET worker with fenced claims, encrypted content, safe plain-text Inbox messages, exact identity checks, duplicate-provider-message protection, canonical Lead history, opt-out suppression, phone-review alerts, owner operations and restricted retry. A dedicated receiving-only worker route remains disabled until explicitly configured; no cron was created. The local harness now applies fourteen named Email migrations.
 
 Verified locally: 73 database cases, 80 unit/proxy cases and seven browser stories, TypeScript and scoped lint. No real Resend connection, domain, API key, endpoint, subscription or deployment has been created. The domain-budget decision is pending; other local implementation can continue while it is unresolved.
+
+
+## Public unsubscribe / preferences continuation
+
+EM-009 local public preferences now include opaque versioned tokens (`em_preference_tokens`), HMAC key versions via `EMAIL_PREFERENCE_KEY_V*`, GET confirmation at `/email/unsubscribe/[token]` (no mutation), POST one-click stop at `/api/email/unsubscribe/[token]`, proxy bypass only for those exact method/path patterns, nullable `em_suppressions.created_by` for recipient-initiated stops, and honest `PUBLIC-UNSUBSCRIBE` audit with null actor. Links remain valid after issuer removal; forged/missing tokens fail closed; CRM history projection failures cannot roll back the unsubscribe. The local harness applies fifteen named Email migrations including `20260913160000_email_public_unsubscribe.sql`. No production migration, preference keys, live send headers, or customer email was deployed.
+
+Verified locally: 75 database workflow cases (serial harness with `LC_ALL=C` / PostgreSQL 16), plus preference HTTP and proxy unit coverage for method/path containment. Remaining EM-009 gaps: deploy preference signing keys, wire List-Unsubscribe on real outbound, preference center beyond one-click marketing stop, production schema apply, and release/auth checks.

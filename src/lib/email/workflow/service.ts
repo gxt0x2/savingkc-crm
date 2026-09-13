@@ -23,6 +23,7 @@ import {
   type Tx,
   type Member,
   type Context,
+  type SuppressionContext,
   type Result,
 } from './core'
 export { WorkflowError, workflowHash } from './core'
@@ -109,7 +110,7 @@ export async function requireHuman(
   )
   return thread
 }
-async function invalidate(context: Context, threadId: string, reason: string) {
+async function invalidate(context: SuppressionContext, threadId: string, reason: string) {
   await context.tx`update em_send_intents set state='cancelled',cancellation_reason=${reason} where workspace_id=${context.member.workspace_id} and thread_id=${threadId} and state in ('queued','held')`
   await context.tx`update em_drafts set state='stale' where workspace_id=${context.member.workspace_id} and thread_id=${threadId} and state='current'`
   await context.tx`update em_ai_generations set state='stale' where workspace_id=${context.member.workspace_id} and thread_id=${threadId} and state in ('queued','running','ready')`
@@ -880,7 +881,7 @@ export async function executePilotCommand(
 }
 
 export async function suppress(
-  context: Context,
+  context: SuppressionContext,
   addressId: string,
   reason: string,
   evidenceId?: string,

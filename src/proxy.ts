@@ -171,6 +171,7 @@ function isPublicApiRoute(request: NextRequest): boolean {
   if (pathname === '/api/leads') {
     return request.method === 'POST' || request.method === 'OPTIONS'
   }
+  if (request.method === 'POST' && /^\/api\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) return true
   if (PUBLIC_API_EXACT.has(pathname)) return true
   if (PUBLIC_API_PREFIXES.some(prefix => pathname.startsWith(prefix))) return true
   if (isPublicDealApi(request)) return true
@@ -462,6 +463,8 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   if (hasTestBypass(request)) {
     return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
   }
+
+  if (['GET', 'HEAD'].includes(request.method) && /^\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) return NextResponse.next()
 
   // Skip auth for public routes
   if (PUBLIC_PAGE_EXACT.has(pathname) || PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {

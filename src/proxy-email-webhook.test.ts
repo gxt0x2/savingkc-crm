@@ -46,6 +46,19 @@ describe('Resend webhook route containment', () => {
     expect(response.headers.get('x-middleware-next')).toBe('1')
     expect(mocks.createServerClient).not.toHaveBeenCalled()
   })
+  it('allows only the scoped public unsubscribe method and path', async () => {
+    const token = '1.' + 'x'.repeat(43)
+    for (const [path, method] of [[`/email/unsubscribe/${token}`, 'GET'], [`/api/email/unsubscribe/${token}`, 'POST']]) {
+      const response = await proxy(new NextRequest(`https://crm.savingkc.com${path}`, { method }), event)
+      expect(response.headers.get('x-middleware-next')).toBe('1')
+    }
+    for (const path of [`/api/email/unsubscribe/${token}/admin`, '/api/email/unsubscribe/not-a-token']) {
+      const response = await proxy(new NextRequest(`https://crm.savingkc.com${path}`, { method: 'POST' }), event)
+      expect(response.status).toBe(401)
+    }
+    const read = await proxy(new NextRequest(`https://crm.savingkc.com/api/email/unsubscribe/${token}`), event)
+    expect(read.status).toBe(401)
+  })
   it.each([
     '/api/webhooks/email/resend-copy',
     '/api/webhooks/email/resend/admin',

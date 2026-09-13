@@ -1,49 +1,53 @@
-import 'server-only'
+import "server-only";
 
-import { holdCallbackTask, projectThreadHistory } from './crm-history'
-import { WorkflowError, type Context, type Tx } from './workflow/core'
+import { holdCallbackTask, projectThreadHistory } from "./crm-history";
+import {
+  WorkflowError,
+  type SuppressionContext,
+  type Tx,
+} from "./workflow/core";
 
 export type CrmProjectionChanges = {
-  history?: boolean
-  holdReason?: 'marketing_stopped' | 'team_role_changed'
-}
+  history?: boolean;
+  holdReason?: "marketing_stopped" | "team_role_changed";
+};
 
 export type CrmProjectionRepairResult = {
-  state: 'complete' | 'pending'
-  historyRequired: boolean
-  callbackHoldRequired: boolean
-}
+  state: "complete" | "pending";
+  historyRequired: boolean;
+  callbackHoldRequired: boolean;
+};
 
 type RepairRow = {
-  id: string
-  state: 'pending' | 'resolved'
-  history_required: boolean
-  callback_hold_required: boolean
-  callback_hold_reason: CrmProjectionChanges['holdReason'] | null
-}
+  id: string;
+  state: "pending" | "resolved";
+  history_required: boolean;
+  callback_hold_required: boolean;
+  callback_hold_reason: CrmProjectionChanges["holdReason"] | null;
+};
 
-const safeErrorCode = /^[A-Z][A-Z0-9_]{0,99}$/
+const safeErrorCode = /^[A-Z][A-Z0-9_]{0,99}$/;
 
 function projectionErrorCode(error: unknown) {
   if (error instanceof WorkflowError && safeErrorCode.test(error.code))
-    return error.code
-  return 'CRM_PROJECTION_FAILED'
+    return error.code;
+  return "CRM_PROJECTION_FAILED";
 }
 
 async function isolatedProjection(
-  context: Context,
-  project: (savepointContext: Context) => Promise<unknown>,
+  context: SuppressionContext,
+  project: (savepointContext: SuppressionContext) => Promise<unknown>,
 ) {
   try {
     await context.tx.savepoint(async (savepoint) => {
       await project({
         ...context,
         tx: savepoint as unknown as Tx,
-      })
-    })
-    return null
+      });
+    });
+    return null;
   } catch (error) {
-    return projectionErrorCode(error)
+    return projectionErrorCode(error);
   }
 }
 
@@ -55,43 +59,44 @@ async function isolatedProjection(
  * projection. No provider or model calls occur here.
  */
 export async function projectCrmChanges(
-  context: Context,
+  context: SuppressionContext,
   threadId: string,
   changes: CrmProjectionChanges = {},
 ): Promise<CrmProjectionRepairResult> {
-  const { tx, member, now } = context
+  const { tx, member, now } = context;
   const [repair] = await tx<RepairRow[]>`select id,state,history_required,
     callback_hold_required,callback_hold_reason
     from em_crm_projection_repairs
     where workspace_id=${member.workspace_id} and thread_id=${threadId}
-    for update`
-  const wasPending = repair?.state === 'pending'
+    for update`;
+  const wasPending = repair?.state === "pending";
 
-  let historyRequired = Boolean(changes.history) ||
-    Boolean(wasPending && repair.history_required)
-  let callbackHoldRequired = Boolean(changes.holdReason) ||
-    Boolean(wasPending && repair.callback_hold_required)
-  const priorHoldReason = wasPending ? repair.callback_hold_reason : null
+  let historyRequired =
+    Boolean(changes.history) || Boolean(wasPending && repair.history_required);
+  let callbackHoldRequired =
+    Boolean(changes.holdReason) ||
+    Boolean(wasPending && repair.callback_hold_required);
+  const priorHoldReason = wasPending ? repair.callback_hold_reason : null;
   const callbackHoldReason =
-    changes.holdReason === 'marketing_stopped' ||
-    priorHoldReason === 'marketing_stopped'
-      ? 'marketing_stopped'
-      : changes.holdReason ?? priorHoldReason
+    changes.holdReason === "marketing_stopped" ||
+    priorHoldReason === "marketing_stopped"
+      ? "marketing_stopped"
+      : (changes.holdReason ?? priorHoldReason);
 
   if (!historyRequired && !callbackHoldRequired)
     return {
-      state: 'complete',
+      state: "complete",
       historyRequired: false,
       callbackHoldRequired: false,
-    }
+    };
 
-  let lastErrorCode: string | null = null
+  let lastErrorCode: string | null = null;
   if (historyRequired) {
     const errorCode = await isolatedProjection(context, (savepointContext) =>
       projectThreadHistory(savepointContext, threadId),
-    )
-    if (errorCode) lastErrorCode = errorCode
-    else historyRequired = false
+    );
+    if (errorCode) lastErrorCode = errorCode;
+    else historyRequired = false;
   }
 
   if (callbackHoldRequired) {
@@ -99,35 +104,35 @@ export async function projectCrmChanges(
       ? await isolatedProjection(context, (savepointContext) =>
           holdCallbackTask(savepointContext, threadId, callbackHoldReason),
         )
-      : 'CRM_PROJECTION_FAILED'
-    if (errorCode) lastErrorCode = errorCode
-    else callbackHoldRequired = false
+      : "CRM_PROJECTION_FAILED";
+    if (errorCode) lastErrorCode = errorCode;
+    else callbackHoldRequired = false;
   }
 
-  const notificationKey = `crm-projection-repair:${threadId}`
+  const notificationKey = `crm-projection-repair:${threadId}`;
   if (!historyRequired && !callbackHoldRequired) {
     if (wasPending) {
       await tx`update em_crm_projection_repairs set
         state='resolved',history_required=false,callback_hold_required=false,
         callback_hold_reason=null,attempt_count=attempt_count+1,
         last_attempt_at=${now},resolved_at=${now},updated_at=${now}
-        where workspace_id=${member.workspace_id} and thread_id=${threadId}`
+        where workspace_id=${member.workspace_id} and thread_id=${threadId}`;
       await tx`update em_notifications
         set kind='CRM repair resolved'
         where workspace_id=${member.workspace_id}
-          and logical_key=${notificationKey}`
+          and logical_key=${notificationKey}`;
     }
     return {
-      state: 'complete',
+      state: "complete",
       historyRequired: false,
       callbackHoldRequired: false,
-    }
+    };
   }
 
-  const errorCode = lastErrorCode ?? 'CRM_PROJECTION_FAILED'
+  const errorCode = lastErrorCode ?? "CRM_PROJECTION_FAILED";
   const storedCallbackHoldReason = callbackHoldRequired
-    ? (callbackHoldReason as NonNullable<CrmProjectionChanges['holdReason']>)
-    : null
+    ? (callbackHoldReason as NonNullable<CrmProjectionChanges["holdReason"]>)
+    : null;
   await tx`insert into em_crm_projection_repairs(
       workspace_id,thread_id,state,history_required,callback_hold_required,
       callback_hold_reason,last_error_code,attempt_count,first_failed_at,
@@ -145,7 +150,7 @@ export async function projectCrmChanges(
       attempt_count=em_crm_projection_repairs.attempt_count+1,
       last_attempt_at=excluded.last_attempt_at,
       last_failed_at=excluded.last_failed_at,resolved_at=null,
-      updated_at=excluded.updated_at`
+      updated_at=excluded.updated_at`;
 
   await tx`insert into em_notifications(
       workspace_id,thread_id,recipient_id,kind,logical_key,created_at
@@ -165,11 +170,11 @@ export async function projectCrmChanges(
       )
     on conflict(workspace_id,recipient_id,logical_key) do update set
       kind=excluded.kind,thread_id=excluded.thread_id,
-      acknowledged_at=null,created_at=excluded.created_at`
+      acknowledged_at=null,created_at=excluded.created_at`;
 
   return {
-    state: 'pending',
+    state: "pending",
     historyRequired,
     callbackHoldRequired,
-  }
+  };
 }
