@@ -65,4 +65,4 @@ The local harness applies eighteen named Email migrations including `20260913190
 - Do not treat a deterministic fixture pass as a paid model evaluation.
 - A Lead is not an Opportunity unless a human qualifies it.
 
-Local #3 software is finished. Remaining work is Robin’s hosted-secret wiring (fail-closed), funded Ari credits, live Calendar/push/phone verify, and Ernest release auth — not more local scaffolding.
+Local #3 software is finished. Remaining work is Email-route deploy under release auth (hosted secrets are present-but-not-live), a Connections-pasted product key, funded Ari credits, live Calendar/push/phone verify, and Ernest release auth — not more local scaffolding.
