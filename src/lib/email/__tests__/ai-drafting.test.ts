@@ -61,6 +61,9 @@ describe('Ari evidence and response boundary', () => {
   it('holds invented commitments and prices', () => {
     for (const body of [
       'Your call is booked.',
+      'I’ve got you down for a call tomorrow afternoon. Which time works best?',
+      'I put you on our calendar.',
+      'We will call you tomorrow.',
       'We offer $200000.',
       'We guarantee a sale.',
     ])
