@@ -169,7 +169,7 @@ Implemented against the existing Email transaction and Lead lock:
 - HAN-RETURN holds the callback for an eligible reviewer, cancels queued sends, and does not change the Lead stage or resume a sequence.
 - HAN-REASSIGN accepts an exact `relatedHandoffs` revision list when one Lead has multiple open Email callbacks; a single-handoff command still fails closed. Access/clarification holds on any listed sibling are released in the same Lead lock.
 - Linked holds from reduced access, marketing stop or clarification can be released to an eligible owner, including as part of a multi-handoff shared move. Marketing stays stopped.
-- HAN-QUALIFY writes verified TIMELINE/CONDITION/MOTIVATION/PRICE evidence through the existing save function and `evaluateQualification`. The Lead `updated_at` clock is the concurrency token. Later stages are preserved. No PPC conversion or Email-only shortcut.
+- HAN-QUALIFY writes verified TIMELINE/CONDITION/MOTIVATION/PRICE evidence through the existing save function and `evaluateQualification`. The Lead `updated_at` clock is the concurrency token (integer milliseconds, 2ms compare window for timestamp precision only). Later stages are preserved. No PPC conversion or Email-only shortcut.
 - Unacknowledged owner callback notices escalate to the saved backup after five Chicago operating minutes. NTF-ACK and reassignment cancel the escalation. Push is not implemented.
 
 Hosted signed-in CRM-shell verification remains blocked: this environment has no production CRM session. The isolated practice app still uses a fabricated test identity. No production migration, provider connection, domain purchase or customer send.
