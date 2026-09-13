@@ -8,8 +8,10 @@ import {
   EMAIL_RESEND_PRODUCT_KEY_LABEL,
   EMAIL_RESEND_WEBHOOK_PATH,
   EMAIL_RESEND_WEBHOOK_SECRET_PATTERN,
+  EMAIL_HOSTED_SECRET_PRESENCE,
   EMAIL_SECRETS_NOT_THIS_PRODUCT,
   emailHostedSecretNames,
+  emailHostedSecretsAreLive,
   emailLiveSendUnlockedByHostedSecrets,
 } from '../secrets-contract'
 
@@ -63,6 +65,24 @@ describe('Email hosted secret contract', () => {
     expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.resendApiKey.liveSendUnlocked).toBe(
       false,
     )
+    expect(EMAIL_CONNECTIONS_SECRET_CONTRACT.hostedPresence).toBe(
+      'present-not-live',
+    )
+  })
+  it('records hosted env names as present-but-not-live', () => {
+    expect(EMAIL_HOSTED_SECRET_PRESENCE.EMAIL_CREDENTIALS_KEY_V1).toMatchObject({
+      presence: 'present-not-live',
+      project: 'savingkc-crm',
+      environments: ['production', 'preview'],
+      servingEmailRoutes: false,
+    })
+    expect(EMAIL_HOSTED_SECRET_PRESENCE.RESEND_API_KEY).toMatchObject({
+      presence: 'present-not-live',
+      product: 'conversations',
+      environments: ['production', 'preview', 'development'],
+      servingEmail: false,
+    })
+    expect(emailHostedSecretsAreLive()).toBe(false)
   })
   it('does not treat hosted secrets as a live-send unlock', () => {
     expect(EMAIL_FLAGS_MUST_STAY_OFF).toEqual([
