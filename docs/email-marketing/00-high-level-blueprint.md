@@ -2,7 +2,7 @@
 
 Date: 2026-09-10
 Updated: 2026-09-12 — added proposed first-run setup and subscription onboarding; recorded Lead/Opportunity definitions.
-Updated: 2026-09-13 — Ernest/Robin purchased the three outreach domains via Cloudflare Registrar. Nameservers are on Cloudflare. They are not email-DNS-ready, not in Resend, and not sending-ready.
+Updated: 2026-09-13 — Ernest/Robin purchased the three outreach domains via Cloudflare Registrar. Nameservers are on Cloudflare. Live Resend domain add and email DNS are a parallel ops lane (Robin). This product does not race those writes or treat the names as sending-ready.
 Status: Architecture baseline. The detailed v1 specification and walkthrough are now available through [the package index](README.md). This is not authorization to launch campaigns.
 
 ## Direction

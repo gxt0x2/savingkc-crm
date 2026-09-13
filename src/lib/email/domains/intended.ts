@@ -3,8 +3,9 @@ export const PRIMARY_BUSINESS_DOMAIN = 'savingkc.com'
 
 /**
  * Owner-purchased outreach domains (Cloudflare Registrar, 2026-09-13).
- * Nameservers are on Cloudflare. They are not email-DNS-ready, not in
- * Resend, and not sending-ready. This catalog is copy/fixture data only.
+ * Nameservers are on Cloudflare. Live Resend domain add and email DNS are
+ * an ops lane (Robin), not this product. This catalog does not observe
+ * those writes and must not invent readiness. Sending stays off.
  */
 export type IntendedOutreachDomain = {
   name: string

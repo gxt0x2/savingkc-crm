@@ -16,10 +16,10 @@ Local-only continuation of build-status next implementation order #2. This incre
 ## Still blocked
 
 - A Resend API key wired into Email. A signup-only account exists at `ernest@savingkc.com`; that is not a product connection or sending proof.
-- Independent sending domains and Cloudflare DNS. Owner-purchased outreach names (Cloudflare Registrar, nameservers already on Cloudflare): `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`. They are not email-DNS-ready, not added in Resend, and not sending-ready. `savingkc.com` stays the primary business domain and is excluded from campaign senders. This increment does not write Cloudflare DNS, add live Resend domains, or produce SPF/DKIM/DMARC/MX records.
+- Independent sending domains and Cloudflare DNS. Owner-purchased outreach names (Cloudflare Registrar, nameservers already on Cloudflare): `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`. Live Resend domain add and email DNS are an ops lane (Robin) in parallel; this increment does not race those writes or invent readiness from them. `savingkc.com` stays the primary business domain and is excluded from campaign senders. This product still does not treat the three names as sending-ready.
 - Production preference and credential key deployment
 - Controlled provider evidence that would allow live dispatch
 - Hosted signed-in CRM-shell verification
 - Funded Ari / AI Gateway credits (prior HTTP 403 for missing paid credits still stands)
 
-Cash floor remains no. Do not buy more domains. This increment does not write Cloudflare DNS, add live Resend domains, or treat the existing Resend signup as readiness. The disposable harness now applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`.
+Cash floor remains no. Do not buy more domains. This increment does not race Robin’s live Resend/DNS writes, invent readiness from that ops lane, or treat the existing Resend signup as a product connection. The disposable harness now applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`.
