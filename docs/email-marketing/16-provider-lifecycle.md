@@ -20,6 +20,6 @@ Local-only continuation of build-status next implementation order #2. This incre
 - Production preference and credential key deployment
 - Controlled provider evidence that would allow live dispatch
 - Hosted signed-in CRM-shell verification
-- Funded Ari / AI Gateway credits (prior HTTP 403 for missing paid credits still stands)
+- Authenticated Ari Prepare-with-Ari (ops credits reported; this VM `AI_NOT_CONNECTED`, prior 403 not retested)
 
 Cash floor remains no. Do not buy more domains. This increment does not invent readiness from Robin’s landed Resend/DNS writes or treat the existing Resend signup as a product connection. The disposable harness now applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`.
