@@ -2,6 +2,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import styles from './email-workspace.module.css'
 import { EmailDomains } from './email-domains'
+import {
+  PRIMARY_BUSINESS_DOMAIN,
+  intendedOutreachDomainNames,
+} from '@/lib/email/domains/intended'
 
 type Connection = {
   id: string
@@ -244,9 +248,11 @@ export function EmailConnections() {
       </div>
       <p>
         Connect your existing services here. Sending stays off until sender
-        setup and delivery checks pass. Planned outreach domains
-        (talktosavingkc.com, savingkcteam.com, yourkchomebuyer.com) are owner
-        purchases only and are not registered or DNS-ready from this screen.
+        setup and delivery checks pass. Owned outreach domains (
+        {intendedOutreachDomainNames().join(', ')}) are registered and use
+        Cloudflare nameservers. They are not email-DNS-ready, not added in
+        Resend, and not sending-ready. {PRIMARY_BUSINESS_DOMAIN} stays the
+        primary business domain and cannot be a campaign sender.
       </p>
       {notice && <p role="status">{notice}</p>}
       <section aria-label="Resend connection">
@@ -323,8 +329,9 @@ export function EmailConnections() {
                 )}
                 {c.state === 'checked' && (
                   <p>
-                    Next: choose an independent sender domain, verify DNS, and
-                    test delivery and replies.
+                    Next remains owner-authorized DNS and Resend domain setup
+                    for the owned outreach names. This screen does not write
+                    Cloudflare DNS or add domains in live Resend.
                   </p>
                 )}
                 {c.state !== 'revoked' && data.configured && (

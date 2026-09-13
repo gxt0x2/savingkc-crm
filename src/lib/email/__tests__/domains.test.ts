@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  INTENDED_OUTREACH_DOMAINS,
+  PRIMARY_BUSINESS_DOMAIN,
+  intendedOutreachDomainNames,
+  intendedOutreachReadiness,
+} from '../domains/intended'
+import {
   assertIndependentSendingDomain,
   senderCanReceive,
   senderCanStartNewEnrollment,
@@ -19,6 +25,32 @@ describe('sending domains', () => {
   it('retired senders keep receiving but cannot enroll', () => {
     expect(senderCanStartNewEnrollment('retired')).toBe(false)
     expect(senderCanReceive('retired')).toBe(true)
+  })
+  it('treats owned outreach names as independent of the business domain and not sending-ready', () => {
+    expect(PRIMARY_BUSINESS_DOMAIN).toBe('savingkc.com')
+    expect(intendedOutreachDomainNames()).toEqual([
+      'talktosavingkc.com',
+      'savingkcteam.com',
+      'yourkchomebuyer.com',
+    ])
+    expect(() =>
+      assertIndependentSendingDomain(
+        PRIMARY_BUSINESS_DOMAIN,
+        PRIMARY_BUSINESS_DOMAIN,
+      ),
+    ).toThrow('PRIMARY_DOMAIN_OR_SUBDOMAIN_FORBIDDEN')
+    for (const domain of INTENDED_OUTREACH_DOMAINS) {
+      expect(
+        assertIndependentSendingDomain(domain.name, PRIMARY_BUSINESS_DOMAIN),
+      ).toBe(domain.name)
+      expect(intendedOutreachReadiness(domain)).toEqual({
+        registrarOwned: true,
+        nameserversOnCloudflare: true,
+        dnsReady: false,
+        resendReady: false,
+        sendingReady: false,
+      })
+    }
   })
 })
 it('rejects URL-shaped, email-shaped, IP and invalid domain values before provider access', () => {

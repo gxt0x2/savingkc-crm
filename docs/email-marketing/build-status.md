@@ -102,7 +102,7 @@ A partial row is intentionally not a completion claim.
 ## Next implementation order
 
 1. Finish remaining hosted CRM-shell verification for the local handoff-management paths. Provider connection, durable remote dispatch/reconciliation and suppression/preferences remain the next major bucket. Qualification is wired only through the existing four-pillar policy and the current Lead `updated_at` clock; do not add Email-only shortcuts.
-2. Local provider-lifecycle, fenced dispatch, delivery reduction and preference-center gaps in this bucket are now connected. Keep live dispatch disabled until controlled provider evidence exists. Remaining work is the real Resend/DNS/hosted-secret path, not more local scaffolding.
+2. Local provider-lifecycle, fenced dispatch, delivery reduction and preference-center gaps in this bucket are now connected. Keep live dispatch disabled until controlled provider evidence exists. Outreach domains are owner-purchased (`talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com`) with Cloudflare nameservers; remaining work is the real Resend API key, authorized DNS/Resend domain add, hosted secrets and controlled provider evidence — not more local scaffolding and not more domain purchases.
 3. Complete the setup wizard, AI policy/evaluations, Calendar/push/response-line integrations and remaining views. Preserve everyday-language sales voice, verified facts, Lead → human-qualified Opportunity distinctions and weekday cadence.
 4. Run full local integration and release checks, then prepare the exact controlled external test/release for authorization. No production schema, subscriptions, provider connection, customer send or deployment was performed in this milestone.
 
@@ -137,7 +137,7 @@ EM-008 now has owner-only DOM-ADD/VERIFY/PAUSE and SND-SAVE through /api/email/d
 
 Sender drafts save paused or retired. Activation is blocked pending the controlled sender-test/readiness workflow. Once referenced by a conversation, domain/address/from-name cannot be swapped. Disconnecting the connection or changing the main company domain holds related setup; no remote account or DNS record is deleted. Sender setup now appears within Connections, with clear errors and actual provider DNS values. Real Resend browser access was checked and requires sign-in; no domain was created remotely.
 
-Verified: 64 database cases, 69 unit cases, six browser stories (the credential and domain submission stories use explicit mocks), TypeScript and scoped ESLint. All provider calls in automated tests are fixtures. Remaining EM-008 work includes controlled sender tests, actual brand/DNS/receiving verification, delivery integration, domain health and full hosted acceptance. Latest image artifacts are in test-results/email-local, including senders-mobile.png. These are local UI evidence, not production or provider proof.
+Verified: 64 database cases, 69 unit cases, six browser stories (the credential and domain submission stories use explicit mocks), TypeScript and scoped ESLint. All provider calls in automated tests are fixtures. Remaining EM-008 work includes controlled sender tests, actual brand/DNS/receiving verification, delivery integration, domain health and full hosted acceptance. Owner-purchased intended sender names may appear in local copy/fixtures; they do not make a domain sending-ready. Latest image artifacts are in test-results/email-local, including senders-mobile.png. These are local UI evidence, not production or provider proof.
 
 ## Calendar restoration and signed intake continuation
 
@@ -187,8 +187,8 @@ See [provider lifecycle](16-provider-lifecycle.md). Local-only continuation of r
 - Delivery events reduce when they match a known provider message. Bounce/complaint suppress immediately. Unmatched events still pause until owner `OPS-ACK`.
 - Simulated outbound frozen payloads include List-Unsubscribe headers when preference keys exist. The public success page can record a program note after one-click stop; it cannot resubscribe.
 
-The local harness applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`. No production migration, Resend account, DNS write, domain purchase or customer send.
+The local harness applies seventeen named Email migrations including `20260913180000_email_provider_lifecycle.sql`. No production migration, live Resend connection, Cloudflare DNS write or customer send.
 
 Verified locally this increment: 85 database workflow cases (serial harness with `EMAIL_TEST_PG_BIN=/usr/lib/postgresql/16/bin`, `LC_ALL=C` / `LANG=C`, `--test-concurrency=1`) and 98 Email/proxy unit tests. Live sending remains off.
 
-Owner lock 2026-09-13: intended outreach domains `talktosavingkc.com`, `savingkcteam.com`, `yourkchomebuyer.com` may appear in later copy/fixtures after Ernest/Robin purchase them. They are not purchased, not on Cloudflare, and are not treated as ready here. The existing Resend signup under `ernest@savingkc.com` has no API key in Email. Ari credits remain unfunded.
+Owner lock 2026-09-13 (purchase update): Ernest/Robin purchased `talktosavingkc.com`, `savingkcteam.com` and `yourkchomebuyer.com` via Cloudflare Registrar. Nameservers are on Cloudflare. `savingkc.com` is untouched and remains the primary business domain. These three names may appear in docs/UI/fixtures as intended sender domains. They are not email-DNS-ready, not added in Resend, and not sending-ready. Do not buy more domains. Do not write Cloudflare DNS, add live Resend domains, or produce SPF/DKIM/DMARC/MX records until Robin authorizes that later packet. The existing Resend signup under `ernest@savingkc.com` has no API key in Email. Ari credits remain unfunded.

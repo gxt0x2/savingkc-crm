@@ -16,7 +16,7 @@ v1.1 user requirements and operating recommendations are recorded in [07 Sales v
 | Decision | Basis | Product consequence |
 | --- | --- | --- |
 | Email operates inside SavingKC CRM | Conversation direction | Existing people, properties, conversations, acquisition work, and outcomes remain connected |
-| Use independently registered sending domains | Explicit user requirement | Main business domain is not offered as a campaign sender; exact external domains are chosen in setup |
+| Use independently registered sending domains | Explicit user requirement | Main business domain (`savingkc.com`) is not offered as a campaign sender; intended outreach domains are `talktosavingkc.com`, `savingkcteam.com` and `yourkchomebuyer.com` (owned; not email-DNS or Resend ready) |
 | Resend is the initial provider | User reports checking suitability | Build one replaceable provider integration; verify the actual configured scope and capabilities during setup/integration testing |
 | AI manages routine conversations with human intervention | Explicit user requirement | Published rules define automatic actions, review cases, takeover, and return to AI |
 | Lead and Opportunity are the two business stages | Explicit user clarification | Replies and callback requests are activity/status milestones, not extra business stages |

@@ -2,13 +2,14 @@
 
 Date: 2026-09-10
 Updated: 2026-09-12 — added proposed first-run setup and subscription onboarding; recorded Lead/Opportunity definitions.
+Updated: 2026-09-13 — Ernest/Robin purchased the three outreach domains via Cloudflare Registrar. Nameservers are on Cloudflare. They are not email-DNS-ready, not in Resend, and not sending-ready.
 Status: Architecture baseline. The detailed v1 specification and walkthrough are now available through [the package index](README.md). This is not authorization to launch campaigns.
 
 ## Direction
 
 Build a native Email workspace in SavingKC CRM. SavingKC owns audiences, campaigns, conversation state, AI policies, review, handoffs, suppression, and attribution. Resend is the initial sending and receiving integration, based on Ernest's statement that he checked the use case. Address verification and model inference are external services. Hosted jobs execute campaigns independently of a user's browser or Codex session.
 
-Use independently registered sending domains. Keep SavingKC's primary business email out of campaign sender selection. Prefer recognizable SavingKC-related branding with clear SavingKC identification. Domain names and registrations are not yet selected. Domain separation reduces exposure but does not guarantee isolation from shared provider-account, IP, or brand reputation effects. A subdomain of the primary domain does not provide the same organizational-domain separation.
+Use independently registered sending domains. Keep SavingKC's primary business email out of campaign sender selection. Prefer recognizable SavingKC-related branding with clear SavingKC identification. Owner-purchased outreach domains are `talktosavingkc.com`, `savingkcteam.com` and `yourkchomebuyer.com`. Nameservers are on Cloudflare; email DNS, Resend domain add and sending remain unauthorized. `savingkc.com` stays the primary business domain and is excluded from campaign senders. Domain separation reduces exposure but does not guarantee isolation from shared provider-account, IP, or brand reputation effects. A subdomain of the primary domain does not provide the same organizational-domain separation.
 
 The initial implementation uses one provider connector behind a narrow interface. A second campaign platform is optional only if a demonstrated requirement justifies its subscription and synchronization burden. We are accepting the work of building scheduling and conversation orchestration in exchange for owning that behavior.
 
