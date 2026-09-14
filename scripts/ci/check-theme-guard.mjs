@@ -39,6 +39,7 @@ const globals = read('src/app/globals.css');
 const rootLayout = read('src/app/layout.tsx');
 const workspaceFrame = read('src/components/conversations/workspace-frame.tsx');
 const cockpitModal = read('src/components/ui/cockpit-modal.tsx');
+const appointmentModal = read('src/components/leads/appointment-modal.tsx');
 
 const forbiddenInShell = [
   'bg-white border-b border-slate-200',
@@ -92,6 +93,18 @@ assert(
   cockpitModal.includes('className={`crm-modal-surface') && !cockpitModal.includes('overflow-hidden ck-dark'),
   'Theme guard failed: portaled cockpit modal must inherit the active document theme.'
 );
+
+assert(
+  appointmentModal.includes('className="crm-modal-surface') && !appointmentModal.includes('className="ck-dark'),
+  'Theme guard failed: appointment modal must inherit the active document theme.'
+);
+
+for (const token of ['var(--ck-surface)', 'var(--ck-text)', 'var(--ck-accent)']) {
+  assert(
+    appointmentModal.includes(token),
+    `Theme guard failed: appointment modal is missing shared theme token ${token}.`
+  );
+}
 
 assert(
   !appShell.includes('TC_LIGHT_THEME') &&
