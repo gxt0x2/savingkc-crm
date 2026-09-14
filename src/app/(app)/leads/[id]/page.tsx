@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -13,6 +13,7 @@ import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
 import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
+import { leadActionModalReducer } from '@/lib/lead-action-modal'
 
 const PropertyHero = dynamic(() => import('@/components/leads/property-hero').then((module) => module.PropertyHero))
 const ActivityFeed = dynamic(() => import('@/components/leads/activity-feed').then((module) => module.ActivityFeed))
@@ -287,8 +288,9 @@ export default function LeadDetailPage() {
   const [detailsExpanded, setDetailsExpanded] = useState(false)
   const [editPanelOpen, setEditPanelOpen] = useState(false)
   const [contractModalOpen, setContractModalOpen] = useState(false)
-  const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
-  const [showNewTask, setShowNewTask] = useState(false)
+  // Appointment and task actions share one modal slot so a transition can
+  // never render both dialogs, even while a dynamically imported modal loads.
+  const [leadActionModal, dispatchLeadActionModal] = useReducer(leadActionModalReducer, null)
   const [outcomeModalOpen, setOutcomeModalOpen] = useState(false)
   const [nextAppointment, setNextAppointment] = useState<AppointmentState | null>(null)
   const [notesModalOpen, setNotesModalOpen] = useState(false)
@@ -777,9 +779,9 @@ export default function LeadDetailPage() {
           setComposeTab('email')
           setSmsModalOpen(true)
         }}
-        onAppointment={() => setAppointmentModalOpen(true)}
+        onAppointment={() => dispatchLeadActionModal({ type: 'open', modal: 'appointment' })}
         onAppointmentOutcome={() => setOutcomeModalOpen(true)}
-        onTask={() => setShowNewTask(true)}
+        onTask={() => dispatchLeadActionModal({ type: 'open', modal: 'task' })}
         onContract={() => setContractModalOpen(true)}
         onOpenProperty={() => setDetailsExpanded(true)}
         onRefresh={refreshAll}
@@ -904,20 +906,20 @@ export default function LeadDetailPage() {
           onSuccess={() => { refreshAll() }}
         />
       )}
-      {appointmentModalOpen && (
+      {leadActionModal === 'appointment' && (
         <AppointmentModal
           lead={lead}
           initialAppointment={activeAppointment}
-          onClose={() => setAppointmentModalOpen(false)}
+          onClose={() => dispatchLeadActionModal({ type: 'close' })}
           onSuccess={() => { refreshAll() }}
         />
       )}
-      {showNewTask && (
+      {leadActionModal === 'task' && (
         <NewTaskModal
           leadId={lead.id}
           leadName={toProperCase(lead.full_name || '') || lead.property_address || 'Unknown'}
-          onClose={() => setShowNewTask(false)}
-          onCreated={() => { setShowNewTask(false); refreshAll() }}
+          onClose={() => dispatchLeadActionModal({ type: 'close' })}
+          onCreated={() => { dispatchLeadActionModal({ type: 'close' }); refreshAll() }}
         />
       )}
       {outcomeModalOpen && activeAppointment && (
