@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { EmailCommand } from '@/lib/email/contracts'
 import type { PilotState, PilotThread } from '@/lib/email/workflow/types'
 import styles from './email-workspace.module.css'
+import { defaultEmailBackup } from '@/lib/email/backup-pairing'
 
 export function EmailHandoffActions({
   data,
@@ -149,7 +150,11 @@ export function EmailHandoffActions({
             <select
               aria-label="Callback owner"
               value={newOwner}
-              onChange={(e) => setNewOwner(e.target.value)}
+              onChange={(e) => {
+                const owner = e.target.value
+                setNewOwner(owner)
+                setBackup(defaultEmailBackup(owner, data.routing, data.members) ?? '')
+              }}
               required
             >
               <option value="">Choose an agent</option>
