@@ -41,7 +41,7 @@ export const WORKSPACE_SECTIONS: Record<string, Section[]> = {
   ],
 }
 
-/** A portalled disclosure stays visible outside the scrolling/collapsed rail. */
+/** Expanded rails show a nested tree; collapsed rails use a compact flyout. */
 export function WorkspaceSubmenu({ label, collapsed, children }: {
   label: string; collapsed: boolean; children: ReactNode
 }) {
@@ -64,12 +64,12 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
     openedByHover.current = fromHover
     setPortalHost(anchor.current?.closest('.crm-workspace-shell') ?? document.body)
     const rect = anchor.current?.getBoundingClientRect()
-    if (rect) setPosition({ left: Math.min(rect.right + 4, window.innerWidth - 260), top: Math.max(8, Math.min(rect.top, window.innerHeight - (items.length * 64 + 56))) })
+    if (rect) setPosition({ left: Math.min(rect.right + 4, window.innerWidth - 200), top: Math.max(8, Math.min(rect.top, window.innerHeight - (items.length * 36 + 16))) })
   }
   useEffect(() => () => clearTimeout(timer.current), [])
   useEffect(() => {
     if (!position) return
-    function outside(event: PointerEvent) {
+    function outside(event: MouseEvent) {
       const target = event.target as Node
       if (!anchor.current?.contains(target) && !panel.current?.contains(target)) setPosition(null)
     }
@@ -77,19 +77,30 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
       if (event.key === 'Escape') { setPosition(null); toggle.current?.focus() }
     }
     const close = () => setPosition(null)
-    document.addEventListener('pointerdown', outside)
+    document.addEventListener('click', outside)
     document.addEventListener('keydown', escape)
-    const closeOnScroll = (event: Event) => { if (event.target !== panel.current) close() }
+    const closeOnScroll = (event: Event) => { if (collapsed && event.target !== panel.current) close() }
     document.addEventListener('scroll', closeOnScroll, true)
     window.addEventListener('resize', close)
     return () => {
-      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('click', outside)
       document.removeEventListener('keydown', escape)
       document.removeEventListener('scroll', closeOnScroll, true)
       window.removeEventListener('resize', close)
     }
-  }, [position])
+  }, [position, collapsed])
   if (!items) return children
+  const submenu = <div ref={panel} id={id} aria-label={`${label} sections`} role="navigation"
+      onPointerEnter={cancelClose} onPointerLeave={closeSoon}
+      onFocus={cancelClose} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget) && !anchor.current?.contains(event.relatedTarget)) closeSoon() }}
+      className={collapsed ? "fixed z-[100] w-48 max-h-[80dvh] overflow-y-auto rounded-xl border border-[var(--crm-nav-hover)] bg-[var(--crm-nav)] p-2 text-[var(--crm-nav-text)] shadow-xl" : "ml-6 mt-1 mb-2 border-l border-[var(--crm-nav-hover)] pl-2 text-[var(--crm-nav-text)]"}
+      style={collapsed && position ? position : undefined}>
+      {items.map((item) => item.href ? <Link key={item.label} href={item.href} prefetch={false} onClick={() => setPosition(null)}
+        aria-current={pathname === item.href.split('?')[0] && Array.from(new URLSearchParams(item.href.split('?')[1] ?? '')).every(([key, value]) => search.get(key) === value) ? 'page' : undefined}
+        className="relative block rounded-lg px-3 py-2 text-xs text-[var(--crm-nav-muted)] before:absolute before:-left-2 before:top-1/2 before:h-px before:w-2 before:bg-[var(--crm-nav-hover)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)] focus-visible:outline-2 focus-visible:outline-[var(--crm-brand)] aria-[current=page]:bg-[var(--crm-nav-active)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--crm-nav-text)]">
+        {item.label}
+      </Link> : <div key={item.label} aria-disabled="true" title={item.description} className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs text-[var(--crm-nav-muted)]"><span>{item.label}</span><span className="text-[10px]">Not connected</span></div>)}
+    </div>
   return <div ref={anchor} className="relative" onPointerEnter={(event) => { if (event.pointerType !== 'touch') open(true) }} onPointerLeave={closeSoon}>
     <div className={collapsed ? '' : 'pr-7'}>{children}</div>
     <button ref={toggle} type="button" aria-label={`Open ${label} sections`} aria-expanded={Boolean(position)} aria-controls={id}
@@ -100,19 +111,8 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
         }
       }}
       className={`absolute right-0 top-0 grid ${collapsed ? 'h-4 w-4' : 'h-10 w-7'} place-items-center rounded text-[var(--crm-nav-muted)] hover:text-[var(--crm-nav-text)] focus-visible:outline-2 focus-visible:outline-[var(--crm-brand)]`}>
-      <Icon name="chevron_right" className="text-base" />
+      <Icon name="chevron_right" className={`text-base transition-transform ${position && !collapsed ? 'rotate-90' : ''}`} />
     </button>
-    {position && createPortal(<div ref={panel} id={id} aria-label={`${label} sections`} role="navigation"
-      onPointerEnter={cancelClose} onPointerLeave={closeSoon}
-      onFocus={cancelClose} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget) && !anchor.current?.contains(event.relatedTarget)) closeSoon() }}
-      className="fixed z-[100] w-64 max-h-[80dvh] overflow-y-auto rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface)] p-2 text-[var(--crm-text)] shadow-xl"
-      style={position}>
-      <p className="px-3 py-2 text-xs font-bold text-[var(--crm-text-muted)]">{label}</p>
-      {items.map((item) => item.href ? <Link key={item.label} href={item.href} prefetch={false} onClick={() => setPosition(null)}
-        aria-current={pathname === item.href.split('?')[0] && Array.from(new URLSearchParams(item.href.split('?')[1] ?? '')).every(([key, value]) => search.get(key) === value) ? 'page' : undefined}
-        className="block rounded-lg px-3 py-2.5 text-sm hover:bg-[var(--crm-surface-subtle)] focus-visible:outline-2 focus-visible:outline-[var(--crm-brand)] aria-[current=page]:bg-[var(--crm-brand-soft)] aria-[current=page]:text-[var(--crm-brand)]">
-        <span className="font-semibold">{item.label}</span>{item.description && <span className="mt-0.5 block text-xs text-[var(--crm-text-muted)]">{item.description}</span>}
-      </Link> : <div key={item.label} aria-disabled="true" className="px-3 py-2.5 text-sm text-[var(--crm-text-muted)]"><span className="font-semibold">{item.label}</span><span className="mt-0.5 block text-xs">{item.description}</span></div>)}
-    </div>, portalHost ?? document.body)}
+    {position && (collapsed ? createPortal(submenu, portalHost ?? document.body) : submenu)}
   </div>
 }
