@@ -18,6 +18,7 @@ import styles from './email-workspace.module.css'
 import { EmailCalendarAgenda } from './email-calendar-agenda'
 import { EmailHandoffActions } from './email-handoff-actions'
 import { EmailAriDraft } from './email-ari-draft'
+import { defaultEmailBackup } from '@/lib/email/backup-pairing'
 
 const detailTabs = [
   ['next', 'Next step'],
@@ -257,8 +258,7 @@ export function EmailThreadPanel({
     const callback = t.callback_request ?? proposal
     if (!inbound || !callback?.phone) return
     const assigned = data.routing?.acquisitionOwnerId ?? data.actorId
-    const backup =
-      data.routing?.backupId ?? data.members.find((m) => m.id !== assigned)?.id
+    const backup = defaultEmailBackup(assigned, data.routing, data.members)
     if (!backup) {
       setLocalError('Choose an acquisitions owner and backup in setup first.')
       return
