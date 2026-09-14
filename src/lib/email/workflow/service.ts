@@ -99,7 +99,7 @@ export async function requireHuman(
       'OWNERSHIP_CHANGED',
     )
   const assignments =
-    await context.tx`select h.id,l.assigned_agent,p.full_name,w.assigned_to
+    await context.tx`select h.id,l.assigned_agent,email_crm_assignee_name(p.email,p.full_name) as full_name,w.assigned_to
     from em_handoffs h join leads l on l.id=h.lead_id
     left join em_memberships m on m.workspace_id=h.workspace_id and m.auth_user_id=h.owner_id and m.active
     left join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
@@ -656,13 +656,13 @@ export async function executePilotCommand(
             !['dead', 'closed_won', 'closed_lost'].includes(lead.station),
           'CRM_RECORD_HELD',
         )
-        const [assignee] = await tx`select p.full_name from em_memberships m
+        const [assignee] = await tx`select email_crm_assignee_name(p.email,p.full_name) as full_name from em_memberships m
           join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
           where m.workspace_id=${ws} and m.auth_user_id=${p.assigneeId} and m.active
           and m.roles && array['owner','reviewer','acquisitions']::text[]`
         check(assignee?.full_name, 'TASK_ASSIGNEE_UNAVAILABLE', 403)
         const [actor] =
-          await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id=${subject}`
+          await tx`select email_crm_assignee_name(p.email,p.full_name) as full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id where m.workspace_id=${ws} and m.auth_user_id=${subject}`
         const start = new Date(p.startAt)
         if (['callback', 'follow_up', 'appointment'].includes(p.kind))
           validateCallbackTime(start, now)
@@ -704,7 +704,7 @@ export async function executePilotCommand(
         const thread = await threadFor(context, command.payload.threadId)
         check(thread.lead_id, 'LINK_LEAD_FIRST')
         const [actor] =
-          await tx`select p.full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
+          await tx`select email_crm_assignee_name(p.email,p.full_name) as full_name from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
           where m.workspace_id=${ws} and m.auth_user_id=${subject}`
         const [note] =
           await tx`insert into lead_activities(lead_id,activity_type,description,agent,metadata,created_at)
@@ -1136,7 +1136,7 @@ export async function readPilotState(
         from em_ai_generations g where g.workspace_id=t.workspace_id and g.thread_id=t.id order by g.created_at desc,g.id desc limit 1) as ai_generation,
       l.assigned_agent as crm_owner_name,
       (h.crm_sync_state='synced' and h.state<>'completed' and
-        (l.assigned_agent is distinct from ho.full_name or w.assigned_to is distinct from ho.full_name)) as callback_owner_changed,
+        (l.assigned_agent is distinct from email_crm_assignee_name(ho.email,ho.full_name) or w.assigned_to is distinct from email_crm_assignee_name(ho.email,ho.full_name))) as callback_owner_changed,
       (select count(*)::int from work_items wi where wi.lead_id=t.lead_id and wi.status in ('pending','blocked')) as open_task_count,
       coalesce((select jsonb_agg(jsonb_build_object('key',wi.work_item_key,'source_id',wi.source_id,'title',wi.title,'kind',wi.kind,'status',wi.status,'due_at',wi.due_at,'assigned_to',wi.assigned_to,
         'notes',coalesce(wi.source_metadata->>'email_task_notes',wi.source_metadata->>'notes')) order by wi.due_at nulls last,wi.work_item_key)
