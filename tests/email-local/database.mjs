@@ -84,7 +84,7 @@ export async function startDisposableDatabase() {
     await sql.unsafe(`create role anon; create role authenticated; create role service_role bypassrls;
       create schema auth;
       create table auth.users(id uuid primary key,email text not null unique);
-      create table agent_profiles(id uuid primary key,email text not null unique,full_name text,is_admin boolean,role text,is_active boolean default true,user_id uuid);`)
+      create table agent_profiles(id uuid primary key,email text not null unique,full_name text,phone text,is_admin boolean,role text,is_active boolean default true,user_id uuid);`)
     await sql`insert into auth.users(id,email) values
       (${fixtureOwner},'owner@savingkc.test'),
       (${fixtureAgent},'agent@savingkc.test'),
@@ -118,6 +118,7 @@ export async function startDisposableDatabase() {
       '20260912181000_email_crm_identity_guard.sql',
       '20260912182000_email_crm_projection_repairs.sql',
       '20260914163000_email_crm_identity_locks.sql',
+      '20260914190000_email_lead_sms_alerts.sql',
       '20260913010000_email_action_workspace.sql',
       '20260913020000_email_ai_generations.sql',
       '20260913030000_email_service_connections.sql',
