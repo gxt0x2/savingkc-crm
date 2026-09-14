@@ -346,7 +346,6 @@ const rejects = (promise: Promise<unknown>, code: string) =>
     promise,
     (e: unknown) => e instanceof Error && e.message === code,
   )
-
 async function reviewedCallback(
   db: Database,
   body = 'I would consider selling this property. Please call me.',
@@ -3830,7 +3829,6 @@ withDb('signed Resend webhook captures encrypted event, holds drip once and queu
   assert.equal((await handler(request(unknown,'msg_storage_failure'))).status,503)
   assert.equal((await db.sql`select * from em_provider_events where provider_event_id='msg_storage_failure'`).length,0)
 })
-
 async function receivingFixture(db:Database) {
   const initial=await reviewedCallback(db)
   initial.payload.ownerId=owner;initial.payload.backupId=agent
@@ -3851,6 +3849,8 @@ async function receivingFixture(db:Database) {
     const body=JSON.stringify({type:'email.received',created_at:now.toISOString(),data:{email_id:content.id,from:content.from,to:content.to,message_id:content.message_id}}),id=`msg_${randomUUID()}`,timestamp=Math.floor(Date.now()/1000).toString()
     const signature=`v1,${createHmac('sha256',Buffer.from(secret.slice(6),'base64')).update(`${id}.${timestamp}.${body}`).digest('base64')}`
     assert.equal((await handler(new Request('http://localhost/api/webhooks/email/resend',{method:'POST',headers:{'svix-id':id,'svix-timestamp':timestamp,'svix-signature':signature},body}))).status,200)
+    // Capture uses the database clock; align only this job with the injected worker clock.
+    await db.sql`update em_jobs set run_after=${now} where dedupe_key=${`resend:${connectionId}:${id}`}`
   }
   await capture()
   return {key,thread,content,connectionId,endpoint,capture}
