@@ -15,7 +15,6 @@ export interface ProspectImportRow {
   classification: null
   priority: 'cold'
   is_parked: false
-  pipeline_intent_source: null
 }
 
 export class ProspectImportError extends Error {
@@ -88,7 +87,6 @@ export function parseProspectImportRows(payload: unknown): ProspectImportRow[] {
       classification: null,
       priority: 'cold',
       is_parked: false,
-      pipeline_intent_source: null,
     }
   })
 }

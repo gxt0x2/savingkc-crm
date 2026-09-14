@@ -19,7 +19,7 @@ describe('prospect import command', () => {
       station: 'new',
       classification: null,
       priority: 'cold',
-      pipeline_intent_source: null,
+      is_parked: false,
     })])
   })
 
