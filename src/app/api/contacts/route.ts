@@ -175,11 +175,11 @@ function cleanText(value: unknown): string | null {
 
 function normalizeContactPhone(value: unknown): string | null {
   const raw = cleanText(value)
-  if (!raw) return null
+  if (!raw || !/^[+\d\s().-]+$/.test(raw)) return null
   const digits = raw.replace(/\D/g, '')
   if (digits.length === 10) return `+1${digits}`
   if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  return raw
+  return null
 }
 
 /**
@@ -197,6 +197,9 @@ export async function POST(request: NextRequest) {
 
   const fullName = cleanText(payload.fullName)
   const phone = normalizeContactPhone(payload.phone)
+  if (cleanText(payload.phone) && !phone) {
+    return NextResponse.json({ error: 'Enter a valid 10-digit phone number, or leave Phone blank.' }, { status: 400 })
+  }
   const email = cleanText(payload.email)?.toLowerCase() ?? null
   const address = cleanText(payload.address)
   if (!fullName && !phone && !email) {
@@ -214,7 +217,7 @@ export async function POST(request: NextRequest) {
       city: cleanText(payload.city),
       state: cleanText(payload.state),
       zip: cleanText(payload.zip),
-      source: cleanText(payload.source) ?? 'manual_crm',
+      source: !cleanText(payload.source) || cleanText(payload.source) === 'manual_crm' ? 'manual' : cleanText(payload.source),
       station: 'new',
       priority: 'warm',
       is_parked: false,
