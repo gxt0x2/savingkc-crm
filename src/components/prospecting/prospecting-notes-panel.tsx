@@ -64,7 +64,7 @@ export function ProspectingNotesPanel(props: ProspectingNotesPanelProps) {
         <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Default workspace</p>
         <h2 className="mt-0.5 text-sm font-black text-[var(--ck-text)]">Notes</h2>
       </div>
-      <span className="rounded-full border border-[var(--prospecting-warning)]/35 bg-[var(--prospecting-warning-soft)] px-2.5 py-1 text-[9px] font-bold text-[var(--prospecting-warning-ink)]">{props.recordKind}</span>
+      <span className="rounded-full border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] px-2.5 py-1 text-[9px] font-bold text-[var(--ck-text-muted)]">{props.recordKind}</span>
     </div>
 
     <ContactNoteComposer contactName={props.sellerName || 'current seller'} onSave={save} readOnlyPreview={props.readOnly} rows={4} variant="workspace" fillAvailable />

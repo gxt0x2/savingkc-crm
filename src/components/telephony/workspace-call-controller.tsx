@@ -32,33 +32,33 @@ export function WorkspaceCallController({
 
   if (loadingSessionQueue) {
     return (
-      <section role="status" aria-label="Loading calling session" className="border-b border-white/15 pb-3">
-        <p className="flex items-center gap-2 text-sm font-semibold text-white"><Icon name="progress_activity" className="animate-spin" size="text-base" />Loading call controls</p>
-        <p className="mt-1 text-xs text-white/60">Restoring the current record and session.</p>
+      <section role="status" aria-label="Loading calling session" className="border-b border-[var(--prospecting-border)] pb-3">
+        <p className="flex items-center gap-2 text-sm font-semibold text-[var(--ck-text)]"><Icon name="progress_activity" className="animate-spin text-[var(--crm-brand)]" size="text-base" />Loading call controls</p>
+        <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Restoring the current record and session.</p>
       </section>
     )
   }
 
   if (outcomeRequired) {
     return (
-      <section aria-label="Current call summary" className="border-b border-white/15 pb-3">
-        <h2 className="text-base font-semibold tracking-[-0.02em] text-white">Call outcome</h2>
-        <p className="mt-1 text-xs font-medium text-[#f1bb55]">Call ended · outcome required</p>
+      <section aria-label="Current call summary" className="border-b border-[var(--prospecting-border)] pb-3">
+        <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--ck-text)]">Call outcome</h2>
+        <p className="mt-1 text-xs font-medium text-[var(--crm-brand)]">Call ended · outcome required</p>
         <p className="sr-only">{queueItem?.heirName || 'Current seller'} {formattedDialDisplay}</p>
       </section>
     )
   }
 
   return (
-    <section aria-label="Next contact" className="border-b border-white/15 pb-3">
-      <h2 className="text-base font-semibold tracking-[-0.02em] text-white">Call outcome</h2>
-      <p className="mt-1 text-xs font-medium text-[#7ed3b4]">{queueItem ? 'Ready to dial · 00:00' : 'Choose a number from the current contact'}</p>
+    <section aria-label="Next contact" className="border-b border-[var(--prospecting-border)] pb-3">
+      <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--ck-text)]">Call outcome</h2>
+      <p className="mt-1 text-xs font-medium text-[var(--ck-text-muted)]">{queueItem ? 'Ready to dial · 00:00' : 'Choose a number from the current contact'}</p>
       <p className="sr-only">{queueItem ? `${queueItem.heirName} ${formattedDialDisplay}` : 'No number selected'}</p>
       <button
         type="button"
         onClick={onCall}
         disabled={!dialReady}
-        className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--prospecting-primary)] px-3 text-sm font-semibold text-white transition-colors hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--prospecting-primary)] px-3 text-sm font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed disabled:opacity-45"
         title={dialReady ? 'Start dialing the reviewed queue' : 'Waiting for Twilio'}
       >
         <Icon name="play_arrow" size="text-xl" filled />

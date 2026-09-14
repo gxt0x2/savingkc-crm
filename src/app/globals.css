@@ -670,6 +670,8 @@ html.dark .crm-modal-surface {
   --prospecting-warning-soft: #3d321d;
   --prospecting-warning-ink: #f0c872;
   --prospecting-on-warning: #231a08;
+  --prospecting-paused: #30383d;
+  --prospecting-on-paused: #ffffff;
   --prospecting-info: #76a9d4;
   --prospecting-info-soft: #1c3041;
   --ck-bg: var(--prospecting-canvas);
@@ -692,33 +694,35 @@ html.dark .crm-modal-surface {
 }
 
 .theme-light .prospecting-answer-workspace {
-  --prospecting-canvas: #f2f3f3;
-  --prospecting-header: #fbfcfc;
-  --prospecting-panel: #ffffff;
-  --prospecting-elevated: #f5f6f6;
-  --prospecting-hover: #e9edef;
-  --prospecting-border: #d5dbde;
-  --prospecting-border-strong: #87949b;
-  --prospecting-text: #172026;
-  --prospecting-muted: #4b5961;
-  --prospecting-dim: #66757d;
-  --prospecting-primary: #1f5f74;
-  --prospecting-primary-strong: #17495a;
-  --prospecting-primary-soft: #e6f0f3;
-  --prospecting-on-primary: #ffffff;
-  --prospecting-danger: #b4233b;
-  --prospecting-danger-hover: #921c31;
-  --prospecting-danger-soft: #faeaed;
-  --prospecting-success: #147d64;
-  --prospecting-success-strong: #0e624f;
-  --prospecting-success-soft: #e4f3ee;
+  --prospecting-canvas: var(--crm-canvas);
+  --prospecting-header: var(--crm-surface);
+  --prospecting-panel: var(--crm-surface);
+  --prospecting-elevated: var(--crm-surface-subtle);
+  --prospecting-hover: var(--crm-surface-hover);
+  --prospecting-border: var(--crm-border);
+  --prospecting-border-strong: var(--crm-border-strong);
+  --prospecting-text: var(--crm-ink);
+  --prospecting-muted: var(--crm-text-muted);
+  --prospecting-dim: var(--crm-text-dim);
+  --prospecting-primary: var(--crm-brand);
+  --prospecting-primary-strong: var(--crm-brand-hover);
+  --prospecting-primary-soft: var(--crm-brand-soft);
+  --prospecting-on-primary: var(--crm-on-brand);
+  --prospecting-danger: var(--crm-danger);
+  --prospecting-danger-hover: var(--crm-brand-hover);
+  --prospecting-danger-soft: var(--crm-danger-soft);
+  --prospecting-success: var(--crm-success);
+  --prospecting-success-strong: var(--crm-success);
+  --prospecting-success-soft: var(--crm-success-soft);
   --prospecting-on-success: #ffffff;
-  --prospecting-warning: #a96708;
-  --prospecting-warning-soft: #fff3d6;
-  --prospecting-warning-ink: #754700;
+  --prospecting-warning: var(--crm-charcoal);
+  --prospecting-warning-soft: var(--crm-surface-subtle);
+  --prospecting-warning-ink: var(--crm-charcoal);
   --prospecting-on-warning: #ffffff;
-  --prospecting-info: #315f86;
-  --prospecting-info-soft: #e9f1f7;
+  --prospecting-paused: var(--crm-charcoal);
+  --prospecting-on-paused: #ffffff;
+  --prospecting-info: var(--crm-text-muted);
+  --prospecting-info-soft: var(--crm-surface-subtle);
   color-scheme: light;
 }
 
@@ -747,6 +751,28 @@ html.dark .crm-modal-surface {
   color-scheme: dark;
 }
 
+/* The answer workspace is one light-theme product surface. The dialer keeps
+   its strong red dispositions, but no longer becomes a separate dark UI. */
+.theme-light .prospecting-answer-workspace .prospecting-dialer-control-surface {
+  --prospecting-panel: var(--crm-surface);
+  --prospecting-header: var(--crm-surface);
+  --prospecting-elevated: var(--crm-surface-subtle);
+  --prospecting-hover: var(--crm-surface-hover);
+  --prospecting-border: var(--crm-border);
+  --prospecting-border-strong: var(--crm-border-strong);
+  --prospecting-text: var(--crm-ink);
+  --prospecting-muted: var(--crm-text-muted);
+  --prospecting-dim: var(--crm-text-dim);
+  --prospecting-primary: var(--crm-brand);
+  --prospecting-primary-strong: var(--crm-brand-hover);
+  --prospecting-primary-soft: var(--crm-brand-soft);
+  --prospecting-on-primary: var(--crm-on-brand);
+  --ck-text: var(--crm-ink);
+  --ck-text-muted: var(--crm-text-muted);
+  --ck-text-dim: var(--crm-text-dim);
+  color-scheme: light;
+}
+
 .prospecting-dialer-secondary-button {
   display: inline-flex;
   min-height: 2.25rem;
@@ -772,6 +798,22 @@ html.dark .crm-modal-surface {
 .prospecting-dialer-secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.theme-light .prospecting-answer-workspace .prospecting-dialer-secondary-button {
+  border-color: var(--crm-border-strong);
+  background: var(--crm-surface-subtle);
+  color: var(--crm-text);
+}
+
+.theme-light .prospecting-answer-workspace .prospecting-dialer-secondary-button:enabled:hover {
+  border-color: var(--crm-brand-border);
+  background: var(--crm-brand-soft);
+  color: var(--crm-brand);
+}
+
+.theme-light .prospecting-answer-workspace .prospecting-dialer-secondary-button:disabled {
+  opacity: 0.62;
 }
 
 .prospecting-information-panel {

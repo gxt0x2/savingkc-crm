@@ -76,10 +76,10 @@ function zillowPropertyUrl(address: string): string {
 
 function ColumnHeader({ label, tone }: { label: string; tone: 'contact' | 'information' | 'dialer' }) {
   const dot = tone === 'contact'
-    ? 'bg-[var(--prospecting-success)]'
+    ? 'bg-[var(--prospecting-primary)]'
     : tone === 'information'
-      ? 'bg-[var(--prospecting-info)]'
-      : 'bg-[var(--prospecting-danger)]'
+      ? 'bg-[var(--ck-text-dim)]'
+      : 'bg-[var(--prospecting-primary)]'
   return <div className="flex min-h-9 w-full items-center gap-2 border-b border-[var(--ck-border)] bg-[var(--prospecting-header)] px-3 text-[11px] font-semibold text-[var(--ck-text-muted)]">
     <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
     {label}

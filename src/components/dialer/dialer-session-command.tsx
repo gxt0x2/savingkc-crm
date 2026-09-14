@@ -65,11 +65,11 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       ? `${statusLabel} · ${props.queueState.callDuration}`
       : statusLabel
   const statusTone = props.controlUnavailable || props.stopRequested || props.queueState?.outcomeRequired
-    ? 'bg-[var(--prospecting-warning)] text-[var(--prospecting-on-warning)]'
+    ? 'bg-[var(--prospecting-danger-soft)] text-[var(--prospecting-danger)]'
     : statusLabel === 'Connected' || statusLabel === 'Dialing' || previewStatus === 'Live'
-      ? 'bg-[var(--prospecting-success-strong)] text-white'
+      ? 'bg-[var(--prospecting-primary)] text-[var(--prospecting-on-primary)]'
       : statusLabel === 'Paused' || previewStatus === 'Paused'
-        ? 'bg-[var(--prospecting-warning)] text-[var(--prospecting-on-warning)]'
+        ? 'bg-[var(--prospecting-paused)] text-[var(--prospecting-on-paused)]'
         : previewStatus === 'Stopped'
           ? 'bg-[var(--prospecting-danger-soft)] text-[var(--prospecting-danger)]'
           : 'bg-[var(--prospecting-elevated)] text-[var(--ck-text)]'

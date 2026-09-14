@@ -39,4 +39,11 @@ describe('ProspectingWrapUpActions', () => {
     expect(screen.getByRole('button', { name: /mail/i })).toBeDisabled()
     expect(screen.getByText(/locked until this window owns/i)).toBeVisible()
   })
+
+  it('does not repeat the current-record attachment message inside action tabs', () => {
+    render(<ProspectingWrapUpActions {...baseProps} variant="tab" action="follow_up" />)
+
+    expect(screen.queryByText(/Attached to the current record/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add follow-up/i })).toBeVisible()
+  })
 })

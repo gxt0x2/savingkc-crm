@@ -328,7 +328,7 @@ export function HeirsSection({
                 onClick={() => { if (phone) queueOne(heir, phone) }}
                 disabled={readOnlyPreview || !canCall}
                 aria-label={phone ? `Call ${displayName} at ${formatPhone(phone.number) || phone.number}` : `No callable phone for ${displayName}`}
-                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg bg-[var(--prospecting-success)] px-2.5 text-xs font-semibold text-[var(--prospecting-on-success)] transition-colors hover:bg-[var(--prospecting-success-strong)] disabled:cursor-not-allowed"
+                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg bg-[var(--prospecting-primary)] px-2.5 text-xs font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed"
               >
                 <Icon name="call" size="text-sm" /> Call
               </button>

@@ -26,7 +26,8 @@ describe('ProspectingPreviewCallRail', () => {
     }] } })))
 
     expect(screen.getByText('Call outcome')).toBeVisible()
-    expect(screen.getByText('Preview only')).toBeVisible()
+    expect(screen.queryByText('Preview only')).not.toBeInTheDocument()
+    expect(screen.getByText(/Read-only review for campaign/)).toHaveClass('sr-only')
     expect(screen.getByText('Ready to dial · 00:00')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Start dialing' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Contact' })).toBeVisible()
