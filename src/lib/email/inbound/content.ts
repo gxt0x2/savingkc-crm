@@ -1,3 +1,5 @@
+import { authoredReplyText } from '../reply-text'
+export { authoredReplyText } from '../reply-text'
 import { parse, type DefaultTreeAdapterTypes } from 'parse5'
 import { z } from 'zod'
 
@@ -25,14 +27,6 @@ export const receivedContentSchema = z.object({
     .default([]),
 })
 export type ReceivedContent = z.infer<typeof receivedContentSchema>
-export function authoredReplyText(body: string) {
-  return body
-    .split(/\n(?:On .+wrote:|From:|--\s*$|Sent from my)/im)[0]
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('>'))
-    .join('\n')
-    .trim()
-}
 export function isOptOutReply(body: string) {
   const authored = authoredReplyText(body)
   return (

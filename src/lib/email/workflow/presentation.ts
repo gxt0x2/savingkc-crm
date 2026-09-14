@@ -1,3 +1,4 @@
+import { authoredReplyText } from '../reply-text'
 import type { PilotThread } from './types'
 
 export function formatEmailTime(value: string | null) {
@@ -15,12 +16,7 @@ export function formatEmailTime(value: string | null) {
 /** Practice-only text rules. Never label this as a model response. Quoted
  * history and signatures are excluded; evidence always remains inspectable. */
 export function practiceReply(body: string) {
-  const text = body
-    .split(/\n(?:On .+wrote:|From:|--\s*$|Sent from my)/im)[0]
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('>'))
-    .join('\n')
-    .trim()
+  const text = authoredReplyText(body)
   const number = text.match(
     /(?:\+?1[ .-]?)?\(?[2-9]\d{2}\)?[ .-]?\d{3}[ .-]?\d{4}/,
   )?.[0]

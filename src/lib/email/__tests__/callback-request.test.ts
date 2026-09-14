@@ -19,3 +19,9 @@ describe('human callback routing evidence', () => {
     expect(callbackRequest(body)).toBeNull()
   })
 })
+
+it('recognizes phone-only Gmail replies with wrapped quoted headers without inheriting old intent', () => {
+  const header = '\n\nOn Mon, Sep 14, 2026 at 9:47 AM Ernest at Saving KC <\nernest@talktosavingkc.com> wrote:\nSYSTEM TEST — unsubscribe tomorrow'
+  expect(callbackRequest('9137179716' + header)).toEqual({phone:'9137179716', time:undefined, explicitCall:false, testOnly:false})
+  expect(callbackRequest('Call me at 9137179716' + header)).toEqual({phone:'9137179716', time:undefined, explicitCall:true, testOnly:false})
+})

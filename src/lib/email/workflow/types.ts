@@ -57,7 +57,7 @@ export type PilotCallbackTaskState =
   | 'completed'
   | 'cancelled'
 export interface PilotThread {
-  callback_request?: { messageId: string; phone: string; time?: string; testOnly: boolean; reviewed: boolean } | null
+  callback_request?: { messageId: string; phone: string; time?: string; explicitCall?: boolean; testOnly: boolean; reviewed: boolean } | null
   inbound_pending?: boolean
   id: string
   campaign_id: string
