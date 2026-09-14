@@ -1,5 +1,6 @@
 'use client'
 
+import { EmailCallbackReview } from './email-callback-review'
 import { EmailSendIssue } from './email-send-issue'
 import { EmailMessageBody as MessageBody } from './email-message-body'
 import Link from 'next/link'
@@ -627,14 +628,8 @@ export function EmailThreadPanel({
                   available.
                 </p>
               ) : t.callback_request && (!localSimulation || t.state === 'stopped') ? (
-                <>
-                  {t.state === 'stopped' && <p>Marketing remains stopped. This review does not authorize email or an automatic call.</p>}
-                  {t.callback_request.reviewed ? <p>Test reviewed. No seller Lead, task, appointment or call was created.</p> : <>
-                    <p>{t.callback_request.testOnly ? 'Explicit test message. Record the review without creating a seller Lead or callable task.' : 'A new callback request needs human review before a Lead or follow-up task can be created.'}</p>
-                    <p>{t.callback_request.phone}{t.callback_request.time ? ` · ${t.callback_request.time}` : ''}</p>
-                    {canWork && (t.controller_user_id === data.actorId ? <button className={styles.primary} disabled={blocked} onClick={handoff}>{t.callback_request.testOnly ? 'Record test review' : 'Approve callback handoff'}</button> : <button disabled={blocked} onClick={() => act({ command: 'THR-TAKEOVER', idempotencyKey: crypto.randomUUID(), payload: { threadId: t.id, expectedControllerRevision: t.controller_revision } })}>Take over callback review</button>)}
-                  </>}
-                </>
+                <EmailCallbackReview request={t.callback_request} stopped={t.state === 'stopped'} canWork={canWork} owns={t.controller_user_id === data.actorId} blocked={blocked} onApprove={handoff}
+                  onTakeOver={() => act({ command: 'THR-TAKEOVER', idempotencyKey: crypto.randomUUID(), payload: { threadId: t.id, expectedControllerRevision: t.controller_revision } })} />
               ) : t.state === 'done' ? (
                 <p>No remaining work. A new reply will return here.</p>
               ) : t.state === 'stopped' ? (

@@ -1,5 +1,5 @@
 import 'server-only'
-import { callbackRequest, isCallbackTest } from './callback-request'
+import { callbackRequest, isCallbackTest, stoppedCallback, annotateCallbackRequests, recordCallbackTest } from './callback-review'
 import { commandAllowedInMode } from './mode'
 import { queueIntent } from './queue-intent'
 import { readHostedReadiness } from '../setup/readiness'
@@ -69,12 +69,6 @@ async function threadFor(context: Context, id: string) {
     404,
   )
   return thread
-}
-async function stoppedCallback(context: Context, thread: { id: string; address_id: string }) {
-  const { tx, member } = context
-  const [message] = await tx`select id,text_body,occurred_at from em_messages where workspace_id=${member.workspace_id} and thread_id=${thread.id} and direction='inbound' order by sequence desc limit 1`
-  const [suppression] = await tx`select max(effective_at) as stopped_at from em_suppressions where workspace_id=${member.workspace_id} and address_id=${thread.address_id}`
-  check(message && suppression?.stopped_at && new Date(message.occurred_at) > new Date(suppression.stopped_at) && callbackRequest(message.text_body)?.explicitCall, 'NEW_CALLBACK_REQUEST_REQUIRED')
 }
 export async function requireHuman(
   context: Context,
@@ -589,11 +583,7 @@ export async function executePilotCommand(
           'NEW_REPLY_REVIEW_REQUIRED',
         )
         const request = callbackRequest(latestInbound.text_body)
-        if (isCallbackTest(latestInbound.text_body)) {
-          const [already] = await tx`select id from em_audit_events where workspace_id=${ws} and entity_id=${latestInbound.id} and action='THR-HANDOFF' and detail->>'state'='test_callback_reviewed' limit 1`
-          if (!already) await notify(context, thread.id, subject, 'SYSTEM TEST reviewed — no Lead, task or call created', `test-callback:${latestInbound.id}`)
-          return { entityId: latestInbound.id, state: 'test_callback_reviewed' }
-        }
+        if (isCallbackTest(latestInbound.text_body)) return recordCallbackTest(context, thread.id, latestInbound.id)
         if (thread.state === 'stopped') check(request && p.requestedContact.phone?.replace(/\D/g, '') === request.phone.replace(/\D/g, ''), 'PHONE_EVIDENCE_REQUIRED')
         const quoted = p.factEvidence.map((e) => e.quote).join(' ')
         if (p.requestedContact.phone)
@@ -1182,13 +1172,7 @@ export async function readPilotState(
     const messages = ids.length
       ? await tx`select id,thread_id,direction,text_body,occurred_at,transport from em_messages where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) order by thread_id,sequence`
       : []
-    const reviewedTests = ids.length ? await tx`select entity_id from em_audit_events where workspace_id=${ws} and action='THR-HANDOFF' and detail->>'state'='test_callback_reviewed' and entity_id in (select id from em_messages where thread_id=any(${tx.array(ids)}::uuid[]) and workspace_id=${ws})` : []
-    for (const thread of threads) {
-      const inbound = messages.filter(m => m.thread_id === thread.id && m.direction === 'inbound').at(-1)
-      const request = inbound ? callbackRequest(inbound.text_body) : null
-      const afterStop = thread.state !== 'stopped' || (request?.explicitCall && thread.marketing_stopped_at && inbound && new Date(inbound.occurred_at) > new Date(thread.marketing_stopped_at))
-      thread.callback_request = request && afterStop && !thread.inbound_pending && !thread.handoff_id ? { ...request, messageId: inbound!.id, reviewed: reviewedTests.some(r => r.entity_id === inbound!.id) } : null
-    }
+    await annotateCallbackRequests({ tx, member, now }, threads, messages)
     const drafts = ids.length
       ? await tx`select id,thread_id,body,body_hash,content_revision,controller_revision,state from em_drafts where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) and author_id=${subject} order by created_at`
       : []
