@@ -1,5 +1,5 @@
 import "server-only";
-import { outreachFooter } from "./outreach-footer";
+import { outreachFooter, outreachHtml } from "./outreach-footer";
 import { createHmac, randomBytes } from "node:crypto";
 import { preferenceKeys } from "../preferences/service";
 import { check, type Context } from "../workflow/core";
@@ -82,6 +82,7 @@ export async function freezeHostedEnvelope(
       to: [thread.normalized_address],
       subject,
       text: `${body}\n\n${outreachFooter(config.business.name, config.business.address, link)}`,
+      html: outreachHtml(body, config.business.name, config.business.address, link),
       reply_to: alias,
       headers: {
         "List-Unsubscribe": `<${origin}/api/email/unsubscribe/${token}>`,
