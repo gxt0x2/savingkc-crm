@@ -10,6 +10,8 @@ import { createClient } from '@/lib/supabase/client'
 import { toProperCase } from '@/lib/format'
 import { applyCanonicalHousingToLead, leadHousingDetails } from '@/lib/lead-housing-details'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
+import { AppointmentModal } from '@/components/leads/appointment-modal'
+import { NewTaskModal } from '@/components/modals/new-task-modal'
 import { normalizeLeadRecordingActivities } from '@/lib/lead-recording-activities'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
 import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
@@ -23,13 +25,11 @@ const AdsSignalReceipt = dynamic(() => import('@/components/leads/ads-signal-rec
 const AddNote = dynamic(() => import('@/components/leads/add-note').then((module) => module.AddNote))
 const EditNoteModal = dynamic(() => import('@/components/leads/edit-note-modal').then((module) => module.EditNoteModal))
 const ContractModal = dynamic(() => import('@/components/leads/contract-modal').then((module) => module.ContractModal))
-const AppointmentModal = dynamic(() => import('@/components/leads/appointment-modal').then((module) => module.AppointmentModal))
 const AppointmentOutcomeModal = dynamic(() => import('@/components/leads/appointment-outcome-modal').then((module) => module.AppointmentOutcomeModal))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
 const MailTracker = dynamic(() => import('@/components/leads/mail-tracker').then((module) => module.MailTracker))
 const EmailThread = dynamic(() => import('@/components/leads/email-thread').then((module) => module.EmailThread))
 const CockpitModal = dynamic(() => import('@/components/ui/cockpit-modal').then((module) => module.CockpitModal))
-const NewTaskModal = dynamic(() => import('@/components/modals/new-task-modal').then((module) => module.NewTaskModal))
 const EditTaskModal = dynamic(() => import('@/components/modals/edit-task-modal').then((module) => module.EditTaskModal))
 const LeadAiChangeReview = dynamic(() => import('@/components/ai/lead-ai-change-review').then((module) => module.LeadAiChangeReview))
 
