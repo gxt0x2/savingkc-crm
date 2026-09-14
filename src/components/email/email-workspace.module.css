@@ -625,6 +625,7 @@
 /* The message stream scrolls independently; the composer is a fixed grid row. */
 .workspace:has(.inbox) {
   height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -956,13 +957,14 @@
     animation: none;
   }
 }
+.workspace[data-mode="hosted"]:has(.inbox) { height: calc(100dvh - 64px); }
 @media (max-width: 1350px) {
   .inbox { grid-template-columns: 190px minmax(0, 1fr); }
   .withDetails { grid-template-columns: minmax(0, 1fr) 280px; }
   .contextDrawer { padding: 10px; }
 }
 @media (max-width: 950px) {
-  .workspace:has(.inbox) { height: auto; min-height: 100dvh; overflow: visible; padding: 12px; }
+  .workspace:has(.inbox), .workspace[data-mode="hosted"]:has(.inbox) { height: auto; min-height: 100dvh; overflow: visible; padding: 12px; }
   .inbox { display: flex; flex-direction: column; overflow: visible; }
   .threadList { max-height: 150px; flex-shrink: 0; }
   .threadWorkspace { overflow: visible; }

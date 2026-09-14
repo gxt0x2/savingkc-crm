@@ -409,7 +409,7 @@ export function EmailWorkspace({
   }
 
   return (
-    <main className={styles.workspace}>
+    <main className={styles.workspace} data-mode={data?.mode}>
       <header className={styles.header}>
         <h1>Email</h1>
         <nav aria-label="Email workspace" className={styles.nav}>
