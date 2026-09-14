@@ -88,7 +88,7 @@ describe('prospecting workspace UI contract', () => {
     expect(navigation).toContain("{ label: 'Conversations', href: '/conversations', icon: 'forum' }")
     expect(navigation).not.toContain("{ label: 'Dialer', href: '/dialer', icon: 'phone_in_talk' },\n  { label: 'Ads'")
     expect(appShell).toContain("pathname?.startsWith('/prospecting')")
-    expect(workspaceNavigation).toContain("{ label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer'] }")
+    expect(workspaceNavigation).toContain("{ label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer', '/marketing/email'] }")
     expect(workspaceNavigation).toContain("{ label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] }")
     expect(workspaceNavigation).not.toContain("{ label: 'Dialer', icon: 'dialpad'")
     expect(contextNavigation).not.toContain("pathPrefix: '/prospecting'")
