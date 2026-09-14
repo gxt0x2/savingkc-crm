@@ -38,7 +38,7 @@ export function isOptOutReply(body: string) {
   return (
     /\b(unsubscribe|stop emailing|remove me|do not email|don't email|no more emails)\b/i.test(
       authored,
-    ) || /^stop[.!\s]*$/i.test(authored)
+    ) || /^(?:stop|remove)[.!\s]*$/i.test(authored)
   )
 }
 export function normalizeReceivedContent(raw: unknown) {

@@ -1,4 +1,5 @@
 import "server-only";
+import { outreachFooter } from "./outreach-footer";
 import { createHmac, randomBytes } from "node:crypto";
 import { preferenceKeys } from "../preferences/service";
 import { check, type Context } from "../workflow/core";
@@ -80,7 +81,7 @@ export async function freezeHostedEnvelope(
       from: `${String(sender.from_name).replace(/[<>\r\n]/g, "")} <${sender.local_part}@${sender.name_ascii}>`,
       to: [thread.normalized_address],
       subject,
-      text: `${body}\n\n${sender.signature || config.business.name}\n${config.business.address}\nStop marketing emails: ${link}`,
+      text: `${body}\n\n${outreachFooter(config.business.name, config.business.address, link)}`,
       reply_to: alias,
       headers: {
         "List-Unsubscribe": `<${origin}/api/email/unsubscribe/${token}>`,
