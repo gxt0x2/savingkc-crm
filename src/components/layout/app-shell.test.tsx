@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from './app-shell'
+import { viewedAgentStorageKey } from '@/lib/viewed-agent-session'
 import {
   CRM_DIALER_OPEN_EVENT,
   PROSPECTING_DIALER_CONTROLS_EVENT,
@@ -158,7 +159,7 @@ describe('AppShell first-load work', () => {
   })
 
   it('redirects an owner-selected Casey workspace to My Day without painting the company dashboard', () => {
-    window.sessionStorage.setItem('savingkc:viewed-agent-email', 'casey@savingkc.com')
+    window.localStorage.setItem(viewedAgentStorageKey('ernest@savingkc.com'), 'casey@savingkc.com')
 
     render(<AppShell><main>Dashboard content</main></AppShell>)
 
@@ -170,7 +171,7 @@ describe('AppShell first-load work', () => {
 
   it('keeps Scorecard on the authenticated reviewer when Casey was previously viewed', async () => {
     navigation.pathname = '/scorecard'
-    window.sessionStorage.setItem('savingkc:viewed-agent-email', 'casey@savingkc.com')
+    window.localStorage.setItem(viewedAgentStorageKey('ernest@savingkc.com'), 'casey@savingkc.com')
 
     render(<AppShell><main>Scorecard content</main></AppShell>)
 
@@ -178,5 +179,16 @@ describe('AppShell first-load work', () => {
     expect(screen.getByText('Scorecard content')).toBeVisible()
     expect(navigation.replace).not.toHaveBeenCalled()
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/settings?email=ernest%40savingkc.com'), { timeout: 2_500 })
+  })
+
+  it('keeps the owner-selected Casey workspace on routes beyond My Day', () => {
+    navigation.pathname = '/contacts'
+    window.localStorage.setItem(viewedAgentStorageKey('ernest@savingkc.com'), 'casey@savingkc.com')
+
+    render(<AppShell><main>Pipeline content</main></AppShell>)
+
+    expect(screen.getByTestId('workspace-frame')).toHaveAttribute('data-user-email', 'casey@savingkc.com')
+    expect(screen.getByText('Pipeline content')).toBeVisible()
+    expect(navigation.replace).not.toHaveBeenCalled()
   })
 })

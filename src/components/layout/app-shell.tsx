@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -82,7 +82,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const { user, signOut } = useAuth()
-  const viewedAgentEmail = useSyncExternalStore(subscribeToViewedAgentChange, getViewedAgentEmailSnapshot, getServerViewedAgentEmailSnapshot)
+  const signedInEmail = user?.email?.toLowerCase() ?? null
+  const getViewedAgentSnapshot = useCallback(
+    () => getViewedAgentEmailSnapshot(signedInEmail),
+    [signedInEmail],
+  )
+  const getServerViewedAgentSnapshot = useCallback(
+    () => getServerViewedAgentEmailSnapshot(signedInEmail),
+    [signedInEmail],
+  )
+  const viewedAgentEmail = useSyncExternalStore(
+    subscribeToViewedAgentChange,
+    getViewedAgentSnapshot,
+    getServerViewedAgentSnapshot,
+  )
   const { mode, setMode } = useAppMode()
   const router = useRouter()
   const pathname = usePathname()
@@ -142,7 +155,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     : isProspectingCallingFloor
       ? 'workspace'
       : 'modal'
-  const signedInEmail = user?.email?.toLowerCase() ?? null
   // My Day is Casey's purpose-built workspace. Scorecard is reviewer-owned and
   // must always preserve the authenticated reviewer instead of inheriting a
   // previously viewed agent or painting Casey's profile into the global shell.
