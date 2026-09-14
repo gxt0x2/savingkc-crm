@@ -1,25 +1,33 @@
 import type { PilotThread } from '@/lib/email/workflow/types'
 import styles from './email-workspace.module.css'
 
-export function EmailCallbackReview({ request, stopped, canWork, owns, blocked, onApprove, onTakeOver }: {
+export function EmailCallbackReview({ request, stopped, canWork, owns, blocked, busy, onBackToInbox, onApprove, onTakeOver }: {
   request: NonNullable<PilotThread['callback_request']>
   stopped: boolean
   canWork: boolean
   owns: boolean
+  busy: boolean
+  onBackToInbox: () => void
   blocked: boolean
   onApprove: () => void
   onTakeOver: () => void
 }) {
   return <>
-    {stopped && <p>Marketing remains stopped. This review does not authorize email or an automatic call.</p>}
-    {request.reviewed ? <p>Test reviewed. No seller Lead, task, appointment or call was created.</p> : <>
+    {request.reviewed ? <div role="status">
+      <p><strong>✓ Moved to Done.</strong> Nothing else is needed for this conversation.</p>
+      <p>This was a test number, so no real Lead or callback task was created.</p>
+      <button className={styles.primary} onClick={onBackToInbox}>Back to inbox</button>
+    </div> : <>
       <p>{request.testOnly
-        ? 'Explicit test message. Record the review without creating a seller Lead or callable task.'
-        : 'A new callback request needs human review before a Lead or follow-up task can be created.'}</p>
-      <p>{request.phone}{request.time ? ` · ${request.time}` : ''}</p>
-      {canWork && (owns
-        ? <button className={styles.primary} disabled={blocked} onClick={onApprove}>{request.testOnly ? 'Record test review' : 'Approve callback handoff'}</button>
-        : <button disabled={blocked} onClick={onTakeOver}>Take over callback review</button>)}
+        ? 'This message contains a test number. Finish the test to move this conversation to Done.'
+        : 'The sender asked for a call. Approve the handoff so CRM can check the Lead details and route the follow-up to your callback team.'}</p>
+      <p><strong>{request.phone}</strong>{request.time ? ` · ${request.time}` : ''}</p>
+      {request.testOnly && <p>No real Lead or callback task will be created.</p>}
+      {canWork ? (owns
+        ? <button className={styles.primary} disabled={blocked} onClick={onApprove}>{busy ? 'Saving…' : request.testOnly ? 'Finish test' : 'Approve & route callback'}</button>
+        : <button disabled={blocked} onClick={onTakeOver}>{busy ? 'Saving…' : 'Take ownership to review'}</button>)
+        : <p>Your assigned reviewer must complete this step.</p>}
     </>}
+    {stopped && <p><small>Marketing remains stopped.</small></p>}
   </>
 }

@@ -249,7 +249,7 @@ export function EmailWorkspace({
             simulation_active:
               'Practice campaign started. Delivery is simulated.',
             human: 'You control this conversation.',
-            test_callback_reviewed: 'Test review recorded. No seller Lead, task, appointment or call was created.',
+            test_callback_reviewed: 'Callback test complete. Moved to Done.',
             draft_saved: 'Reply draft saved.',
             queued_simulation: 'Reply queued for simulated delivery.',
             marketing_stopped:
@@ -612,6 +612,7 @@ export function EmailWorkspace({
                 </section>
                 {selected ? (
                   <EmailThreadPanel
+                    onBackToInbox={() => { setThreadId(null); setView('action') }}
                     key={selected.id}
                     data={data}
                     thread={selected}
