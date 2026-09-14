@@ -97,7 +97,7 @@ export function WorkspaceFrame({
   const [pageHeaderHidden, setPageHeaderHidden] = useState(false)
   const [commandBarHost, setCommandBarHost] = useState<HTMLDivElement | null>(null)
   const { theme, toggle: toggleTheme } = useThemePreference()
-  const resolvedTheme = focusedCalling ? 'dark' : theme
+  const resolvedTheme = focusedCalling ? 'light' : theme
   const userProfile = useMemo(() => resolveAgentTelephonyProfile(userEmail), [userEmail])
   const needsReplyKnownByPage = pageNeedsReply !== undefined || needsReply !== undefined
   const { data: attentionPayload, isPending: attentionPending } = useQuery({

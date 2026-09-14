@@ -116,7 +116,7 @@ describe('WorkspaceFrame route persistence', () => {
     expect(screen.getByTestId('embedded-call-rail')).toHaveTextContent('Embedded call controls')
     expect(screen.queryByRole('complementary', { name: 'Prospecting call controls' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open AI Assistant' })).not.toBeInTheDocument()
-    expect(screen.getByText('Prospecting session').closest('.crm-workspace-shell')).toHaveAttribute('data-theme', 'dark')
+    expect(screen.getByText('Prospecting session').closest('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light')
     themeMock.current = 'light'
   })
 
