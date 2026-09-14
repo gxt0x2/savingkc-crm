@@ -1,6 +1,7 @@
 import 'server-only'
 import { generateText, NoObjectGeneratedError, Output } from 'ai'
 import { z } from 'zod'
+import { getVercelOidcTokenSync } from '@vercel/oidc'
 
 export const EMAIL_AI_MODEL = 'openai/gpt-5.6-luna'
 export const EMAIL_AI_POLICY = 'savingkc-reply-review-v2'
@@ -46,13 +47,15 @@ If they opt out, decline further contact, name a third-party contact, ask a lega
 Ground the summary and proposed reply in exact evidence quotes from the supplied visible messages, with their message IDs. Use only these messages as facts. At least one quote must come from the latest inbound message for a reply decision. No email signatures or quoted historical messages are included. Keep the reply under 60 words, warm and useful. Never say you have someone down for a call, put them on a calendar, or promise that you or an agent will call; no scheduling action has been performed. Return only the structured object.`
 
 export function emailAiAvailable() {
-  return (
-    process.env.EMAIL_AI_ENABLED === 'true' &&
-    Boolean(
-      process.env.AI_GATEWAY_API_KEY?.trim() ||
-        process.env.VERCEL_OIDC_TOKEN?.trim(),
-    )
-  )
+  if (process.env.EMAIL_AI_ENABLED !== 'true') return false
+  if (process.env.AI_GATEWAY_API_KEY?.trim()) return true
+  try {
+    // Hosted Vercel functions receive OIDC through request context, not an env var.
+    // Match the Gateway SDK's credential lookup without caching or exposing it.
+    return Boolean(getVercelOidcTokenSync()?.trim())
+  } catch {
+    return false
+  }
 }
 
 export function configuredEmailAiProvider(): EmailAiProvider | null {
