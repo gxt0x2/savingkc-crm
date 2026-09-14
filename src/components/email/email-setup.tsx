@@ -142,8 +142,8 @@ function TeamForm({ settings, busy, act }: Props) {
     >
       <h3>Team responsibilities</h3>
       <p>
-        Choose who reviews replies, who handles seller conversations and a
-        different person as backup.
+        Choose who reviews replies and the primary acquisitions pair. These two
+        agents back each other up; other agents default to the backup agent.
       </p>
       <div className={styles.setupGrid}>
         {(['reviewerId', 'acquisitionOwnerId', 'backupId'] as const).map(
@@ -152,8 +152,8 @@ function TeamForm({ settings, busy, act }: Props) {
               {
                 {
                   reviewerId: 'Reply reviewer',
-                  acquisitionOwnerId: 'Acquisitions owner',
-                  backupId: 'Backup agent',
+                  acquisitionOwnerId: 'Primary acquisitions agent',
+                  backupId: 'Default backup agent',
                 }[field]
               }
               <select
