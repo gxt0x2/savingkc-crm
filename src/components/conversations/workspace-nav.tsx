@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { WorkspaceSubmenu, WORKSPACE_SECTIONS } from './workspace-submenu'
 import { SystemAndon } from '@/components/feedback/system-andon'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
@@ -16,7 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: 'home', href: '/dashboard', activeOn: ['/dashboard'] },
   { label: 'Issue Log', icon: 'warning_amber', href: '/reports/andon', activeOn: ['/reports/andon', '/reports/bottlenecks'] },
   { label: 'Pipeline', icon: 'account_tree', href: '/contacts?list=contacted', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
-  { label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer'] },
+  { label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer', '/marketing/email'] },
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Scorecard', icon: 'fact_check', href: '/scorecard', activeOn: ['/scorecard'] },
@@ -94,7 +95,7 @@ export function WorkspaceNav({ needsReply, userEmail, canReviewCalls = false }: 
         <Image src="/logo.png" alt={collapsed ? '' : 'Saving KC Homebuyers'} width={489} height={141} className={cn('h-auto object-contain', collapsed ? 'w-[48px]' : 'w-[138px]')} style={{ filter: 'url(#crm-logo-dark)' }} />
       </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 py-3" aria-label="CRM navigation">
-        {navItems.map((item) => <WorkspaceNavLink key={item.label} item={item} pathname={pathname} collapsed={collapsed} needsReply={needsReply} />)}
+        {navItems.map((item) => <WorkspaceSubmenu key={item.label} label={item.label} collapsed={collapsed}><WorkspaceNavLink item={item} pathname={pathname} collapsed={collapsed} needsReply={needsReply} /></WorkspaceSubmenu>)}
       </nav>
       <div className="space-y-2 border-t border-white/10 px-3 pb-3 pt-3">
         <SystemAndon collapsed={collapsed} />
@@ -113,7 +114,7 @@ export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = fal
     ? ['My Day', 'Pipeline', 'Prospecting', 'Conversations']
     : ['Dashboard', 'Pipeline', 'Prospecting', 'Conversations']
   const primaryItems = primaryLabels.flatMap((label) => navItems.filter((item) => item.label === label))
-  const moreItems = navItems.filter((item) => !primaryLabels.includes(item.label))
+  const moreItems = navItems.filter((item) => item.label === 'Prospecting' || !primaryLabels.includes(item.label))
 
   useEffect(() => {
     if (!moreOpen) return
@@ -136,7 +137,7 @@ export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = fal
             <nav className="grid max-h-[calc(78dvh-6rem)] grid-cols-2 gap-2 overflow-y-auto p-4" aria-label="Additional CRM navigation">
               {moreItems.map((item) => {
                 const active = isItemActive(item, pathname)
-                return <Link key={item.label} href={item.href} prefetch={false} onPointerDown={() => router.prefetch(item.href)} onClick={() => setMoreOpen(false)} aria-current={active ? 'page' : undefined} className={cn('flex min-h-14 items-center gap-3 rounded-xl border px-3 py-3 text-sm font-bold', active ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-text)]')}><Icon name={item.icon} className="text-[21px]" />{item.label}</Link>
+                return <div key={item.label} className="min-w-0"><Link href={item.href} prefetch={false} onPointerDown={() => router.prefetch(item.href)} onClick={() => setMoreOpen(false)} aria-current={active ? 'page' : undefined} className={cn('flex min-h-14 items-center gap-3 rounded-xl border px-3 py-3 text-sm font-bold', active ? 'border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)] bg-[var(--crm-surface)] text-[var(--crm-text)]')}><Icon name={item.icon} className="text-[21px]" />{item.label}</Link>{WORKSPACE_SECTIONS[item.label]?.map((child) => child.href ? <Link key={child.label} href={child.href} onClick={() => setMoreOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-[var(--crm-text)] hover:bg-[var(--crm-surface-subtle)]">{child.label}</Link> : <span key={child.label} aria-disabled="true" className="block px-3 py-2 text-xs text-[var(--crm-text-muted)]">{child.label} · {child.description}</span>)}</div>
               })}
             </nav>
           </section>
@@ -145,6 +146,7 @@ export function WorkspaceMobileNav({ needsReply, userEmail, canReviewCalls = fal
       <nav className="fixed inset-x-0 bottom-0 z-[60] grid h-[calc(4.25rem+env(safe-area-inset-bottom))] grid-cols-5 border-t border-[var(--crm-border)] bg-[color:var(--crm-surface)]/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(0,0,0,.12)] backdrop-blur-xl lg:hidden" aria-label="Primary CRM navigation">
         {primaryItems.map((item) => {
           const active = isItemActive(item, pathname)
+          if (item.label === 'Prospecting') return <button key={item.label} type="button" onClick={() => setMoreOpen(true)} aria-label="Prospecting" aria-expanded={moreOpen} className={cn('flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold', active ? 'text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={item.icon} className="text-[22px]" /><span>Prospecting</span></button>
           return <Link key={item.label} href={item.href} aria-current={active ? 'page' : undefined} className={cn('relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold', active ? 'text-[var(--crm-brand)]' : 'text-[var(--crm-text-muted)]')}><Icon name={item.icon} className="text-[22px]" /><span className="max-w-full truncate">{item.label}</span>{item.label === 'Conversations' && needsReply !== null && needsReply > 0 ? <span className="absolute right-[18%] top-1.5 min-w-4 rounded-full bg-[var(--crm-brand)] px-1 text-center text-[9px] text-white">{needsReply > 99 ? '99+' : needsReply}</span> : null}</Link>
         })}
         <button type="button" onClick={() => setMoreOpen(true)} aria-expanded={moreOpen} className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold text-[var(--crm-text-muted)]"><Icon name="menu" className="text-[22px]" /><span>More</span></button>

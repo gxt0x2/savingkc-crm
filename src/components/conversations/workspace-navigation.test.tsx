@@ -49,6 +49,45 @@ describe('workspace navigation', () => {
     expect(within(navigationRegion).queryByRole('link', { name: 'ARI Insights' })).not.toBeInTheDocument()
   })
 
+  it('opens Prospecting on hover and exposes Email without inventing an SMS destination', () => {
+    navigation.pathname = '/marketing/email'
+    render(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
+    const prospecting = screen.getByRole('link', { name: 'Prospecting' })
+    expect(prospecting).toHaveAttribute('aria-current', 'page')
+    fireEvent.pointerEnter(prospecting.parentElement!.parentElement!)
+    const sections = screen.getByRole('navigation', { name: 'Prospecting sections' })
+    expect(within(sections).getByRole('link', { name: /Email campaigns and replies/ })).toHaveAttribute('href', '/marketing/email')
+    expect(within(sections).getByRole('link', { name: /Prospecting dialer/ })).toHaveAttribute('href', '/prospecting')
+    expect(within(sections).queryByRole('link', { name: /SMS/ })).not.toBeInTheDocument()
+    expect(within(sections).getByText(/not connected yet/)).toBeVisible()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('navigation', { name: 'Prospecting sections' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Prospecting sections' })).toHaveFocus()
+  })
+
+  it('opens grouped navigation by click while the rail is collapsed', () => {
+    render(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse navigation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Reports sections' }))
+    const sections = screen.getByRole('navigation', { name: 'Reports sections' })
+    fireEvent.click(within(sections).getByRole('link', { name: 'Finance' }))
+    expect(screen.queryByRole('navigation', { name: 'Reports sections' })).not.toBeInTheDocument()
+  })
+
+  it('makes Email accessible by tapping Prospecting on mobile', () => {
+    render(<WorkspaceMobileNav needsReply={0} userEmail="ernest@savingkc.com" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Prospecting' }))
+    const more = screen.getByRole('dialog', { name: 'More navigation' })
+    fireEvent.click(within(more).getByRole('link', { name: 'Email' }))
+    expect(screen.queryByRole('dialog', { name: 'More navigation' })).not.toBeInTheDocument()
+  })
+
+  it('does not put a redundant Marketing bar above the Prospecting Email workspace', () => {
+    navigation.pathname = '/marketing/email'
+    render(<WorkspaceContextNav />)
+    expect(screen.queryByRole('navigation', { name: 'Marketing sections' })).not.toBeInTheDocument()
+  })
+
   it('keeps Scorecard out of Casey’s agent menu even when the signed-in user is a reviewer', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
     const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
@@ -91,7 +130,7 @@ describe('workspace navigation', () => {
     fireEvent.click(within(primary).getByRole('button', { name: /More/ }))
 
     const more = screen.getByRole('dialog', { name: 'More navigation' })
-    expect(within(more).getByRole('link', { name: /Dispositions/ })).toHaveAttribute('href', '/dispo/pipeline')
+    expect(within(more).getAllByRole('link', { name: /Dispositions/ }).map((link) => link.getAttribute('href'))).toContain('/dispo/pipeline')
   })
 
   it('keeps the system Andon available from the shared CRM navigation', async () => {
