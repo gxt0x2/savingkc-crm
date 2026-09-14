@@ -138,7 +138,7 @@ export default function SettingsPage() {
   // Switch to a different agent's profile
   async function switchAgent(email: string) {
     setSelectedEmail(email)
-    setViewedAgentEmail(email)
+    setViewedAgentEmail(email, userEmail)
     try {
       const res = await fetch(`/api/settings?email=${encodeURIComponent(email)}`)
       const data = await res.json()
