@@ -184,6 +184,12 @@ export function EmailWorkspace({
   }, [])
   useEffect(() => {
     let cancelled = false
+    const target = new URLSearchParams(window.location.search).get('thread')
+    if (target && /^[0-9a-f-]{36}$/i.test(target)) {
+      setThreadId(target)
+      setMine(false)
+      setView('all')
+    }
     refresh()
       .catch((e) => {
         if (!cancelled) setError(friendly[e.message] ?? e.message)
