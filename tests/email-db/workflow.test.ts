@@ -1475,7 +1475,7 @@ withDb(
         },
         now,
       ),
-      'THREAD_STOPPED',
+      'NEW_CALLBACK_REQUEST_REQUIRED',
     )
     const review = await getPilotReview(
       db.sql,

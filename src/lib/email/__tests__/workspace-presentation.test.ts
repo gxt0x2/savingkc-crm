@@ -43,6 +43,8 @@ describe('focused work queues', () => {
         'action',
       ],
       [{ state: 'stopped', handoff_state: 'held' }, 'action'],
+      [{ state: 'stopped', callback_request: { messageId: 'test', phone: '816-555-0101', testOnly: true, reviewed: false } }, 'action'],
+      [{ state: 'stopped', callback_request: { messageId: 'test', phone: '816-555-0101', testOnly: true, reviewed: true } }, 'done'],
       [
         {
           state: 'stopped',

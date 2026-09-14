@@ -28,6 +28,7 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  NEW_CALLBACK_REQUEST_REQUIRED: 'A new explicit callback request received after marketing stopped is required. Marketing remains blocked.',
   REPLY_CONTENT_PENDING:
     'A reply arrived. Wait for its full content before acting.',
   TASK_ASSIGNEE_UNAVAILABLE:
@@ -248,6 +249,7 @@ export function EmailWorkspace({
             simulation_active:
               'Practice campaign started. Delivery is simulated.',
             human: 'You control this conversation.',
+            test_callback_reviewed: 'Test review recorded. No seller Lead, task, appointment or call was created.',
             draft_saved: 'Reply draft saved.',
             queued_simulation: 'Reply queued for simulated delivery.',
             marketing_stopped:

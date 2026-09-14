@@ -1,5 +1,6 @@
 'use client'
 
+import { EmailCallbackReview } from './email-callback-review'
 import { EmailSendIssue } from './email-send-issue'
 import { EmailMessageBody as MessageBody } from './email-message-body'
 import Link from 'next/link'
@@ -252,7 +253,8 @@ export function EmailThreadPanel({
     }
   }
   async function handoff() {
-    if (!inbound || !proposal?.phone || !proposal.interest) return
+    const callback = t.callback_request ?? proposal
+    if (!inbound || !callback?.phone) return
     const assigned = data.routing?.acquisitionOwnerId ?? data.actorId
     const backup =
       data.routing?.backupId ?? data.members.find((m) => m.id !== assigned)?.id
@@ -269,11 +271,11 @@ export function EmailThreadPanel({
         ownerId: assigned,
         backupId: backup,
         reason:
-          'Agent approved contact information and selling context in the current reply.',
-        positiveSellerInterest: proposal.interest,
+          t.callback_request?.testOnly ? 'SYSTEM TEST: review only. Do not create a seller Lead or callable task.' : 'Agent reviewed the current explicit callback request. Marketing permission is unchanged.',
+        positiveSellerInterest: !t.callback_request?.testOnly && (proposal?.interest ?? Boolean(t.callback_request)),
         requestedContact: {
-          phone: proposal.phone,
-          ...(proposal.time ? { requestedTimeText: proposal.time } : {}),
+          phone: callback.phone,
+          ...(callback.time ? { requestedTimeText: callback.time } : {}),
         },
         factEvidence: [
           {
@@ -625,11 +627,14 @@ export function EmailThreadPanel({
                   content is retrieved. Review will resume when the message is
                   available.
                 </p>
+              ) : t.callback_request && (!localSimulation || t.state === 'stopped') ? (
+                <EmailCallbackReview request={t.callback_request} stopped={t.state === 'stopped'} canWork={canWork} owns={t.controller_user_id === data.actorId} blocked={blocked} onApprove={handoff}
+                  onTakeOver={() => act({ command: 'THR-TAKEOVER', idempotencyKey: crypto.randomUUID(), payload: { threadId: t.id, expectedControllerRevision: t.controller_revision } })} />
               ) : t.state === 'done' ? (
                 <p>No remaining work. A new reply will return here.</p>
               ) : t.state === 'stopped' ? (
                 <p>
-                  Marketing is stopped. The message history remains available.
+                  Marketing is stopped. {t.callback_task_state === 'pending' ? 'The approved callback task is available in the CRM calendar. No automatic call or appointment was made.' : 'The message history remains available.'}
                 </p>
               ) : (
                 <>
