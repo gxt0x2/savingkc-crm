@@ -9,11 +9,74 @@
 -- 20261006120000 replaced the members unique key with a partial unique index on
 -- (campaign_id, lead_id) WHERE subject_kind = 'lead'. The original enroll
 -- command still uses ON CONFLICT (campaign_id, lead_id), which is 42P10 on Atlas.
--- hygiene-approved-destructive: only existing function bodies are replaced;
--- no lead, campaign, or activity rows are deleted.
+--
+-- The import command also writes source='csv_import'. Atlas leads_source_check
+-- never included that value (it does allow 'import'). Widen the installed
+-- constraint instead of replacing the evolved allowlist, and persist 'import'
+-- for empty or csv_import sources so the CSV path matches the live workaround.
+-- hygiene-approved-destructive: only existing function bodies and one check
+-- constraint are replaced; no lead, campaign, or activity rows are deleted.
 
 SET lock_timeout = '10s';
 SET statement_timeout = '5min';
+
+DO $$
+DECLARE
+  source_constraint_name text;
+  source_constraint_expression text;
+  source_type text;
+  source_column smallint;
+  source_constraint_count integer;
+  source_constraint_validated boolean;
+  source_constraint_noinherit boolean;
+BEGIN
+  SELECT typ.typname, col.attnum INTO source_type, source_column
+  FROM pg_attribute col JOIN pg_type typ ON typ.oid = col.atttypid
+  WHERE col.attrelid = 'public.leads'::regclass AND col.attname = 'source';
+  IF source_type NOT IN ('text', 'varchar') THEN
+    RAISE EXCEPTION 'prospect import requires a text leads.source column';
+  END IF;
+  SELECT count(*) INTO source_constraint_count FROM pg_constraint
+  WHERE conrelid = 'public.leads'::regclass AND contype = 'c'
+    AND source_column = ANY (conkey);
+  IF source_constraint_count > 1 THEN
+    RAISE EXCEPTION 'prospect import source constraint is ambiguous';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.leads'::regclass
+      AND contype = 'c'
+      AND source_column = ANY (conkey)
+      AND cardinality(conkey) <> 1
+  ) THEN
+    RAISE EXCEPTION 'prospect import cannot widen a multi-column source constraint';
+  END IF;
+  SELECT constraint_row.conname,
+    pg_get_expr(constraint_row.conbin, constraint_row.conrelid),
+    constraint_row.convalidated, constraint_row.connoinherit
+  INTO source_constraint_name, source_constraint_expression,
+    source_constraint_validated, source_constraint_noinherit
+  FROM pg_constraint AS constraint_row
+  WHERE constraint_row.conrelid = 'public.leads'::regclass
+    AND constraint_row.contype = 'c'
+    AND source_column = ANY (constraint_row.conkey);
+
+  IF source_constraint_expression IS NOT NULL
+    AND source_constraint_expression NOT LIKE '%csv_import%'
+  THEN
+    EXECUTE format('ALTER TABLE public.leads DROP CONSTRAINT %I', source_constraint_name);
+    EXECUTE format(
+      'ALTER TABLE public.leads ADD CONSTRAINT %I CHECK ((%s) OR source::text = %L) %s NOT VALID',
+      source_constraint_name,
+      source_constraint_expression,
+      'csv_import',
+      CASE WHEN source_constraint_noinherit THEN 'NO INHERIT' ELSE '' END
+    );
+    IF source_constraint_validated THEN
+      EXECUTE format('ALTER TABLE public.leads VALIDATE CONSTRAINT %I', source_constraint_name);
+    END IF;
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION public.import_prospecting_campaign_members_v1(
   p_campaign_id uuid,
@@ -93,7 +156,11 @@ BEGIN
       nullif(trim(row_value.city), ''),
       nullif(trim(row_value.state), ''),
       nullif(trim(row_value.zip), ''),
-      coalesce(nullif(trim(row_value.source), ''), 'csv_import'),
+      CASE
+        WHEN nullif(btrim(row_value.source), '') IS NULL THEN 'import'
+        WHEN lower(btrim(row_value.source)) IN ('csv_import', 'contact_csv_import') THEN 'import'
+        ELSE btrim(row_value.source)
+      END,
       'new', NULL, 'cold', false
     FROM jsonb_to_recordset(p_rows) AS row_value(
       id uuid,
