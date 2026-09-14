@@ -109,6 +109,30 @@ test('rebuilt CRM navigation has no placeholder destinations', async ({ page }) 
   await expect(page.locator('a[href="#"]')).toHaveCount(0);
 });
 
+test('heading hover reveals nested channels and collapsed rail uses a flyout', async ({ page }) => {
+  await page.goto('/workflows', { waitUntil: 'domcontentloaded' });
+  const rail = page.getByRole('navigation', { name: 'CRM navigation' });
+  await rail.getByRole('link', { name: 'Prospecting', exact: true }).hover();
+  const nested = rail.getByRole('navigation', { name: 'Prospecting sections' });
+  await expect(nested).toBeVisible();
+  await expect(nested).toHaveCSS('position', 'static');
+  await nested.getByRole('link', { name: 'Email', exact: true }).hover();
+  await expect(nested).toBeVisible();
+  await expect(nested.getByRole('link', { name: 'Email', exact: true })).toHaveAttribute('href', '/marketing/email');
+  await page.getByRole('button', { name: 'Collapse navigation' }).hover();
+  await expect(nested).toHaveCount(0);
+  await page.getByRole('button', { name: 'Collapse navigation' }).click();
+  await rail.getByRole('link', { name: 'Prospecting', exact: true }).hover();
+  const flyout = page.getByRole('navigation', { name: 'Prospecting sections' });
+  await expect(flyout).toBeVisible();
+  await expect(flyout).toHaveCSS('position', 'fixed');
+  await flyout.getByRole('link', { name: 'Email', exact: true }).hover();
+  await expect(flyout).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(flyout).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open Prospecting sections' })).toBeFocused();
+});
+
 test('legacy CRM pages resolve to their canonical workspaces', async ({ page }) => {
   await page.goto('/leads', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/contacts$/);
