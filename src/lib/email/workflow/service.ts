@@ -901,7 +901,7 @@ export async function suppress(
       and (select count(*) from em_party_addresses p where p.workspace_id=${ws} and p.address_id=${addressId} and p.relationship in ('confirmed','shared'))=1))`
   for (const alias of aliases) {
     await tx`insert into em_suppressions(workspace_id,address_id,reason,evidence_message_id,created_by,effective_at)
-      values(${ws},${alias.id},${reason},${evidenceId ?? null},${member.auth_user_id},${now}) on conflict(workspace_id,address_id) do nothing`
+      values(${ws},${alias.id},${reason},${evidenceId ?? null},${member.auth_user_id},${now}) on conflict(workspace_id,address_id) do update set effective_at=greatest(em_suppressions.effective_at,excluded.effective_at)`
     await tx`update em_addresses set restriction_revision=restriction_revision+1 where workspace_id=${ws} and id=${alias.id}`
     const threads =
       await tx`select id from em_threads where workspace_id=${ws} and address_id=${alias.id}`

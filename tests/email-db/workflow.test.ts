@@ -4054,5 +4054,9 @@ for (const testOnly of [false, true]) withDb(
       assert.equal(handoff.owner_id, agent)
       assert.ok(handoff.crm_task_id)
     }
+    const stoppedAgain = new Date(at.getTime() + 10000)
+    await executePilotCommand(db.sql, owner, { command: 'SUP-ADD', idempotencyKey: randomUUID(), payload: { addressIds: [initial.address_id], scope: 'all_marketing', reason: 'unsubscribe' } }, stoppedAgain)
+    assert.equal((await readPilotState(db.sql, owner, stoppedAgain)).threads.find(t => t.id === threadId)?.callback_request, null)
+    await rejects(executePilotCommand(db.sql, owner, { ...command, idempotencyKey: randomUUID() }, stoppedAgain), 'NEW_CALLBACK_REQUEST_REQUIRED')
   },
 )
