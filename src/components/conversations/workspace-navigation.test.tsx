@@ -65,6 +65,21 @@ describe('workspace navigation', () => {
     expect(screen.getByRole('button', { name: 'Open Prospecting sections' })).toHaveFocus()
   })
 
+  it('keeps a hovered menu open on first click and inherits the workspace theme', () => {
+    const { container } = render(<div className="crm-workspace-shell" data-theme="dark"><WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" /></div>)
+    const button = screen.getByRole('button', { name: 'Open Prospecting sections' })
+    fireEvent.pointerEnter(button.parentElement!)
+    fireEvent.click(button)
+    const sections = screen.getByRole('navigation', { name: 'Prospecting sections' })
+    expect(sections.parentElement).toBe(container.firstElementChild)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(button)
+    expect(screen.queryByRole('navigation', { name: 'Prospecting sections' })).not.toBeInTheDocument()
+    fireEvent.click(button)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(button).toHaveFocus()
+  })
+
   it('opens grouped navigation by click while the rail is collapsed', () => {
     render(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
     fireEvent.click(screen.getByRole('button', { name: 'Collapse navigation' }))
