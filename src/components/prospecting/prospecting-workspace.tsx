@@ -352,9 +352,6 @@ export function ProspectingWorkspace({
       ring_count: String(ringCount),
       return_to: `/prospecting?campaign=${encodeURIComponent(input.campaignId)}`,
     })
-    if (input.session.status !== 'paused') {
-      window.sessionStorage.setItem(`savingkc:dialer-autostart:${input.session.id}`, '1')
-    }
     if (input.continued && Number.isInteger(input.controlGeneration) && input.controlGeneration! >= 0) {
       publishDialerControlTaken(input.session.id, input.controlGeneration!)
     }

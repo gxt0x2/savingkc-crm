@@ -38,6 +38,12 @@ function databaseFailure(
   throw new ProspectingCampaignError('contact_note_unavailable', 503, publicMessage)
 }
 
+function missingProspectColumn(error: { code?: string; message?: string } | null | undefined): boolean {
+  const message = error?.message?.toLowerCase() || ''
+  return error?.code === '42703'
+    || (message.includes('prospect_id') && (message.includes('does not exist') || message.includes('schema cache')))
+}
+
 export async function loadProspectingContactNotes(
   rawProspectId: unknown,
   database: ContactNoteDatabase = supabase,
@@ -50,9 +56,23 @@ export async function loadProspectingContactNotes(
     .in('activity_type', ['note', 'task', 'appointment', 'follow_up', 'callback', 'mail'])
     .order('created_at', { ascending: false })
     .limit(50)
-  if (error) databaseFailure('activity list failed', error, 'Contact notes are temporarily unavailable')
+  if (!error) return { activities: data ?? [] }
+  if (!missingProspectColumn(error)) databaseFailure('activity list failed', error, 'Contact notes are temporarily unavailable')
 
-  return { activities: data ?? [] }
+  // Preview deployments are intentionally read-only and may render before the
+  // additive prospect-work migration reaches production. Existing contact
+  // notes already carry the source Prospect in metadata, so keep them visible
+  // without weakening write boundaries or requiring a preview migration.
+  const { data: legacyData, error: legacyError } = await database
+    .from('lead_activities')
+    .select('id,lead_id,activity_type,description,agent,metadata,created_at')
+    .eq('activity_type', 'note')
+    .contains('metadata', { source: 'prospecting_contact_note', prospect_id: prospectId })
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (legacyError) databaseFailure('legacy activity list failed', legacyError, 'Contact notes are temporarily unavailable')
+
+  return { activities: legacyData ?? [] }
 }
 
 export async function saveProspectingContactNote(

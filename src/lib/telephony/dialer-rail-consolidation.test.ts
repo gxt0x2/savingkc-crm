@@ -7,17 +7,21 @@ const callRail = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf
 const sessionControls = readFileSync('src/components/telephony/workspace-session-controls.tsx', 'utf8')
 
 describe('prospecting dialer rail consolidation', () => {
-  it('shows dispositions only when the workspace actually requires an outcome', () => {
-    expect(callRail).toContain('pendingSessionId && (outcomeRequired || Boolean(recoveryPending))')
+  it('keeps the disposition choices visible in the persistent workspace rail', () => {
+    expect(callRail).toContain('pendingSessionId ? <WorkspaceDispositionControls')
+    expect(callRail).toContain('outcomeRequired={outcomeRequired || Boolean(recoveryPending)}')
   })
 
-  it('keeps direct hang up in the active-call card instead of duplicating it in the footer', () => {
+  it('keeps direct hang up in the active-call card and the persistent footer', () => {
     expect(activeCall).toContain('Hang Up')
-    expect(sessionControls).not.toContain('Hang up current call')
-    expect(sessionControls).not.toContain("onAction('hangup')")
+    expect(sessionControls).toContain("onAction('hangup')")
+    expect(sessionControls).toContain('Hang up')
   })
 
-  it('removes caller-policy duplication from the top command bar while the rail is docked', () => {
-    expect(commandBar).toContain('{!props.controlsDocked ? <p')
+  it('keeps the top command bar limited to status, list, current, and progress', () => {
+    expect(commandBar).toContain("['Status', statusValue")
+    expect(commandBar).toContain("['List', props.queueLabel")
+    expect(commandBar).toContain("['Current', props.currentLabel")
+    expect(commandBar).toContain("['Progress', `${props.currentIndex + 1} / ${props.queueSize}`")
   })
 })

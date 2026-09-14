@@ -17,9 +17,9 @@ type DialerQueueHeaderProps = {
 export function DialerQueueHeader({ item, index, length, callBusy, workspace, onEnd, onPrevious, onSkip }: DialerQueueHeaderProps) {
   if (workspace) {
     return (
-      <div aria-label="Number progress" className="flex items-center justify-between gap-3 border-b border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] px-4 py-2.5">
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--skc-text-tertiary)]">Number progress</p>
-        <p className="text-xs font-black tabular-nums text-[var(--skc-text-primary)]">{index + 1} of {length}</p>
+      <div aria-label="Number progress" className="flex items-center justify-between gap-3 border-b border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] px-4 py-2.5">
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--ck-text-dim)]">Number progress</p>
+        <p className="text-xs font-black tabular-nums text-[var(--ck-text)]">{index + 1} of {length}</p>
       </div>
     )
   }

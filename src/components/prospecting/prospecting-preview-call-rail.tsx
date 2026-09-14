@@ -1,13 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+
 import { Icon } from '@/components/ui/icon'
-import { WorkspaceCallController } from '@/components/telephony/workspace-call-controller'
-import { WorkspaceDispositionControls } from '@/components/telephony/workspace-disposition-controls'
-import { WorkspaceSessionControls } from '@/components/telephony/workspace-session-controls'
-import { FIRST_DIAL_COUNTDOWN_SECONDS } from '@/components/telephony/use-dialer-start-countdown'
-import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
+import { formatPhone } from '@/lib/format'
 import type { HeirDialerQueueItem } from '@/lib/heir-dialer-queue'
 
 type ProspectingPreviewCallRailProps = {
@@ -17,102 +13,116 @@ type ProspectingPreviewCallRailProps = {
   rotationNumbers: string
 }
 
-export function ProspectingPreviewCallRail({
-  campaignId,
-  callerId,
-  callerMode,
-  rotationNumbers,
-}: ProspectingPreviewCallRailProps) {
-  const router = useRouter()
+type PreviewCallState = 'ready' | 'live' | 'paused' | 'stopped'
+
+const PREVIEW_OUTCOMES = [
+  ['contact', 'Contact', 'person'],
+  ['no_contact', 'No Contact', 'person_off'],
+  ['bad_number', 'Bad Number', 'phone_disabled'],
+  ['voicemail', 'Voicemail', 'mail'],
+  ['dnc_contact', 'DNC Contact', 'person_off'],
+  ['dnc_number', 'DNC Number', 'phone_disabled'],
+] as const
+
+type PreviewOutcomeId = typeof PREVIEW_OUTCOMES[number][0]
+
+function emptyOutcomeCounts(): Record<PreviewOutcomeId, number> {
+  return Object.fromEntries(PREVIEW_OUTCOMES.map(([id]) => [id, 0])) as Record<PreviewOutcomeId, number>
+}
+
+function callDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProps) {
   const [queue, setQueue] = useState<HeirDialerQueueItem[]>([])
-  const [remainingSeconds, setRemainingSeconds] = useState(FIRST_DIAL_COUNTDOWN_SECONDS)
-  const [paused, setPaused] = useState(false)
+  const [callState, setCallState] = useState<PreviewCallState>('ready')
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [selectedOutcome, setSelectedOutcome] = useState<PreviewOutcomeId | null>(null)
+  const [outcomeCounts, setOutcomeCounts] = useState<Record<PreviewOutcomeId, number>>(emptyOutcomeCounts)
   const queueItem = queue[0] ?? null
-  const callerPlan = useMemo(() => normalizeDialerCallerPlan({
-    mode: callerMode === 'rotation' ? 'rotation' : 'static',
-    staticCallerId: callerId,
-    rotationCallerIds: parseCallerIdsCsv(rotationNumbers),
-    rotateEveryCalls: 1,
-    redialCallerId: null,
-  }, callerId), [callerId, callerMode, rotationNumbers])
+  const duration = callDuration(elapsedSeconds)
 
   useEffect(() => {
     function onQueueReady(event: Event) {
       const nextQueue = ((event as CustomEvent).detail as { queue?: HeirDialerQueueItem[] } | null)?.queue
-      if (!Array.isArray(nextQueue) || nextQueue.length === 0) return
-      setQueue(nextQueue)
+      if (Array.isArray(nextQueue) && nextQueue.length > 0) setQueue(nextQueue)
     }
     window.addEventListener('prospecting-preview-queue-ready', onQueueReady)
     return () => window.removeEventListener('prospecting-preview-queue-ready', onQueueReady)
   }, [])
 
   useEffect(() => {
-    if (paused || remainingSeconds <= 0) return
-    const timeout = window.setTimeout(() => setRemainingSeconds((current) => Math.max(0, current - 1)), 1_000)
-    return () => window.clearTimeout(timeout)
-  }, [paused, remainingSeconds])
-
-  function pauseOrResume() {
-    if (remainingSeconds === 0) {
-      setRemainingSeconds(FIRST_DIAL_COUNTDOWN_SECONDS)
-      setPaused(false)
-      return
-    }
-    setPaused((current) => !current)
-  }
-
-  function endPreview() {
-    router.push(`/prospecting?campaign=${encodeURIComponent(campaignId)}`)
-  }
-
-  const completed = remainingSeconds === 0
-  const previewStatus = paused ? 'Paused' : completed ? 'Outcome required' : 'Ready'
+    if (callState !== 'live') return
+    const tick = window.setTimeout(() => setElapsedSeconds((current) => current + 1), 1_000)
+    return () => window.clearTimeout(tick)
+  }, [callState, elapsedSeconds])
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('prospecting-preview-status', {
-      detail: { status: previewStatus },
+    const status = callState === 'ready' ? 'Ready' : callState === 'live' ? 'Live' : callState === 'paused' ? 'Paused' : 'Stopped'
+    window.dispatchEvent(new CustomEvent('prospecting-preview-status', { detail: { status } }))
+    window.dispatchEvent(new CustomEvent('heir-queue-state', {
+      detail: {
+        queueItem,
+        queueIndex: 0,
+        queueLength: queue.length,
+        callDuration: duration,
+        outcomeRequired: callState === 'stopped',
+        status: callState === 'live' ? 'on_call' : 'ready',
+      },
     }))
-  }, [previewStatus])
+  }, [callState, duration, queue.length, queueItem])
 
-  return (
-    <section aria-label="Preview prospecting call controls" className="flex h-full min-h-0 flex-col bg-[var(--skc-surface-1)] text-[var(--skc-text-primary)]">
-      <header className="border-b border-[var(--skc-separator)] px-5 py-4 text-center">
-        <h2 className="text-lg font-black tracking-[-0.03em]">Call controls</h2>
+  function startDialing() {
+    setSelectedOutcome(null)
+    setElapsedSeconds(0)
+    setCallState('live')
+  }
+
+  function recordOutcome(id: PreviewOutcomeId) {
+    setSelectedOutcome(id)
+    setOutcomeCounts((current) => ({ ...current, [id]: current[id] + 1 }))
+    setCallState('stopped')
+  }
+
+  return <section aria-label="Preview prospecting call controls" className="prospecting-dialer-control-surface flex h-full min-h-0 flex-col bg-[var(--prospecting-panel)] text-[var(--ck-text)]">
+    <p className="sr-only">Read-only review for campaign {props.campaignId}, calling from {formatPhone(props.callerId) || props.callerId}. No phone call or CRM write will be made.</p>
+    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <header className="border-b border-[var(--prospecting-border)] pb-3">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.02em]">Call outcome</h2>
+          <p className={`mt-1 text-xs font-medium ${callState === 'ready' ? 'text-[var(--ck-text-muted)]' : callState === 'live' ? 'text-[var(--prospecting-success)]' : callState === 'paused' ? 'text-[var(--ck-text)]' : 'text-[var(--prospecting-danger)]'}`}>
+            {callState === 'ready' ? 'Ready to dial' : callState === 'live' ? 'Connected' : callState === 'paused' ? 'Paused' : 'Call ended'} · {duration}
+          </p>
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-        <WorkspaceCallController
-          autoStartCountdownSeconds={remainingSeconds}
-          callerPlan={callerPlan}
-          countdownPaused={paused}
-          dialDisplay={queueItem?.phone ?? ''}
-          dialReady={false}
-          effectiveCallerId={callerId}
-          onCall={() => {}}
-          onPauseAutoStart={pauseOrResume}
-          outcomeRequired={completed}
-          previewOnly
-          queueItem={queueItem}
-          statusLabel={previewStatus}
-        />
+      {callState === 'ready' ? <button type="button" onClick={startDialing} className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--prospecting-primary)] px-3 text-sm font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)]"><Icon name="play_arrow" size="text-lg" filled />Start dialing</button> : null}
 
-        <details open={completed} className="rounded-2xl border border-[var(--skc-separator)] bg-[var(--skc-surface-soft)] p-3">
-          <summary className="cursor-pointer text-xs font-black text-[var(--skc-text-secondary)]">Call outcome</summary>
-          <div className="mt-3"><WorkspaceDispositionControls outcomeRequired={completed} previewOnly /></div>
-          {completed ? <button type="button" onClick={pauseOrResume} className="mt-3 min-h-10 w-full rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-3 text-xs font-bold text-[var(--skc-text-primary)]">Restart preview</button> : null}
-        </details>
+      <div className="mt-3 space-y-2" aria-label="Preview dispositions">
+        {PREVIEW_OUTCOMES.map(([id, label, icon]) => <button
+          key={id}
+          type="button"
+          aria-label={label}
+          aria-pressed={selectedOutcome === id}
+          disabled={callState !== 'live' && callState !== 'paused'}
+          onClick={() => recordOutcome(id)}
+          className={`flex min-h-11 w-full items-center gap-2 rounded-lg border px-3 text-left text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-75 ${selectedOutcome === id ? 'border-[var(--crm-brand-active)] bg-[var(--crm-brand-active)] ring-2 ring-[var(--crm-brand-border)]' : 'border-[var(--crm-brand)] bg-[var(--crm-brand)] enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)]'}`}
+        >
+          <Icon name={icon} size="text-sm" className="shrink-0 text-white" />
+          <span className="min-w-0 flex-1">{label}</span>
+          <span aria-hidden="true" className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-white px-1 text-[10px] font-black tabular-nums text-[#222831]">{outcomeCounts[id]}</span>
+        </button>)}
       </div>
 
-      <footer aria-label="Preview calling session controls" className="shrink-0 space-y-2 bg-[var(--skc-surface-1)] p-4">
-        <WorkspaceSessionControls
-          status={paused ? 'paused' : 'active'}
-          callBusy={false}
-          outcomeRequired={false}
-          previewOnly
-          onAction={() => {}}
-        />
-        <button type="button" onClick={endPreview} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#7D2626] bg-[#E32E2E]/10 px-4 text-sm font-bold text-[#FF7A7A]"><Icon name="stop_circle" size="text-lg" />End preview</button>
-      </footer>
-    </section>
-  )
+      <div className="mt-3 grid gap-1.5 border-t border-[var(--prospecting-border)] pt-3">
+        <button type="button" onClick={startDialing} disabled={callState !== 'stopped'} className="prospecting-dialer-secondary-button"><Icon name="phone_callback" size="text-sm" className="text-[var(--crm-brand)]" />Redial</button>
+        <button type="button" onClick={() => setCallState('stopped')} disabled={callState !== 'live' && callState !== 'paused'} className="prospecting-dialer-secondary-button"><Icon name="call_end" size="text-sm" />Hang up</button>
+        <button type="button" onClick={() => setCallState((current) => current === 'paused' ? 'live' : 'paused')} disabled={callState !== 'live' && callState !== 'paused'} className="prospecting-dialer-secondary-button"><Icon name={callState === 'paused' ? 'play_arrow' : 'pause'} size="text-sm" />{callState === 'paused' ? 'Resume' : 'Pause'}</button>
+        <button type="button" onClick={() => setCallState('stopped')} disabled={callState === 'ready' || callState === 'stopped'} className="prospecting-dialer-secondary-button"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] bg-[#ff183c]" />Stop</button>
+      </div>
+    </div>
+  </section>
 }

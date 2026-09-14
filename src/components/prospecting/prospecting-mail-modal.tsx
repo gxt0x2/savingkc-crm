@@ -36,12 +36,10 @@ export function ProspectingMailModal(props: ProspectingMailModalProps) {
   const idempotencyKey = useRef(crypto.randomUUID())
   const titleId = useId()
   const fieldId = useId()
-  const close = () => { if (!saving) props.onClose() }
-  const dialogRef = useDialogAccessibility<HTMLFormElement>(true, close, pieceRef)
+  const dialogRef = useDialogAccessibility<HTMLFormElement>(true, props.onClose, pieceRef)
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
-    if (saving) return
     setSaving(true)
     setError('')
     try {
@@ -80,13 +78,13 @@ export function ProspectingMailModal(props: ProspectingMailModalProps) {
     }
   }
 
-  return <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={close}>
-    <form ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={submit} onClick={(event) => event.stopPropagation()} className="crm-panel-raised flex max-h-[calc(100dvh-env(safe-area-inset-top)-.75rem)] w-full max-w-md flex-col overflow-hidden rounded-t-3xl sm:max-h-[min(90dvh,46rem)] sm:rounded-2xl">
+  return <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={props.onClose}>
+    <form ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} onSubmit={submit} onClick={(event) => event.stopPropagation()} className="crm-panel-raised w-full max-w-md overflow-hidden rounded-t-3xl sm:rounded-2xl">
       <div className="flex items-start border-b border-[var(--crm-border)] px-4 pb-3 pt-4 sm:px-6 sm:pt-6">
         <div className="min-w-0 flex-1"><p className="crm-eyebrow">Prospecting wrap-up</p><h2 id={titleId} className="mt-0.5 text-xl font-black text-[var(--crm-ink)]">Add mail action</h2><p className="mt-1 truncate text-xs text-[var(--crm-text-muted)]">{props.sellerName} · {props.propertyAddress || 'this property'}</p></div>
-        <button type="button" onClick={close} disabled={saving} className="crm-icon-button grid h-11 w-11 place-items-center rounded-xl" aria-label="Close mail form">×</button>
+        <button type="button" onClick={props.onClose} className="crm-icon-button grid h-11 w-11 place-items-center rounded-xl" aria-label="Close mail form">×</button>
       </div>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
+      <div className="space-y-4 px-4 py-5 sm:px-6">
         <div><label htmlFor={`${fieldId}-piece`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Mail piece</label><select ref={pieceRef} id={`${fieldId}-piece`} value={pieceType} onChange={(event) => setPieceType(event.target.value)} className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base"><option value="thank_you">Thank-you letter</option><option value="letter">Letter</option><option value="postcard">Postcard</option></select></div>
         <fieldset><legend className="mb-1 text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Status</legend><div className="grid grid-cols-2 gap-2">{([['needed', 'Needs mailing'], ['sent', 'Already sent']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={mailState === value} onClick={() => setMailState(value)} className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-bold ${mailState === value ? 'border-[var(--crm-brand)] bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]' : 'border-[var(--crm-border)] text-[var(--crm-text-muted)]'}`}>{label}</button>)}</div></fieldset>
         {mailState === 'needed' ? <div><label htmlFor={`${fieldId}-due`} className="mb-1 block text-xs font-bold uppercase tracking-wider text-[var(--crm-text-muted)]">Mail by</label><input id={`${fieldId}-due`} type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} required className="crm-field min-h-11 w-full rounded-lg px-3 py-2 text-base" /></div> : null}

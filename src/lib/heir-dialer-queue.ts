@@ -49,15 +49,14 @@ export function dispatchHeirQueue(
   queue: HeirDialerQueueItem[],
   callerId?: string | null,
   callerPlan?: Partial<DialerCallerPlan> | null,
-  options?: { autoDial?: boolean; ringCount?: number | null },
+  options?: { ringCount?: number | null },
   sessionId?: string | null,
   surface: InteractiveDialerSurface = 'crm',
 ) {
   if (queue.length === 0) return
-  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; autoDial?: boolean; ringCount?: number; sessionId?: string } = { queue }
+  const detail: { queue: HeirDialerQueueItem[]; callerId?: string; callerPlan?: DialerCallerPlan; ringCount?: number; sessionId?: string } = { queue }
   if (typeof callerId === 'string' && callerId.trim()) detail.callerId = callerId.trim()
   detail.callerPlan = normalizeDialerCallerPlan(callerPlan, typeof callerId === 'string' ? callerId.trim() : '')
-  if (options?.autoDial) detail.autoDial = true
   if (options?.ringCount && options.ringCount > 0) detail.ringCount = options.ringCount
   if (sessionId) detail.sessionId = sessionId
   const eventName = surface === 'prospecting' ? PROSPECTING_DIALER_QUEUE_EVENT : CRM_DIALER_QUEUE_EVENT

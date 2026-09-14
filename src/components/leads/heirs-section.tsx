@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { ContactNoteComposer } from '@/components/leads/contact-note-composer'
+import { HeirsCallingCompact } from '@/components/leads/heirs-calling-compact'
 import { useHeirsSectionData } from '@/components/leads/use-heirs-section-data'
 import { formatPhone, toProperCase } from '@/lib/format'
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
+import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 import { excludeCompletedDialerPhones } from '@/lib/heir-dialer-resume'
 import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
-import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
-import {
-  dispositionLabel as canonicalDispositionLabel,
-} from '@/lib/dialer-dispositions'
+import { dispositionLabel } from '@/lib/dialer-dispositions'
 import {
   dispatchHeirQueue,
   isAutoCallablePhone,
@@ -55,17 +54,14 @@ interface HeirsSectionProps {
   readOnlyPreview?: boolean
   /** Refreshes any surrounding activity timeline after a per-contact note is persisted. */
   onContactNoteSaved?: () => void
+  /** Focused calling mode removes maintenance UI and shows one compact card per callable person. */
+  variant?: 'default' | 'calling-compact'
 }
 
 function phoneIcon(type: string | null): string {
   const t = (type ?? '').toLowerCase()
-  if (t.includes('mobile') || t.includes('cell') || t.includes('wireless')) return 'smartphone'
-  if (t.includes('voip')) return 'settings_phone'
-  return 'phone'
-}
-
-function dispositionLabel(d: string | null): string {
-  return canonicalDispositionLabel(d)
+  return t.includes('mobile') || t.includes('cell') || t.includes('wireless')
+    ? 'smartphone' : t.includes('voip') ? 'settings_phone' : 'phone'
 }
 
 function daysAgo(iso: string | null): string {
@@ -99,6 +95,7 @@ export function HeirsSection({
   dialerSurface = 'crm',
   readOnlyPreview = false,
   onContactNoteSaved,
+  variant = 'default',
 }: HeirsSectionProps) {
   const [isSyncing, setIsSyncing] = useState(false)
   const [expanded, setExpanded] = useState(defaultExpanded)
@@ -222,8 +219,8 @@ export function HeirsSection({
     }))
   }, [campaignMemberId, deceasedOwnerName, leadId, propertyAddress, prospectId])
 
-  // AUTO / BULK path (Call heirs, auto-start). Queue every callable listed
-  // number for this property, grouped by heir. Attempted/verified phones stay
+  // Queue every callable number for this property, grouped by heir, but wait
+  // for the agent to start dialing. Attempted/verified phones stay
   // in the rotation for the current session; only hard-stop outcomes are
   // removed from auto dialing.
   const buildQueueForHeir = useCallback((h: Heir): HeirDialerQueueItem[] => {
@@ -294,12 +291,16 @@ export function HeirsSection({
 
     if (queue.length > 0) {
       if (readOnlyPreview) window.dispatchEvent(new CustomEvent('prospecting-preview-queue-ready', { detail: { queue } }))
-      else dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { autoDial: true, ringCount }, dialerSessionId, dialerSurface)
+      else dispatchHeirQueue(queue, dialerCallerId, dialerCallerPlan, { ringCount }, dialerSessionId, dialerSurface)
       onAutoStartHandled?.()
       return
     }
     onAutoStartEmpty?.()
   }, [autoStart, autoStartKey, autoStartSkipPhoneIds, autoStartSkipPhones, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, dialerSurface, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount])
+
+  if (variant === 'calling-compact') {
+    return <HeirsCallingCompact {...{ callablePhonesForHeir, error, heirs, loading, queueOne, readOnlyPreview }} />
+  }
 
   return (
     <section className={`ck-card overflow-hidden ${expanded ? (collapsible ? 'p-6' : 'p-0') : 'px-6 py-4'}`}>

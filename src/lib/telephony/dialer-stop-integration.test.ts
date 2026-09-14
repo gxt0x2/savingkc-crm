@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const callingFloor = readFileSync('src/components/prospecting/prospecting-calling-floor.tsx', 'utf8')
 const callController = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf8')
-const countdown = readFileSync('src/components/telephony/use-dialer-start-countdown.ts', 'utf8')
+const workspaceCallController = readFileSync('src/components/telephony/workspace-call-controller.tsx', 'utf8')
 const controlLoss = readFileSync('src/components/telephony/use-dialer-control-loss.ts', 'utf8')
 const heirsSection = readFileSync('src/components/leads/heirs-section.tsx', 'utf8')
 const smsCompose = readFileSync('src/components/leads/sms-compose-modal.tsx', 'utf8')
@@ -19,16 +19,16 @@ describe('dialer stop lifecycle integration', () => {
   })
 
   it('suppresses automatic dialing and number advancement while a stop is pending', () => {
-    expect(callController).toContain('cancelAutoStart()')
+    expect(callController).toContain('cancelQueuedAutoDial()')
     expect(callController).toContain("postDisposition === 'stop_session'")
     expect(callController).toContain("transitionDurableDialerSession(durableSessionId, 'stop')")
   })
 
-  it('holds the first automatic dial for fifteen seconds and lets pause cancel it first', () => {
-    expect(countdown).toContain('FIRST_DIAL_COUNTDOWN_SECONDS = 15')
-    expect(callController).toContain('autoStartCountdownSeconds !== null && autoStartCountdownSeconds > 0')
-    expect(callController).toContain("detail: { action: 'pause' }")
-    expect(callController).toContain('finishAutoStart()')
+  it('requires the agent to start the reviewed queue without a countdown', () => {
+    expect(workspaceCallController).toContain("'Start dialing'")
+    expect(workspaceCallController).not.toContain('First call starts in')
+    expect(workspaceCallController).not.toContain('progressbar')
+    expect(callController).not.toContain('autoStartCountdownSeconds')
   })
 
   it('recovers a persisted stop request after a refresh', () => {
@@ -37,10 +37,10 @@ describe('dialer stop lifecycle integration', () => {
   })
 
   it('cancels queued dialing and disconnects the displaced browser after matching session control is lost', () => {
-    expect(countdown).toContain("window.addEventListener('dialer-control-lost', onControlLost)")
     expect(controlLoss).toContain("window.addEventListener('dialer-control-lost', onControlLost)")
     expect(controlLoss).toContain('lostSessionId !== sessionId')
     expect(controlLoss).toContain('cancelAutoStart()')
+    expect(callController).toContain('cancelQueuedAutoDial')
     expect(controlLoss).toContain('activeCall?.disconnect()')
     expect(controlLoss).toContain('controlLossRevisions.set(sessionId')
     expect(controlLoss).toContain('endQueue()')
@@ -82,7 +82,7 @@ describe('dialer stop lifecycle integration', () => {
     expect(smsCompose).toContain("withDialerSessionControlOperation(dialerSessionId, 'Sending email', (controlHeaders, signal)")
     expect(smsThread).toContain("withDialerSessionControlOperation(dialerSessionId, 'Sending text message', (controlHeaders, signal)")
     expect([callingFloor, heirsSection, smsCompose, smsThread].every((source) => source.includes('signal,'))).toBe(true)
-    expect(callingContext).toContain('dialerSessionId={props.durableSessionId || null}')
+    expect(callingContext).toContain('dialerSessionId={props.durableSessionId}')
     expect(lifecycleClient).toContain("withDialerSessionControlOperation(input.dialerSessionId, 'Marking lead dead'")
     expect(callController).toContain('dialerSessionId: durableSessionId')
   })

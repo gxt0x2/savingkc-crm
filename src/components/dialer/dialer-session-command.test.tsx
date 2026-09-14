@@ -1,42 +1,30 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
 import { DialerSessionCommand } from './dialer-session-command'
-import { PROSPECTING_DIALER_CONTROLS_EVENT } from '@/lib/telephony/dialer-events'
 
 function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSessionCommand>> = {}) {
   const props: React.ComponentProps<typeof DialerSessionCommand> = {
-    queueLabel: 'August absentee owners',
-    currentIndex: 3,
-    queueSize: 20,
-    callerId: '+18165550123',
-    durableSessionId: 'session-1',
+    queueLabel: 'Mojo Training List',
+    currentLabel: 'Mojo Contact',
+    currentIndex: 0,
+    queueSize: 31,
     durableStatus: 'active',
-    todayMetrics: {
-      metric_date: '2026-08-25',
-      dialing_seconds: 4_025,
-      calls: 17,
-      contacts: 4,
-      leads: 1,
-      generatedAt: '2026-08-25T15:00:00.000Z',
-    },
     queueState: {
-      queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
+      queueItem: { phone: '+18165550199', heirName: 'Mojo Contact', relation: 'owner' },
       queueIndex: 0,
       queueLength: 3,
       callDuration: null,
       status: 'ready',
     },
     actionPending: false,
-    currentLeadId: 'lead-1',
     error: null,
-    onClose: vi.fn(),
     onPause: vi.fn(),
     onResume: vi.fn(),
     onEndSession: vi.fn(),
     onMarkDead: vi.fn(),
-    onPrevious: vi.fn(),
     onSkip: vi.fn(),
     ...overrides,
   }
@@ -46,217 +34,65 @@ function renderCommand(overrides: Partial<React.ComponentProps<typeof DialerSess
 }
 
 describe('DialerSessionCommand', () => {
-  afterEach(() => vi.useRealTimers())
-
-  it('keeps session status compact without duplicating the seller or phone workspace', () => {
+  it('uses only Status, List, Current, and Progress in the top row', () => {
     renderCommand()
 
-    expect(screen.getByRole('region', { name: 'Calling floor command center' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Calling session' })).toBeVisible()
-    expect(screen.getByText('August absentee owners')).toBeVisible()
-    expect(screen.getByText('Assigned line (816) 555-0123')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' })).toBeVisible()
-    expect(screen.queryByText('Caller ID')).not.toBeInTheDocument()
-    expect(screen.queryByText('Sellers worked')).not.toBeInTheDocument()
-    expect(screen.getByText('Dialer time')).toBeVisible()
-    expect(screen.getByText('1:07:05')).toBeVisible()
-    expect(screen.getByText('Calls')).toBeVisible()
-    expect(screen.getByText('17')).toBeVisible()
-    expect(screen.getByText('Contacts')).toBeVisible()
-    expect(screen.getByText('4')).toBeVisible()
-    expect(screen.getByText('Leads')).toBeVisible()
-    expect(screen.getByText('Seller progress')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelectorAll('article')).toHaveLength(5)
-    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="info"]')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="brand"]')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="success"]')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Today’s acquisition metrics' }).querySelector('[data-tone="warning"]')).toBeVisible()
-    expect(screen.queryByText('Helen Seller')).not.toBeInTheDocument()
-    expect(screen.queryByText('(816) 555-0199')).not.toBeInTheDocument()
-    expect(screen.getByText('Session progress 20%')).toBeInTheDocument()
+    const summary = screen.getByRole('region', { name: 'Calling session summary' })
+    expect(within(summary).getByText('Status')).toBeVisible()
+    expect(within(summary).getByText('List')).toBeVisible()
+    expect(within(summary).getByText('Current')).toBeVisible()
+    expect(within(summary).getByText('Progress')).toBeVisible()
+    expect(within(summary).getByText('Mojo Training List')).toBeVisible()
+    expect(within(summary).getByText('Mojo Contact')).toBeVisible()
+    expect(within(summary).getByText('1 / 31')).toBeVisible()
+    expect(screen.queryByText('Dialer time')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Back to campaigns' })).not.toBeInTheDocument()
   })
 
-  it('shows caller rotation as a read-only session policy', () => {
-    renderCommand({ callerPolicyLabel: 'Rotating 3 approved lines every 50 calls' })
-    expect(screen.getByText('Rotating 3 approved lines every 50 calls')).toBeVisible()
-  })
-
-  it('makes ending a durable session explicit and requires confirmation', () => {
-    const props = renderCommand()
-
-    fireEvent.click(screen.getByRole('button', { name: 'End session' }))
-    const dialog = screen.getByRole('dialog', { name: 'Stop this session?' })
-    expect(dialog).toBeVisible()
-    expect(props.onEndSession).not.toHaveBeenCalled()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'End session' }))
-
-    expect(props.onEndSession).toHaveBeenCalledOnce()
-  })
-
-  it('keeps skip, pause, and exit actions distinct from ending the session', () => {
-    const props = renderCommand()
-
-    fireEvent.click(screen.getByRole('button', { name: /Skip seller/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Pause session' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Back to campaigns' }))
-
-    expect(props.onSkip).toHaveBeenCalledOnce()
-    expect(props.onPause).toHaveBeenCalledOnce()
-    expect(props.onClose).toHaveBeenCalledOnce()
-  })
-
-  it('uses the persistent call rail as the single home for call actions', () => {
-    const props = renderCommand({ controlsDocked: true })
-
-    expect(screen.queryByRole('button', { name: 'Call controls' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Pause session' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'End session' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Back to campaigns' })).toBeVisible()
-
-    window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))
-    expect(props.onPause).toHaveBeenCalledOnce()
-  })
-
-  it('shows a truthful outcome-required state instead of reporting an idle call', () => {
-    renderCommand({ queueState: {
-      queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
-      queueIndex: 0,
-      queueLength: 3,
-      status: 'ready',
-      outcomeRequired: true,
-    } })
-
-    expect(screen.getByText('Outcome required')).toBeVisible()
-    expect(screen.queryByText('Outcome', { exact: true })).not.toBeInTheDocument()
-  })
-
-  it('lets an agent reopen hidden call controls without restarting the session', () => {
-    const dispatchEvent = vi.spyOn(window, 'dispatchEvent')
-    renderCommand()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Call controls' }))
-
-    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: PROSPECTING_DIALER_CONTROLS_EVENT }))
-  })
-
-  it('offers an explicit resume action for paused durable sessions', () => {
-    const props = renderCommand({ durableStatus: 'paused' })
-    fireEvent.click(screen.getByRole('button', { name: 'Resume session' }))
-    expect(props.onResume).toHaveBeenCalledOnce()
-  })
-
-  it('shows a live five-minute inactivity countdown without changing dialer time', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-09-01T16:00:00.000Z'))
-    renderCommand({ idleExpiresAt: '2026-09-01T16:05:00.000Z' })
-
-    expect(screen.getByRole('timer')).toHaveTextContent('5:00 remaining')
-    await act(async () => { await vi.advanceTimersByTimeAsync(61_000) })
-    expect(screen.getByRole('timer')).toHaveTextContent('3:59 remaining')
-    expect(screen.getByText('1:07:05')).toBeVisible()
-  })
-
-  it('blocks resume while a paused call still needs to hang up and save its outcome', () => {
+  it('shows the live call duration in Status without repeating contact data', () => {
     renderCommand({
-      durableStatus: 'paused',
       queueState: {
-        queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
+        queueItem: { phone: '+18165550199', heirName: 'Mojo Contact', relation: 'owner' },
         queueIndex: 0,
-        queueLength: 3,
-        status: 'calling',
-      },
-    })
-
-    expect(screen.getByRole('button', { name: 'Pausing call…' })).toBeDisabled()
-  })
-
-  it('keeps a paused session locked until its required outcome is saved', () => {
-    renderCommand({
-      durableStatus: 'paused',
-      queueState: {
-        queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
-        queueIndex: 0,
-        queueLength: 3,
-        status: 'ready',
-        outcomeRequired: true,
-      },
-    })
-
-    expect(screen.getByRole('button', { name: 'Paused — save outcome' })).toBeDisabled()
-  })
-
-  it('shows live connected state without adding predictive or parallel-line claims', () => {
-    const props = renderCommand({
-      queueState: {
-        queueItem: { phone: '+18165550199', heirName: 'Helen Seller', relation: 'daughter' },
-        queueIndex: 1,
         queueLength: 3,
         callDuration: '03:12',
         status: 'on_call',
       },
     })
 
-    expect(screen.getByText('Connected now')).toBeVisible()
-    expect(screen.queryByText('03:12')).not.toBeInTheDocument()
-    expect(screen.queryByText(/predictive/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/3 lines/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Hang up' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Pause & hang up' })).toBeVisible()
-
-    fireEvent.click(screen.getByRole('button', { name: 'End session' }))
-    const dialog = screen.getByRole('dialog', { name: 'Stop this session?' })
-    expect(within(dialog).getByText(/current call will hang up now/i)).toBeVisible()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'End call & session' }))
-    expect(props.onEndSession).toHaveBeenCalledOnce()
+    expect(screen.getByText('Live · 03:12')).toBeVisible()
   })
 
-  it('shows a durable pending-stop state and disables queue-changing actions', () => {
-    renderCommand({ stopRequested: true })
+  it('keeps the compact status row wired to the persistent dialer commands', () => {
+    const props = renderCommand()
 
-    expect(screen.getByText('Ending after outcome')).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'End session' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Skip seller/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Pause session' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Back to campaigns' })).toBeDisabled()
-  })
-
-  it('uses theme-owned surfaces instead of a permanently dark command banner', () => {
-    renderCommand()
-    const command = screen.getByRole('region', { name: 'Calling floor command center' })
-    expect(command).toHaveClass('bg-[var(--ck-surface)]')
-    expect(command).toHaveClass('text-[var(--ck-text)]')
-    expect(command).not.toHaveClass('bg-[#101827]')
-  })
-
-  it('makes a workflow preview navigable without exposing calling or record mutations', () => {
-    const props = renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
-
-    expect(screen.getByRole('heading', { name: 'Calling workflow preview' })).toBeVisible()
-    expect(screen.getByText(/Resume calling restores the saved seller/i)).toBeVisible()
-    expect(screen.queryByRole('link', { name: 'Open live calling' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Call controls' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } })))
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'skip' } })))
+    expect(props.onPause).toHaveBeenCalledOnce()
     expect(props.onSkip).toHaveBeenCalledOnce()
   })
 
-  it('keeps a displaced window visible but prevents it from changing the durable session', () => {
+  it('requires confirmation when the persistent dialer ends the session', () => {
+    const props = renderCommand()
+
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'end' } })))
+    const dialog = screen.getByRole('dialog', { name: 'Stop this session?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'End session' }))
+
+    expect(props.onEndSession).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a displaced window visible but blocks its command events', () => {
     const props = renderCommand({ controlUnavailable: true })
 
     expect(screen.getByText('Open elsewhere')).toBeVisible()
-    expect(screen.getByText(/Dialing control moved to another window/i)).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Pause session' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Dead' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Skip seller/ })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Back to campaigns' }))
-    window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } }))
-
-    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(screen.getByText(/current record remains visible/i)).toBeVisible()
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } })))
     expect(props.onPause).not.toHaveBeenCalled()
   })
 
-  it('shows the preview session status across the top command center', () => {
-    renderCommand({ readOnlyPreview: true, durableSessionId: '', durableStatus: undefined })
+  it('mirrors preview status in the same four-cell row', () => {
+    renderCommand({ readOnlyPreview: true, durableStatus: undefined })
 
     expect(screen.getByText('Ready')).toBeVisible()
     act(() => window.dispatchEvent(new CustomEvent('prospecting-preview-status', { detail: { status: 'Paused' } })))

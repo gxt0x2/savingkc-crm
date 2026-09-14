@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import '@fontsource-variable/inter'
 import './globals.css'
+import './prospecting.css'
 import './daily-rhythm.css'
 import './mobile-crm.css'
 

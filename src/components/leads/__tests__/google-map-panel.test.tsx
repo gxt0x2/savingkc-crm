@@ -17,6 +17,7 @@ describe('StreetViewPanel', () => {
     const location = { lat: () => 38.991, lng: () => -94.654 }
     const constructPanorama = vi.fn()
     const setVisible = vi.fn()
+    const setZoom = vi.fn()
     const clearInstanceListeners = vi.fn()
     const addListener = vi.fn(() => ({ remove: vi.fn() }))
     const forwardedPointerUp = vi.fn()
@@ -51,6 +52,7 @@ describe('StreetViewPanel', () => {
 
       getZoom = () => zoomReads++ === 0 ? Number.NaN : 0
       getPov = () => ({ heading: 92, pitch: 1 })
+      setZoom = setZoom
       setVisible = setVisible
     }
 
@@ -62,7 +64,7 @@ describe('StreetViewPanel', () => {
         StreetViewService: MockStreetViewService,
         StreetViewPanorama: MockStreetViewPanorama,
         StreetViewSource: { OUTDOOR: 'outdoor' },
-        event: { addListener, clearInstanceListeners },
+        event: { addListener, clearInstanceListeners, trigger: vi.fn() },
       },
     }
 
@@ -84,6 +86,7 @@ describe('StreetViewPanel', () => {
     await waitFor(() => expect(screen.getByText('Drag to look around')).toBeInTheDocument())
     expect(canvas).toHaveAttribute('data-street-view-heading', '92')
     expect(canvas).toHaveAttribute('data-street-view-pitch', '1')
+    expect(setZoom).toHaveBeenCalledWith(1)
 
     expect(nativeSurface).not.toBeNull()
     fireEvent.pointerDown(nativeSurface!, {

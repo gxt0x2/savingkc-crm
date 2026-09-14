@@ -2,12 +2,13 @@
 
 import { Icon } from '@/components/ui/icon'
 
-export type WorkspaceSessionAction = 'pause' | 'resume' | 'skip' | 'end'
+export type WorkspaceSessionAction = 'redial' | 'hangup' | 'pause' | 'resume' | 'end'
 
 type WorkspaceSessionControlsProps = {
   status: 'active' | 'paused' | 'completed' | 'stopped' | null
   callBusy: boolean
   outcomeRequired: boolean
+  redialReady?: boolean
   previewOnly?: boolean
   controlUnavailable?: boolean
   onAction: (action: WorkspaceSessionAction) => void
@@ -17,6 +18,7 @@ export function WorkspaceSessionControls({
   status,
   callBusy,
   outcomeRequired,
+  redialReady = true,
   previewOnly = false,
   controlUnavailable = false,
   onAction,
@@ -29,49 +31,46 @@ export function WorkspaceSessionControls({
     : previewOnly
       ? 'Available in a live calling session'
       : undefined
-  const pauseLabel = callBusy
-    ? 'Pause & hang up'
-    : outcomeRequired
-      ? 'Pause after outcome'
-      : 'Pause session'
-  const pausedActionLabel = callBusy
-    ? 'Pausing call…'
-    : outcomeRequired
-      ? 'Paused — save outcome'
-      : 'Resume session'
+  const pauseLabel = paused ? 'Resume' : 'Pause'
 
   return (
-    <section aria-label="Calling session controls" className="mx-1 space-y-2 border-t border-[var(--skc-separator)] pt-3">
+    <section aria-label="Calling session controls" className="grid gap-1.5 border-t border-white/15 pt-3">
+      <button
+        type="button"
+        onClick={() => onAction('redial')}
+        disabled={controlsLocked || finished || paused || callBusy || outcomeRequired || !redialReady}
+        title={lockedTitle}
+        className="prospecting-dialer-secondary-button"
+      >
+        <Icon name="phone_callback" size="text-sm" className="text-[#8fce47]" /> Redial
+      </button>
+      <button
+        type="button"
+        onClick={() => onAction('hangup')}
+        disabled={controlsLocked || !callBusy}
+        title={lockedTitle}
+        className="prospecting-dialer-secondary-button"
+      >
+        <Icon name="call_end" size="text-sm" /> Hang up
+      </button>
       <button
         type="button"
         onClick={() => onAction(paused ? 'resume' : 'pause')}
-        disabled={controlsLocked || finished || (paused && (callBusy || outcomeRequired))}
+        disabled={controlsLocked || finished || outcomeRequired || (paused && callBusy)}
         title={lockedTitle}
-        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-4 text-sm font-black text-[var(--crm-on-warning)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        className="prospecting-dialer-secondary-button"
       >
-        <Icon name={paused && !callBusy && !outcomeRequired ? 'play_arrow' : 'pause_circle'} size="text-lg" />
-        {paused ? pausedActionLabel : pauseLabel}
+        <Icon name={paused ? 'play_arrow' : 'pause'} size="text-sm" /> {pauseLabel}
       </button>
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => onAction('skip')}
-          disabled={controlsLocked || callBusy || outcomeRequired || status !== 'active'}
-          title={lockedTitle}
-          className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-2 text-xs font-bold text-[var(--skc-text-primary)] hover:bg-[var(--skc-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Icon name="skip_next" size="text-base" /> Skip seller
-        </button>
-        <button
-          type="button"
-          onClick={() => onAction('end')}
-          disabled={controlsLocked || finished}
-          title={lockedTitle}
-          className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-[#7D2626] bg-[#E32E2E]/10 px-2 text-xs font-bold text-[#FF7A7A] hover:bg-[#E32E2E]/20 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Icon name="stop_circle" size="text-base" /> End session
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => onAction('end')}
+        disabled={controlsLocked || finished}
+        title={lockedTitle}
+        className="prospecting-dialer-secondary-button"
+      >
+        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] bg-[#ff183c]" /> Stop
+      </button>
     </section>
   )
 }

@@ -4,8 +4,6 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
-import { useWorkspaceCallRailOpen } from '@/components/conversations/workspace-frame'
-import { formatPhone } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { normalizeDialerCallerPlan, parseCallerIdsCsv } from '@/lib/dialer-caller-plan'
 import { loadDialerSubjectActivities, type DialerActivity as Activity } from '@/lib/dialer-lead-activity'
@@ -22,15 +20,12 @@ import type {
   ProspectingCallingLead as LeadSummary,
   ProspectingCallingProspect as ProspectSummary,
   ProspectingCallingQueueState as QueueState,
-  ProspectingCallingTab,
   ProspectingSmsTarget,
 } from '@/components/prospecting/prospecting-calling-types'
 import { useCampaignPreviewQueue } from '@/components/prospecting/use-campaign-preview-queue'
 import {
   dispatchDialerPauseRequested,
-  useDialerPauseAndLeave,
 } from '@/components/prospecting/use-dialer-pause-and-leave'
-import { useDialerTodayMetrics } from '@/components/prospecting/use-dialer-today-metrics'
 import { useProspectingSessionControl } from '@/components/prospecting/use-prospecting-session-control'
 import {
   DialerOperationHoldRetainedError,
@@ -48,12 +43,12 @@ interface ProspectingCallingFloorProps {
 }
 
 export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampaignId = null }: ProspectingCallingFloorProps) {
-  const callRailOpen = useWorkspaceCallRailOpen()
   const router = useRouter()
   const params = useSearchParams()
   const [subjects, setSubjects] = useState<DurableDialerQueueSubject[]>([])
   const [leads, setLeads] = useState<Record<string, LeadSummary>>({})
   const [prospects, setProspects] = useState<Record<string, ProspectSummary | null>>({})
+  const [promotedLeads, setPromotedLeads] = useState<Record<string, LeadSummary>>({})
   const [coOwners, setCoOwners] = useState<Record<string, string[]>>({})
   const [currentIndex, setCurrentIndex] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -61,7 +56,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
   // Activity feed for the current Lead or unpromoted source Prospect.
   const [activitySnapshot, setActivitySnapshot] = useState<{ subjectKey: string; items: Activity[] } | null>(null)
-  const [leftTab, setLeftTab] = useState<ProspectingCallingTab>('texts')
   const currentActivitySubjectRef = useRef<string | null>(null)
 
   // Live queue state from telephony-bar
@@ -73,7 +67,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   const [smsTarget, setSmsTarget] = useState<ProspectingSmsTarget | null>(null)
 
   // Authoritative daily performance + mark-lead-dead dialog
-  const todayMetrics = useDialerTodayMetrics(readOnlyPreview)
   const [showMarkDead, setShowMarkDead] = useState(false)
   const [markDeadReason, setMarkDeadReason] = useState('')
   const [markDeadNotes, setMarkDeadNotes] = useState('')
@@ -83,9 +76,10 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   const currentSubject = subjects[currentIndex] ?? null
   const currentSubjectKey = currentSubject ? `${currentSubject.kind}:${currentSubject.id}` : null
   const currentDialerSubjectKeyRef = useRef(currentSubjectKey)
-  const currentLeadId: string | null = currentSubject?.leadId ?? null
   const currentProspectId: string | null = currentSubject?.prospectId ?? null
-  const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? null : null
+  const promotedLead = currentProspectId ? promotedLeads[currentProspectId] ?? null : null
+  const currentLeadId: string | null = currentSubject?.leadId ?? promotedLead?.id ?? null
+  const currentLead: LeadSummary | null = currentLeadId ? leads[currentLeadId] ?? promotedLead : null
   const currentProspect: ProspectSummary | null = currentSubjectKey ? prospects[currentSubjectKey] ?? null : null
   const smsOriginLead: LeadSummary | null = smsTarget ? leads[smsTarget.leadId] ?? null : null
   const activities = activitySnapshot?.subjectKey === currentSubjectKey ? activitySnapshot.items : []
@@ -113,13 +107,10 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
 
   const {
     session: durableSession,
-    applySession: applyDurableSession,
     clearSession: clearDurableSession,
     initializeSession,
     actionPending: sessionActionPending,
-    setActionPending: setSessionActionPending,
     sessionError,
-    setSessionError,
     controlLocked,
     controlSummary,
     controlBusy,
@@ -173,11 +164,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     }, sessionCallerId || DEFAULT_DIALER_CALLER_ID)
     return plan
   }, [durableSession?.settingsSnapshot?.callerPlan, sessionCallerId, sessionCallerModeParam, sessionRotateEveryParam, sessionRotationNumbersParam, sessionRedialCallerId])
-  const sessionCallerPolicyLabel = sessionCallerPlan.mode === 'rotation' && sessionCallerPlan.rotationCallerIds.length > 1
-    ? `Rotating ${sessionCallerPlan.rotationCallerIds.length} approved lines every ${sessionCallerPlan.rotateEveryCalls} calls`
-    : sessionCallerId
-      ? `Assigned line ${formatPhone(sessionCallerId)}`
-      : 'Caller ID unavailable'
   const startIndexParam = params.get('start_index')
 
   useEffect(() => {
@@ -369,7 +355,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   }, [currentIndex, subjects])
 
   const back = useCallback(() => {
-    setCurrentIndex((i) => Math.max(i - 1, 0))
+    setCurrentIndex((index) => Math.max(index - 1, 0))
   }, [])
 
   const skipCurrentLead = useCallback(async () => {
@@ -398,15 +384,6 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     }
     router.push('/prospecting')
   }, [params, router])
-
-  const closeSession = useDialerPauseAndLeave({
-    session: durableSession,
-    sessionId: durableSessionId,
-    applySession: applyDurableSession,
-    navigateAway: navigateAwayFromSession,
-    setPending: setSessionActionPending,
-    setError: setSessionError,
-  })
 
   const stopSession = useCallback(async () => {
     if (!durableSessionId) {
@@ -571,7 +548,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   }
 
   return (
-    <div className="mx-auto max-w-[1700px] px-3 pb-24 pt-3 sm:px-5 lg:px-6">
+    <div className="prospecting-answer-workspace min-h-full w-full px-3 py-3 pb-24 sm:px-5 sm:py-5 lg:pb-5">
       {controlSummary ? <ProspectingSessionTakeoverDialog
         summary={controlSummary}
         selectedCampaignId={controlSummary.campaignId}
@@ -581,39 +558,30 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         onCancel={navigateAwayFromSession}
         onContinue={() => { void confirmControlTakeover() }}
       /> : null}
-      <DialerSessionCommand
-        queueLabel={inferredQueueLabel}
-        currentIndex={currentIndex}
-        queueSize={subjects.length}
-        callerId={sessionCallerId}
-        callerPolicyLabel={sessionCallerPolicyLabel}
-        durableSessionId={durableSessionId}
-        durableStatus={durableSession?.status}
-        stopRequested={Boolean(durableSession?.stopRequestedAt)}
-        idleExpiresAt={durableSession?.idleExpiresAt}
-        idleTimedOutAt={durableSession?.idleTimedOutAt}
-        todayMetrics={todayMetrics}
-        queueState={queueState}
-        controlsDocked={callRailOpen}
-        actionPending={sessionActionPending || markDeadBusy}
-        currentLeadId={currentLeadId}
-        error={sessionError}
-        readOnlyPreview={readOnlyPreview}
-        controlUnavailable={controlLocked}
-        onClose={() => { if (controlLocked) navigateAwayFromSession(); else void closeSession() }}
-        onPause={() => { void pauseSession() }}
-        onResume={() => { void transitionCurrentSession('resume') }}
-        onEndSession={() => { void stopSession() }}
-        onMarkDead={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}
-        onPrevious={back}
-        onSkip={() => { void skipCurrentLead() }}
-      />
+      <section aria-label="Prospecting answer console" className="mx-auto w-full max-w-[1880px] overflow-hidden rounded-[14px] border border-[var(--prospecting-border)] bg-[var(--prospecting-canvas)] shadow-[0_18px_50px_rgba(15,23,42,0.12)]">
+        <DialerSessionCommand
+          queueLabel={inferredQueueLabel}
+          currentLabel={ownerName}
+          currentIndex={currentIndex}
+          queueSize={subjects.length}
+          durableStatus={durableSession?.status}
+          stopRequested={Boolean(durableSession?.stopRequestedAt)}
+          queueState={queueState}
+          actionPending={sessionActionPending || markDeadBusy}
+          error={sessionError}
+          readOnlyPreview={readOnlyPreview}
+          controlUnavailable={controlLocked}
+          onPause={() => { void pauseSession() }}
+          onResume={() => { void transitionCurrentSession('resume') }}
+          onEndSession={() => { void stopSession() }}
+          onMarkDead={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}
+          onSkip={() => { void skipCurrentLead() }}
+        />
 
-      {/* Calling floor: people and phone actions are primary; context remains bounded at the side. */}
-      <div className="grid grid-cols-12 gap-4 lg:gap-6">
-        {/* Primary workspace — the actual people and callable numbers. */}
-        <main className="order-1 col-span-12 lg:col-span-8">
-          {currentSubject && (
+        <div className="p-3">
+          <ProspectingCallingContextRail
+          key={currentSubjectKey || 'current'}
+          primaryWorkspace={currentSubject ? (
             <HeirsSection
               key={`${currentSubjectKey}:${autoStartEpoch}`}
               leadId={currentLeadId}
@@ -638,13 +606,10 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
                 ? (target) => setSmsTarget({ ...target, leadId: currentLeadId, subjectKey: currentSubjectKey })
                 : undefined}
               onContactNoteSaved={() => { void refreshActivities() }}
+              variant="calling-compact"
             />
-          )}
-        </main>
-
-        {/* Supporting rail — sticky, internally bounded, and limited to this seller. */}
-        <ProspectingCallingContextRail
-          fullWidth={false}
+          ) : null}
+          campaignId={previewCampaignId || params.get('campaign')}
           leadId={currentLeadId}
           lead={currentLead}
           prospect={currentProspect}
@@ -655,14 +620,17 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           delinquentYears={delinquentYears}
           durableSessionId={durableSessionId}
           campaignMemberId={currentSubject?.campaignMemberId || null}
+          presentedPhone={queueState?.queueItem?.phone || currentLead?.phone || null}
           activities={activities}
-          activeTab={leftTab}
-          callerId={sessionCallerId}
           readOnlyPreview={readOnlyPreview || controlLocked}
-          onTabChange={setLeftTab}
+          onLeadPromoted={(lead) => {
+            if (currentProspectId) setPromotedLeads((current) => ({ ...current, [currentProspectId]: lead }))
+            setLeads((current) => ({ ...current, [lead.id]: lead }))
+          }}
           onRefreshActivities={() => { void refreshActivities() }}
-        />
-      </div>
+          />
+        </div>
+      </section>
 
       {/* SMS composer — pinned to the property lead so the SMS logs there. */}
       {smsTarget && smsOriginLead && currentSubjectKey === smsTarget.subjectKey && (
