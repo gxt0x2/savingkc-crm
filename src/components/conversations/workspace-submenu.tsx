@@ -69,7 +69,7 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
   useEffect(() => () => clearTimeout(timer.current), [])
   useEffect(() => {
     if (!position) return
-    function outside(event: PointerEvent) {
+    function outside(event: MouseEvent) {
       const target = event.target as Node
       if (!anchor.current?.contains(target) && !panel.current?.contains(target)) setPosition(null)
     }
@@ -77,13 +77,13 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
       if (event.key === 'Escape') { setPosition(null); toggle.current?.focus() }
     }
     const close = () => setPosition(null)
-    document.addEventListener('pointerdown', outside)
+    document.addEventListener('click', outside)
     document.addEventListener('keydown', escape)
     const closeOnScroll = (event: Event) => { if (collapsed && event.target !== panel.current) close() }
     document.addEventListener('scroll', closeOnScroll, true)
     window.addEventListener('resize', close)
     return () => {
-      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('click', outside)
       document.removeEventListener('keydown', escape)
       document.removeEventListener('scroll', closeOnScroll, true)
       window.removeEventListener('resize', close)
