@@ -29,6 +29,7 @@ interface StreetViewData {
 interface StreetViewPanoramaInstance {
   getPov(): { heading: number; pitch: number }
   getZoom(): number
+  setZoom(zoom: number): void
   setVisible(visible: boolean): void
 }
 
@@ -66,6 +67,7 @@ interface GoogleMapsApi {
         handler: () => void,
       ): GoogleMapsEventListener
       clearInstanceListeners(instance: unknown): void
+      trigger(instance: unknown, eventName: string): void
     }
     StreetViewSource: { OUTDOOR: string }
   }
@@ -305,6 +307,8 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
   useEffect(() => {
     let cancelled = false
     let zoomReadyTimer: ReturnType<typeof setTimeout> | null = null
+    let resizeObserver: ResizeObserver | null = null
+    let resizeHandler: (() => void) | null = null
     clearLoadingTimer()
     loadingTimer.current = setTimeout(() => {
       if (cancelled) return
@@ -372,6 +376,21 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
             const panorama = new google.maps.StreetViewPanorama(canvasRef.current, panoramaOptions)
             panoramaRef.current = panorama
 
+            const ensureFiniteZoom = () => {
+              if (!Number.isFinite(panorama.getZoom())) panorama.setZoom(1)
+            }
+            resizeHandler = () => {
+              ensureFiniteZoom()
+              google.maps.event?.trigger(panorama, 'resize')
+              ensureFiniteZoom()
+            }
+            if (typeof ResizeObserver === 'function') {
+              resizeObserver = new ResizeObserver(resizeHandler)
+              resizeObserver.observe(canvasRef.current)
+            } else {
+              window.addEventListener('resize', resizeHandler)
+            }
+
             const syncPovDiagnostics = () => {
               if (!canvasRef.current) return
               const pov = panorama.getPov()
@@ -390,6 +409,7 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
                 return
               }
 
+              panorama.setZoom(1)
               zoomReadyTimer = setTimeout(waitForStableZoom, 50)
             }
 
@@ -408,6 +428,8 @@ function StreetViewContent({ address, height = 500 }: PanelProps) {
       cancelled = true
       clearLoadingTimer()
       if (zoomReadyTimer) clearTimeout(zoomReadyTimer)
+      resizeObserver?.disconnect()
+      if (resizeHandler) window.removeEventListener('resize', resizeHandler)
       if (panoramaRef.current) {
         mapsApiRef.current?.maps.event?.clearInstanceListeners(panoramaRef.current)
         panoramaRef.current.setVisible(false)

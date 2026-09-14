@@ -1,149 +1,164 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ProspectingCallingContextRail } from './prospecting-calling-context-rail'
 
+vi.mock('@/components/leads/google-map-panel', () => ({
+  StreetViewPanel: ({ address }: { address: string }) => <div>Street View for {address}</div>,
+}))
+
+const prospect = {
+  id: 'prospect-1',
+  owner_1: 'Mary Seller',
+  situs_street: '123 Main Street',
+  situs_city: 'Kansas City',
+  situs_state: 'MO',
+  situs_zip: '64108',
+  county: 'Jackson',
+  is_deceased: true,
+  occupancy_status: 'absentee',
+  delinquent_years_category: '2-year',
+  mailing_street: 'PO Box 55',
+  mailing_city: 'Liberty',
+  mailing_state: 'MO',
+  mailing_zip: '64068',
+  cumulative_due: 6_000,
+  zestimate: 198_000,
+  total_market_value: 144_000,
+  earliest_delinquent_year: 2024,
+}
+
+const baseProps: React.ComponentProps<typeof ProspectingCallingContextRail> = {
+  campaignId: 'campaign-1',
+  leadId: null,
+  lead: null,
+  prospect,
+  ownerName: 'Mary Seller',
+  situsAddress: '123 Main Street Kansas City, MO 64108',
+  coOwners: [],
+  occupancy: null,
+  delinquentYears: '2 yr',
+  durableSessionId: '',
+  campaignMemberId: 'member-1',
+  presentedPhone: '+18165550123',
+  activities: [{
+    id: 'activity-1',
+    activity_type: 'note',
+    description: 'Daughter handles the estate calls.',
+    agent: 'Ernest',
+    metadata: {
+      source: 'prospecting_contact_note',
+      prospect_id: 'prospect-1',
+      contact_name: 'Helen Seller',
+    },
+    created_at: '2026-08-26T12:00:00.000Z',
+  }],
+  onRefreshActivities: vi.fn(),
+}
+
 describe('ProspectingCallingContextRail', () => {
-  it('keeps source-Prospect contact notes visible in seller history', () => {
-    render(<ProspectingCallingContextRail
-      leadId={null}
-      lead={null}
-      prospect={{
-        id: 'prospect-1',
-        owner_1: 'Mary Seller',
-        situs_street: '123 Main Street',
-        situs_city: 'Kansas City',
-        situs_state: 'MO',
-        situs_zip: '64108',
-        county: 'Jackson',
-        is_deceased: true,
-        occupancy_status: 'absentee',
-        delinquent_years_category: '2-year',
-        mailing_street: null,
-        mailing_city: null,
-        mailing_state: null,
-        mailing_zip: null,
-        cumulative_due: 6_000,
-        zestimate: 198_000,
-        total_market_value: 144_000,
-        earliest_delinquent_year: 2024,
-      }}
-      ownerName="Mary Seller"
-      situsAddress="123 Main Street Kansas City, MO 64108"
-      coOwners={[]}
-      occupancy={null}
-      delinquentYears="2 yr"
-      durableSessionId=""
-      activities={[{
-        id: 'activity-1',
-        activity_type: 'note',
-        description: 'Daughter handles the estate calls.',
-        agent: 'Ernest',
-        metadata: {
-          source: 'prospecting_contact_note',
-          prospect_id: 'prospect-1',
-          contact_name: 'Helen Seller',
-        },
-        created_at: '2026-08-26T12:00:00.000Z',
-      }]}
-      activeTab="activity"
-      callerId="+18163077835"
-      onTabChange={vi.fn()}
-      onRefreshActivities={vi.fn()}
-    />)
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.restoreAllMocks()
+  })
 
-    expect(screen.getByRole('region', { name: 'Contact notes' })).toBeVisible()
-    expect(screen.getByText('Helen Seller')).toBeVisible()
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('opens on Notes and keeps the approved contact, information, and live-dialer columns', () => {
+    render(<ProspectingCallingContextRail {...baseProps} />)
+
+    expect(screen.getByRole('main', { name: 'Current Contact' })).toBeVisible()
+    expect(screen.getByRole('complementary', { name: 'Prospect information workspace' })).toBeVisible()
+    expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).toBeVisible()
+    expect(screen.getByRole('tab', { name: 'Notes' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('region', { name: 'Notes' })).toBeVisible()
+    expect(screen.queryByText(/Auto-linked to live record/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark as Lead' })).toBeVisible()
     expect(screen.getByText('Daughter handles the estate calls.')).toBeVisible()
-    expect(screen.getByText('Saved by Ernest')).toBeVisible()
-    expect(screen.getByText('1 items')).toBeVisible()
-    expect(screen.getByLabelText('Owner name cells')).toBeVisible()
-    expect(screen.getByLabelText('Situs address cells')).toBeVisible()
-    expect(screen.getByLabelText('Mailing address cells')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Seller answer workspace' }).firstElementChild).toHaveClass(
+      'items-stretch',
+      'lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(11rem,0.72fr)]',
+      '2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]',
+    )
+    expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).toHaveClass('lg:sticky', 'lg:top-3')
+    expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).not.toHaveClass('lg:col-span-2')
+    expect(screen.getByRole('main', { name: 'Current Contact' })).toHaveClass('lg:h-full')
+    expect(screen.getByRole('complementary', { name: 'Prospect information workspace' })).toHaveClass('lg:h-full')
+    expect(screen.getByRole('tabpanel', { name: 'Street View' })).toHaveClass('flex-1')
+    expect(screen.getByRole('tablist', { name: 'Contact tools' })).toHaveClass('prospecting-tool-tabs')
+    expect(screen.queryByText('Answer workspace')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Capture context without leaving/i)).not.toBeInTheDocument()
   })
 
-  it('shows swallowed MI and unit in their own cells without turning MO into Mo', () => {
-    render(<ProspectingCallingContextRail
-      leadId={null}
-      lead={null}
-      prospect={{
-        id: 'prospect-lock',
-        owner_1: 'MOORE BETTY J',
-        owner_1_first: 'BETTY J',
-        owner_1_last: 'MOORE',
-        situs_street: '303 E PARTRIDGE ST UNIT 38',
-        situs_city: 'KANSAS CITY',
-        situs_state: 'MO',
-        situs_zip: '64133',
-        county: 'Jackson',
-        is_deceased: true,
-        occupancy_status: 'absentee',
-        delinquent_years_category: '3yr_plus',
-        mailing_street: '303 E PARTRIDGE ST UNIT B',
-        mailing_city: 'KANSAS CITY',
-        mailing_state: 'MO',
-        mailing_zip: '64133',
-        cumulative_due: 6_000,
-        zestimate: 198_000,
-        total_market_value: 144_000,
-        earliest_delinquent_year: 2024,
-      }}
-      ownerName="Betty J Moore"
-      situsAddress="303 E Partridge St Unit 38, Kansas City, MO 64133"
-      coOwners={[]}
-      occupancy={null}
-      delinquentYears="3+ yr"
-      durableSessionId=""
-      activities={[]}
-      activeTab="activity"
-      callerId="+18163077835"
-      onTabChange={vi.fn()}
-      onRefreshActivities={vi.fn()}
-    />)
+  it('switches between Street View and the actual Zillow page with quick Zestimate', () => {
+    render(<ProspectingCallingContextRail {...baseProps} />)
 
-    expect(screen.getByText('Betty')).toBeVisible()
-    expect(screen.getByText('J')).toBeVisible()
-    expect(screen.getByText('Moore')).toBeVisible()
-    expect(screen.getAllByText('303 E Partridge St').length).toBeGreaterThan(0)
-    expect(screen.getByText('Unit 38')).toBeVisible()
-    expect(screen.getByText('Unit B')).toBeVisible()
-    expect(screen.getAllByText((content) => content === 'MO').length).toBeGreaterThan(0)
+    expect(screen.getByRole('tab', { name: 'Street View' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('tab', { name: 'Zillow' }))
+
+    expect(screen.getByText('Quick Zestimate')).toBeVisible()
+    expect(screen.getByText('$198k')).toBeVisible()
+    const zillow = screen.getByRole('link', { name: /Open the live Zillow page/i })
+    expect(zillow).toHaveAttribute('href', expect.stringContaining('zillow.com/homes/123-Main-Street-Kansas-City-MO-64108_rb'))
+    expect(zillow).toHaveAttribute('target', '_blank')
   })
 
-  it('keeps the Text Hub visible but removes its composer in read-only preview', () => {
-    render(<ProspectingCallingContextRail
-      leadId="lead-1"
-      lead={{
-        id: 'lead-1',
-        full_name: 'Helen Seller',
-        phone: '+18165550123',
-        email: null,
-        property_address: '123 Main Street',
-        city: 'Kansas City',
-        state: 'MO',
-        zip: '64108',
-        county: 'Jackson',
-        is_favorite: false,
-      }}
-      prospect={null}
-      ownerName="Helen Seller"
-      situsAddress="123 Main Street Kansas City, MO 64108"
-      coOwners={[]}
-      occupancy={null}
-      delinquentYears={null}
-      durableSessionId=""
-      activities={[]}
-      activeTab="texts"
-      callerId="+18163077835"
-      readOnlyPreview
-      onTabChange={vi.fn()}
-      onRefreshActivities={vi.fn()}
-    />)
+  it('keeps the useful property facts and report links under Details', () => {
+    render(<ProspectingCallingContextRail {...baseProps} />)
 
-    expect(screen.getByText(/Texting is visible for workflow review but disabled/i)).toBeVisible()
-    expect(screen.queryByRole('textbox', { name: 'Type a text...' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Send text' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }))
+
+    expect(screen.getByRole('region', { name: 'Details' })).toBeVisible()
+    expect(screen.getByText(/Po Box 55, Liberty, MO 64068/i)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'List' })).toHaveAttribute('href', '/prospecting?campaign=campaign-1')
+    expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', '/prospecting/reports?campaign=campaign-1')
+    expect(screen.getByRole('link', { name: 'Recordings' })).toHaveAttribute('href', '/prospecting/reports?campaign=campaign-1&view=recordings')
+  })
+
+  it('keeps the approved fixed column order without drag controls', () => {
+    window.localStorage.setItem('savingkc:prospecting-column-order:v1', JSON.stringify(['information', 'contact', 'dialer']))
+    render(<ProspectingCallingContextRail {...baseProps} />)
+
+    expect(screen.queryByRole('button', { name: /Move .* column/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Drag to arrange/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'Current Contact' }).compareDocumentPosition(screen.getByRole('complementary', { name: 'Prospect information workspace' }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('marks the currently presented source Prospect as a Lead', async () => {
+    const onLeadPromoted = vi.fn()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(input).toBeDefined()
+      void init
+      return {
+        ok: true,
+        json: async () => ({ lead: { id: 'lead-1', full_name: 'Mary Seller', phone: '+18165550123' } }),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProspectingCallingContextRail {...baseProps} onLeadPromoted={onLeadPromoted} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as Lead' }))
+
+    await waitFor(() => expect(onLeadPromoted).toHaveBeenCalledWith(expect.objectContaining({ id: 'lead-1' })))
+    expect(fetchMock).toHaveBeenCalledWith('/api/prospecting/prospects/prospect-1/promote', expect.objectContaining({ method: 'POST' }))
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      campaignMemberId: 'member-1',
+      presentedPhone: '+18165550123',
+    })
+    expect(screen.getByRole('button', { name: 'Marked as Lead' })).toBeDisabled()
+  })
+
+  it('shows all quick-action tabs while locking writes in preview', () => {
+    render(<ProspectingCallingContextRail {...baseProps} readOnlyPreview />)
+
+    expect(screen.getByRole('tab', { name: 'Follow-up' })).toBeVisible()
+    expect(screen.getByRole('tab', { name: 'Appointment' })).toBeVisible()
+    expect(screen.getByRole('tab', { name: 'Mail' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Mark as Lead' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('tab', { name: 'Follow-up' }))
+    expect(screen.getByRole('button', { name: 'Add follow-up' })).toBeDisabled()
   })
 })

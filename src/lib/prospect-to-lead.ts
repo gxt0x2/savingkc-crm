@@ -17,7 +17,7 @@ function getSupabase() {
 export async function createEnrichedLeadFromProspect(
   match: ProspectMatch,
   inboundPhone: string,
-  source: 'tax_delinquent_inbound_call' | 'tax_delinquent_inbound_sms' | 'website_form' | 'youtube' | 'inbound_ivr' | 'cold_call_callback' | 'inbound_call',
+  source: 'tax_delinquent_inbound_call' | 'tax_delinquent_inbound_sms' | 'website_form' | 'youtube' | 'inbound_ivr' | 'cold_call_callback' | 'inbound_call' | 'heir_dialer',
   priority: 'hot' | 'warm',
 ): Promise<string | null> {
   const supabase = getSupabase()

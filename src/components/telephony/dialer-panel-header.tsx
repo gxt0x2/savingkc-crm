@@ -13,12 +13,12 @@ type DialerPanelHeaderProps = {
 export function DialerPanelHeader({ workspace, status, statusDotClass, reconnecting, onReconnect, onClose }: DialerPanelHeaderProps) {
   if (workspace) {
     return (
-      <header className="flex items-center justify-between gap-3 border-b border-[var(--skc-separator)] px-4 py-3">
+      <header className="flex items-center justify-between gap-3 border-b border-[var(--prospecting-border)] px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--skc-text-tertiary)]">Prospecting phone</p>
-          <p className="mt-0.5 truncate text-sm font-black text-[var(--skc-text-primary)]">Call controls</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[var(--ck-text-dim)]">Prospecting phone</p>
+          <p className="mt-0.5 truncate text-sm font-black text-[var(--ck-text)]">Call controls</p>
         </div>
-        <button onClick={onReconnect} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--skc-separator)] bg-[var(--skc-surface-3)] px-3 text-[11px] font-bold text-[var(--skc-text-secondary)] transition-colors hover:bg-[var(--skc-surface-2)]" title="Reconnect the phone">
+        <button onClick={onReconnect} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] px-3 text-[11px] font-bold text-[var(--ck-text-muted)] transition-colors hover:bg-[var(--prospecting-hover)]" title="Reconnect the phone">
           <span className={`h-2 w-2 rounded-full ${statusDotClass} ${reconnecting ? 'animate-pulse' : ''}`} />
           <span>{status}</span>
         </button>

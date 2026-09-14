@@ -42,7 +42,7 @@ describe('prospecting workspace UI contract', () => {
     expect(sessionSetup).toContain('First unworked')
     expect(sessionSetup).toContain('Cold-call numbers')
     expect(sessionSetup).toContain('Rings before no answer')
-    expect(workspace).toContain('savingkc:dialer-autostart:${input.session.id}')
+    expect(workspace).not.toContain('savingkc:dialer-autostart:${input.session.id}')
     expect(workspace).toContain("caller_mode: setup.callerMode")
     expect(workspace).toContain("rotation_numbers: setup.callerIds.join(',')")
     expect(workspace).toContain("ring_count: String(setup.ringCount)")
@@ -113,9 +113,9 @@ describe('prospecting workspace UI contract', () => {
 
   it('shows owner MI, suffix, and unit cells next to first, last, and street', () => {
     expect(callingSellerContext).toContain('formatOwnerDisplayName')
-    expect(callingRail).toContain('ProspectOwnerNameFields')
-    expect(callingRail).toContain('ProspectAddressFields')
-    expect(callingRail).toContain('Situs address cells')
-    expect(callingRail).toContain('Mailing address cells')
+    expect(callingRail).toContain('resolveOwnerDisplay')
+    expect(callingRail).toContain('resolveSitusDisplay')
+    expect(callingRail).toContain('joinOwnerAddress')
+    expect(callingRail).toContain('resolveMailingDisplay')
   })
 })

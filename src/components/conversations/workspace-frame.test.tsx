@@ -3,9 +3,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { useWorkspaceUserEmail, WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
+import { useWorkspaceCallRail, useWorkspaceUserEmail, WorkspaceChrome, WorkspaceFrame } from './workspace-frame'
 
 const useQueryMock = vi.hoisted(() => vi.fn(() => ({ data: undefined, isPending: false })))
+const themeMock = vi.hoisted(() => ({ current: 'light' as 'light' | 'dark' }))
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -30,7 +31,7 @@ vi.mock('@tanstack/react-query', () => ({
 }))
 
 vi.mock('@/hooks/use-theme-preference', () => ({
-  useThemePreference: () => ({ theme: 'light', toggle: vi.fn() }),
+  useThemePreference: () => ({ theme: themeMock.current, toggle: vi.fn() }),
 }))
 
 vi.mock('@/components/telephony/global-dialer-button', () => ({
@@ -50,6 +51,11 @@ vi.mock('./workspace-context-nav', () => ({
 describe('WorkspaceFrame route persistence', () => {
   function ProfileAwareContent() {
     return <p>Active profile: {useWorkspaceUserEmail()}</p>
+  }
+
+  function CallingContent() {
+    const callRail = useWorkspaceCallRail()
+    return <main>Prospecting session<div data-testid="embedded-call-rail">{callRail}</div></main>
   }
 
   it('provides the active viewed profile to profile-aware pages', () => {
@@ -97,18 +103,21 @@ describe('WorkspaceFrame route persistence', () => {
   })
 
   it('replaces the global phone launcher with one dedicated Prospecting call rail', () => {
+    themeMock.current = 'dark'
     render(
       <WorkspaceFrame focusedCalling rightRail={<div>Embedded call controls</div>}>
-        <main>Prospecting session</main>
+        <CallingContent />
       </WorkspaceFrame>,
     )
 
     expect(screen.queryByRole('button', { name: 'Open phone' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('workspace-nav')).not.toBeInTheDocument()
     expect(screen.queryByTestId('workspace-mobile-nav')).not.toBeInTheDocument()
-    expect(screen.getByRole('complementary', { name: 'Prospecting call controls' })).toHaveTextContent('Embedded call controls')
-    expect(screen.getByRole('complementary', { name: 'Prospecting call controls' })).toHaveClass('xl:order-first', 'xl:w-[300px]', 'xl:border-r')
+    expect(screen.getByTestId('embedded-call-rail')).toHaveTextContent('Embedded call controls')
+    expect(screen.queryByRole('complementary', { name: 'Prospecting call controls' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open AI Assistant' })).not.toBeInTheDocument()
+    expect(screen.getByText('Prospecting session').closest('.crm-workspace-shell')).toHaveAttribute('data-theme', 'light')
+    themeMock.current = 'light'
   })
 
   it('does not render a false zero badge while the global conversation count is unknown', () => {

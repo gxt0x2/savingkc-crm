@@ -131,6 +131,19 @@ afterEach(() => {
 })
 
 describe('HeirsSection dial queue', () => {
+  it('renders the focused calling workspace as compact person cards without duplicate note forms', async () => {
+    mockHeirsFetch()
+    renderHeirsSection({ variant: 'calling-compact', readOnlyPreview: true, autoStart: true })
+
+    expect(await screen.findByText('Angela Taylor')).toBeVisible()
+    expect(screen.getByText('Ben Taylor')).toBeVisible()
+    expect(screen.getByText(/Daughter · mobile/i)).toBeVisible()
+    expect(screen.getByText(/Son · verified mobile/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: /Call Angela Taylor at/i })).toBeDisabled()
+    expect(screen.queryByRole('textbox', { name: /Note for/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Re-sync' })).not.toBeInTheDocument()
+  })
+
   it('keeps calling-floor readiness compact beside the primary phone action', async () => {
     mockHeirsFetch()
     renderHeirsSection({ collapsible: false })
@@ -400,7 +413,7 @@ describe('HeirsSection dial queue', () => {
     window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
-  it('auto-starts the next property with the full callable heir queue', async () => {
+  it('loads the next property queue without starting a call', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
@@ -409,7 +422,7 @@ describe('HeirsSection dial queue', () => {
     renderHeirsSection({ autoStart: true })
 
     await waitFor(() => expect(queueEvents).toHaveLength(1))
-    expect(queueEvents[0].detail.autoDial).toBe(true)
+    expect(queueEvents[0].detail.autoDial).toBeUndefined()
     expect(queueEvents[0].detail.queue.map((item: { prospect_phone_id: string }) => item.prospect_phone_id)).toEqual([
       'phone-fresh',
       'phone-no-answer',
@@ -420,7 +433,7 @@ describe('HeirsSection dial queue', () => {
     window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 
-  it('resumes automatic dialing after phone numbers already completed in this session', async () => {
+  it('loads the remaining reviewed numbers after completed attempts', async () => {
     mockHeirsFetch()
     const queueEvents: CustomEvent[] = []
     const onQueue = (event: Event) => queueEvents.push(event as CustomEvent)
@@ -481,7 +494,7 @@ describe('HeirsSection dial queue', () => {
     />)
 
     await waitFor(() => expect(queueEvents).toHaveLength(2))
-    expect(queueEvents[1].detail.autoDial).toBe(true)
+    expect(queueEvents[1].detail.autoDial).toBeUndefined()
     window.removeEventListener(CRM_DIALER_QUEUE_EVENT, onQueue)
   })
 

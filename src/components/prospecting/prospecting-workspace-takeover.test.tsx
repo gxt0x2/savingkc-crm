@@ -182,7 +182,7 @@ describe('ProspectingWorkspace session takeover', () => {
     expect(mocks.routerPush).toHaveBeenCalledWith(expect.stringMatching(
       new RegExp(`^/prospecting\\?session_id=${existingSessionId}&campaign=${existingCampaignId}`),
     ))
-    expect(window.sessionStorage.getItem(`savingkc:dialer-autostart:${existingSessionId}`)).toBe('1')
+    expect(window.sessionStorage.getItem(`savingkc:dialer-autostart:${existingSessionId}`)).toBeNull()
   })
 
   it('stays on the campaign and shows the transfer error when the automatic takeover fails', async () => {

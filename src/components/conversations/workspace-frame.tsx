@@ -15,6 +15,7 @@ import { GiraffeAssistantLauncher } from '@/components/ai/giraffe-assistant-laun
 
 type WorkspaceChromeContextValue = {
   callRailOpen: boolean
+  callRail: ReactNode
   commandBarHost: HTMLDivElement | null
   userEmail: string | null
   setCommandBarActive: (active: boolean) => void
@@ -61,6 +62,10 @@ export function useWorkspaceCallRailOpen() {
   return useContext(WorkspaceChromeContext)?.callRailOpen ?? false
 }
 
+export function useWorkspaceCallRail() {
+  return useContext(WorkspaceChromeContext)?.callRail ?? null
+}
+
 export function WorkspaceFrame({
   children,
   needsReply,
@@ -92,6 +97,7 @@ export function WorkspaceFrame({
   const [pageHeaderHidden, setPageHeaderHidden] = useState(false)
   const [commandBarHost, setCommandBarHost] = useState<HTMLDivElement | null>(null)
   const { theme, toggle: toggleTheme } = useThemePreference()
+  const resolvedTheme = focusedCalling ? 'light' : theme
   const userProfile = useMemo(() => resolveAgentTelephonyProfile(userEmail), [userEmail])
   const needsReplyKnownByPage = pageNeedsReply !== undefined || needsReply !== undefined
   const { data: attentionPayload, isPending: attentionPending } = useQuery({
@@ -109,6 +115,7 @@ export function WorkspaceFrame({
   const resolvedCommandBarActive = Boolean(commandBar) || pageCommandBarActive
   const chromeContextValue = useMemo<WorkspaceChromeContextValue>(() => ({
     callRailOpen: Boolean(rightRail),
+    callRail: rightRail ?? null,
     commandBarHost,
     userEmail: userEmail ?? null,
     setCommandBarActive: setPageCommandBarActive,
@@ -134,10 +141,9 @@ export function WorkspaceFrame({
   return (
     <div
       className="crm-workspace-shell flex h-[100dvh] overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
-      data-theme={theme}
+      data-theme={resolvedTheme}
     >
       {focusedCalling ? null : <WorkspaceNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />}
-      {focusedCalling ? callRail : null}
       <div className="flex min-w-0 flex-1 flex-col">
         <WorkspaceChromeContext.Provider value={chromeContextValue}>
           {resolvedHideHeader ? null : <header className={`crm-shell-header relative z-[60] flex shrink-0 flex-col overflow-visible border-b px-3 pb-2 pt-[max(.5rem,env(safe-area-inset-top))] backdrop-blur md:flex-row md:items-center md:gap-5 md:px-6 md:py-2 ${resolvedCommandBarActive ? 'md:min-h-[76px]' : 'md:h-[62px]'}`}>

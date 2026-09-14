@@ -2,28 +2,41 @@
 
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { useMemo } from 'react'
+import {
+  type ReactNode,
+  useMemo,
+  useState,
+} from 'react'
 
 import { CommsSummaryBar, CommsTimeline } from '@/components/leads/comms-timeline'
-import { Icon } from '@/components/ui/icon'
+import { useWorkspaceCallRail } from '@/components/conversations/workspace-frame'
+import { ProspectingNotesPanel } from '@/components/prospecting/prospecting-notes-panel'
+import {
+  ProspectingWrapUpActions,
+  type ProspectingWrapUpAction,
+} from '@/components/prospecting/prospecting-wrap-up-actions'
 import type {
   ProspectingCallingLead,
   ProspectingCallingProspect,
-  ProspectingCallingTab,
   ProspectingOccupancy,
 } from '@/components/prospecting/prospecting-calling-types'
-import { ProspectAddressFields, ProspectOwnerNameFields } from '@/components/prospecting/prospect-display-fields'
-import { ProspectingWrapUpActions } from '@/components/prospecting/prospecting-wrap-up-actions'
+import { Icon } from '@/components/ui/icon'
 import { buildCommsTimeline, summarizeComms } from '@/lib/comms-timeline'
-import { toProperCase } from '@/lib/format'
 import type { DialerActivity } from '@/lib/dialer-lead-activity'
-import { resolveMailingDisplay, resolveOwnerDisplay, resolveSitusDisplay } from '@/lib/owner-display'
+import { toProperCase } from '@/lib/format'
+import { joinOwnerAddress, resolveMailingDisplay, resolveOwnerDisplay, resolveSitusDisplay } from '@/lib/owner-display'
+import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
 
-const DialerAiAssist = dynamic(() => import('@/components/dialer/dialer-ai-assist').then((module) => module.DialerAiAssist))
-const SmsThreadPanel = dynamic(() => import('@/components/leads/sms-thread-panel').then((module) => module.SmsThreadPanel))
+const StreetViewPanel = dynamic(() => import('@/components/leads/google-map-panel').then((module) => module.StreetViewPanel), {
+  ssr: false,
+  loading: () => <div className="grid h-full min-h-[150px] place-items-center bg-[var(--ck-surface-elev)] text-xs text-[var(--ck-text-muted)]">Loading Street View…</div>,
+})
+
+type InformationTab = 'notes' | 'details' | ProspectingWrapUpAction
 
 interface ProspectingCallingContextRailProps {
-  fullWidth?: boolean
+  primaryWorkspace?: ReactNode
+  campaignId?: string | null
   leadId: string | null
   lead: ProspectingCallingLead | null
   prospect: ProspectingCallingProspect | null
@@ -34,13 +47,20 @@ interface ProspectingCallingContextRailProps {
   delinquentYears: string | null
   durableSessionId: string
   campaignMemberId?: string | null
+  presentedPhone?: string | null
   activities: DialerActivity[]
-  activeTab: ProspectingCallingTab
-  callerId: string
   readOnlyPreview?: boolean
-  onTabChange: (tab: ProspectingCallingTab) => void
+  onLeadPromoted?: (lead: ProspectingCallingLead) => void
   onRefreshActivities: () => void
 }
+
+const INFORMATION_TABS: Array<{ id: InformationTab; label: string; icon: string }> = [
+  { id: 'notes', label: 'Notes', icon: 'edit_note' },
+  { id: 'details', label: 'Details', icon: 'contact_page' },
+  { id: 'follow_up', label: 'Follow-up', icon: 'event_repeat' },
+  { id: 'appointment', label: 'Appointment', icon: 'calendar_month' },
+  { id: 'mail', label: 'Mail', icon: 'mail' },
+]
 
 function compactDollars(value: number | null | undefined): string {
   if (!value || value <= 0) return '—'
@@ -49,31 +69,34 @@ function compactDollars(value: number | null | undefined): string {
   return `$${value.toLocaleString()}`
 }
 
-function contactNoteLabel(activity: DialerActivity): string {
-  const contactName = activity.metadata?.contact_name
-  return typeof contactName === 'string' && contactName.trim() ? contactName.trim() : 'Associated contact'
+function zillowPropertyUrl(address: string): string {
+  const slug = address.trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return slug ? `https://www.zillow.com/homes/${encodeURIComponent(slug)}_rb/` : 'https://www.zillow.com/'
 }
 
-function contactNoteTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'America/Chicago',
-  }).format(date)
+function ColumnHeader({ label, tone }: { label: string; tone: 'contact' | 'information' | 'dialer' }) {
+  const dot = tone === 'contact'
+    ? 'bg-[var(--prospecting-primary)]'
+    : tone === 'information'
+      ? 'bg-[var(--ck-text-dim)]'
+      : 'bg-[var(--prospecting-primary)]'
+  return <div className="flex min-h-9 w-full items-center gap-2 border-b border-[var(--ck-border)] bg-[var(--prospecting-header)] px-3 text-[11px] font-semibold text-[var(--ck-text-muted)]">
+    <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
+    {label}
+  </div>
 }
 
 export function ProspectingCallingContextRail(props: ProspectingCallingContextRailProps) {
+  const callRail = useWorkspaceCallRail()
+  const [activeInfoTab, setActiveInfoTab] = useState<InformationTab>('notes')
+  const [propertyTab, setPropertyTab] = useState<'street' | 'zillow'>('street')
+  const [leadState, setLeadState] = useState<'idle' | 'saving' | 'saved'>(() => props.leadId ? 'saved' : 'idle')
+  const [leadError, setLeadError] = useState<string | null>(null)
   const commsEvents = useMemo(() => buildCommsTimeline(props.activities), [props.activities])
   const commsSummary = useMemo(() => summarizeComms(commsEvents), [commsEvents])
   const contactNotes = useMemo(() => props.activities.filter((activity) => (
-    activity.activity_type === 'note'
-    && activity.metadata?.source === 'prospecting_contact_note'
+    activity.activity_type === 'note' && activity.metadata?.source === 'prospecting_contact_note'
   )), [props.activities])
-  const historyCount = commsEvents.length + contactNotes.length
   const owner = useMemo(() => resolveOwnerDisplay(props.prospect, props.lead?.full_name), [props.prospect, props.lead])
   const situs = useMemo(() => resolveSitusDisplay(props.prospect, {
     street: props.lead?.property_address,
@@ -82,94 +105,157 @@ export function ProspectingCallingContextRail(props: ProspectingCallingContextRa
     zip: props.lead?.zip,
   }), [props.prospect, props.lead])
   const mailing = useMemo(() => resolveMailingDisplay(props.prospect), [props.prospect])
+  const situsLine = useMemo(() => joinOwnerAddress(situs) || props.situsAddress || 'Address unavailable', [situs, props.situsAddress])
+  const mailingLine = useMemo(() => joinOwnerAddress(mailing), [mailing])
+  const currentPhone = props.presentedPhone || props.lead?.phone || null
+  const zillowUrl = zillowPropertyUrl(situsLine === 'Address unavailable' ? '' : situsLine)
+  const campaignQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}` : ''
+  const reportsQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}` : ''
+  const recordingsQuery = props.campaignId ? `?campaign=${encodeURIComponent(props.campaignId)}&view=recordings` : '?view=recordings'
+  const recordKey = props.prospect?.id || props.leadId || 'current'
 
-  return <aside aria-label="Seller context" className={`order-2 col-span-12 space-y-3 lg:self-start ${props.fullWidth ? 'lg:col-span-12' : 'lg:sticky lg:top-[168px] lg:col-span-4 lg:max-h-[calc(100vh-184px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1'}`}>
+  async function markAsLead() {
+    if (props.readOnlyPreview || leadState === 'saving' || leadState === 'saved') return
+    if (!props.prospect?.id) {
+      setLeadError('This record is already connected to the CRM Lead workspace.')
+      return
+    }
+    setLeadState('saving')
+    setLeadError(null)
+    try {
+      const response = await withDialerSessionControlOperation(props.durableSessionId, 'Marking current record as Lead', (controlHeaders, signal) => fetch(`/api/prospecting/prospects/${encodeURIComponent(props.prospect!.id)}/promote`, {
+        method: 'POST',
+        signal,
+        headers: { 'Content-Type': 'application/json', ...controlHeaders },
+        body: JSON.stringify({
+          dialerSessionId: props.durableSessionId,
+          campaignMemberId: props.campaignMemberId || null,
+          presentedPhone: currentPhone,
+        }),
+      }))
+      const payload = await response.json().catch(() => null) as { error?: string; lead?: ProspectingCallingLead } | null
+      if (!response.ok || !payload?.lead) throw new Error(payload?.error || 'The record could not be marked as a Lead')
+      setLeadState('saved')
+      props.onLeadPromoted?.(payload.lead)
+      props.onRefreshActivities()
+    } catch (error) {
+      setLeadState('idle')
+      setLeadError(error instanceof Error ? error.message : 'The record could not be marked as a Lead')
+    }
+  }
 
-    <ProspectingWrapUpActions
-      key={`actions:${props.prospect?.id || props.leadId || 'current'}`}
-      leadId={props.leadId}
-      prospectId={props.prospect?.id || null}
-      campaignMemberId={props.campaignMemberId || null}
-      dialerSessionId={props.durableSessionId}
-      sellerName={props.ownerName}
-      propertyAddress={props.situsAddress}
-      activities={props.activities}
-      readOnly={Boolean(props.readOnlyPreview)}
-      onRefresh={props.onRefreshActivities}
-    />
-
-    <section className="ck-card p-4">
-      <div className="mb-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Subject property</p>
-            <h1 className="truncate text-xl font-black leading-tight text-[var(--ck-text)]">{situs.street || '—'}</h1>
-          </div>
-          {props.leadId ? <Link href={`/leads/${props.leadId}`} prefetch={false} target="_blank" title="Open full lead profile in a new tab" className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)] transition-colors hover:border-[var(--ck-border-strong)] hover:text-[var(--ck-text)]">Profile <Icon name="open_in_new" size="text-xs" /></Link>
-            : <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">Source Prospect</span>}
+  const contactColumn = <main
+    aria-label="Current Contact"
+    className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm lg:h-full"
+  >
+    <ColumnHeader label="Current Contact" tone="contact" />
+    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold tracking-[-0.02em] text-[var(--ck-text)]">{owner.fullName || props.ownerName}</h1>
+          <p className="mt-1 text-xs leading-5 text-[var(--ck-text-muted)]">{situsLine}</p>
         </div>
-        <ProspectAddressFields label="Situs address cells" address={situs} />
-        <div className="mt-3">
-          <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Mailing</p>
-          <ProspectAddressFields label="Mailing address cells" address={mailing} />
+        <div className="grid shrink-0 gap-2">
+          <button type="button" aria-pressed={leadState === 'saved'} disabled={Boolean(props.readOnlyPreview || leadState !== 'idle')} onClick={() => { void markAsLead() }} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[var(--prospecting-primary)] bg-transparent px-3 text-xs font-semibold text-[var(--prospecting-primary)] transition-colors hover:bg-[var(--prospecting-primary-soft)] disabled:cursor-not-allowed"><Icon name={leadState === 'saving' ? 'progress_activity' : leadState === 'saved' ? 'verified' : 'person_add'} size="text-sm" className={leadState === 'saving' ? 'animate-spin' : ''} />{leadState === 'saving' ? 'Saving…' : leadState === 'saved' ? 'Marked as Lead' : 'Mark as Lead'}</button>
         </div>
-      </div>
+      </header>
+      {leadError ? <p role="alert" className="rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-danger)]">{leadError}</p> : null}
 
-      <div className="mb-3 rounded-lg border border-[var(--crm-brand-border)] bg-[var(--crm-brand-soft)] p-3">
-        <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[#E32E2E]">Owner of record</p>
-        <p className="text-sm font-bold text-[var(--ck-text)]">{owner.fullName || props.ownerName}</p>
-        <div className="mt-2"><ProspectOwnerNameFields owner={owner} /></div>
-        <p className="mt-2 text-[10px] uppercase tracking-wider text-[var(--ck-text-dim)]">{props.prospect?.is_deceased === true ? 'Deceased owner · contact the associated people below' : 'Owner record · contact the associated people below'}</p>
-        {props.coOwners.length > 0 ? <div className="mt-3 border-t border-[#E32E2E]/20 pt-3"><p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Co-owners on title</p><ul className="space-y-0.5">{props.coOwners.map((name) => <li key={name} className="flex items-center gap-1.5 text-xs text-[var(--ck-text)]"><Icon name="person" size="text-xs" className="text-[var(--ck-text-dim)]" />{toProperCase(name)}</li>)}</ul></div> : null}
-      </div>
+      {props.primaryWorkspace}
 
-      <div className="mb-3 flex flex-wrap gap-2">
-        {props.occupancy ? <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${props.occupancy.tone === 'warn' ? 'border-[#E32E2E]/40 bg-[#E32E2E]/15 text-[#E32E2E]' : props.occupancy.tone === 'amber' ? 'border-amber-500/30 bg-amber-500/15 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400'}`}>{props.occupancy.label}</span> : null}
-        {props.prospect?.county ? <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">{props.prospect.county} county</span> : null}
-        {props.delinquentYears ? <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400">{props.delinquentYears} delinquent</span> : null}
-        {props.prospect?.earliest_delinquent_year ? <span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--ck-text-muted)]">since {props.prospect.earliest_delinquent_year}</span> : null}
-      </div>
+      <section aria-label="Property lookup" className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)]">
+        <div role="tablist" aria-label="Property lookup" className="grid grid-cols-2 border-b border-[var(--ck-border)] p-1">
+          {(['street', 'zillow'] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={propertyTab === tab} onClick={() => setPropertyTab(tab)} className={`min-h-9 rounded-lg text-xs font-black ${propertyTab === tab ? 'bg-[var(--ck-surface)] text-[var(--ck-text)] shadow-sm' : 'text-[var(--ck-text-muted)]'}`}>{tab === 'street' ? 'Street View' : 'Zillow'}</button>)}
+        </div>
+        {propertyTab === 'street' ? <div role="tabpanel" aria-label="Street View" className="min-h-[150px] flex-1 overflow-hidden"><StreetViewPanel address={situsLine} height="100%" /></div>
+          : <div role="tabpanel" aria-label="Zillow" className="flex flex-1 flex-col gap-3 p-4">
+            <div className="flex items-end justify-between gap-3 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-3">
+              <div><p className="text-[9px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Quick Zestimate</p><p className="mt-1 text-2xl font-black text-[var(--ck-text)]">{compactDollars(props.prospect?.zestimate)}</p></div>
+              <span className="text-[10px] font-bold text-[var(--ck-text-muted)]">Saved property estimate</span>
+            </div>
+            <a href={zillowUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open the live Zillow page for ${situsLine}`} className="flex min-h-20 items-center gap-3 rounded-xl border border-[var(--prospecting-info)]/35 bg-[var(--prospecting-info-soft)] p-4 text-[var(--ck-text)] transition-colors hover:border-[var(--prospecting-info)]">
+              <Icon name="open_in_new" size="text-xl" className="text-[var(--prospecting-info)]" />
+              <span className="min-w-0"><strong className="block text-sm font-black">Live Zillow property page</strong><span className="mt-1 block truncate text-xs text-[var(--ck-text-muted)]">{situsLine}</span></span>
+            </a>
+          </div>}
+      </section>
+    </div>
+  </main>
 
-      <div className="grid grid-cols-3 gap-2">
-        {[['Taxes owed', compactDollars(props.prospect?.cumulative_due), 'text-[#E32E2E]'], ['Zestimate', compactDollars(props.prospect?.zestimate), 'text-[var(--ck-text)]'], ['Market', compactDollars(props.prospect?.total_market_value), 'text-[var(--ck-text)]']].map(([label, value, tone]) => <div key={label} className="ck-card-elev p-3"><p className="mb-1 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{label}</p><p className={`text-lg font-black tabular-nums ${tone}`}>{value}</p></div>)}
-      </div>
-    </section>
+  const informationColumn = <aside
+    aria-label="Prospect information workspace"
+    className="prospecting-information-panel flex min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm lg:h-full"
+  >
+    <ColumnHeader label="Information" tone="information" />
+    <div role="tablist" aria-label="Contact tools" className="prospecting-tool-tabs w-full border-b border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-1">
+      {INFORMATION_TABS.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeInfoTab === tab.id} onClick={() => setActiveInfoTab(tab.id)} className={`flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 text-[10px] font-bold whitespace-nowrap transition-colors ${activeInfoTab === tab.id ? 'bg-[var(--prospecting-primary-soft)] text-[var(--prospecting-primary)] shadow-sm ring-1 ring-inset ring-[var(--prospecting-primary)]/35' : 'text-[var(--ck-text-muted)] hover:bg-[var(--prospecting-hover)] hover:text-[var(--ck-text)]'}`}><Icon name={tab.icon} size="text-base" className="shrink-0" /><span className="min-w-0 truncate">{tab.label}</span></button>)}
+    </div>
+    <div className="flex min-h-0 flex-1 flex-col p-4">
+      {activeInfoTab === 'notes' ? <ProspectingNotesPanel
+        key={`notes:${recordKey}`}
+        leadId={props.leadId}
+        prospectId={props.prospect?.id || null}
+        campaignMemberId={props.campaignMemberId || null}
+        dialerSessionId={props.durableSessionId}
+        sellerName={props.ownerName}
+        recordKind={props.leadId ? 'Lead' : 'Source Prospect'}
+        notes={contactNotes}
+        readOnly={Boolean(props.readOnlyPreview)}
+        onSaved={props.onRefreshActivities}
+      /> : null}
 
-    {props.lead ? <DialerAiAssist key={`${props.durableSessionId || 'legacy'}:${props.lead.id}`} sessionId={props.durableSessionId} leadId={props.lead.id} /> : null}
+      {activeInfoTab === 'details' ? <section aria-label="Details" className="space-y-4">
+        <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--ck-text-dim)]">Reference</p><h2 className="mt-0.5 text-sm font-black text-[var(--ck-text)]">Details</h2></div><span className="rounded-full border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-2 py-1 text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-muted)]">{props.leadId ? 'Lead' : 'Source Prospect'}</span></div>
+        <dl className="grid gap-2 sm:grid-cols-2">
+          {[
+            ['Subject property', situsLine],
+            ['Owner of record', owner.fullName || props.ownerName],
+            ['Mailing address', mailingLine || 'Not on file'],
+            ['Taxes owed', compactDollars(props.prospect?.cumulative_due)],
+            ['Market value', compactDollars(props.prospect?.total_market_value)],
+            ['Occupancy', props.occupancy?.label || 'Unknown'],
+          ].map(([label, value], index) => <div key={label} className={`rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3 ${index < 3 ? 'sm:col-span-2' : ''}`}><dt className="text-[9px] font-black uppercase tracking-wider text-[var(--ck-text-dim)]">{label}</dt><dd className="mt-1 text-xs font-bold leading-5 text-[var(--ck-text)]">{value}</dd></div>)}
+        </dl>
+        {props.coOwners.length > 0 ? <div className="flex flex-wrap gap-2">{props.coOwners.map((name) => <span key={name} className="rounded-full border border-[var(--ck-border)] px-2 py-1 text-[10px] font-bold">{toProperCase(name)}</span>)}</div> : null}
+        <nav aria-label="Current record links" className="grid grid-cols-2 gap-2">
+          <Link href={`/prospecting${campaignQuery}`} className="crm-secondary-button inline-flex min-h-10 items-center justify-center gap-1 text-xs font-black"><Icon name="view_list" size="text-sm" />List</Link>
+          <Link href={`/prospecting/reports${reportsQuery}`} className="crm-secondary-button inline-flex min-h-10 items-center justify-center gap-1 text-xs font-black"><Icon name="analytics" size="text-sm" />Report</Link>
+          <Link href={`/prospecting/reports${recordingsQuery}`} className="crm-secondary-button inline-flex min-h-10 items-center justify-center gap-1 text-xs font-black"><Icon name="graphic_eq" size="text-sm" />Recordings</Link>
+          {props.leadId ? <Link href={`/leads/${props.leadId}`} target="_blank" className="crm-secondary-button inline-flex min-h-10 items-center justify-center gap-1 text-xs font-black"><Icon name="open_in_new" size="text-sm" />Lead profile</Link> : <span className="grid min-h-10 place-items-center rounded-lg border border-[var(--ck-border)] text-[10px] font-bold text-[var(--ck-text-muted)]">Profile after promotion</span>}
+        </nav>
+        {commsEvents.length > 0 ? <section aria-label="Recent communication history" className="space-y-3 border-t border-[var(--ck-border)] pt-4"><CommsSummaryBar summary={commsSummary} /><div className="max-h-72 overflow-y-auto"><CommsTimeline events={commsEvents} /></div></section> : <p className="rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-3 text-xs text-[var(--ck-text-muted)]">No communication history has been recorded for this seller yet.</p>}
+      </section> : null}
 
-
-
-    <section aria-label="Seller communication workspace" className="ck-card p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="inline-flex rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-0.5">{([['texts', 'Text Hub'], ['activity', 'History']] as const).map(([tab, label]) => <button key={tab} type="button" onClick={() => props.onTabChange(tab)} className={`rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${props.activeTab === tab ? 'bg-[var(--crm-brand)] text-white' : 'text-[var(--ck-text-dim)] hover:text-[var(--ck-text)]'}`}>{label}</button>)}</div>
-        <span className="text-[10px] text-[var(--ck-text-dim)]">{props.activeTab === 'texts' ? `${commsSummary.sms} texts` : `${historyCount} items`}</span>
-      </div>
-      <div className="max-h-[360px] overflow-y-auto overscroll-contain pr-1">
-        {props.activeTab === 'texts' ? props.readOnlyPreview
-        ? <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-xs leading-5 text-[var(--ck-text-muted)]">Texting is visible for workflow review but disabled in read-only preview. Start a live calling session to send a message.</div>
-        : props.leadId
-        ? <SmsThreadPanel key={props.leadId} leadId={props.leadId} leadName={props.ownerName} phone={props.lead?.phone} propertyAddress={props.situsAddress} activities={props.activities} defaultFromPhone={props.callerId || null} dialerSessionId={props.durableSessionId || null} onRefresh={props.onRefreshActivities} />
-        : <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-xs leading-5 text-[var(--ck-text-muted)]">SMS stays locked until a reviewed recipient is selected from the campaign audience. Calling this source Prospect does not create a Lead.</div>
-        : <div className="space-y-3">
-          {contactNotes.length > 0 ? <section aria-label="Contact notes" className="space-y-2">
-            <p className="text-[9px] font-black uppercase tracking-[0.12em] text-[var(--ck-text-dim)]">Contact notes</p>
-            {contactNotes.map((activity) => <article key={activity.id} className="rounded-lg border border-[var(--crm-info-border)] bg-[var(--crm-info-soft)] p-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-xs font-black text-[var(--ck-text)]">{contactNoteLabel(activity)}</p>
-                <time dateTime={activity.created_at} className="shrink-0 text-[9px] font-bold text-[var(--ck-text-dim)]">{contactNoteTime(activity.created_at)}</time>
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-[var(--ck-text-muted)]">{activity.description || 'Note saved without details.'}</p>
-              {activity.agent ? <p className="mt-1.5 text-[9px] font-bold uppercase tracking-wider text-[var(--ck-text-dim)]">Saved by {activity.agent}</p> : null}
-            </article>)}
-          </section> : null}
-          {commsEvents.length > 0 ? <>
-            <CommsSummaryBar summary={commsSummary} />
-            <div className="border-t border-[var(--ck-border)] pt-3"><CommsTimeline events={commsEvents} /></div>
-          </> : contactNotes.length === 0 ? <p className="rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] p-4 text-xs leading-5 text-[var(--ck-text-muted)]">No calls, texts, emails, notes, or next actions logged for this seller yet.</p> : null}
-        </div>}
-      </div>
-      {props.leadId ? <Link href={`/conversations?lead=${encodeURIComponent(props.leadId)}`} prefetch={false} className="mt-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-brand)] hover:underline">Open full conversation <Icon name="arrow_forward" size="text-xs" /></Link> : null}
-    </section>
-
+      {activeInfoTab === 'follow_up' || activeInfoTab === 'appointment' || activeInfoTab === 'mail' ? <ProspectingWrapUpActions
+        key={`${recordKey}:${activeInfoTab}`}
+        variant="tab"
+        action={activeInfoTab}
+        leadId={props.leadId}
+        prospectId={props.prospect?.id || null}
+        campaignMemberId={props.campaignMemberId || null}
+        dialerSessionId={props.durableSessionId}
+        sellerName={props.ownerName}
+        propertyAddress={props.situsAddress}
+        activities={props.activities}
+        readOnly={Boolean(props.readOnlyPreview)}
+        onRefresh={props.onRefreshActivities}
+      /> : null}
+    </div>
   </aside>
+
+  const dialerColumn = <aside
+    aria-label="Persistent live dialer controls"
+    className="prospecting-dialer-control-surface min-w-0 self-start overflow-hidden rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-panel)] shadow-sm lg:sticky lg:top-3"
+  >
+    <ColumnHeader label="Live Dialer" tone="dialer" />
+    <div className="min-h-0">{callRail || <div className="grid min-h-40 place-items-center p-5 text-center text-xs text-[var(--ck-text-muted)]">Live dialer controls load with the calling session.</div>}</div>
+  </aside>
+
+  return <section aria-label="Seller answer workspace" className="min-w-0">
+    <div className="grid min-w-0 grid-cols-1 items-stretch gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(11rem,0.72fr)] 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]">
+      {contactColumn}
+      {informationColumn}
+      {dialerColumn}
+    </div>
+  </section>
 }

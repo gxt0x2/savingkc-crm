@@ -1,0 +1,216 @@
+.prospecting-tool-tabs {
+  scrollbar-color: #686d73 transparent;
+  scrollbar-width: thin;
+}
+
+.prospecting-tool-tabs::-webkit-scrollbar {
+  height: 6px;
+}
+
+.prospecting-tool-tabs::-webkit-scrollbar-thumb {
+  background: #686d73;
+  border-radius: 999px;
+}
+
+.prospecting-tool-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ─── Prospecting answer workspace ────────────────────────────────────────
+ * This console has its own high-density surface ladder so light mode is a
+ * designed interface, not a washed-out inversion of the dark cockpit.
+ */
+.prospecting-answer-workspace {
+  --prospecting-canvas: #131719;
+  --prospecting-header: #0f1214;
+  --prospecting-panel: #1c2225;
+  --prospecting-elevated: #252c30;
+  --prospecting-hover: #30383d;
+  --prospecting-border: #3a4449;
+  --prospecting-border-strong: #6d7b82;
+  --prospecting-text: #f3f5f6;
+  --prospecting-muted: #b5bec3;
+  --prospecting-dim: #829097;
+  --prospecting-primary: #67b3ca;
+  --prospecting-primary-strong: #2f788e;
+  --prospecting-primary-soft: #17343e;
+  --prospecting-on-primary: #0b1b20;
+  --prospecting-danger: #ef6a7b;
+  --prospecting-danger-hover: #d85668;
+  --prospecting-danger-soft: #3b2227;
+  --prospecting-success: #5dc7a6;
+  --prospecting-success-strong: #2d8069;
+  --prospecting-success-soft: #143a31;
+  --prospecting-on-success: #0d211b;
+  --prospecting-warning: #e6b85c;
+  --prospecting-warning-soft: #3d321d;
+  --prospecting-warning-ink: #f0c872;
+  --prospecting-on-warning: #231a08;
+  --prospecting-paused: #30383d;
+  --prospecting-on-paused: #ffffff;
+  --prospecting-info: #76a9d4;
+  --prospecting-info-soft: #1c3041;
+  --ck-bg: var(--prospecting-canvas);
+  --ck-surface: var(--prospecting-panel);
+  --ck-surface-elev: var(--prospecting-elevated);
+  --ck-surface-hi: var(--prospecting-hover);
+  --ck-border: var(--prospecting-border);
+  --ck-border-strong: var(--prospecting-border-strong);
+  --ck-text: var(--prospecting-text);
+  --ck-text-muted: var(--prospecting-muted);
+  --ck-text-dim: var(--prospecting-dim);
+  --ck-accent: var(--prospecting-primary);
+  --ck-accent-bright: var(--prospecting-primary-strong);
+  --ck-warn: var(--prospecting-warning);
+  --ck-success: var(--prospecting-success);
+  --ck-info: var(--prospecting-info);
+  background: var(--prospecting-canvas);
+  color: var(--prospecting-text);
+  color-scheme: dark;
+}
+
+.crm-workspace-shell[data-theme="light"] .prospecting-answer-workspace {
+  --prospecting-canvas: var(--crm-canvas);
+  --prospecting-header: var(--crm-surface);
+  --prospecting-panel: var(--crm-surface);
+  --prospecting-elevated: var(--crm-surface-subtle);
+  --prospecting-hover: var(--crm-surface-hover);
+  --prospecting-border: var(--crm-border);
+  --prospecting-border-strong: var(--crm-border-strong);
+  --prospecting-text: var(--crm-ink);
+  --prospecting-muted: var(--crm-text-muted);
+  --prospecting-dim: var(--crm-text-dim);
+  --prospecting-primary: var(--crm-brand);
+  --prospecting-primary-strong: var(--crm-brand-hover);
+  --prospecting-primary-soft: var(--crm-brand-soft);
+  --prospecting-on-primary: var(--crm-on-brand);
+  --prospecting-danger: var(--crm-danger);
+  --prospecting-danger-hover: var(--crm-brand-hover);
+  --prospecting-danger-soft: var(--crm-danger-soft);
+  --prospecting-success: var(--crm-success);
+  --prospecting-success-strong: var(--crm-success);
+  --prospecting-success-soft: var(--crm-success-soft);
+  --prospecting-on-success: #ffffff;
+  --prospecting-warning: var(--crm-charcoal);
+  --prospecting-warning-soft: var(--crm-surface-subtle);
+  --prospecting-warning-ink: var(--crm-charcoal);
+  --prospecting-on-warning: #ffffff;
+  --prospecting-paused: var(--crm-charcoal);
+  --prospecting-on-paused: #ffffff;
+  --prospecting-info: var(--crm-text-muted);
+  --prospecting-info-soft: var(--crm-surface-subtle);
+  color-scheme: light;
+}
+
+.crm-workspace-shell[data-theme="light"] .prospecting-answer-workspace :is(input, textarea, select) {
+  color-scheme: light;
+}
+
+/* The disposition rail is an operational instrument: it stays charcoal in
+   either theme so the red results and call controls remain unmistakable. */
+.prospecting-dialer-control-surface {
+  --prospecting-panel: #20262d;
+  --prospecting-header: #1b2127;
+  --prospecting-elevated: #3c4551;
+  --prospecting-hover: #46515e;
+  --prospecting-border: #36404a;
+  --prospecting-border-strong: #596572;
+  --prospecting-text: #f7f8fa;
+  --prospecting-muted: #c8ced5;
+  --prospecting-dim: #98a2ad;
+  --prospecting-primary: #2f788e;
+  --prospecting-primary-strong: #27677a;
+  --prospecting-on-primary: #ffffff;
+  --ck-text: var(--prospecting-text);
+  --ck-text-muted: var(--prospecting-muted);
+  --ck-text-dim: var(--prospecting-dim);
+  color-scheme: dark;
+}
+
+/* The answer workspace is one light-theme product surface. The dialer keeps
+   its strong red dispositions, but no longer becomes a separate dark UI. */
+.crm-workspace-shell[data-theme="light"] .prospecting-answer-workspace .prospecting-dialer-control-surface {
+  --prospecting-panel: var(--crm-surface);
+  --prospecting-header: var(--crm-surface);
+  --prospecting-elevated: var(--crm-surface-subtle);
+  --prospecting-hover: var(--crm-surface-hover);
+  --prospecting-border: var(--crm-border);
+  --prospecting-border-strong: var(--crm-border-strong);
+  --prospecting-text: var(--crm-ink);
+  --prospecting-muted: var(--crm-text-muted);
+  --prospecting-dim: var(--crm-text-dim);
+  --prospecting-primary: var(--crm-brand);
+  --prospecting-primary-strong: var(--crm-brand-hover);
+  --prospecting-primary-soft: var(--crm-brand-soft);
+  --prospecting-on-primary: var(--crm-on-brand);
+  --ck-text: var(--crm-ink);
+  --ck-text-muted: var(--crm-text-muted);
+  --ck-text-dim: var(--crm-text-dim);
+  color-scheme: light;
+}
+
+.prospecting-dialer-secondary-button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border: 1px solid #4d5865;
+  border-radius: 0.75rem;
+  background: #3c4551;
+  padding: 0.5rem 0.75rem;
+  color: #f4f6f8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.prospecting-dialer-secondary-button:enabled:hover {
+  border-color: #687583;
+  background: #46515e;
+}
+
+.prospecting-dialer-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.crm-workspace-shell[data-theme="light"] .prospecting-answer-workspace .prospecting-dialer-secondary-button {
+  border-color: var(--crm-border-strong);
+  background: var(--crm-surface-subtle);
+  color: var(--crm-text);
+}
+
+.crm-workspace-shell[data-theme="light"] .prospecting-answer-workspace .prospecting-dialer-secondary-button:enabled:hover {
+  border-color: var(--crm-brand-border);
+  background: var(--crm-brand-soft);
+  color: var(--crm-brand);
+}
+
+.crm-workspace-shell[data-theme="light"] .prospecting-answer-workspace .prospecting-dialer-secondary-button:disabled {
+  opacity: 0.62;
+}
+
+.prospecting-information-panel {
+  container-type: inline-size;
+}
+
+.prospecting-tool-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+@container (min-width: 24rem) {
+  .prospecting-tool-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 44rem) {
+  .prospecting-tool-tabs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+

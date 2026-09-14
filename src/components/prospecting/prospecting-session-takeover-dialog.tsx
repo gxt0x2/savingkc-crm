@@ -58,7 +58,7 @@ export function ProspectingSessionTakeoverDialog({
             <p className="crm-eyebrow">Dialing session already open</p>
             <h2 id="dialer-takeover-title" className="mt-1 text-xl font-black text-[var(--crm-ink)]">Disconnect the other session and call here?</h2>
             <p id="dialer-takeover-description" className="mt-2 text-sm leading-6 text-[var(--crm-text-muted)]">
-              One click removes dialing control from every other window, preserves this campaign and seller position, then starts a fresh 15-second countdown here.
+              One click removes dialing control from every other window and preserves this campaign and seller position. You decide when the first call starts.
             </p>
           </div>
         </div>
