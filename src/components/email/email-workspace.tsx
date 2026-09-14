@@ -458,21 +458,21 @@ export function EmailWorkspace({
           </button>
         </div>
       </header>
-      <div className={styles.banner}>
+      {data?.mode !== 'hosted' && <div className={styles.banner}>
         <strong>
           {data?.mode === 'simulation'
             ? 'Local practice workspace'
-            : data?.mode === 'hosted' ? 'Email workspace' : 'Email setup pending'}
+            : 'Email setup pending'}
         </strong>
         <span>
           {data?.mode === 'simulation'
             ? 'Practice only · No messages, calls or calendar events are sent.'
-            : data?.mode === 'hosted' ? 'Review replies in Inbox. Manage connections and sending controls in More.' : 'Your team will work here once the remaining integrations are connected and verified.'}
+            : 'Your team will work here once the remaining integrations are connected and verified.'}
         </span>
         {data && (
           <small className={styles.asOf}>As of {formatTime(data.asOf)}</small>
         )}
-      </div>
+      </div>}
       {error && (
         <div role="alert" className={styles.error}>
           {error}

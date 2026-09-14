@@ -956,68 +956,20 @@
     animation: none;
   }
 }
-@media (max-width: 1150px) {
-  .inbox {
-    grid-template-columns: 225px minmax(0, 1fr);
-  }
-  .withDetails {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .contextDrawer {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: min(360px, 100vw);
-    z-index: 20;
-    box-shadow: -15px 0 50px #20263125;
-  }
+@media (max-width: 1350px) {
+  .inbox { grid-template-columns: 190px minmax(0, 1fr); }
+  .withDetails { grid-template-columns: minmax(0, 1fr) 280px; }
+  .contextDrawer { padding: 10px; }
 }
-@media (max-width: 850px), (max-height: 780px) {
-  .workspace:has(.inbox) {
-    height: auto;
-    min-height: 100dvh;
-    overflow: visible;
-    padding: 16px 12px;
-  }
-  .inbox {
-    display: flex;
-    flex-direction: column;
-    overflow: visible;
-  }
-  .threadList {
-    max-height: 170px;
-    flex-shrink: 0;
-  }
-  .threadWorkspace {
-    height: 740px;
-    flex: none;
-  }
-  .conversation {
-    height: 740px;
-  }
-  .conversationHeader {
-    flex-wrap: nowrap;
-  }
-  .conversationHeader .headerRight {
-    flex-wrap: wrap;
-  }
-  .nextAction {
-    max-height: 260px;
-    overflow: auto;
-  }
-  .contextDrawer {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: min(360px, 100vw);
-    z-index: 20;
-    box-shadow: -15px 0 50px #20263125;
-  }
-  .withDetails {
-    grid-template-columns: minmax(0, 1fr);
-  }
+@media (max-width: 950px) {
+  .workspace:has(.inbox) { height: auto; min-height: 100dvh; overflow: visible; padding: 12px; }
+  .inbox { display: flex; flex-direction: column; overflow: visible; }
+  .threadList { max-height: 150px; flex-shrink: 0; }
+  .threadWorkspace { overflow: visible; }
+  .withDetails { grid-template-columns: minmax(0, 1fr); }
+  .conversation { height: 520px; }
+  .contextDrawer { position: static; width: auto; max-height: 620px; border-top: 1px solid var(--line); }
+  .conversationHeader .headerRight { flex-wrap: wrap; }
 }
 /* Compact chrome keeps the actual conversation above the fold. */
 .workspace .header {
