@@ -331,7 +331,12 @@ export async function POST(req: Request) {
 
       const statusCallback = outboundStatusCallback(identity, clientAttemptId)
       const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
-      const dialTimeout = parseDialTimeout(getFormString(body, ['RingCount', 'ringCount', 'ring_count']))
+      // Manual calls need time for a person (or their voicemail) to answer.
+      // Keep explicit campaign ring counts and the legacy fallback intact.
+      const dialTimeout = parseDialTimeout(
+        getFormString(body, ['RingCount', 'ringCount', 'ring_count']),
+        source === 'web_click_to_call' ? 60 : undefined,
+      )
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial callerId="${callerId}" timeout="${dialTimeout}" answerOnBridge="true" ringTone="us" record="record-from-answer-dual" recordingStatusCallback="${recordingCallback}" recordingStatusCallbackMethod="POST">

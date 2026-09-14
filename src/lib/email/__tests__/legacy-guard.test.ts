@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {assertLegacySendContext} from '../legacy-guard';describe('legacy send guard',()=>it('blocks campaign addresses without explicit thread context',()=>{expect(()=>assertLegacySendContext({campaignAddress:true})).toThrow('CHOOSE_EMAIL_THREAD');expect(assertLegacySendContext({campaignAddress:true,emailThreadId:'t'})).toBe(true)}))

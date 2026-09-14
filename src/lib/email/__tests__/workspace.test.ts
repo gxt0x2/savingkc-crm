@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {sectionFromPath} from '../workspace';describe('email workspace navigation',()=>it('keeps inbox as the focused default',()=>{expect(sectionFromPath('/email')).toBe('inbox');expect(sectionFromPath('/email/campaigns')).toBe('campaigns')}))

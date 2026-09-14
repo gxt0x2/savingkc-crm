@@ -1,0 +1,3 @@
+import {describe,expect,it} from 'vitest'
+import {createPreferenceToken,hashPreferenceToken,isSuppressed,publicUnsubscribeResult} from '../suppression'
+describe('suppression',()=>{it('uses opaque random tokens and does not expose identity',()=>{const token=createPreferenceToken();expect(token.length).toBeGreaterThan(40);expect(hashPreferenceToken(token,'key')).not.toContain(token);expect(publicUnsubscribeResult()).toEqual({ok:true,message:'Your preferences have been updated.'})});it('does not let a restore silently release marketing suppression',()=>{expect(isSuppressed([{scope:'all_marketing'}],'seller_outreach')).toBe(true);expect(isSuppressed([{scope:'program',program:'buyer_marketing'}],'seller_outreach')).toBe(false)})})

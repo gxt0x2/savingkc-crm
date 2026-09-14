@@ -103,7 +103,7 @@ const GROUPS: ContextGroup[] = [
 export function WorkspaceContextNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const group = GROUPS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
+  const group = pathname.startsWith('/marketing/email') ? null : GROUPS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
 
   if (!group) return null
 

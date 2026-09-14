@@ -468,10 +468,17 @@ test.describe('real iPhone navigation', () => {
     const measured: Array<{ route: string; milliseconds: number }> = []
 
     for (const transition of mobileTransitions) {
-      const link = mobileNavigation.getByRole('link', { name: new RegExp(`${transition.label}$`, 'i') })
-      await expect(link).toBeVisible()
+      const destination = transition.label === 'Prospecting'
+        ? mobileNavigation.getByRole('button', { name: 'Prospecting', exact: true })
+        : mobileNavigation.getByRole('link', { name: new RegExp(`${transition.label}$`, 'i') })
+      await expect(destination).toBeVisible()
       const startedAt = Date.now()
-      await link.click()
+      await destination.click()
+      if (transition.label === 'Prospecting') {
+        const channels = page.getByRole('dialog', { name: 'More navigation' })
+        await expect(channels.getByRole('link', { name: 'Email', exact: true })).toBeVisible()
+        await channels.getByRole('link', { name: 'Dialer', exact: true }).click()
+      }
       await expectRouteReady(page, transition.href)
       const milliseconds = Date.now() - startedAt
       measured.push({ route: transition.label, milliseconds })

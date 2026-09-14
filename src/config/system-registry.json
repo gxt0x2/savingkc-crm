@@ -69,6 +69,12 @@
         "minimumIntervalMs": 30000,
         "reason": "Renew a short server-owned CRM operation lease only while one Prospecting mutation is still in flight; the timer stops immediately when the mutation settles and fails closed if renewal cannot be confirmed.",
         "targetDate": "2026-11-30"
+      },
+      {
+        "path": "src/components/email/email-workspace.tsx",
+        "minimumIntervalMs": 30000,
+        "reason": "Refresh the signed-in Email inbox and next-action queue while the workspace is visible so inbound holds appear without client-authored unread state. The timer does not run while a command is in flight or the tab is hidden, and it cannot dispatch or enable workers.",
+        "targetDate": "2026-12-31"
       }
     ],
     "approvedOversizedSources": [
@@ -127,6 +133,48 @@
         "owner": "Acquisitions",
         "reason": "The shared softphone now bridges provider events to the durable server-owned attempt lifecycle; freeze growth while call state and device controls are extracted.",
         "targetDate": "2026-10-31"
+      },
+      {
+        "path": "src/components/email/email-thread-panel.tsx",
+        "maximumLines": 1457,
+        "owner": "Marketing",
+        "reason": "The Email thread action surface shipped as one foundation unit; freeze growth while tabs, scheduler, and CRM cards are extracted.",
+        "targetDate": "2026-12-31"
+      },
+      {
+        "path": "src/components/email/email-workspace.module.css",
+        "maximumLines": 1393,
+        "owner": "Marketing",
+        "reason": "Approved Email chrome tokens remain in one stylesheet for this release; freeze growth while panels move into scoped modules.",
+        "targetDate": "2026-12-31"
+      },
+      {
+        "path": "src/components/email/email-workspace.tsx",
+        "maximumLines": 1137,
+        "owner": "Marketing",
+        "reason": "The local Email workspace remains consolidated for the foundation tip; freeze growth while inbox, setup, and operations panes are extracted.",
+        "targetDate": "2026-12-31"
+      },
+      {
+        "path": "src/lib/email/workflow/service.ts",
+        "maximumLines": 1250,
+        "owner": "Marketing",
+        "reason": "Email command handling stays in one fail-closed service for this landing; freeze growth while command groups are split.",
+        "targetDate": "2026-12-31"
+      },
+      {
+        "path": "tests/email-db/workflow.test.ts",
+        "maximumLines": 4016,
+        "owner": "Marketing",
+        "reason": "The disposable Email database harness records the foundation workflow cases in one file; freeze growth while suites are split by packet.",
+        "targetDate": "2026-12-31"
+      },
+      {
+        "path": "tests/email-local/workflow.spec.ts",
+        "maximumLines": 862,
+        "owner": "Marketing",
+        "reason": "Local Email browser stories stay together for the foundation landing; freeze growth while setup and inbox stories are extracted.",
+        "targetDate": "2026-12-31"
       }
     ],
     "retiredRuntimeRoutes": [
@@ -447,6 +495,88 @@
           "path": "/api/workers/ppc-conversion-export",
           "schedule": "*/15 * * * *"
         }
+      ]
+    },
+    {
+      "id": "email_marketing",
+      "name": "Email marketing workspace and Resend intake",
+      "crons": [{"path":"/api/workers/email","schedule":"* * * * *","highFrequencyReason":"Process one reply and one bounded send per minute; receiving and suppression precede outbound work."}],
+      "owner": "Marketing",
+      "status": "active",
+      "routes": ["/marketing/email", "/email/unsubscribe/[token]"],
+      "apiRoutes": [
+        "/api/email/workspace",
+        "/api/email/setup",
+        "/api/email/audiences",
+        "/api/email/connections",
+        "/api/email/domains",
+        "/api/email/receiving",
+        "/api/email/unsubscribe/[token]",
+        "/api/webhooks/email/resend",
+        "/api/workers/email"
+      ],
+      "tables": [
+        "em_workspaces",
+        "em_memberships",
+        "em_setup_steps",
+        "em_audit_events",
+        "em_membership_holds",
+        "em_command_receipts",
+        "em_parties",
+        "em_addresses",
+        "em_party_addresses",
+        "em_party_properties",
+        "em_audiences",
+        "em_audience_snapshots",
+        "em_snapshot_rows",
+        "em_campaigns",
+        "em_campaign_versions",
+        "em_enrollments",
+        "em_jobs",
+        "em_provider_events",
+        "em_threads",
+        "em_send_intents",
+        "em_messages",
+        "em_drafts",
+        "em_suppressions",
+        "em_handoffs",
+        "em_notifications",
+        "em_crm_handoff_projections",
+        "em_crm_message_projections",
+        "em_attribution_touches",
+        "em_crm_identity_claims",
+        "em_crm_projection_repairs",
+        "em_ai_generations",
+        "em_service_connections",
+        "em_domains",
+        "em_senders",
+        "em_webhook_endpoints",
+        "em_reply_aliases",
+        "em_preference_tokens"
+      ],
+      "environment": [
+        "EMAIL_CREDENTIALS_KEY_V1",
+        "EMAIL_RESEND_WEBHOOK_ENDPOINT_ID",
+        "EMAIL_PREFERENCE_KEY_V1",
+        "EMAIL_WORKFLOW_MODE",
+        "EMAIL_PUBLIC_ORIGIN",
+        "EMAIL_DISPATCH_WORKER_ENABLED",
+        "EMAIL_CONTROLLED_RECIPIENT",
+        "EMAIL_DATABASE_URL",
+        "EMAIL_AI_ENABLED",
+        "EMAIL_RECEIVING_WORKER_ENABLED",
+        "EMAIL_RECEIVING_WORKER_SECRET",
+        "EMAIL_RECEIVING_WORKER_OWNER_ID",
+        "EMAIL_TEST_DATABASE_DISPOSABLE",
+        "EMAIL_TEST_SCHEMA",
+        "EMAIL_TEST_DATABASE_URL",
+        "EMAIL_TEST_PG_BIN",
+        "EMAIL_LOCAL_DATABASE_URL",
+        "EMAIL_LOCAL_PORT",
+        "EMAIL_UI_BASE_URL",
+        "EMAIL_UI_AUTH_BYPASS_SECRET",
+        "EMAIL_UI_TEST_ACTOR",
+        "NODE_ENV"
       ]
     },
     {

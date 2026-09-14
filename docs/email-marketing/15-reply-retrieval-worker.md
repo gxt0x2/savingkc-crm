@@ -1,0 +1,17 @@
+# Reply retrieval and recovery checkpoint
+
+The receiving worker now claims one due `resend_receive_content` job using a 90-second lease, performs one fixed-host receiving GET outside the transaction, and commits only after rechecking the lease, active owner, connection, endpoint revision, alias and sender. A reclaimed worker cannot commit over the new lease. Temporary provider failures back off from one minute to a maximum one hour, with five attempts before review. All unresolved messages retain the conversation hold.
+
+The worker preserves provider UUID and RFC Message-ID separately, deduplicates repeated notifications for the same received email, stores full provider content encrypted, and renders only bounded plain text. HTML is parsed with parse5 8.0.1 (promoted to a direct production dependency); scripts, style, images and remote resources are never executed or fetched. HTML quotations are marked for authored-text extraction. Attachments expose metadata only and remain unopened. Bodyless/oversized content, changed sender/alias/identifier, and failed authentication stay held for review.
+
+Verified received messages become `transport=resend` Inbox entries and project to the linked Lead's shared email history. Exact opt-out phrases in authored text stop marketing; quoted text is excluded. Projection failures retain durable repair obligations without undoing suppression. New phone numbers create a private callback-review alert, not a guessed appointment or Opportunity. Multiple pending replies keep the hold until all bodies are resolved. All completed replies remain human-review work; no automatic reply is enabled.
+
+More → Operations now includes an owner-only receiving status panel. `/api/email/receiving` provides masked queue state and a same-origin, authenticated process-next action. `OPS-REPLAY` supports a reviewed retry for eligible retrieval failures with current error checks, receipt/audit and preserved holds. It cannot bypass sender/identity/content review or reroute a revoked connection. The local harness exposes status only and rejects real provider processing.
+
+`/api/workers/email` now accepts only `EMAIL_RECEIVING_WORKER_SECRET` (at least 32 characters), runs as the explicit `EMAIL_RECEIVING_WORKER_OWNER_ID` (fresh active owner membership required), and processes one job only when `EMAIL_RECEIVING_WORKER_ENABLED=true`. It is exact-listed through the proxy to its own credential check. No deployment environment variable or cron schedule was configured. It has no send capability.
+
+Still required: actual Resend key/domain/alias/endpoint setup, persistent hosted database and credentials, full delivery-event reducer, unknown-address/manual content review, authenticated sender/identity signal interpretation, controlled provider verification and remaining release work. Local fixtures are not live provider evidence. RFC-ID fallback for missing aliases and shared aliases beyond the exact current address remain held instead of inferred.
+
+Validated locally: 73 database cases, 80 unit/proxy cases, seven browser stories, TypeScript and scoped ESLint (the lifecycle cleanup lint warning was corrected). The browser's identity-hold status case uses an explicit response mock; provider retrieval/database stories use signed local fixtures and injectable GET responses. No real customer content, sends or Calendar events were created.
+
+Source: [Resend received-email API](https://resend.com/docs/api-reference/emails/retrieve-received-email).

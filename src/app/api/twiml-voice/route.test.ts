@@ -261,8 +261,21 @@ describe('TwiML request containment', () => {
     })
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text).toContain('answerOnBridge="true" ringTone="us"')
+    expect(text).toContain('timeout="60"')
     expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
     expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1"')
+  })
+
+  it('preserves an explicit ring count on a signed manual call', async () => {
+    mocks.verifyDialerCallIntent.mockReturnValue({ valid: true, claims: validLeadClaims })
+    const { text } = await responseText(outboundRequest({ DialIntentToken: 'signed-intent', RingCount: '7' }))
+    expect(text).toContain('timeout="42"')
+  })
+
+  it('does not let unsigned source metadata extend the legacy timeout', async () => {
+    vi.stubEnv('DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS', 'true')
+    const { text } = await responseText(outboundRequest({ source: 'web_click_to_call' }))
+    expect(text).toContain('timeout="15"')
   })
 
   it('rechecks a signed source-Prospect destination without a shadow Lead', async () => {
@@ -275,11 +288,13 @@ describe('TwiML request containment', () => {
 
     const { response, text } = await responseText(outboundRequest({
       DialIntentToken: 'signed-prospect-intent',
+      RingCount: '7',
       ProspectId: 'prospect-1',
       ProspectPhoneId: 'prospect-phone-1',
     }))
 
     expect(response.status).toBe(200)
+    expect(text).toContain('timeout="42"')
     expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalledWith({
       phone: DESTINATION,
       leadId: null,

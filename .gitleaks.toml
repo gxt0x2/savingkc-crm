@@ -23,4 +23,13 @@ regexes = [
   # just dotted namespace strings with high enough entropy to trip the
   # generic-api-key default rule.
   '''skc\.ppc\.attribution\.v\d+''',
+  # RFC 4122 example UUIDs used as Email command-contract fixtures
+  # (`idempotencyKey` / workspace id). Not live credentials. Needed so
+  # historical `const key = '123e4567-…174001'` does not fail generic-api-key.
+  '''123e4567-e89b-12d3-a456-42661417400[01]''',
+  # Disposable Email harness values shaped like Resend keys (`re_` prefix
+  # required by the connection validator). Sequential fixture strings only.
+  '''re_fixture[_A-Za-z0-9]*''',
+  '''re_different_private_resend_[0-9]+''',
+  '''re_very_secret_token''',
 ]

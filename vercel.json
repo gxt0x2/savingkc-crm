@@ -5,6 +5,7 @@
   "framework": "nextjs",
   "regions": ["pdx1"],
   "crons": [
+    {"path": "/api/workers/email", "schedule": "* * * * *"},
     {
       "path": "/api/cron/sweep-briefings",
       "schedule": "*/5 * * * *"

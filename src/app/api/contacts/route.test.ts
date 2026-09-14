@@ -139,3 +139,21 @@ describe('contacts GET', () => {
     expect(mocks.from).not.toHaveBeenCalled()
   })
 })
+
+
+describe('manual contact creation', () => {
+  beforeEach(() => { mocks.from.mockReset(); mocks.requireUser.mockResolvedValue(null) })
+  it.each([undefined, 'manual_crm', 'manual'])('writes the supported manual source for %s', async (source) => {
+    const insert = vi.fn().mockReturnValue({ select: () => ({ single: async () => ({ data: { id: 'lead-id' }, error: null }) }) })
+    mocks.from.mockReturnValue({ insert })
+    const response = await POST(new NextRequest('https://crm.savingkc.com/api/contacts', { method: 'POST', body: JSON.stringify({ fullName: 'Ernest', phone: '(816) 555-0101', source }) }))
+    expect(response.status).toBe(201)
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ source: 'manual', phone: '+18165550101' }))
+  })
+  it.each(['Pernest', '81655', 'call 8165550101'])('rejects invalid phone %s before writing', async (phone) => {
+    const response = await POST(new NextRequest('https://crm.savingkc.com/api/contacts', { method: 'POST', body: JSON.stringify({ fullName: 'Ernest', phone }) }))
+    expect(response.status).toBe(400)
+    expect((await response.json()).error).toContain('valid 10-digit phone')
+    expect(mocks.from).not.toHaveBeenCalled()
+  })
+})

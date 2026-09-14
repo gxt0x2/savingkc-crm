@@ -1,0 +1,1 @@
+export function authorizedLaunchCount(eligibleCount:number,approvedMax:number){if(!Number.isInteger(eligibleCount)||!Number.isInteger(approvedMax)||approvedMax<1)throw new Error('INVALID_LAUNCH_SCOPE');return Math.min(eligibleCount,approvedMax)}

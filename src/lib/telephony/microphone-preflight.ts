@@ -2,7 +2,7 @@ const MICROPHONE_BLOCKED_MESSAGE = 'Microphone access is blocked for this CRM. A
 const MICROPHONE_MISSING_MESSAGE = 'No microphone is available. Connect or select a microphone, then reconnect the phone.'
 const MICROPHONE_UNAVAILABLE_MESSAGE = 'The selected microphone is unavailable or already in use. Check the headset, then reconnect the phone.'
 
-export const MICROPHONE_SILENCE_MESSAGE = 'Your microphone is not sending audio. Unmute the headset and the dialer, or reconnect the phone before continuing.'
+export const MICROPHONE_SILENCE_MESSAGE = 'Your microphone is not sending audio. Check mute, then choose and test a microphone in the dialer before continuing.'
 
 type MicrophoneMediaDevices = Pick<MediaDevices, 'getUserMedia'>
 

@@ -54,3 +54,7 @@ query-sharion.js
 scripts/.reprocess-progress.jsonl
 supabase/.temp/
 .env*.local
+
+# Disposable Email practice app build output
+/tests/email-local/.next/
+/tests/email-local/next-env.d.ts

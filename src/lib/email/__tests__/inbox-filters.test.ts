@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {normalizeInboxBucket} from '../inbox-filters';describe('inbox filters',()=>it('uses a safe focused default',()=>{expect(normalizeInboxBucket('ai_handling')).toBe('ai_handling');expect(normalizeInboxBucket('anything')).toBe('needs_action')}))

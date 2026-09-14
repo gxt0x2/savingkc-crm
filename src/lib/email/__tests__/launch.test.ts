@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {authorizedLaunchCount} from '../launch';describe('launch scope',()=>it('never expands beyond owner approval',()=>{expect(authorizedLaunchCount(50,25)).toBe(25);expect(authorizedLaunchCount(10,25)).toBe(10)}))

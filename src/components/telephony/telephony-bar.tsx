@@ -35,6 +35,12 @@ import {
 import { saveManualCallDisposition } from '@/lib/telephony/manual-call-disposition'
 import { findRecoverableDialerAttempt, type RecoverableDialerAttempt } from '@/lib/telephony/dialer-session-recovery'
 import { dialerPauseIsPending, dialerStopIsPending, postDispositionCommand } from '@/lib/telephony/dialer-lifecycle'
+import { MICROPHONE_SILENCE_MESSAGE } from '@/lib/telephony/microphone-preflight'
+import { prepareCallMicrophone, releaseCallMicrophone, monitorCallMicrophone } from '@/lib/telephony/selected-microphone'
+import { DialerMicrophoneControls } from './dialer-microphone-controls'
+import { initializeTwilioDevice } from './initialize-twilio-device'
+import { useDialerRingback } from './use-dialer-ringback'
+import { bindCallRingback } from '@/lib/telephony/call-ringback'
 import {
   DIALER_KEYPAD,
   DIALER_STATUS_DOT_COLOR,
@@ -490,14 +496,7 @@ export function SoftphoneCore({
     }
   }, [open, initDevice])
 
-  // Auto-open panel on incoming call
-  useEffect(() => {
-    if (status === 'incoming' && !open) {
-      // We can't directly open—parent controls this. Signal via onStatusChange.
-    }
-  }, [status, open])
 
-  // Escape key to close
   useEffect(() => {
     if (!open) return
     function handleKey(e: KeyboardEvent) {
@@ -535,7 +534,6 @@ export function SoftphoneCore({
     }
   }, [searchQuery])
 
-  // Load recent calls
   useEffect(() => {
     if (!open) return
     async function loadRecent() {
@@ -666,19 +664,15 @@ export function SoftphoneCore({
       }
       const authorizedRingCount = authorized.ringCount ?? ringCountRef.current
       if (authorizedRingCount && authorizedRingCount > 0) params.RingCount = String(authorizedRingCount)
-      // enableRingingState: true is required by the Twilio Voice SDK so the
-      // parent (browser) call emits a 'ringing' event and plays the network
-      // ringback tone while the destination phone rings. Without it the
-      // call transitions pending → connecting → open with no audible
-      // feedback. This surfaced after PR #131 added answerOnBridge="true"
-      // to the outbound TwiML — answerOnBridge holds the parent in
-      // "ringing" until the destination answers, and the SDK has to be
-      // told to honor that.
+      // The event includes whether Twilio/carrier early media exists. When it
+      // does not, play the bundled ringback so the agent never waits in silence.
+      await prepareCallMicrophone(deviceRef.current)
       const call = await deviceRef.current.connect({
         params,
         rtcConstraints: { audio: true },
         enableRingingState: true,
       })
+      monitorCallMicrophone(deviceRef.current, call)
       if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) { call.disconnect(); return }
       if (callerPlan.mode === 'rotation' && !callerIdLockedByUser) {
         setAttemptsPlaced((current) => current + 1)
@@ -686,6 +680,7 @@ export function SoftphoneCore({
       callRef.current = call
       callStartRef.current = Date.now()
       let callWasAccepted = false
+      bindCallRingback(call, { play: playLocalRingback, stop: stopLocalRingback, log })
       call.on('ringing', () => {
         log('ringing...')
         setStatusLogged('calling')
@@ -794,6 +789,7 @@ export function SoftphoneCore({
       }
     } catch (err) {
       const msg = extractTwilioErrorMessage(err)
+      if (deviceRef.current) void releaseCallMicrophone(deviceRef.current).catch(() => {})
       log(`makeCall error: ${msg}`)
       setError(msg)
       setStatusLogged('ready')
@@ -891,10 +887,15 @@ export function SoftphoneCore({
     setWorkspaceDispositionPreset(null)
   }
 
-  function acceptIncoming() {
-    callRef.current?.accept()
-    setStatusLogged('on_call')
-    callStartRef.current = Date.now()
+  async function acceptIncoming() {
+    const device = deviceRef.current, call = callRef.current
+    if (!device || !call) return
+    try {
+      await prepareCallMicrophone(device)
+      if (callRef.current !== call) { await releaseCallMicrophone(device); return }
+      monitorCallMicrophone(device, call); call.accept()
+      setStatusLogged('on_call'); callStartRef.current = Date.now()
+    } catch (error) { void releaseCallMicrophone(device).catch(() => {}); setError(extractTwilioErrorMessage(error)) }
   }
 
   function rejectIncoming() {
@@ -1301,6 +1302,7 @@ export function SoftphoneCore({
             below content size and the panel respects max-h cap. Without it
             the body forces the panel past the viewport. */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+          <DialerMicrophoneControls deviceRef={deviceRef} status={status} open={open} />
           {/* Error banner */}
           {error && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">

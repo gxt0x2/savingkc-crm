@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {canPurgeRetention} from '../retention';describe('retention',()=>it('requires an explicit current preview approval',()=>{expect(canPurgeRetention({ownerApproved:false,previewHash:'a',currentPreviewHash:'a'})).toBe(false);expect(canPurgeRetention({ownerApproved:true,previewHash:'a',currentPreviewHash:'b'})).toBe(false)}))

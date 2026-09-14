@@ -40,13 +40,18 @@ const checks = [
   },
   {
     file: 'src/components/telephony/telephony-bar.tsx',
+    needle: 'bindCallRingback(call,',
+    why: 'Local fallback must hand off to remote media so agents do not hear overlapping ringback.',
+  },
+  {
+    file: 'src/components/telephony/telephony-bar.tsx',
     needle: 'if (deviceInitPromiseRef.current) return deviceInitPromiseRef.current',
     why: 'Dialer initialization must be single-flight so one agent identity cannot register competing Voice devices.',
   },
   {
     file: 'src/components/telephony/telephony-bar.tsx',
-    needle: 'await verifyMicrophoneInput()',
-    why: 'The browser must prove a live microphone track exists before it can place a call.',
+    needle: 'await prepareCallMicrophone(deviceRef.current)',
+    why: 'The dialer must bind and verify the actual Twilio input stream before it can place a call.',
   },
 ]
 
