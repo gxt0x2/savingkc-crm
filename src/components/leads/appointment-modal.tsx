@@ -99,13 +99,13 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
     <>
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="ck-dark bg-surface-container-lowest rounded-2xl shadow-2xl max-w-md w-full border border-outline-variant/20">
+        <div className="crm-modal-surface w-full max-w-md rounded-2xl border border-[color:var(--ck-border)] bg-[color:var(--ck-surface)] shadow-2xl">
           <div className="flex items-center justify-between px-6 py-4 border-b border-[color:var(--ck-border)]">
             <div className="flex items-center gap-2">
-              <Icon name="calendar_month" className="text-primary" />
-              <h2 className="text-lg font-bold text-white">{initialAppointment?.scheduledAt ? 'Edit Appointment' : 'Schedule Appointment'}</h2>
+              <Icon name="calendar_month" className="text-[color:var(--ck-accent)]" />
+              <h2 className="text-lg font-bold text-[color:var(--ck-text)]">{initialAppointment?.scheduledAt ? 'Edit Appointment' : 'Schedule Appointment'}</h2>
             </div>
-            <button type="button" aria-label="Close appointment" onClick={onClose} className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text-muted)] transition-colors">
+            <button type="button" aria-label="Close appointment" onClick={onClose} className="text-[color:var(--ck-text-dim)] hover:text-[color:var(--ck-text)] transition-colors">
               <Icon name="close" />
             </button>
           </div>
@@ -122,7 +122,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                     onClick={() => setForm(f => ({ ...f, type: opt.value }))}
                     className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-sm font-medium border transition-all ${
                       form.type === opt.value
-                        ? 'bg-primary text-white border-primary'
+                        ? 'border-[color:var(--ck-accent)] bg-[color:var(--ck-accent)] text-white hover:bg-[color:var(--ck-accent-bright)]'
                         : 'bg-[color:var(--ck-surface-elev)] text-[color:var(--ck-text-muted)] border-[color:var(--ck-border)] hover:bg-[color:var(--ck-surface-hi)]'
                     }`}
                   >
@@ -143,7 +143,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                   value={form.date}
                   onChange={(e) => setForm(f => ({ ...f, date: e.target.value }))}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                  className="w-full rounded-lg border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] px-3 py-2 text-sm text-[color:var(--ck-text)] focus:border-[color:var(--ck-accent)] focus:outline-none focus:ring-2 focus:ring-red-500/20"
                 />
               </div>
               <div>
@@ -153,7 +153,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                   type="time"
                   value={form.time}
                   onChange={(e) => setForm(f => ({ ...f, time: e.target.value }))}
-                  className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                  className="w-full rounded-lg border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] px-3 py-2 text-sm text-[color:var(--ck-text)] focus:border-[color:var(--ck-accent)] focus:outline-none focus:ring-2 focus:ring-red-500/20"
                 />
               </div>
             </div>
@@ -165,7 +165,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                 id="appointment-agent"
                 value={form.agent}
                 onChange={(e) => setForm(f => ({ ...f, agent: e.target.value }))}
-                className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                className="w-full rounded-lg border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] px-3 py-2 text-sm text-[color:var(--ck-text)] focus:border-[color:var(--ck-accent)] focus:outline-none focus:ring-2 focus:ring-red-500/20"
               >
                 <option value="Ernest Dodson">Ernest Dodson</option>
                 <option value="Casey Davis">Casey Davis</option>
@@ -181,7 +181,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                 onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="Any additional details..."
                 rows={2}
-                className="w-full border border-[color:var(--ck-border)] rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                className="w-full resize-none rounded-lg border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] px-3 py-2 text-sm text-[color:var(--ck-text)] placeholder:text-[color:var(--ck-text-dim)] focus:border-[color:var(--ck-accent)] focus:outline-none focus:ring-2 focus:ring-red-500/20"
               />
             </div>
 
@@ -191,11 +191,24 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                 type="checkbox"
                 checked={form.sendReminder}
                 onChange={(e) => setForm(f => ({ ...f, sendReminder: e.target.checked }))}
-                className="rounded border-[color:var(--ck-border)] text-primary focus:ring-primary"
+                className="rounded border-[color:var(--ck-border)] focus:ring-2 focus:ring-red-500/20"
+                style={{ accentColor: 'var(--ck-accent)' }}
               />
               <span className="text-[color:var(--ck-text)]">Send SMS confirmation to seller</span>
             </label>
-            {error && <p role="alert" className="rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">{error}</p>}
+            {error && (
+              <p
+                role="alert"
+                className="rounded-lg border px-3 py-2 text-sm"
+                style={{
+                  borderColor: 'var(--crm-danger-border)',
+                  background: 'var(--crm-danger-soft)',
+                  color: 'var(--crm-danger)',
+                }}
+              >
+                {error}
+              </p>
+            )}
           </div>
 
           <div className="px-6 py-4 border-t border-[color:var(--ck-border)] flex gap-3">
@@ -210,7 +223,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
               type="button"
               onClick={handleSubmit}
               disabled={saving || !form.date}
-              className="flex-1 bg-primary text-white rounded-lg py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:var(--ck-accent)] py-2.5 text-sm font-bold text-white transition-colors hover:bg-[color:var(--ck-accent-bright)] disabled:opacity-50"
             >
               {saving ? 'Saving...' : initialAppointment?.scheduledAt ? 'Save Appointment' : 'Schedule'}
             </button>
