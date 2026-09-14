@@ -39,10 +39,6 @@ export const WORKSPACE_SECTIONS: Record<string, Section[]> = {
     { label: 'Finance', href: '/reports/finance' },
     { label: 'Calls & SMS', href: '/reports/call-sms' },
   ],
-  Settings: [
-    { label: 'Settings', href: '/settings' },
-    { label: 'System health', href: '/settings/system-health' },
-  ],
 }
 
 /** A portalled disclosure stays visible outside the scrolling/collapsed rail. */
