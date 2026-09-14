@@ -156,7 +156,7 @@ export async function draftWithAri(
       left join agent_profiles p on p.id=m.agent_profile_id
       left join work_items w on w.work_item_key=h.crm_task_key
       where h.workspace_id=${generation.workspace_id} and h.thread_id=${generation.thread_id} and h.state<>'completed'
-        and (h.state='held' or h.crm_sync_state<>'synced' or p.is_active=false or l.assigned_agent is distinct from p.full_name or w.assigned_to is distinct from p.full_name)`
+        and (h.state='held' or h.crm_sync_state<>'synced' or p.is_active=false or l.assigned_agent is distinct from email_crm_assignee_name(p.email,p.full_name) or w.assigned_to is distinct from email_crm_assignee_name(p.email,p.full_name))`
     const stale =
       saved?.state === 'stale' ||
       !!queuedReply ||

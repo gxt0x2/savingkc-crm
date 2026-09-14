@@ -130,11 +130,11 @@ export async function projectEmailHandoffToCrm(
       handoff.fact_evidence[0].quote === input.evidenceQuote,
     'CRM_HANDOFF_CHANGED',
   )
-  const [owner] = await tx`select p.full_name from em_memberships m
+  const [owner] = await tx`select email_crm_assignee_name(p.email,p.full_name) as full_name from em_memberships m
       join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
       where m.workspace_id=${member.workspace_id}
         and m.auth_user_id=${input.ownerId} and m.active`
-  const [actor] = await tx`select p.full_name from em_memberships m
+  const [actor] = await tx`select email_crm_assignee_name(p.email,p.full_name) as full_name from em_memberships m
       join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
       where m.workspace_id=${member.workspace_id}
         and m.auth_user_id=${member.auth_user_id} and m.active`
@@ -235,6 +235,7 @@ export async function projectEmailHandoffToCrm(
       'contact_identity_conflict',
     )
 
+  await tx`select lock_email_crm_identity(${member.workspace_id}::uuid,${thread.party_id}::uuid)`
   const properties =
     await tx`select ep.canonical_property_id,cp.address,cp.city,cp.state,cp.zip,
       cp.county,cp.parcel_id,cp.property_type,cp.bedrooms,cp.bathrooms,cp.sqft,
@@ -243,7 +244,7 @@ export async function projectEmailHandoffToCrm(
     join crm_properties cp on cp.id=ep.canonical_property_id
     where ep.workspace_id=${member.workspace_id} and ep.party_id=${thread.party_id}
       and ep.relationship in ('owner','representative')
-      and ep.canonical_property_id is not null for share of ep,cp`
+      and ep.canonical_property_id is not null for share of ep`
   if (properties.length === 0)
     return holdBridge(
       context,
@@ -264,7 +265,7 @@ export async function projectEmailHandoffToCrm(
   await tx`select pg_advisory_xact_lock(hashtextextended(
     ${`email-crm-identity:${thread.canonical_person_id}:${property.canonical_property_id}`},0))`
   const [person] =
-    await tx`select record_status from crm_people where id=${thread.canonical_person_id} for update`
+    await tx`select record_status from crm_people where id=${thread.canonical_person_id}`
   if (person?.record_status !== 'active')
     return holdBridge(
       context,
@@ -277,7 +278,7 @@ export async function projectEmailHandoffToCrm(
 
   const [contactMethod] = await tx`select id from crm_contact_methods
       where person_id=${thread.canonical_person_id} and method_type='email'
-        and lower(normalized_value)=lower(${thread.normalized_address}) for share`
+        and lower(normalized_value)=lower(${thread.normalized_address})`
   if (!contactMethod)
     return holdBridge(
       context,

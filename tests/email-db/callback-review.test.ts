@@ -154,6 +154,7 @@ async function reviewedCallback(
 for (const testOnly of [false, true]) withDb(
   `post-unsubscribe callback review preserves suppression (${testOnly ? 'test' : 'seller'})`,
   async db => {
+    if (!testOnly) await db.sql`update agent_profiles set email='casey@savingkc.com',full_name='Casey Davis' where id=${db.profileIds.agent}`
     const command = await reviewedCallback(db, 'Call me at 816-555-0101 tomorrow afternoon.')
     const threadId = command.payload.threadId
     const [initial] = await db.sql`select * from em_threads where id=${threadId}`
@@ -189,6 +190,8 @@ for (const testOnly of [false, true]) withDb(
       const [handoff] = await db.sql`select owner_id,crm_task_id from em_handoffs where thread_id=${threadId}`
       assert.equal(handoff.owner_id, agent)
       assert.ok(handoff.crm_task_id)
+      assert.equal((await db.sql`select assigned_to from work_items where source_id=${handoff.crm_task_id}`)[0].assigned_to, 'Casey')
+      assert.equal((await readPilotState(db.sql, owner, at)).threads.find(t => t.id === threadId)?.callback_owner_changed, false)
     }
     const stoppedAgain = new Date(at.getTime() + 10000)
     await executePilotCommand(db.sql, owner, { command: 'SUP-ADD', idempotencyKey: randomUUID(), payload: { addressIds: [initial.address_id], scope: 'all_marketing', reason: 'unsubscribe' } }, stoppedAgain)
