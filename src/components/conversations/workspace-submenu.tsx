@@ -48,16 +48,21 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
   const pathname = usePathname()
   const search = useSearchParams()
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+  const [portalHost, setPortalHost] = useState<Element | null>(null)
   const anchor = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  const openedByHover = useRef(false)
   const toggle = useRef<HTMLButtonElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const items = WORKSPACE_SECTIONS[label]
   const id = `workspace-submenu-${label.toLowerCase()}`
   const cancelClose = () => clearTimeout(timer.current)
   const closeSoon = () => { cancelClose(); timer.current = setTimeout(() => { if (!panel.current?.contains(document.activeElement)) setPosition(null) }, 160) }
-  function open() {
+  function open(fromHover = false) {
     cancelClose()
+    if (fromHover && position) return
+    openedByHover.current = fromHover
+    setPortalHost(anchor.current?.closest('.crm-workspace-shell') ?? document.body)
     const rect = anchor.current?.getBoundingClientRect()
     if (rect) setPosition({ left: Math.min(rect.right + 4, window.innerWidth - 260), top: Math.max(8, Math.min(rect.top, window.innerHeight - (items.length * 64 + 56))) })
   }
@@ -85,10 +90,10 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
     }
   }, [position])
   if (!items) return children
-  return <div ref={anchor} className="relative" onPointerEnter={(event) => { if (event.pointerType !== 'touch') open() }} onPointerLeave={closeSoon}>
+  return <div ref={anchor} className="relative" onPointerEnter={(event) => { if (event.pointerType !== 'touch') open(true) }} onPointerLeave={closeSoon}>
     <div className={collapsed ? '' : 'pr-7'}>{children}</div>
     <button ref={toggle} type="button" aria-label={`Open ${label} sections`} aria-expanded={Boolean(position)} aria-controls={id}
-      onClick={() => position ? setPosition(null) : open()}
+      onClick={() => position && !openedByHover.current ? setPosition(null) : open()}
       onKeyDown={(event) => {
         if (event.key === 'ArrowDown' || (event.key === 'Tab' && position && !event.shiftKey)) {
           event.preventDefault(); open(); requestAnimationFrame(() => panel.current?.querySelector<HTMLAnchorElement>('a')?.focus())
@@ -108,6 +113,6 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
         className="block rounded-lg px-3 py-2.5 text-sm hover:bg-[var(--crm-surface-subtle)] focus-visible:outline-2 focus-visible:outline-[var(--crm-brand)] aria-[current=page]:bg-[var(--crm-brand-soft)] aria-[current=page]:text-[var(--crm-brand)]">
         <span className="font-semibold">{item.label}</span>{item.description && <span className="mt-0.5 block text-xs text-[var(--crm-text-muted)]">{item.description}</span>}
       </Link> : <div key={item.label} aria-disabled="true" className="px-3 py-2.5 text-sm text-[var(--crm-text-muted)]"><span className="font-semibold">{item.label}</span><span className="mt-0.5 block text-xs">{item.description}</span></div>)}
-    </div>, document.body)}
+    </div>, portalHost ?? document.body)}
   </div>
 }
