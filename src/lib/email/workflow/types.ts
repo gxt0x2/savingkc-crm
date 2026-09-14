@@ -57,6 +57,7 @@ export type PilotCallbackTaskState =
   | 'completed'
   | 'cancelled'
 export interface PilotThread {
+  callback_request?: { messageId: string; phone: string; time?: string; testOnly: boolean; reviewed: boolean } | null
   inbound_pending?: boolean
   id: string
   campaign_id: string
@@ -236,6 +237,8 @@ export function primaryView(
     thread.handoff_state === 'held' ||
     thread.callback_task_state === 'blocked'
   if (issue) return 'action'
+  if (thread.callback_request && !thread.callback_request.reviewed) return 'action'
+  if (thread.state === 'stopped' && thread.callback_task_state === 'pending') return thread.scheduled_for && new Date(thread.scheduled_for) > new Date(asOf) ? 'scheduled' : 'action'
   if (thread.state === 'stopped' || thread.state === 'done') return 'done'
   if (thread.state === 'needs_review') return 'action'
   if (thread.scheduled_for && thread.callback_task_state === 'pending')

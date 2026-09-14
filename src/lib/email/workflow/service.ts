@@ -1,4 +1,5 @@
 import 'server-only'
+import { callbackRequest, isCallbackTest } from './callback-request'
 import { commandAllowedInMode } from './mode'
 import { queueIntent } from './queue-intent'
 import { readHostedReadiness } from '../setup/readiness'
@@ -69,16 +70,24 @@ async function threadFor(context: Context, id: string) {
   )
   return thread
 }
+async function stoppedCallback(context: Context, thread: { id: string; address_id: string }) {
+  const { tx, member } = context
+  const [message] = await tx`select id,text_body,occurred_at from em_messages where workspace_id=${member.workspace_id} and thread_id=${thread.id} and direction='inbound' order by sequence desc limit 1`
+  const [suppression] = await tx`select max(effective_at) as stopped_at from em_suppressions where workspace_id=${member.workspace_id} and address_id=${thread.address_id}`
+  check(message && suppression?.stopped_at && new Date(message.occurred_at) > new Date(suppression.stopped_at) && callbackRequest(message.text_body)?.explicitCall, 'NEW_CALLBACK_REQUEST_REQUIRED')
+}
 export async function requireHuman(
   context: Context,
   id: string,
   contentRevision?: number,
   controllerRevision?: number,
+  callbackOnly = false,
 ) {
   check(canWork(context.member), 'FORBIDDEN', 403)
   const thread = await threadFor(context, id)
   check(!thread.inbound_pending, 'REPLY_CONTENT_PENDING')
-  check(thread.state !== 'stopped', 'THREAD_STOPPED')
+  if (thread.state === 'stopped' && callbackOnly) await stoppedCallback(context, { id: thread.id, address_id: thread.address_id })
+  else check(thread.state !== 'stopped', 'THREAD_STOPPED')
   check(thread.state !== 'done', 'THREAD_DONE')
   check(
     thread.controller === 'human' &&
@@ -450,7 +459,10 @@ export async function executePilotCommand(
       case 'THR-TAKEOVER': {
         check(canWork(member), 'FORBIDDEN', 403)
         const thread = await threadFor(context, command.payload.threadId)
-        check(thread.state !== 'stopped', 'THREAD_STOPPED')
+        if (thread.state === 'stopped') {
+          check(!thread.inbound_pending, 'REPLY_CONTENT_PENDING')
+          await stoppedCallback(context, { id: thread.id, address_id: thread.address_id })
+        }
         check(
           thread.controller_revision ===
             command.payload.expectedControllerRevision,
@@ -463,7 +475,7 @@ export async function executePilotCommand(
           'OTHER_AGENT_CONTROLS_THREAD',
         )
         await invalidate(context, thread.id, 'human_takeover')
-        await tx`update em_threads set controller='human',controller_user_id=${subject},responsible_user_id=${subject},controller_revision=controller_revision+1,state='human' where id=${thread.id} and workspace_id=${ws}`
+        await tx`update em_threads set controller='human',controller_user_id=${subject},responsible_user_id=${subject},controller_revision=controller_revision+1,state=case when state='stopped' then state else 'human' end where id=${thread.id} and workspace_id=${ws}`
         await tx`update em_enrollments set state='held' where workspace_id=${ws} and id=${thread.enrollment_id} and state in ('queued','waiting_reply')`
         return {
           entityId: thread.id,
@@ -537,6 +549,8 @@ export async function executePilotCommand(
           context,
           p.threadId,
           command.expectedRevision,
+          undefined,
+          true,
         )
         const members =
           await tx`select m.auth_user_id,m.roles from em_memberships m join agent_profiles a on a.id=m.agent_profile_id and a.is_active is distinct from false and (a.user_id is null or a.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.auth_user_id in (${p.ownerId},${p.backupId}) and m.active`
@@ -569,11 +583,18 @@ export async function executePilotCommand(
           )
         }
         const [latestInbound] =
-          await tx`select id from em_messages where workspace_id=${ws} and thread_id=${thread.id} and direction='inbound' order by sequence desc limit 1`
+          await tx`select id,text_body from em_messages where workspace_id=${ws} and thread_id=${thread.id} and direction='inbound' order by sequence desc limit 1`
         check(
           latestInbound?.id === p.factEvidence[0].messageId,
           'NEW_REPLY_REVIEW_REQUIRED',
         )
+        const request = callbackRequest(latestInbound.text_body)
+        if (isCallbackTest(latestInbound.text_body)) {
+          const [already] = await tx`select id from em_audit_events where workspace_id=${ws} and entity_id=${latestInbound.id} and action='THR-HANDOFF' and detail->>'state'='test_callback_reviewed' limit 1`
+          if (!already) await notify(context, thread.id, subject, 'SYSTEM TEST reviewed — no Lead, task or call created', `test-callback:${latestInbound.id}`)
+          return { entityId: latestInbound.id, state: 'test_callback_reviewed' }
+        }
+        if (thread.state === 'stopped') check(request && p.requestedContact.phone?.replace(/\D/g, '') === request.phone.replace(/\D/g, ''), 'PHONE_EVIDENCE_REQUIRED')
         const quoted = p.factEvidence.map((e) => e.quote).join(' ')
         if (p.requestedContact.phone)
           check(
@@ -593,7 +614,7 @@ export async function executePilotCommand(
           values(${ws},${thread.id},${p.ownerId},${p.backupId},${p.reason},${tx.json(json(p.requestedContact))},${tx.json(json(p.factEvidence))},${p.positiveSellerInterest},'pending',${now}) on conflict(thread_id) do nothing returning id`
         check(handoff, 'HANDOFF_ALREADY_EXISTS')
         await invalidate(context, thread.id, 'handoff')
-        await tx`update em_threads set responsible_user_id=${p.ownerId},controller_user_id=${p.ownerId},outcome='call_requested',controller_revision=controller_revision+1 where workspace_id=${ws} and id=${thread.id}`
+        await tx`update em_threads set responsible_user_id=${p.ownerId},controller_user_id=${p.ownerId},outcome=case when state='stopped' then outcome else 'call_requested' end,controller_revision=controller_revision+1 where workspace_id=${ws} and id=${thread.id}`
         const evidence = p.factEvidence[0]
         const bridge = await projectEmailHandoffToCrm(context, {
           handoffId: handoff.id,
@@ -1113,7 +1134,9 @@ export async function readPilotState(
       await tx`select execution_mode,pause_reason,config,send_enabled from em_workspaces where id=${ws}`
     const team = canSeeTeam(member)
     const threads =
-      await tx`select t.*,p.display_name as name,a.normalized_address as email,c.name as campaign_name,
+      await tx`select t.*,
+      (select max(s.effective_at) from em_suppressions s where s.workspace_id=t.workspace_id and s.address_id=t.address_id) as marketing_stopped_at,
+      p.display_name as name,a.normalized_address as email,c.name as campaign_name,
       h.id as handoff_id,h.state as handoff_state,h.requested_contact,
       h.owner_id as handoff_owner_id,h.backup_id as handoff_backup_id,
       h.crm_sync_state,h.crm_sync_reason,h.crm_task_id,h.crm_task_key,
@@ -1159,6 +1182,13 @@ export async function readPilotState(
     const messages = ids.length
       ? await tx`select id,thread_id,direction,text_body,occurred_at,transport from em_messages where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) order by thread_id,sequence`
       : []
+    const reviewedTests = ids.length ? await tx`select entity_id from em_audit_events where workspace_id=${ws} and action='THR-HANDOFF' and detail->>'state'='test_callback_reviewed' and entity_id in (select id from em_messages where thread_id=any(${tx.array(ids)}::uuid[]) and workspace_id=${ws})` : []
+    for (const thread of threads) {
+      const inbound = messages.filter(m => m.thread_id === thread.id && m.direction === 'inbound').at(-1)
+      const request = inbound ? callbackRequest(inbound.text_body) : null
+      const afterStop = thread.state !== 'stopped' || (request?.explicitCall && thread.marketing_stopped_at && inbound && new Date(inbound.occurred_at) > new Date(thread.marketing_stopped_at))
+      thread.callback_request = request && afterStop && !thread.inbound_pending && !thread.handoff_id ? { ...request, messageId: inbound!.id, reviewed: reviewedTests.some(r => r.entity_id === inbound!.id) } : null
+    }
     const drafts = ids.length
       ? await tx`select id,thread_id,body,body_hash,content_revision,controller_revision,state from em_drafts where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) and author_id=${subject} order by created_at`
       : []
