@@ -4,7 +4,11 @@ import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 import { DispositionModal, DispositionType } from './disposition-modal'
-import { NewTaskModal } from '@/components/modals/new-task-modal'
+import {
+  buildDialerNextActionSubject,
+  DialerNextActionModal,
+  type DialerNextActionSubject,
+} from './dialer-next-action-modal'
 import { DialerCallerPlan, normalizeDialerCallerPlan } from '@/lib/dialer-caller-plan'
 import {
   MAIN_DIALER_DISPOSITIONS,
@@ -52,7 +56,6 @@ import {
   formatDuration,
   formatTimeAgo,
   isNoAnswer,
-  isNonFatalAudioWarning,
   normalizeDispositionLabel,
   priorityColors,
   type RecentCall,
@@ -66,15 +69,6 @@ function deferEffectUpdate(update: () => void) {
   let cancelled = false
   queueMicrotask(() => { if (!cancelled) update() })
   return () => { cancelled = true }
-}
-
-interface NextActionSubject {
-  leadId: string | null
-  prospectId: string | null
-  campaignMemberId: string | null
-  dialerSessionId: string | null
-  name: string
-  propertyAddress: string | null
 }
 
 export function SoftphoneCore({
@@ -98,6 +92,8 @@ export function SoftphoneCore({
   const [error, setError] = useState<string | null>(null)
   const deviceRef = useRef<TwilioDevice>(null)
   const callRef = useRef<TwilioDevice>(null)
+  const deviceInitPromiseRef = useRef<Promise<void> | null>(null)
+  const { play: playLocalRingback, stop: stopLocalRingback } = useDialerRingback()
   const callTimer = useCallTimer(status === 'on_call')
   const deviceInitialized = useRef(false)
   // Ring count for the current heir-queue session → Twilio Dial timeout.
@@ -126,7 +122,7 @@ export function SoftphoneCore({
   const [workspaceDispositionSaving, setWorkspaceDispositionSaving] = useState<DispositionType | null>(null)
   const [reviewContext, setReviewContext] = useState<{ sessionId: string; clientAttemptId: string } | null>(null)
   const [recoveryPending, setRecoveryPending] = useState<RecoverableDialerAttempt | null>(null)
-  const [showNewTaskFor, setShowNewTaskFor] = useState<NextActionSubject | null>(null)
+  const [showNewTaskFor, setShowNewTaskFor] = useState<DialerNextActionSubject | null>(null)
   const lastCallPhoneRef = useRef<string>('')
   const [lastCallDuration, setLastCallDuration] = useState<string | null>(null)
   const lastCallDurationSecondsRef = useRef(0)
@@ -413,79 +409,50 @@ export function SoftphoneCore({
   // Lazy device init on first panel open
   const initDevice = useCallback(async () => {
     if (deviceInitialized.current && deviceRef.current) return
-    setStatusLogged('connecting')
-    setError(null)
-    try {
-      log('fetching token...')
-      const { Device } = await import('@twilio/voice-sdk')
-      const res = await fetch('/api/twilio-token')
-      const data = await res.json()
-      if (!res.ok || data.error) throw new Error('Phone service is unavailable. Retry in a moment or use the production CRM.')
-      const { token, callerId: cid, identity } = data
-      if (cid) {
-        setCallerIdDisplay(cid)
-        setSelectedCallerId((prev) => {
-          if (campaignCallerIdRef.current) return campaignCallerIdRef.current
-          if (callerIdLockedByUser && prev) return prev
-          return cid
+    if (deviceInitPromiseRef.current) return deviceInitPromiseRef.current
+
+    const initialize = async () => {
+      setStatusLogged('connecting')
+      setError(null)
+      try {
+        deviceRef.current = await initializeTwilioDevice({
+          log,
+          onCallerId: (callerId) => {
+            setCallerIdDisplay(callerId)
+            setSelectedCallerId((current) => {
+              if (campaignCallerIdRef.current) return campaignCallerIdRef.current
+              if (callerIdLockedByUser && current) return current
+              return callerId
+            })
+          },
+          onError: setError,
+          onIdentity: setAgentIdentity,
+          onIncoming: (call) => {
+            log('incoming call')
+            callRef.current = call
+            setStatusLogged('incoming')
+            call.on('disconnect', () => { callRef.current = null; setStatusLogged('ready') })
+            call.on('cancel', () => { callRef.current = null; setStatusLogged('ready') })
+          },
+          onStatus: setStatusLogged,
         })
-      }
-      if (identity) setAgentIdentity(identity)
-      log('token received')
-
-      const device = new Device(token, { logLevel: 1 })
-      deviceRef.current = device
-
-      device.on('registered', () => setStatusLogged('ready'))
-      device.on('unregistered', () => setStatusLogged('offline'))
-      device.on('tokenWillExpire', async () => {
-        log('token expiring, refreshing...')
-        try {
-          const refreshRes = await fetch('/api/twilio-token')
-          const refreshData = await refreshRes.json()
-          if (refreshData.token) {
-            device.updateToken(refreshData.token)
-            if (refreshData.callerId) {
-              setCallerIdDisplay(refreshData.callerId)
-              setSelectedCallerId((prev) => {
-                if (campaignCallerIdRef.current) return campaignCallerIdRef.current
-                if (callerIdLockedByUser && prev) return prev
-                return refreshData.callerId
-              })
-            }
-            if (refreshData.identity) setAgentIdentity(refreshData.identity)
-            log('token refreshed')
-          }
-        } catch {
-          log('token refresh failed')
-        }
-      })
-      device.on('error', (err: TwilioErrorLike) => {
+        deviceInitialized.current = true
+      } catch (err) {
         const msg = extractTwilioErrorMessage(err)
-        if (isNonFatalAudioWarning(err)) {
-          log(`non-fatal audio warning: ${msg}`)
-          return
-        }
-        log(`device error: ${msg}`)
+        log(`init error: ${msg}`)
+        deviceRef.current = null
+        deviceInitialized.current = false
         setError(msg)
         setStatusLogged('offline')
-      })
-      device.on('incoming', (call: TwilioDevice) => {
-        log('incoming call')
-        callRef.current = call
-        setStatusLogged('incoming')
-        call.on('disconnect', () => { callRef.current = null; setStatusLogged('ready') })
-        call.on('cancel', () => { callRef.current = null; setStatusLogged('ready') })
-      })
+      }
+    }
 
-      log('registering device...')
-      await device.register()
-      deviceInitialized.current = true
-    } catch (err) {
-      const msg = extractTwilioErrorMessage(err)
-      log(`init error: ${msg}`)
-      setError(msg)
-      setStatusLogged('offline')
+    const promise = initialize()
+    deviceInitPromiseRef.current = promise
+    try {
+      await promise
+    } finally {
+      if (deviceInitPromiseRef.current === promise) deviceInitPromiseRef.current = null
     }
   }, [callerIdLockedByUser, setStatusLogged])
 
@@ -549,6 +516,14 @@ export function SoftphoneCore({
   }, [open])
 
   const callStartRef = useRef<number>(0)
+
+  function reconnectDevice() {
+    if (deviceInitPromiseRef.current) return
+    deviceRef.current?.destroy()
+    deviceRef.current = null
+    deviceInitialized.current = false
+    void initDevice()
+  }
 
   async function makeCall() {
     const number = dialNumber.trim()
@@ -686,6 +661,7 @@ export function SoftphoneCore({
         setStatusLogged('calling')
       })
       call.on('accept', () => {
+        stopLocalRingback()
         callWasAccepted = true
         log('call accepted')
         setStatusLogged('on_call')
@@ -696,6 +672,19 @@ export function SoftphoneCore({
             action: 'connected',
           }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
         }
+      })
+      call.on('warning', (name: string) => {
+        if (name !== 'constant-audio-input-level') return
+        log('microphone input is silent')
+        setError(MICROPHONE_SILENCE_MESSAGE)
+      })
+      call.on('warning-cleared', (name: string) => {
+        if (name !== 'constant-audio-input-level') return
+        setError((current) => current === MICROPHONE_SILENCE_MESSAGE ? null : current)
+      })
+      call.on('error', (callError: TwilioErrorLike) => {
+        stopLocalRingback()
+        setError(extractTwilioErrorMessage(callError))
       })
 
       const heirMeta = activeQueueItemRef.current
@@ -717,12 +706,15 @@ export function SoftphoneCore({
           agent: activeAgentName,
           agent_identity: agentIdentity,
           from_number: authorized.callerId,
+          dial_source: authorized.source,
+          dial_surface: authorized.surface,
           lead_id: authorized.leadId,
           clientAttemptId: authorized.clientAttemptId,
           ...heirMeta,
         }),
       }).catch(() => {})
       call.on('disconnect', () => {
+        stopLocalRingback()
         if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
         const duration = Math.round((Date.now() - callStartRef.current) / 1000)
         // The SDK accept event means the browser leg opened, not that the
@@ -746,6 +738,8 @@ export function SoftphoneCore({
             agent: activeAgentName,
             agent_identity: agentIdentity,
             from_number: authorized.callerId,
+            dial_source: authorized.source,
+            dial_surface: authorized.surface,
             lead_id: authorized.leadId,
             clientAttemptId: authorized.clientAttemptId,
             ...heirMeta,
@@ -767,6 +761,7 @@ export function SoftphoneCore({
         requireDisposition()
       })
       call.on('cancel', () => {
+        stopLocalRingback()
         if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
         callRef.current = null
         setStatusLogged('ready')
@@ -788,6 +783,7 @@ export function SoftphoneCore({
         call.disconnect()
       }
     } catch (err) {
+      stopLocalRingback()
       const msg = extractTwilioErrorMessage(err)
       if (deviceRef.current) void releaseCallMicrophone(deviceRef.current).catch(() => {})
       log(`makeCall error: ${msg}`)
@@ -1285,7 +1281,7 @@ export function SoftphoneCore({
           } ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
         >
         <DialerPanelHeader workspace={isWorkspace} status={DIALER_STATUS_LABEL[status]} statusDotClass={DIALER_STATUS_DOT_COLOR[status]}
-          reconnecting={status === 'connecting'} onReconnect={() => { deviceInitialized.current = false; void initDevice() }} onClose={onClose} />
+          reconnecting={status === 'connecting'} onReconnect={reconnectDevice} onClose={onClose} />
 
         {queueMode && queueItem ? <DialerQueueHeader
           item={queueItem}
@@ -1308,12 +1304,12 @@ export function SoftphoneCore({
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
               <Icon name="error" className="text-red-400" size="text-sm" />
               <span className="text-xs text-red-300 flex-1">{error}</span>
-              <button
-                onClick={() => recoveryPending ? void finishRecoveredAttempt() : (setError(null), void initDevice())}
+              {(recoveryPending || status === 'offline') && <button
+                onClick={() => recoveryPending ? void finishRecoveredAttempt() : (setError(null), reconnectDevice())}
                 className="text-[10px] font-bold text-red-300 hover:text-white uppercase"
               >
-                {recoveryPending ? 'Finish outcome' : 'Retry'}
-              </button>
+                {recoveryPending ? 'Finish outcome' : 'Reconnect'}
+              </button>}
             </div>
           )}
 
@@ -1727,53 +1723,18 @@ export function SoftphoneCore({
         ] : []}
         onNextActionPick={(actionId) => {
           if (actionId === 'set_next_activity') {
-            setShowNewTaskFor(dispositionQueueItem ? {
-              leadId: dispositionQueueItem.leadId,
-              prospectId: dispositionQueueItem.prospectId,
-              campaignMemberId: dispositionQueueItem.campaignMemberId,
-              dialerSessionId: pendingSessionId,
-              name: dispositionQueueItem.heirName,
-              propertyAddress: dispositionQueueItem.propertyAddress,
-            } : selectedLead ? {
-              leadId: selectedLead.id,
-              prospectId: null,
-              campaignMemberId: null,
-              dialerSessionId: null,
-              name: selectedLead.full_name,
-              propertyAddress: selectedLead.property_address,
-            } : null)
+            setShowNewTaskFor(buildDialerNextActionSubject(dispositionQueueItem, selectedLead, pendingSessionId))
           }
         }}
       />
 
       {/* New Task modal — triggered by Set Next Activity from disposition */}
       {showNewTaskFor && (
-        <NewTaskModal
-          leadId={showNewTaskFor.leadId || undefined}
-          prospectId={showNewTaskFor.prospectId || undefined}
-          campaignMemberId={showNewTaskFor.campaignMemberId || undefined}
-          dialerSessionId={showNewTaskFor.dialerSessionId || undefined}
-          leadName={showNewTaskFor.name || undefined}
-          initialTitle={`Follow up with ${showNewTaskFor.name || 'seller'}`}
-          primaryNextAction={Boolean(showNewTaskFor.leadId)}
-          onClose={() => setShowNewTaskFor(null)}
-          onCreated={() => {
-            setShowNewTaskFor(null)
-            window.dispatchEvent(new CustomEvent('crm:task-created', {
-              detail: {
-                leadId: showNewTaskFor.leadId,
-                prospectId: showNewTaskFor.prospectId,
-                campaignMemberId: showNewTaskFor.campaignMemberId,
-              },
-            }))
-          }}
-        />
+        <DialerNextActionModal subject={showNewTaskFor} onClose={() => setShowNewTaskFor(null)} />
       )}
     </>
   )
 }
 
 export const DialerPanel = SoftphoneCore
-
-// Re-export for backwards compat if anything imported TelephonyBar
 export { DialerPanel as TelephonyBar }

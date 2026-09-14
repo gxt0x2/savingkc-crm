@@ -56,9 +56,9 @@ export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProp
 
   useEffect(() => {
     if (callState !== 'live') return
-    const interval = window.setInterval(() => setElapsedSeconds((current) => current + 1), 1_000)
-    return () => window.clearInterval(interval)
-  }, [callState])
+    const tick = window.setTimeout(() => setElapsedSeconds((current) => current + 1), 1_000)
+    return () => window.clearTimeout(tick)
+  }, [callState, elapsedSeconds])
 
   useEffect(() => {
     const status = callState === 'ready' ? 'Ready' : callState === 'live' ? 'Live' : callState === 'paused' ? 'Paused' : 'Stopped'

@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { ContactNoteComposer } from '@/components/leads/contact-note-composer'
+import { HeirsCallingCompact } from '@/components/leads/heirs-calling-compact'
 import { useHeirsSectionData } from '@/components/leads/use-heirs-section-data'
 import { formatPhone, toProperCase } from '@/lib/format'
 import type { DialerCallerPlan } from '@/lib/dialer-caller-plan'
 import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 import { excludeCompletedDialerPhones } from '@/lib/heir-dialer-resume'
 import { withDialerSessionControlOperation } from '@/lib/telephony/dialer-control-operation-client'
-import {
-  dispositionLabel as canonicalDispositionLabel,
-} from '@/lib/dialer-dispositions'
+import { dispositionLabel } from '@/lib/dialer-dispositions'
 import {
   dispatchHeirQueue,
   isAutoCallablePhone,
@@ -61,13 +60,8 @@ interface HeirsSectionProps {
 
 function phoneIcon(type: string | null): string {
   const t = (type ?? '').toLowerCase()
-  if (t.includes('mobile') || t.includes('cell') || t.includes('wireless')) return 'smartphone'
-  if (t.includes('voip')) return 'settings_phone'
-  return 'phone'
-}
-
-function dispositionLabel(d: string | null): string {
-  return canonicalDispositionLabel(d)
+  return t.includes('mobile') || t.includes('cell') || t.includes('wireless')
+    ? 'smartphone' : t.includes('voip') ? 'settings_phone' : 'phone'
 }
 
 function daysAgo(iso: string | null): string {
@@ -225,9 +219,8 @@ export function HeirsSection({
     }))
   }, [campaignMemberId, deceasedOwnerName, leadId, propertyAddress, prospectId])
 
-  // SESSION path. Load every callable listed number into the reviewed queue,
-  // but never place the first call until the agent presses Start dialing.
-  // number for this property, grouped by heir. Attempted/verified phones stay
+  // Queue every callable number for this property, grouped by heir, but wait
+  // for the agent to start dialing. Attempted/verified phones stay
   // in the rotation for the current session; only hard-stop outcomes are
   // removed from auto dialing.
   const buildQueueForHeir = useCallback((h: Heir): HeirDialerQueueItem[] => {
@@ -306,37 +299,7 @@ export function HeirsSection({
   }, [autoStart, autoStartKey, autoStartSkipPhoneIds, autoStartSkipPhones, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, dialerSurface, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount])
 
   if (variant === 'calling-compact') {
-    return <section aria-label="Callable people" className="border-b border-[var(--ck-border)] pb-4">
-      {error ? <p role="alert" className="mb-3 rounded-lg border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-3 py-2 text-xs font-medium text-[var(--crm-danger)]">{error}</p> : null}
-      {loading ? <div role="status" className="grid min-h-28 place-items-center"><Icon name="progress_activity" className="animate-spin text-xl text-[var(--ck-text-dim)]" /></div> : null}
-      {!loading && heirs.length === 0 ? <p className="rounded-xl border border-[var(--ck-border)] bg-[var(--prospecting-elevated)] px-3 py-4 text-xs text-[var(--ck-text-muted)]">No callable people are attached to this record.</p> : null}
-      {!loading && heirs.length > 0 ? <div className={`grid grid-cols-1 gap-2 ${heirs.length > 1 ? 'sm:grid-cols-2' : ''}`}>
-        {heirs.map((heir) => {
-          const verifiedPhone = verifiedPhoneOf(heir)
-          const phone = verifiedPhone ?? callablePhonesForHeir(heir)[0] ?? heir.phones[0] ?? null
-          const displayName = toProperCase(heir.contact_name)
-          const relationship = toProperCase(heir.relationship || 'Associated person')
-          const phoneType = phone?.type ? phone.type.toLowerCase() : 'phone'
-          const canCall = Boolean(phone && isAutoCallablePhone(phone))
-          return <article key={heir.key} className="min-w-0 rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] p-3">
-            <p className="truncate text-sm font-semibold text-[var(--ck-text)]">{displayName}</p>
-            <p className="mt-1 min-h-8 text-[10px] leading-4 text-[var(--ck-text-muted)]">{relationship}{verifiedPhone ? ` · verified ${phoneType}` : phone ? ` · ${phoneType}` : ''}</p>
-            <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-              <span className="min-w-0 truncate font-mono text-[11px] tabular-nums text-[var(--ck-text)]">{phone ? formatPhone(phone.number) || phone.number : 'No phone'}</span>
-              <button
-                type="button"
-                onClick={() => { if (phone) queueOne(heir, phone) }}
-                disabled={readOnlyPreview || !canCall}
-                aria-label={phone ? `Call ${displayName} at ${formatPhone(phone.number) || phone.number}` : `No callable phone for ${displayName}`}
-                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg bg-[var(--prospecting-primary)] px-2.5 text-xs font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed"
-              >
-                <Icon name="call" size="text-sm" /> Call
-              </button>
-            </div>
-          </article>
-        })}
-      </div> : null}
-    </section>
+    return <HeirsCallingCompact {...{ callablePhonesForHeir, error, heirs, loading, queueOne, readOnlyPreview }} />
   }
 
   return (

@@ -76,9 +76,10 @@ assert(
 );
 
 assert(
-  workspaceFrame.includes('data-theme={theme}') &&
+  workspaceFrame.includes("const resolvedTheme = focusedCalling ? 'light' : theme") &&
+    workspaceFrame.includes('data-theme={resolvedTheme}') &&
     workspaceFrame.includes("aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}"),
-  'Theme guard failed: rebuilt CRM workspace must expose and apply the persisted theme preference.'
+  'Theme guard failed: rebuilt CRM workspace must apply the persisted theme except for the approved light calling workspace.'
 );
 
 assert(
