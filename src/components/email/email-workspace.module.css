@@ -622,7 +622,6 @@
     grid-template-columns: 1fr;
   }
 }
-
 /* The message stream scrolls independently; the composer is a fixed grid row. */
 .workspace:has(.inbox) {
   height: 100dvh;
@@ -1020,7 +1019,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-
 /* Compact chrome keeps the actual conversation above the fold. */
 .workspace .header {
   gap: 18px;
@@ -1214,15 +1212,15 @@
     margin-left: 0;
   }
 }
-
 /* Next step owns the action; Calendar owns the scheduling form. */
 .workspace .detailTabs button:nth-child(n + 4) {
   grid-column: span 2;
 }
 .contextDrawer .nextAction {
-  border: 0;
-  padding: 0;
-  background: transparent;
+  border: 1px solid #b9ddc6;
+  border-radius: 8px;
+  padding: 12px;
+  background: #eaf6ee;
   max-height: none;
   overflow: visible;
 }
@@ -1391,3 +1389,5 @@
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
 }
+
+.contextDrawer .nextAction.crmAttention { background: #fff4e5; border-color: #e6b96e; }

@@ -66,13 +66,14 @@ export function EmailThreadPanel({
   thread: t,
   act,
   busy,
-  localSimulation,
+  localSimulation, onBackToInbox,
 }: {
   data: PilotState
   thread: PilotThread
   act: Act
   busy: boolean
   localSimulation: boolean
+  onBackToInbox: () => void
 }) {
   const messages = data.messages.filter((m) => m.thread_id === t.id)
   const inbound = messages.filter((m) => m.direction === 'inbound').at(-1)
@@ -628,7 +629,7 @@ export function EmailThreadPanel({
                   available.
                 </p>
               ) : t.callback_request && (!localSimulation || t.state === 'stopped') ? (
-                <EmailCallbackReview request={t.callback_request} stopped={t.state === 'stopped'} canWork={canWork} owns={t.controller_user_id === data.actorId} blocked={blocked} onApprove={handoff}
+                <EmailCallbackReview request={t.callback_request} stopped={t.state === 'stopped'} canWork={canWork} owns={t.controller_user_id === data.actorId} blocked={blocked} busy={busy || working} onBackToInbox={onBackToInbox} onApprove={handoff}
                   onTakeOver={() => act({ command: 'THR-TAKEOVER', idempotencyKey: crypto.randomUUID(), payload: { threadId: t.id, expectedControllerRevision: t.controller_revision } })} />
               ) : t.state === 'done' ? (
                 <p>No remaining work. A new reply will return here.</p>
