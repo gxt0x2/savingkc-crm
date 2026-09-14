@@ -120,16 +120,19 @@ withDb('delivery failure is visible to owner and recipient; early delivered rece
     method:'POST',body:new URLSearchParams({MessageSid:receiptSid,MessageStatus:status,To:'+18165550101',ErrorCode:'30003'})})
   await processLeadSmsAlerts(db.sql,owner,{enabled:true,now:()=>now,send:async input=>{
     assert.equal((await handler(receipt(input.id,'delivered'))).status,204)
-    return {success:true,sid,status:'queued'}
+    return {success:false,deliveryUnknown:true,error:'Transport result arrived after delivery receipt'}
   }})
   const [a]=await db.sql`select * from em_lead_sms_alerts`
   assert.equal(a.state,'delivered')
+  assert.equal((await db.sql`select id from em_notifications where logical_key=${`sms-alert:${a.id}:failure`}`).length,0)
   await db.sql`update em_lead_sms_alerts set state='accepted',delivered_at=null where id=${a.id}`
   await handler(receipt(a.id,'failed',`SM${'b'.repeat(32)}`))
   assert.equal((await db.sql`select state from em_lead_sms_alerts`)[0].state,'accepted')
   await handler(receipt(a.id,'undelivered'))
   assert.equal((await db.sql`select state from em_lead_sms_alerts`)[0].state,'failed')
   assert.equal((await db.sql`select id from em_notifications where kind='Lead SMS failed — review delivery'`).length,2)
+  await handler(receipt(a.id,'delivered'))
+  assert.equal((await db.sql`select id from em_notifications where kind='Lead SMS failed — review delivery' and acknowledged_at is null`).length,0)
 })
 test('SMS requires explicit hosted enablement and cannot send from preview or test mode', () => {
   const keys=['EMAIL_LEAD_SMS_ENABLED','EMAIL_WORKFLOW_MODE','NODE_ENV','VERCEL_ENV','TEST_MODE']

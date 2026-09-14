@@ -93,10 +93,10 @@ export async function processLeadSmsAlerts(sql: Sql, owner: string, options: {
   await sql.begin(async transaction => {
     const tx = transaction as unknown as Tx
     // A signed delivery callback may arrive before messages.create returns.
-    await tx`update em_lead_sms_alerts set state=${state},provider_sid=${result.sid?.startsWith('SM') ? result.sid : null},
+    const updated = await tx`update em_lead_sms_alerts set state=${state},provider_sid=${result.sid?.startsWith('SM') ? result.sid : null},
       provider_status=${result.status ?? null},last_error=${result.error ?? null},updated_at=${now}
-      where id=${claimed.id} and state='submitting'`
-    if (state==='failed' || state==='unknown') await alertFailure(tx, claimed as Parameters<typeof alertFailure>[1],
+      where id=${claimed.id} and state='submitting' returning id`
+    if (updated.length && (state==='failed' || state==='unknown')) await alertFailure(tx, claimed as Parameters<typeof alertFailure>[1],
       state==='failed' ? 'Lead SMS failed — review delivery' : 'Lead SMS delivery unknown — review required', now)
   })
   return { state, alertId: claimed.id }

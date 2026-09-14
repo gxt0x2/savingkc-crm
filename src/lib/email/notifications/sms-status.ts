@@ -31,6 +31,8 @@ export function createLeadSmsStatusHttp(deps: { database: () => Sql; validate?: 
           delivered_at=case when ${state}='delivered' then ${now} else delivered_at end,
           last_error=${failed ? `Twilio delivery ${status}: ${String(form.get('ErrorCode') ?? 'unknown').slice(0,20)}` : null},updated_at=${now}
           where id=${id}`
+        if (state==='delivered') await tx`update em_notifications set acknowledged_at=coalesce(acknowledged_at,${now})
+          where workspace_id=${row.workspace_id} and logical_key=${`sms-alert:${row.id}:failure`}`
         if (failed) await alertFailure(tx,row as Parameters<typeof alertFailure>[1],'Lead SMS failed — review delivery',now)
       })
       return new Response(null,{status:204})
