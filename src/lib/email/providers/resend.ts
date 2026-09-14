@@ -36,6 +36,7 @@ const payloadSchema = z
       .max(998)
       .refine((v) => !/[\r\n]/.test(v)),
     text: z.string().min(1).max(100_000),
+    html: z.string().min(1).max(1_000_000).optional(),
     reply_to: z.string().email(),
     headers: z.record(
       z.string(),
