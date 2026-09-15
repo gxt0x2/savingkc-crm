@@ -62,7 +62,7 @@ describe('conversation call card', () => {
     fireEvent.loadedMetadata(audio as HTMLAudioElement)
 
     expect(screen.queryByText(/Infinity|NaN/)).not.toBeInTheDocument()
-    expect(screen.getAllByText('0:40')).toHaveLength(2)
+    expect(screen.getByLabelText('Playback elapsed and total time')).toHaveTextContent('0:00 / 0:40')
   })
 })
 

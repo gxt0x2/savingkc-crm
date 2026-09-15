@@ -105,7 +105,7 @@ function CompletedScorecardOverlay({ call, onClose }: { call: ReviewCall; onClos
             <p className="text-xs font-black">
               Original call <span className="font-bold text-[var(--crm-text-muted)]">· {formatDuration(call.durationSeconds)}</span>
             </p>
-            <audio controls preload="metadata" src={call.recordingUrl} className="mt-2 w-full" />
+            <CallReviewAudioPlayer src={call.recordingUrl} knownDuration={call.durationSeconds} label="Original call" compact className="mt-2" />
           </div>
         </div>
         {coachingRecording ? (
@@ -114,7 +114,7 @@ function CompletedScorecardOverlay({ call, onClose }: { call: ReviewCall; onClos
               <Icon name="mic" />
               {call.id === 'test-review-preview' ? 'Sample coaching review · 0:14' : 'Coaching review'}
             </p>
-            <audio controls preload="metadata" src={coachingRecording} className="mt-2 w-full" />
+            <CallReviewAudioPlayer src={coachingRecording} label="Coaching review" compact className="mt-2" />
           </div>
         ) : (
           <div className="mt-3 rounded-xl border border-[var(--crm-warning)] bg-[var(--crm-warning-soft)] p-4">
@@ -580,7 +580,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                   </div>
                   <div>
                     <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{attachedReview ? 'Coaching review' : 'Original call'}</p>
-                    <audio aria-label={attachedReview ? 'Attached coaching review' : 'Original call'} controls preload="none" src={attachedReview || call.recordingUrl} className="h-8 w-full" />
+                    <CallReviewAudioPlayer label={attachedReview ? 'Attached coaching review' : 'Original call'} src={attachedReview || call.recordingUrl} knownDuration={attachedReview ? 0 : call.durationSeconds} compact />
                   </div>
                   <span className="truncate text-xs font-bold text-[var(--crm-text-muted)]">{getCallReviewFramework(call.reviewWorkflow.framework)?.label || 'Jr. Acquisitions Scorecard'}</span>
                   {call.reviewWorkflow.status === 'completed' ? (
@@ -694,7 +694,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
                 {voiceoverUrl ? (
                   <div className="mt-3">
                     <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">Completed coaching review</p>
-                    <audio aria-label="Completed coaching review preview" controls src={voiceoverUrl} className="w-full" />
+                    <CallReviewAudioPlayer label="Completed coaching review preview" src={voiceoverUrl} compact />
                   </div>
                 ) : null}
               </div>

@@ -16,6 +16,7 @@ import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
 import { formatPhone } from '@/lib/format'
 import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
+import { playableRecordingUrl, readCallReviewWorkflow, readRecordingDuration } from '@/lib/marketing/call-recordings'
 import {
   getCallOutcomePresentation,
   getCallParties,
@@ -179,7 +180,8 @@ function timelineItemToEntry(item: ConversationTimelineItem, lead: ConversationT
 
   if (kind === 'call') {
     const recordingSid = text(metadata.recordingSid, metadata.recording_sid) || undefined
-    const recordingUrl = text(metadata.recordingUrl, metadata.recording_url) || (recordingSid ? `/api/recordings/${recordingSid}` : undefined)
+    const recordingDurationSeconds = readRecordingDuration(metadata)
+    const recordingUrl = playableRecordingUrl(metadata) || undefined
     const callOutcome = getCallOutcomePresentation(activity)
     const parties = getCallParties(activity, { leadPhone: lead.phone, teamPhone })
     return {
@@ -192,9 +194,11 @@ function timelineItemToEntry(item: ConversationTimelineItem, lead: ConversationT
         timestamp,
         senderInitials,
         agentName: direction === 'sent' ? agentName : undefined,
-        callDuration: formatDuration(metadata.duration ?? metadata.dialCallDuration ?? metadata.duration_seconds),
+        callDuration: formatDuration(recordingDurationSeconds),
+        recordingDurationSeconds,
         recordingSid,
         recordingUrl,
+        callReviewWorkflow: readCallReviewWorkflow(metadata),
         transcript: text(metadata.transcript) || undefined,
         callOutcome,
         fromPhone: parties.from ? formatPhone(parties.from) : undefined,
