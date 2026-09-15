@@ -1,12 +1,15 @@
 'use client'
 
+import { CallReviewAudioPlayer } from '@/components/call-review/call-review-audio-player'
 import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
 import { Icon } from '@/components/ui/icon'
 import type { LeadConversationActivity } from '@/lib/lead-conversation'
-import { playableRecordingUrl } from '@/lib/marketing/call-recordings'
+import { playableRecordingUrl, readCallReviewWorkflow, readRecordingDuration } from '@/lib/marketing/call-recordings'
 
 export function CallActivityDetails({ activity }: { activity: LeadConversationActivity }) {
   const recordingUrl = playableRecordingUrl(activity.metadata)
+  const recordingDuration = readRecordingDuration(activity.metadata)
+  const reviewWorkflow = readCallReviewWorkflow(activity.metadata)
   if (!recordingUrl && !activity.callSummary && !activity.callTranscript) return null
 
   return (
@@ -20,10 +23,19 @@ export function CallActivityDetails({ activity }: { activity: LeadConversationAc
       <div className="border-t border-[var(--crm-border)] px-3 pb-3">
         {recordingUrl ? (
           <>
-            <audio className="mt-3 w-full accent-[var(--crm-brand)]" controls preload="metadata" src={recordingUrl}>
-              Your browser does not support call recording playback.
-            </audio>
-            <CallReviewSubmitButton activityId={activity.recordingActivityId || activity.id} recordingUrl={recordingUrl} />
+            <CallReviewAudioPlayer
+              src={recordingUrl}
+              knownDuration={recordingDuration}
+              label="Call recording"
+              compact
+              className="mt-3"
+            />
+            <CallReviewSubmitButton
+              activityId={activity.recordingActivityId || activity.id}
+              recordingUrl={recordingUrl}
+              durationSeconds={recordingDuration}
+              initialWorkflow={reviewWorkflow}
+            />
           </>
         ) : null}
         {activity.callSummary ? (

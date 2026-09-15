@@ -105,6 +105,7 @@ export function readRecordingDuration(metadata: unknown): number {
   return Math.max(0, Math.round(
     numberValue(meta.duration)
       ?? numberValue(meta.duration_seconds)
+      ?? numberValue(meta.dialCallDuration)
       ?? numberValue(meta.recordingDuration)
       ?? numberValue(meta.RecordingDuration)
       ?? 0,

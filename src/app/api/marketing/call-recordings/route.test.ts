@@ -53,4 +53,45 @@ describe('call review mutation access', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Note to reviewer must be 500 characters or fewer' })
     expect(mocks.supabaseAdmin).not.toHaveBeenCalled()
   })
+
+  it('returns the existing submitted workflow without rewriting or duplicating side effects', async () => {
+    const existingActivity = {
+      id: 'call-42',
+      lead_id: 'lead-42',
+      activity_type: 'call',
+      description: 'Outbound call',
+      created_at: '2026-09-15T13:40:00.000Z',
+      agent: 'casey@savingkc.com',
+      metadata: {
+        call_review: {
+          status: 'submitted',
+          framework: 'junior_acquisitions',
+          submitted_at: '2026-09-15T13:49:22.000Z',
+          submitted_by: 'casey@savingkc.com',
+          assigned_reviewer: 'ernest@savingkc.com',
+        },
+      },
+    }
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      limit: vi.fn(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: existingActivity, error: null }),
+      update: vi.fn(),
+      insert: vi.fn(),
+    }
+    query.select.mockReturnValue(query)
+    query.eq.mockReturnValue(query)
+    query.limit.mockReturnValue(query)
+    query.update.mockReturnValue(query)
+    query.insert.mockReturnValue(query)
+    mocks.supabaseAdmin.mockReturnValue({ from: vi.fn().mockReturnValue(query) })
+
+    const response = await PATCH(request('submit', { framework: 'junior_acquisitions', assignedReviewer: 'ernest@savingkc.com' }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ ok: true, action: 'submit', idempotent: true, workflow: { status: 'submitted', submittedAt: '2026-09-15T13:49:22.000Z' } })
+    expect(query.update).not.toHaveBeenCalled()
+    expect(query.insert).not.toHaveBeenCalled()
+  })
 })

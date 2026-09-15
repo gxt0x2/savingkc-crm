@@ -7,6 +7,7 @@ import { CALL_REVIEWERS, isCallReviewer } from '@/lib/call-review-reviewers'
 import { CALL_REVIEW_TAGS, getCallReviewFramework } from '@/lib/call-review-frameworks'
 import { scoreCallReview } from '@/lib/call-review-scoring'
 import { processCallReviewAi } from '@/lib/call-review-ai'
+import { mergeCallActivityRows } from '@/lib/marketing/call-review-queue'
 import { buildRecordingSummary, CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH, compactTranscript, isGoogleAdsCall, isRecordingReviewOutcome, mergeRecordingReviewMetadata, mergeCallReviewWorkflow, playableRecordingUrl, readRecordingDuration, readRecordingReview, readCallReviewWorkflow, readRecordingSid, record, reopenCallReviewWorkflow, text, type RecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { sendCallReviewSubmittedSmsAlert } from '@/lib/server/operational-sms-alerts'
@@ -285,16 +286,28 @@ export async function GET(req: NextRequest) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
   const db = supabaseAdmin()
 
-  const { data: callRows, error: callError } = await db.from('lead_activities').select('id, lead_id, activity_type, description, metadata, created_at, agent').eq('activity_type', 'call').gte('created_at', since).order('created_at', { ascending: false }).limit(1500)
+  const callFields = 'id, lead_id, activity_type, description, metadata, created_at, agent'
+  const [recentCallResult, submittedCallResult, completedCallResult] = await Promise.all([
+    db.from('lead_activities').select(callFields).eq('activity_type', 'call').gte('created_at', since).order('created_at', { ascending: false }).limit(1000),
+    db.from('lead_activities').select(callFields).eq('activity_type', 'call').eq('metadata->call_review->>status', 'submitted').order('created_at', { ascending: false }).limit(1000),
+    db.from('lead_activities').select(callFields).eq('activity_type', 'call').eq('metadata->call_review->>status', 'completed').order('created_at', { ascending: false }).limit(1000),
+  ])
 
+  const callError = recentCallResult.error || submittedCallResult.error || completedCallResult.error
   if (callError) {
     return NextResponse.json({ error: callError.message }, { status: 500, headers: NO_STORE_HEADERS })
   }
 
-  const candidateCalls = ((callRows || []) as LeadActivityRow[]).filter((row) => {
+  const callRows = mergeCallActivityRows(
+    (recentCallResult.data || []) as LeadActivityRow[],
+    (submittedCallResult.data || []) as LeadActivityRow[],
+    (completedCallResult.data || []) as LeadActivityRow[],
+  )
+  const candidateCalls = callRows.filter((row) => {
     const meta = record(row.metadata)
     if (isInternalTestRecording(meta)) return false
-    return Boolean(playableRecordingUrl(meta) && readRecordingDuration(meta) >= minDuration)
+    const workflow = readCallReviewWorkflow(meta)
+    return Boolean(playableRecordingUrl(meta) && (workflow.status !== 'available' || readRecordingDuration(meta) >= minDuration))
   })
   const leadIds = Array.from(new Set(candidateCalls.map((row) => row.lead_id).filter((id): id is string => Boolean(id))))
 
@@ -481,9 +494,21 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (action === 'submit' || action === 'complete') {
+    const existing = readCallReviewWorkflow(activityRow.metadata)
+    if (action === 'submit' && existing.status === 'submitted') {
+      return NextResponse.json(
+        { ok: true, activityId: activityRow.id, action, idempotent: true, workflow: existing },
+        { headers: NO_STORE_HEADERS },
+      )
+    }
+    if (action === 'submit' && existing.status === 'completed') {
+      return NextResponse.json(
+        { error: 'This call review is already completed. Reopen it from Scorecard to review it again.' },
+        { status: 409, headers: NO_STORE_HEADERS },
+      )
+    }
     const framework = getCallReviewFramework(body?.framework)
     if (!framework) return NextResponse.json({ error: 'Select a valid review framework' }, { status: 400, headers: NO_STORE_HEADERS })
-    const existing = readCallReviewWorkflow(activityRow.metadata)
     let updatedMetadata: Record<string, unknown>
     let description: string
     if (action === 'submit') {
