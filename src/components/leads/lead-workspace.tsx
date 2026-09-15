@@ -189,7 +189,7 @@ export function LeadWorkspace({
     [communicationFilter, normalizedActivities],
   )
   const visibleCommunicationFilters = COMMUNICATION_FILTERS.filter((filter) => (
-    filter.key === 'all' || filter.key === communicationFilter || communicationCounts[filter.key] > 0
+    filter.key === 'all' || filter.key === 'email' || filter.key === 'note' || filter.key === communicationFilter || communicationCounts[filter.key] > 0
   ))
   const latestOfferActivity = useMemo(() => [...activities]
     .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())

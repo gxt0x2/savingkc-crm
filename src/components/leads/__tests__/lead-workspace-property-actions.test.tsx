@@ -98,6 +98,14 @@ describe('LeadWorkspace property actions', () => {
     expect(screen.getByRole('combobox', { name: 'Assigned person' })).toHaveValue('Ernest')
   })
 
+  it('keeps Email and Notes filters available when their counts are zero', () => {
+    renderWorkspace()
+
+    expect(screen.getByRole('button', { name: /Emails\s*0/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Notes\s*0/ })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Voicemail\s*0/ })).not.toBeInTheDocument()
+  })
+
   it('opens a manual verbal or written offer form from the Opportunity panel', () => {
     renderWorkspace()
 
