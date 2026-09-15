@@ -178,6 +178,7 @@ BEGIN
   IF NOT FOUND THEN RETURN NULL; END IF;
   IF a.reschedule_requested_at IS NOT NULL THEN RETURN NULL; END IF;
   IF p_response='review' AND NOT a.sequence_enabled THEN RETURN NULL; END IF;
+  IF p_response='review' AND a.confirmation_status='confirmed' THEN RETURN NULL; END IF;
   IF a.sequence_enabled AND NOT EXISTS(SELECT 1 FROM public.appointment_sequence_steps WHERE appointment_id=a.id AND version=a.sequence_version AND touch IN ('booking_sms','confirm_sms') AND status='sent') THEN RETURN NULL; END IF;
   IF p_response='review' THEN
     INSERT INTO public.lead_activities(id,lead_id,activity_type,description,agent,metadata) VALUES(p_event_id,p_lead_id,'appointment_reply_review',
