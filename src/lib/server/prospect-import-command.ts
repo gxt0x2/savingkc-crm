@@ -3,7 +3,7 @@ import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 export const MAX_PROSPECT_IMPORT_ROWS = 500
 
 export interface ProspectImportRow {
-  full_name: string | null
+  full_name: string
   phone: string
   email: string | null
   property_address: string | null
@@ -15,7 +15,6 @@ export interface ProspectImportRow {
   classification: null
   priority: 'cold'
   is_parked: false
-  pipeline_intent_source: null
 }
 
 export class ProspectImportError extends Error {
@@ -70,6 +69,8 @@ export function parseProspectImportRows(payload: unknown): ProspectImportRow[] {
     const lastName = cleanText(first(record, ['last_name', 'lastname']), 100)
     const fullName = cleanText(first(record, ['full_name', 'name']), 200)
       ?? cleanText([firstName, lastName].filter(Boolean).join(' '), 200)
+    if (!fullName) throw new ProspectImportError('A contact name is required', rowNumber)
+    const source = cleanText(record.source, 100)
     const email = cleanText(first(record, ['email', 'email_address']), 320)?.toLowerCase() ?? null
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new ProspectImportError('Email address is invalid', rowNumber)
@@ -83,12 +84,11 @@ export function parseProspectImportRows(payload: unknown): ProspectImportRow[] {
       city: cleanText(record.city, 120),
       state: cleanText(record.state, 50),
       zip: cleanText(first(record, ['zip', 'postal_code', 'zipcode']), 20),
-      source: cleanText(record.source, 100) ?? 'csv_import',
+      source: !source || ['csv_import', 'contact_csv_import'].includes(source.toLowerCase()) ? 'import' : source,
       station: 'new',
       classification: null,
       priority: 'cold',
       is_parked: false,
-      pipeline_intent_source: null,
     }
   })
 }
