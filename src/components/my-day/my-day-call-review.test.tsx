@@ -39,6 +39,7 @@ describe('MyDayCallReview submitter notes', () => {
     render(<MyDayCallReview surface="scorecard" />)
 
     expect(await screen.findByText('Listen for the pricing objection near the end.')).toBeInTheDocument()
+    expect(screen.getByText('Submitted for review · 3:04 · Jr. Acquisitions Scorecard')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Score Call' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Gunner Byrd' })

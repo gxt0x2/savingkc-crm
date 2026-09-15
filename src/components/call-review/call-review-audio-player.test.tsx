@@ -31,4 +31,12 @@ describe('CallReviewAudioPlayer', () => {
     expect(restart.querySelector('svg')).toBeInTheDocument()
     expect(restart.querySelector('.material-symbols-outlined')).not.toBeInTheDocument()
   })
+
+  it('keeps compact queue controls on one line when space allows', () => {
+    render(<CallReviewAudioPlayer src="/api/recordings/RE123" knownDuration={1329} compact inline />)
+
+    const root = screen.getByLabelText('Original call recording').parentElement
+    expect(root).toHaveClass('sm:flex-nowrap')
+    expect(screen.getByLabelText('Playback elapsed and total time').parentElement).not.toHaveClass('mt-3')
+  })
 })

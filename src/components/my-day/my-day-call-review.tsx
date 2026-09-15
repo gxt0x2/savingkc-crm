@@ -525,7 +525,7 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
   return (
     <>
       <section aria-labelledby="scorecard-reviews-title" className="crm-panel overflow-hidden rounded-xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 py-4">
+        <div className={`flex flex-wrap items-center justify-between gap-3 border-b border-[var(--crm-border)] px-5 ${surface === 'scorecard' ? 'py-3' : 'py-4'}`}>
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--crm-brand-soft)] text-[var(--crm-brand)]">
               <Icon name="fact_check" />
@@ -560,29 +560,30 @@ export function MyDayCallReview({ onReviewActiveChange, surface = 'workspace' }:
           <div className="divide-y divide-[var(--crm-border)]">
             {visibleCalls.map((call) => {
               const attachedReview = reviewRecordingUrl(call)
+              const frameworkLabel = getCallReviewFramework(call.reviewWorkflow.framework)?.label || 'Jr. Acquisitions Scorecard'
               return (
-                <div key={call.id} className="grid items-center gap-3 px-5 py-3 md:grid-cols-[minmax(0,1fr)_210px_220px_125px]">
+                <div key={call.id} className={`grid items-center gap-3 px-5 ${surface === 'scorecard' ? 'py-2 md:grid-cols-[minmax(0,1fr)_minmax(340px,410px)_125px]' : 'py-3 md:grid-cols-[minmax(0,1fr)_210px_220px_125px]'}`}>
                   <div>
                     <p className="font-black">{call.leadName}</p>
-                    <p className="text-[11px] text-[var(--crm-text-muted)]">{call.reviewWorkflow.status === 'completed' ? `${call.reviewWorkflow.score ?? 0} / 3 · ${call.reviewWorkflow.completedBy || 'Reviewed'}` : `Submitted for review · ${formatDuration(call.durationSeconds)}`}</p>
+                    <p className="text-[11px] text-[var(--crm-text-muted)]">{call.reviewWorkflow.status === 'completed' ? `${call.reviewWorkflow.score ?? 0} / 3 · ${call.reviewWorkflow.completedBy || 'Reviewed'}` : `Submitted for review · ${formatDuration(call.durationSeconds)}${surface === 'scorecard' ? ` · ${frameworkLabel}` : ''}`}</p>
                     {call.reviewWorkflow.submissionNote ? (
                       <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--crm-text)]">
                         <span className="font-black text-[var(--crm-brand)]">Submitter note:</span> {call.reviewWorkflow.submissionNote}
                       </p>
                     ) : null}
-                    <div className="mt-1 flex flex-wrap gap-1">
+                    {call.reviewWorkflow.tags.length > 0 ? <div className="mt-1 flex flex-wrap gap-1">
                       {call.reviewWorkflow.tags.map((tag) => (
                         <span key={tag} className="rounded-full bg-[var(--crm-info-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--crm-info)]">
                           {tag}
                         </span>
                       ))}
-                    </div>
+                    </div> : null}
                   </div>
                   <div>
-                    <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]">{attachedReview ? 'Coaching review' : 'Original call'}</p>
-                    <CallReviewAudioPlayer label={attachedReview ? 'Attached coaching review' : 'Original call'} src={attachedReview || call.recordingUrl} knownDuration={attachedReview ? 0 : call.durationSeconds} compact />
+                    <p className={surface === 'scorecard' ? 'sr-only' : 'mb-1 text-[9px] font-black uppercase tracking-wider text-[var(--crm-text-muted)]'}>{attachedReview ? 'Coaching review' : 'Original call'}</p>
+                    <CallReviewAudioPlayer label={attachedReview ? 'Attached coaching review' : 'Original call'} src={attachedReview || call.recordingUrl} knownDuration={attachedReview ? 0 : call.durationSeconds} compact inline={surface === 'scorecard'} />
                   </div>
-                  <span className="truncate text-xs font-bold text-[var(--crm-text-muted)]">{getCallReviewFramework(call.reviewWorkflow.framework)?.label || 'Jr. Acquisitions Scorecard'}</span>
+                  {surface === 'workspace' ? <span className="truncate text-xs font-bold text-[var(--crm-text-muted)]">{frameworkLabel}</span> : null}
                   {call.reviewWorkflow.status === 'completed' ? (
                     <button type="button" onClick={() => setViewingCompleted(call)} className="crm-secondary-button inline-flex h-9 items-center justify-center rounded-md px-3 text-xs font-black">
                       View Review
