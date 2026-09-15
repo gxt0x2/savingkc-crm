@@ -199,7 +199,7 @@ function isStaticAsset(pathname: string): boolean {
     pathname.startsWith('/logo') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/audio') ||
-    /\.(ico|png|jpg|jpeg|svg|css|js|woff|woff2|mp3|wav)$/.test(pathname)
+    /\.(ico|png|jpg|jpeg|svg|css|js|eot|otf|ttf|woff|woff2|mp3|wav)$/.test(pathname)
   )
 }
 
