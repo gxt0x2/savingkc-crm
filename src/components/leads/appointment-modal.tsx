@@ -11,6 +11,7 @@ interface AppointmentModalProps {
     property_address: string | null
   }
   initialAppointment?: {
+    appointmentId?: string | null
     type?: string | null
     scheduledAt?: string | null
     assignedTo?: string | null
@@ -24,11 +25,9 @@ function appointmentToInputs(initialAppointment: AppointmentModalProps['initialA
   if (!initialAppointment?.scheduledAt) return { date: '', time: '10:00' }
   const d = new Date(initialAppointment.scheduledAt)
   if (isNaN(d.getTime())) return { date: '', time: '10:00' }
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d)
+  const value = (name: string) => parts.find(p => p.type === name)?.value || ''
+  const yyyy = value('year'), mm = value('month'), dd = value('day'), hh = value('hour'), mi = value('minute')
   return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}` }
 }
 
@@ -62,7 +61,11 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
     setSaving(true)
     setError(null)
 
-    const appointmentDate = new Date(`${form.date}T${form.time}:00`).toISOString()
+    const reference = new Date(`${form.date}T12:00:00Z`)
+    const zone = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(reference).find(p => p.type === 'timeZoneName')?.value
+    const offset = zone?.match(/^GMT([+-]\d{2}:\d{2})$/)?.[1]
+    if (!offset) { setSaving(false); setError('Central time could not be determined'); return }
+    const appointmentDate = new Date(`${form.date}T${form.time}:00${offset}`).toISOString()
     const assignedTo = form.agent.toLowerCase().includes('casey') ? 'casey' : 'ernest'
 
     try {
@@ -72,6 +75,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: lead.id,
+          appointmentId: initialAppointment?.appointmentId || undefined,
           type: form.type,
           scheduledAt: appointmentDate,
           assignedTo,
@@ -194,7 +198,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
                 className="rounded border-[color:var(--ck-border)] focus:ring-2 focus:ring-red-500/20"
                 style={{ accentColor: 'var(--ck-accent)' }}
               />
-              <span className="text-[color:var(--ck-text)]">Send SMS confirmation to seller</span>
+              <span className="text-[color:var(--ck-text)]">Send booking SMS + email and appointment reminders</span>
             </label>
             {error && (
               <p

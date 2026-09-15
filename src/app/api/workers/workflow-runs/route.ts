@@ -4,18 +4,22 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { executeNextWorkflowRun, workflowRunPayload, type WorkflowRun } from '@/lib/server/workflow-runs'
+import { processAppointmentSequence } from '@/lib/server/appointment-sequence'
+
+export const maxDuration = 60
 
 async function processRuns(requestedLimit: number) {
   try {
     const limit = Math.max(1, Math.min(Math.trunc(requestedLimit), 10))
     const workerId = `workflow-worker:${randomUUID()}`
     const runs: WorkflowRun[] = []
+    const appointments = await processAppointmentSequence(limit)
     for (let index = 0; index < limit; index += 1) {
       const run = await executeNextWorkflowRun(workerId)
       if (!run) break
       runs.push(run)
     }
-    return NextResponse.json({ processed: runs.length, runs }, {
+    return NextResponse.json({ processed: runs.length, runs, appointments }, {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
     })
   } catch (error) {

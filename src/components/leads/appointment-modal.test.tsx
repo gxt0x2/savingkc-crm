@@ -49,6 +49,10 @@ describe('AppointmentModal', () => {
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
     expect(onClose).toHaveBeenCalledOnce()
     const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { scheduledAt: string }
-    expect(request.scheduledAt).toBe(new Date(`${tomorrow}T10:00:00`).toISOString())
+    const centralTime = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).format(new Date(request.scheduledAt))
+    expect(centralTime).toBe(`${tomorrow} 10:00`)
   })
 })

@@ -220,7 +220,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
     id: 'appointment-set',
     name: 'Appointment Set',
-    description: 'Creates one canonical appointment, optionally queues one durable confirmation, and requires a human-reviewed outcome.',
+    description: 'Creates one canonical appointment, optionally enrolls booking SMS and email plus reminders, and requires a human-reviewed outcome.',
     category: 'appointment', status: 'active', health: 'healthy', owner: ACQUISITIONS_OWNER,
     trigger: { type: 'appointment_status_changed', toStatus: 'scheduled' },
     actions: [{ type: 'create_calendar_event' }, { type: 'send_sms', templateId: 'appointment_confirmation', consentRequired: true }, { type: 'execute', label: 'Require a human to record the factual appointment outcome' }],
@@ -230,12 +230,12 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
   {
     id: 'appointment-ghost-protocol',
     name: 'Appointment Ghost Protocol',
-    description: 'Archived unscheduled heuristic that created unverified reminder messages and owner tasks from Manifest JSON.',
-    category: 'appointment', status: 'archived', health: 'not_run', owner: ACQUISITIONS_OWNER,
-    trigger: { type: 'record_changed', record: 'appointment', event: 'ghost risk reaches threshold' },
-    actions: [{ type: 'execute', label: 'No execution; historical definition retained for audit only' }],
-    implementation: implementation(['src/lib/operating-model/workflow-catalog.ts'], { execution: 'library', mutatesData: false, approvalPolicy: 'user_confirmation' }),
-    version: 2, lastRunAt: null,
+    description: 'Booking SMS and email, reply-gated confirmation, morning reminder, automatic 52-minute in-person arrival text, and rep escalation.',
+    category: 'appointment', status: 'active', health: 'not_run', owner: ACQUISITIONS_OWNER,
+    trigger: { type: 'record_changed', record: 'appointment', event: 'appointment reminders enabled or appointment changed' },
+    actions: [{ type: 'execute', label: 'Deliver the versioned appointment sequence and record each result' }, { type: 'execute', label: 'Create and escalate confirmation calls after four hours of silence' }],
+    implementation: implementation(['src/lib/server/appointment-sequence.ts', '/api/workers/workflow-runs'], { execution: 'worker', schedule: '* * * * *' }),
+    version: 3, lastRunAt: null,
   },
   {
     id: 'conversation-attention-state',

@@ -97,6 +97,9 @@ interface ActivityRow {
 }
 
 interface AppointmentState {
+  confirmationStatus?: string
+  noShowRisk?: boolean
+  rescheduleRequestedAt?: string | null
   appointmentId: string | null
   type: string | null
   scheduledAt: string
@@ -759,6 +762,11 @@ export default function LeadDetailPage() {
 
   return (
     <>
+      {activeAppointment && (activeAppointment.noShowRisk || activeAppointment.rescheduleRequestedAt || activeAppointment.confirmationStatus === 'confirmed') && (
+        <div className="px-6 py-2 text-sm text-[var(--ck-text)]" role="status">
+          {activeAppointment.rescheduleRequestedAt ? 'Seller requested rescheduling — reminders stopped.' : activeAppointment.confirmationStatus === 'confirmed' ? 'Seller confirmed the appointment.' : 'No-show risk — confirmation call needs review.'}
+        </div>
+      )}
       <LeadWorkspace
         lead={presentationLead}
         activities={workspaceActivities}

@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
     let appointmentQuery = supabase
       .from('appointments')
-      .select('id, notes, scheduled_at, status')
+      .select('id, notes, scheduled_at, status, confirmation_status, no_show_risk, no_show_risk_at')
       .eq('lead_id', leadId)
     if (isUuid(requestedAppointmentId)) {
       appointmentQuery = appointmentQuery.eq('id', requestedAppointmentId)
@@ -76,6 +76,9 @@ export async function POST(req: NextRequest) {
       metadata: {
         appointment_id: appointment.id,
         outcome,
+        confirmation_status: appointment.confirmation_status,
+        no_show_risk: appointment.no_show_risk,
+        no_show_risk_at: appointment.no_show_risk_at,
         notes: notes || null,
         recorded_at: now,
         actor_email: actor.email,

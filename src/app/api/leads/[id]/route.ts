@@ -16,6 +16,9 @@ type LeadPayload = JsonRecord & {
 }
 
 type AppointmentDbRow = {
+  confirmation_status?: string | null
+  no_show_risk?: boolean
+  reschedule_requested_at?: string | null
   id?: string | null
   scheduled_at?: string | null
   type?: string | null
@@ -53,6 +56,9 @@ function normalizeDateValue(value: unknown): string | null {
 }
 
 function normalizeAppointment(row: {
+  confirmation_status?: string | null
+  no_show_risk?: boolean
+  reschedule_requested_at?: string | null
   id?: string | null
   scheduled_at?: string | null
   scheduledAt?: string | null
@@ -75,6 +81,9 @@ function normalizeAppointment(row: {
     address: row?.address ?? null,
     notes: row?.notes ?? null,
     source: row?.source ?? null,
+    confirmationStatus: row?.confirmation_status ?? 'pending',
+    noShowRisk: row?.no_show_risk ?? false,
+    rescheduleRequestedAt: row?.reschedule_requested_at ?? null,
   }
 }
 
@@ -148,7 +157,7 @@ export async function GET(
       .eq('id', id)
       .single(),
     db.from('appointments')
-      .select('id, scheduled_at, type, status, address, notes, source, assigned_to')
+      .select('id, scheduled_at, type, status, address, notes, source, assigned_to, confirmation_status, no_show_risk, reschedule_requested_at')
       .eq('lead_id', id)
       .in('status', ['scheduled', 'confirmed', 'rescheduled'])
       .gte('scheduled_at', nowIso)
