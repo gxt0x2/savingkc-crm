@@ -7,7 +7,7 @@ import { Icon } from '@/components/ui/icon'
 import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
 import { EntityIdentityStatus } from '@/components/leads/entity-identity-status'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
-import { LeadOpportunityPanel, LEAD_WORKSPACE_STAGES } from '@/components/leads/lead-opportunity-panel'
+import { LeadOpportunityPanel } from '@/components/leads/lead-opportunity-panel'
 import { openLeadNextAction } from '@/components/leads/governed-next-action'
 import { RecordOfferModal } from '@/components/leads/record-offer-modal'
 import { StageSelector } from '@/components/leads/stage-selector'
@@ -23,6 +23,7 @@ import {
 } from '@/lib/lead-conversation'
 import { playableRecordingUrl } from '@/lib/marketing/call-recordings'
 import { cn } from '@/lib/utils'
+import { leadWorkspaceStageLabel } from '@/lib/lead-stage'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
 
 export interface LeadWorkspaceLead {
@@ -37,6 +38,10 @@ export interface LeadWorkspaceLead {
   source: string | null
   station: string | null
   priority: string | null
+  notes?: string | null
+  seller_situation?: string | null
+  is_favorite?: boolean | null
+  opportunity_score?: number | null
   assigned_agent: string | null
   beds: number | null
   baths_full: number | null
@@ -182,7 +187,6 @@ export function LeadWorkspace({
   const owner = toProperCase(lead.assigned_agent) || 'Unassigned'
   const address = [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${encodeURIComponent(address)}&fov=90&pitch=4&key=${process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''}`
-  const stageIndex = Math.max(0, LEAD_WORKSPACE_STAGES.findIndex((stage) => stage.keys.includes((lead.station || 'new').toLowerCase())))
   const normalizedActivities = useMemo(() => normalizeLeadConversation(activities), [activities])
   const communicationCounts = useMemo(() => leadConversationCounts(normalizedActivities), [normalizedActivities])
   const visibleActivities = useMemo(
@@ -364,7 +368,7 @@ export function LeadWorkspace({
                     ) : null}
                     <span className="hidden items-center gap-1 rounded-md border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-success)] sm:inline-flex">
                       <Icon name="flag" className="text-[13px]" />
-                      {LEAD_WORKSPACE_STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
+                      {leadWorkspaceStageLabel(lead.station)}
                     </span>
                     <span className="hidden sm:inline-flex"><LeadOwnerControl leadId={lead.id} owner={lead.assigned_agent} onChanged={onOwnerChange} /></span>
                     <EntityIdentityStatus context={lead.entityContext} />
@@ -691,6 +695,11 @@ export function LeadWorkspace({
             leadId={lead.id}
             nextActionTask={nextTask}
             station={lead.station}
+            source={lead.source}
+            notes={lead.notes}
+            sellerSituation={lead.seller_situation}
+            isFavorite={lead.is_favorite}
+            activities={activities}
             score={score}
             motivationScore={lead.motivation_score}
             estimatedValue={lead.arv ?? assessedValue}
