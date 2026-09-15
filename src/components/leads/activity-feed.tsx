@@ -1,34 +1,17 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Icon } from '@/components/ui/icon'
 import Link from 'next/link'
-import type { ActivityType } from '@/types'
 import { getAgentProfile } from '@/lib/agent-profiles'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
-
-interface FeedItem {
-  id: string
-  type: ActivityType
-  title: string
-  content?: string
-  timestamp: string
-  statusBadge?: string
-  dispositionLabel?: string
-  dispositionTone?: 'positive' | 'neutral' | 'negative'
-  direction?: 'inbound' | 'outbound'
-  link?: string
-  linkLabel?: string
-  recordingUrl?: string
-  recordingSid?: string
-  recordingDuration?: number
-  rawType?: string
-  agentName?: string
-  metadata?: Record<string, unknown>
-}
+import {
+  simplifyActivityFeedItems,
+  type ActivityFeedItem,
+} from '@/lib/activity-feed-simplify'
 
 interface ActivityFeedProps {
-  activities: FeedItem[]
+  activities: ActivityFeedItem[]
   leadPhone?: string
   leadEmail?: string
   leadId?: string
@@ -383,12 +366,16 @@ function SegmentedFilter({
   counts: Record<ActivityFilter, number>
   onChange: (key: ActivityFilter) => void
 }) {
+  const visibleFilters = FILTERS.filter((filter) => (
+    filter.key === 'all' || filter.key === active || counts[filter.key] > 0
+  ))
+
   return (
     <div
       className="flex items-center gap-1 p-1 rounded-full overflow-x-auto scrollbar-hide mb-3"
       style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)' }}
     >
-      {FILTERS.map((f) => {
+      {visibleFilters.map((f) => {
         const selected = active === f.key
         return (
           <button
@@ -426,7 +413,7 @@ function ActivityRow({
   onEditNote,
   onEditTask,
 }: {
-  activity: FeedItem
+  activity: ActivityFeedItem
   onEditNote?: (noteId: string, currentContent: string) => void
   onEditTask?: (taskId: string, currentTitle: string, metadata: Record<string, unknown>) => void
 }) {
@@ -435,6 +422,8 @@ function ActivityRow({
   const cfg = typeConfig[rawType] || typeConfig.status_change
   const isMilestone = MILESTONES.has(rawType)
   const hasRecording = Boolean(activity.recordingUrl) && (rawType === 'call' || rawType === 'voicemail')
+  const hasCallDetails = rawType === 'call'
+    && (hasRecording || Boolean(activity.callSummary) || Boolean(activity.callTranscript))
   const isCallOrSms = rawType === 'call' || rawType === 'sms' || rawType === 'email'
   const showDirection = isCallOrSms && (activity.direction === 'inbound' || activity.direction === 'outbound')
 
@@ -483,13 +472,13 @@ function ActivityRow({
 
         {/* Meta row: duration + agent (for calls) */}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {activity.statusBadge && (
+          {activity.statusBadge && !hasRecording ? (
             <span className="text-[11px] tabular-nums" style={{ color: 'var(--ck-text-muted)' }}>
               {activity.statusBadge}
             </span>
-          )}
+          ) : null}
           {activity.agentName && <AgentInitial name={activity.agentName} />}
-          {hasRecording && (
+          {hasCallDetails && (
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
@@ -497,7 +486,7 @@ function ActivityRow({
               style={{ color: '#E32E2E' }}
             >
               <Icon name={expanded ? 'expand_less' : 'play_circle'} size="text-sm" filled />
-              {expanded ? 'Hide recording' : 'Play recording'}
+              {expanded ? 'Hide call details' : hasRecording ? 'Recording & details' : 'Call details'}
             </button>
           )}
           {activity.rawType === 'note' && onEditNote && (
@@ -526,12 +515,36 @@ function ActivityRow({
           )}
         </div>
 
-        {hasRecording && expanded && activity.recordingUrl && (
-          <CallRecordingPlayer
-            url={activity.recordingUrl}
-            durationSeconds={activity.recordingDuration}
-          />
-        )}
+        {hasCallDetails && expanded ? (
+          <div className="mt-2 rounded-xl p-3" style={{ background: 'var(--ck-surface-elev)' }}>
+            {hasRecording && activity.recordingUrl ? (
+              <CallRecordingPlayer
+                url={activity.recordingUrl}
+                durationSeconds={activity.recordingDuration}
+              />
+            ) : null}
+            {activity.callSummary ? (
+              <div className="mt-3">
+                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-dim)' }}>
+                  AI summary
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--ck-text-muted)' }}>
+                  {activity.callSummary}
+                </p>
+              </div>
+            ) : null}
+            {activity.callTranscript ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-[11px] font-semibold" style={{ color: 'var(--ck-text-muted)' }}>
+                  Transcript
+                </summary>
+                <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'var(--ck-text-muted)' }}>
+                  {activity.callTranscript}
+                </p>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
 
         {activity.link && (
           <Link
@@ -558,17 +571,18 @@ export function ActivityFeed({
 }: ActivityFeedProps) {
   const [open, toggleOpen] = useCardCollapse('activity-feed', prominent)
   const [filter, setFilter] = useState<ActivityFilter>('all')
+  const simplifiedActivities = useMemo(() => simplifyActivityFeedItems(activities), [activities])
 
   const counts: Record<ActivityFilter, number> = {
-    all:   activities.length,
-    call:  activities.filter((a) => (a.rawType || a.type) === 'call').length,
-    sms:   activities.filter((a) => (a.rawType || a.type) === 'sms').length,
-    email: activities.filter((a) => (a.rawType || a.type) === 'email').length,
-    mail:  activities.filter((a) => (a.rawType || a.type) === 'letter_tracking').length,
-    note:  activities.filter((a) => (a.rawType || a.type) === 'note').length,
+    all:   simplifiedActivities.length,
+    call:  simplifiedActivities.filter((a) => (a.rawType || a.type) === 'call').length,
+    sms:   simplifiedActivities.filter((a) => (a.rawType || a.type) === 'sms').length,
+    email: simplifiedActivities.filter((a) => (a.rawType || a.type) === 'email').length,
+    mail:  simplifiedActivities.filter((a) => (a.rawType || a.type) === 'letter_tracking').length,
+    note:  simplifiedActivities.filter((a) => (a.rawType || a.type) === 'note').length,
   }
   const activeFilter = FILTERS.find((f) => f.key === filter) ?? FILTERS[0]
-  const filtered = activities.filter((a) => activeFilter.matches(a.rawType || a.type))
+  const filtered = simplifiedActivities.filter((a) => activeFilter.matches(a.rawType || a.type))
   const visible = prominent || open
 
   const handleAction = (type: 'call' | 'sms' | 'email') => onCompose?.(type)
@@ -583,19 +597,7 @@ export function ActivityFeed({
       }}
     >
       {/* Header */}
-      {prominent ? (
-        <div className="w-full flex justify-between items-center mb-4">
-          <h2
-            className="text-[17px] font-bold tracking-tight"
-            style={{ color: 'var(--ck-text)' }}
-          >
-            Activity
-          </h2>
-          <span className="text-[12px] font-medium" style={{ color: 'var(--ck-text-muted)' }}>
-            {activities.length} {activities.length === 1 ? 'event' : 'events'}
-          </span>
-        </div>
-      ) : (
+      {prominent ? null : (
         <button
           type="button"
           onClick={toggleOpen}
@@ -616,7 +618,7 @@ export function ActivityFeed({
 
       {!visible ? null : (
         <>
-          <CommsBar onAction={handleAction} />
+          {!prominent ? <CommsBar onAction={handleAction} /> : null}
           <SegmentedFilter active={filter} counts={counts} onChange={setFilter} />
 
           {filtered.length === 0 ? (
