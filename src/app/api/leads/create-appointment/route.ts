@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
-import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
@@ -18,7 +17,7 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = buildAppointmentCommand(await req.json(), actor.name)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status })
-    const { leadId, type, scheduledAt, assignedTo, notes, sendReminder } = parsed.command
+    const { appointmentId: existingAppointmentId, leadId, type, scheduledAt, assignedTo, notes, sendReminder } = parsed.command
 
     const { data: leadRow, error: leadError } = await supabase
       .from('leads')
@@ -28,17 +27,17 @@ export async function POST(req: NextRequest) {
     if (leadError) return NextResponse.json({ error: 'Contact could not be loaded' }, { status: 500 })
     if (!leadRow) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
     const address = type === 'in_person' ? leadRow.property_address ?? null : null
-    const phone = typeof leadRow.phone === 'string' ? leadRow.phone : null
-    const leadName = typeof leadRow.full_name === 'string' ? leadRow.full_name : null
 
     const canonicalAppointment = await upsertAppointmentFromCall({
       leadId,
       scheduledAt,
+      appointmentId: existingAppointmentId,
       type,
       address,
       notes,
       source: 'manual',
       assignedTo,
+      sequenceEnabled: sendReminder,
     })
     if (!canonicalAppointment) {
       return NextResponse.json({ error: 'Appointment could not be saved' }, { status: 500 })
@@ -110,24 +109,7 @@ export async function POST(req: NextRequest) {
       source: 'appointment_modal',
     }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 
-    // Create SMS reminder task if requested.
-    if (sendReminder && phone) {
-      const reminderBody = `Hi ${leadName || 'there'}, your appointment with Saving KC is confirmed for ${dateDisplay} at ${timeDisplay}. We look forward to speaking with you!`
-
-      await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        activity_type: 'sms',
-        description: 'SMS appointment confirmation queued',
-        agent: 'System',
-        metadata: buildQueuedSmsMetadata({
-          to: phone,
-          from: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
-          body: reminderBody,
-          source: 'appointment_modal',
-          template: 'manual_appointment_confirmation',
-        }),
-      })
-    }
+    // The appointment trigger atomically enrolls the durable Ghost Protocol sequence.
 
     return NextResponse.json({
       success: true,

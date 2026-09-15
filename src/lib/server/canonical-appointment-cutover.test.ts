@@ -36,9 +36,9 @@ describe('canonical appointment cutover contract', () => {
     expect(dispositionCommand).not.toContain("scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000)")
   })
 
-  it('archives the unscheduled heuristic ghost automation and removes its executable files', () => {
+  it('uses the canonical Ghost Protocol worker while keeping legacy heuristic files removed', () => {
     const catalog = source('src/lib/operating-model/workflow-catalog.ts')
-    expect(catalog).toMatch(/id: 'appointment-ghost-protocol'[\s\S]*status: 'archived', health: 'not_run'/)
+    expect(catalog).toMatch(/id: 'appointment-ghost-protocol'[\s\S]*status: 'active', health: 'not_run'/)
     expect(existsSync(resolve(root, 'src/app/api/workers/appointment-reminder/route.ts'))).toBe(false)
     expect(existsSync(resolve(root, 'src/lib/ghost-protocol-appointment.ts'))).toBe(false)
     expect(existsSync(resolve(root, 'src/lib/ghost-risk-calculator.ts'))).toBe(false)

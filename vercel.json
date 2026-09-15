@@ -20,7 +20,7 @@
     },
     {
       "path": "/api/workers/workflow-runs",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/workers/prospecting-campaigns",

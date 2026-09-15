@@ -249,7 +249,7 @@ export async function POST(req: Request) {
         if (appointmentResponse.handled) {
           regenerateBriefing(
             leadId,
-            appointmentResponse.response === 'confirm' ? 'appointment_confirmed' : 'appointment_rescheduled',
+            appointmentResponse.response === 'confirm' ? 'appointment_confirmed' : appointmentResponse.response === 'reschedule' ? 'appointment_rescheduled' : 'appointment_reply_review',
           ).catch(() => {})
           return emptyTwimlResponse()
         }
