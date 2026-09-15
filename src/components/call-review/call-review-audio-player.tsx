@@ -40,6 +40,7 @@ export function CallReviewAudioPlayer({
   onPositionChange,
   onDurationChange,
   compact = false,
+  inline = false,
   className = '',
   downloadName,
 }: {
@@ -51,6 +52,7 @@ export function CallReviewAudioPlayer({
   onPositionChange?: (seconds: number) => void
   onDurationChange?: (seconds: number) => void
   compact?: boolean
+  inline?: boolean
   className?: string
   downloadName?: string
 }) {
@@ -106,7 +108,7 @@ export function CallReviewAudioPlayer({
   }
 
   return (
-    <div className={`rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] ${compact ? 'p-2.5' : 'p-4'} ${className}`}>
+    <div className={`rounded-xl border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] ${compact ? inline ? 'p-2' : 'p-2.5' : 'p-4'} ${inline ? 'flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap' : ''} ${className}`}>
       <audio
         ref={bindAudio}
         aria-label={label}
@@ -119,7 +121,7 @@ export function CallReviewAudioPlayer({
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); onEnded?.() }}
       />
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex items-center gap-2 ${inline ? 'shrink-0' : 'flex-wrap'}`}>
         <button type="button" onClick={() => void togglePlayback()} aria-label={playing ? 'Pause original call' : 'Play original call'} className={`crm-primary-button inline-flex h-10 items-center justify-center gap-2 rounded-lg text-xs font-black ${compact ? 'w-10 px-0' : 'px-4'}`}>
           <PlaybackGlyph name={playing ? 'pause' : 'play'} /><span className={compact ? 'sr-only' : undefined}>{playing ? 'Pause' : 'Play'}</span>
         </button>
@@ -127,15 +129,15 @@ export function CallReviewAudioPlayer({
           <PlaybackGlyph name="restart" /><span className={compact ? 'sr-only' : undefined}>Restart</span>
         </button>
         {downloadName ? <a href={src} download={downloadName} aria-label="Download call recording" className="crm-secondary-button inline-flex h-10 w-10 items-center justify-center rounded-lg"><DownloadGlyph /></a> : null}
-        <label className="ml-auto flex items-center gap-2 text-[11px] font-black text-[var(--crm-text-muted)]">
+        <label className={`${inline ? '' : 'ml-auto'} flex items-center gap-2 text-[11px] font-black text-[var(--crm-text-muted)]`}>
           <span className={compact ? 'sr-only' : undefined}>Speed</span>
           <select aria-label="Playback speed" value={speed} onChange={(event) => changeSpeed(Number(event.target.value))} className="crm-field h-10 rounded-lg px-2 text-xs font-black">
             {PLAYBACK_SPEEDS.map((value) => <option key={value} value={value}>{value}x</option>)}
           </select>
         </label>
       </div>
-      <div className="mt-3 flex items-center gap-3">
-        <span className={`${compact ? 'min-w-[84px] text-[11px]' : 'min-w-[98px] text-xs'} font-mono font-black`} aria-label="Playback elapsed and total time">{formatPlaybackTime(position)} / {formatPlaybackTime(duration || knownDuration)}</span>
+      <div className={`${inline ? 'flex w-full min-w-0 items-center gap-2 sm:ml-auto sm:w-auto sm:flex-1' : 'mt-3 flex items-center gap-3'}`}>
+        <span className={`${compact ? inline ? 'min-w-[76px] text-[10px]' : 'min-w-[84px] text-[11px]' : 'min-w-[98px] text-xs'} font-mono font-black`} aria-label="Playback elapsed and total time">{formatPlaybackTime(position)} / {formatPlaybackTime(duration || knownDuration)}</span>
         <input aria-label="Original call position" type="range" min={0} max={Math.max(duration || finiteSeconds(knownDuration), 1)} step={0.1} value={position} onChange={(event) => seek(Number(event.target.value))} className="w-full" />
       </div>
     </div>
