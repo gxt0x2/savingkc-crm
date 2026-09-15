@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
-import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
+import { CallActivityDetails } from '@/components/leads/call-activity-details'
 import { EntityIdentityStatus } from '@/components/leads/entity-identity-status'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
 import { LeadOpportunityPanel } from '@/components/leads/lead-opportunity-panel'
@@ -22,7 +22,6 @@ import {
   type LeadConversationActivity,
   type LeadCommunicationFilter,
 } from '@/lib/lead-conversation'
-import { playableRecordingUrl } from '@/lib/marketing/call-recordings'
 import { cn } from '@/lib/utils'
 import { leadWorkspaceStageLabel } from '@/lib/lead-stage'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
@@ -996,8 +995,6 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
   const isOutbound = direction === 'Outbound'
   const isCall = activity.activity_type === 'call'
   const text = leadActivityText(activity)
-  const recordingUrl = playableRecordingUrl(activity.metadata)
-  const hasCallDetails = isCall && Boolean(recordingUrl || activity.callSummary || activity.callTranscript)
   return (
     <article className="grid grid-cols-[92px_34px_1fr] gap-3">
       <time className="pt-1 text-right text-[11px] leading-4 text-[var(--crm-text-muted)]">{formatActivityDate(activity.created_at)}</time>
@@ -1011,38 +1008,7 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
           {activity.agent ? <span className="text-[10px] text-[var(--crm-text-muted)]">by {toProperCase(activity.agent)}</span> : null}
         </div>
         <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-[var(--crm-text)]">{text}</p>
-        {hasCallDetails ? (
-          <details className="mt-2 rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface)]">
-            <summary className="cursor-pointer list-none px-3 py-2 text-xs font-bold text-[var(--crm-brand)] [&::-webkit-details-marker]:hidden">
-              <span className="inline-flex items-center gap-1.5">
-                <Icon name={recordingUrl ? 'play_circle' : 'notes'} className="text-[17px]" />
-                {recordingUrl ? 'Recording & details' : 'Call details'}
-              </span>
-            </summary>
-            <div className="border-t border-[var(--crm-border)] px-3 pb-3">
-              {recordingUrl ? (
-                <>
-                  <audio className="mt-3 w-full accent-[var(--crm-brand)]" controls preload="metadata" src={recordingUrl}>
-                    Your browser does not support call recording playback.
-                  </audio>
-                  <CallReviewSubmitButton activityId={activity.recordingActivityId || activity.id} recordingUrl={recordingUrl} />
-                </>
-              ) : null}
-              {activity.callSummary ? (
-                <div className="mt-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.08em] text-[var(--crm-text-muted)]">AI summary</p>
-                  <p className="mt-1 text-sm leading-5 text-[var(--crm-text)]">{activity.callSummary}</p>
-                </div>
-              ) : null}
-              {activity.callTranscript ? (
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-xs font-bold text-[var(--crm-text-muted)]">Transcript</summary>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-5 text-[var(--crm-text-muted)]">{activity.callTranscript}</p>
-                </details>
-              ) : null}
-            </div>
-          </details>
-        ) : null}
+        {isCall ? <CallActivityDetails activity={activity} /> : null}
       </div>
     </article>
   )
