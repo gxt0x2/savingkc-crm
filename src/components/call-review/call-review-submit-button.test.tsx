@@ -12,7 +12,10 @@ describe('CallReviewSubmitButton', () => {
   })
 
   it('lets the submitter add a quick note before sending the call to Ernest', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ workflow: { status: 'submitted', assignedReviewer: 'ernest@savingkc.com', submittedAt: '2026-09-15T13:49:22.000Z', completedAt: null, completedBy: null } }),
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<CallReviewSubmitButton activityId="call-123" />)
@@ -31,7 +34,16 @@ describe('CallReviewSubmitButton', () => {
       assignedReviewer: 'ernest@savingkc.com',
       note: 'Listen for the pricing objection.',
     })
-    expect(await screen.findByRole('status')).toHaveTextContent('Sent to Ernest for review.')
+    expect(await screen.findByRole('status')).toHaveTextContent('Submitted to Ernest for review')
+    expect(screen.queryByRole('button', { name: 'Submit for Review' })).not.toBeInTheDocument()
+  })
+
+  it('shows durable server state instead of offering a duplicate submission', () => {
+    render(<CallReviewSubmitButton activityId="call-789" initialWorkflow={{ status: 'submitted', assignedReviewer: 'ernest@savingkc.com', submittedAt: '2026-09-15T13:49:22.000Z', completedAt: null, completedBy: null }} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Submitted to Ernest for review')
+    expect(screen.queryByRole('textbox', { name: 'Quick note to reviewer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Submit for Review' })).not.toBeInTheDocument()
   })
 
   it('queues the exact call locally when a preview blocks database writes', async () => {

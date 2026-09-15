@@ -22,10 +22,13 @@ describe('CallReviewAudioPlayer', () => {
     audio.currentTime = 38
 
     fireEvent.change(screen.getByLabelText('Playback speed'), { target: { value: '1.5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Restart' }))
+    const restart = screen.getByRole('button', { name: 'Restart' })
+    fireEvent.click(restart)
 
     expect(audio.playbackRate).toBe(1.5)
     expect(audio.currentTime).toBe(0)
     expect(play).toHaveBeenCalled()
+    expect(restart.querySelector('svg')).toBeInTheDocument()
+    expect(restart.querySelector('.material-symbols-outlined')).not.toBeInTheDocument()
   })
 })

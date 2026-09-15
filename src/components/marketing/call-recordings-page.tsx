@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CallReviewAudioPlayer } from '@/components/call-review/call-review-audio-player'
 import { CALL_REVIEW_FRAMEWORKS, CALL_REVIEW_TAGS, type CallReviewFrameworkId } from '@/lib/call-review-frameworks'
 import { CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH, type RecordingReviewOutcome, type StoredRecordingReviewOutcome } from '@/lib/marketing/call-recordings'
 
@@ -313,7 +314,7 @@ export function CallRecordingsPage() {
                       {row.opportunityScore !== null ? <span>Score {row.opportunityScore}</span> : null}
                     </div>
 
-                    <audio controls preload="metadata" src={row.recordingUrl} />
+                    <CallReviewAudioPlayer src={row.recordingUrl} knownDuration={row.durationSeconds} label={`Call recording for ${row.leadName}`} compact />
 
                     <div className="review-line">
                       <input
