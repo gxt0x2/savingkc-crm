@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { appointmentCopy, type AppointmentTouch } from './appointment-sequence-copy'
+import { appointmentCopy, type AppointmentTouch } from './appointment-sequence-templates'
 
 type Step = { id: string; appointment_id: string; version: number; touch: AppointmentTouch; due_at: string }
 

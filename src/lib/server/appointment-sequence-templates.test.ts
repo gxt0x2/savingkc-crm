@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appointmentCopy } from './appointment-sequence-copy'
+import { appointmentCopy } from './appointment-sequence-templates'
 
 const input = { firstName: 'Ernest Dodson', repName: 'Casey Davis', repPhone: '+18167277667', scheduledAt: '2026-09-16T22:00:00Z', bookedAt: '2026-09-14T18:00:00Z', type: 'in_person' }
 describe('appointment seller copy', () => {
