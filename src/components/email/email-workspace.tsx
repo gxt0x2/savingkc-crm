@@ -24,7 +24,7 @@ const views: [InboxView, string][] = [
   ['action', 'To do'],
   ['waiting', 'Waiting on seller'],
   ['scheduled', 'Scheduled'],
-  ['done', 'Done'],
+  ['done', 'Email handled'],
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
@@ -683,7 +683,7 @@ export function EmailWorkspace({
                         onClick={() => selectCampaign(c.id)}
                       >
                         <strong>{c.name}</strong>
-                        <span>{c.state}</span>
+                        <span>{c.is_test ? 'Setup test · report separately' : c.state}</span>
                         <small>
                           {c.started}/{c.approved} recipients started
                         </small>

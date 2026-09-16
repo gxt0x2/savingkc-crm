@@ -1066,7 +1066,7 @@ withDb(
     )
     const [lead] = await db.sql`select * from leads`
     assert.equal((await db.sql`select * from leads`).length, 1)
-    assert.equal(lead.phone, null)
+    assert.equal(lead.phone, '+18165550101')
     assert.equal(lead.email, state.threads[0].email)
     assert.equal(lead.station, 'contacted')
     assert.equal(lead.classification, 'lead')

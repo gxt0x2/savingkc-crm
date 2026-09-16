@@ -4,6 +4,7 @@ import { check, json, workflowHash, type Context } from './workflow/core'
 import { pilotCallbackDue } from './workflow/schedule'
 import { projectThreadHistory } from './crm-history'
 import { emailWorkspaceConfigSchema } from './config'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 
 export type LeadBridgeFacts = {
   positiveSellerInterest: boolean
@@ -386,7 +387,7 @@ export async function projectEmailHandoffToCrm(
         property_type,bedrooms,bathrooms,sqft,year_built,source,station,
         classification,priority,assigned_agent,is_parked
       ) values(
-        ${thread.display_name},${null},${thread.normalized_address},
+        ${thread.display_name},${normalizePhoneToE164(input.requestedContact.phone)},${thread.normalized_address},
         ${property.address},${property.city},${property.state},${property.zip},
         ${property.county},${property.parcel_id},${property.property_type},
         ${property.bedrooms},${property.bathrooms},${property.sqft},

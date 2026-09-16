@@ -82,7 +82,7 @@ export function nextWork(thread: PilotThread, asOf: string) {
   if (thread.callback_request?.reviewed) return 'Test complete'
   if (thread.state === 'stopped' && thread.callback_task_state === 'pending') return 'Callback follow-up · marketing stopped'
   if (thread.state === 'stopped') return 'Marketing stopped'
-  if (thread.state === 'done') return 'Done'
+  if (thread.state === 'done') return 'Email handled'
   if (thread.state === 'needs_review') return 'Reply received'
   if (thread.scheduled_for && thread.callback_task_state === 'pending')
     return new Date(thread.scheduled_for) > new Date(asOf)

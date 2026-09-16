@@ -15,6 +15,7 @@ import { suppress } from '../workflow/service'
 import { projectCrmChanges } from '../crm-repairs'
 import { normalizeReceivedContent, authoredReplyText } from './content'
 import { receivingProvider, type ReceivingProvider } from './provider'
+import { automaticallyHandoffCallback } from './automatic-callback'
 
 const retryable = new Set([
   'REPLY_PROVIDER_UNAVAILABLE',
@@ -178,6 +179,10 @@ export async function processNextReceivedReply(
       }
       await tx`update em_provider_events set state='processed',hold_reason=null,encrypted_content=${tx.json(json(encryptEmailSecret(serialized, key, `${ws.id}/${event.id}/resend-content/1`, 1)))} where id=${event.id}`
       await tx`update em_threads set inbound_pending=exists(select 1 from em_provider_events where workspace_id=${ws.id} and thread_id=${thread.id} and state<>'processed' and type='email.received') where id=${thread.id}`
+      if (!content.optOut && (!content.headers['auto-submitted'] || content.headers['auto-submitted'].toLowerCase() === 'no')) {
+        const handled = await automaticallyHandoffCallback(context, thread.id, messageId)
+        if (handled) await tx`update em_notifications set acknowledged_at=${now} where workspace_id=${ws.id} and logical_key=${`received:${event.connection_id}:${content.id}`}`
+      }
       await tx`update em_jobs set state='done',lease_token=null,lease_until=null,last_error=null,updated_at=${now} where id=${job.id} and lease_token=${claim.token}`
       return {
         state: existing

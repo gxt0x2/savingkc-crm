@@ -24,6 +24,7 @@ export interface PilotReview {
   recipients: RecipientReview[]
 }
 export interface PilotCampaign {
+  is_test?: boolean
   id: string
   name: string
   state: string
