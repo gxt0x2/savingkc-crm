@@ -86,23 +86,25 @@ async function launchCommand(db: Database, id: string) {
     },
   }
 }
-async function launched(db: Database) {
-  const id = await draft(db)
+async function launched(db: Database, name = 'Pilot') {
+  const id = await draft(db, name)
   await executePilotCommand(db.sql, owner, await launchCommand(db, id), now)
   await simulateDelivery(db.sql, owner, randomUUID(), now)
   const state = await readPilotState(db.sql, owner, now)
-  const message = state.messages[0]
+  const thread = state.threads.find((row) => row.campaign_id === id)!
+  const message = state.messages.find((row) => row.thread_id === thread.id)!
   return {
     id,
-    thread: state.threads.find((t) => t.id === message.thread_id)!,
+    thread,
     message,
   }
 }
 export async function reviewedCallback(
   db: Database,
   body = 'I would consider selling this property. Please call me.',
+  campaignName = 'Pilot',
 ) {
-  const { thread } = await launched(db)
+  const { thread } = await launched(db, campaignName)
   const inbound = await simulateInbound(
     db.sql,
     owner,
@@ -136,4 +138,3 @@ export async function reviewedCallback(
     },
   }
 }
-
