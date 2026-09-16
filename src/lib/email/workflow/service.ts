@@ -1176,7 +1176,7 @@ export async function readPilotState(
       ? await tx`select id,thread_id,body,body_hash,content_revision,controller_revision,state from em_drafts where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) and author_id=${subject} order by created_at`
       : []
     const campaigns = canManage(member)
-      ? await tx`select c.id,c.name,c.state,c.revision,c.draft_config,
+      ? await tx`select c.id,c.name,c.state,c.revision,c.draft_config,c.is_test,
       (select count(*)::int from em_enrollments e where e.campaign_id=c.id) as approved,
       (select count(*)::int from em_threads t where t.campaign_id=c.id and exists(select 1 from em_messages m where m.thread_id=t.id and m.direction='outbound')) as started,
       (select min(i.not_before) from em_send_intents i join em_threads t on t.id=i.thread_id where t.campaign_id=c.id and i.state='queued' and c.state='active') as next_send

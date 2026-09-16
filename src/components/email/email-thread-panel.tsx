@@ -20,6 +20,7 @@ import { EmailHandoffActions } from './email-handoff-actions'
 import { EmailAriDraft } from './email-ari-draft'
 import { EmailCallOutcomeFields, type EmailCallOutcome } from './email-call-outcome-fields'
 import { defaultEmailBackup } from '@/lib/email/backup-pairing'
+import { handoffHelp } from '@/lib/email/workflow/handoff-help'
 
 const detailTabs = [
   ['next', 'Next step'],
@@ -506,7 +507,7 @@ export function EmailThreadPanel({
               {t.state === 'stopped'
                 ? 'Sending is stopped.'
                 : t.state === 'done'
-                  ? 'Conversation finished.'
+                  ? 'Email handled. Continue sales work in the Pipeline record.'
                   : `Take over to reply${owner?.name ? ` · Assigned to ${owner.name}` : ''}.`}
             </small>
           )}
@@ -592,7 +593,7 @@ export function EmailThreadPanel({
                           ? 'Some conversation history has not reached CRM.'
                           : t.handoff_state === 'held' ||
                               t.callback_task_state === 'blocked'
-                            ? 'Callback held for review. Resolve the hold before calling.'
+                            ? handoffHelp(t.crm_sync_reason)
                             : `Review ${t.crm_sync_reason?.replaceAll('_', ' ') ?? 'the CRM connection'} before continuing.`}
                   </p>
                   {repair && data.roles.includes('owner') && (
@@ -816,6 +817,7 @@ export function EmailThreadPanel({
             </p>
             {t.lead_id && (
               <span className={styles.badge}>
+                In Pipeline ·{' '}
                 {t.lead_classification === 'opportunity'
                   ? 'Opportunity'
                   : 'Lead'}{' '}
@@ -827,7 +829,7 @@ export function EmailThreadPanel({
             )}
             {t.lead_id && !localSimulation && (
               <Link className={styles.crmLink} href={`/leads/${t.lead_id}`}>
-                Open CRM record
+                Open {t.lead_classification === 'opportunity' ? 'Opportunity' : 'Lead'} →
               </Link>
             )}
             <details>

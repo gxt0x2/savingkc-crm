@@ -5,6 +5,8 @@ import { ownerWorkspace, connectionMasterKey } from "../connections/service";
 import { preferenceKeys } from "../preferences/service";
 import { check, type Tx } from "../workflow/core";
 import { emailWorkspaceConfigSchema } from "../config";
+import { normalizePhoneToE164 } from '@/lib/phone-normalize';
+import { leadSmsEnabled } from '../notifications/sms-provider';
 
 export async function readHostedReadiness(tx: Tx, workspaceId: string) {
   const [workspace] =
@@ -28,11 +30,15 @@ export async function readHostedReadiness(tx: Tx, workspaceId: string) {
       config.team.backupId,
     ];
     const active =
-      await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id
+      await tx`select m.auth_user_id,p.phone,m.roles from em_memberships m join agent_profiles p on p.id=m.agent_profile_id
    and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
    where m.workspace_id=${workspaceId} and m.auth_user_id=any(${tx.array(ids)}::uuid[]) and m.active`;
     if (ids.some((id) => !active.some((a) => a.auth_user_id === id)))
       blockers.push("Active assigned team members");
+    const callbackIds = [config.team.acquisitionOwnerId, config.team.backupId];
+    if (callbackIds[0] === callbackIds[1]) blockers.push('Separate callback owner and backup');
+    if (callbackIds.some(id => !active.some(a => a.auth_user_id === id && a.roles.some((r: string) => ['owner','acquisitions'].includes(r)) && normalizePhoneToE164(a.phone))))
+      blockers.push('Callback owner and backup need active acquisitions access and valid SMS numbers');
   }
   if (!counts.connections) blockers.push("Checked Resend connection");
   if (!counts.endpoints) blockers.push("Active reply webhook");
@@ -45,6 +51,7 @@ export async function readHostedReadiness(tx: Tx, workspaceId: string) {
     blockers.push("Reply-processing worker");
   if (process.env.EMAIL_DISPATCH_WORKER_ENABLED !== "true")
     blockers.push("Sending worker");
+  if (!leadSmsEnabled()) blockers.push('Lead SMS alerts');
   if (workspace.pause_reason)
     blockers.push(`Paused: ${workspace.pause_reason}`);
   return {

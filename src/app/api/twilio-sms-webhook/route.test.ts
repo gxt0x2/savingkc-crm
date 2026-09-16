@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
@@ -140,6 +140,8 @@ let inserts: Array<{ table: string; payload: unknown }>
 describe('twilio SMS webhook seller responses', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-03T15:00:00.000Z')) // Weekday, 10 AM Central
     inserts = []
     process.env.CASEY_PHONE = '+18167564943'
     process.env.ERNEST_PHONE = '+18162262552'
@@ -173,6 +175,8 @@ describe('twilio SMS webhook seller responses', () => {
     ))
     mocks.from.mockImplementation((table: string) => supabaseChain(table))
   })
+
+  afterEach(() => vi.useRealTimers())
 
   it('does not send a canned TwiML reply back to a prospect who texts YES', async () => {
     const response = await POST(makeSmsRequest('YES'))
