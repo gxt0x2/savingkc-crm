@@ -14,6 +14,7 @@ const now = new Date(fixtureNow)
 test('automatic eligibility requires unambiguous first-person callback instructions', () => {
   assert.ok(automaticCallbackRequest('Call me at 9137179716'))
   assert.ok(automaticCallbackRequest('Please call me at 913-717-9716 tomorrow afternoon.'))
+  assert.equal(automaticCallbackRequest('Call me at 9137179716 about your car warranty.'),null)
   for (const text of ['9137179716', 'If interested call me at 9137179716', 'Do not call me at 9137179716', 'Call me at 9137179716?', 'Call me at 9137179716 or 8162345678', 'Call me at 9137179716 — test only', 'Call me at 9137179716 but not about selling', 'Call me at 9137179716 to remove me', 'Call me at 9131119716', 'My brother says call me at 9137179716']) {
     assert.equal(automaticCallbackRequest(text), null, text)
   }

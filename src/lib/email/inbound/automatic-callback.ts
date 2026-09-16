@@ -17,6 +17,12 @@ export function automaticCallbackRequest(body: string) {
   if (!/^(?:(?:hi|hello|yes|sure|okay|ok)[,.!\s]+)?(?:please\s+)?(?:call me|give me a call|reach me)\b/i.test(text)) return null
   if (/[?"“”]|\b(if|unless|not|don't|never|stop|remove|unsubscribe|wrong|instead|but|example|test|fake|false|dummy|his|her|their|brother|sister|attorney|agent)\b/i.test(text)) return null
   if (text.length > 240) return null
+  const remainder = text
+    .replace(/^(?:(?:hi|hello|yes|sure|okay|ok)[,.!\s]+)?(?:please\s+)?(?:call me|give me a call|reach me)\b\s*(?:at|on)?\s*/i, '')
+    .replace(request.phone, '')
+    .replace(request.time ?? /^$/, '')
+    .replace(/[\s,.!;—-]/g, '')
+  if (remainder) return null
   return request
 }
 
