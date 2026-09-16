@@ -48,9 +48,9 @@ export function WorkspaceDispositionControls({
       ? 'Choose one result to finish this call'
       : 'Available when a call ends'
 
-  return <section aria-label="Call disposition controls" className="border-t border-[var(--prospecting-border)] pt-3">
+  return <section aria-label="Call disposition controls" className="border-t border-[var(--prospecting-border)] pt-2">
     <p className="sr-only" aria-live="polite">{status}</p>
-    <div className="grid gap-1.5">
+    <div className="grid gap-1">
       {WORKSPACE_OUTCOMES.map((item) => {
         const unavailable = !available.has(item.disposition)
         const saving = savingDisposition === item.disposition
@@ -63,7 +63,7 @@ export function WorkspaceDispositionControls({
             setCounts((current) => ({ ...current, [item.key]: current[item.key] + 1 }))
             onDisposition?.(item.disposition)
           }}
-          className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-lg border border-[var(--crm-brand)] bg-[var(--crm-brand)] px-3 py-2 text-left text-xs font-semibold leading-tight text-white transition-colors enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)] disabled:cursor-not-allowed disabled:opacity-75"
+          className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-[var(--crm-brand)] bg-[var(--crm-brand)] px-3 py-1.5 text-left text-xs font-semibold leading-tight text-white transition-colors enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)] disabled:cursor-not-allowed disabled:opacity-75"
         >
           <Icon name={saving ? 'progress_activity' : item.icon} size="text-sm" className={`shrink-0 text-white ${saving ? 'animate-spin' : ''}`} />
           <span className="min-w-0 flex-1 whitespace-normal break-words">{item.label}</span>

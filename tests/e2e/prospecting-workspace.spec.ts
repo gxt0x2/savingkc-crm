@@ -303,3 +303,48 @@ test('Prospecting studio remains usable on a phone-sized viewport', async ({ pag
   await expect(page.getByRole('button', { name: /Continue/ })).toBeVisible()
   await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll')
 })
+
+test('seller answer workspace stays above the fold on laptop and desktop viewports', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('crm-theme', 'light'))
+  await mockCampaigns(page, false)
+  await mockCallingPreview(page)
+  await page.setViewportSize({ width: 1366, height: 768 })
+  await page.goto(`/prospecting?preview_campaign=${dialerCampaign.id}&campaign=${dialerCampaign.id}&queue_label=${encodeURIComponent(dialerCampaign.name)}`, { waitUntil: 'domcontentloaded' })
+
+  const workspace = page.getByRole('region', { name: 'Seller answer workspace' })
+  await expect(workspace).toBeVisible()
+  await expect(page.getByRole('main', { name: 'Current Contact' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Prospect information workspace' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Persistent live dialer controls' })).toBeVisible()
+
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport)
+    const dimensions = await workspace.evaluate((element) => {
+      const columns = Array.from(element.firstElementChild?.children ?? []).map((column) => {
+        const rect = column.getBoundingClientRect()
+        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+      })
+      return {
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+        pageHeight: document.documentElement.scrollHeight,
+        pageWidth: document.documentElement.scrollWidth,
+        columns,
+      }
+    })
+
+    expect(dimensions.pageHeight).toBeLessThanOrEqual(dimensions.viewportHeight)
+    expect(dimensions.pageWidth).toBeLessThanOrEqual(dimensions.viewportWidth)
+    expect(dimensions.columns).toHaveLength(3)
+    expect(new Set(dimensions.columns.map((column) => Math.round(column.top))).size).toBe(1)
+    for (const column of dimensions.columns) expect(column.bottom).toBeLessThanOrEqual(dimensions.viewportHeight)
+    const dialer = page.getByRole('complementary', { name: 'Persistent live dialer controls' })
+    const stopBounds = await page.getByRole('button', { name: 'Stop' }).evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const rail = element.closest('[aria-label="Persistent live dialer controls"]')?.getBoundingClientRect()
+      return { bottom: rect.bottom, railBottom: rail?.bottom ?? 0 }
+    })
+    expect(stopBounds.bottom).toBeLessThanOrEqual(stopBounds.railBottom)
+    await expect(dialer).toBeInViewport()
+  }
+})

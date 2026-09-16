@@ -34,7 +34,7 @@ export function WorkspaceSessionControls({
   const pauseLabel = paused ? 'Resume' : 'Pause'
 
   return (
-    <section aria-label="Calling session controls" className="grid gap-1.5 border-t border-white/15 pt-3">
+    <section aria-label="Calling session controls" className="grid gap-1 border-t border-white/15 pt-1">
       <button
         type="button"
         onClick={() => onAction('redial')}

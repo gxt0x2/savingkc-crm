@@ -203,7 +203,7 @@ export function WorkspaceFrame({
           <Suspense fallback={null}>
             <WorkspaceContextNav />
           </Suspense>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
+          <div className={`min-h-0 flex-1 overscroll-contain pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:pb-0 ${focusedCalling ? 'overflow-y-auto lg:overflow-hidden' : 'overflow-y-auto'}`}>{children}</div>
           {focusedCalling ? null : <GiraffeAssistantLauncher />}
           {focusedCalling ? null : <WorkspaceMobileNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />}
         </WorkspaceChromeContext.Provider>
