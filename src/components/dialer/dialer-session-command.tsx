@@ -28,6 +28,8 @@ interface DialerSessionCommandProps {
   error: string | null
   readOnlyPreview?: boolean
   controlUnavailable?: boolean
+  controlCheckPending?: boolean
+  onCheckControl?: () => void
   onPause: () => void
   onResume: () => void
   onEndSession: () => void
@@ -40,10 +42,10 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
   const [previewStatus, setPreviewStatus] = useState('Ready')
   const endSessionDialogRef = useDialogAccessibility<HTMLElement>(confirmEndOpen, () => setConfirmEndOpen(false))
   const mutationControlsLocked = Boolean(props.readOnlyPreview || props.controlUnavailable)
-  const isCalling = Boolean(props.queueState?.queueItem && ['calling', 'on_call'].includes(props.queueState.status))
+  const isCalling = Boolean(props.queueState && ['calling', 'on_call', 'incoming'].includes(props.queueState.status))
   const isPaused = props.durableStatus === 'paused'
   const statusLabel = props.controlUnavailable
-    ? 'Open elsewhere'
+    ? 'Control unavailable'
     : props.readOnlyPreview
       ? previewStatus
       : props.queueState?.outcomeRequired
@@ -90,7 +92,7 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
     if (detail?.action === 'pause') props.onPause()
     if (detail?.action === 'resume') props.onResume()
     if (detail?.action === 'end') setConfirmEndOpen(true)
-    if (detail?.action === 'skip') props.onSkip()
+    if (detail?.action === 'skip' && !isCalling && !props.queueState?.outcomeRequired && !props.stopRequested && props.durableStatus === 'active') props.onSkip()
     if (detail?.action === 'dead') props.onMarkDead()
   })
 
@@ -112,7 +114,10 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
       </div>)}
     </section>
 
-    {props.controlUnavailable ? <div role="status" className="mb-4 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">Dialing control moved to another window. The current record remains visible here, but calls and CRM changes are locked.</div> : null}
+    {props.controlUnavailable ? <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--crm-warning-border)] bg-[var(--crm-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--crm-on-warning)]">
+      <span>Dialing control is unavailable in this window. The current record remains visible here, but calls and CRM changes are locked.</span>
+      {props.onCheckControl ? <button type="button" disabled={props.controlCheckPending} onClick={props.onCheckControl} className="crm-secondary-button rounded-lg px-3 py-2 disabled:opacity-50">{props.controlCheckPending ? 'Checking…' : 'Check dialing control'}</button> : null}
+    </div> : null}
     {props.error ? <div role="alert" className="mb-4 rounded-xl border border-[var(--crm-danger-border)] bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-semibold text-[var(--crm-danger)]">{props.error}</div> : null}
 
     {confirmEndOpen ? <div className="crm-modal-surface fixed inset-0 z-[100] grid place-items-center bg-black/45 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !props.actionPending) setConfirmEndOpen(false) }}>

@@ -121,6 +121,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     requestPause,
     finishUnadvancedAttempt,
     confirmTakeover: confirmControlTakeover,
+    retryControl,
   } = useProspectingSessionControl({
     readOnlyPreview,
     sessionId: durableSessionId,
@@ -368,8 +369,12 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       return
     }
     if (markDeadBusy || controlLocked) return
+    if (sessionActionPending
+      || durableSession?.status !== 'active' || durableSession.stopRequestedAt
+      || queueState?.outcomeRequired
+      || (queueState && ['calling', 'on_call', 'incoming'].includes(queueState.status))) return
     await transitionCurrentSession('skip', 'Agent skipped this contact')
-  }, [advance, controlLocked, durableSessionId, markDeadBusy, readOnlyPreview, transitionCurrentSession])
+  }, [advance, controlLocked, durableSession, durableSessionId, markDeadBusy, queueState, readOnlyPreview, sessionActionPending, transitionCurrentSession])
 
   const handleAutoStartEmpty = useCallback(() => {
     setAutoQueueSubjectKey(null)
@@ -571,6 +576,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           error={sessionError}
           readOnlyPreview={readOnlyPreview}
           controlUnavailable={controlLocked}
+          controlCheckPending={controlBusy}
+          onCheckControl={() => { void retryControl() }}
           onPause={() => { void pauseSession() }}
           onResume={() => { void transitionCurrentSession('resume') }}
           onEndSession={() => { void stopSession() }}
