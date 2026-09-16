@@ -60,7 +60,7 @@ export async function POST(req: Request) {
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${greetingTag}
-  <Record action="${BASE_URL}/api/ivr/voicemail-recording?agent=${encodeURIComponent(agent)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}" method="POST" maxLength="120" playBeep="true" timeout="5" />
+  <Record action="${BASE_URL}/api/ivr/voicemail-recording?agent=${encodeURIComponent(agent)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}" method="POST" maxLength="120" playBeep="true" timeout="5" />
   <Say voice="Polly.Matthew">We didn't receive a message. Goodbye.</Say>
   <Hangup />
 </Response>`

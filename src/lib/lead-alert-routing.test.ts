@@ -11,11 +11,11 @@ describe('lead-alert-routing', () => {
     ])
   })
 
-  it('adds Casey only Monday through Friday from 9 to 5 Central time', () => {
+  it('adds Casey only Monday through Friday from 8 to 5 Central time', () => {
     vi.stubEnv('ERNEST_PHONE', '+18160000001')
     vi.stubEnv('CASEY_PHONE', '+18160000002')
 
-    expect(isCaseyLeadAlertWindow(new Date('2026-06-03T14:00:00.000Z'))).toBe(true)
+    expect(isCaseyLeadAlertWindow(new Date('2026-06-03T13:00:00.000Z'))).toBe(true)
     expect(getLeadAlertRecipients(new Date('2026-06-03T14:00:00.000Z')).map((recipient) => recipient.name)).toEqual([
       'Ernest',
       'Casey',
@@ -23,5 +23,27 @@ describe('lead-alert-routing', () => {
 
     expect(isCaseyLeadAlertWindow(new Date('2026-06-03T22:00:00.000Z'))).toBe(false)
     expect(isCaseyLeadAlertWindow(new Date('2026-06-06T16:00:00.000Z'))).toBe(false)
+  })
+
+  it('isolates Casey company-number alerts to Casey during business hours', () => {
+    vi.stubEnv('ERNEST_PHONE', '+18160000001')
+    vi.stubEnv('CASEY_PHONE', '+18160000002')
+
+    expect(getLeadAlertRecipients(
+      new Date('2026-06-03T13:00:00.000Z'),
+      '+18167277667',
+    )).toEqual([
+      { name: 'Casey', phone: '+18160000002', schedule: 'weekday_business_hours' },
+    ])
+  })
+
+  it('suppresses Casey company-number alerts after hours', () => {
+    vi.stubEnv('ERNEST_PHONE', '+18160000001')
+    vi.stubEnv('CASEY_PHONE', '+18160000002')
+
+    expect(getLeadAlertRecipients(
+      new Date('2026-06-03T22:00:00.000Z'),
+      '+18167277667',
+    )).toEqual([])
   })
 })

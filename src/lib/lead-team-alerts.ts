@@ -1,6 +1,6 @@
 import { startLeadFormAgentCallback } from '@/lib/lead-form-callback'
 import { getLeadAlertRecipients, type LeadAlertRecipient } from '@/lib/lead-alert-routing'
-import { sendPushToAgents } from '@/lib/push-notifications'
+import { sendPushToAgentNames } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -29,6 +29,7 @@ type TeamLeadAlertInput = {
   source?: string | null
   trafficSource?: string | null
   now?: Date
+  calledNumber?: string | null
   push?: PushInput | false
   callback?: CallbackInput | false
   metadata?: Record<string, unknown>
@@ -69,7 +70,7 @@ function deliveryStatus(
 }
 
 export async function sendTeamLeadAlert(input: TeamLeadAlertInput): Promise<TeamLeadAlertResult> {
-  const recipients = getLeadAlertRecipients(input.now)
+  const recipients = getLeadAlertRecipients(input.now, input.calledNumber)
   const from = smsFrom()
 
   const smsResults = from && recipients.length > 0
@@ -91,8 +92,8 @@ export async function sendTeamLeadAlert(input: TeamLeadAlertInput): Promise<Team
     )
     : []
 
-  if (input.push) {
-    sendPushToAgents(input.push).catch((error) => {
+  if (input.push && recipients.length > 0) {
+    sendPushToAgentNames(recipients.map((recipient) => recipient.name), input.push).catch((error) => {
       console.error('[lead-team-alerts] push notification failed:', error)
     })
   }
