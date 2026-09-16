@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   isStartKeyword: vi.fn(),
   regenerateBriefing: vi.fn(),
   sendPushToAgents: vi.fn(),
+  sendPushToAgentNames: vi.fn(),
   lookupProspectByPhone: vi.fn(),
   createEnrichedLeadFromProspect: vi.fn(),
   formatProspectAlert: vi.fn(),
@@ -56,6 +57,7 @@ vi.mock('@/lib/briefing-regen', () => ({
 
 vi.mock('@/lib/push-notifications', () => ({
   sendPushToAgents: mocks.sendPushToAgents,
+  sendPushToAgentNames: mocks.sendPushToAgentNames,
 }))
 
 vi.mock('@/lib/prospect-lookup', () => ({
@@ -92,10 +94,10 @@ import { POST } from './route'
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 const PROSPECT_PHONE = '+19135550123'
 
-function makeSmsRequest(body: string, from = PROSPECT_PHONE): Request {
+function makeSmsRequest(body: string, from = PROSPECT_PHONE, to = '+1816608559'): Request {
   const form = new FormData()
   form.set('From', from)
-  form.set('To', '+1816608559')
+  form.set('To', to)
   form.set('Body', body)
   form.set('MessageSid', `SM-${body}`)
   return new Request('https://crm.savingkc.com/api/twilio-sms-webhook', {
@@ -157,6 +159,7 @@ describe('twilio SMS webhook seller responses', () => {
     mocks.isStartKeyword.mockImplementation((value: string) => value.trim().toUpperCase() === 'START')
     mocks.regenerateBriefing.mockResolvedValue(undefined)
     mocks.sendPushToAgents.mockResolvedValue(1)
+    mocks.sendPushToAgentNames.mockResolvedValue(1)
     mocks.lookupProspectByPhone.mockResolvedValue([])
     mocks.createEnrichedLeadFromProspect.mockResolvedValue('lead-created')
     mocks.formatProspectAlert.mockReturnValue('prospect context')
@@ -183,6 +186,32 @@ describe('twilio SMS webhook seller responses', () => {
       payload !== null &&
       (payload as { activity_type?: string }).activity_type === 'task'
     ))).toBe(false)
+  })
+
+  it('alerts only Casey for texts to Casey company line during the 8-to-5 window', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-03T13:00:00.000Z')) // 8:00 AM Central
+
+    const response = await POST(makeSmsRequest('YES', PROSPECT_PHONE, '+18167277667'))
+
+    await expect(response.text()).resolves.toBe(EMPTY_TWIML)
+    expect(mocks.safeSendSMS).toHaveBeenCalledTimes(1)
+    expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({ to: '+18167564943' }))
+    expect(mocks.safeSendSMS).not.toHaveBeenCalledWith(expect.objectContaining({ to: '+18162262552' }))
+    expect(mocks.sendPushToAgentNames).toHaveBeenCalledWith(['Casey'], expect.any(Object))
+    vi.useRealTimers()
+  })
+
+  it('suppresses alerts for texts to Casey company line at 5 PM Central', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-03T22:00:00.000Z')) // 5:00 PM Central
+
+    const response = await POST(makeSmsRequest('YES', PROSPECT_PHONE, '+18167277667'))
+
+    await expect(response.text()).resolves.toBe(EMPTY_TWIML)
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(mocks.sendPushToAgentNames).toHaveBeenCalledWith([], expect.any(Object))
+    vi.useRealTimers()
   })
 
   it('does not send a canned TwiML reply back to a prospect who texts CONFIRM', async () => {

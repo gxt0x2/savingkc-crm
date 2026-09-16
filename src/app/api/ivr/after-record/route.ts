@@ -81,6 +81,7 @@ export async function POST(req: Request) {
     smsBody: urgentMsg,
     trigger: 'inbound_seller_voicemail_alert',
     source: 'inbound_ivr',
+    calledNumber,
     push: leadId ? {
       title: 'Inbound Seller Voicemail',
       body: `Voicemail from ${from}. Call back now.`,

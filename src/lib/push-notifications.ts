@@ -63,6 +63,42 @@ export async function sendPushToAgents(payload: PushPayload): Promise<number> {
   return sendToSubscriptions(subscriptions as PushSubscriptionRow[], payload)
 }
 
+export async function sendPushToAgentNames(
+  agentNames: Array<'Ernest' | 'Casey'>,
+  payload: PushPayload,
+): Promise<number> {
+  if (!pushConfigured || agentNames.length === 0) return 0
+
+  const emails = agentNames.map((name) => `${name.toLowerCase()}@savingkc.com`)
+  const { data: profiles, error: profileError } = await supabase
+    .from('agent_profiles')
+    .select('user_id, email')
+    .in('email', emails)
+
+  if (profileError) {
+    console.error('[push] Failed to resolve agent profiles:', profileError.message)
+    return 0
+  }
+
+  const userIds = (profiles || [])
+    .map((profile) => profile.user_id)
+    .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0)
+
+  if (userIds.length === 0) return 0
+
+  const { data: subscriptions, error } = await supabase
+    .from('push_subscriptions')
+    .select('*')
+    .in('user_id', userIds)
+
+  if (error) {
+    console.error('[push] Failed to fetch targeted subscriptions:', error.message)
+    return 0
+  }
+
+  return sendToSubscriptions((subscriptions || []) as PushSubscriptionRow[], payload)
+}
+
 /**
  * Send a push notification to a specific user by user ID.
  * Returns the number of notifications successfully sent.

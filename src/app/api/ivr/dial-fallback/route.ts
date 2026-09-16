@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   const routing = getAgentRouting(calledNumber)
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Redirect method="POST">${BASE_URL}/api/ivr/voicemail?agent=${encodeURIComponent(routing.primary.name)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}</Redirect>
+  <Redirect method="POST">${BASE_URL}/api/ivr/voicemail?agent=${encodeURIComponent(routing.primary.name)}&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}</Redirect>
 </Response>`
 
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })

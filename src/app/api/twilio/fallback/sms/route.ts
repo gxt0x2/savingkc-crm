@@ -93,6 +93,7 @@ export async function POST(request: Request) {
       smsBody: `Carrier fallback captured an inbound text from ${from} to ${to}: “${message.slice(0, 180)}”`,
       trigger: 'carrier_sms_fallback',
       source: 'inbound_sms',
+      calledNumber: to,
       push: {
         title: 'Inbound text recovered',
         body: `${from}: ${message.slice(0, 100)}`,

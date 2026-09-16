@@ -184,6 +184,7 @@ export async function POST(req: Request) {
           smsBody: missedAlert,
           trigger: 'known_missed_call_alert',
           source: 'inbound_call',
+          calledNumber: to || TWILIO_PHONE,
           push: {
             title: 'Missed Call - Hot Lead',
             body: `${leadName} called and got no answer.`,
@@ -289,6 +290,7 @@ export async function POST(req: Request) {
           smsBody: agentAlert,
           trigger: 'unknown_missed_call_alert',
           source: 'inbound_call',
+          calledNumber: to || TWILIO_PHONE,
           push: {
             title: 'Missed Call - Unknown',
             body: `Unknown number ${formatPhone(from)} called.`,
