@@ -1297,8 +1297,8 @@ export function SoftphoneCore({
         {/* Scrollable body — min-h-0 is required so flex-1 actually shrinks
             below content size and the panel respects max-h cap. Without it
             the body forces the panel past the viewport. */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
-          <DialerMicrophoneControls deviceRef={deviceRef} status={status} open={open} />
+        <div data-dialer-scroll-body className={isWorkspace ? 'flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2.5' : 'flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4'}>
+          <DialerMicrophoneControls deviceRef={deviceRef} status={status} open={open} sessionId={pendingSessionId} workspace={isWorkspace} />
           {/* Error banner */}
           {error && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
@@ -1674,7 +1674,7 @@ export function SoftphoneCore({
             </button>
           )}
         </div>
-        {isWorkspace && pendingSessionId ? <div className="shrink-0 bg-[var(--prospecting-panel)] px-5 pb-4">
+        {isWorkspace && pendingSessionId ? <div className="shrink-0 bg-[var(--prospecting-panel)] px-3 pb-1">
           <WorkspaceSessionControls status={workspaceSessionStatus} callBusy={isOnCall} controlUnavailable={workspaceControlsUnavailable}
             outcomeRequired={outcomeRequired || Boolean(recoveryPending)}
             redialReady={Boolean(dialNumber.trim()) && status === 'ready'}

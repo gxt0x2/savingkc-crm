@@ -4,13 +4,25 @@ import type { Device } from '@twilio/voice-sdk'
 import { chooseMicrophone, preferredMicrophone, testSelectedMicrophone } from '@/lib/telephony/selected-microphone'
 
 type Props = { deviceRef: RefObject<Device | null>; status: string; open: boolean }
-export function DialerMicrophoneControls({ deviceRef, status, open }: Props) {
+const SESSION_CHECK_PREFIX = 'savingkc:dialer-microphone-check:v1:'
+
+function microphoneCheckCompleted(sessionId: string | null): boolean {
+  if (!sessionId || typeof window === 'undefined') return false
+  try { return window.sessionStorage.getItem(`${SESSION_CHECK_PREFIX}${sessionId}`) === 'complete' } catch { return false }
+}
+
+export function DialerMicrophoneControls({ deviceRef, status, open, sessionId = null, workspace = false }: Props & { sessionId?: string | null; workspace?: boolean }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [selected, setSelected] = useState('default')
   const [testing, setTesting] = useState(false)
   const [level, setLevel] = useState(0)
   const [message, setMessage] = useState('Choose your microphone and test it before calling.')
+  const [completedSessionId, setCompletedSessionId] = useState<string | null>(() => microphoneCheckCompleted(sessionId) ? sessionId : null)
   const abortRef = useRef<AbortController | null>(null)
+  const completed = Boolean(sessionId && completedSessionId === sessionId)
+  useEffect(() => {
+    setCompletedSessionId(microphoneCheckCompleted(sessionId) ? sessionId : null)
+  }, [sessionId])
   useEffect(() => {
     if (!open || status !== 'ready') return
     let cancelled = false
@@ -37,15 +49,31 @@ export function DialerMicrophoneControls({ deviceRef, status, open }: Props) {
     setTesting(true); setLevel(0); setMessage('Speak toward the selected microphone for six seconds…')
     try {
       const maximum = await testSelectedMicrophone(device, setLevel, controller.signal)
-      if (!controller.signal.aborted) setMessage(maximum >= 0.003
-        ? 'Input signal detected. Confirm two-way speech with a test call.'
-        : 'No usable input signal detected. Select another microphone and test again.')
+      if (!controller.signal.aborted && maximum >= 0.003) {
+        if (sessionId) {
+          try { window.sessionStorage.setItem(`${SESSION_CHECK_PREFIX}${sessionId}`, 'complete') } catch { /* the in-memory session state still hides the completed check */ }
+          setCompletedSessionId(sessionId)
+        } else {
+          setMessage('Input signal detected. Confirm two-way speech with a test call.')
+        }
+      } else if (!controller.signal.aborted) {
+        setMessage('No usable input signal detected. Select another microphone and test again.')
+      }
     } catch (error) { if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : 'Microphone check failed.') }
     finally { if (abortRef.current === controller) { abortRef.current = null; setTesting(false); setLevel(0) } }
   }
-  return <section className="space-y-2 rounded-[var(--skc-radius-control)] border border-[var(--skc-separator)] p-3" aria-label="Microphone settings">
-    <label className="block text-xs font-semibold text-[var(--skc-text-primary)]">Microphone
-      <select aria-label="Call microphone" className="mt-1 w-full rounded border border-[var(--skc-separator)] bg-[var(--skc-surface-2)] p-2 text-xs text-[var(--skc-text-primary)]" value={selected} disabled={busy} onChange={event => {
+  if (completed) return null
+
+  const sectionClass = workspace
+    ? 'space-y-2 rounded-xl border border-[var(--prospecting-border)] bg-[var(--prospecting-elevated)] p-3 text-[var(--prospecting-text)]'
+    : 'space-y-2 rounded-[var(--skc-radius-control)] border border-[var(--skc-separator)] bg-[var(--skc-surface-2)] p-3 text-[var(--skc-text-primary)]'
+  const selectClass = workspace
+    ? 'mt-1 w-full rounded-lg border border-[var(--prospecting-border-strong)] bg-[var(--prospecting-panel)] p-2 text-xs font-semibold text-[var(--prospecting-text)]'
+    : 'mt-1 w-full rounded border border-[var(--skc-separator)] bg-[var(--skc-surface-2)] p-2 text-xs text-[var(--skc-text-primary)]'
+
+  return <section className={sectionClass} aria-label="Microphone check">
+    <label className="block text-xs font-semibold">Call microphone
+      <select aria-label="Call microphone" className={selectClass} value={selected} disabled={busy} onChange={event => {
         const device = deviceRef.current
         if (!device) return
         try { chooseMicrophone(device, event.target.value); setSelected(event.target.value); setMessage('Microphone selected. Test its input before calling.') }
@@ -57,9 +85,9 @@ export function DialerMicrophoneControls({ deviceRef, status, open }: Props) {
       </select>
     </label>
     <div className="flex items-center gap-3">
-      <button type="button" disabled={status !== 'ready'} className="shrink-0 rounded border border-[var(--skc-separator)] px-2 py-1 text-xs font-semibold text-[var(--skc-text-primary)] disabled:opacity-50" onClick={() => testing ? abortRef.current?.abort() : void test()}>{testing ? 'Stop check' : 'Test microphone'}</button>
+      <button type="button" disabled={status !== 'ready'} className={workspace ? 'shrink-0 rounded-lg border border-[var(--prospecting-border-strong)] bg-[var(--prospecting-panel)] px-2.5 py-1.5 text-xs font-bold text-[var(--prospecting-text)] disabled:opacity-50' : 'shrink-0 rounded border border-[var(--skc-separator)] px-2 py-1 text-xs font-semibold text-[var(--skc-text-primary)] disabled:opacity-50'} onClick={() => testing ? abortRef.current?.abort() : void test()}>{testing ? 'Stop check' : 'Test microphone'}</button>
       <meter aria-label="Microphone input level" className="h-3 w-full" min={0} max={1} value={Math.min(1, level * 10)} />
     </div>
-    <p role="status" className="text-xs text-[var(--skc-text-secondary)]">{message}</p>
+    <p role="status" className={workspace ? 'text-xs leading-4 text-[var(--prospecting-muted)]' : 'text-xs text-[var(--skc-text-secondary)]'}>{message}</p>
   </section>
 }

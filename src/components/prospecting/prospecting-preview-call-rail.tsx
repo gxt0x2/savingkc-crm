@@ -90,7 +90,7 @@ export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProp
   return <section aria-label="Preview prospecting call controls" className="prospecting-dialer-control-surface flex h-full min-h-0 flex-col bg-[var(--prospecting-panel)] text-[var(--ck-text)]">
     <p className="sr-only">Read-only review for campaign {props.campaignId}, calling from {formatPhone(props.callerId) || props.callerId}. No phone call or CRM write will be made.</p>
     <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <header className="border-b border-[var(--prospecting-border)] pb-3">
+      <header className="border-b border-[var(--prospecting-border)] pb-2">
         <div>
           <h2 className="text-base font-semibold tracking-[-0.02em]">Call outcome</h2>
           <p className={`mt-1 text-xs font-medium ${callState === 'ready' ? 'text-[var(--ck-text-muted)]' : callState === 'live' ? 'text-[var(--prospecting-success)]' : callState === 'paused' ? 'text-[var(--ck-text)]' : 'text-[var(--prospecting-danger)]'}`}>
@@ -99,9 +99,9 @@ export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProp
         </div>
       </header>
 
-      {callState === 'ready' ? <button type="button" onClick={startDialing} className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--prospecting-primary)] px-3 text-sm font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)]"><Icon name="play_arrow" size="text-lg" filled />Start dialing</button> : null}
+      {callState === 'ready' ? <button type="button" onClick={startDialing} className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--prospecting-primary)] px-3 text-sm font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)]"><Icon name="play_arrow" size="text-lg" filled />Start dialing</button> : null}
 
-      <div className="mt-3 space-y-2" aria-label="Preview dispositions">
+      <div className="mt-2 space-y-1" aria-label="Preview dispositions">
         {PREVIEW_OUTCOMES.map(([id, label, icon]) => <button
           key={id}
           type="button"
@@ -109,7 +109,7 @@ export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProp
           aria-pressed={selectedOutcome === id}
           disabled={callState !== 'live' && callState !== 'paused'}
           onClick={() => recordOutcome(id)}
-          className={`flex min-h-11 w-full items-center gap-2 rounded-lg border px-3 text-left text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-75 ${selectedOutcome === id ? 'border-[var(--crm-brand-active)] bg-[var(--crm-brand-active)] ring-2 ring-[var(--crm-brand-border)]' : 'border-[var(--crm-brand)] bg-[var(--crm-brand)] enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)]'}`}
+          className={`flex min-h-10 w-full items-center gap-2 rounded-lg border px-3 text-left text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-75 ${selectedOutcome === id ? 'border-[var(--crm-brand-active)] bg-[var(--crm-brand-active)] ring-2 ring-[var(--crm-brand-border)]' : 'border-[var(--crm-brand)] bg-[var(--crm-brand)] enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)]'}`}
         >
           <Icon name={icon} size="text-sm" className="shrink-0 text-white" />
           <span className="min-w-0 flex-1">{label}</span>
@@ -117,7 +117,7 @@ export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProp
         </button>)}
       </div>
 
-      <div className="mt-3 grid gap-1.5 border-t border-[var(--prospecting-border)] pt-3">
+      <div className="mt-2 grid gap-1 border-t border-[var(--prospecting-border)] pt-2">
         <button type="button" onClick={startDialing} disabled={callState !== 'stopped'} className="prospecting-dialer-secondary-button"><Icon name="phone_callback" size="text-sm" className="text-[var(--crm-brand)]" />Redial</button>
         <button type="button" onClick={() => setCallState('stopped')} disabled={callState !== 'live' && callState !== 'paused'} className="prospecting-dialer-secondary-button"><Icon name="call_end" size="text-sm" />Hang up</button>
         <button type="button" onClick={() => setCallState((current) => current === 'paused' ? 'live' : 'paused')} disabled={callState !== 'live' && callState !== 'paused'} className="prospecting-dialer-secondary-button"><Icon name={callState === 'paused' ? 'play_arrow' : 'pause'} size="text-sm" />{callState === 'paused' ? 'Resume' : 'Pause'}</button>

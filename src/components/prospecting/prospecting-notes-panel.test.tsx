@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ProspectingNotesPanel } from './prospecting-notes-panel'
@@ -78,5 +78,43 @@ describe('ProspectingNotesPanel', () => {
     expect(screen.getByRole('textbox', { name: 'Note for Mary Seller' })).toBeDisabled()
     expect(screen.getByRole('textbox', { name: 'Note for Mary Seller' })).toHaveClass('flex-1', 'resize-none')
     expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled()
+  })
+
+  it('dictates into the note draft and waits for review before saving', () => {
+    let onRecognitionResult: ((event: { results: { length: number; [index: number]: { 0: { transcript: string } } } }) => void) | null = null
+    let onRecognitionEnd: (() => void) | null = null
+    class MockSpeechRecognition {
+      continuous = false
+      interimResults = false
+      lang = ''
+      set onresult(handler: ((event: { results: { length: number; [index: number]: { 0: { transcript: string } } } }) => void) | null) { onRecognitionResult = handler }
+      onerror: ((event: { error: string }) => void) | null = null
+      set onend(handler: (() => void) | null) { onRecognitionEnd = handler }
+      start = vi.fn()
+      stop = vi.fn(() => onRecognitionEnd?.())
+    }
+    vi.stubGlobal('webkitSpeechRecognition', MockSpeechRecognition)
+
+    render(<ProspectingNotesPanel
+      leadId="lead-1"
+      prospectId={null}
+      campaignMemberId="member-1"
+      dialerSessionId="session-1"
+      sellerName="Mary Seller"
+      recordKind="Lead"
+      notes={[]}
+      readOnly={false}
+      onSaved={vi.fn()}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start note dictation' }))
+    expect(screen.getByText('Listening… speak naturally.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled()
+
+    act(() => onRecognitionResult?.({ results: { 0: { 0: { transcript: 'Call again Friday afternoon.' } }, length: 1 } }))
+    expect(screen.getByRole('textbox', { name: 'Note for Mary Seller' })).toHaveValue('Call again Friday afternoon.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop note dictation' }))
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeEnabled()
   })
 })
