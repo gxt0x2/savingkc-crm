@@ -40,7 +40,7 @@ export async function processLeadSmsAlerts(sql: Sql, owner: string, options: {
       where a.workspace_id=${ws} and a.phase='owner' and a.response_due_at<=${now}
       and a.state in ('accepted','delivered','failed','unknown') and n.acknowledged_at is null
       and h.owner_id=a.recipient_id and h.state='needs_contact' and h.crm_sync_state='synced'
-      on conflict(handoff_id,recipient_id,phase) do nothing`
+      on conflict do nothing`
     const rows = await tx`select a.*,h.thread_id,h.owner_id,h.backup_id,h.state as handoff_state,h.crm_sync_state,
       h.seller_interest_confirmed,h.requested_contact,h.lead_id,n.acknowledged_at,t.state as thread_state,
       p.phone,p.full_name,p.email,p.is_active,m.active as member_active,l.assigned_agent,l.classification,l.is_parked,l.station,
