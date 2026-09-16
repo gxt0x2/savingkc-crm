@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
 import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
-import { changeCallback, validateCallbackTime } from './callback-actions'
+import { changeCallback, validateCallbackTime, validateOutcomeCampaign } from './callback-actions'
 import { retryReceivedJob } from '../inbound/retry'
 import { manageHandoff } from './handoff-management'
 import { draftWithAri } from '../ai/drafting'
@@ -725,8 +725,7 @@ export async function executePilotCommand(
       case 'HAN-OUTCOME':
       case 'HAN-ACCEPT': {
         const p = command.payload
-        const [h] =
-          await tx`select thread_id from em_handoffs where workspace_id=${ws} and id=${p.handoffId}`
+        const [h] = await tx`select h.thread_id,c.name as campaign_name from em_handoffs h join em_threads t on t.id=h.thread_id and t.workspace_id=h.workspace_id join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id where h.workspace_id=${ws} and h.id=${p.handoffId}`
         check(h, 'HANDOFF_NOT_FOUND', 404)
         const revision = 'contentRevision' in p ? p.contentRevision : undefined
         if (command.command !== 'HAN-ACCEPT')
@@ -749,8 +748,8 @@ export async function executePilotCommand(
         }
         if (command.command === 'HAN-OUTCOME') {
           const p = command.payload
-          const remainsOpen =
-            p.outcome === 'follow_up' || p.outcome === 'no_contact'
+          validateOutcomeCampaign(p.outcome, h.campaign_name)
+          const remainsOpen = p.outcome === 'follow_up' || p.outcome === 'no_contact'
           check(
             !p.completedAt || new Date(p.completedAt) <= now,
             'INVALID_OUTCOME_TIME',
