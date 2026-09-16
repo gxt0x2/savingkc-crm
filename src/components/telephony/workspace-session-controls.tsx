@@ -2,7 +2,7 @@
 
 import { Icon } from '@/components/ui/icon'
 
-export type WorkspaceSessionAction = 'redial' | 'hangup' | 'pause' | 'resume' | 'end'
+export type WorkspaceSessionAction = 'redial' | 'hangup' | 'pause' | 'resume' | 'skip' | 'end'
 
 type WorkspaceSessionControlsProps = {
   status: 'active' | 'paused' | 'completed' | 'stopped' | null
@@ -61,6 +61,15 @@ export function WorkspaceSessionControls({
         className="prospecting-dialer-secondary-button"
       >
         <Icon name={paused ? 'play_arrow' : 'pause'} size="text-sm" /> {pauseLabel}
+      </button>
+      <button
+        type="button"
+        onClick={() => onAction('skip')}
+        disabled={controlsLocked || status !== 'active' || callBusy || outcomeRequired}
+        title={lockedTitle || (outcomeRequired ? 'Save the current call outcome before skipping' : 'Skip this seller in the current session')}
+        className="prospecting-dialer-secondary-button"
+      >
+        <Icon name="skip_next" size="text-sm" /> Skip seller
       </button>
       <button
         type="button"

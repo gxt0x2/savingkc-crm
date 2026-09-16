@@ -85,10 +85,28 @@ describe('DialerSessionCommand', () => {
   it('keeps a displaced window visible but blocks its command events', () => {
     const props = renderCommand({ controlUnavailable: true })
 
-    expect(screen.getByText('Open elsewhere')).toBeVisible()
+    expect(screen.getByText('Control unavailable')).toBeVisible()
     expect(screen.getByText(/current record remains visible/i)).toBeVisible()
     act(() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'pause' } })))
     expect(props.onPause).not.toHaveBeenCalled()
+  })
+
+  it('offers a control recheck without claiming that another window took over', () => {
+    const onCheckControl = vi.fn()
+    renderCommand({ controlUnavailable: true, onCheckControl })
+    expect(screen.queryByText(/moved to another window/i)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Check dialing control' }))
+    expect(onCheckControl).toHaveBeenCalledOnce()
+  })
+
+  it.each(['calling', 'on_call', 'incoming', 'outcome'] as const)('rejects skip commands while %s', (state) => {
+    const props = renderCommand({ queueState: {
+      queueItem: null, queueIndex: 0, queueLength: 0,
+      status: state === 'outcome' ? 'ready' : state,
+      outcomeRequired: state === 'outcome',
+    } })
+    act(() => window.dispatchEvent(new CustomEvent('prospecting-session-command', { detail: { action: 'skip' } })))
+    expect(props.onSkip).not.toHaveBeenCalled()
   })
 
   it('mirrors preview status in the same four-cell row', () => {

@@ -338,6 +338,21 @@ export function useProspectingSessionControl({
     autoStartSkipPhones: resumeAttemptsReady ? resumeAttempts.completedPhones : [],
   }), [autoQueueSubjectKey, autoStartEpoch, controlOwned, currentSubjectKey, readOnlyPreview, resumeAttempts.completedPhoneIds, resumeAttempts.completedPhones, resumeAttemptsReady, sessionId])
 
+  const retryControl = useCallback(async () => {
+    if (readOnlyPreview || !sessionId || controlBusy) return
+    setControlBusy(true)
+    setSessionError(null)
+    try {
+      // Recheck the existing controller. A different owner still requires the
+      // normal takeover flow; this never claims or interrupts another call.
+      await initializeSession()
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Dialing control could not be checked. Try again.')
+    } finally {
+      setControlBusy(false)
+    }
+  }, [controlBusy, initializeSession, readOnlyPreview, sessionId])
+
   return {
     session,
     applySession,
@@ -358,5 +373,6 @@ export function useProspectingSessionControl({
     requestPause,
     finishUnadvancedAttempt,
     confirmTakeover,
+    retryControl,
   }
 }

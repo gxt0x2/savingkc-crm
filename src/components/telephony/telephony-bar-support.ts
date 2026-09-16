@@ -96,6 +96,13 @@ export function isNonFatalAudioWarning(err: unknown): boolean {
   return msg.includes('audio output') || msg.includes('setsinkid') || msg.includes('audio device') || msg.includes('devices not found')
 }
 
+export function formatTwilioCallError(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error ? Number(error.code) : null
+  if (code === 31000) return 'Twilio reported a call error (31000). Save the call outcome. If it happens again, include this code in your Andon report.'
+  const message = extractTwilioErrorMessage(error)
+  return code && Number.isInteger(code) && !message.includes(String(code)) ? `${message} (Twilio ${code})` : message
+}
+
 export function normalizeDispositionLabel(disposition: string) {
   return disposition.replace(/_/g, ' ')
 }

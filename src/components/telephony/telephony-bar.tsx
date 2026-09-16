@@ -51,6 +51,7 @@ import {
   DIALER_STATUS_LABEL,
   classifyDirection,
   extractTwilioErrorMessage,
+  formatTwilioCallError,
   formatCallLeg,
   formatDialDisplay,
   formatDuration,
@@ -272,7 +273,7 @@ export function SoftphoneCore({
   }, [cancelQueuedAutoDial, clearDispositionRequirement, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueRingCount, pendingSessionId])
 
   useEffect(() => {
-    if (!open || !pendingSessionId || !pendingQueue?.length) return
+    if (!open || !pendingSessionId) return
     let cancelled = false
     void loadDialerAttemptHistory(pendingSessionId)
       .then(({ session, attempts }) => {
@@ -281,6 +282,9 @@ export function SoftphoneCore({
         pausedSessionIdRef.current = session.status === 'paused' ? session.id : null
         setWorkspaceSessionStatus(session.status)
         if (session.stopRequestedAt || session.status === 'paused') cancelQueuedAutoDial()
+        // Session navigation is still available when this seller has no
+        // callable numbers. Restore outcomes once its phone queue is loaded.
+        if (!pendingQueue?.length) return
         const recovery = findRecoverableDialerAttempt(session, attempts.items, pendingQueue)
         if (!recovery) {
           if (session.stopRequestedAt && session.status !== 'stopped') {
@@ -684,7 +688,7 @@ export function SoftphoneCore({
       })
       call.on('error', (callError: TwilioErrorLike) => {
         stopLocalRingback()
-        setError(extractTwilioErrorMessage(callError))
+        setError(formatTwilioCallError(callError))
       })
 
       const heirMeta = activeQueueItemRef.current
@@ -1205,10 +1209,6 @@ export function SoftphoneCore({
     return item
   }
 
-  function skipQueueItem() {
-    advanceQueue()
-  }
-
   function prevQueueItem() {
     if (!queue || queueIndex === 0) return
     const prev = queueIndex - 1
@@ -1291,7 +1291,7 @@ export function SoftphoneCore({
           workspace={isWorkspace}
           onEnd={endQueue}
           onPrevious={prevQueueItem}
-          onSkip={skipQueueItem}
+          onSkip={advanceQueue}
         /> : null}
 
         {/* Scrollable body — min-h-0 is required so flex-1 actually shrinks

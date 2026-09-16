@@ -83,4 +83,33 @@ describe('Prospecting session operation hold on reload', () => {
     expect(acquired).not.toHaveBeenCalled()
     window.removeEventListener('dialer-control-acquired', acquired)
   })
+
+  it('can recheck an expired operation hold without forcing a takeover', async () => {
+    const onApplySession = vi.fn()
+    const onControlLost = vi.fn()
+    const { result } = renderHook(() => useProspectingSessionControl({
+      readOnlyPreview: false, sessionId: 'session-1', currentSubject: null,
+      currentSubjectKey: null, autoQueueSubjectKey: null, onApplySession, onControlLost,
+    }))
+    await act(async () => { await result.current.initializeSession() })
+    expect(result.current.controlLocked).toBe(true)
+    mocks.heartbeat.mockResolvedValue({ session, control: { generation: 4, operationActive: false } })
+    await act(async () => { await result.current.retryControl() })
+    expect(result.current.controlLocked).toBe(false)
+    expect(result.current.controlBusy).toBe(false)
+    expect(result.current.sessionError).toBeNull()
+    expect(mocks.heartbeat).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps failed control rechecks locked and retryable', async () => {
+    const { result } = renderHook(() => useProspectingSessionControl({
+      readOnlyPreview: false, sessionId: 'session-1', currentSubject: null,
+      currentSubjectKey: null, autoQueueSubjectKey: null, onApplySession: vi.fn(), onControlLost: vi.fn(),
+    }))
+    mocks.heartbeat.mockRejectedValue(new Error('Network unavailable'))
+    await act(async () => { await result.current.retryControl() })
+    expect(result.current.controlLocked).toBe(true)
+    expect(result.current.controlBusy).toBe(false)
+    expect(result.current.sessionError).toBe('Network unavailable')
+  })
 })
