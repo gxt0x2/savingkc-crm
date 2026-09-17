@@ -1,4 +1,5 @@
 import "server-only";
+import { selectInitialAddresses } from "../hygiene/guards";
 import { randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
 import { z } from "zod";
@@ -53,11 +54,13 @@ export async function queueControlledTest(
     const [stopped] =
       await tx`select id from em_suppressions where workspace_id=${ws.id} and address_id=${address.id}`;
     check(!stopped, "RECIPIENT_UNSUBSCRIBED");
-    const [party] =
-      await tx`insert into em_parties(workspace_id,display_name,kind,identity_state,identity_evidence)
-      values(${ws.id},'Controlled test recipient','seller','confirmed','{"source":"owner-authorized controlled test; not a seller lead"}'::jsonb) returning id`;
+    const existingPeople = await tx`select p.id,pa.relationship from em_party_addresses pa join em_parties p on p.workspace_id=pa.workspace_id and p.id=pa.party_id where pa.workspace_id=${ws.id} and pa.address_id=${address.id} and pa.relationship in ('confirmed','shared')`;
+    check(existingPeople.length <= 1 && (!existingPeople[0] || existingPeople[0].relationship === 'confirmed'), 'CONTROLLED_IDENTITY_REVIEW');
+    const party = existingPeople[0] ?? (await tx`insert into em_parties(workspace_id,display_name,kind,identity_state,identity_evidence)
+      values(${ws.id},'Controlled test recipient','seller','confirmed','{"source":"owner-authorized controlled test; not a seller lead"}'::jsonb) returning id`)[0];
     await tx`insert into em_party_addresses(workspace_id,party_id,address_id,relationship,confirmed_at,evidence)
-      values(${ws.id},${party.id},${address.id},'confirmed',${now},'{"source":"owner-authorized test"}'::jsonb)`;
+      values(${ws.id},${party.id},${address.id},'confirmed',${now},'{"source":"owner-authorized test"}'::jsonb) on conflict do nothing`;
+    await selectInitialAddresses(tx, ws.id, party.id);
     const [audience] =
       await tx`insert into em_audiences(workspace_id,name,program,state) values(${ws.id},'Controlled delivery test','seller_outreach','ready') returning id`;
     const [snapshot] =
