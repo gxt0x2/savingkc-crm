@@ -129,6 +129,7 @@ export async function startDisposableDatabase() {
       '20260913160000_email_public_unsubscribe.sql',
       '20260913220000_email_hosted_dispatch.sql',
       '20261110120000_email_person_property_hygiene.sql',
+      '20261110121000_email_hygiene_runtime_access.sql',
     ]) {
       await sql.unsafe(
         await readFile(path.join(root, 'supabase/migrations', name), 'utf8'),
