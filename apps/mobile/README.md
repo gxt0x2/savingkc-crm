@@ -2,20 +2,20 @@
 
 Native mobile companion app for the SavingKC CRM.
 
-## Version 1 Scope
+## Live MVP Scope
 
 - Supabase sign-in using CRM credentials.
-- Active contacts only; records marked not-a-lead/dead remain in the web archive.
+- Canonical Pipeline lists and counts; records marked not-a-lead/dead remain in the web archive.
 - Outcome-aware conversation inbox backed by CRM communication activity.
 - SMS and email sent through authenticated SavingKC server routes.
 - Native Twilio Voice registration for inbound and outbound business calls.
 - The signed-in user's assigned SavingKC caller ID is authoritative for calls and SMS.
 - Open contact detail and save call outcomes back through `/api/mobile/v1/calls/events`.
-- Review Mine or Unassigned event-backed work by department, complete versioned tasks, and accept explicit responsibility handoffs.
-- View and change the canonical contact owner from contact detail; mobile never writes ownership or task state directly to Supabase.
+- Read the current operational Calendar across scheduled tasks and appointments.
+- View and change the canonical contact owner from contact detail; mobile never writes ownership directly to Supabase.
 - Queue failed call events locally and retry them from the lead list.
-- Ask ARI read-only questions grounded in the signed-in user's authorized CRM scope.
-- Open ARI from a contact to prepare a contact-360 briefing and next-action recommendation.
+
+The operator-facing bottom navigation is intentionally limited to Pipeline, Inbox, Calendar, and Phone. The server keeps the existing authenticated work and assistant APIs available for later expansion without crowding this MVP.
 
 ## Distribution
 
@@ -25,8 +25,8 @@ TestFlight is the preferred path over ad-hoc sideloading: all three users receiv
 
 ### One-time account setup
 
-1. Sign in to Expo (`npx eas-cli login`) and link or create the EAS project (`npx eas-cli init`).
-2. Store `EAS_PROJECT_ID`, `EXPO_OWNER`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `EXPO_PUBLIC_CRM_API_BASE_URL=https://crm.savingkc.com` in the EAS `production` environment.
+1. Sign in to Expo (`npx eas-cli login`) and verify the linked EAS project with `npx eas-cli project:info`.
+2. Store `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `EXPO_PUBLIC_CRM_API_BASE_URL=https://crm.savingkc.com` in the EAS `production` environment. `EAS_PROJECT_ID` and `EXPO_OWNER` remain supported overrides; the checked-in app configuration is authoritative by default.
 3. In Apple Developer/App Store Connect, register `com.savingkc.crm`, enable Push Notifications, create the app, and invite the other two users as internal TestFlight testers.
 4. In Twilio, create the production iOS VoIP Push Credential for `com.savingkc.crm`; store its `CR...` SID as `TWILIO_VOIP_PUSH_CREDENTIAL_SID` in the CRM production environment. The mobile token route includes that credential in the VoiceGrant.
 5. Deploy the CRM backend first so the bearer-authenticated ARI routes and VoIP-enabled token route are live at `https://crm.savingkc.com`.

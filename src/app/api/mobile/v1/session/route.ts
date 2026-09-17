@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
           ownerAssignment: true,
           handoffAcceptance: true,
           aiAssistantReadOnly: true,
+          calendar: true,
         },
       },
       { headers: mobileNoStoreHeaders() },

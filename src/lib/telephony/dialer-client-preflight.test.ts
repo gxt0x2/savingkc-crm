@@ -64,7 +64,7 @@ describe('outbound dialer client preflight', () => {
   })
 
   it('sends lead context from lead detail and no lead context from the manual phone', () => {
-    const manualCall = mobileAppSource.match(/startTwilioVoiceCall\(\{ accessToken, phone, onState: setCurrentState \}\)/)
+    const manualCall = mobileAppSource.match(/startTwilioVoiceCall\(\{ accessToken, phone, onState: setCallState \}\)/)
     expect(manualCall).not.toBeNull()
     expect(manualCall?.[0]).not.toContain('leadId')
 
