@@ -18,3 +18,17 @@ test('contact rules show scope and give visible confirmation after saving',async
  expect(body).toMatchObject({threadId:id,action:'hold_property',propertyId:id,expectedHash:'a'.repeat(64)})
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
 })
+
+test('successful retry clears an earlier loading error',async({page})=>{
+ let attempt=0
+ await page.route('**/api/email/contact-rules**',async route=>{
+  if(attempt++===0)await route.fulfill({status:500,json:{error:'temporary'}})
+  else await route.fulfill({json:{hash:'a'.repeat(64),person:{display_name:'Jamie',status:null},addresses:[],properties:[]}})
+ })
+ await page.goto('/contact-rules')
+ await page.getByText('Contact rules',{exact:true}).click()
+ await expect(page.getByRole('status')).toHaveText('Could not load contact rules. Try again.')
+ await page.getByRole('button',{name:'Load rules',exact:true}).click()
+ await expect(page.getByText('No person-level hold')).toBeVisible()
+ await expect(page.getByText('Could not load contact rules. Try again.')).toHaveCount(0)
+})

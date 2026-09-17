@@ -27,8 +27,9 @@ export function EmailContactRules({ threadId }: {
     threadId: string;
 }) {
     const [data, setData] = useState<Rules | null>(null), [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [action, setAction] = useState<Action>('stop_person'), [reason, setReason] = useState(''), [primary, setPrimary] = useState(''), [backup, setBackup] = useState(''), [property, setProperty] = useState('');
-    async function load() {
+    async function load(clearMessage = true) {
         setBusy(true);
+        if (clearMessage) setMessage('');
         try {
             const response = await fetch(`/api/email/contact-rules?threadId=${threadId}`, { cache: 'no-store' });
             if (!response.ok)
@@ -60,7 +61,7 @@ export function EmailContactRules({ threadId }: {
             }
             setMessage(result.state);
             setReason('');
-            await load();
+            await load(false);
         }
         catch (error) {
             setMessage(error instanceof Error ? error.message : 'Could not save.');

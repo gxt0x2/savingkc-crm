@@ -10,7 +10,7 @@ Owner controls: Email → Inbox → Contact → Contact rules. Owners can record
 
 ## Release and validation
 
-Apply `20261110120000_email_person_property_hygiene.sql` before the application release. It adds private RLS-protected tables and backfills existing selected pairs and personal stops; it never clears existing suppression. The migration is replayable. If application rollback is needed, retain the additive tables and keep campaign sending off until behavior is reverified.
+Apply `20261110120000_email_person_property_hygiene.sql` and `20261110121000_email_hygiene_runtime_access.sql` before the application release. The second migration grants only the existing hosted backend role access to the three new tables; it does not alter role flags or RLS. It adds private RLS-protected tables and backfills existing selected pairs and personal stops; it never clears existing suppression. The migration is replayable. If application rollback is needed, retain the additive tables and keep campaign sending off until behavior is reverified.
 
 Tests cover independent heirs, late aliases, mailbox-only failure, shared inboxes, maximum pair size, no automatic promotion, owner access, stale requests, idempotency, property coordination and dispatch blocking after launch. The local browser test exercises an owner property hold at 360px with visible success feedback.
 
