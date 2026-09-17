@@ -15,15 +15,16 @@ import {
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 import { getMissingConfig } from './src/config'
-import { fetchConversationDetail, fetchConversations, fetchLeadDetail, fetchLeads, fetchMobileSession, logCallEvent, sendMobileMessage } from './src/lib/api'
+import { fetchConversationDetail, fetchConversations, fetchLeadDetail, fetchMobileSession, logCallEvent, sendMobileMessage } from './src/lib/api'
 import { enqueueCallEvent, flushCallOutbox, getQueuedCallEvents } from './src/lib/call-outbox'
 import { initializeTwilioVoice, registerTwilioVoice, startTwilioVoiceCall, type IncomingVoiceCall, type NativeVoiceCall, type VoiceState } from './src/lib/twilio-voice-service'
 import { getSupabaseClient } from './src/lib/supabase'
 import type { CallOutcome, ConversationThread, CrmLead } from './src/types'
 import { LeadOperationsCard } from './src/components/lead-operations-card'
-import { WorkScreen } from './src/components/work-screen'
 import { ActivityRow } from './src/components/activity-row'
-import { AssistantScreen } from './src/components/assistant-screen'
+import { BottomNav, type MobileTab } from './src/components/bottom-nav'
+import { CalendarScreen } from './src/components/calendar-screen'
+import { PipelineScreen } from './src/components/pipeline-screen'
 
 const queryClient = new QueryClient()
 
@@ -46,13 +47,10 @@ function MobileCrm() {
   const missingConfig = useMemo(() => getMissingConfig(), [])
   const supabase = useMemo(() => getSupabaseClient(), [])
   const [session, setSession] = useState<Session | null>(null)
-  const [loadingSession, setLoadingSession] = useState(true)
+  const [loadingSession, setLoadingSession] = useState(Boolean(supabase))
 
   useEffect(() => {
-    if (!supabase) {
-      setLoadingSession(false)
-      return
-    }
+    if (!supabase) return
 
     supabase.auth
       .getSession()
@@ -165,27 +163,19 @@ function LoginScreen() {
   )
 }
 
-type MobileTab = 'contacts' | 'work' | 'conversations' | 'ari' | 'phone'
-
 function MobileWorkspace({ accessToken, email }: { accessToken: string; email: string }) {
   const supabase = getSupabaseClient()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<MobileTab>('contacts')
+  const [activeTab, setActiveTab] = useState<MobileTab>('pipeline')
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [queuedEvents, setQueuedEvents] = useState(0)
   const [syncingOutbox, setSyncingOutbox] = useState(false)
-  const [search, setSearch] = useState('')
   const [voiceState, setVoiceState] = useState<VoiceState>('offline')
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [voiceIdentity, setVoiceIdentity] = useState<{ callerId: string; displayName: string } | null>(null)
   const [incomingCall, setIncomingCall] = useState<IncomingVoiceCall | null>(null)
   const [activeVoiceCall, setActiveVoiceCall] = useState<NativeVoiceCall | null>(null)
-  const [assistantPrompt, setAssistantPrompt] = useState<string | null>(null)
-  const leadsQuery = useQuery({
-    queryKey: ['leads'],
-    queryFn: ({ signal }) => fetchLeads({ accessToken, signal }),
-  })
   const sessionQuery = useQuery({
     queryKey: ['mobile-session'],
     queryFn: ({ signal }) => fetchMobileSession({ accessToken, signal }),
@@ -252,26 +242,27 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
     queryClient.clear()
   }
 
-  function askAriAboutLead(lead: CrmLead) { setAssistantPrompt(`Brief me on CRM contact ${lead.full_name || 'Unnamed contact'} with leadId ${lead.id}. Use the contact 360 and recent communications. Tell me the highest-leverage next action, but do not change CRM data.`); setSelectedLeadId(null); setActiveTab('ari') }
-
   if (selectedLeadId) {
     return (
       <LeadDetailScreen
         accessToken={accessToken}
         leadId={selectedLeadId}
         onBack={() => setSelectedLeadId(null)}
-        onAskAri={askAriAboutLead}
+        onMessage={(leadId) => {
+          setSelectedLeadId(null)
+          setSelectedConversationId(leadId)
+        }}
         onOutboxChange={refreshOutboxCount}
       />
     )
   }
 
   if (selectedConversationId) {
-    return <ConversationDetailScreen accessToken={accessToken} leadId={selectedConversationId} onBack={() => setSelectedConversationId(null)} />
+    return <ConversationDetailScreen accessToken={accessToken} leadId={selectedConversationId} onBack={() => setSelectedConversationId(null)} onCall={(leadId) => {
+      setSelectedConversationId(null)
+      setSelectedLeadId(leadId)
+    }} />
   }
-
-  const normalizedSearch = search.trim().toLowerCase()
-  const filteredLeads = (leadsQuery.data ?? []).filter((lead) => !normalizedSearch || [lead.full_name, lead.phone, lead.email, lead.property_address, lead.city].some((value) => value?.toLowerCase().includes(normalizedSearch)))
 
   async function acceptIncomingCall() {
     if (!incomingCall) return
@@ -294,21 +285,20 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="dark" />
-      <View style={styles.toolbar}>
-        <View>
-          <Text style={styles.eyebrow}>Signed in</Text>
-          <Text style={styles.toolbarTitle}>{email}</Text>
+      <View style={styles.appHeader}>
+        <View style={styles.brandMark}>
+          <Text style={styles.brandMarkText}>SK</Text>
         </View>
-        <Pressable onPress={signOut} style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>Sign out</Text>
+        <View style={styles.brandCopy}>
+          <Text style={styles.brandTitle}>SavingKC CRM</Text>
+          <Text numberOfLines={1} style={styles.brandSubtitle}>{email}</Text>
+        </View>
+        <Pressable accessibilityLabel="Sign out" onPress={signOut} style={styles.signOutButton}>
+          <Text style={styles.signOutText}>Exit</Text>
         </Pressable>
       </View>
 
       {incomingCall ? <View style={styles.incomingBanner}><View style={{ flex: 1 }}><Text style={styles.incomingTitle}>Incoming call</Text><Text style={styles.incomingNumber}>{incomingCall.from}</Text></View><Pressable onPress={rejectIncomingCall} style={styles.declineButton}><Text style={styles.primaryButtonText}>Decline</Text></Pressable><Pressable onPress={acceptIncomingCall} style={styles.answerButton}><Text style={styles.primaryButtonText}>Answer</Text></Pressable></View> : null}
-
-      <View style={styles.mobileTabs}>
-        {(['contacts', 'work', 'conversations', 'ari', 'phone'] as MobileTab[]).map((tab) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: activeTab === tab }} key={tab} onPress={() => setActiveTab(tab)} style={[styles.mobileTab, activeTab === tab && styles.mobileTabActive]}><Text style={[styles.mobileTabText, activeTab === tab && styles.mobileTabTextActive]}>{tab === 'contacts' ? 'Contacts' : tab === 'work' ? 'Work' : tab === 'conversations' ? 'Inbox' : tab === 'ari' ? 'ARI' : 'Phone'}</Text></Pressable>)}
-      </View>
 
       {queuedEvents > 0 ? (
         <View style={styles.syncBanner}>
@@ -321,31 +311,31 @@ function MobileWorkspace({ accessToken, email }: { accessToken: string; email: s
         </View>
       ) : null}
 
-      {activeTab === 'contacts' ? <>
-      <View style={styles.headerCompact}>
-        <Text style={styles.title}>Contacts</Text>
-        <Text style={styles.body}>Active acquisition contacts. Dead records stay in the web archive.</Text>
-        <TextInput value={search} onChangeText={setSearch} placeholder="Search name, phone, email, or property" style={styles.input} autoCapitalize="none" />
+      <View style={styles.workspaceBody}>
+        {activeTab === 'pipeline' ? (
+          <PipelineScreen
+            accessToken={accessToken}
+            onCall={setSelectedLeadId}
+            onMessage={setSelectedConversationId}
+            onOpen={setSelectedLeadId}
+          />
+        ) : activeTab === 'conversations' ? (
+          <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} />
+        ) : activeTab === 'calendar' ? (
+          <CalendarScreen accessToken={accessToken} onOpenLead={setSelectedLeadId} />
+        ) : (
+          <PhoneScreen
+            accessToken={accessToken}
+            callerId={voiceIdentity?.callerId ?? null}
+            agentName={voiceIdentity?.displayName ?? email}
+            voiceState={voiceState}
+            error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)}
+            activeCall={activeVoiceCall}
+            onActiveCall={setActiveVoiceCall}
+          />
+        )}
       </View>
-      {leadsQuery.isLoading ? (
-        <CenteredStatus label="Loading leads..." />
-      ) : leadsQuery.isError ? (
-        <View style={styles.panel}>
-          <Text style={styles.error}>{leadsQuery.error.message}</Text>
-          <Pressable onPress={() => leadsQuery.refetch()} style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Retry</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <FlatList
-          contentContainerStyle={styles.list}
-          data={filteredLeads}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <LeadRow lead={item} onOpen={() => setSelectedLeadId(item.id)} />}
-          refreshing={leadsQuery.isFetching}
-          onRefresh={() => leadsQuery.refetch()}
-        />
-      )}</> : activeTab === 'work' ? <WorkScreen accessToken={accessToken} onOpenLead={setSelectedLeadId} /> : activeTab === 'conversations' ? <ConversationsScreen accessToken={accessToken} onOpen={setSelectedConversationId} /> : activeTab === 'ari' ? <AssistantScreen accessToken={accessToken} ownerEmail={email} initialPrompt={assistantPrompt} onInitialPromptConsumed={() => setAssistantPrompt(null)} /> : <PhoneScreen accessToken={accessToken} callerId={voiceIdentity?.callerId ?? null} agentName={voiceIdentity?.displayName ?? email} voiceState={voiceState} error={voiceError || (sessionQuery.isError ? 'Mobile API session check failed.' : null)} activeCall={activeVoiceCall} onActiveCall={setActiveVoiceCall} />}
+      <BottomNav active={activeTab} onChange={setActiveTab} />
     </SafeAreaView>
   )
 }
@@ -378,7 +368,7 @@ function ConversationRow({ thread, onOpen }: { thread: ConversationThread; onOpe
   </Pressable>
 }
 
-function ConversationDetailScreen({ accessToken, leadId, onBack }: { accessToken: string; leadId: string; onBack: () => void }) {
+function ConversationDetailScreen({ accessToken, leadId, onBack, onCall }: { accessToken: string; leadId: string; onBack: () => void; onCall: (leadId: string) => void }) {
   const queryClient = useQueryClient()
   const [channel, setChannel] = useState<'sms' | 'email'>('sms')
   const [message, setMessage] = useState('')
@@ -416,7 +406,14 @@ function ConversationDetailScreen({ accessToken, leadId, onBack }: { accessToken
     <StatusBar style="dark" />
     <View style={styles.toolbar}><Pressable onPress={onBack} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Back</Text></Pressable><Text style={styles.toolbarTitle}>{contact?.full_name || contact?.phone || 'Conversation'}</Text><Pressable onPress={() => detailQuery.refetch()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Refresh</Text></Pressable></View>
     {detailQuery.isLoading ? <CenteredStatus label="Loading conversation..." /> : detailQuery.isError ? <View style={styles.panel}><Text style={styles.error}>{detailQuery.error.message}</Text></View> : <ScrollView contentContainerStyle={styles.detailContent}>
-      <View style={styles.panel}><Text style={styles.sectionTitle}>{contact?.full_name || 'Unnamed contact'}</Text><Text style={styles.leadMeta}>{contact?.phone || 'No phone'}</Text><Text style={styles.leadMeta}>{contact?.email || 'No email'}</Text></View>
+      <View style={styles.panel}>
+        <Text style={styles.sectionTitle}>{contact?.full_name || 'Unnamed contact'}</Text>
+        <Text style={styles.leadMeta}>{contact?.phone || 'No phone'}</Text>
+        <Text style={styles.leadMeta}>{contact?.email || 'No email'}</Text>
+        <Pressable disabled={!contact?.phone} onPress={() => onCall(leadId)} style={[styles.callButton, !contact?.phone && styles.disabledButton]}>
+          <Text style={styles.callButtonText}>☎  Call this contact</Text>
+        </Pressable>
+      </View>
       <View style={styles.channelTabs}><Pressable onPress={() => setChannel('sms')} style={[styles.channelTab, channel === 'sms' && styles.channelTabActive]}><Text style={[styles.channelTabText, channel === 'sms' && styles.channelTabTextActive]}>Text</Text></Pressable><Pressable onPress={() => setChannel('email')} style={[styles.channelTab, channel === 'email' && styles.channelTabActive]}><Text style={[styles.channelTabText, channel === 'email' && styles.channelTabTextActive]}>Email</Text></Pressable></View>
       {channel === 'email' ? <TextInput value={subject} onChangeText={setSubject} placeholder="Subject" style={styles.input} /> : null}
       <TextInput value={message} onChangeText={setMessage} multiline placeholder={channel === 'sms' ? 'Write a text message…' : 'Write an email…'} style={[styles.input, styles.textArea]} />
@@ -430,26 +427,25 @@ function ConversationDetailScreen({ accessToken, leadId, onBack }: { accessToken
 function PhoneScreen({ accessToken, callerId, agentName, voiceState, error, activeCall, onActiveCall }: { accessToken: string; callerId: string | null; agentName: string; voiceState: VoiceState; error: string | null; activeCall: NativeVoiceCall | null; onActiveCall: (call: NativeVoiceCall | null) => void }) {
   const [phone, setPhone] = useState('')
   const [callError, setCallError] = useState<string | null>(null)
-  const [currentState, setCurrentState] = useState<VoiceState>(voiceState)
-
-  useEffect(() => setCurrentState(voiceState), [voiceState])
+  const [callState, setCallState] = useState<VoiceState | null>(null)
+  const currentState = activeCall ? (callState ?? voiceState) : voiceState
 
   async function placeCall() {
     if (!phone.trim() || activeCall) return
     setCallError(null)
     try {
-      const call = await startTwilioVoiceCall({ accessToken, phone, onState: setCurrentState })
+      const call = await startTwilioVoiceCall({ accessToken, phone, onState: setCallState })
       onActiveCall(call)
     } catch (caught) {
       setCallError(caught instanceof Error ? caught.message : 'Call could not be started.')
-      setCurrentState('ready')
+      setCallState(null)
     }
   }
 
   async function hangUp() {
     await activeCall?.disconnect().catch(() => null)
     onActiveCall(null)
-    setCurrentState('ready')
+    setCallState(null)
   }
 
   return <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
@@ -463,40 +459,17 @@ function PhoneScreen({ accessToken, callerId, agentName, voiceState, error, acti
   </ScrollView>
 }
 
-function LeadRow({ lead, onOpen }: { lead: CrmLead; onOpen: () => void }) {
-  const location = [lead.city, lead.state].filter(Boolean).join(', ')
-
-  return (
-    <View style={styles.leadRow}>
-      <View style={styles.leadRowTop}>
-        <Text style={styles.leadName}>{lead.full_name || 'Unnamed lead'}</Text>
-        {lead.priority ? <Text style={styles.badge}>{lead.priority}</Text> : null}
-      </View>
-      <Text style={styles.leadMeta}>{lead.property_address || location || 'No address yet'}</Text>
-      <Text style={styles.leadMeta}>{lead.phone || lead.email || 'No contact info'}</Text>
-      <View style={styles.leadActions}>
-        <Pressable disabled={!lead.phone} onPress={onOpen} style={[styles.callButton, !lead.phone && styles.disabledButton]}>
-          <Text style={styles.callButtonText}>Call</Text>
-        </Pressable>
-        <Pressable onPress={onOpen} style={styles.noteButton}>
-          <Text style={styles.noteButtonText}>Details</Text>
-        </Pressable>
-      </View>
-    </View>
-  )
-}
-
 function LeadDetailScreen({
   accessToken,
   leadId,
   onBack,
-  onAskAri,
+  onMessage,
   onOutboxChange,
 }: {
   accessToken: string
   leadId: string
   onBack: () => void
-  onAskAri: (lead: CrmLead) => void
+  onMessage: (leadId: string) => void
   onOutboxChange: () => void
 }) {
   const queryClient = useQueryClient()
@@ -618,7 +591,6 @@ function LeadDetailScreen({
             <Text style={styles.eyebrow}>{lead.priority || lead.station || 'Lead'}</Text>
             <Text style={styles.title}>{lead.full_name || 'Unnamed lead'}</Text>
             <Text style={styles.body}>{lead.property_address || formatLocation(lead) || 'No address yet'}</Text>
-            <Pressable accessibilityRole="button" onPress={() => onAskAri(lead)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Ask ARI for a briefing</Text></Pressable>
           </View>
 
           {operations ? <LeadOperationsCard accessToken={accessToken} leadId={lead.id} operations={operations} onChanged={async () => {
@@ -633,9 +605,14 @@ function LeadDetailScreen({
             <Text style={styles.sectionTitle}>Contact</Text>
             <Text style={styles.leadMeta}>{lead.phone || 'No phone'}</Text>
             <Text style={styles.leadMeta}>{lead.email || 'No email'}</Text>
-            <Pressable disabled={!lead.phone || !!activeCall} onPress={startCall} style={[styles.primaryButton, (!lead.phone || !!activeCall) && styles.disabledButton]}>
-              <Text style={styles.primaryButtonText}>{activeCall ? 'Call in progress' : 'Start call'}</Text>
-            </Pressable>
+            <View style={styles.leadActions}>
+              <Pressable disabled={!lead.phone || !!activeCall} onPress={startCall} style={[styles.callButton, (!lead.phone || !!activeCall) && styles.disabledButton]}>
+                <Text style={styles.callButtonText}>{activeCall ? 'Call in progress' : '☎  Call'}</Text>
+              </Pressable>
+              <Pressable disabled={!lead.phone && !lead.email} onPress={() => onMessage(lead.id)} style={[styles.messageButton, !lead.phone && !lead.email && styles.disabledButton]}>
+                <Text style={styles.messageButtonText}>●  Message</Text>
+              </Pressable>
+            </View>
           </View>
 
           {activeCall ? (
@@ -704,13 +681,13 @@ function CenteredStatus({ label }: { label: string }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F6F8FC',
-    paddingHorizontal: 20,
+    backgroundColor: '#F2F0FE',
+    paddingHorizontal: 16,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#F6F8FC',
+    backgroundColor: '#F2F0FE',
     gap: 12,
     justifyContent: 'center',
   },
@@ -729,6 +706,56 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 22,
     paddingTop: 18,
+  },
+  appHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    paddingBottom: 14,
+    paddingTop: 10,
+  },
+  brandMark: {
+    alignItems: 'center',
+    backgroundColor: '#433DD9',
+    borderRadius: 14,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  brandMarkText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  brandCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  brandTitle: {
+    color: '#191819',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  brandSubtitle: {
+    color: '#77748A',
+    fontSize: 11,
+    paddingTop: 2,
+  },
+  signOutButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: 13,
+  },
+  signOutText: {
+    color: '#433DD9',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  workspaceBody: {
+    flex: 1,
   },
   toolbarTitle: {
     color: '#111827',
@@ -781,7 +808,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#E32E2E',
+    backgroundColor: '#433DD9',
     borderRadius: 12,
     minHeight: 52,
     justifyContent: 'center',
@@ -988,6 +1015,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
+  messageButton: {
+    alignItems: 'center',
+    backgroundColor: '#EEF3FF',
+    borderRadius: 10,
+    flex: 1,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  messageButtonText: {
+    color: '#2C53E0',
+    fontSize: 15,
+    fontWeight: '800',
+  },
   noteButton: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
@@ -1081,7 +1121,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   channelTabTextActive: {
-    color: '#D4212A',
+    color: '#433DD9',
   },
   phoneCard: {
     backgroundColor: '#0B2540',

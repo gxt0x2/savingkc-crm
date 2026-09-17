@@ -1,5 +1,5 @@
 export const mobileConfig = {
-  crmApiBaseUrl: process.env.EXPO_PUBLIC_CRM_API_BASE_URL?.replace(/\/+$/, '') ?? '',
+  crmApiBaseUrl: process.env.EXPO_PUBLIC_CRM_API_BASE_URL?.replace(/\/+$/, '') || 'https://crm.savingkc.com',
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
   supabaseAnonKey:
     process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??

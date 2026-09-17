@@ -1,6 +1,6 @@
 module.exports = ({ config }) => {
-  const projectId = process.env.EAS_PROJECT_ID?.trim()
-  const owner = process.env.EXPO_OWNER?.trim()
+  const projectId = process.env.EAS_PROJECT_ID?.trim() || config.extra?.eas?.projectId
+  const owner = process.env.EXPO_OWNER?.trim() || config.owner
 
   return {
     ...config,

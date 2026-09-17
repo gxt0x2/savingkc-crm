@@ -12,7 +12,20 @@ export type CrmLead = {
   classification?: string | null
   dead_reason?: string | null
   assigned_agent?: string | null
+  source?: string | null
   priority: string | null
+  score?: number | null
+  is_favorite?: boolean
+  attention_state?: 'needs_reply' | 'waiting_on_contact' | 'resolved'
+  last_message?: string | null
+  last_activity_at?: string | null
+  primary_next_action?: {
+    id: string
+    title: string
+    due_at: string | null
+    owner: string | null
+    overdue: boolean
+  } | null
   motivation_score?: number | null
   seller_situation?: string | null
   appointment_date?: string | null
@@ -22,7 +35,32 @@ export type CrmLead = {
 
 export type LeadsResponse = {
   leads?: CrmLead[]
+  counts?: Record<MobilePipelineList, number>
+  pageInfo?: {
+    total: number
+    hasMore: boolean
+    nextCursor: string | null
+  }
   error?: string
+}
+
+export type MobilePipelineList =
+  | 'new'
+  | 'contacted'
+  | 'qualified'
+  | 'appointment_set'
+  | 'offer_made'
+  | 'in_closing'
+  | 'all'
+
+export type MobilePipelineResponse = {
+  leads: CrmLead[]
+  counts: Record<MobilePipelineList, number>
+  pageInfo: {
+    total: number
+    hasMore: boolean
+    nextCursor: string | null
+  }
 }
 
 export type CrmActivity = {
@@ -143,6 +181,7 @@ export type MobileSession = {
     ownerAssignment: boolean
     handoffAcceptance: boolean
     aiAssistantReadOnly: boolean
+    calendar: boolean
   }
 }
 
@@ -163,6 +202,27 @@ export type ConversationsResponse = {
 export type ConversationDetailResponse = {
   contact?: CrmLead
   activities?: CrmActivity[]
+  error?: string
+}
+
+export type MobileCalendarItem = {
+  id: string
+  type: string
+  title: string
+  description: string | null
+  contactId: string | null
+  contactName: string | null
+  propertyAddress: string | null
+  dueAt: string
+  assignedTo: string | null
+  department: string
+  priority: string
+  status: 'pending' | 'blocked'
+}
+
+export type MobileCalendarResponse = {
+  items: MobileCalendarItem[]
+  serverNow: string
   error?: string
 }
 
