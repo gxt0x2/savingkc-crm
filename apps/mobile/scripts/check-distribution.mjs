@@ -1,8 +1,8 @@
 import process from 'node:process'
 import appConfig from '../app.json' with { type: 'json' }
 
-const projectId = process.env.EAS_PROJECT_ID?.trim() || appConfig.expo?.extra?.eas?.projectId
-const owner = process.env.EXPO_OWNER?.trim() || appConfig.expo?.owner
+const projectId = appConfig.expo?.extra?.eas?.projectId
+const owner = appConfig.expo?.owner
 const requiredEnvironment = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY']
 
 const missing = requiredEnvironment.filter((name) => !process.env[name]?.trim())
