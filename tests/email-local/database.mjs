@@ -128,6 +128,7 @@ export async function startDisposableDatabase() {
       '20260913150000_email_received_content.sql',
       '20260913160000_email_public_unsubscribe.sql',
       '20260913220000_email_hosted_dispatch.sql',
+      '20261110120000_email_person_property_hygiene.sql',
     ]) {
       await sql.unsafe(
         await readFile(path.join(root, 'supabase/migrations', name), 'utf8'),
@@ -195,6 +196,7 @@ export async function startDisposableDatabase() {
           'Jackson',${propertyAddress},'owner',
           '{"source":"fabricated local fixture"}'::jsonb
         )`
+      await sql`insert into em_selected_addresses(workspace_id,party_id,address_id,slot) values(${workspace.id},${party.id},${address.id},1)`
       partyIds.push(party.id)
       canonicalPeople.push(person.id)
       canonicalProperties.push(canonicalProperty.id)

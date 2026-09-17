@@ -506,6 +506,7 @@
       "routes": ["/marketing/email", "/email/unsubscribe/[token]"],
       "apiRoutes": [
         "/api/email/workspace",
+        "/api/email/contact-rules",
         "/api/email/setup",
         "/api/email/audiences",
         "/api/email/connections",
@@ -522,7 +523,7 @@
         "em_audit_events",
         "em_membership_holds",
         "em_command_receipts",
-        "em_parties",
+        "em_parties", "em_person_marketing_rules", "em_property_marketing_holds", "em_selected_addresses",
         "em_addresses",
         "em_party_addresses",
         "em_party_properties",

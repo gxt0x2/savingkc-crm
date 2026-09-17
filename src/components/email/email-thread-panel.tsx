@@ -1,5 +1,6 @@
 'use client'
 
+import { EmailContactRules } from './email-contact-rules'
 import { EmailCallbackReview } from './email-callback-review'
 import { EmailSendIssue } from './email-send-issue'
 import { EmailMessageBody as MessageBody } from './email-message-body'
@@ -832,6 +833,7 @@ export function EmailThreadPanel({
                 Open {t.lead_classification === 'opportunity' ? 'Opportunity' : 'Lead'} →
               </Link>
             )}
+            {data.roles.includes('owner') && !localSimulation && detailTab === 'contact' && <EmailContactRules key={t.id} threadId={t.id} />}
             <details>
               <summary>Source & controls</summary>
               <p>Campaign: {t.campaign_name}</p>

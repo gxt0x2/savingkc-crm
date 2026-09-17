@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: '.',
-  testMatch: 'workflow.spec.ts',
+  testMatch: ['workflow.spec.ts', 'contact-rules.spec.ts'],
   workers: 1,
   timeout: 45000,
   outputDir: '../../test-results/email-local',

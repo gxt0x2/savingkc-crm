@@ -1,3 +1,4 @@
+import { holdRelatedOutreach, needsPropertyReview } from '../hygiene/property'
 import 'server-only'
 import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
@@ -165,6 +166,7 @@ export async function processNextReceivedReply(
         messageId = message.id
         await tx`update em_threads set content_revision=content_revision+1,last_message_at=${now},state=case when state='stopped' then state else 'needs_review' end where id=${thread.id}`
         await tx`update em_enrollments set state='replied' where workspace_id=${ws.id} and id=${thread.enrollment_id} and state not in ('suppressed','failed')`
+        if (content.optOut && needsPropertyReview(content.text)) await holdRelatedOutreach(context, thread.id, `Reply ${message.id}; review property-wide request`,true)
         if (content.optOut)
           await suppress(context, thread.address_id, 'unsubscribe', message.id)
         else await projectCrmChanges(context, thread.id, { history: true })
@@ -180,6 +182,7 @@ export async function processNextReceivedReply(
       await tx`update em_provider_events set state='processed',hold_reason=null,encrypted_content=${tx.json(json(encryptEmailSecret(serialized, key, `${ws.id}/${event.id}/resend-content/1`, 1)))} where id=${event.id}`
       await tx`update em_threads set inbound_pending=exists(select 1 from em_provider_events where workspace_id=${ws.id} and thread_id=${thread.id} and state<>'processed' and type='email.received') where id=${thread.id}`
       if (!content.optOut && (!content.headers['auto-submitted'] || content.headers['auto-submitted'].toLowerCase() === 'no')) {
+        if (!existing) await holdRelatedOutreach(context, thread.id, `Reply ${messageId}; review other contacts before continuing property outreach`,needsPropertyReview(content.text))
         const handled = await automaticallyHandoffCallback(context, thread.id, messageId)
         if (handled) await tx`update em_notifications set acknowledged_at=${now} where workspace_id=${ws.id} and logical_key=${`received:${event.connection_id}:${content.id}`}`
       }

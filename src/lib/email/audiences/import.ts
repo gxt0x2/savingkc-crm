@@ -1,3 +1,4 @@
+import { selectInitialAddresses, contactHygieneReasons } from '../hygiene/guards';
 import "server-only";
 import type { Sql } from "postgres";
 import { z } from "zod";
@@ -107,7 +108,14 @@ export async function importAudience(
       }
       const [stop] =
         await tx`select id from em_suppressions where workspace_id=${ws.id} and address_id=${address.id}`;
-      const reasons = [];
+      if (confirmed) {
+        await selectInitialAddresses(tx, ws.id, partyId!);
+        await tx`insert into em_party_properties(workspace_id,party_id,canonical_property_id,address,relationship,evidence)
+          select distinct p.workspace_id,p.id,l.property_id,cp.address,'unconfirmed',jsonb_build_object('source','Canonical CRM record link; ownership requires review')
+          from em_parties p join crm_lead_entity_links l on l.person_id=p.canonical_person_id join crm_properties cp on cp.id=l.property_id
+          where p.workspace_id=${ws.id} and p.id=${partyId} and l.property_id is not null on conflict do nothing`;
+      }
+      const reasons = await contactHygieneReasons(tx, { workspaceId: ws.id, partyId: partyId!, addressId: address.id, now });
       if (!confirmed) reasons.push("identity_review");
       if (
         address.verification_state !== "valid" ||
