@@ -12,6 +12,17 @@ describe('appointment seller copy', () => {
       expect(result.html).not.toContain(input.repPhone)
     }
   })
+  it('uses the approved booking email language and signature', () => {
+    const result = appointmentCopy({
+      ...input,
+      touch: 'booking_email',
+      firstName: 'Howard',
+      scheduledAt: '2026-09-23T18:30:00Z',
+    })
+    expect(result.body).toBe("Hi Howard,\n\nYou're set for Wednesday, September 23 at 1:30 PM CT. This'll be about 30 to 60 minutes, no pressure, just walking through your options and what makes the most sense for you.\n\nMy direct number is (816) 727-7667, so text or call if something changes.\n\nTalk soon,\nCasey\nSaving KC Homebuyers")
+    expect(result.body).not.toContain("I'm Casey")
+    expect(result.body).not.toContain('getting you real numbers')
+  })
   it('uses the seller first name, rep identity, and Central appointment time', () => {
     const result = appointmentCopy({ ...input, touch: 'booking_sms' })
     expect(result.body).toContain("Hey Ernest, it's Casey")

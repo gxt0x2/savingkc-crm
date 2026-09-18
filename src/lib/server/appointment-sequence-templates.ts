@@ -22,7 +22,7 @@ export function appointmentCopy(input: {
     morning_sms: `Good morning ${name}! We're still set for ${time} today. Looking forward to ${meeting}. If anything changes, just text me here.`,
     arrival_sms: `On my way, should be there by ${time}. See you shortly, ${name}.`,
   }
-  const text = `Hi ${name},\n\nYou're set for ${apptDate} at ${time}. This'll be about 30 to 60 minutes, no pressure, just walking through your options and getting you real numbers.\n\nI'm ${rep}. My direct number is ${repPhone}, so text or call if something changes.\n\nTalk soon,\n${rep}\nSaving KC Homebuyers`
+  const text = `Hi ${name},\n\nYou're set for ${apptDate} at ${time}. This'll be about 30 to 60 minutes, no pressure, just walking through your options and what makes the most sense for you.\n\nMy direct number is ${repPhone}, so text or call if something changes.\n\nTalk soon,\n${rep}\nSaving KC Homebuyers`
   const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!)
   const photo = input.photoUrl && /^https:\/\//i.test(input.photoUrl)
     ? `<p><img src="${escape(input.photoUrl)}" alt="${escape(rep)}" width="120" style="border-radius:12px" /></p>` : ''
