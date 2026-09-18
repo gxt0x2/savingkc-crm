@@ -4,10 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
-import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
+import { CallActivityDetails } from '@/components/leads/call-activity-details'
 import { EntityIdentityStatus } from '@/components/leads/entity-identity-status'
 import { StreetViewPanel } from '@/components/leads/google-map-panel'
-import { LeadOpportunityPanel, LEAD_WORKSPACE_STAGES } from '@/components/leads/lead-opportunity-panel'
+import { LeadOpportunityPanel } from '@/components/leads/lead-opportunity-panel'
 import { openLeadNextAction } from '@/components/leads/governed-next-action'
 import { RecordOfferModal } from '@/components/leads/record-offer-modal'
 import { StageSelector } from '@/components/leads/stage-selector'
@@ -19,10 +19,11 @@ import {
   leadActivityText,
   leadConversationCounts,
   normalizeLeadConversation,
+  type LeadConversationActivity,
   type LeadCommunicationFilter,
 } from '@/lib/lead-conversation'
-import { playableRecordingUrl } from '@/lib/marketing/call-recordings'
 import { cn } from '@/lib/utils'
+import { leadWorkspaceStageLabel } from '@/lib/lead-stage'
 import type { CrmEntityContext } from '@/lib/server/crm-entity-foundation'
 
 export interface LeadWorkspaceLead {
@@ -37,6 +38,10 @@ export interface LeadWorkspaceLead {
   source: string | null
   station: string | null
   priority: string | null
+  notes?: string | null
+  seller_situation?: string | null
+  is_favorite?: boolean | null
+  opportunity_score?: number | null
   assigned_agent: string | null
   beds: number | null
   baths_full: number | null
@@ -51,13 +56,8 @@ export interface LeadWorkspaceLead {
   entityContext?: CrmEntityContext | null
 }
 
-export interface LeadWorkspaceActivity {
-  id: string
-  activity_type: string
-  description: string | null
+export interface LeadWorkspaceActivity extends LeadConversationActivity {
   agent: string | null
-  metadata: Record<string, unknown> | null
-  created_at: string
 }
 
 interface LeadWorkspaceAppointment {
@@ -182,13 +182,15 @@ export function LeadWorkspace({
   const owner = toProperCase(lead.assigned_agent) || 'Unassigned'
   const address = [lead.property_address, lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${encodeURIComponent(address)}&fov=90&pitch=4&key=${process.env.NEXT_PUBLIC_GMAPS_KEY ?? ''}`
-  const stageIndex = Math.max(0, LEAD_WORKSPACE_STAGES.findIndex((stage) => stage.keys.includes((lead.station || 'new').toLowerCase())))
   const normalizedActivities = useMemo(() => normalizeLeadConversation(activities), [activities])
   const communicationCounts = useMemo(() => leadConversationCounts(normalizedActivities), [normalizedActivities])
   const visibleActivities = useMemo(
     () => filterLeadConversation(normalizedActivities, communicationFilter),
     [communicationFilter, normalizedActivities],
   )
+  const visibleCommunicationFilters = COMMUNICATION_FILTERS.filter((filter) => (
+    filter.key === 'all' || filter.key === 'email' || filter.key === 'note' || filter.key === communicationFilter || communicationCounts[filter.key] > 0
+  ))
   const latestOfferActivity = useMemo(() => [...activities]
     .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
     .find((activity) => activity.activity_type === 'offer' || typeof activity.metadata?.offer_method === 'string'),
@@ -364,7 +366,7 @@ export function LeadWorkspace({
                     ) : null}
                     <span className="hidden items-center gap-1 rounded-md border border-[var(--crm-success-border)] bg-[var(--crm-success-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--crm-success)] sm:inline-flex">
                       <Icon name="flag" className="text-[13px]" />
-                      {LEAD_WORKSPACE_STAGES[stageIndex]?.label || toProperCase(lead.station) || 'New'}
+                      {leadWorkspaceStageLabel(lead.station)}
                     </span>
                     <span className="hidden sm:inline-flex"><LeadOwnerControl leadId={lead.id} owner={lead.assigned_agent} onChanged={onOwnerChange} /></span>
                     <EntityIdentityStatus context={lead.entityContext} />
@@ -609,7 +611,7 @@ export function LeadWorkspace({
             <CardHeader title="Conversation" icon="forum" />
             <div className="border-b border-[var(--crm-border)] bg-[var(--crm-surface)] px-4 py-2.5">
               <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filter conversation by communication type">
-                {COMMUNICATION_FILTERS.map((filter) => (
+                {visibleCommunicationFilters.map((filter) => (
                   <button
                     key={filter.key}
                     type="button"
@@ -629,10 +631,6 @@ export function LeadWorkspace({
                     </span>
                   </button>
                 ))}
-                <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--crm-info-soft)] px-2 py-1 text-[10px] font-bold text-[var(--crm-info)]">
-                  <Icon name="south" className="text-[13px]" />
-                  Newest first
-                </span>
               </div>
             </div>
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
@@ -691,6 +689,11 @@ export function LeadWorkspace({
             leadId={lead.id}
             nextActionTask={nextTask}
             station={lead.station}
+            source={lead.source}
+            notes={lead.notes}
+            sellerSituation={lead.seller_situation}
+            isFavorite={lead.is_favorite}
+            activities={activities}
             score={score}
             motivationScore={lead.motivation_score}
             estimatedValue={lead.arv ?? assessedValue}
@@ -992,7 +995,6 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
   const isOutbound = direction === 'Outbound'
   const isCall = activity.activity_type === 'call'
   const text = leadActivityText(activity)
-  const recordingUrl = playableRecordingUrl(activity.metadata)
   return (
     <article className="grid grid-cols-[92px_34px_1fr] gap-3">
       <time className="pt-1 text-right text-[11px] leading-4 text-[var(--crm-text-muted)]">{formatActivityDate(activity.created_at)}</time>
@@ -1006,16 +1008,7 @@ function TimelineActivity({ activity }: { activity: LeadWorkspaceActivity }) {
           {activity.agent ? <span className="text-[10px] text-[var(--crm-text-muted)]">by {toProperCase(activity.agent)}</span> : null}
         </div>
         <p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-[var(--crm-text)]">{text}</p>
-        {isCall ? recordingUrl ? (
-          <><audio className="mt-3 w-full accent-[var(--crm-brand)]" controls preload="metadata" src={recordingUrl}>
-            Your browser does not support call recording playback.
-          </audio><CallReviewSubmitButton activityId={activity.id} recordingUrl={recordingUrl} /></>
-        ) : (
-          <div className="mt-3 flex items-center gap-2 rounded-md border border-[var(--crm-border)] bg-[var(--crm-surface-subtle)] px-3 py-2 text-xs font-semibold text-[var(--crm-text-muted)]">
-            <Icon name="phone_in_talk" className="text-[17px] text-[var(--crm-brand)]" />
-            No recording available
-          </div>
-        ) : null}
+        {isCall ? <CallActivityDetails activity={activity} /> : null}
       </div>
     </article>
   )

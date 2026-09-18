@@ -273,6 +273,8 @@ describe('TwiML request containment', () => {
   })
 
   it('does not let unsigned source metadata extend the legacy timeout', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-19T18:00:00.000Z'))
     vi.stubEnv('DIALER_ALLOW_LEGACY_UNSIGNED_INTENTS', 'true')
     const { text } = await responseText(outboundRequest({ source: 'web_click_to_call' }))
     expect(text).toContain('timeout="15"')

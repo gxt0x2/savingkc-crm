@@ -22,7 +22,6 @@ const AUTOMATION_ACTOR = {
 } as const
 
 function targetStage(current: string, trigger: AutoTrigger): CrmLifecycleStage | null {
-  if (trigger === 'outbound_contact' && current === 'new') return 'contacted'
   if (trigger === 'appointment_set' && ['new', 'contacted', 'qualified'].includes(current)) return 'appointment_set'
   if (trigger === 'appointment_completed' && ['new', 'contacted'].includes(current)) return 'qualified'
   if (trigger === 'contract_sent' && ['new', 'contacted', 'qualified', 'appointment_set'].includes(current)) return 'offer_made'
@@ -35,6 +34,10 @@ export async function checkAutoAdvance(
   trigger: AutoTrigger,
   options?: { beforeMutation?: () => Promise<void> },
 ): Promise<{ advanced: boolean; from?: string; to?: string }> {
+  // Outreach is communication evidence, not an agent-confirmed Lead.
+  // Activity projections already track attempted/connected outreach separately.
+  if (trigger === 'outbound_contact') return { advanced: false }
+
   const { data: lead, error } = await supabaseAdmin()
     .from('leads')
     .select('id,station')

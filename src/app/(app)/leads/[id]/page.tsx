@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { createClient } from '@/lib/supabase/client'
 import { toProperCase } from '@/lib/format'
+import { formatCallDuration } from '@/lib/activity-feed-simplify'
 import { applyCanonicalHousingToLead, leadHousingDetails } from '@/lib/lead-housing-details'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { AppointmentModal } from '@/components/leads/appointment-modal'
@@ -671,14 +672,8 @@ export default function LeadDetailPage() {
           : undefined
         const metaStatus = a.metadata?.status as string | undefined
 
-        const fmtMMSS = (sec: number) => {
-          const m = Math.floor(sec / 60)
-          const s = sec % 60
-          return `${m}:${String(s).padStart(2, '0')}`
-        }
-
         if (metaDuration && metaDuration > 0) {
-          statusBadge = fmtMMSS(metaDuration)
+          statusBadge = formatCallDuration(metaDuration)
         } else if (metaStatus === 'no-answer') {
           statusBadge = 'No answer'
         } else if (metaStatus === 'busy') {
@@ -690,11 +685,11 @@ export default function LeadDetailPage() {
             const m1 = tail.match(/^(\d+)s$/)
             const m2 = tail.match(/([a-z-]+)\s*\((\d+)s\)/i)
             if (m1) {
-              statusBadge = fmtMMSS(parseInt(m1[1], 10))
+              statusBadge = formatCallDuration(parseInt(m1[1], 10))
             } else if (m2) {
               const [, callStatus, duration] = m2
               const n = parseInt(duration, 10)
-              if (callStatus === 'completed' && n > 0) statusBadge = fmtMMSS(n)
+              if (callStatus === 'completed' && n > 0) statusBadge = formatCallDuration(n)
               else if (callStatus === 'no-answer') statusBadge = 'No answer'
               else if (callStatus === 'busy') statusBadge = 'Busy'
               else statusBadge = callStatus

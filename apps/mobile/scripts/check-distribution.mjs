@@ -1,13 +1,13 @@
 import process from 'node:process'
+import appConfig from '../app.json' with { type: 'json' }
 
-const required = [
-  'EAS_PROJECT_ID',
-  'EXPO_OWNER',
-  'EXPO_PUBLIC_SUPABASE_URL',
-  'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
-]
+const projectId = appConfig.expo?.extra?.eas?.projectId
+const owner = appConfig.expo?.owner
+const requiredEnvironment = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY']
 
-const missing = required.filter((name) => !process.env[name]?.trim())
+const missing = requiredEnvironment.filter((name) => !process.env[name]?.trim())
+if (!projectId) missing.unshift('EAS_PROJECT_ID')
+if (!owner) missing.unshift('EXPO_OWNER')
 const apiBase = process.env.EXPO_PUBLIC_CRM_API_BASE_URL?.trim() || 'https://crm.savingkc.com'
 if (apiBase !== 'https://crm.savingkc.com') {
   console.error(`EXPO_PUBLIC_CRM_API_BASE_URL must be https://crm.savingkc.com for production builds; received ${apiBase}.`)

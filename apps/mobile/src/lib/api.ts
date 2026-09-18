@@ -13,6 +13,9 @@ import type {
   CrmLead,
   LeadDetailResponse,
   LeadsResponse,
+  MobileCalendarResponse,
+  MobilePipelineList,
+  MobilePipelineResponse,
   MobileWorkResponse,
   MobileSession,
   VoiceTokenResponse,
@@ -42,11 +45,20 @@ export function createMobileRequestId(): string {
 }
 
 export async function fetchLeads(options: ApiOptions = {}): Promise<CrmLead[]> {
+  return (await fetchPipeline({ ...options, list: 'contacted' })).leads
+}
+
+export async function fetchPipeline(options: ApiOptions & { list: MobilePipelineList; search?: string }): Promise<MobilePipelineResponse> {
   if (!mobileConfig.crmApiBaseUrl) {
     throw new CrmApiError('CRM API base URL is not configured.')
   }
 
-  const response = await fetch(`${mobileConfig.crmApiBaseUrl}/api/mobile/v1/leads?limit=25`, {
+  const query = new URLSearchParams({
+    limit: '50',
+    list: options.list,
+  })
+  if (options.search?.trim()) query.set('q', options.search.trim())
+  const response = await fetch(`${mobileConfig.crmApiBaseUrl}/api/mobile/v1/leads?${query}`, {
     headers: {
       Accept: 'application/json',
       ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
@@ -65,7 +77,19 @@ export async function fetchLeads(options: ApiOptions = {}): Promise<CrmLead[]> {
     throw new CrmApiError(payload?.error || `CRM API request failed (${response.status}).`, response.status)
   }
 
-  return Array.isArray(payload?.leads) ? payload.leads : []
+  return {
+    leads: Array.isArray(payload?.leads) ? payload.leads : [],
+    counts: {
+      new: payload?.counts?.new ?? 0,
+      contacted: payload?.counts?.contacted ?? 0,
+      qualified: payload?.counts?.qualified ?? 0,
+      appointment_set: payload?.counts?.appointment_set ?? 0,
+      offer_made: payload?.counts?.offer_made ?? 0,
+      in_closing: payload?.counts?.in_closing ?? 0,
+      all: payload?.counts?.all ?? 0,
+    },
+    pageInfo: payload?.pageInfo ?? { total: 0, hasMore: false, nextCursor: null },
+  }
 }
 
 export async function fetchMobileSession(options: ApiOptions = {}): Promise<MobileSession> {
@@ -173,6 +197,10 @@ async function mobileRequest<T>(path: string, options: ApiOptions & { method?: '
 export async function fetchConversations(options: ApiOptions = {}): Promise<ConversationThread[]> {
   const payload = await mobileRequest<ConversationsResponse>('/api/mobile/v1/conversations', options)
   return Array.isArray(payload.items) ? payload.items : []
+}
+
+export async function fetchMobileCalendar(options: ApiOptions = {}): Promise<MobileCalendarResponse> {
+  return mobileRequest<MobileCalendarResponse>('/api/mobile/v1/calendar', options)
 }
 
 export async function fetchConversationDetail(leadId: string, options: ApiOptions = {}): Promise<ConversationDetailResponse> {

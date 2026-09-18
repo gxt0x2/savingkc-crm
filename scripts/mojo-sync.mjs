@@ -60,6 +60,10 @@ const ACTIVITY_LEAD = 30
 
 // Groups that indicate a meaningful conversation happened
 const MEANINGFUL_GROUPS = new Set(['follow up', 'appointment set'])
+// Mojo emits activity type 30 when a contact is added to Follow Up. That is a
+// provider workflow side effect, not evidence that the seller was qualified.
+// Only an explicitly named qualification group may grant agent qualification.
+const QUALIFIED_LEAD_GROUPS = new Set(['lead', 'qualified lead'])
 
 // Ensure log directory exists
 if (!fs.existsSync(LOG_DIR)) {
@@ -411,8 +415,12 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
         break
       }
       case ACTIVITY_LEAD: {
-        entry.isQualifiedLead = true
-        if (details.group_name) entry.groupName = details.group_name
+        const activityGroup = String(details.group_name || '').trim()
+        entry.isQualifiedLead = QUALIFIED_LEAD_GROUPS.has(activityGroup.toLowerCase())
+        if (activityGroup) entry.groupName = activityGroup
+        if (!entry.isQualifiedLead) {
+          log(`  Ignoring non-qualifying Mojo lead event for contact ${contactId}: group=${activityGroup || '(none)'}`)
+        }
         break
       }
     }

@@ -51,6 +51,7 @@ import {
   DIALER_STATUS_LABEL,
   classifyDirection,
   extractTwilioErrorMessage,
+  formatTwilioCallError,
   formatCallLeg,
   formatDialDisplay,
   formatDuration,
@@ -272,7 +273,7 @@ export function SoftphoneCore({
   }, [cancelQueuedAutoDial, clearDispositionRequirement, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueRingCount, pendingSessionId])
 
   useEffect(() => {
-    if (!open || !pendingSessionId || !pendingQueue?.length) return
+    if (!open || !pendingSessionId) return
     let cancelled = false
     void loadDialerAttemptHistory(pendingSessionId)
       .then(({ session, attempts }) => {
@@ -281,6 +282,9 @@ export function SoftphoneCore({
         pausedSessionIdRef.current = session.status === 'paused' ? session.id : null
         setWorkspaceSessionStatus(session.status)
         if (session.stopRequestedAt || session.status === 'paused') cancelQueuedAutoDial()
+        // Session navigation is still available when this seller has no
+        // callable numbers. Restore outcomes once its phone queue is loaded.
+        if (!pendingQueue?.length) return
         const recovery = findRecoverableDialerAttempt(session, attempts.items, pendingQueue)
         if (!recovery) {
           if (session.stopRequestedAt && session.status !== 'stopped') {
@@ -684,7 +688,7 @@ export function SoftphoneCore({
       })
       call.on('error', (callError: TwilioErrorLike) => {
         stopLocalRingback()
-        setError(extractTwilioErrorMessage(callError))
+        setError(formatTwilioCallError(callError))
       })
 
       const heirMeta = activeQueueItemRef.current
@@ -1205,10 +1209,6 @@ export function SoftphoneCore({
     return item
   }
 
-  function skipQueueItem() {
-    advanceQueue()
-  }
-
   function prevQueueItem() {
     if (!queue || queueIndex === 0) return
     const prev = queueIndex - 1
@@ -1291,14 +1291,14 @@ export function SoftphoneCore({
           workspace={isWorkspace}
           onEnd={endQueue}
           onPrevious={prevQueueItem}
-          onSkip={skipQueueItem}
+          onSkip={advanceQueue}
         /> : null}
 
         {/* Scrollable body — min-h-0 is required so flex-1 actually shrinks
             below content size and the panel respects max-h cap. Without it
             the body forces the panel past the viewport. */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
-          <DialerMicrophoneControls deviceRef={deviceRef} status={status} open={open} />
+        <div data-dialer-scroll-body className={isWorkspace ? 'flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2.5' : 'flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4'}>
+          <DialerMicrophoneControls deviceRef={deviceRef} status={status} open={open} sessionId={pendingSessionId} workspace={isWorkspace} />
           {/* Error banner */}
           {error && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
@@ -1674,7 +1674,7 @@ export function SoftphoneCore({
             </button>
           )}
         </div>
-        {isWorkspace && pendingSessionId ? <div className="shrink-0 bg-[var(--prospecting-panel)] px-5 pb-4">
+        {isWorkspace && pendingSessionId ? <div className="shrink-0 bg-[var(--prospecting-panel)] px-3 pb-1">
           <WorkspaceSessionControls status={workspaceSessionStatus} callBusy={isOnCall} controlUnavailable={workspaceControlsUnavailable}
             outcomeRequired={outcomeRequired || Boolean(recoveryPending)}
             redialReady={Boolean(dialNumber.trim()) && status === 'ready'}

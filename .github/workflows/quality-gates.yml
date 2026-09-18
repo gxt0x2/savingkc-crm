@@ -64,6 +64,9 @@ jobs:
       - name: Root dependency security gate
         run: npm run gate:security
 
+      - name: Mojo appointment provenance PostgreSQL rehearsal
+        run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-mojo-appointment-provenance.sh
+
       - name: Unit coverage gate
         run: |
           npm run test:coverage

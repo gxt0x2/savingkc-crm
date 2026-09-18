@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     const agent = url.searchParams.get('agent') || ''
     const from = url.searchParams.get('from') || ''
     let resolvedLeadId = url.searchParams.get('leadId') || ''
+    const calledNumber = url.searchParams.get('calledNumber') || ''
 
     const body = await req.formData()
     const recordingUrl = body.get('RecordingUrl') as string
@@ -91,6 +92,7 @@ export async function POST(req: Request) {
     smsBody: vmMsg,
     trigger: 'voicemail_recording_alert',
     source: 'inbound_voicemail',
+    calledNumber,
     push: {
       title: 'New Voicemail',
       body: `Voicemail from ${from} (${recordingDuration}s)`,
@@ -99,6 +101,7 @@ export async function POST(req: Request) {
     },
     metadata: {
       from,
+      calledNumber,
       recordingUrl,
       recordingSid,
       duration: recordingDuration,

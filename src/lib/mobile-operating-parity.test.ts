@@ -3,32 +3,34 @@ import { describe, expect, it } from 'vitest'
 
 const app = readFileSync('apps/mobile/App.tsx', 'utf8')
 const api = readFileSync('apps/mobile/src/lib/api.ts', 'utf8')
+const bottomNav = readFileSync('apps/mobile/src/components/bottom-nav.tsx', 'utf8')
+const pipelineScreen = readFileSync('apps/mobile/src/components/pipeline-screen.tsx', 'utf8')
+const calendarScreen = readFileSync('apps/mobile/src/components/calendar-screen.tsx', 'utf8')
 const workScreen = readFileSync('apps/mobile/src/components/work-screen.tsx', 'utf8')
 const operationsCard = readFileSync('apps/mobile/src/components/lead-operations-card.tsx', 'utf8')
-const assistantScreen = readFileSync('apps/mobile/src/components/assistant-screen.tsx', 'utf8')
 const twilioVoice = readFileSync('apps/mobile/src/lib/twilio-voice-service.ts', 'utf8')
 const twilioTokenRoute = readFileSync('src/app/api/mobile/v1/twilio/token/route.ts', 'utf8')
 const environmentExample = readFileSync('.env.example', 'utf8')
 
 describe('mobile operating parity contract', () => {
-  it('keeps one mobile Work surface backed by canonical server actions', () => {
-    expect(app).toContain("type MobileTab = 'contacts' | 'work' | 'conversations' | 'ari' | 'phone'")
-    expect(app).toContain('<WorkScreen accessToken={accessToken}')
-    expect(workScreen).toContain('fetchMobileWork')
-    expect(workScreen).toContain('completeMobileWorkItem')
-    expect(workScreen).toContain('acceptMobileHandoff')
+  it('keeps the operator-facing app focused on the four mobile MVP lanes', () => {
+    expect(bottomNav).toContain("type MobileTab = 'pipeline' | 'conversations' | 'calendar' | 'phone'")
+    expect(app).toContain('<PipelineScreen')
+    expect(app).toContain('<ConversationsScreen')
+    expect(app).toContain('<CalendarScreen')
+    expect(app).toContain('<PhoneScreen')
+    expect(app).not.toContain('<WorkScreen')
+    expect(app).not.toContain('<AssistantScreen')
   })
 
-  it('gives mobile users a bearer-authenticated, read-only ARI surface', () => {
-    expect(app).toContain('<AssistantScreen accessToken={accessToken}')
-    expect(app).toContain('Ask ARI for a briefing')
-    expect(api).toContain("'/api/ai/command'")
-    expect(api).toContain("'/api/ai/threads?limit=20'")
-    expect(api).toContain('requestId: input.requestId')
-    expect(assistantScreen).toContain('retryRequest?.content === content')
-    expect(assistantScreen).toContain('It can research and recommend, but it cannot change CRM data')
-    expect(assistantScreen).toContain('require confirmation')
-    expect(assistantScreen).not.toMatch(/supabase|\.from\(/i)
+  it('backs Pipeline and Calendar with bearer-authenticated server reads', () => {
+    expect(pipelineScreen).toContain('fetchPipeline')
+    expect(calendarScreen).toContain('fetchMobileCalendar')
+    expect(api).toContain('/api/mobile/v1/leads?')
+    expect(api).toContain("'/api/mobile/v1/calendar'")
+    expect(api).toContain("Authorization: `Bearer ${options.accessToken}`")
+    expect(pipelineScreen).not.toMatch(/supabase|\.from\(/i)
+    expect(calendarScreen).not.toMatch(/supabase|\.from\(/i)
   })
 
   it('initializes iOS PushKit early and binds the production VoIP credential into mobile tokens', () => {

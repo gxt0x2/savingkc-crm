@@ -43,23 +43,22 @@ describe('canonical pipeline auto advance', () => {
     }))
   })
 
-  it('moves first contact through the canonical audited lifecycle command', async () => {
-    const query = leadQuery({ id: 'lead-1', station: 'new' })
-    await expect(checkAutoAdvance('lead-1', 'outbound_contact')).resolves.toEqual({
-      advanced: true, from: 'new', to: 'contacted',
-    })
-    expect(query.select).toHaveBeenCalledWith('id,station')
-    expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({
-      leadId: 'lead-1', commandType: 'transition', stage: 'contacted',
-      actorEmail: 'automation@savingkc.com', actorName: 'CRM Automation',
-    }))
+  it.each(['new', 'contacted', 'qualified', 'dead'])('keeps %s unchanged after outreach', async (station) => {
+    leadQuery({ id: 'lead-1', station })
+    const beforeMutation = vi.fn()
+    await expect(checkAutoAdvance('lead-1', 'outbound_contact', { beforeMutation }))
+      .resolves.toEqual({ advanced: false })
+    expect(mocks.from).not.toHaveBeenCalled()
+    expect(beforeMutation).not.toHaveBeenCalled()
+    expect(mocks.apply).not.toHaveBeenCalled()
+    expect(mocks.conversion).not.toHaveBeenCalled()
   })
 
   it('revalidates protected control immediately before the lifecycle mutation', async () => {
     leadQuery({ id: 'lead-1', station: 'new' })
     const beforeMutation = vi.fn().mockResolvedValue(undefined)
 
-    await checkAutoAdvance('lead-1', 'outbound_contact', { beforeMutation })
+    await checkAutoAdvance('lead-1', 'appointment_set', { beforeMutation })
 
     expect(beforeMutation).toHaveBeenCalledOnce()
     expect(beforeMutation.mock.invocationCallOrder[0]).toBeLessThan(mocks.apply.mock.invocationCallOrder[0])
@@ -69,7 +68,7 @@ describe('canonical pipeline auto advance', () => {
     leadQuery({ id: 'lead-1', station: 'new' })
     const beforeMutation = vi.fn().mockRejectedValue(new Error('Dialing control moved'))
 
-    await expect(checkAutoAdvance('lead-1', 'outbound_contact', { beforeMutation }))
+    await expect(checkAutoAdvance('lead-1', 'appointment_set', { beforeMutation }))
       .rejects.toThrow('Dialing control moved')
     expect(mocks.apply).not.toHaveBeenCalled()
     expect(mocks.conversion).not.toHaveBeenCalled()
@@ -107,7 +106,7 @@ describe('canonical pipeline auto advance', () => {
 
   it('fails closed when the canonical lead record cannot be read', async () => {
     leadQuery(null, { message: 'database unavailable' })
-    await expect(checkAutoAdvance('lead-1', 'outbound_contact')).rejects.toThrow('Lifecycle record unavailable')
+    await expect(checkAutoAdvance('lead-1', 'appointment_set')).rejects.toThrow('Lifecycle record unavailable')
     expect(mocks.apply).not.toHaveBeenCalled()
   })
 })

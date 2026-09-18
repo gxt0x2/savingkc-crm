@@ -50,7 +50,7 @@ export function WorkspaceCallController({
   }
 
   return (
-    <section aria-label="Next contact" className="border-b border-[var(--prospecting-border)] pb-3">
+    <section aria-label="Next contact" className="border-b border-[var(--prospecting-border)] pb-2">
       <h2 className="text-base font-semibold tracking-[-0.02em] text-[var(--ck-text)]">Call outcome</h2>
       <p className="mt-1 text-xs font-medium text-[var(--ck-text-muted)]">{queueItem ? 'Ready to dial · 00:00' : 'Choose a number from the current contact'}</p>
       <p className="sr-only">{queueItem ? `${queueItem.heirName} ${formattedDialDisplay}` : 'No number selected'}</p>
@@ -58,7 +58,7 @@ export function WorkspaceCallController({
         type="button"
         onClick={onCall}
         disabled={!dialReady}
-        className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--prospecting-primary)] px-3 text-sm font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--prospecting-primary)] px-3 text-sm font-semibold text-[var(--prospecting-on-primary)] transition-colors hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed disabled:opacity-45"
         title={dialReady ? 'Start dialing the reviewed queue' : 'Waiting for Twilio'}
       >
         <Icon name="play_arrow" size="text-xl" filled />

@@ -119,6 +119,7 @@ export async function startDisposableDatabase() {
       '20260912182000_email_crm_projection_repairs.sql',
       '20260914163000_email_crm_identity_locks.sql',
       '20260914190000_email_lead_sms_alerts.sql',
+      '20261109130000_email_lead_sms_alert_cycles.sql',
       '20260913010000_email_action_workspace.sql',
       '20260913020000_email_ai_generations.sql',
       '20260913030000_email_service_connections.sql',
@@ -127,6 +128,8 @@ export async function startDisposableDatabase() {
       '20260913150000_email_received_content.sql',
       '20260913160000_email_public_unsubscribe.sql',
       '20260913220000_email_hosted_dispatch.sql',
+      '20261110120000_email_person_property_hygiene.sql',
+      '20261110121000_email_hygiene_runtime_access.sql',
     ]) {
       await sql.unsafe(
         await readFile(path.join(root, 'supabase/migrations', name), 'utf8'),
@@ -194,6 +197,7 @@ export async function startDisposableDatabase() {
           'Jackson',${propertyAddress},'owner',
           '{"source":"fabricated local fixture"}'::jsonb
         )`
+      await sql`insert into em_selected_addresses(workspace_id,party_id,address_id,slot) values(${workspace.id},${party.id},${address.id},1)`
       partyIds.push(party.id)
       canonicalPeople.push(person.id)
       canonicalProperties.push(canonicalProperty.id)

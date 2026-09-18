@@ -4,6 +4,8 @@ export type LeadAlertRecipient = {
   schedule: '24_7' | 'weekday_business_hours'
 }
 
+export const CASEY_COMPANY_NUMBER = '+18167277667'
+
 function cleanPhone(value: string | null | undefined): string {
   const raw = (value ?? '').trim()
   const digits = raw.replace(/\D/g, '')
@@ -27,12 +29,21 @@ export function isCaseyLeadAlertWindow(now = new Date()): boolean {
   const weekday = chicagoPart(now, 'weekday')
   const hour = Number(chicagoPart(now, 'hour'))
   if (!Number.isFinite(hour)) return false
-  return !['Sat', 'Sun'].includes(weekday) && hour >= 9 && hour < 17
+  return !['Sat', 'Sun'].includes(weekday) && hour >= 8 && hour < 17
 }
 
-export function getLeadAlertRecipients(now = new Date()): LeadAlertRecipient[] {
+export function getLeadAlertRecipients(
+  now = new Date(),
+  calledNumber?: string | null,
+): LeadAlertRecipient[] {
   const ernestPhone = cleanPhone(process.env.ERNEST_PHONE) || '+18162262552'
   const caseyPhone = cleanPhone(process.env.CASEY_PHONE) || '+18167564943'
+
+  if (calledNumber === CASEY_COMPANY_NUMBER) {
+    return isCaseyLeadAlertWindow(now)
+      ? [{ name: 'Casey', phone: caseyPhone, schedule: 'weekday_business_hours' }]
+      : []
+  }
 
   const recipients: LeadAlertRecipient[] = [
     { name: 'Ernest', phone: ernestPhone, schedule: '24_7' },

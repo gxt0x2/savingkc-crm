@@ -1,6 +1,10 @@
 import 'server-only'
 import { check, type Context } from './core'
 
+export function validateOutcomeCampaign(outcome: string, campaignName: string) {
+  check(outcome !== 'controlled_test_complete' || campaignName === 'Controlled setup test', 'CONTROLLED_TEST_OUTCOME_REQUIRED')
+}
+
 /** Mutate the canonical durable activity, then verify its task projection. */
 export async function changeCallback(
   context: Context,
@@ -17,6 +21,7 @@ export async function changeCallback(
       | 'follow_up'
       | 'no_contact'
       | 'not_qualified'
+      | 'controlled_test_complete'
     outcomeNote?: string
   },
   key: string,

@@ -399,7 +399,20 @@ export async function POST(req: Request) {
   // For direct calls, alert the agent who owns that number only (no tasks/SMS to caller)
   if (isDirect && from) {
     const missedMsg = `MISSED: Direct call from ${from} to your company line. Going to voicemail.`
-    await safeSendSMS({ body: missedMsg, from: TWILIO_PHONE, to: routing.primary.phone })
+    await sendTeamLeadAlert({
+      leadId: resolvedLeadId,
+      smsBody: missedMsg,
+      trigger: 'direct_missed_call_alert',
+      source: 'direct_inbound_call',
+      calledNumber,
+      push: {
+        title: 'Missed Direct Call',
+        body: `${from} called your company line.`,
+        url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/conversations',
+        tag: 'direct-missed-call',
+      },
+      metadata: { from, calledNumber, callSid: parentCallSid, dialStatus },
+    })
 
     await supabase.from('lead_activities').insert({
       lead_id: resolvedLeadId,
@@ -445,6 +458,7 @@ export async function POST(req: Request) {
       smsBody: missedMsg,
       trigger: 'ivr_missed_call_alert',
       source: 'inbound_ivr',
+      calledNumber,
       push: {
         title: 'Missed Inbound Call',
         body: `${type === 'seller' ? 'Seller' : 'Caller'} ${from} reached voicemail.`,

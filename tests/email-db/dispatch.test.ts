@@ -166,7 +166,7 @@ test("two workers send one immutable intent once and persist provider acceptance
       await db.sql`select * from em_messages where intent_id=${intent.id}`;
     assert.equal(message.transport, "resend");
     assert.equal(message.provider_email_id, saved.provider_message_id);
-    assert.match(message.text_body, /Stop marketing emails:/);
+    assert.match(message.text_body, /Unsubscribe: https:\/\//);
   }));
 test("uncertain requests remain held from automatic retry and create no sent message", () =>
   withDB(async (db) => {
@@ -482,3 +482,13 @@ test("worker refreshes existing active sender verification without creating or u
     await refreshActiveSenderDomain(db.sql, owner, now, provider);
     assert.equal(reads, 1);
   }));
+
+test("person and property holds added after launch prevent provider calls",()=>withDB(async db=>{
+ const intent=await ready(db)
+ const [thread]=await db.sql`select party_id from em_threads where id=${intent.thread_id}`
+ await db.sql`insert into em_person_marketing_rules(workspace_id,party_id,status,reason,evidence) values(${db.workspaceId},${thread.party_id},'deceased_reported','Reported deceased','Verified transport; identity review pending')`
+ let sends=0
+ await processNextDispatch(db.sql,owner,{now,send:async()=>{sends++;return {state:'accepted',providerId:randomUUID()}}})
+ assert.equal(sends,0)
+ const [saved]=await db.sql`select state from em_send_intents where id=${intent.id}`;assert.equal(saved.state,'cancelled')
+}))

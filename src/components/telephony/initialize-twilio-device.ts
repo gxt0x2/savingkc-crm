@@ -1,6 +1,6 @@
 import { verifyMicrophoneInput } from '@/lib/telephony/microphone-preflight'
 import type { CallStatus, TwilioDevice, TwilioErrorLike } from './telephony-bar-types'
-import { extractTwilioErrorMessage, isNonFatalAudioWarning } from './telephony-bar-support'
+import { extractTwilioErrorMessage, formatTwilioCallError, isNonFatalAudioWarning } from './telephony-bar-support'
 
 type InitializeTwilioDeviceOptions = {
   log: (message: string) => void
@@ -29,7 +29,7 @@ export async function initializeTwilioDevice(options: InitializeTwilioDeviceOpti
 
   // SDK debug logging includes signaling payloads. Keep browser logs at
   // warning level while retaining the app's redacted dialer lifecycle logs.
-  const device = new Device(data.token, { logLevel: 'warn' })
+  const device = new Device(data.token, { logLevel: 'warn', enableImprovedSignalingErrorPrecision: true })
   device.on('registered', () => options.onStatus('ready'))
   device.on('unregistered', () => options.onStatus('offline'))
   device.on('tokenWillExpire', async () => {
@@ -46,10 +46,17 @@ export async function initializeTwilioDevice(options: InitializeTwilioDeviceOpti
       options.log('token refresh failed')
     }
   })
-  device.on('error', (error: TwilioErrorLike) => {
+  device.on('error', (error: TwilioErrorLike, call?: unknown) => {
     const message = extractTwilioErrorMessage(error)
     if (isNonFatalAudioWarning(error)) {
       options.log(`non-fatal audio warning: ${message}`)
+      return
+    }
+    if (call) {
+      // Twilio also emits call-scoped signaling errors on Device. Call
+      // disconnect/cancel owns the wrap-up; the registered device stays usable.
+      options.log(`call signaling error: ${message}`)
+      options.onError(formatTwilioCallError(error))
       return
     }
     options.log(`device error: ${message}`)

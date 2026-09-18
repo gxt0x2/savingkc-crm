@@ -79,10 +79,12 @@ describe('ProspectingCallingContextRail', () => {
     expect(screen.getByText('Daughter handles the estate calls.')).toBeVisible()
     expect(screen.getByRole('region', { name: 'Seller answer workspace' }).firstElementChild).toHaveClass(
       'items-stretch',
+      'lg:h-full',
+      'lg:min-h-0',
       'lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(11rem,0.72fr)]',
       '2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(15rem,0.72fr)]',
     )
-    expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).toHaveClass('lg:sticky', 'lg:top-3')
+    expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).toHaveClass('lg:sticky', 'lg:top-3', 'lg:h-full')
     expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).not.toHaveClass('lg:col-span-2')
     expect(screen.getByRole('main', { name: 'Current Contact' })).toHaveClass('lg:h-full')
     expect(screen.getByRole('complementary', { name: 'Prospect information workspace' })).toHaveClass('lg:h-full')

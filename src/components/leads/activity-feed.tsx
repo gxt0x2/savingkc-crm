@@ -1,34 +1,18 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { CallReviewAudioPlayer } from '@/components/call-review/call-review-audio-player'
 import Link from 'next/link'
-import type { ActivityType } from '@/types'
 import { getAgentProfile } from '@/lib/agent-profiles'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
-
-interface FeedItem {
-  id: string
-  type: ActivityType
-  title: string
-  content?: string
-  timestamp: string
-  statusBadge?: string
-  dispositionLabel?: string
-  dispositionTone?: 'positive' | 'neutral' | 'negative'
-  direction?: 'inbound' | 'outbound'
-  link?: string
-  linkLabel?: string
-  recordingUrl?: string
-  recordingSid?: string
-  recordingDuration?: number
-  rawType?: string
-  agentName?: string
-  metadata?: Record<string, unknown>
-}
+import {
+  simplifyActivityFeedItems,
+  type ActivityFeedItem,
+} from '@/lib/activity-feed-simplify'
 
 interface ActivityFeedProps {
-  activities: FeedItem[]
+  activities: ActivityFeedItem[]
   leadPhone?: string
   leadEmail?: string
   leadId?: string
@@ -100,70 +84,38 @@ function relTime(ts: string): string {
   }
 }
 
-function validSeconds(value: unknown): number | null {
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) && n > 0 ? n : null
-}
-
-// ─── Recording Player (themed with ck-* tokens) ────────────────────────────
+// Public storage links first resolve to a short-lived authenticated URL. Every
+// call surface then delegates playback behavior to the shared player.
 function CallRecordingPlayer({ url, durationSeconds }: { url: string; durationSeconds?: number }) {
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const [playing, setPlaying] = useState(false)
-  const [speed, setSpeed] = useState(1)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(durationSeconds || 0)
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    const fallbackDuration = validSeconds(durationSeconds)
-    if (fallbackDuration) setDuration(fallbackDuration)
-  }, [durationSeconds])
-
-  useEffect(() => {
+    let active = true
     const resolve = async () => {
+      setLoading(true)
+      setError(false)
       try {
         if (url.includes('/storage/v1/object/public/recordings/')) {
           const path = url.split('/storage/v1/object/public/recordings/')[1]
           const res = await fetch(`/api/recordings?path=${encodeURIComponent(path)}`)
           if (!res.ok) throw new Error('failed')
-          const data = await res.json()
-          setResolvedUrl(data.url)
+          const data = await res.json() as { url?: string }
+          if (!data.url) throw new Error('failed')
+          if (active) setResolvedUrl(data.url)
         } else {
-          setResolvedUrl(url)
+          if (active) setResolvedUrl(url)
         }
       } catch {
-        setError(true)
+        if (active) setError(true)
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
-    resolve()
+    void resolve()
+    return () => { active = false }
   }, [url])
-
-  const togglePlay = () => {
-    const a = audioRef.current
-    if (!a || !resolvedUrl) return
-    if (playing) a.pause()
-    else a.play()
-  }
-
-  const cycleSpeed = () => {
-    const a = audioRef.current
-    const next = speed >= 2 ? 1 : speed + 0.5
-    setSpeed(next)
-    if (a) a.playbackRate = next
-  }
-
-  const fmt = (s: number) => {
-    if (!Number.isFinite(s)) return '0:00'
-    const m = Math.floor(s / 60)
-    const sec = Math.floor(s % 60)
-    return `${m}:${sec.toString().padStart(2, '0')}`
-  }
-
-  const knownDuration = validSeconds(duration) || validSeconds(durationSeconds)
 
   if (loading) {
     return (
@@ -186,94 +138,7 @@ function CallRecordingPlayer({ url, durationSeconds }: { url: string; durationSe
     )
   }
 
-  return (
-    <div
-      className="mt-3 rounded-xl p-3 flex items-center gap-3"
-      style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)' }}
-    >
-      <audio
-        ref={audioRef}
-        src={resolvedUrl}
-        preload="metadata"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); setCurrentTime(0) }}
-        onTimeUpdate={() => {
-          const a = audioRef.current
-          if (!a) return
-          setCurrentTime(a.currentTime)
-          const loadedDuration = validSeconds(a.duration)
-          if (loadedDuration && Math.abs(loadedDuration - duration) > 0.5) {
-            setDuration(loadedDuration)
-          }
-        }}
-        onLoadedMetadata={() => {
-          const a = audioRef.current
-          const loadedDuration = validSeconds(a?.duration)
-          if (loadedDuration) setDuration(loadedDuration)
-        }}
-        onDurationChange={() => {
-          const a = audioRef.current
-          const loadedDuration = validSeconds(a?.duration)
-          if (loadedDuration) setDuration(loadedDuration)
-        }}
-      />
-      <button
-        type="button"
-        onClick={togglePlay}
-        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-95"
-        style={{
-          background: '#E32E2E',
-          color: 'white',
-          boxShadow: '0 2px 8px rgba(227,46,46,0.35)',
-        }}
-        aria-label={playing ? 'Pause recording' : 'Play recording'}
-      >
-        <Icon name={playing ? 'pause' : 'play_arrow'} size="text-xl" filled />
-      </button>
-      <div className="flex-1 min-w-0">
-        <div
-          className="w-full h-1 rounded-full cursor-pointer overflow-hidden"
-          style={{ background: 'var(--ck-border)' }}
-          onClick={(e) => {
-            const a = audioRef.current
-            if (!a || !knownDuration) return
-            const rect = e.currentTarget.getBoundingClientRect()
-            const pct = (e.clientX - rect.left) / rect.width
-            a.currentTime = pct * knownDuration
-          }}
-        >
-          <div
-            className="h-full rounded-full transition-all"
-            style={{
-              width: knownDuration ? `${Math.min(100, (currentTime / knownDuration) * 100)}%` : '0%',
-              background: '#E32E2E',
-            }}
-          />
-        </div>
-        <div
-          className="flex justify-between text-[11px] mt-1 tabular-nums"
-          style={{ color: 'var(--ck-text-muted)' }}
-        >
-          <span>{fmt(currentTime)}</span>
-          <span title="Total recording duration">{knownDuration ? fmt(knownDuration) : 'duration unknown'}</span>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={cycleSpeed}
-        className="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold tabular-nums transition-colors"
-        style={{
-          background: 'var(--ck-surface)',
-          color: 'var(--ck-text)',
-          border: '1px solid var(--ck-border)',
-        }}
-        title="Playback speed"
-      >
-        {speed}×
-      </button>
-    </div>
-  )
+  return <CallReviewAudioPlayer src={resolvedUrl} knownDuration={durationSeconds} label="Call recording" compact className="mt-3" />
 }
 
 // ─── Direction badge (↗ outbound · ↙ inbound) ──────────────────────────────
@@ -383,12 +248,16 @@ function SegmentedFilter({
   counts: Record<ActivityFilter, number>
   onChange: (key: ActivityFilter) => void
 }) {
+  const visibleFilters = FILTERS.filter((filter) => (
+    filter.key === 'all' || filter.key === active || counts[filter.key] > 0
+  ))
+
   return (
     <div
       className="flex items-center gap-1 p-1 rounded-full overflow-x-auto scrollbar-hide mb-3"
       style={{ background: 'var(--ck-surface-elev)', border: '1px solid var(--ck-border)' }}
     >
-      {FILTERS.map((f) => {
+      {visibleFilters.map((f) => {
         const selected = active === f.key
         return (
           <button
@@ -426,7 +295,7 @@ function ActivityRow({
   onEditNote,
   onEditTask,
 }: {
-  activity: FeedItem
+  activity: ActivityFeedItem
   onEditNote?: (noteId: string, currentContent: string) => void
   onEditTask?: (taskId: string, currentTitle: string, metadata: Record<string, unknown>) => void
 }) {
@@ -435,6 +304,8 @@ function ActivityRow({
   const cfg = typeConfig[rawType] || typeConfig.status_change
   const isMilestone = MILESTONES.has(rawType)
   const hasRecording = Boolean(activity.recordingUrl) && (rawType === 'call' || rawType === 'voicemail')
+  const hasCallDetails = rawType === 'call'
+    && (hasRecording || Boolean(activity.callSummary) || Boolean(activity.callTranscript))
   const isCallOrSms = rawType === 'call' || rawType === 'sms' || rawType === 'email'
   const showDirection = isCallOrSms && (activity.direction === 'inbound' || activity.direction === 'outbound')
 
@@ -483,13 +354,13 @@ function ActivityRow({
 
         {/* Meta row: duration + agent (for calls) */}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {activity.statusBadge && (
+          {activity.statusBadge && !hasRecording ? (
             <span className="text-[11px] tabular-nums" style={{ color: 'var(--ck-text-muted)' }}>
               {activity.statusBadge}
             </span>
-          )}
+          ) : null}
           {activity.agentName && <AgentInitial name={activity.agentName} />}
-          {hasRecording && (
+          {hasCallDetails && (
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
@@ -497,7 +368,7 @@ function ActivityRow({
               style={{ color: '#E32E2E' }}
             >
               <Icon name={expanded ? 'expand_less' : 'play_circle'} size="text-sm" filled />
-              {expanded ? 'Hide recording' : 'Play recording'}
+              {expanded ? 'Hide call details' : hasRecording ? 'Recording & details' : 'Call details'}
             </button>
           )}
           {activity.rawType === 'note' && onEditNote && (
@@ -526,12 +397,36 @@ function ActivityRow({
           )}
         </div>
 
-        {hasRecording && expanded && activity.recordingUrl && (
-          <CallRecordingPlayer
-            url={activity.recordingUrl}
-            durationSeconds={activity.recordingDuration}
-          />
-        )}
+        {hasCallDetails && expanded ? (
+          <div className="mt-2 rounded-xl p-3" style={{ background: 'var(--ck-surface-elev)' }}>
+            {hasRecording && activity.recordingUrl ? (
+              <CallRecordingPlayer
+                url={activity.recordingUrl}
+                durationSeconds={activity.recordingDuration}
+              />
+            ) : null}
+            {activity.callSummary ? (
+              <div className="mt-3">
+                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--ck-text-dim)' }}>
+                  AI summary
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--ck-text-muted)' }}>
+                  {activity.callSummary}
+                </p>
+              </div>
+            ) : null}
+            {activity.callTranscript ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-[11px] font-semibold" style={{ color: 'var(--ck-text-muted)' }}>
+                  Transcript
+                </summary>
+                <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'var(--ck-text-muted)' }}>
+                  {activity.callTranscript}
+                </p>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
 
         {activity.link && (
           <Link
@@ -558,17 +453,18 @@ export function ActivityFeed({
 }: ActivityFeedProps) {
   const [open, toggleOpen] = useCardCollapse('activity-feed', prominent)
   const [filter, setFilter] = useState<ActivityFilter>('all')
+  const simplifiedActivities = useMemo(() => simplifyActivityFeedItems(activities), [activities])
 
   const counts: Record<ActivityFilter, number> = {
-    all:   activities.length,
-    call:  activities.filter((a) => (a.rawType || a.type) === 'call').length,
-    sms:   activities.filter((a) => (a.rawType || a.type) === 'sms').length,
-    email: activities.filter((a) => (a.rawType || a.type) === 'email').length,
-    mail:  activities.filter((a) => (a.rawType || a.type) === 'letter_tracking').length,
-    note:  activities.filter((a) => (a.rawType || a.type) === 'note').length,
+    all:   simplifiedActivities.length,
+    call:  simplifiedActivities.filter((a) => (a.rawType || a.type) === 'call').length,
+    sms:   simplifiedActivities.filter((a) => (a.rawType || a.type) === 'sms').length,
+    email: simplifiedActivities.filter((a) => (a.rawType || a.type) === 'email').length,
+    mail:  simplifiedActivities.filter((a) => (a.rawType || a.type) === 'letter_tracking').length,
+    note:  simplifiedActivities.filter((a) => (a.rawType || a.type) === 'note').length,
   }
   const activeFilter = FILTERS.find((f) => f.key === filter) ?? FILTERS[0]
-  const filtered = activities.filter((a) => activeFilter.matches(a.rawType || a.type))
+  const filtered = simplifiedActivities.filter((a) => activeFilter.matches(a.rawType || a.type))
   const visible = prominent || open
 
   const handleAction = (type: 'call' | 'sms' | 'email') => onCompose?.(type)
@@ -583,19 +479,7 @@ export function ActivityFeed({
       }}
     >
       {/* Header */}
-      {prominent ? (
-        <div className="w-full flex justify-between items-center mb-4">
-          <h2
-            className="text-[17px] font-bold tracking-tight"
-            style={{ color: 'var(--ck-text)' }}
-          >
-            Activity
-          </h2>
-          <span className="text-[12px] font-medium" style={{ color: 'var(--ck-text-muted)' }}>
-            {activities.length} {activities.length === 1 ? 'event' : 'events'}
-          </span>
-        </div>
-      ) : (
+      {prominent ? null : (
         <button
           type="button"
           onClick={toggleOpen}
@@ -616,7 +500,7 @@ export function ActivityFeed({
 
       {!visible ? null : (
         <>
-          <CommsBar onAction={handleAction} />
+          {!prominent ? <CommsBar onAction={handleAction} /> : null}
           <SegmentedFilter active={filter} counts={counts} onChange={setFilter} />
 
           {filtered.length === 0 ? (

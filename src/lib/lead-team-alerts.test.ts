@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
-import { sendPushToAgents } from '@/lib/push-notifications'
+import { sendPushToAgentNames } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 import { sendTeamLeadAlert } from './lead-team-alerts'
@@ -10,7 +10,7 @@ vi.mock('@/lib/lead-alert-routing', () => ({
 }))
 
 vi.mock('@/lib/push-notifications', () => ({
-  sendPushToAgents: vi.fn(),
+  sendPushToAgentNames: vi.fn(),
 }))
 
 vi.mock('@/lib/safe-communications', () => ({
@@ -34,7 +34,7 @@ describe('sendTeamLeadAlert', () => {
       { name: 'Ernest', phone: '+18160000001', schedule: '24_7' },
       { name: 'Casey', phone: '+18160000002', schedule: 'weekday_business_hours' },
     ])
-    vi.mocked(sendPushToAgents).mockResolvedValue(2)
+    vi.mocked(sendPushToAgentNames).mockResolvedValue(2)
     vi.mocked(safeSendSMS).mockImplementation(async ({ body, from, to }) => ({
       success: true,
       sid: `sid-${to.slice(-4)}`,
@@ -60,7 +60,7 @@ describe('sendTeamLeadAlert', () => {
 
     expect(result.recipients.map((recipient) => recipient.name)).toEqual(['Ernest', 'Casey'])
     expect(safeSendSMS).toHaveBeenCalledTimes(2)
-    expect(sendPushToAgents).toHaveBeenCalledWith({
+    expect(sendPushToAgentNames).toHaveBeenCalledWith(['Ernest', 'Casey'], {
       title: 'New lead',
       body: 'Lead body',
       url: '/leads/lead-123',
@@ -77,5 +77,28 @@ describe('sendTeamLeadAlert', () => {
         ],
       }),
     }))
+  })
+
+  it('does not send SMS or push when a company line has no scheduled recipients', async () => {
+    vi.mocked(getLeadAlertRecipients).mockReturnValue([])
+    const insert = vi.fn(async () => ({ error: null }))
+    vi.mocked(supabase.from).mockReturnValue({ insert } as never)
+
+    const result = await sendTeamLeadAlert({
+      leadId: 'lead-123',
+      smsBody: 'After-hours alert',
+      trigger: 'unit_test_alert',
+      calledNumber: '+18167277667',
+      push: {
+        title: 'After hours',
+        body: 'Do not send',
+        url: '/leads/lead-123',
+        tag: 'after-hours',
+      },
+    })
+
+    expect(result.recipients).toEqual([])
+    expect(safeSendSMS).not.toHaveBeenCalled()
+    expect(sendPushToAgentNames).not.toHaveBeenCalled()
   })
 })

@@ -19,8 +19,17 @@ describe('prospect import command', () => {
       station: 'new',
       classification: null,
       priority: 'cold',
-      pipeline_intent_source: null,
+      is_parked: false,
     })])
+  })
+
+  it.each([undefined, '', 'csv_import', 'contact_csv_import', ' CSV_IMPORT '])('uses the supported source for %s', (source) => {
+    expect(parseProspectImportRows({ rows: [{ name: 'Seller', phone: '8165550100', source }] })[0].source).toBe('import')
+  })
+
+  it('rejects unnamed records before any database write', () => {
+    expect(() => parseProspectImportRows({ rows: [{ phone: '8165550100' }] }))
+      .toThrow(expect.objectContaining<Partial<ProspectImportError>>({ row: 2 }))
   })
 
   it('rejects invalid or repeated phones with the CSV row number', () => {

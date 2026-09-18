@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { startDisposableDatabase, fixtureOwner as owner, fixtureAgent as agent, fixtureNow } from '../email-local/database.mjs'
 import { reviewedCallback } from '../email-local/callback-fixture'
-import { executePilotCommand } from '../../src/lib/email/workflow/service'
+import { executePilotCommand, readPilotState } from '../../src/lib/email/workflow/service'
 import { processLeadSmsAlerts } from '../../src/lib/email/notifications/sms-worker'
 import { leadSmsEnabled } from '../../src/lib/email/notifications/sms-provider'
 import { createLeadSmsStatusHttp } from '../../src/lib/email/notifications/sms-status'
@@ -22,12 +22,9 @@ async function setup(db: Db, positive = true) {
 function withDb(name: string, run: (db: Db) => Promise<void>) {
   test(name, async () => { const db=await startDisposableDatabase(); try {await run(db)} finally {await db.stop()} })
 }
-withDb('positive Lead handoff queues one owner SMS; concurrent workers submit once',async db=>{
+withDb('positive Lead handoff queues one owner SMS; concurrent workers submit its notice once',async db=>{
   const h=await setup(db)
   assert.equal(h.state,'handoff_saved_crm_synced')
-  const [notice]=await db.sql`select * from em_notifications where thread_id=${h.threadId} and kind='Callback task ready'`
-  await db.sql`insert into em_notifications(workspace_id,thread_id,recipient_id,kind,logical_key)
-    values(${notice.workspace_id},${notice.thread_id},${notice.recipient_id},${notice.kind},${randomUUID()})`
   assert.equal((await db.sql`select * from em_lead_sms_alerts`).length,1)
   let sends=0
   const send=async (input:{phone:string;body:string})=>{sends++;assert.equal(input.phone,'+18165550101');assert.match(input.body,/No time specified/);assert.match(input.body,new RegExp(`thread=${h.threadId}`));return {success:true,sid,status:'queued'}}
@@ -102,6 +99,46 @@ withDb('acknowledged owner notification prevents backup SMS',async db=>{
   await db.sql`update em_notifications set acknowledged_at=${now} where kind='Callback task ready'`
   await processLeadSmsAlerts(db.sql,owner,{enabled:true,send,now:()=>new Date(now.getTime()+31*60_000)})
   assert.equal(sends,1)
+})
+
+withDb('reassignment creates a fresh owner SMS cycle and escalates only its current backup',async db=>{
+  const h=await setup(db)
+  const phones:string[]=[]
+  const send=async (input:{phone:string})=>{
+    phones.push(input.phone)
+    return {success:true,sid:`SM${String(phones.length).repeat(32)}`}
+  }
+  await processLeadSmsAlerts(db.sql,owner,{enabled:true,send,now:()=>now})
+  const thread=(await readPilotState(db.sql,owner,now)).threads.find(row=>row.id===h.threadId)!
+  await executePilotCommand(db.sql,owner,{
+    command:'HAN-REASSIGN',
+    idempotencyKey:randomUUID(),
+    expectedRevision:thread.handoff_revision,
+    payload:{
+      handoffId:h.entityId,
+      newOwnerId:owner,
+      backupId:agent,
+      reason:'Owner is handling the controlled callback test',
+      expectedCrmOwner:'Demo agent',
+      contentRevision:thread.content_revision,
+      controllerRevision:thread.controller_revision,
+    },
+  },new Date(now.getTime()+60_000))
+  const cycles=await db.sql`select a.phase,a.state,a.recipient_id,n.acknowledged_at
+    from em_lead_sms_alerts a join em_notifications n on n.id=a.notification_id
+    order by a.created_at,a.id`
+  assert.equal(cycles.length,2)
+  assert.equal(cycles[0].recipient_id,agent)
+  assert.equal(cycles[0].state,'accepted')
+  assert.ok(cycles[0].acknowledged_at)
+  assert.equal(cycles[1].recipient_id,owner)
+  assert.equal(cycles[1].state,'queued')
+  assert.equal(cycles[1].acknowledged_at,null)
+
+  await processLeadSmsAlerts(db.sql,owner,{enabled:true,send,now:()=>new Date(now.getTime()+60_000)})
+  assert.deepEqual(phones,['+18165550101','+18165550102'])
+  await processLeadSmsAlerts(db.sql,owner,{enabled:true,send,now:()=>new Date(now.getTime()+32*60_000)})
+  assert.deepEqual(phones,['+18165550101','+18165550102','+18165550101'])
 })
 
 withDb('missing agent phone fails visibly and never calls the provider', async db => {

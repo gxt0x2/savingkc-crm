@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Icon } from '@/components/ui/icon'
 import { getAgentProfile } from '@/lib/agent-profiles'
 import type { CallOutcomePresentation } from '@/lib/operating-model/conversation-presentation'
+import { CallReviewAudioPlayer } from '@/components/call-review/call-review-audio-player'
 import { CallReviewSubmitButton } from '@/components/call-review/call-review-submit-button'
+import type { CallReviewWorkflow } from '@/lib/marketing/call-recordings'
 
 export type MessageType = 'sms' | 'email' | 'call' | 'note' | 'task' | 'status'
 export type MessageDirection = 'sent' | 'received'
@@ -23,8 +25,10 @@ export interface Message {
   emailMeta?: string
   // call-specific
   callDuration?: string
+  recordingDurationSeconds?: number
   recordingUrl?: string   // proxied URL like /api/recordings/RExxxxxxx
   recordingSid?: string
+  callReviewWorkflow?: CallReviewWorkflow
   transcript?: string
   callOutcome?: CallOutcomePresentation
   fromPhone?: string
@@ -58,6 +62,13 @@ const CALL_OUTCOME_STYLE = {
     text: 'text-[var(--crm-text-muted)]',
   },
 } as const
+
+function durationSeconds(value?: string) {
+  if (!value) return 0
+  const parts = value.split(':').map(Number)
+  if (parts.some((part) => !Number.isFinite(part) || part < 0)) return 0
+  return parts.reduce((total, part) => total * 60 + part, 0)
+}
 
 function AgentAvatar({ agentName, fallbackInitials, size = 'w-8 h-8' }: { agentName?: string; fallbackInitials: string; size?: string }) {
   const profile = agentName ? getAgentProfile(agentName) : null
@@ -193,58 +204,8 @@ function StatusEvent({ message }: { message: Message }) {
 
 function CallCard({ message }: { message: Message }) {
   const isSent = message.direction === 'sent'
-  const [playing, setPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [speed, setSpeed] = useState(1)
   const [showTranscript, setShowTranscript] = useState(false)
-  const audioRef = useRef<HTMLAudioElement>(null)
-
-  function togglePlay() {
-    const audio = audioRef.current
-    if (!audio) return
-    if (playing) { audio.pause(); setPlaying(false) }
-    else { audio.play(); setPlaying(true) }
-  }
-
-  function handleTimeUpdate() {
-    const nextTime = audioRef.current?.currentTime
-    setCurrentTime(typeof nextTime === 'number' && Number.isFinite(nextTime) && nextTime >= 0 ? nextTime : 0)
-  }
-
-  function handleLoadedMetadata() {
-    const nextDuration = audioRef.current?.duration
-    setDuration(typeof nextDuration === 'number' && Number.isFinite(nextDuration) && nextDuration > 0 ? nextDuration : 0)
-  }
-
-  function handleEnded() {
-    setPlaying(false)
-    setCurrentTime(0)
-  }
-
-  function cycleSpeed() {
-    const speeds = [1, 1.5, 2]
-    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length]
-    setSpeed(next)
-    if (audioRef.current) audioRef.current.playbackRate = next
-  }
-
-  function handleDownload() {
-    if (!message.recordingUrl) return
-    const a = document.createElement('a')
-    a.href = message.recordingUrl
-    a.download = `call-${message.id}.mp3`
-    a.click()
-  }
-
-  function fmtTime(s: number) {
-    if (!Number.isFinite(s) || s < 0) return '0:00'
-    const m = Math.floor(s / 60)
-    const sec = Math.floor(s % 60)
-    return `${m}:${sec.toString().padStart(2, '0')}`
-  }
-
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0
+  const recordingDuration = message.recordingDurationSeconds || durationSeconds(message.callDuration)
   const outcome = message.callOutcome ?? {
     key: 'pending',
     label: 'Outcome pending',
@@ -306,76 +267,10 @@ function CallCard({ message }: { message: Message }) {
 
           {message.recordingUrl ? (
             <div className="mt-4 border-t border-[var(--crm-border)] pt-4">
-              <audio
-                ref={audioRef}
-                src={message.recordingUrl}
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                onEnded={handleEnded}
-                preload="metadata"
-              />
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  aria-label={playing ? 'Pause call recording' : 'Play call recording'}
-                  className={cn(
-                    'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all',
-                    'bg-[var(--crm-brand)] hover:bg-[var(--crm-brand-hover)]'
-                  )}
-                >
-                  <Icon
-                    name={playing ? 'pause' : 'play_arrow'}
-                    className="text-lg text-white"
-                    filled
-                  />
-                </button>
-
-                <div className="flex-1 flex flex-col gap-1">
-                  <input
-                    type="range"
-                    min={0}
-                    max={duration || 0}
-                    step={0.1}
-                    value={Math.min(currentTime, duration || 0)}
-                    onChange={(event) => {
-                      const nextTime = Number(event.target.value)
-                      setCurrentTime(nextTime)
-                      if (audioRef.current) audioRef.current.currentTime = nextTime
-                    }}
-                    aria-label="Call recording position"
-                    className="h-1.5 w-full cursor-pointer accent-[var(--crm-brand)]"
-                    style={{ backgroundSize: `${progress}% 100%` }}
-                  />
-                  <div className="flex justify-between text-[10px] text-[var(--crm-text-muted)]">
-                    <span>{fmtTime(currentTime)}</span>
-                    <span>{duration > 0 ? fmtTime(duration) : message.callDuration || '—'}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={cycleSpeed}
-                    aria-label={`Playback speed ${speed} times`}
-                    className="rounded px-1.5 py-0.5 text-[10px] font-bold text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]"
-                  >
-                    {speed}x
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownload}
-                    aria-label="Download call recording"
-                    className="rounded p-1 text-[var(--crm-text-muted)] hover:bg-black/5 hover:text-[var(--crm-ink)]"
-                    title="Download"
-                  >
-                    <Icon name="download" className="text-base" />
-                  </button>
-                </div>
-              </div>
+              <CallReviewAudioPlayer src={message.recordingUrl} knownDuration={recordingDuration} label="Call recording" downloadName={`call-${message.id}.mp3`} compact />
             </div>
           ) : null}
-          {message.recordingUrl ? <CallReviewSubmitButton activityId={message.id} recordingSid={message.recordingSid} recordingUrl={message.recordingUrl} durationSeconds={duration} /> : null}
+          {message.recordingUrl ? <CallReviewSubmitButton activityId={message.id} recordingSid={message.recordingSid} recordingUrl={message.recordingUrl} durationSeconds={recordingDuration} initialWorkflow={message.callReviewWorkflow} /> : null}
         </div>
 
         {/* View Transcript link */}

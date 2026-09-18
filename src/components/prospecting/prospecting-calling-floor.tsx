@@ -121,6 +121,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     requestPause,
     finishUnadvancedAttempt,
     confirmTakeover: confirmControlTakeover,
+    retryControl,
   } = useProspectingSessionControl({
     readOnlyPreview,
     sessionId: durableSessionId,
@@ -368,8 +369,12 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
       return
     }
     if (markDeadBusy || controlLocked) return
+    if (sessionActionPending
+      || durableSession?.status !== 'active' || durableSession.stopRequestedAt
+      || queueState?.outcomeRequired
+      || (queueState && ['calling', 'on_call', 'incoming'].includes(queueState.status))) return
     await transitionCurrentSession('skip', 'Agent skipped this contact')
-  }, [advance, controlLocked, durableSessionId, markDeadBusy, readOnlyPreview, transitionCurrentSession])
+  }, [advance, controlLocked, durableSession, durableSessionId, markDeadBusy, queueState, readOnlyPreview, sessionActionPending, transitionCurrentSession])
 
   const handleAutoStartEmpty = useCallback(() => {
     setAutoQueueSubjectKey(null)
@@ -548,7 +553,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   }
 
   return (
-    <div className="prospecting-answer-workspace min-h-full w-full px-3 py-3 pb-24 sm:px-5 sm:py-5 lg:pb-5">
+    <div className="prospecting-answer-workspace min-h-full w-full px-3 py-3 pb-24 sm:px-5 sm:py-5 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pb-5">
       {controlSummary ? <ProspectingSessionTakeoverDialog
         summary={controlSummary}
         selectedCampaignId={controlSummary.campaignId}
@@ -558,7 +563,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         onCancel={navigateAwayFromSession}
         onContinue={() => { void confirmControlTakeover() }}
       /> : null}
-      <section aria-label="Prospecting answer console" className="mx-auto w-full max-w-[1880px] overflow-hidden rounded-[14px] border border-[var(--prospecting-border)] bg-[var(--prospecting-canvas)] shadow-[0_18px_50px_rgba(15,23,42,0.12)]">
+      <section aria-label="Prospecting answer console" className="mx-auto w-full max-w-[1880px] overflow-hidden rounded-[14px] border border-[var(--prospecting-border)] bg-[var(--prospecting-canvas)] shadow-[0_18px_50px_rgba(15,23,42,0.12)] lg:flex lg:h-full lg:min-h-0 lg:flex-col">
         <DialerSessionCommand
           queueLabel={inferredQueueLabel}
           currentLabel={ownerName}
@@ -571,6 +576,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           error={sessionError}
           readOnlyPreview={readOnlyPreview}
           controlUnavailable={controlLocked}
+          controlCheckPending={controlBusy}
+          onCheckControl={() => { void retryControl() }}
           onPause={() => { void pauseSession() }}
           onResume={() => { void transitionCurrentSession('resume') }}
           onEndSession={() => { void stopSession() }}
@@ -578,7 +585,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           onSkip={() => { void skipCurrentLead() }}
         />
 
-        <div className="p-3">
+        <div className="p-3 lg:min-h-0 lg:flex-1">
           <ProspectingCallingContextRail
           key={currentSubjectKey || 'current'}
           primaryWorkspace={currentSubject ? (

@@ -126,7 +126,8 @@ describe('atomic prospect import', () => {
       phone: '+18165550100',
       station: 'new',
       classification: null,
-      pipeline_intent_source: null,
+      priority: 'cold',
+      is_parked: false,
     })]])
     expect(mocks.activityPayloads).toEqual([[expect.objectContaining({
       lead_id: 'lead-1',

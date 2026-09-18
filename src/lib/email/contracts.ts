@@ -291,7 +291,7 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
     contentRevision: revision.optional(),
   }).strict()),
   command('HAN-OUTCOME', z.object({
-    handoffId: uuid, outcome: z.enum(['conversation_complete', 'follow_up', 'no_contact', 'not_qualified']),
+    handoffId: uuid, outcome: z.enum(['conversation_complete', 'follow_up', 'no_contact', 'not_qualified', 'controlled_test_complete']),
     note: shortText, nextAction: z.string().trim().min(1).max(200).optional(), nextDueAt: isoDateTime.optional(), completedAt: isoDateTime.optional(),
     contentRevision: revision.optional(),
   }).strict()),

@@ -1,5 +1,6 @@
 'use client'
 
+import { EmailContactRules } from './email-contact-rules'
 import { EmailCallbackReview } from './email-callback-review'
 import { EmailSendIssue } from './email-send-issue'
 import { EmailMessageBody as MessageBody } from './email-message-body'
@@ -18,7 +19,9 @@ import styles from './email-workspace.module.css'
 import { EmailCalendarAgenda } from './email-calendar-agenda'
 import { EmailHandoffActions } from './email-handoff-actions'
 import { EmailAriDraft } from './email-ari-draft'
+import { EmailCallOutcomeFields, type EmailCallOutcome } from './email-call-outcome-fields'
 import { defaultEmailBackup } from '@/lib/email/backup-pairing'
+import { handoffHelp } from '@/lib/email/workflow/handoff-help'
 
 const detailTabs = [
   ['next', 'Next step'],
@@ -104,9 +107,7 @@ export function EmailThreadPanel({
   )
   const [taskNote, setTaskNote] = useState(t.callback_notes ?? '')
   const [outcome, setOutcome] = useState('')
-  const [outcomeKind, setOutcomeKind] = useState<
-    'conversation_complete' | 'follow_up' | 'no_contact' | 'not_qualified'
-  >('conversation_complete')
+  const [outcomeKind, setOutcomeKind] = useState<EmailCallOutcome>('conversation_complete')
   const [nextAction, setNextAction] = useState('')
   const [outcomeDue, setOutcomeDue] = useState('')
   const outcomeRemainsOpen =
@@ -507,7 +508,7 @@ export function EmailThreadPanel({
               {t.state === 'stopped'
                 ? 'Sending is stopped.'
                 : t.state === 'done'
-                  ? 'Conversation finished.'
+                  ? 'Email handled. Continue sales work in the Pipeline record.'
                   : `Take over to reply${owner?.name ? ` · Assigned to ${owner.name}` : ''}.`}
             </small>
           )}
@@ -593,7 +594,7 @@ export function EmailThreadPanel({
                           ? 'Some conversation history has not reached CRM.'
                           : t.handoff_state === 'held' ||
                               t.callback_task_state === 'blocked'
-                            ? 'Callback held for review. Resolve the hold before calling.'
+                            ? handoffHelp(t.crm_sync_reason)
                             : `Review ${t.crm_sync_reason?.replaceAll('_', ' ') ?? 'the CRM connection'} before continuing.`}
                   </p>
                   {repair && data.roles.includes('owner') && (
@@ -817,6 +818,7 @@ export function EmailThreadPanel({
             </p>
             {t.lead_id && (
               <span className={styles.badge}>
+                In Pipeline ·{' '}
                 {t.lead_classification === 'opportunity'
                   ? 'Opportunity'
                   : 'Lead'}{' '}
@@ -828,9 +830,10 @@ export function EmailThreadPanel({
             )}
             {t.lead_id && !localSimulation && (
               <Link className={styles.crmLink} href={`/leads/${t.lead_id}`}>
-                Open CRM record
+                Open {t.lead_classification === 'opportunity' ? 'Opportunity' : 'Lead'} →
               </Link>
             )}
+            {data.roles.includes('owner') && !localSimulation && detailTab === 'contact' && <EmailContactRules key={t.id} threadId={t.id} />}
             <details>
               <summary>Source & controls</summary>
               <p>Campaign: {t.campaign_name}</p>
@@ -1267,75 +1270,18 @@ export function EmailThreadPanel({
                       }
                     }}
                   >
-                    <label>
-                      Result
-                      <select
-                        aria-label="Call result"
-                        value={outcomeKind}
-                        onChange={(e) =>
-                          setOutcomeKind(e.target.value as typeof outcomeKind)
-                        }
-                      >
-                        <option value="conversation_complete">
-                          Conversation complete
-                        </option>
-                        <option value="follow_up">Follow-up needed</option>
-                        <option value="no_contact">No contact</option>
-                        <option value="not_qualified">
-                          Not a fit for this outreach
-                        </option>
-                      </select>
-                    </label>
-                    <label>
-                      Call outcome
-                      <textarea
-                        aria-label="Call outcome"
-                        rows={2}
-                        required
-                        value={outcome}
-                        onChange={(e) => setOutcome(e.target.value)}
-                        maxLength={2000}
-                      />
-                    </label>
-                    {outcomeRemainsOpen && (
-                      <>
-                        <label>
-                          Next action
-                          <input
-                            value={nextAction}
-                            onChange={(e) => setNextAction(e.target.value)}
-                            required
-                            maxLength={200}
-                          />
-                        </label>
-                        <label>
-                          Next action time (Chicago)
-                          <input
-                            type="datetime-local"
-                            value={outcomeDue}
-                            onChange={(e) => setOutcomeDue(e.target.value)}
-                            required
-                          />
-                        </label>
-                      </>
-                    )}
-                    <button
-                      disabled={
-                        blocked ||
-                        !outcome.trim() ||
-                        (outcomeRemainsOpen &&
-                          (!nextAction.trim() || !outcomeDue))
-                      }
-                    >
-                      {outcomeRemainsOpen
-                        ? 'Save outcome & follow-up'
-                        : 'Complete callback'}
-                    </button>
-                    <small>
-                      {outcomeRemainsOpen
-                        ? 'Keeps this callback open with its next action.'
-                        : 'Completes this callback only. The CRM stage stays unchanged.'}
-                    </small>
+                    <EmailCallOutcomeFields
+                      campaignName={t.campaign_name}
+                      outcomeKind={outcomeKind}
+                      setOutcomeKind={setOutcomeKind}
+                      outcome={outcome}
+                      setOutcome={setOutcome}
+                      nextAction={nextAction}
+                      setNextAction={setNextAction}
+                      outcomeDue={outcomeDue}
+                      setOutcomeDue={setOutcomeDue}
+                      blocked={blocked}
+                    />
                   </form>
                 </details>
               </>

@@ -3,6 +3,8 @@ import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp } from '@/middleware/rate-limit'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { sendPushToAgents } from '@/lib/push-notifications'
+import { sendPushToAgentNames } from '@/lib/push-notifications'
+import { CASEY_COMPANY_NUMBER, getLeadAlertRecipients } from '@/lib/lead-alert-routing'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect, formatProspectAlert } from '@/lib/prospect-to-lead'
 import type { ProspectMatch } from '@/lib/prospect-lookup'
@@ -33,13 +35,6 @@ function emptyTwimlResponse(status = 200): NextResponse {
     status,
     headers: TWIML_HEADERS,
   })
-}
-
-function isOfficeHours(): boolean {
-  const now = new Date()
-  const cst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }))
-  const hour = cst.getHours()
-  return hour >= 9 && hour < 17
 }
 
 // Team numbers — never trigger auto-reply flows for these
@@ -80,6 +75,12 @@ function isHardBlockedReason(reason: SmsSuppressionReason | null): boolean {
   return reason === 'SPAM' || reason === 'BLOCKED'
 }
 
+function sendInboundSmsPush(to: string, payload: Parameters<typeof sendPushToAgents>[0]) {
+  if (to !== CASEY_COMPANY_NUMBER) return sendPushToAgents(payload)
+  const recipients = getLeadAlertRecipients(new Date(), to)
+  return sendPushToAgentNames(recipients.map((recipient) => recipient.name), payload)
+}
+
 export async function POST(req: Request) {
   try {
     // Twilio signature validation
@@ -101,6 +102,10 @@ export async function POST(req: Request) {
     const messageBody = body.get('Body') as string
     const messageSid = body.get('MessageSid') as string
     const isGoogleAdsSms = isGoogleAdsPhoneNumber(to || '')
+    const alertRecipients = getLeadAlertRecipients(new Date(), to)
+    const sendAlertSms = (body: string) => Promise.allSettled(
+      alertRecipients.map((recipient) => safeSendSMS({ body, from: TWILIO_PHONE, to: recipient.phone })),
+    )
 
     if (!from || !messageBody) {
       return new NextResponse('Missing required fields', { status: 400 })
@@ -166,7 +171,7 @@ export async function POST(req: Request) {
       const teamAlert = `📩 ${teamMember} texted ${to}: "${messageBody.slice(0, 100)}"`
 
       // Push notification to CRM
-      sendPushToAgents({
+      sendInboundSmsPush(to, {
         title: `Team SMS: ${teamMember}`,
         body: messageBody.slice(0, 80),
         url: '/conversations',
@@ -286,20 +291,15 @@ export async function POST(req: Request) {
         if (priorityError) throw priorityError
       }
 
-      // Alert BOTH agents — primary based on office hours
+      // Alert only the agents eligible for the receiving company number and current schedule.
       const prospectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
       const yesAlertBody = prospectMatch
         ? `🔥 TAX PROSPECT replied YES! ${prospectMatch.owner_1 || from}${prospectCtx}${yesLeadId ? '\n' + BASE_URL + '/leads/' + yesLeadId : ''}`
         : `🔥 HOT: ${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.${yesLeadId ? ' ' + BASE_URL + '/leads/' + yesLeadId : ''}`
-      const primaryAgent = isOfficeHours() ? CASEY_PHONE : ERNEST_PHONE
-      const secondaryAgent = isOfficeHours() ? ERNEST_PHONE : CASEY_PHONE
-      await Promise.allSettled([
-        safeSendSMS({ body: yesAlertBody, from: TWILIO_PHONE, to: primaryAgent }),
-        safeSendSMS({ body: yesAlertBody, from: TWILIO_PHONE, to: secondaryAgent }),
-      ])
+      await sendAlertSms(yesAlertBody)
 
       // Push notification
-      sendPushToAgents({
+      sendInboundSmsPush(to, {
         title: 'HOT: YES Reply',
         body: `${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.`,
         url: yesLeadId ? `/leads/${yesLeadId}` : '/',
@@ -313,7 +313,7 @@ export async function POST(req: Request) {
           activity_type: 'sms',
           description: yesAlertBody,
           agent: 'System',
-          metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: 'yes_reply_alert' },
+          metadata: { direction: 'outbound_alert', to_agents: alertRecipients.map((recipient) => recipient.name), trigger: 'yes_reply_alert' },
         })
       }
 
@@ -352,29 +352,17 @@ export async function POST(req: Request) {
       return emptyTwimlResponse()
     }
 
-    // ── Known lead replies (any message = alert BOTH agents) ──
+    // ── Known lead replies ──
     if (lead) {
       const alertBody = `📩 ${leadName} just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
 
-      // Send alerts to both agents
-      const [caseyResult, ernestResult] = await Promise.all([
-        safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: CASEY_PHONE }),
-        safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: ERNEST_PHONE }),
-      ])
-
-      // Log success/failure for monitoring
-      const caseySuccess = caseyResult.success
-      const ernestSuccess = ernestResult.success
-
-      if (!caseySuccess) {
-        console.error(`[ALERT-FAILED] Casey alert failed: ${caseyResult.error}`)
-      }
-      if (!ernestSuccess) {
-        console.error(`[ALERT-FAILED] Ernest alert failed: ${ernestResult.error}`)
-      }
+      const alertResults = await Promise.all(alertRecipients.map(async (recipient) => ({
+        recipient,
+        result: await safeSendSMS({ body: alertBody, from: TWILIO_PHONE, to: recipient.phone }),
+      })))
 
       // Push notification as backup
-      sendPushToAgents({
+      sendInboundSmsPush(to, {
         title: 'Lead Texted',
         body: `${leadName}: "${messageBody.slice(0, 80)}"`,
         url: `/leads/${leadId}`,
@@ -389,23 +377,16 @@ export async function POST(req: Request) {
         agent: 'System',
         metadata: {
           direction: 'outbound_alert',
-          to_agents: ['Casey', 'Ernest'],
+          to_agents: alertRecipients.map((recipient) => recipient.name),
           trigger: 'lead_reply_alert',
-          delivery_status: {
-            casey: { success: caseySuccess, sid: caseyResult.sid, error: caseyResult.error },
-            ernest: { success: ernestSuccess, sid: ernestResult.sid, error: ernestResult.error },
-          },
+          delivery_status: alertResults.map(({ recipient, result }) => ({
+            agent: recipient.name,
+            success: result.success,
+            sid: result.sid,
+            error: result.error,
+          })),
         },
       })
-
-      // CRITICAL: If both alerts fail, log to console prominently
-      if (!caseySuccess && !ernestSuccess) {
-        console.error('🚨 [CRITICAL] BOTH team SMS alerts failed!')
-        console.error(`  Lead: ${leadName}`)
-        console.error(`  Message: ${messageBody.slice(0, 100)}`)
-        console.error(`  Casey error: ${caseyResult.error}`)
-        console.error(`  Ernest error: ${ernestResult.error}`)
-      }
     }
 
     // ── Unknown number — create/enrich lead, alert agents, create task. No generic seller auto-reply. ──
@@ -435,15 +416,12 @@ export async function POST(req: Request) {
           .eq('metadata->>message_sid', messageSid)
           .is('lead_id', null)
 
-        // Alert both agents — include prospect context if matched
+        // Alert only eligible recipients for the receiving company number.
         const unknownProspectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
         const smsAlert = prospectMatch
           ? `🔥 TAX PROSPECT texted! ${prospectMatch.owner_1 || formatPhone(from)}: "${messageBody.slice(0, 60)}"${unknownProspectCtx}\n${BASE_URL}/leads/${newLeadId}`
           : `📩 New text from unknown number ${formatPhone(from)}: "${messageBody.slice(0, 80)}" ${BASE_URL}/leads/${newLeadId}`
-        await Promise.allSettled([
-          safeSendSMS({ body: smsAlert, from: TWILIO_PHONE, to: CASEY_PHONE }),
-          safeSendSMS({ body: smsAlert, from: TWILIO_PHONE, to: ERNEST_PHONE }),
-        ])
+        await sendAlertSms(smsAlert)
 
         // Log the alert
         await supabase.from('lead_activities').insert({
@@ -451,11 +429,11 @@ export async function POST(req: Request) {
           activity_type: 'sms',
           description: smsAlert,
           agent: 'System',
-          metadata: { direction: 'outbound_alert', to_agents: ['Casey', 'Ernest'], trigger: prospectMatch ? 'prospect_sms_alert' : 'unknown_sms_alert' },
+          metadata: { direction: 'outbound_alert', to_agents: alertRecipients.map((recipient) => recipient.name), trigger: prospectMatch ? 'prospect_sms_alert' : 'unknown_sms_alert' },
         })
 
         // Push notification
-        sendPushToAgents({
+        sendInboundSmsPush(to, {
           title: prospectMatch ? 'Tax Prospect Texted!' : 'Unknown SMS',
           body: prospectMatch
             ? `${prospectMatch.owner_1 || from}: "${messageBody.slice(0, 60)}"`

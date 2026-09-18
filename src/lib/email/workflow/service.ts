@@ -1,3 +1,5 @@
+import { suppressionTargets } from '../hygiene/suppression'
+import { contactHygieneReasons } from '../hygiene/guards'
 import 'server-only'
 import { callbackRequest, isCallbackTest, stoppedCallback, annotateCallbackRequests, recordCallbackTest } from './callback-review'
 import { commandAllowedInMode } from './mode'
@@ -7,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import type { Sql } from 'postgres'
 import { projectEmailHandoffToCrm } from '../crm-adapter'
 import { projectCrmChanges } from '../crm-repairs'
-import { changeCallback, validateCallbackTime } from './callback-actions'
+import { changeCallback, validateCallbackTime, validateOutcomeCampaign } from './callback-actions'
 import { retryReceivedJob } from '../inbound/retry'
 import { manageHandoff } from './handoff-management'
 import { draftWithAri } from '../ai/drafting'
@@ -189,8 +191,7 @@ async function review(
     await tx`select r.id,r.address_id,r.party_id,r.eligibility,r.evidence_hash,
       a.normalized_address,a.verification_state,a.verification_expires_at,a.restriction_revision,
       p.display_name,p.identity_state,
-      exists(select 1 from em_suppressions s where s.workspace_id=r.workspace_id and (s.address_id=r.address_id or s.address_id in
-        (select pa.address_id from em_party_addresses pa where pa.workspace_id=r.workspace_id and pa.party_id=r.party_id and pa.relationship='confirmed'))) as suppressed,
+      exists(select 1 from em_suppressions s where s.workspace_id=r.workspace_id and s.address_id=r.address_id) as suppressed,
       exists(select 1 from em_enrollments e where e.workspace_id=r.workspace_id and (e.address_id=r.address_id or e.party_id=r.party_id) and e.state in ('queued','waiting_reply','held','replied')) as enrolled,
       (select count(*) from em_party_addresses pa where pa.workspace_id=r.workspace_id and pa.address_id=r.address_id and pa.relationship in ('confirmed','shared')) as identity_links,
       exists(select 1 from em_party_addresses pa where pa.workspace_id=r.workspace_id and pa.address_id=r.address_id and pa.party_id=r.party_id and pa.relationship='confirmed') as confirmed
@@ -199,7 +200,8 @@ async function review(
     where r.workspace_id=${member.workspace_id} and r.snapshot_id=${snapshot.id} order by r.id`
   const seenAddresses = new Set<string>(),
     seenParties = new Set<string>()
-  const recipients = rows.map((r) => {
+  const recipients = []
+  for (const r of rows) {
     const reasons: string[] = []
     if (r.suppressed) reasons.push('Marketing stopped')
     if (r.enrolled)
@@ -218,6 +220,7 @@ async function review(
       new Date(r.verification_expires_at) <= now
     )
       reasons.push('Address verification required')
+    reasons.push(...await contactHygieneReasons(tx, { workspaceId: member.workspace_id, partyId: r.party_id, addressId: r.address_id, now, recontactDays: config.recontactDays }))
     if (workspace.execution_mode === 'simulation' && !String(r.normalized_address).endsWith('.test'))
       reasons.push('Local pilot accepts fabricated .test addresses only')
     if (seenAddresses.has(r.address_id) || seenParties.has(r.party_id))
@@ -226,7 +229,7 @@ async function review(
       seenAddresses.add(r.address_id)
       seenParties.add(r.party_id)
     }
-    return {
+    recipients.push({
       id: r.id,
       addressId: r.address_id,
       partyId: r.party_id,
@@ -234,8 +237,8 @@ async function review(
       email: r.normalized_address,
       eligible: reasons.length === 0,
       reasons,
-    }
-  })
+    })
+  }
   const audienceHash = workflowHash({
     snapshot: snapshot.content_hash,
     recipients,
@@ -725,8 +728,7 @@ export async function executePilotCommand(
       case 'HAN-OUTCOME':
       case 'HAN-ACCEPT': {
         const p = command.payload
-        const [h] =
-          await tx`select thread_id from em_handoffs where workspace_id=${ws} and id=${p.handoffId}`
+        const [h] = await tx`select h.thread_id,c.name as campaign_name from em_handoffs h join em_threads t on t.id=h.thread_id and t.workspace_id=h.workspace_id join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id where h.workspace_id=${ws} and h.id=${p.handoffId}`
         check(h, 'HANDOFF_NOT_FOUND', 404)
         const revision = 'contentRevision' in p ? p.contentRevision : undefined
         if (command.command !== 'HAN-ACCEPT')
@@ -749,8 +751,8 @@ export async function executePilotCommand(
         }
         if (command.command === 'HAN-OUTCOME') {
           const p = command.payload
-          const remainsOpen =
-            p.outcome === 'follow_up' || p.outcome === 'no_contact'
+          validateOutcomeCampaign(p.outcome, h.campaign_name)
+          const remainsOpen = p.outcome === 'follow_up' || p.outcome === 'no_contact'
           check(
             !p.completedAt || new Date(p.completedAt) <= now,
             'INVALID_OUTCOME_TIME',
@@ -882,13 +884,7 @@ export async function suppress(
 ) {
   const { tx, member, now } = context,
     ws = member.workspace_id
-  // Follow only unambiguous confirmed aliases. Shared addresses stop themselves
-  // but must never silently identify or merge multiple people.
-  const aliases =
-    await tx`select distinct a.id from em_addresses a where a.workspace_id=${ws} and (a.id=${addressId} or a.id in (
-    select alias.address_id from em_party_addresses source join em_party_addresses alias on alias.workspace_id=source.workspace_id and alias.party_id=source.party_id
-    where source.workspace_id=${ws} and source.address_id=${addressId} and source.relationship='confirmed' and alias.relationship='confirmed'
-      and (select count(*) from em_party_addresses p where p.workspace_id=${ws} and p.address_id=${addressId} and p.relationship in ('confirmed','shared'))=1))`
+  const aliases = await suppressionTargets(context, addressId, reason)
   for (const alias of aliases) {
     await tx`insert into em_suppressions(workspace_id,address_id,reason,evidence_message_id,created_by,effective_at)
       values(${ws},${alias.id},${reason},${evidenceId ?? null},${member.auth_user_id},${now}) on conflict(workspace_id,address_id) do update set effective_at=greatest(em_suppressions.effective_at,excluded.effective_at)`
@@ -1004,8 +1000,7 @@ export async function simulateDelivery(
         if (intent.origin === 'sequence' && intent.campaign_state !== 'active')
           continue
         const [restriction] =
-          await tx`select id from em_suppressions where workspace_id=${ws} and (address_id=${intent.address_id} or address_id in
-        (select pa.address_id from em_party_addresses pa where pa.workspace_id=${ws} and pa.party_id=${intent.party_id} and pa.relationship='confirmed')) limit 1`
+          await tx`select id from em_suppressions where workspace_id=${ws} and address_id=${intent.address_id} limit 1`
         const [address] =
           await tx`select normalized_address,verification_state,verification_expires_at from em_addresses where workspace_id=${ws} and id=${intent.address_id}`
         const [responsible] =
@@ -1015,11 +1010,12 @@ export async function simulateDelivery(
           (
             await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id) where m.workspace_id=${ws} and m.auth_user_id=${intent.controller_user_id} and m.active and m.roles && array['owner','reviewer','acquisitions']::text[]`
           ).length > 0
+        const hygiene = await contactHygieneReasons(tx, { workspaceId: ws, partyId: intent.party_id, addressId: intent.address_id, threadId: intent.thread_id, now, sequence: intent.origin === 'sequence' })
         const stale =
           intent.expected_content_revision !== intent.content_revision ||
           intent.expected_controller_revision !== intent.controller_revision
         if (
-          restriction ||
+          restriction || hygiene.length > 0 ||
           intent.thread_state === 'stopped' ||
           stale ||
           (intent.origin === 'sequence' && intent.controller !== 'none')
@@ -1177,7 +1173,7 @@ export async function readPilotState(
       ? await tx`select id,thread_id,body,body_hash,content_revision,controller_revision,state from em_drafts where workspace_id=${ws} and thread_id = any(${tx.array(ids)}::uuid[]) and author_id=${subject} order by created_at`
       : []
     const campaigns = canManage(member)
-      ? await tx`select c.id,c.name,c.state,c.revision,c.draft_config,
+      ? await tx`select c.id,c.name,c.state,c.revision,c.draft_config,c.is_test,
       (select count(*)::int from em_enrollments e where e.campaign_id=c.id) as approved,
       (select count(*)::int from em_threads t where t.campaign_id=c.id and exists(select 1 from em_messages m where m.thread_id=t.id and m.direction='outbound')) as started,
       (select min(i.not_before) from em_send_intents i join em_threads t on t.id=i.thread_id where t.campaign_id=c.id and i.state='queued' and c.state='active') as next_send

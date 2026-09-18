@@ -22,10 +22,21 @@ describe('CallReviewAudioPlayer', () => {
     audio.currentTime = 38
 
     fireEvent.change(screen.getByLabelText('Playback speed'), { target: { value: '1.5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Restart' }))
+    const restart = screen.getByRole('button', { name: 'Restart' })
+    fireEvent.click(restart)
 
     expect(audio.playbackRate).toBe(1.5)
     expect(audio.currentTime).toBe(0)
     expect(play).toHaveBeenCalled()
+    expect(restart.querySelector('svg')).toBeInTheDocument()
+    expect(restart.querySelector('.material-symbols-outlined')).not.toBeInTheDocument()
+  })
+
+  it('keeps compact queue controls on one line when space allows', () => {
+    render(<CallReviewAudioPlayer src="/api/recordings/RE123" knownDuration={1329} compact inline />)
+
+    const root = screen.getByLabelText('Original call recording').parentElement
+    expect(root).toHaveClass('sm:flex-nowrap')
+    expect(screen.getByLabelText('Playback elapsed and total time').parentElement).not.toHaveClass('mt-3')
   })
 })

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { applyCampaignContactCallPolicy } from '@/lib/server/campaign-contact-call-policy'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { supabase } from '@/lib/supabase-lazy'
 import { isMissingColumnError } from '@/lib/schema-compat'
@@ -153,7 +154,11 @@ export async function GET(req: Request) {
         historyByPhone.set(row.id, row)
       }
     }
-    const heirs = buildCampaignCallContactGroups(contactRows, historyByPhone)
+    const heirs = await applyCampaignContactCallPolicy(
+      buildCampaignCallContactGroups(contactRows, historyByPhone),
+      { leadId, prospectId },
+    ).catch(() => null)
+    if (!heirs) return NextResponse.json({ error: 'Current calling rules could not be checked. Refresh the contact before dialing.' }, { status: 503 })
 
     return NextResponse.json({
       heirs,

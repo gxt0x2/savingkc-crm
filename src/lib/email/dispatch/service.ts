@@ -1,3 +1,4 @@
+import { contactHygieneReasons } from '../hygiene/guards';
 import "server-only";
 import type { Sql } from "postgres";
 import { ownerWorkspace, connectionMasterKey } from "../connections/service";
@@ -69,8 +70,7 @@ export async function processNextDispatch(
     if (!intent.is_test && pilotSendSlot(now).getTime() !== now.getTime())
       return null;
     const [restriction] =
-      await tx`select id from em_suppressions where workspace_id=${ws.id} and
-      (address_id=${intent.address_id} or address_id in (select address_id from em_party_addresses where workspace_id=${ws.id} and party_id=${intent.party_id} and relationship='confirmed')) limit 1`;
+      await tx`select id from em_suppressions where workspace_id=${ws.id} and address_id=${intent.address_id} limit 1`;
     const [active] =
       await tx`select m.auth_user_id from em_memberships m join agent_profiles p on p.id=m.agent_profile_id
       and p.is_active is distinct from false and (p.user_id is null or p.user_id=m.auth_user_id)
@@ -84,8 +84,9 @@ export async function processNextDispatch(
       where m.workspace_id=${ws.id} and m.auth_user_id=${intent.controller_user_id} and m.active
       and m.roles && array['owner','reviewer','acquisitions']::text[]`
       ).length > 0;
+    const hygiene = await contactHygieneReasons(tx, { workspaceId: ws.id, partyId: intent.party_id, addressId: intent.address_id, now, threadId: intent.thread_id, sequence: intent.origin === "sequence", recontactDays: intent.campaign_config.recontactDays });
     const invalid =
-      restriction ||
+      hygiene.length > 0 || restriction ||
       !active ||
       !controllerActive ||
       intent.inbound_pending ||
