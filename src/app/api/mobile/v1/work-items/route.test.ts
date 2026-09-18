@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({ actor: vi.fn(), create: vi.fn() }))
 vi.mock('@/lib/mobile-api/auth', async (original) => ({ ...await original<typeof import('@/lib/mobile-api/auth')>(), requireMobileActor: mocks.actor }))
 vi.mock('@/lib/server/work-items', async (original) => ({ ...await original<typeof import('@/lib/server/work-items')>(), createWorkItem: mocks.create }))
+import { WorkItemError } from '@/lib/server/work-items'
 import { POST } from './route'
 
 describe('mobile work-item create', () => {
@@ -37,5 +38,14 @@ describe('mobile work-item create', () => {
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'appointment', role: 'in_person', idempotencyKey: 'appointment-create-1',
     }))
+  })
+  it('returns conflict when a retry key belongs to different task content', async () => {
+    mocks.create.mockRejectedValue(new WorkItemError('That Idempotency-Key belongs to a different work item.', 'conflict'))
+    const response = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/work-items', {
+      method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json', 'Idempotency-Key': 'task-create-1' },
+      body: JSON.stringify({ title: 'Different task', leadId: 'lead-1', taskType: 'callback', assignedTo: 'Casey' }),
+    }))
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({ error: 'That Idempotency-Key belongs to a different work item.' })
   })
 })

@@ -59,6 +59,30 @@ interface WorkItemRow {
   updated_at: string
 }
 
+interface WorkItemCreateEventRow {
+  action: string
+  actor: string
+  work_item_key: string
+  next_state: WorkItemRow | null
+}
+
+interface CreateWorkItemInput {
+  actor: string
+  idempotencyKey: string
+  leadId?: string | null
+  prospectId?: string | null
+  kind: string
+  title: string
+  notes?: string | null
+  dueAt?: string | null
+  assignedTo: string | null
+  department: string
+  role?: string | null
+  priority?: string
+  primaryNextAction?: boolean
+  provenance?: Record<string, unknown>
+}
+
 export class WorkItemError extends Error {
   constructor(
     message: string,
@@ -125,6 +149,58 @@ function mapWorkItem(row: WorkItemRow): WorkItem {
     sourceCreatedAt: row.source_created_at,
     completedAt: row.completed_at,
     updatedAt: row.updated_at,
+  }
+}
+
+function normalizedOptionalText(value: string | null | undefined): string | null {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  return normalized || null
+}
+
+function sameOptionalTimestamp(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizedOptionalText(left)
+  const normalizedRight = normalizedOptionalText(right)
+  if (!normalizedLeft || !normalizedRight) return normalizedLeft === normalizedRight
+  const leftTimestamp = Date.parse(normalizedLeft)
+  const rightTimestamp = Date.parse(normalizedRight)
+  if (Number.isNaN(leftTimestamp) || Number.isNaN(rightTimestamp)) return normalizedLeft === normalizedRight
+  return leftTimestamp === rightTimestamp
+}
+
+function workItemCreateReplayMatches(input: CreateWorkItemInput, item: WorkItem): boolean {
+  const prospectId = normalizedOptionalText(input.prospectId)
+  const leadId = normalizedOptionalText(input.leadId)
+  const subjectMatches = item.prospectId === prospectId
+    && (prospectId ? !leadId || item.leadId === leadId : item.leadId === leadId)
+  const expectedPrimaryNextAction = input.primaryNextAction === true && (!prospectId || Boolean(leadId))
+
+  return subjectMatches
+    && item.kind === (input.kind.trim().toLowerCase() || 'task')
+    && item.title === input.title.trim()
+    && item.description === normalizedOptionalText(input.notes)
+    && sameOptionalTimestamp(item.dueAt, input.dueAt)
+    && item.assignedTo === normalizedOptionalText(input.assignedTo)
+    && item.department === (input.department.trim().toLowerCase() || 'acquisitions')
+    && item.role === normalizedOptionalText(input.role)
+    && item.priority === (input.priority?.trim().toLowerCase() || 'normal')
+    && item.primaryNextAction === expectedPrimaryNextAction
+}
+
+async function assertWorkItemCreateReplay(input: CreateWorkItemInput, current: WorkItem, db: SupabaseClient): Promise<void> {
+  const { data, error } = await db.from('work_item_events')
+    .select('action,actor,work_item_key,next_state')
+    .eq('idempotency_key', input.idempotencyKey.trim())
+    .maybeSingle()
+  if (error) databaseError(error.message)
+  const event = data as WorkItemCreateEventRow | null
+  if (!event?.next_state) databaseError('idempotent work item create event is unavailable')
+  if (
+    event.action !== 'create'
+    || event.actor !== input.actor.trim()
+    || event.work_item_key !== current.key
+    || !workItemCreateReplayMatches(input, mapWorkItem(event.next_state))
+  ) {
+    throw new WorkItemError('That Idempotency-Key belongs to a different work item.', 'conflict')
   }
 }
 
@@ -221,22 +297,7 @@ export async function listCompletedWorkItemDates(input: {
   return (data || []).flatMap((row) => typeof row.completed_at === 'string' ? [row.completed_at] : [])
 }
 
-export async function createWorkItem(input: {
-  actor: string
-  idempotencyKey: string
-  leadId?: string | null
-  prospectId?: string | null
-  kind: string
-  title: string
-  notes?: string | null
-  dueAt?: string | null
-  assignedTo: string | null
-  department: string
-  role?: string | null
-  priority?: string
-  primaryNextAction?: boolean
-  provenance?: Record<string, unknown>
-}, db: SupabaseClient = supabaseAdmin()): Promise<{ created: boolean; workItem: WorkItem }> {
+export async function createWorkItem(input: CreateWorkItemInput, db: SupabaseClient = supabaseAdmin()): Promise<{ created: boolean; workItem: WorkItem }> {
   const subjectAware = Boolean(input.prospectId) || normalizeWorkItemKind(input.kind) === 'mail'
   const rpcName = subjectAware ? 'create_work_item_v3' : input.provenance ? 'create_work_item_v2' : 'create_work_item_v1'
   const rpcInput = {
@@ -259,7 +320,9 @@ export async function createWorkItem(input: {
   if (error) databaseError(error.message)
   const result = data as { created?: boolean; workItem?: WorkItemRow } | null
   if (!result?.workItem) databaseError('work item create returned malformed state')
-  return { created: result.created === true, workItem: mapWorkItem(result.workItem) }
+  const workItem = mapWorkItem(result.workItem)
+  if (result.created !== true) await assertWorkItemCreateReplay(input, workItem, db)
+  return { created: result.created === true, workItem }
 }
 
 export async function transitionWorkItem(input: {

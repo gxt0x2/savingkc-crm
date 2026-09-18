@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), laneLookup: vi.fn(), eq: vi.fn(), readRows: vi.fn() }))
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), laneLookup: vi.fn(), eq: vi.fn(), readRows: vi.fn(), eventMaybeSingle: vi.fn() }))
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: () => {
@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       limit: vi.fn(() => query),
       eq: mocks.eq.mockImplementation(() => query),
       in: mocks.laneLookup,
+      maybeSingle: mocks.eventMaybeSingle,
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(mocks.readRows()).then(resolve, reject),
     }
     return { rpc: mocks.rpc, from: vi.fn(() => query) }
@@ -49,6 +50,10 @@ describe('canonical work-item server service', () => {
       error: null,
     }))
     mocks.readRows.mockReturnValue({ data: [row], error: null })
+    mocks.eventMaybeSingle.mockResolvedValue({
+      data: { action: 'create', actor: 'Casey', work_item_key: row.work_item_key, next_state: row },
+      error: null,
+    })
   })
 
   it('normalizes legacy UI labels into the canonical kind vocabulary', () => {
@@ -97,6 +102,68 @@ describe('canonical work-item server service', () => {
       p_actor: 'Casey',
       p_idempotency_key: 'create-key-0001',
     }))
+  })
+
+  it('replays the original create when actor and normalized payload match', async () => {
+    mocks.rpc.mockResolvedValue({ data: { created: false, workItem: row }, error: null })
+    const result = await createWorkItem({
+      actor: 'Casey',
+      idempotencyKey: 'create-key-replay-0001',
+      leadId: row.lead_id,
+      kind: ' FOLLOW_UP ',
+      title: ' Call seller ',
+      dueAt: '2026-08-21T09:00:00-05:00',
+      assignedTo: ' Casey ',
+      department: ' Acquisitions ',
+      role: ' setter ',
+      priority: ' Normal ',
+      primaryNextAction: true,
+    })
+
+    expect(result).toMatchObject({ created: false, workItem: { key: row.work_item_key } })
+  })
+
+  it('rejects reuse of a create key for changed work-item content', async () => {
+    mocks.rpc.mockResolvedValue({ data: { created: false, workItem: row }, error: null })
+
+    await expect(createWorkItem({
+      actor: 'Casey',
+      idempotencyKey: 'create-key-replay-0002',
+      leadId: row.lead_id,
+      kind: 'follow_up',
+      title: 'Call a different seller',
+      dueAt: row.due_at,
+      assignedTo: row.assigned_to,
+      department: row.department,
+      role: row.role,
+      priority: row.priority,
+      primaryNextAction: row.primary_next_action,
+    })).rejects.toMatchObject({
+      code: 'conflict',
+      message: 'That Idempotency-Key belongs to a different work item.',
+    })
+  })
+
+  it('rejects reuse of a create key by a different actor', async () => {
+    mocks.rpc.mockResolvedValue({ data: { created: false, workItem: row }, error: null })
+    mocks.eventMaybeSingle.mockResolvedValue({
+      data: { action: 'create', actor: 'Ernest', work_item_key: row.work_item_key, next_state: row },
+      error: null,
+    })
+
+    await expect(createWorkItem({
+      actor: 'Casey',
+      idempotencyKey: 'create-key-replay-0003',
+      leadId: row.lead_id,
+      kind: row.kind,
+      title: row.title,
+      dueAt: row.due_at,
+      assignedTo: row.assigned_to,
+      department: row.department,
+      role: row.role,
+      priority: row.priority,
+      primaryNextAction: row.primary_next_action,
+    })).rejects.toMatchObject({ code: 'conflict' })
   })
 
   it('defaults every standard read to the current operational lane', async () => {
