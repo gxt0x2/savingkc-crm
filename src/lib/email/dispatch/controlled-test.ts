@@ -59,7 +59,6 @@ export async function queueControlledTest(
       ? (sourceCampaign.draft_config as PilotConfig)
       : null;
     if (sourceConfig) {
-      check(sourceConfig.senderIds.includes(input.senderId), "SENDER_MISMATCH", 400);
       check(sourceConfig.steps.length === 2, "SAVE_SEQUENCE_FIRST", 400);
     }
     const [address] =

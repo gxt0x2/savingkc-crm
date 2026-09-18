@@ -1266,6 +1266,7 @@ export async function readPilotState(
       : []
     return json({
       senders: canManage(member) ? await tx`select s.id,s.from_name as name,s.local_part||'@'||d.name_ascii as address from em_senders s join em_domains d on d.id=s.domain_id and d.workspace_id=s.workspace_id where s.workspace_id=${ws} and s.state='active' and not d.paused order by s.id` : [],
+      sampleSenders: canManage(member) ? await tx`select s.id,s.from_name as name,s.local_part||'@'||d.name_ascii as address,s.state from em_senders s join em_domains d on d.id=s.domain_id and d.workspace_id=s.workspace_id where s.workspace_id=${ws} and s.state in ('active','paused') order by s.created_at,s.id` : [],
       sendingEnabled: workspace.send_enabled,
       ai_available: emailAiAvailable(),
       mode: workspace.execution_mode,

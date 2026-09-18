@@ -169,6 +169,7 @@ export function EmailWorkspace({
   const [review, setReview] = useState<PilotReview | null>(null)
   const [newName, setNewName] = useState('')
   const [recipientProperties, setRecipientProperties] = useState<Record<string, string>>({})
+  const [sampleSenders, setSampleSenders] = useState<Record<string, string>>({})
   const [showSimulation, setShowSimulation] = useState(false)
   const [simulationBody, setSimulationBody] = useState(
     'I might consider selling. Call me at 816-555-0101. Tomorrow afternoon works.',
@@ -333,7 +334,7 @@ export function EmailWorkspace({
   }
 
   async function sendCampaignSample(campaign: PilotState['campaigns'][number]) {
-    const senderId = campaign.draft_config.senderIds?.[0]
+    const senderId = sampleSenders[campaign.id] ?? campaign.draft_config.senderIds?.[0]
     if (!senderId) {
       setError('Choose and save a tested sender before sending a sample.')
       return
@@ -1004,12 +1005,27 @@ export function EmailWorkspace({
                                     ))}
                                   </details>
                                   {data.mode === 'hosted' && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() => sendCampaignSample(campaign)}
-                                    >
-                                      Send exact sample
-                                    </button>
+                                    <div>
+                                      <label>
+                                        Sample sender
+                                        <select
+                                          value={sampleSenders[campaign.id] ?? campaign.draft_config.senderIds?.[0] ?? ''}
+                                          onChange={(event) => setSampleSenders((current) => ({ ...current, [campaign.id]: event.target.value }))}
+                                        >
+                                          {(data.sampleSenders ?? []).map((sender) => (
+                                            <option key={sender.id} value={sender.id}>
+                                              {sender.name} · {sender.address}{sender.state === 'paused' ? ' · test pending' : ''}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                      <button
+                                        disabled={busy}
+                                        onClick={() => sendCampaignSample(campaign)}
+                                      >
+                                        Send exact sample
+                                      </button>
+                                    </div>
                                   )}
                                   <button
                                     className={styles.primary}

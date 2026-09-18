@@ -197,6 +197,7 @@ export interface PilotState {
   ai_available?: boolean
   sendingEnabled?: boolean
   senders?: { id: string; name: string; address: string }[]
+  sampleSenders?: { id: string; name: string; address: string; state: 'active' | 'paused' }[]
   routing: { acquisitionOwnerId: string; backupId: string } | null
   settings: PilotSettings | null
   mode: 'simulation' | 'disabled' | 'hosted'
