@@ -10,11 +10,20 @@ vi.mock('@/lib/mobile-api/auth', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/mobile-api/auth')>(),
   requireMobileUser: mocks.requireMobileUser,
 }))
-vi.mock('@/lib/server/contact-directory-read-model', () => ({
+vi.mock('@/lib/server/contact-directory-read-model', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/server/contact-directory-read-model')>(),
   readContactDirectoryPage: mocks.readPage,
 }))
 
 import { GET } from './route'
+
+const encodedCursor = Buffer.from(JSON.stringify({
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Morgan Seller',
+  lastActivityAt: '2026-09-17T12:00:00Z',
+  score: 88,
+  attentionRank: 1,
+})).toString('base64url')
 
 function request(query = '') {
   return new NextRequest(`https://crm.savingkc.com/api/mobile/v1/leads${query}`, {
@@ -67,10 +76,10 @@ describe('mobile Pipeline', () => {
   })
 
   it('forwards cursor and search without draining every page', async () => {
-    await GET(request('?list=all&limit=25&cursor=next-page&q=oak'))
+    await GET(request(`?list=all&limit=25&cursor=${encodedCursor}&q=oak`))
 
     expect(mocks.readPage).toHaveBeenCalledWith(expect.objectContaining({
-      smartList: 'all', cursor: 'next-page', search: 'oak', limit: 25,
+      smartList: 'all', cursor: expect.objectContaining({ id: '11111111-1111-4111-8111-111111111111' }), search: 'oak', limit: 25,
     }))
   })
 

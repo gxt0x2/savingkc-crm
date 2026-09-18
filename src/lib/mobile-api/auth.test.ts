@@ -69,7 +69,7 @@ describe('mobile bearer actor resolution', () => {
       error: null,
     })
 
-    await expect(requireMobileUser(request())).rejects.toMatchObject<Partial<MobileAuthError>>({
+    await expect(requireMobileUser(request())).rejects.toMatchObject({
       status: 403,
       message: 'Authenticated user is not authorized for the mobile CRM',
     })

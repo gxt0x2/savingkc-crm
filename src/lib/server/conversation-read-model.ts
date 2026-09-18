@@ -256,6 +256,8 @@ function projectionThread(
     owner: text(row.owner) ?? text(base.assigned_agent),
     lastMessage: communicationActivitySummary(communication),
     lastActivityAt: row.last_activity_at,
+    lastActivityId: communication.id,
+    lastDirection: getConversationDirection(communication),
     lastChannel,
     lastCallOutcome: lastChannel === 'call' || lastChannel === 'voicemail'
       ? getCallOutcomePresentation(communication)

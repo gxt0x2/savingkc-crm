@@ -6,7 +6,7 @@ import {
   mobileOptionsResponse,
   requireMobileUser,
 } from '@/lib/mobile-api/auth'
-import { readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
+import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       smartList: list,
       scope: 'active',
       limit,
-      cursor: searchParams.get('cursor')?.trim() || null,
+      cursor: decodeContactDirectoryCursor(searchParams.get('cursor')?.trim() || null),
       sort: 'recent',
       search: searchParams.get('q')?.trim() || '',
       owner: '',
