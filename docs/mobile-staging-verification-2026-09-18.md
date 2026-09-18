@@ -34,9 +34,10 @@ The only missing production extension, `pg_trgm`, was installed in staging.
 The custom `email_workflow_runtime` placeholder is `NOLOGIN`, `NOINHERIT`, and
 `NOBYPASSRLS`; provider execution remains disabled.
 
-The mobile-only migration
-`supabase/migrations/20260918160000_mobile_command_receipts.sql` was then
-applied to staging. The receipt table is empty before behavioral testing.
+The mobile-only migrations
+`supabase/migrations/20260918160000_mobile_command_receipts.sql` and
+`supabase/migrations/20260918170000_mobile_appointment_commands.sql` were then
+applied to staging. Production migration history was not changed.
 
 ## Verified baseline
 
@@ -46,8 +47,8 @@ applied to staging. The receipt table is empty before behavioral testing.
 - Lead activities: 0; work items: 0; appointments: 0.
 - The canonical `contact_workspace_page_v4` RPC returns the authorized record
   in the `contacted` list with `is_favorite=false`.
-- Focused backend mobile API tests: 71 passed across 21 files.
-- Standalone mobile tests: 72 passed.
+- Focused canonical appointment backend tests: 21 passed across 8 files.
+- Standalone mobile tests: 78 passed across 39 suites.
 - Standalone mobile TypeScript check: passed.
 
 This environment is a limited staging surface. Native voice, external SMS or
@@ -89,6 +90,41 @@ The durable rows are explicitly titled or described `STAGING VERIFICATION` and
 state that no customer action is required. No call, SMS, email, or other
 customer communication was attempted.
 
+## Canonical appointment contract
+
+Backend source `df8efa58210c53f3ca4cebad6515f9ccc07519eb` contains the
+fixed mobile routes, server-derived actor handling, canonical appointment
+service, and staging migration. Its 21 focused tests, 4 GB TypeScript gate, and
+direct Next.js webpack production build all pass.
+
+The appointment migration was applied only to the isolated staging branch. A
+schema/RPC audit confirmed all ten mobile appointment fields, the
+`appointment_command_events` ledger with RLS enabled, authenticated-role RPC
+execution revoked, and service-role-only execution granted.
+
+Direct transactional staging verification then proved:
+
+- create produced canonical appointment
+  `b97d2438-bdb9-4f65-aa4c-1031a96a4e41` at version 1;
+- exact create replay returned the same ID with `replayed=true` and no duplicate;
+- changed payload with the same actor/key failed with
+  `appointment_idempotency_conflict`;
+- edit kept the same ID and advanced to version 2; exact edit replay stayed at
+  version 2;
+- a stale expected version failed with `appointment_version_conflict`;
+- reschedule kept the same ID and advanced to version 3 with start
+  `2026-09-26T17:00:00+00:00`;
+- cancel advanced to version 4, left zero active calendar rows, and the complete
+  sequence created exactly four command-ledger rows and four activity rows;
+- reminders remained disabled and provider status remained `not_configured`, so
+  no provider call, calendar event, SMS, or email was attempted.
+
+The database also enforces a 15-minute minimum and 24-hour maximum appointment
+duration. Authenticated HTTP verification is still blocked: the pulled preview
+environment contains an empty staging service-role value, so the local route
+correctly returned `503` rather than bypassing server authorization. No HTTP or
+two-phone success is claimed for the canonical appointment route yet.
+
 ## Hosted-preview incident boundary
 
 Vercel accepted two preview-only artifacts for this source:
@@ -96,9 +132,8 @@ Vercel accepted two preview-only artifacts for this source:
 - Git preview `dpl_5TAk3x6u436F5otqyFwc3UbC2cHu`;
 - prebuilt preview `dpl_BL6MBuaV4Neks7zpJeEfiYLdKN9D`.
 
-Both remained `INITIALIZING` while their inner build object reported `READY`.
-Vercel incident `bwkmw4hmrgmk`, “Elevated Errors Triggering Deployments,” was
-open with major impact and the Builds component in partial outage at the time.
-The existing branch alias still resolved to the prior read-only deployment, so
-it was not accepted as staging evidence. Hosted status remains blocked until a
-new preview is `READY` and repeats the authenticated checks above.
+Both later became `READY` after Vercel incident `bwkmw4hmrgmk`, “Elevated Errors
+Triggering Deployments,” cleared. They predate the canonical appointment adapter
+and therefore do not verify the new routes. Hosted status remains blocked until
+a new exact-source preview is `READY`, has the staging service-role value, and
+repeats the authenticated checks above.
