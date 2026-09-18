@@ -23,6 +23,7 @@ export async function contactHygieneReasons(tx: Tx, input: {
     threadId?: string;
     sequence?: boolean;
     recontactDays?: number;
+    ignoreOtherTestThreads?: boolean;
 }) {
     const { workspaceId: ws, partyId, addressId, now } = input;
     const reasons: string[] = [];
@@ -47,7 +48,7 @@ export async function contactHygieneReasons(tx: Tx, input: {
       and i.accepted_at>${new Date(now.getTime() - Math.max(90, input.recontactDays ?? 90) * 86400000)} and not i.is_test limit 1`;
         if (recent)
             reasons.push('Person is in the 90-day recontact cooldown');
-        const [other] = await tx `select t.id from em_threads t where t.workspace_id=${ws} and t.party_id=${partyId} and t.id is distinct from ${input.threadId ?? null}::uuid and t.state not in ('done','stopped') limit 1`;
+        const [other] = await tx `select t.id from em_threads t join em_campaigns c on c.workspace_id=t.workspace_id and c.id=t.campaign_id where t.workspace_id=${ws} and t.party_id=${partyId} and t.id is distinct from ${input.threadId ?? null}::uuid and t.state not in ('done','stopped') and (not ${input.ignoreOtherTestThreads === true} or not c.is_test) limit 1`;
         if (other)
             reasons.push('Person already has an active conversation');
     }

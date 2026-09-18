@@ -29,6 +29,7 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  SAMPLE_DELIVERY_NOT_ACCEPTED: 'The sample was not confirmed sent. Check sending readiness before retrying; the campaign has not started.',
   CAMPAIGN_SENDER_TEST_REQUIRED: 'Complete the listed campaign checks, including a delivered sample and matched reply for the selected sender, before starting.',
   PERSONALIZATION_IDENTITY_REQUIRED: 'Verify the recipient’s identity before personalizing this message.',
   PERSONALIZATION_PROPERTY_REQUIRED: 'Confirm one property and record the evidence before personalizing this message.',

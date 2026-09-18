@@ -342,6 +342,24 @@ test("controlled test is allowlisted, idempotent and excludes automatic follow-u
     const [campaign] =
       await db.sql`select c.is_test from em_campaigns c join em_threads t on t.campaign_id=c.id where t.id=${a.threadId}`;
     assert.equal(campaign.is_test, true);
+    // Repeated owner-requested samples may coexist; ordinary outreach must not.
+    const second = await queueControlledTest(db.sql, owner, { ...input, idempotencyKey: randomUUID() }, now);
+    const result = await processNextDispatch(db.sql, owner, {
+      now, intentId: second.entityId, allowlistedTest: "owner@example.test",
+      send: async (_key, payload) => {
+        sends++;
+        assert.deepEqual(payload.to, ["owner@example.test"]);
+        return { state: "accepted", providerId: randomUUID() };
+      },
+    });
+    assert.equal(result.state, "accepted");
+    assert.equal(sends, 2);
+    const { contactHygieneReasons } = await import('../../src/lib/email/hygiene/guards');
+    const [testThread] = await db.sql`select party_id,address_id from em_threads where id=${second.threadId}`;
+    const hygieneInput = { workspaceId: db.workspaceId, partyId: testThread.party_id, addressId: testThread.address_id, threadId: second.threadId, now };
+    assert.ok((await contactHygieneReasons(db.sql as unknown as Tx, hygieneInput)).includes('Person already has an active conversation'));
+    await db.sql`update em_campaigns set is_test=false where id=(select campaign_id from em_threads where id=${a.threadId})`;
+    assert.ok((await contactHygieneReasons(db.sql as unknown as Tx, { ...hygieneInput, ignoreOtherTestThreads: true })).includes('Person already has an active conversation'));
   }));
 
 import { enableTestedSending } from "../../src/lib/email/setup/readiness";

@@ -87,7 +87,7 @@ export async function processNextDispatch(
       where m.workspace_id=${ws.id} and m.auth_user_id=${intent.controller_user_id} and m.active
       and m.roles && array['owner','reviewer','acquisitions']::text[]`
       ).length > 0;
-    const hygiene = await contactHygieneReasons(tx, { workspaceId: ws.id, partyId: intent.party_id, addressId: intent.address_id, now, threadId: intent.thread_id, sequence: intent.origin === "sequence", recontactDays: intent.campaign_config.recontactDays });
+    const hygiene = await contactHygieneReasons(tx, { workspaceId: ws.id, partyId: intent.party_id, addressId: intent.address_id, now, threadId: intent.thread_id, sequence: intent.origin === "sequence", recontactDays: intent.campaign_config.recontactDays, ignoreOtherTestThreads: Boolean(intent.is_test && options.allowlistedTest) });
     const invalid =
       hygiene.length > 0 || restriction ||
       !active ||

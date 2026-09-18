@@ -45,3 +45,7 @@ Validation: 10 targeted database regressions passed, including source provenance
 ## Hosted identity review correction
 
 The first hosted save exposed that audience review attempted direct canonical writes although the email runtime only has SELECT on those tables. `20261110124000_email_review_identity_command.sql` replaces that path with a bounded definer command: active owner/marketer, current audience row, source evidence, matching existing identity, serialized identity/property resolution, no Lead creation. Canonical table write permissions remain unavailable to the runtime. The regression runs the complete review under a restricted database role and checks repeat safety and denied reader access.
+
+## Repeated owner sample correction
+
+Live sample dispatch was cancelled before the provider attempt because an older controlled sample remained active. Allowlisted controlled samples now ignore only other test conversations in the duplicate-conversation check. Real active conversations, opt-outs, identity checks and all other delivery guards remain enforced. Regression covers a second sample, ordinary duplicate-contact blocking and a real conversation blocking a test. Sample-send errors now use plain language.
