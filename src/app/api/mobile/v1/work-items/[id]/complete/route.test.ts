@@ -22,7 +22,7 @@ describe('mobile work-item completion', () => {
 
   it('completes through the versioned canonical work-item service', async () => {
     const response = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/work-items/x/complete', {
-      method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: 2 }),
+      method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json', 'Idempotency-Key': 'complete-task-1' }, body: JSON.stringify({ expectedVersion: 2 }),
     }), context)
 
     expect(response.status).toBe(200)

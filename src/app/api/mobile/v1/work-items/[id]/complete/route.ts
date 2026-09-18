@@ -20,11 +20,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params
     if (!id) return NextResponse.json({ error: 'Work item id is required.' }, { status: 400, headers: mobileNoStoreHeaders() })
     const body = await req.json().catch(() => ({})) as { expectedVersion?: unknown }
+    const idempotencyKey = req.headers.get('idempotency-key')?.trim() || ''
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 200) {
+      return NextResponse.json({ error: 'A stable Idempotency-Key is required.' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
     const result = await transitionWorkItem({
       key: id,
       actor: actor.name,
       action: 'complete',
-      idempotencyKey: req.headers.get('idempotency-key')?.trim() || crypto.randomUUID(),
+      idempotencyKey,
       expectedVersion: typeof body.expectedVersion === 'number' ? body.expectedVersion : null,
     })
     return NextResponse.json({
