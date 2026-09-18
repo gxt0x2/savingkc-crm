@@ -31,6 +31,30 @@ function pipelineList(value: string | null): PipelineList {
   return PIPELINE_LISTS.includes(value as PipelineList) ? value as PipelineList : 'contacted'
 }
 
+type DirectoryPage = Awaited<ReturnType<typeof readContactDirectoryPage>>
+
+function mergeSearchPages(pages: DirectoryPage[], limit: number): DirectoryPage {
+  const activePage = pages[0]
+  const items = Array.from(new Map(
+    pages.flatMap((page) => page.items).map((item) => [item.id, item]),
+  ).values())
+    .sort((left, right) => {
+      const activityDelta = Date.parse(right.last_activity_at) - Date.parse(left.last_activity_at)
+      return activityDelta || left.id.localeCompare(right.id)
+    })
+    .slice(0, limit)
+
+  return {
+    ...activePage,
+    items,
+    totalCount: pages.reduce((total, page) => total + page.totalCount, 0),
+    // Global contact search is deliberately bounded instead of pretending one
+    // cursor can continue three independently ordered canonical scopes.
+    hasMore: false,
+    nextCursor: null,
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     await requireMobileUser(req)
@@ -40,13 +64,15 @@ export async function GET(req: NextRequest) {
       ? Math.min(Math.max(requestedLimit, 1), 50)
       : 25
     const list = pipelineList(searchParams.get('list'))
-    const page = await readContactDirectoryPage({
-      smartList: list,
-      scope: 'active',
-      limit,
-      cursor: decodeContactDirectoryCursor(searchParams.get('cursor')?.trim() || null),
+    const search = searchParams.get('q')?.trim() || ''
+    const cursor = decodeContactDirectoryCursor(searchParams.get('cursor')?.trim() || null)
+    const directoryQuery = (smartList: string, scope: string, queryLimit = limit) => ({
+      smartList,
+      scope,
+      limit: queryLimit,
+      cursor,
       sort: 'recent',
-      search: searchParams.get('q')?.trim() || '',
+      search,
       owner: '',
       stage: '',
       minimumStage: '',
@@ -58,6 +84,13 @@ export async function GET(req: NextRequest) {
       dataGap: '',
       referenceTime: new Date().toISOString(),
     })
+    const page = list === 'all' && search && !cursor
+      ? mergeSearchPages(await Promise.all([
+        readContactDirectoryPage(directoryQuery('all', 'active', 50)),
+        readContactDirectoryPage(directoryQuery('prospects', 'prospects', 50)),
+        readContactDirectoryPage(directoryQuery('not_leads', 'not_leads', 50)),
+      ]), limit)
+      : await readContactDirectoryPage(directoryQuery(list, 'active'))
 
     const leads = page.items.map((item) => ({
       id: item.id,

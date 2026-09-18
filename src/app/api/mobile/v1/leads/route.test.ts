@@ -67,6 +67,44 @@ describe('mobile Pipeline', () => {
     })
   })
 
+  it('searches active, prospect, and not-lead scopes without broadening mutation authority', async () => {
+    const page = (id: string, name: string, station: string, classification: string | null) => ({
+      items: [{
+        id, full_name: name, station, classification, last_activity_at: `2026-09-1${id}T12:00:00Z`,
+        is_favorite: false, score: 0,
+      }],
+      totalCount: 1,
+      hasMore: false,
+      nextCursor: null,
+      smartListCounts: { all: 4 },
+    })
+    mocks.readPage
+      .mockResolvedValueOnce(page('1', 'Active Seller', 'contacted', 'lead'))
+      .mockResolvedValueOnce(page('2', 'Ernest Prenest', 'new', null))
+      .mockResolvedValueOnce(page('3', 'Closed Seller', 'dead', 'dead'))
+
+    const response = await GET(request('?list=all&q=Ernest%20Prenest&limit=50'))
+
+    expect(mocks.readPage).toHaveBeenCalledTimes(3)
+    expect(mocks.readPage).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      smartList: 'all', scope: 'active', search: 'Ernest Prenest', limit: 50, cursor: null,
+    }))
+    expect(mocks.readPage).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      smartList: 'prospects', scope: 'prospects', search: 'Ernest Prenest', limit: 50, cursor: null,
+    }))
+    expect(mocks.readPage).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      smartList: 'not_leads', scope: 'not_leads', search: 'Ernest Prenest', limit: 50, cursor: null,
+    }))
+    await expect(response.json()).resolves.toMatchObject({
+      leads: [
+        { id: '3', station: 'dead' },
+        { id: '2', full_name: 'Ernest Prenest', station: 'new' },
+        { id: '1', station: 'contacted' },
+      ],
+      pageInfo: { total: 3, hasMore: false, nextCursor: null },
+    })
+  })
+
   it('defaults unknown lists and clamps page size', async () => {
     await GET(request('?list=legacy&limit=500'))
 
