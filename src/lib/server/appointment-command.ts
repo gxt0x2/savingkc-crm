@@ -7,6 +7,7 @@ export type AppointmentCommandResult =
   | {
       ok: true
       command: {
+        appointmentId?: string
         leadId: string
         type: OperatorAppointmentType
         scheduledAt: string
@@ -29,6 +30,10 @@ export function buildAppointmentCommand(input: unknown, actorName: string, now =
   }
   const body = input as Record<string, unknown>
   const leadId = cleanText(body.leadId, 100)
+  const appointmentId = cleanText(body.appointmentId, 100)
+  if (appointmentId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(appointmentId)) {
+    return { ok: false, error: 'Invalid appointment identifier', status: 400 }
+  }
   const scheduledText = cleanText(body.scheduledAt, 100)
   const scheduledMs = scheduledText ? new Date(scheduledText).getTime() : Number.NaN
   const latestAllowed = now + (2 * 365 * 24 * 60 * 60 * 1000)
@@ -49,6 +54,7 @@ export function buildAppointmentCommand(input: unknown, actorName: string, now =
   return {
     ok: true,
     command: {
+      ...(appointmentId ? { appointmentId } : {}),
       leadId,
       type: requestedType as OperatorAppointmentType,
       scheduledAt: new Date(scheduledMs).toISOString(),

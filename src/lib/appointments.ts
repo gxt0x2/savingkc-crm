@@ -20,6 +20,7 @@ export interface AppointmentRow {
 }
 
 interface UpsertInput {
+  appointmentId?: string
   leadId: string
   scheduledAt: string
   type?: AppointmentType
@@ -28,33 +29,45 @@ interface UpsertInput {
   source: AppointmentSource
   sourceCallId?: string | null
   assignedTo?: string | null
+  sequenceEnabled?: boolean
 }
 
 const DEDUP_WINDOW_MIN = 60
 
 // Upsert an appointment for a lead. Dedup window: if a non-terminal
-// appointment exists within ±60 minutes of scheduledAt, update that one
-// instead of inserting a new row. Reschedules to a different day always
-// get a fresh row so we keep history.
+// appointment exists within ±60 minutes of scheduledAt, update that one.
+// The CRM editor uses the atomic sequence RPC and explicit appointment ID
+// so reschedules also invalidate reminders for the previously selected time.
 export async function upsertAppointmentFromCall(input: UpsertInput): Promise<AppointmentRow | null> {
   const db = supabaseAdmin()
   const target = new Date(input.scheduledAt).getTime()
   if (!Number.isFinite(target)) return null
+  if (input.sequenceEnabled !== undefined) {
+    const { data, error } = await db.rpc('upsert_sequence_appointment_v1', {
+      p_appointment_id: input.appointmentId || null, p_lead_id: input.leadId,
+      p_scheduled_at: new Date(target).toISOString(), p_type: input.type || 'phone_call',
+      p_address: input.address || null, p_notes: input.notes || null,
+      p_assigned_to: input.assignedTo || null, p_enabled: input.sequenceEnabled,
+    })
+    if (error) { console.error('[appointments] sequence booking failed:', error.message); return null }
+    return (Array.isArray(data) ? data[0] : data) as AppointmentRow | null
+  }
 
   const windowMs = DEDUP_WINDOW_MIN * 60 * 1000
   const lo = new Date(target - windowMs).toISOString()
   const hi = new Date(target + windowMs).toISOString()
 
-  const { data: existing } = await db
+  let lookup = db
     .from('appointments')
     .select('*')
     .eq('lead_id', input.leadId)
     .in('status', ['scheduled', 'confirmed', 'rescheduled'])
-    .gte('scheduled_at', lo)
-    .lte('scheduled_at', hi)
+  lookup = input.appointmentId ? lookup.eq('id', input.appointmentId) : lookup.gte('scheduled_at', lo).lte('scheduled_at', hi)
+  const { data: existing, error: lookupError } = await lookup
     .order('scheduled_at', { ascending: true })
     .limit(1)
     .maybeSingle()
+  if (lookupError || (input.appointmentId && !existing)) return null
 
   const payload: Partial<AppointmentRow> = {
     lead_id: input.leadId,
@@ -81,6 +94,7 @@ export async function upsertAppointmentFromCall(input: UpsertInput): Promise<App
         source_call_id: payload.source_call_id ?? existing.source_call_id,
         assigned_to: payload.assigned_to ?? existing.assigned_to,
         updated_at: payload.updated_at,
+        ...(existing.status === 'rescheduled' ? { status: 'scheduled' } : {}),
       })
       .eq('id', existing.id)
       .select('*')

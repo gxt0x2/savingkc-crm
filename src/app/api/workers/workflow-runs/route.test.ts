@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), execute: vi.fn() }))
+vi.mock('@/lib/server/appointment-sequence', () => ({ processAppointmentSequence: vi.fn().mockResolvedValue({ processed: 0 }) }))
 vi.mock('@/lib/api/admin-auth', () => ({ requireAdminOrSecret: mocks.auth }))
 vi.mock('@/lib/server/workflow-runs', () => ({
   executeNextWorkflowRun: mocks.execute,
