@@ -572,6 +572,25 @@ import { createHmac } from 'node:crypto';
 import { createResendWebhookHttp, webhookSecretAad } from '../../src/lib/email/inbound/capture';
 import { processNextReceivedReply } from '../../src/lib/email/inbound/worker';
 import { processPendingDeliveryEvents } from '../../src/lib/email/inbound/delivery';
+import { readHostedReadiness } from '../../src/lib/email/setup/readiness';
+
+test('campaign readiness requires the selected sender to prove its clean reply route',()=>withDB(async db=>{
+  const intent=await ready(db),providerId=randomUUID();
+  const [thread]=await db.sql`select * from em_threads where id=${intent.thread_id}`;
+  const senderBlocker='Selected sender needs a delivered clean-address test, a matched reply and activation';
+  const readiness=()=>readHostedReadiness(db.sql as unknown as Tx,db.workspaceId,[thread.sender_id]);
+  assert.ok((await readiness()).blockers.includes(senderBlocker));
+  await processNextDispatch(db.sql,owner,{now,send:async()=>({state:'accepted',providerId})});
+  await db.sql`update em_campaigns set is_test=true where id=${thread.campaign_id}`;
+  await db.sql`update em_send_intents set rfc_message_id='<readiness@provider.example.test>' where id=${intent.id}`;
+  const [saved]=await db.sql`select connection_id from em_send_intents where id=${intent.id}`;
+  await db.sql`insert into em_provider_events(workspace_id,connection_id,provider_event_id,type,payload_hash,provider_email_id,state,thread_id) values(${db.workspaceId},${saved.connection_id},${randomUUID()},'email.delivered','fixture',${providerId},'processed',${thread.id})`;
+  assert.ok((await readiness()).blockers.includes(senderBlocker));
+  await db.sql`insert into em_messages(workspace_id,thread_id,direction,text_body,subject,sequence,transport,event_key,content_hash,occurred_at) values(${db.workspaceId},${thread.id},'inbound','Test reply','Re: Test',99,'resend',${randomUUID()},'fixture',${now})`;
+  assert.ok(!(await readiness()).blockers.includes(senderBlocker));
+  await db.sql`update em_senders set state='paused' where id=${thread.sender_id}`;
+  assert.ok((await readiness()).blockers.includes(senderBlocker));
+}));
 
 test('early provider event is reconciled and a queued follow-up gets the real thread header before its first attempt',()=>withDB(async db=>{
   const intent=await ready(db),providerId=randomUUID(),eventId=randomUUID(),rfc='<early-event@provider.example.test>';

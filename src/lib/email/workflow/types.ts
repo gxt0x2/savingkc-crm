@@ -16,6 +16,7 @@ export interface RecipientReview {
   reasons: string[]
 }
 export interface PilotReview {
+  blockers?: string[]
   campaignId: string
   revision: number
   draftHash: string

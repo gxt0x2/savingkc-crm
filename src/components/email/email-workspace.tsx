@@ -29,6 +29,7 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  CAMPAIGN_SENDER_TEST_REQUIRED: 'Complete the listed campaign checks, including a delivered sample and matched reply for the selected sender, before starting.',
   PERSONALIZATION_IDENTITY_REQUIRED: 'Verify the recipient’s identity before personalizing this message.',
   PERSONALIZATION_PROPERTY_REQUIRED: 'Confirm one property and record the evidence before personalizing this message.',
   PERSONALIZATION_NAME_REQUIRED: 'A verified person’s name is required for personalization.',
@@ -840,7 +841,7 @@ export function EmailWorkspace({
                               ))}
                             </select>
                           </label>
-                          {data.mode === 'hosted' && <label>Sender<select disabled={campaign.state !== 'draft'} value={config.senderIds[0] ?? ''} onChange={e => {setConfig({...config,senderIds:[e.target.value]});setReview(null)}}><option value="">Choose a tested sender</option>{(data.senders ?? []).map(s => <option key={s.id} value={s.id}>{s.name} · {s.address}</option>)}</select></label>}
+                          {data.mode === 'hosted' && <label>Sender<select disabled={campaign.state !== 'draft'} value={config.senderIds[0] ?? ''} onChange={e => {setConfig({...config,senderIds:[e.target.value]});setReview(null)}}><option value="">Choose a sender</option>{(data.sampleSenders ?? []).map(s => <option key={s.id} value={s.id}>{s.name} · {s.address}{s.state === 'paused' ? ' · test pending' : ''}</option>)}</select></label>}
                           {campaign.state === 'draft' && <div>
                             <button onClick={() => { setConfig(inheritedPropertyCopy(config)); setReview(null) }}>Use inherited-property sequence</button>
                             <p>Verified fields: {'{{first_name}}'}, {'{{property_address}}'}, {'{{property_question}}'}. Family wording requires a confirmed heir relationship. Missing or ambiguous facts block sending. Save, then review each person’s exact messages.</p>
@@ -1050,10 +1051,12 @@ export function EmailWorkspace({
                                       </button>
                                     </div>
                                   )}
+                                  {!!review.blockers?.length && <div role="status"><strong>Before starting</strong><ul>{review.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul></div>}
                                   <button
                                     className={styles.primary}
                                     disabled={
                                       busy ||
+                                      !!review.blockers?.length ||
                                       !review.recipients.some((r) => r.eligible)
                                     }
                                     onClick={() =>

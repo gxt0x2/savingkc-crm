@@ -8,7 +8,7 @@ import { emailWorkspaceConfigSchema } from "../config";
 import { normalizePhoneToE164 } from '@/lib/phone-normalize';
 import { leadSmsEnabled } from '../notifications/sms-provider';
 
-export async function readHostedReadiness(tx: Tx, workspaceId: string) {
+export async function readHostedReadiness(tx: Tx, workspaceId: string, senderIds?: string[]) {
   const [workspace] =
     await tx`select config,send_enabled,execution_mode,revision,pause_reason from em_workspaces where id=${workspaceId}`;
   const config = emailWorkspaceConfigSchema.parse(workspace.config);
@@ -47,6 +47,19 @@ export async function readHostedReadiness(tx: Tx, workspaceId: string) {
     blockers.push("Unsubscribe configuration");
   if (!counts.complete_tests)
     blockers.push("Delivered test email and received reply");
+  if (senderIds) {
+    const tested = await tx`select distinct t.sender_id from em_threads t
+      join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id
+      join em_senders s on s.id=t.sender_id and s.workspace_id=t.workspace_id
+      join em_domains d on d.id=s.domain_id and d.workspace_id=s.workspace_id
+      where t.workspace_id=${workspaceId} and c.is_test and s.state='active'
+      and t.sender_id=any(${tx.array(senderIds)}::uuid[])
+      and exists(select 1 from em_send_intents i where i.thread_id=t.id and i.workspace_id=t.workspace_id and i.state='accepted' and i.rfc_message_id is not null and lower(i.provider_payload->>'reply_to')=lower(s.local_part||'@'||d.name_ascii))
+      and exists(select 1 from em_messages m where m.thread_id=t.id and m.transport='resend' and m.direction='inbound')
+      and exists(select 1 from em_provider_events e where e.thread_id=t.id and e.type='email.delivered' and e.state='processed')`;
+    if (!senderIds.length || senderIds.some(id => !tested.some(row => row.sender_id === id)))
+      blockers.push('Selected sender needs a delivered clean-address test, a matched reply and activation');
+  }
   if (process.env.EMAIL_RECEIVING_WORKER_ENABLED !== "true")
     blockers.push("Reply-processing worker");
   if (process.env.EMAIL_DISPATCH_WORKER_ENABLED !== "true")

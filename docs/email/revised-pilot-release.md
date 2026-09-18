@@ -13,6 +13,7 @@ The pilot remains a draft. Implementation is not permission to start it.
 - Unmatched replies hold outreach and are surfaced for review after bounded retries. A known sender's fresh opt-out is honored without inventing a conversation match.
 - First bounce, complaint or provider suppression pauses the affected non-test campaign, cancels pending sequence sends and alerts its owner. It never restarts automatically.
 - Exact campaign samples are scoped to the requested intent and configured owner inbox. Personalized samples require reviewed source facts. Accepted attempts are not sent again by a repeated request.
+- Drafts can select a sender whose test is pending. Launch requires that specific sender to have a delivered clean-address sample, matched inbound reply and active state; another sender's earlier test does not qualify it.
 
 ## Migration
 
@@ -23,6 +24,7 @@ Apply `20261110122000_email_reply_message_ids.sql` before the application releas
 - Full email database suite: 126 passing before the final unthreaded-opt-out addition.
 - Revised dispatch suite: 19 passing, including unthreaded opt-out and unmatched callback hold.
 - Additional early-webhook/follow-up-threading regression: passed.
+- Selected-sender readiness regression: passed.
 - Email unit suite: 122 passing. TypeScript, changed-file lint and canonical build gate pass.
 - Live Resend domain configuration inspected: tracking metrics not configured; no tracking subdomain added.
 

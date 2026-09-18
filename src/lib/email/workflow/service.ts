@@ -269,6 +269,7 @@ async function review(
     }),
     // This token is explicitly simulation-only, never provider readiness.
     readinessRunId: campaign.id,
+    blockers: workspace.execution_mode === 'hosted' ? (await readHostedReadiness(tx, member.workspace_id, config.senderIds)).blockers : [],
   }
 }
 
@@ -447,6 +448,7 @@ export async function executePilotCommand(
           'DRAFT_CHANGED',
         )
         const current = await review(context, campaign.id)
+        check(!current.blockers?.length, 'CAMPAIGN_SENDER_TEST_REQUIRED')
         check(
           current.draftHash === command.payload.draftHash &&
             current.audienceHash === command.payload.audienceHash &&
