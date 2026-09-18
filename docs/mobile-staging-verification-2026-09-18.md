@@ -120,10 +120,22 @@ Direct transactional staging verification then proved:
   no provider call, calendar event, SMS, or email was attempted.
 
 The database also enforces a 15-minute minimum and 24-hour maximum appointment
-duration. Authenticated HTTP verification is still blocked: the pulled preview
-environment contains an empty staging service-role value, so the local route
-correctly returned `503` rather than bypassing server authorization. No HTTP or
-two-phone success is claimed for the canonical appointment route yet.
+duration. A local route without a service-role value correctly returned `503`
+rather than bypassing server authorization.
+
+The exact rebased branch head `1470ad9ff4f1ecba4ce2d3e5bc1b5824a91160f3`
+then deployed as preview `dpl_64wgV4MwdbztQdPXWGj8HiuZ12hs` at
+`https://savingkc-25b47l3yw-gxt0x2s-projects.vercel.app`. Its build log confirms
+that the canonical gate passed, commit `1470ad9` was cloned, all appointment
+routes were built, and `TEST_MODE` disabled SMS and email delivery.
+
+Authenticated hosted HTTP verification used independent Ernest and Casey
+sessions and proved the same create/replay/conflict/edit/stale-version/
+reschedule/cancel sequence. Hosted appointment
+`f3623a55-8b27-49da-a080-fd36fdf4cbcc` remained one row across versions 1–4;
+both users read the same version 3/start time before cancellation; the final
+active-calendar count was zero. This is two-user API continuity, not a physical
+two-phone result.
 
 ## Hosted-preview incident boundary
 
@@ -134,6 +146,6 @@ Vercel accepted two preview-only artifacts for this source:
 
 Both later became `READY` after Vercel incident `bwkmw4hmrgmk`, “Elevated Errors
 Triggering Deployments,” cleared. They predate the canonical appointment adapter
-and therefore do not verify the new routes. Hosted status remains blocked until
-a new exact-source preview is `READY`, has the staging service-role value, and
-repeats the authenticated checks above.
+and remain historical only. The new exact-source preview
+`dpl_64wgV4MwdbztQdPXWGj8HiuZ12hs` is `READY` and passed the authenticated checks
+above. It is a preview, not a production release.
