@@ -92,7 +92,7 @@ customer communication was attempted.
 
 ## Canonical appointment contract
 
-Backend source `df8efa58210c53f3ca4cebad6515f9ccc07519eb` contains the
+Backend source `eeeeb1f56fbedfb707a4042ae77b808464428240` contains the
 fixed mobile routes, server-derived actor handling, canonical appointment
 service, and staging migration. Its 21 focused tests, 4 GB TypeScript gate, and
 direct Next.js webpack production build all pass.
