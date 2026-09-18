@@ -1,5 +1,5 @@
 import { suppressionTargets } from '../hygiene/suppression'
-import { contactHygieneReasons } from '../hygiene/guards'
+import { contactHygieneReasons, selectInitialAddresses } from '../hygiene/guards'
 import 'server-only'
 import { callbackRequest, isCallbackTest, stoppedCallback, annotateCallbackRequests, recordCallbackTest } from './callback-review'
 import { commandAllowedInMode } from './mode'
@@ -305,9 +305,71 @@ export async function executePilotCommand(
     const ws = member.workspace_id
     if (isSettingsCommand(command.command))
       return applySettingsCommand(context, command)
-    if (command.command.startsWith('CAM-'))
+    if (command.command.startsWith('CAM-') || command.command === 'AUD-RESOLVE')
       check(canManage(member), 'FORBIDDEN', 403)
     switch (command.command) {
+      case 'AUD-RESOLVE': {
+        check(command.payload.resolution === 'link_existing', 'UNSUPPORTED_IDENTITY_RESOLUTION', 400)
+        check(command.payload.partyId && command.payload.propertyRef, 'IDENTITY_AND_PROPERTY_REQUIRED', 400)
+        const [rowAudience] = await tx`select s.audience_id
+          from em_snapshot_rows r join em_audience_snapshots s on s.id=r.snapshot_id and s.workspace_id=r.workspace_id
+          where r.workspace_id=${ws} and r.id=${command.payload.rowId} and r.party_id=${command.payload.partyId}`
+        check(rowAudience, 'RECIPIENT_NOT_FOUND', 404)
+        await tx`select id from em_audiences where workspace_id=${ws} and id=${rowAudience.audience_id} for update`
+        const [row] = await tx`select r.id,r.party_id,r.address_id,r.snapshot_id,a.normalized_address,p.display_name,
+            s.audience_id,s.source_revision,s.content_hash,s.row_count
+          from em_snapshot_rows r
+          join em_addresses a on a.id=r.address_id and a.workspace_id=r.workspace_id
+          join em_parties p on p.id=r.party_id and p.workspace_id=r.workspace_id
+          join em_audience_snapshots s on s.id=r.snapshot_id and s.workspace_id=r.workspace_id
+          where r.workspace_id=${ws} and r.id=${command.payload.rowId} and r.party_id=${command.payload.partyId}
+            and s.id=(select id from em_audience_snapshots where workspace_id=${ws} and audience_id=${rowAudience.audience_id} order by source_revision desc limit 1)
+          for update of r,p`
+        check(row, 'RECIPIENT_NOT_FOUND', 404)
+        const [method] = await tx`select id,person_id from crm_contact_methods where method_type='email' and normalized_value=${row.normalized_address} for update`
+        let personId = method?.person_id as string | null
+        if (!personId) {
+          const [person] = await tx`insert into crm_people(display_name) values(${row.display_name}) returning id`
+          personId = person.id
+          if (method)
+            await tx`update crm_contact_methods set person_id=${personId},is_primary=true,deliverability_status='valid',updated_at=${now} where id=${method.id}`
+          else
+            await tx`insert into crm_contact_methods(person_id,method_type,raw_value,normalized_value,label,is_primary,deliverability_status,sms_consent_status,consent_source,consent_observed_at)
+              values(${personId},'email',${row.normalized_address},${row.normalized_address},'campaign verified',true,'valid','not_applicable','ZeroBounce and human identity review',${now})`
+        }
+        await tx`update em_parties set kind='seller',identity_state='confirmed',canonical_person_id=${personId},identity_evidence=${tx.json({ source: 'human_assessment', evidence: command.payload.evidence })},updated_at=${now}
+          where workspace_id=${ws} and id=${row.party_id}`
+        await tx`update em_party_addresses set relationship='confirmed',confirmed_by=${subject},confirmed_at=${now},evidence=${tx.json({ source: 'human_assessment', evidence: command.payload.evidence })}
+          where workspace_id=${ws} and party_id=${row.party_id} and address_id=${row.address_id}`
+        const normalizedProperty = command.payload.propertyRef.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+        let [property] = await tx`select id,address from crm_properties where lower(address)=lower(${command.payload.propertyRef}) or normalized_address=${normalizedProperty} limit 2 for update`
+        if (!property)
+          [property] = await tx`insert into crm_properties(normalized_address,address) values(${normalizedProperty},${command.payload.propertyRef.trim()}) returning id,address`
+        await tx`insert into em_party_properties(workspace_id,party_id,canonical_property_id,address,relationship,evidence)
+          values(${ws},${row.party_id},${property.id},${property.address},'representative',${tx.json({ source: 'human_assessment', evidence: command.payload.evidence })})
+          on conflict(workspace_id,party_id,canonical_property_id) where canonical_property_id is not null
+          do update set relationship='representative',evidence=excluded.evidence,revision=em_party_properties.revision+1`
+        await selectInitialAddresses(tx, ws, row.party_id)
+        const evidenceHash = workflowHash({
+          prior: row.content_hash,
+          partyId: row.party_id,
+          addressId: row.address_id,
+          propertyRef: command.payload.propertyRef.trim(),
+          evidence: command.payload.evidence,
+        })
+        const [{ eligible_count: eligibleCount }] = await tx`select count(*) filter(where eligibility='eligible' or id=${row.id})::int as eligible_count
+          from em_snapshot_rows where workspace_id=${ws} and snapshot_id=${row.snapshot_id}`
+        const [nextSnapshot] = await tx`insert into em_audience_snapshots(workspace_id,audience_id,source_revision,content_hash,row_count,eligible_count,created_by)
+          values(${ws},${row.audience_id},${Number(row.source_revision) + 1},${evidenceHash},${row.row_count},${eligibleCount},${subject}) returning id,source_revision`
+        await tx`insert into em_snapshot_rows(workspace_id,snapshot_id,party_id,address_id,property_ref,eligibility,reason_codes,evidence_hash)
+          select workspace_id,${nextSnapshot.id},party_id,address_id,
+            case when id=${row.id} then ${command.payload.propertyRef.trim()} else property_ref end,
+            case when id=${row.id} then 'eligible' else eligibility end,
+            case when id=${row.id} then '{}'::text[] else reason_codes end,
+            case when id=${row.id} then ${evidenceHash} else evidence_hash end
+          from em_snapshot_rows where workspace_id=${ws} and snapshot_id=${row.snapshot_id}`
+        return { entityId: nextSnapshot.id, revision: Number(nextSnapshot.source_revision), state: 'recipient_identity_confirmed' }
+      }
       case 'CAM-CREATE': {
         check(
           command.payload.program === 'seller_outreach',

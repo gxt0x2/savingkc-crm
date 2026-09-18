@@ -34,6 +34,42 @@ const withDb = (name: string, run: (db: Database) => Promise<void>) =>
     }
   })
 
+withDb('owner confirms a reviewed recipient without creating a Lead', async (db) => {
+  const [snapshot] = await db.sql`insert into em_audience_snapshots(workspace_id,audience_id,source_revision,content_hash,row_count,eligible_count)
+    values(${db.workspaceId},${db.audienceId},2,'identity-review-fixture',1,0) returning id`
+  const [party] = await db.sql`insert into em_parties(workspace_id,display_name,kind,identity_state,identity_evidence)
+    values(${db.workspaceId},'Reviewed Relative','unknown','unresolved','{}') returning id`
+  const [address] = await db.sql`insert into em_addresses(workspace_id,raw_address,normalized_address,verification_state,verification_expires_at)
+    values(${db.workspaceId},'reviewed@example.test','reviewed@example.test','valid','2027-01-01') returning id`
+  await db.sql`insert into em_party_addresses(workspace_id,party_id,address_id,relationship,evidence)
+    values(${db.workspaceId},${party.id},${address.id},'candidate','{}')`
+  const [row] = await db.sql`insert into em_snapshot_rows(workspace_id,snapshot_id,party_id,address_id,eligibility,reason_codes,evidence_hash)
+    values(${db.workspaceId},${snapshot.id},${party.id},${address.id},'needs_review',array['identity_review'],'identity-review-fixture') returning id`
+  const command = {
+    command: 'AUD-RESOLVE',
+    idempotencyKey: randomUUID(),
+    payload: {
+      rowId: row.id,
+      partyId: party.id,
+      propertyRef: '101 Fixture Avenue',
+      resolution: 'link_existing',
+      evidence: [{ source: 'human_assessment', quote: 'Two reviewed sources match this person and property.' }],
+    },
+  }
+  await rejects(executePilotCommand(db.sql, reader, command, now), 'FORBIDDEN')
+  const result = await executePilotCommand(db.sql, owner, command, now)
+  assert.equal(result.state, 'recipient_identity_confirmed')
+  assert.equal((await db.sql`select * from leads where email='reviewed@example.test'`).length, 0)
+  const [confirmed] = await db.sql`select p.identity_state,p.canonical_person_id,pa.relationship,r.eligibility
+    from em_parties p join em_party_addresses pa on pa.party_id=p.id join em_snapshot_rows r on r.party_id=p.id
+    join em_audience_snapshots s on s.id=r.snapshot_id
+    where p.id=${party.id} order by s.source_revision desc limit 1`
+  assert.equal(confirmed.identity_state, 'confirmed')
+  assert.ok(confirmed.canonical_person_id)
+  assert.equal(confirmed.relationship, 'confirmed')
+  assert.equal(confirmed.eligibility, 'eligible')
+})
+
 withDb(
   'focused actions persist canonical notes and fenced manual callbacks without qualification',
   async (db) => {

@@ -168,6 +168,7 @@ export function EmailWorkspace({
   const [config, setConfig] = useState<PilotConfig | null>(null)
   const [review, setReview] = useState<PilotReview | null>(null)
   const [newName, setNewName] = useState('')
+  const [recipientProperties, setRecipientProperties] = useState<Record<string, string>>({})
   const [showSimulation, setShowSimulation] = useState(false)
   const [simulationBody, setSimulationBody] = useState(
     'I might consider selling. Call me at 816-555-0101. Tomorrow afternoon works.',
@@ -297,6 +298,8 @@ export function EmailWorkspace({
             crm_repair_pending:
               'CRM still needs repair. The pending update is saved, and marketing restrictions remain in effect.',
             paused: 'Sending paused.',
+            recipient_identity_confirmed:
+              'Person, mailbox and property confirmed. Campaign eligibility was recalculated.',
           }[body.state as string] ?? ''),
       )
       return body as { entityId: string; state: string }
@@ -908,6 +911,47 @@ export function EmailWorkspace({
                                             ? (data.mode === 'hosted' ? 'Eligible for reviewed campaign' : 'Ready for local practice')
                                             : r.reasons.join(' · ')}
                                         </small>
+                                        {!r.eligible && r.reasons.includes('Identity needs review') && (
+                                          <div>
+                                            <label>
+                                              Property address for this person
+                                              <input
+                                                value={recipientProperties[r.id] ?? ''}
+                                                placeholder="Street address, city"
+                                                onChange={(event) =>
+                                                  setRecipientProperties((current) => ({
+                                                    ...current,
+                                                    [r.id]: event.target.value,
+                                                  }))
+                                                }
+                                              />
+                                            </label>
+                                            <button
+                                              disabled={busy || !(recipientProperties[r.id]?.trim())}
+                                              onClick={async () => {
+                                                const saved = await act({
+                                                  command: 'AUD-RESOLVE',
+                                                  idempotencyKey: crypto.randomUUID(),
+                                                  payload: {
+                                                    rowId: r.id,
+                                                    partyId: r.partyId,
+                                                    propertyRef: recipientProperties[r.id].trim(),
+                                                    resolution: 'link_existing',
+                                                    evidence: [
+                                                      {
+                                                        source: 'human_assessment',
+                                                        quote: 'Recipient identity, current verified mailbox and property relationship reviewed for the bounded pilot.',
+                                                      },
+                                                    ],
+                                                  },
+                                                })
+                                                if (saved) await fetchReview(campaign.id)
+                                              }}
+                                            >
+                                              Confirm person + property
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
