@@ -14,7 +14,7 @@ vi.mock('@/lib/supabase/env', () => ({
   getSupabasePublicKey: () => 'public-key',
 }))
 
-import { MobileAuthError, requireMobileActor } from './auth'
+import { MobileAuthError, requireMobileActor, requireMobileUser } from './auth'
 
 function request() {
   return new Request('https://crm.savingkc.com/api/mobile/v1/work', {
@@ -61,5 +61,17 @@ describe('mobile bearer actor resolution', () => {
 
     await expect(requireMobileActor(request())).rejects.toBeInstanceOf(MobileAuthError)
     expect(mocks.admin).not.toHaveBeenCalled()
+  })
+
+  it('rejects a valid bearer for an account outside the mobile operating roster', async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: { id: 'user-2', email: 'outsider@example.com' } },
+      error: null,
+    })
+
+    await expect(requireMobileUser(request())).rejects.toMatchObject<Partial<MobileAuthError>>({
+      status: 403,
+      message: 'Authenticated user is not authorized for the mobile CRM',
+    })
   })
 })

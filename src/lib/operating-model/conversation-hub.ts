@@ -46,6 +46,8 @@ export interface ConversationHubThread extends ConversationHubLead {
   lastMessage: string
   lastActivityAt: string
   lastChannel: 'call' | 'sms' | 'email' | 'voicemail' | null
+  lastActivityId: string | null
+  lastDirection: 'inbound' | 'outbound' | null
   lastCallOutcome: CallOutcomePresentation | null
   primaryNextAction: {
     id: string
@@ -258,6 +260,8 @@ export function buildConversationHubThread(
             ? 'email'
             : 'call'
       : null,
+    lastActivityId: latestComm?.id ?? null,
+    lastDirection: latestComm ? getConversationDirection(latestComm) : null,
     lastCallOutcome: latestComm && ['call', 'missed_call', 'voicemail'].includes(latestComm.activity_type)
       ? getCallOutcomePresentation(latestComm)
       : null,

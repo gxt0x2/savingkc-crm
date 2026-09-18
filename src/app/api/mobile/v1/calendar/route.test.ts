@@ -36,12 +36,14 @@ describe('mobile Calendar', () => {
       {
         key: 'activity:task-1', kind: 'appointment', title: 'Seller appointment', description: null,
         status: 'pending', priority: 'high', dueAt: '2026-09-18T15:00:00Z', assignedTo: 'Ernest',
-        department: 'acquisitions', leadId: 'lead-1',
+        department: 'acquisitions', leadId: 'lead-1', sourceKind: 'activity', sourceId: 'task-1',
+        version: 3, updatedAt: '2026-09-18T14:00:00Z',
       },
       {
         key: 'activity:task-2', kind: 'task', title: 'No-date task', description: null,
         status: 'pending', priority: 'normal', dueAt: null, assignedTo: 'Ernest',
-        department: 'acquisitions', leadId: null,
+        department: 'acquisitions', leadId: null, sourceKind: 'activity', sourceId: 'task-2',
+        version: 1, updatedAt: '2026-09-18T14:00:00Z',
       },
     ])
     mocks.inIds.mockResolvedValue({
@@ -62,6 +64,8 @@ describe('mobile Calendar', () => {
       items: [{
         id: 'activity:task-1', type: 'appointment', contactId: 'lead-1',
         contactName: 'Morgan Seller', propertyAddress: '123 Main St',
+        recordKind: 'work_item', workItemKey: 'activity:task-1', workItemVersion: 3,
+        sourceKind: 'activity', sourceId: 'task-1',
       }],
     })
   })

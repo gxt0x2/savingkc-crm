@@ -43,6 +43,11 @@ export async function GET(req: NextRequest) {
         const contact = item.leadId ? contacts.get(item.leadId) : null
         return {
           id: item.key,
+          recordKind: 'work_item',
+          workItemKey: item.key,
+          workItemVersion: item.version,
+          sourceKind: item.sourceKind,
+          sourceId: item.sourceId,
           type: item.kind,
           title: item.title,
           description: item.description,
@@ -54,6 +59,7 @@ export async function GET(req: NextRequest) {
           department: item.department,
           priority: item.priority,
           status: item.status,
+          updatedAt: item.updatedAt,
         }
       }),
       serverNow: new Date().toISOString(),

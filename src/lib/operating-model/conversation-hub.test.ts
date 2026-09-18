@@ -81,6 +81,8 @@ describe('conversation hub read model', () => {
     expect(thread.unread).toBe(false)
     expect(thread.lastMessage).toBe('Yes, calling shortly.')
     expect(thread.lastChannel).toBe('sms')
+    expect(thread.lastActivityId).toBe('outbound')
+    expect(thread.lastDirection).toBe('outbound')
   })
 
   it('does not let a newer team alert hide an inbound seller reply', () => {

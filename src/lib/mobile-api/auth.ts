@@ -16,7 +16,18 @@ export type MobileApiActor = MobileApiUser & {
 }
 
 export class MobileAuthError extends Error {
-  status = 401
+  constructor(message: string, public readonly status = 401) {
+    super(message)
+  }
+}
+
+function allowedMobileEmails(): Set<string> {
+  return new Set(
+    (process.env.CRM_MOBILE_ALLOWED_EMAILS || 'ernest@savingkc.com,casey@savingkc.com')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  )
 }
 
 export function getBearerToken(req: Request): string | null {
@@ -39,6 +50,11 @@ export async function requireMobileUser(req: Request): Promise<MobileApiUser> {
 
   const { data, error } = await supabase.auth.getUser(accessToken)
   if (error || !data.user) throw new MobileAuthError('Invalid bearer token')
+
+  const email = data.user.email?.trim().toLowerCase() ?? ''
+  if (!email || !allowedMobileEmails().has(email)) {
+    throw new MobileAuthError('Authenticated user is not authorized for the mobile CRM', 403)
+  }
 
   return { accessToken, user: data.user }
 }
