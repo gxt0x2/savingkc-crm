@@ -175,6 +175,7 @@ export function EmailWorkspace({
   )
 
   const requestSequence = useRef(0)
+  const sampleKeys = useRef<Record<string, string>>({})
   const refresh = useCallback(async () => {
     const request = ++requestSequence.current
     const response = await fetch('/api/email/workspace', { cache: 'no-store' })
@@ -323,6 +324,41 @@ export function EmailWorkspace({
       if (!response.ok) throw new Error(body.error?.code ?? body.error)
       setReview(body)
       setCampaignTab('Recipients')
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'EMAIL_UNAVAILABLE'
+      setError(friendly[message] ?? message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function sendCampaignSample(campaign: PilotState['campaigns'][number]) {
+    const senderId = campaign.draft_config.senderIds?.[0]
+    if (!senderId) {
+      setError('Choose and save a tested sender before sending a sample.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    setNotice('')
+    sampleKeys.current[campaign.id] ??= crypto.randomUUID()
+    try {
+      const response = await fetch('/api/email/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send_test',
+          senderId,
+          campaignId: campaign.id,
+          idempotencyKey: sampleKeys.current[campaign.id],
+        }),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error?.code ?? body.error)
+      if (body.delivery?.state !== 'accepted')
+        throw new Error('SAMPLE_DELIVERY_NOT_ACCEPTED')
+      setNotice(`Sample sent to ${body.recipient}. No follow-up was scheduled.`)
+      await refresh()
     } catch (e) {
       const message = e instanceof Error ? e.message : 'EMAIL_UNAVAILABLE'
       setError(friendly[message] ?? message)
@@ -967,6 +1003,14 @@ export function EmailWorkspace({
                                       </article>
                                     ))}
                                   </details>
+                                  {data.mode === 'hosted' && (
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => sendCampaignSample(campaign)}
+                                    >
+                                      Send exact sample
+                                    </button>
+                                  )}
                                   <button
                                     className={styles.primary}
                                     disabled={

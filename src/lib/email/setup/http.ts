@@ -25,6 +25,7 @@ const input = z.discriminatedUnion("action", [
       action: z.literal("send_test"),
       senderId: z.string().uuid(),
       idempotencyKey: z.string().uuid(),
+      campaignId: z.string().uuid().optional(),
     })
     .strict(),
   z.object({ action: z.literal("process_replies") }).strict(),
@@ -88,6 +89,7 @@ export function createHostedSetupHttp(deps: WorkflowHttpDependencies) {
           const queued = await queueControlledTest(sql, subject, {
             senderId: command.senderId,
             idempotencyKey: command.idempotencyKey,
+            campaignId: command.campaignId,
           });
           result = {
             ...queued,

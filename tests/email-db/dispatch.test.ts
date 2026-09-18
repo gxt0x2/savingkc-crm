@@ -303,7 +303,16 @@ test("controlled test is allowlisted, idempotent and excludes automatic follow-u
     process.env.EMAIL_CONTROLLED_RECIPIENT = "owner@example.test";
     const [sender] =
       await db.sql`select id from em_senders where workspace_id=${db.workspaceId}`;
-    const input = { senderId: sender.id, idempotencyKey: randomUUID() };
+    const [saved] = await db.sql`select draft_config from em_campaigns where workspace_id=${db.workspaceId} and not is_test limit 1`;
+    const sampleConfig = {
+      ...saved.draft_config,
+      steps: saved.draft_config.steps.map((step: Record<string, unknown>, index: number) =>
+        index === 0 ? { ...step, subject: "Exact campaign sample", bodyTemplate: "Would selling be worth discussing?" } : step,
+      ),
+    };
+    const [source] = await db.sql`insert into em_campaigns(workspace_id,name,program,owner_id,state,draft_config)
+      values(${db.workspaceId},'Sample source','seller_outreach',${owner},'draft',${db.sql.json(sampleConfig)}) returning id`;
+    const input = { senderId: sender.id, campaignId: source.id, idempotencyKey: randomUUID() };
     const [a, b] = await Promise.all([
       queueControlledTest(db.sql, owner, input, now),
       queueControlledTest(db.sql, owner, input, now),
@@ -317,6 +326,9 @@ test("controlled test is allowlisted, idempotent and excludes automatic follow-u
       send: async (_key, payload) => {
         sends++;
         assert.deepEqual(payload.to, ["owner@example.test"]);
+        assert.equal(payload.subject, "Exact campaign sample");
+        assert.match(payload.text, /Would selling be worth discussing\?/);
+        assert.match(payload.text, /Best regards,/);
         return { state: "accepted", providerId: randomUUID() };
       },
     });

@@ -9,7 +9,11 @@ import { check, workflowHash, type Tx } from "../workflow/core";
 import type { PilotConfig } from "../workflow/types";
 
 export const controlledTestSchema = z
-  .object({ senderId: z.string().uuid(), idempotencyKey: z.string().uuid() })
+  .object({
+    senderId: z.string().uuid(),
+    idempotencyKey: z.string().uuid(),
+    campaignId: z.string().uuid().optional(),
+  })
   .strict();
 /** A real test has its own records and can only target the operator allowlist. */
 export async function queueControlledTest(
@@ -47,6 +51,17 @@ export async function queueControlledTest(
     const [sender] =
       await tx`select id from em_senders where workspace_id=${ws.id} and id=${input.senderId}`;
     check(sender, "SENDER_NOT_FOUND", 404);
+    const [sourceCampaign] = input.campaignId
+      ? await tx`select name,draft_config from em_campaigns where workspace_id=${ws.id} and id=${input.campaignId} and state='draft' and not is_test`
+      : [];
+    if (input.campaignId) check(sourceCampaign, "CAMPAIGN_NOT_FOUND", 404);
+    const sourceConfig = sourceCampaign
+      ? (sourceCampaign.draft_config as PilotConfig)
+      : null;
+    if (sourceConfig) {
+      check(sourceConfig.senderIds.includes(input.senderId), "SENDER_MISMATCH", 400);
+      check(sourceConfig.steps.length === 2, "SAVE_SEQUENCE_FIRST", 400);
+    }
     const [address] =
       await tx`insert into em_addresses(workspace_id,raw_address,normalized_address,verification_state,verification_expires_at)
       values(${ws.id},${recipient!},${recipient!},'valid',${new Date(now.getTime() + 86_400_000)})
@@ -68,8 +83,10 @@ export async function queueControlledTest(
       values(${ws.id},${audience.id},1,${hash},1,1) returning id`;
     await tx`insert into em_snapshot_rows(workspace_id,snapshot_id,party_id,address_id,eligibility,evidence_hash)
       values(${ws.id},${snapshot.id},${party.id},${address.id},'eligible',${hash})`;
-    const text =
+    const text = sourceConfig?.steps[0].bodyTemplate ??
       "Ernest, this is the controlled SavingKC Email setup test you approved. Please reply to this message so we can verify that your response appears in the CRM. This is a system test, not a property inquiry.";
+    const subjectLine = sourceConfig?.steps[0].subject ??
+      "SavingKC Email — controlled setup test";
     const config: PilotConfig = {
       audienceId: audience.id,
       senderIds: [sender.id],
@@ -83,7 +100,7 @@ export async function queueControlledTest(
           delayMinCalendarDays: 0,
           delayMaxCalendarDays: 0,
           targetCalendarDay: 0,
-          subject: "SavingKC Email — controlled setup test",
+          subject: subjectLine,
           bodyTemplate: text,
         },
         {
@@ -110,7 +127,7 @@ export async function queueControlledTest(
       requiredPermissionBasis: "Explicit owner-approved controlled test",
     };
     const [campaign] =
-      await tx`insert into em_campaigns(workspace_id,name,program,owner_id,state,draft_config,is_test) values(${ws.id},'Controlled setup test','seller_outreach',${subject},'draft',${tx.json(config)},true) returning id`;
+      await tx`insert into em_campaigns(workspace_id,name,program,owner_id,state,draft_config,is_test) values(${ws.id},${sourceCampaign ? `Sample: ${sourceCampaign.name}` : 'Controlled setup test'},'seller_outreach',${subject},'draft',${tx.json(config)},true) returning id`;
     const [version] =
       await tx`insert into em_campaign_versions(workspace_id,campaign_id,version_number,snapshot_id,playbook_version_id,config,content_hash,review_hash,published_by)
       values(${ws.id},${campaign.id},1,${snapshot.id},${config.playbookVersionId},${tx.json(config)},${workflowHash(config)},${hash},${subject}) returning id`;
