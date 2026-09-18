@@ -1,3 +1,4 @@
+import { cleanReplyCandidates, resolveReplyThread } from './routing'
 import { holdRelatedOutreach, needsPropertyReview } from '../hygiene/property'
 import 'server-only'
 import { randomUUID } from 'node:crypto'
@@ -21,6 +22,7 @@ import { automaticallyHandoffCallback } from './automatic-callback'
 const retryable = new Set([
   'REPLY_PROVIDER_UNAVAILABLE',
   'REPLY_NOT_READY',
+  'REPLY_ROUTING_NOT_READY',
   'REPLY_RATE_LIMIT',
 ])
 /** One bounded provider GET per claimed job. No sending, attachment fetch or AI. */
@@ -43,7 +45,7 @@ export async function processNextReceivedReply(
     const [event] =
       await tx`select e.*,c.encrypted_secret,c.state as connection_state,ep.active as endpoint_active,ep.revision as endpoint_revision from em_provider_events e join em_service_connections c on c.workspace_id=e.workspace_id and c.id=e.connection_id join em_webhook_endpoints ep on ep.id=e.endpoint_id and ep.connection_id=c.id where e.id=${job.entity_id} and e.workspace_id=${ws.id}`
     if (
-      !event?.thread_id ||
+      !event || (!event.thread_id && event.hold_reason !== 'awaiting_routing_headers') ||
       event.state !== 'pending' ||
       event.connection_state !== 'checked' ||
       !event.endpoint_active
@@ -117,17 +119,26 @@ export async function processNextReceivedReply(
           content.from.toLowerCase() === original.data.from.toLowerCase(),
         'REPLY_IDENTITY_REVIEW',
       )
-      const addresses = (
-        content.received_for?.length ? content.received_for : content.to
-      ).map((a) => a.toLowerCase())
-      const aliases =
-        await tx`select distinct a.thread_id from em_reply_aliases a where a.workspace_id=${ws.id} and a.connection_id=${event.connection_id} and a.address=any(${tx.array(addresses)})`
-      check(
-        aliases.length === 1 && aliases[0].thread_id === event.thread_id,
-        'REPLY_IDENTITY_REVIEW',
-      )
+      const resolvedThread = await resolveReplyThread(tx, ws.id, event.connection_id, content)
+      // An opt-out belongs to the known sender address even when the person starts
+      // a new email. Do not invent a conversation match to honor that request.
+      if (!resolvedThread && content.optOut && event.hold_reason === 'awaiting_routing_headers') {
+        const candidates = await cleanReplyCandidates(tx, ws.id, event.connection_id, content.from, content.received_for?.length ? content.received_for : content.to)
+        check(candidates.length, 'REPLY_IDENTITY_REVIEW')
+        const [address] = await tx`select id from em_addresses where workspace_id=${ws.id} and normalized_address=${content.from.toLowerCase()}`
+        check(address, 'REPLY_IDENTITY_REVIEW')
+        await suppress({tx,member:{workspace_id:ws.id,auth_user_id:subject,roles:['owner']},now}, address.id, 'unsubscribe')
+        await tx`update em_provider_events set state='processed',hold_reason=null,encrypted_content=${tx.json(json(encryptEmailSecret(serialized, key, `${ws.id}/${event.id}/resend-content/1`, 1)))} where id=${event.id}`
+        await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail,created_at) values(${ws.id},${subject},'UNTHREADED-OPTOUT',${address.id},${event.id},${tx.json({providerEventId:event.id,threadMatched:false})},${now})`
+        await tx`update em_threads t set inbound_pending=exists(select 1 from em_provider_events e where e.workspace_id=t.workspace_id and e.type='email.received' and e.state<>'processed' and (e.thread_id=t.id or (e.thread_id is null and e.hold_reason='awaiting_routing_headers'))) where t.workspace_id=${ws.id} and t.address_id=${address.id}`
+        await tx`update em_jobs set state='done',lease_token=null,lease_until=null,last_error=null,updated_at=${now} where id=${job.id} and lease_token=${claim.token}`
+        return {state:'unsubscribed',jobId:job.id,threadMatched:false}
+      }
+      check(resolvedThread, event.hold_reason === 'awaiting_routing_headers' ? 'REPLY_ROUTING_NOT_READY' : 'REPLY_IDENTITY_REVIEW')
+      check(!event.thread_id || event.thread_id === resolvedThread, 'REPLY_IDENTITY_REVIEW')
+      await tx`update em_provider_events set thread_id=${resolvedThread} where id=${event.id}`
       const [thread] =
-        await tx`select t.*,a.normalized_address from em_threads t join em_addresses a on a.workspace_id=t.workspace_id and a.id=t.address_id where t.workspace_id=${ws.id} and t.id=${event.thread_id} for update of t`
+        await tx`select t.*,a.normalized_address from em_threads t join em_addresses a on a.workspace_id=t.workspace_id and a.id=t.address_id where t.workspace_id=${ws.id} and t.id=${resolvedThread} for update of t`
       check(thread, 'REPLY_IDENTITY_REVIEW')
       // A signed webhook authenticates the transport, not a changed sender. Human review is required.
       check(
@@ -181,6 +192,9 @@ export async function processNextReceivedReply(
       }
       await tx`update em_provider_events set state='processed',hold_reason=null,encrypted_content=${tx.json(json(encryptEmailSecret(serialized, key, `${ws.id}/${event.id}/resend-content/1`, 1)))} where id=${event.id}`
       await tx`update em_threads set inbound_pending=exists(select 1 from em_provider_events where workspace_id=${ws.id} and thread_id=${thread.id} and state<>'processed' and type='email.received') where id=${thread.id}`
+      if (event.hold_reason === 'awaiting_routing_headers') {
+        await tx`update em_threads t set inbound_pending=exists(select 1 from em_provider_events e where e.workspace_id=t.workspace_id and e.type='email.received' and e.state<>'processed' and (e.thread_id=t.id or (e.thread_id is null and e.hold_reason='awaiting_routing_headers'))) where t.workspace_id=${ws.id} and t.address_id=${thread.address_id} and t.inbound_pending`;
+      }
       if (!content.optOut && (!content.headers['auto-submitted'] || content.headers['auto-submitted'].toLowerCase() === 'no')) {
         if (!existing) await holdRelatedOutreach(context, thread.id, `Reply ${messageId}; review other contacts before continuing property outreach`,needsPropertyReview(content.text))
         const handled = await automaticallyHandoffCallback(context, thread.id, messageId)
@@ -215,8 +229,12 @@ export async function processNextReceivedReply(
         return { state: 'lease_lost', jobId: claim.jobId }
       const retry = retryable.has(code) && job.attempts < 5
       await tx`update em_jobs set state=${retry ? 'retry' : 'dead'},lease_token=null,lease_until=null,last_error=${code},run_after=${new Date(now.getTime() + Math.min(3600000, 30000 * 2 ** job.attempts))},updated_at=${now} where id=${job.id}`
-      if (!retry)
+      if (!retry) {
         await tx`update em_provider_events set state='quarantined',hold_reason=${code} where id=${claim.event.id}`
+        if (claim.event.hold_reason === 'awaiting_routing_headers') {
+          await tx`update em_workspaces set pause_reason=coalesce(pause_reason,'Reply could not be matched. Review the receiving issue before continuing outreach.'),revision=revision+1 where id=${ws.id}`
+        }
+      }
       return {
         state: retry ? 'retry_scheduled' : 'review_required',
         jobId: job.id,

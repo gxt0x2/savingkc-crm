@@ -1,4 +1,3 @@
-import { authoredReplyText } from '../reply-text'
 export { authoredReplyText } from '../reply-text'
 import { parse, type DefaultTreeAdapterTypes } from 'parse5'
 import { z } from 'zod'
@@ -27,14 +26,8 @@ export const receivedContentSchema = z.object({
     .default([]),
 })
 export type ReceivedContent = z.infer<typeof receivedContentSchema>
-export function isOptOutReply(body: string) {
-  const authored = authoredReplyText(body)
-  return (
-    /\b(unsubscribe|stop emailing|remove me|do not email|don't email|no more emails)\b/i.test(
-      authored,
-    ) || /^(?:stop|remove)[.!\s]*$/i.test(authored)
-  )
-}
+export { isOptOutReply } from '../opt-out'
+import { isOptOutReply } from '../opt-out'
 export function normalizeReceivedContent(raw: unknown) {
   const content = receivedContentSchema.parse(raw)
   let text = content.text?.trim() ?? ''

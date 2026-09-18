@@ -1,3 +1,5 @@
+import { renderCampaignCopy, type RenderedStep } from './campaign-copy'
+import type { PilotConfig } from './types'
 import "server-only";
 import { freezeHostedEnvelope } from "../providers/frozen-envelope";
 import { check, workflowHash, type Context } from "./core";
@@ -24,6 +26,18 @@ export async function queueIntent(
       await context.tx`select id from em_send_intents where workspace_id=${context.member.workspace_id} and thread_id=${input.threadId} and state in ('dispatching','uncertain') limit 1`;
     check(!unresolved, "DELIVERY_RECONCILIATION_REQUIRED");
   }
+  let campaignCopy: RenderedStep[] | undefined
+  if (input.origin === 'sequence') {
+    const [thread] = await context.tx`select t.party_id,c.is_test,v.config from em_threads t join em_enrollments e on e.id=t.enrollment_id and e.workspace_id=t.workspace_id join em_campaign_versions v on v.id=e.campaign_version_id and v.workspace_id=t.workspace_id join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id where t.workspace_id=${context.member.workspace_id} and t.id=${input.threadId}`
+    check(thread, 'THREAD_NOT_FOUND')
+    if (!thread.is_test) {
+      const [initial] = await context.tx`select frozen_payload from em_send_intents where workspace_id=${context.member.workspace_id} and thread_id=${input.threadId} and origin='sequence' and step=0 limit 1`
+      campaignCopy = initial?.frozen_payload?.campaignCopy ?? await renderCampaignCopy(context.tx, context.member.workspace_id, thread.party_id, (thread.config as PilotConfig).steps)
+      const step = campaignCopy?.[input.step]
+      check(step, 'CAMPAIGN_COPY_REQUIRED')
+      input = { ...input, body: step.body, subject: step.subject }
+    }
+  }
   const hosted =
     workspace.execution_mode === "hosted"
       ? await freezeHostedEnvelope(
@@ -34,6 +48,7 @@ export async function queueIntent(
         )
       : null;
   const payload = {
+    ...(campaignCopy ? { campaignCopy } : {}),
     body: input.body,
     subject: input.subject,
     from: hosted?.payload.from ?? "team@outreach.savingkc.test",

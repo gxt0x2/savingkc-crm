@@ -1,3 +1,4 @@
+import { renderCampaignCopy } from '../workflow/campaign-copy'
 import "server-only";
 import { selectInitialAddresses } from "../hygiene/guards";
 import { randomUUID } from "node:crypto";
@@ -13,6 +14,7 @@ export const controlledTestSchema = z
     senderId: z.string().uuid(),
     idempotencyKey: z.string().uuid(),
     campaignId: z.string().uuid().optional(),
+    samplePartyId: z.string().uuid().optional(),
   })
   .strict();
 /** A real test has its own records and can only target the operator allowlist. */
@@ -61,6 +63,13 @@ export async function queueControlledTest(
     if (sourceConfig) {
       check(sourceConfig.steps.length === 2, "SAVE_SEQUENCE_FIRST", 400);
     }
+    let sampleCopy
+    if (sourceConfig && sourceConfig.steps.some(step => (step.subject + step.bodyTemplate).includes('{{'))) {
+      check(input.samplePartyId, 'CHOOSE_REVIEWED_SAMPLE_RECIPIENT')
+      const [row] = await tx`select r.id from em_snapshot_rows r join em_audience_snapshots s on s.id=r.snapshot_id and s.workspace_id=r.workspace_id where r.workspace_id=${ws.id} and s.audience_id=${sourceConfig.audienceId} and r.party_id=${input.samplePartyId!} and r.eligibility='eligible' and s.id=(select id from em_audience_snapshots where workspace_id=${ws.id} and audience_id=${sourceConfig.audienceId} order by source_revision desc limit 1)`
+      check(row, 'SAMPLE_RECIPIENT_NOT_REVIEWED')
+      sampleCopy = await renderCampaignCopy(tx, ws.id, input.samplePartyId!, sourceConfig.steps)
+    }
     const [address] =
       await tx`insert into em_addresses(workspace_id,raw_address,normalized_address,verification_state,verification_expires_at)
       values(${ws.id},${recipient!},${recipient!},'valid',${new Date(now.getTime() + 86_400_000)})
@@ -82,9 +91,9 @@ export async function queueControlledTest(
       values(${ws.id},${audience.id},1,${hash},1,1) returning id`;
     await tx`insert into em_snapshot_rows(workspace_id,snapshot_id,party_id,address_id,eligibility,evidence_hash)
       values(${ws.id},${snapshot.id},${party.id},${address.id},'eligible',${hash})`;
-    const text = sourceConfig?.steps[0].bodyTemplate ??
+    const text = sampleCopy?.[0].body ?? sourceConfig?.steps[0].bodyTemplate ??
       "Ernest, this is the controlled SavingKC Email setup test you approved. Please reply to this message so we can verify that your response appears in the CRM. This is a system test, not a property inquiry.";
-    const subjectLine = sourceConfig?.steps[0].subject ??
+    const subjectLine = sampleCopy?.[0].subject ?? sourceConfig?.steps[0].subject ??
       "SavingKC Email — controlled setup test";
     const config: PilotConfig = {
       audienceId: audience.id,

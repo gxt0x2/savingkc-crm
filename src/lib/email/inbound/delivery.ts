@@ -1,3 +1,6 @@
+import { decryptEmailSecret } from '../secrets';
+import { connectionMasterKey } from '../connections/service';
+import { validMessageId } from './routing';
 import "server-only";
 import type { Sql } from "postgres";
 import { ownerWorkspace } from "../connections/service";
@@ -35,16 +38,29 @@ export async function reduceDeliveryEvent(
     connection_id: string;
     provider_email_id: string | null;
     type: string;
+    messageId?: string;
   },
   now: Date,
 ) {
   if (!deliveryEventTypes.has(event.type) || !event.provider_email_id)
     return false;
   const [intent] =
-    await tx`select i.id,i.remote_outcome,t.address_id,t.id as thread_id from em_send_intents i
+    await tx`select i.id,i.remote_outcome,t.address_id,t.id as thread_id,t.campaign_id,t.responsible_user_id from em_send_intents i
     join em_threads t on t.id=i.thread_id and t.workspace_id=i.workspace_id
     where i.workspace_id=${event.workspace_id} and i.connection_id=${event.connection_id} and i.provider_message_id=${event.provider_email_id}`;
   if (!intent) return false;
+  let messageId = event.messageId;
+  if (!messageId) {
+    const key = connectionMasterKey();
+    const [stored] = await tx`select encrypted_payload from em_provider_events where id=${event.id} and workspace_id=${event.workspace_id}`;
+    if (key && stored?.encrypted_payload) {
+      const payload = JSON.parse(decryptEmailSecret(stored.encrypted_payload, key, `${event.workspace_id}/${event.id}/resend-event/1`));
+      messageId = payload.data?.message_id;
+    }
+  }
+  if (validMessageId(messageId))
+    await tx`update em_send_intents set rfc_message_id=${messageId} where workspace_id=${event.workspace_id} and connection_id=${event.connection_id} and id=${intent.id} and (rfc_message_id is null or rfc_message_id=${messageId})`;
+
   if ((rank[event.type] ?? 0) > (rank[intent.remote_outcome] ?? 0))
     await tx`update em_send_intents set remote_outcome=${event.type} where id=${intent.id}`;
   if (
@@ -69,6 +85,15 @@ export async function reduceDeliveryEvent(
           ? "complaint"
           : "provider_suppressed",
     );
+  }
+  // This pilot is deliberately small: any bounce or complaint warrants review.
+  if (["email.bounced", "email.complained", "email.suppressed"].includes(event.type)) {
+    const [paused] = await tx`update em_campaigns set state='paused',revision=revision+1 where workspace_id=${event.workspace_id} and id=${intent.campaign_id} and state='active' and not is_test returning id`;
+    if (paused) {
+      await tx`update em_send_intents set state='cancelled',cancellation_reason='pilot_delivery_review' where workspace_id=${event.workspace_id} and origin='sequence' and state in ('queued','held') and thread_id in(select id from em_threads where campaign_id=${paused.id} and workspace_id=${event.workspace_id})`;
+      await tx`insert into em_notifications(workspace_id,thread_id,recipient_id,kind,logical_key,created_at) values(${event.workspace_id},${intent.thread_id},${intent.responsible_user_id},'Campaign paused — review bounce or complaint before further outreach',${`campaign-delivery-pause:${paused.id}`},${now}) on conflict do nothing`;
+      await tx`insert into em_audit_events(workspace_id,action,entity_id,request_id,detail,created_at) values(${event.workspace_id},'PILOT-DELIVERY-PAUSE',${paused.id},${event.id},${tx.json({ event: event.type, automaticRestart: false })},${now})`;
+    }
   }
   if (event.type === "email.failed") {
     await tx`update em_send_intents set state='cancelled',cancellation_reason='provider_delivery_failed' where workspace_id=${event.workspace_id} and thread_id=${intent.thread_id} and state in ('queued','held')`;

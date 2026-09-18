@@ -504,3 +504,117 @@ test("person and property holds added after launch prevent provider calls",()=>w
  assert.equal(sends,0)
  const [saved]=await db.sql`select state from em_send_intents where id=${intent.id}`;assert.equal(saved.state,'cancelled')
 }))
+
+import { renderCampaignCopy } from '../../src/lib/email/workflow/campaign-copy';
+import { resolveReplyThread } from '../../src/lib/email/inbound/routing';
+import { reduceDeliveryEvent } from '../../src/lib/email/inbound/delivery';
+
+test('personalized preview requires verified property evidence and freezes the reviewed follow-up', () => withDB(async db => {
+  const intent = await ready(db);
+  const [thread] = await db.sql`select t.*,v.config from em_threads t join em_enrollments e on e.id=t.enrollment_id join em_campaign_versions v on v.id=e.campaign_version_id where t.id=${intent.thread_id}`;
+  const steps = thread.config.steps.map((s: Record<string,unknown>, index: number) => ({ ...s, subject: index ? 'Re: {{property_address}}' : '{{property_address}}', bodyTemplate: 'Hi {{first_name}},\n{{property_question}}' }));
+  await db.sql`delete from em_party_properties where party_id=${thread.party_id}`;
+  await assert.rejects(renderCampaignCopy(db.sql as unknown as Tx, db.workspaceId, thread.party_id, steps), /PERSONALIZATION_PROPERTY_REQUIRED/);
+  const [property] = await db.sql`insert into crm_properties(normalized_address,address) values('123 example st','123 Example St') returning id`;
+  await db.sql`insert into em_party_properties(workspace_id,party_id,canonical_property_id,address,relationship,evidence) values(${db.workspaceId},${thread.party_id},${property.id},'123 Example St','representative','{"source":"reviewed fixture"}')`;
+  const representative = await renderCampaignCopy(db.sql as unknown as Tx, db.workspaceId, thread.party_id, steps);
+  assert.match(representative[0].body, /right person/);
+  assert.doesNotMatch(representative[0].body, /your family/);
+  await db.sql`update em_party_properties set relationship='heir' where party_id=${thread.party_id}`;
+  const heir = await renderCampaignCopy(db.sql as unknown as Tx, db.workspaceId, thread.party_id, steps);
+  assert.match(heir[0].body, /your family/);
+  const frozen = {...intent.frozen_payload,campaignCopy:heir};
+  await db.sql`update em_send_intents set frozen_payload=${db.sql.json(frozen)},payload_hash=${workflowHash(frozen)} where id=${intent.id}`;
+  await db.sql`update em_party_properties set address='Changed after approval' where party_id=${thread.party_id}`;
+  await processNextDispatch(db.sql, owner, { now, send: async()=>({state:'accepted',providerId:randomUUID()}) });
+  const [followup] = await db.sql`select frozen_payload from em_send_intents where thread_id=${thread.id} and step=1`;
+  assert.equal(followup.frozen_payload.subject, 'Re: 123 Example St');
+  assert.equal(followup.frozen_payload.body, heir[1].body);
+  await assert.rejects(renderCampaignCopy(db.sql as unknown as Tx, db.workspaceId, thread.party_id, [{...steps[0],bodyTemplate:'Hi {{tax_debt}}'}]), /UNSUPPORTED_PERSONALIZATION_FIELD/);
+}));
+
+test('clean mailbox replies require matching RFC references and the expected sender; old aliases still work', () => withDB(async db => {
+  const intent = await ready(db), providerId = randomUUID();
+  await processNextDispatch(db.sql, owner, {now,send:async(_key,payload)=>{
+    assert.equal(payload.reply_to,'hello@outreach.example.test');
+    return {state:'accepted',providerId};
+  }});
+  const [saved] = await db.sql`select i.connection_id,t.address_id,a.normalized_address from em_send_intents i join em_threads t on t.id=i.thread_id join em_addresses a on a.id=t.address_id where i.id=${intent.id}`;
+  const [event] = await db.sql`insert into em_provider_events(workspace_id,connection_id,provider_event_id,type,payload_hash,provider_email_id) values(${db.workspaceId},${saved.connection_id},${randomUUID()},'email.sent','fixture',${providerId}) returning *`;
+  const messageId='<real-provider-id@resend.example.test>';
+  await reduceDeliveryEvent(db.sql as unknown as Tx,{...event,messageId} as Parameters<typeof reduceDeliveryEvent>[1],now);
+  const content={from:saved.normalized_address,to:['hello@outreach.example.test'],headers:{'in-reply-to':messageId}};
+  const resolve=(c:typeof content)=>resolveReplyThread(db.sql as unknown as Tx,db.workspaceId,saved.connection_id,c);
+  assert.equal(await resolve(content),intent.thread_id);
+  assert.equal(await resolve({...content,from:'stranger@example.test'}),null);
+  assert.equal(await resolve({...content,headers:{'in-reply-to':'<wrong@example.test>'}}),null);
+  assert.equal(await resolve({...content,to:['someoneelse@outreach.example.test']}),null);
+  const [alias]=await db.sql`select address from em_reply_aliases where thread_id=${intent.thread_id}`;
+  assert.equal(await resolve({...content,to:[alias.address],headers:{'in-reply-to':''}}),intent.thread_id);
+  const envelope=await freezeHostedEnvelope({tx:db.sql as unknown as Tx,member:{workspace_id:db.workspaceId,auth_user_id:owner,roles:['owner']},now},intent.thread_id,'Reply','Re: Test');
+  assert.equal(envelope.payload.headers['In-Reply-To'],messageId);
+}));
+
+test('first pilot bounce pauses only its campaign, cancels scheduled outreach and alerts the owner', () => withDB(async db => {
+  const intent=await ready(db),providerId=randomUUID();
+  await processNextDispatch(db.sql,owner,{now,send:async()=>({state:'accepted',providerId})});
+  const [saved]=await db.sql`select connection_id from em_send_intents where id=${intent.id}`;
+  const [event]=await db.sql`insert into em_provider_events(workspace_id,connection_id,provider_event_id,type,payload_hash,provider_email_id) values(${db.workspaceId},${saved.connection_id},${randomUUID()},'email.bounced','fixture',${providerId}) returning *`;
+  await reduceDeliveryEvent(db.sql as unknown as Tx,event as Parameters<typeof reduceDeliveryEvent>[1],now);
+  await reduceDeliveryEvent(db.sql as unknown as Tx,event as Parameters<typeof reduceDeliveryEvent>[1],now);
+  assert.equal((await db.sql`select c.state from em_campaigns c join em_threads t on t.campaign_id=c.id where t.id=${intent.thread_id}`)[0].state,'paused');
+  assert.equal((await db.sql`select count(*)::int n from em_send_intents where state in ('queued','held')`)[0].n,0);
+  assert.equal((await db.sql`select count(*)::int n from em_audit_events where action='PILOT-DELIVERY-PAUSE'`)[0].n,1);
+  assert.equal((await db.sql`select count(*)::int n from em_notifications where logical_key like 'campaign-delivery-pause:%'`)[0].n,1);
+}));
+
+import { createHmac } from 'node:crypto';
+import { createResendWebhookHttp, webhookSecretAad } from '../../src/lib/email/inbound/capture';
+import { processNextReceivedReply } from '../../src/lib/email/inbound/worker';
+import { processPendingDeliveryEvents } from '../../src/lib/email/inbound/delivery';
+
+test('early provider event is reconciled and a queued follow-up gets the real thread header before its first attempt',()=>withDB(async db=>{
+  const intent=await ready(db),providerId=randomUUID(),eventId=randomUUID(),rfc='<early-event@provider.example.test>';
+  const [connection]=await db.sql`select connection_id from em_send_intents where id=${intent.id}`;
+  const payload=JSON.stringify({type:'email.sent',data:{email_id:providerId,message_id:rfc}});
+  await db.sql`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,provider_email_id,encrypted_payload,state,hold_reason) values(${eventId},${db.workspaceId},${connection.connection_id},${randomUUID()},'email.sent','fixture',${providerId},${db.sql.json(encryptEmailSecret(payload,key,`${db.workspaceId}/${eventId}/resend-event/1`,1))},'pending','awaiting_send_receipt')`;
+  assert.equal(await processPendingDeliveryEvents(db.sql,owner,now),0);
+  await processNextDispatch(db.sql,owner,{now,send:async()=>({state:'accepted',providerId})});
+  assert.equal(await processPendingDeliveryEvents(db.sql,owner,now),1);
+  const [followup]=await db.sql`select * from em_send_intents where thread_id=${intent.thread_id} and step=1`;
+  assert.equal(followup.provider_payload.headers['In-Reply-To'],undefined);
+  const due=new Date(followup.not_before);
+  await db.sql`update em_domains set last_verified_at=${due} where workspace_id=${db.workspaceId}`;
+  let sent=false;
+  const result=await processNextDispatch(db.sql,owner,{now:due,send:async(_key,p)=>{
+    sent=true;
+    assert.equal(p.headers['In-Reply-To'],rfc);
+    assert.equal(p.headers.References,rfc);
+    assert.equal(p.text,followup.provider_payload.text);
+    return {state:'accepted',providerId:randomUUID()};
+  }});
+  assert.equal(result.state,'accepted');
+  assert.equal(sent,true);
+}));
+
+for (const [knownReference,optOut] of [[true,true],[false,false],[false,true]]) test(`signed clean-address receiving matches headers before acting (known: ${knownReference}, opt out: ${optOut})`,()=>withDB(async db=>{
+  const intent=await ready(db),providerId=randomUUID();
+  await processNextDispatch(db.sql,owner,{now,send:async()=>({state:'accepted',providerId})});
+  const [saved]=await db.sql`select i.connection_id,a.normalized_address from em_send_intents i join em_threads t on t.id=i.thread_id join em_addresses a on a.id=t.address_id where i.id=${intent.id}`;
+  const rfc='<sample-original@provider.example.test>';
+  await db.sql`update em_send_intents set rfc_message_id=${rfc} where id=${intent.id}`;
+  const endpoint=randomUUID(),secret=`whsec_${Buffer.alloc(32,9).toString('base64')}`;
+  await db.sql`insert into em_webhook_endpoints(id,workspace_id,connection_id,encrypted_secret,active) values(${endpoint},${db.workspaceId},${saved.connection_id},${db.sql.json(encryptEmailSecret(secret,key,webhookSecretAad(db.workspaceId,endpoint),1))},true)`;
+  const content={id:randomUUID(),from:saved.normalized_address,to:['hello@outreach.example.test'],created_at:now.toISOString(),subject:'Re: Test',message_id:`<${randomUUID()}@recipient.example.test>`,text:optOut?'Please remove\nErnest':'Call me at 816-555-0199',headers:{'in-reply-to':knownReference?rfc:'<unknown@example.test>'},attachments:[]};
+  const handler=createResendWebhookHttp({database:()=>db.sql,endpointId:()=>endpoint,key:()=>key});
+  const body=JSON.stringify({type:'email.received',created_at:now.toISOString(),data:{email_id:content.id,from:content.from,to:content.to,message_id:content.message_id}}),id=`msg_${randomUUID()}`,timestamp=Math.floor(Date.now()/1000).toString();
+  const signature=`v1,${createHmac('sha256',Buffer.from(secret.slice(6),'base64')).update(`${id}.${timestamp}.${body}`).digest('base64')}`;
+  assert.equal((await handler(new Request('http://localhost/api/webhooks/email/resend',{method:'POST',headers:{'svix-id':id,'svix-timestamp':timestamp,'svix-signature':signature},body}))).status,200);
+  assert.equal((await db.sql`select inbound_pending from em_threads where id=${intent.thread_id}`)[0].inbound_pending,true);
+  assert.equal((await db.sql`select count(*)::int n from em_send_intents where thread_id=${intent.thread_id} and state='queued'`)[0].n,0);
+  await db.sql`update em_jobs set run_after=${now} where kind='resend_receive_content'`;
+  const result=await processNextReceivedReply(db.sql,owner,{get:async()=>content},()=>now,key);
+  assert.equal(result.state,optOut?'unsubscribed':'retry_scheduled');
+  assert.equal((await db.sql`select count(*)::int n from em_suppressions`)[0].n,optOut?1:0);
+  if(optOut) assert.equal((await db.sql`select inbound_pending from em_threads where id=${intent.thread_id}`)[0].inbound_pending,false);
+}));

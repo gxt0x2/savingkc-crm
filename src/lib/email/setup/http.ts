@@ -26,6 +26,7 @@ const input = z.discriminatedUnion("action", [
       senderId: z.string().uuid(),
       idempotencyKey: z.string().uuid(),
       campaignId: z.string().uuid().optional(),
+      samplePartyId: z.string().uuid().optional(),
     })
     .strict(),
   z.object({ action: z.literal("process_replies") }).strict(),
@@ -90,11 +91,14 @@ export function createHostedSetupHttp(deps: WorkflowHttpDependencies) {
             senderId: command.senderId,
             idempotencyKey: command.idempotencyKey,
             campaignId: command.campaignId,
+            samplePartyId: command.samplePartyId,
           });
+          const [existing] = await sql`select state from em_send_intents where id=${queued.entityId}`;
           result = {
             ...queued,
-            delivery: await processNextDispatch(sql, subject, {
+            delivery: existing?.state === "accepted" ? { state: "accepted", alreadySent: true } : await processNextDispatch(sql, subject, {
               allowlistedTest: process.env.EMAIL_CONTROLLED_RECIPIENT,
+              intentId: queued.entityId,
             }),
           };
         } else if (command.action === "process_replies")

@@ -5,6 +5,7 @@ import { preferenceKeys } from "../preferences/service";
 import { check, type Context } from "../workflow/core";
 import { emailWorkspaceConfigSchema } from "../config";
 import type { FrozenResendPayload } from "./resend";
+import { latestReplyMessageId } from '../inbound/routing';
 
 /** Called under the shared workspace lock, alongside intent creation. */
 export async function freezeHostedEnvelope(
@@ -74,6 +75,7 @@ export async function freezeHostedEnvelope(
     503,
   );
   const link = `${origin}/email/unsubscribe/${token}`;
+  const parent = await latestReplyMessageId(tx, member.workspace_id, threadId);
   return {
     connectionId: sender.connection_id,
     isTest: Boolean(thread.is_test),
@@ -83,8 +85,9 @@ export async function freezeHostedEnvelope(
       subject,
       text: `${body}\n\n${outreachFooter(config.business.name, config.business.address, link)}`,
       html: outreachHtml(body, config.business.name, config.business.address, link),
-      reply_to: alias,
+      reply_to: `${sender.local_part}@${sender.name_ascii}`,
       headers: {
+        ...(parent ? { "In-Reply-To": parent, "References": parent } : {}),
         "List-Unsubscribe": `<${origin}/api/email/unsubscribe/${token}>`,
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
       },

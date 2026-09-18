@@ -1,3 +1,5 @@
+import { renderCampaignCopy, validateCampaignCopy } from './campaign-copy'
+import { isOptOutReply } from '../opt-out'
 import { suppressionTargets } from '../hygiene/suppression'
 import { contactHygieneReasons, selectInitialAddresses } from '../hygiene/guards'
 import 'server-only'
@@ -229,12 +231,16 @@ async function review(
       seenAddresses.add(r.address_id)
       seenParties.add(r.party_id)
     }
+    let messages
+    try { messages = await renderCampaignCopy(tx, member.workspace_id, r.party_id, config.steps) }
+    catch (error) { reasons.push(error instanceof WorkflowError ? error.code : 'PERSONALIZATION_REVIEW_REQUIRED') }
     recipients.push({
       id: r.id,
       addressId: r.address_id,
       partyId: r.party_id,
       name: r.display_name ?? 'Unresolved person',
       email: r.normalized_address,
+      messages,
       eligible: reasons.length === 0,
       reasons,
     })
@@ -346,9 +352,9 @@ export async function executePilotCommand(
         if (!property)
           [property] = await tx`insert into crm_properties(normalized_address,address) values(${normalizedProperty},${command.payload.propertyRef.trim()}) returning id,address`
         await tx`insert into em_party_properties(workspace_id,party_id,canonical_property_id,address,relationship,evidence)
-          values(${ws},${row.party_id},${property.id},${property.address},'representative',${tx.json({ source: 'human_assessment', evidence: command.payload.evidence })})
+          values(${ws},${row.party_id},${property.id},${property.address},${command.payload.relationship ?? 'representative'},${tx.json({ source: 'human_assessment', evidence: command.payload.evidence })})
           on conflict(workspace_id,party_id,canonical_property_id) where canonical_property_id is not null
-          do update set relationship='representative',evidence=excluded.evidence,revision=em_party_properties.revision+1`
+          do update set relationship=excluded.relationship,evidence=excluded.evidence,revision=em_party_properties.revision+1`
         await selectInitialAddresses(tx, ws, row.party_id)
         const evidenceHash = workflowHash({
           prior: row.content_hash,
@@ -411,13 +417,7 @@ export async function executePilotCommand(
           400,
         )
         check(new Date(config.expiresAt) > now, 'CAMPAIGN_EXPIRED', 400)
-        check(
-          config.steps.every(
-            (step) => !/[{}]/.test(step.subject + step.bodyTemplate),
-          ),
-          'USE_REVIEWED_LITERAL_COPY',
-          400,
-        )
+        validateCampaignCopy(config.steps)
         const [audience] =
           await tx`select id from em_audiences where workspace_id=${ws} and id=${config.audienceId} and program='seller_outreach' and state='ready'`
         check(audience, 'RECIPIENT_LIST_NOT_READY')
@@ -482,7 +482,7 @@ export async function executePilotCommand(
             await tx`insert into em_enrollments(workspace_id,campaign_id,campaign_version_id,party_id,address_id) values(${ws},${campaign.id},${version.id},${recipient.partyId},${recipient.addressId}) returning id`
           const [thread] =
             await tx`insert into em_threads(workspace_id,campaign_id,enrollment_id,address_id,party_id,subject,responsible_user_id)
-            values(${ws},${campaign.id},${enrollment.id},${recipient.addressId},${recipient.partyId},${config.steps[0].subject},${subject}) returning id`
+            values(${ws},${campaign.id},${enrollment.id},${recipient.addressId},${recipient.partyId},${recipient.messages?.[0].subject ?? config.steps[0].subject},${subject}) returning id`
           await queueIntent(context, {
             threadId: thread.id,
             key: `${enrollment.id}:0`,
@@ -1020,7 +1020,7 @@ export async function simulateInbound(
       )
       // Conservative exact opt-out recognition for local fixtures. All other
       // inbound stays on human review; no AI classification claim is made.
-      if (/\b(unsubscribe|stop emailing|remove me)\b/i.test(input.body))
+      if (isOptOutReply(input.body))
         await suppress(context, thread.address_id, 'unsubscribe', message.id)
       else await projectCrmChanges(context, thread.id, { history: true })
       return { entityId: message.id, state: 'received_sequence_stopped' }

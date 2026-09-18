@@ -1,6 +1,6 @@
 'use client'
 import { EmailRecipientImport } from './email-recipient-import'
-import { pilotDefaults } from './campaign-defaults'
+import { pilotDefaults, inheritedPropertyCopy } from './campaign-defaults'
 import { EmailHostedSetup } from './email-hosted-setup'
 import { EmailReceivingStatus } from './email-receiving-status'
 
@@ -19,6 +19,7 @@ import { EmailSetup } from './email-setup'
 import { EmailThreadPanel } from './email-thread-panel'
 import { EmailNotifications } from './email-notifications'
 import { nextWork } from '@/lib/email/workflow/presentation'
+import { outreachFooter } from '@/lib/email/providers/outreach-footer'
 
 const views: [InboxView, string][] = [
   ['action', 'To do'],
@@ -28,6 +29,13 @@ const views: [InboxView, string][] = [
   ['all', 'All'],
 ]
 const friendly: Record<string, string> = {
+  PERSONALIZATION_IDENTITY_REQUIRED: 'Verify the recipient’s identity before personalizing this message.',
+  PERSONALIZATION_PROPERTY_REQUIRED: 'Confirm one property and record the evidence before personalizing this message.',
+  PERSONALIZATION_NAME_REQUIRED: 'A verified person’s name is required for personalization.',
+  CHOOSE_REVIEWED_SAMPLE_RECIPIENT: 'Choose a reviewed recipient for the sample’s name and property details.',
+  SAMPLE_RECIPIENT_NOT_REVIEWED: 'This sample recipient needs identity and property review first.',
+  UNSUPPORTED_PERSONALIZATION_FIELD: 'Use only first_name, property_address and property_question inside double braces.',
+
   NEW_CALLBACK_REQUEST_REQUIRED: 'A new explicit callback request received after marketing stopped is required. Marketing remains blocked.',
   REPLY_CONTENT_PENDING:
     'A reply arrived. Wait for its full content before acting.',
@@ -169,6 +177,9 @@ export function EmailWorkspace({
   const [review, setReview] = useState<PilotReview | null>(null)
   const [newName, setNewName] = useState('')
   const [recipientProperties, setRecipientProperties] = useState<Record<string, string>>({})
+  const [recipientEvidence, setRecipientEvidence] = useState<Record<string, string>>({})
+  const [recipientRelationships, setRecipientRelationships] = useState<Record<string, 'owner' | 'representative' | 'heir'>>({})
+  const [samplePeople, setSamplePeople] = useState<Record<string, string>>({})
   const [sampleSenders, setSampleSenders] = useState<Record<string, string>>({})
   const [showSimulation, setShowSimulation] = useState(false)
   const [simulationBody, setSimulationBody] = useState(
@@ -342,7 +353,8 @@ export function EmailWorkspace({
     setBusy(true)
     setError('')
     setNotice('')
-    sampleKeys.current[campaign.id] ??= crypto.randomUUID()
+    const sampleKey = [campaign.id, campaign.revision, senderId, samplePeople[campaign.id] ?? 'literal'].join(':')
+    sampleKeys.current[sampleKey] ??= crypto.randomUUID()
     try {
       const response = await fetch('/api/email/setup', {
         method: 'POST',
@@ -351,14 +363,15 @@ export function EmailWorkspace({
           action: 'send_test',
           senderId,
           campaignId: campaign.id,
-          idempotencyKey: sampleKeys.current[campaign.id],
+          samplePartyId: samplePeople[campaign.id] || undefined,
+          idempotencyKey: sampleKeys.current[sampleKey],
         }),
       })
       const body = await response.json()
       if (!response.ok) throw new Error(body.error?.code ?? body.error)
       if (body.delivery?.state !== 'accepted')
         throw new Error('SAMPLE_DELIVERY_NOT_ACCEPTED')
-      setNotice(`Sample sent to ${body.recipient}. No follow-up was scheduled.`)
+      setNotice(`${body.delivery?.alreadySent ? 'This sample was already sent' : 'Sample sent'} to ${body.recipient}. No follow-up was scheduled.`)
       await refresh()
     } catch (e) {
       const message = e instanceof Error ? e.message : 'EMAIL_UNAVAILABLE'
@@ -796,6 +809,7 @@ export function EmailWorkspace({
                             Two messages maximum. A reply or marketing stop ends
                             the sequence. Agents review incoming replies;
                             automatic AI responses are off.
+                            A bounce, complaint or provider suppression pauses the pilot for review. Cancelled emails do not restart automatically.
                           </p>
                           <p>
                             Weekdays, 9 AM–5 PM America/Chicago. Follow-up
@@ -827,6 +841,10 @@ export function EmailWorkspace({
                             </select>
                           </label>
                           {data.mode === 'hosted' && <label>Sender<select disabled={campaign.state !== 'draft'} value={config.senderIds[0] ?? ''} onChange={e => {setConfig({...config,senderIds:[e.target.value]});setReview(null)}}><option value="">Choose a tested sender</option>{(data.senders ?? []).map(s => <option key={s.id} value={s.id}>{s.name} · {s.address}</option>)}</select></label>}
+                          {campaign.state === 'draft' && <div>
+                            <button onClick={() => { setConfig(inheritedPropertyCopy(config)); setReview(null) }}>Use inherited-property sequence</button>
+                            <p>Verified fields: {'{{first_name}}'}, {'{{property_address}}'}, {'{{property_question}}'}. Family wording requires a confirmed heir relationship. Missing or ambiguous facts block sending. Save, then review each person’s exact messages.</p>
+                          </div>}
                           {config.steps.map((step, index) => (
                             <fieldset
                               key={step.id}
@@ -946,9 +964,10 @@ export function EmailWorkspace({
                                         <small>
                                           {r.eligible
                                             ? (data.mode === 'hosted' ? 'Eligible for reviewed campaign' : 'Ready for local practice')
-                                            : r.reasons.join(' · ')}
+                                            : r.reasons.map(reason => friendly[reason] ?? reason).join(' · ')}
                                         </small>
-                                        {!r.eligible && r.reasons.includes('Identity needs review') && (
+                                        {r.messages && <details><summary>Preview this person’s emails</summary>{r.messages.map((message, index) => <article key={index}><h4>{message.subject}</h4><pre>{message.body}</pre></article>)}</details>}
+                                        {!r.eligible && (r.reasons.includes('Identity needs review') || r.reasons.includes('PERSONALIZATION_PROPERTY_REQUIRED')) && (
                                           <div>
                                             <label>
                                               Property address for this person
@@ -963,8 +982,10 @@ export function EmailWorkspace({
                                                 }
                                               />
                                             </label>
+                                            <label>Verified relationship<select value={recipientRelationships[r.id] ?? 'representative'} onChange={event => setRecipientRelationships(current => ({ ...current, [r.id]: event.target.value as 'owner' | 'representative' | 'heir' }))}><option value="representative">Property contact / representative</option><option value="owner">Owner</option><option value="heir">Confirmed heir</option></select></label>
+                                            <label>Evidence for this person, email and property<textarea value={recipientEvidence[r.id] ?? ''} placeholder="Source and facts you checked; do not infer an heir from a shared last name." onChange={event => setRecipientEvidence(current => ({ ...current, [r.id]: event.target.value }))}/></label>
                                             <button
-                                              disabled={busy || !(recipientProperties[r.id]?.trim())}
+                                              disabled={busy || !(recipientProperties[r.id]?.trim()) || !(recipientEvidence[r.id]?.trim())}
                                               onClick={async () => {
                                                 const saved = await act({
                                                   command: 'AUD-RESOLVE',
@@ -974,10 +995,11 @@ export function EmailWorkspace({
                                                     partyId: r.partyId,
                                                     propertyRef: recipientProperties[r.id].trim(),
                                                     resolution: 'link_existing',
+                                                    relationship: recipientRelationships[r.id] ?? 'representative',
                                                     evidence: [
                                                       {
                                                         source: 'human_assessment',
-                                                        quote: 'Recipient identity, current verified mailbox and property relationship reviewed for the bounded pilot.',
+                                                        quote: recipientEvidence[r.id].trim(),
                                                       },
                                                     ],
                                                   },
@@ -994,8 +1016,7 @@ export function EmailWorkspace({
                                   </div>
                                   <details>
                                     <summary>
-                                      Exact saved messages included in this
-                                      review
+                                      Saved sequence and shared signature
                                     </summary>
                                     {campaign.draft_config.steps?.map((s) => (
                                       <article key={s.id}>
@@ -1003,9 +1024,11 @@ export function EmailWorkspace({
                                         <pre>{s.bodyTemplate}</pre>
                                       </article>
                                     ))}
+                                    {data.settings?.config.business && <article><h4>Included with every email</h4><pre>{outreachFooter(data.settings.config.business.name, data.settings.config.business.address, '[Personal unsubscribe link]')}</pre><small>The actual message includes a clickable Unsubscribe link. Personalized message text is shown under each reviewed recipient.</small></article>}
                                   </details>
                                   {data.mode === 'hosted' && (
                                     <div>
+                                      {campaign.draft_config.steps?.some(step => (step.subject + step.bodyTemplate).includes('{{')) && <label>Sample recipient’s verified details<select value={samplePeople[campaign.id] ?? ''} onChange={event => setSamplePeople(current => ({ ...current, [campaign.id]: event.target.value }))}><option value="">Choose a reviewed recipient</option>{review.recipients.filter(r => r.eligible && r.messages).map(r => <option key={r.id} value={r.partyId}>{r.name}</option>)}</select><small>The sample goes only to the configured test inbox. It uses this person’s reviewed copy.</small></label>}
                                       <label>
                                         Sample sender
                                         <select
@@ -1020,7 +1043,7 @@ export function EmailWorkspace({
                                         </select>
                                       </label>
                                       <button
-                                        disabled={busy}
+                                        disabled={busy || (campaign.draft_config.steps?.some(step => (step.subject + step.bodyTemplate).includes('{{')) && !samplePeople[campaign.id])}
                                         onClick={() => sendCampaignSample(campaign)}
                                       >
                                         Send exact sample

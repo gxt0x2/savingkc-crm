@@ -1,4 +1,5 @@
 import { contactHygieneReasons } from '../hygiene/guards';
+import { latestReplyMessageId } from '../inbound/routing';
 import "server-only";
 import type { Sql } from "postgres";
 import { ownerWorkspace, connectionMasterKey } from "../connections/service";
@@ -26,6 +27,7 @@ export async function processNextDispatch(
     now?: Date;
     send?: typeof sendResendEmail;
     allowlistedTest?: string;
+    intentId?: string;
   } = {},
 ) {
   const now = options.now ?? new Date(),
@@ -57,9 +59,10 @@ export async function processNextDispatch(
       join em_addresses a on a.workspace_id=t.workspace_id and a.id=t.address_id
       where i.workspace_id=${ws.id} and i.state='queued' and i.not_before<=${now}
       and (${!options.allowlistedTest} or i.is_test)
+      and (${options.intentId ?? null}::uuid is null or i.id=${options.intentId ?? null}::uuid)
       order by case when i.origin='human' then 0 else 1 end,i.not_before,i.id limit 1 for update of i`;
     if (!intent) return null;
-    const payload = intent.provider_payload as FrozenResendPayload | null;
+    let payload = intent.provider_payload as FrozenResendPayload | null;
     if (
       options.allowlistedTest &&
       (!intent.is_test ||
@@ -121,6 +124,16 @@ export async function processNextDispatch(
     if (invalid || unready) {
       await tx`update em_send_intents set state=${invalid ? "cancelled" : "held"},cancellation_reason=${invalid ? "dispatch_guard" : "readiness_changed"} where id=${intent.id}`;
       return null;
+    }
+    // A follow-up can be queued before the provider reports the first message ID.
+    // Freeze threading metadata only before the very first attempt; content stays unchanged.
+    if (!intent.first_attempt_at && payload && !payload.headers['In-Reply-To']) {
+      const parent = await latestReplyMessageId(tx, ws.id, intent.thread_id);
+      if (!parent && intent.origin === 'sequence' && intent.step > 0) return null;
+      if (parent) {
+        payload = { ...payload, headers: { ...payload.headers, 'In-Reply-To': parent, References: parent } };
+        await tx`update em_send_intents set provider_payload=${tx.json(payload)},provider_payload_hash=${workflowHash(payload)} where id=${intent.id}`;
+      }
     }
     const [usage] =
       await tx`select count(*) filter(where first_attempt_at > ${new Date(now.getTime() - 3600000)})::int as hour,

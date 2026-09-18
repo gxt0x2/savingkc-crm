@@ -1,3 +1,4 @@
+import { isOptOutReply } from '../opt-out'
 import { authoredReplyText } from '../reply-text'
 import type { PilotThread } from './types'
 
@@ -30,7 +31,7 @@ export function practiceReply(body: string) {
     /\b(his|her|their|brother|sister|attorney|agent|wrong person|wrong number|not interested|not selling|do not want to sell|don't want to sell|do not call|don't call)\b/i.test(
       text,
     )
-  const optedOut = /\b(unsubscribe|stop emailing|remove me)\b/i.test(text)
+  const optedOut = isOptOutReply(text)
   const phone =
     number && !thirdParty && !optedOut && (explicitCall || numberOnly)
       ? number

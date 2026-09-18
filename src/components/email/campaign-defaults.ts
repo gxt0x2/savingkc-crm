@@ -58,3 +58,13 @@ export function pilotDefaults(
         : "Fabricated local practice recipients only",
   };
 }
+
+/** Family wording is rendered only when the verified relationship is heir. */
+export function inheritedPropertyCopy(config: PilotConfig): PilotConfig {
+  return { ...config, steps: config.steps.map((step, index) => ({ ...step,
+    subject: index === 0 ? '{{property_address}}' : 'Re: {{property_address}}',
+    bodyTemplate: index === 0
+      ? 'Hi {{first_name}},\n\nI’m Ari with Saving KC Homebuyers. I’m reaching out about {{property_address}}.\n\n{{property_question}}'
+      : 'Hi {{first_name}},\n\nFollowing up once about {{property_address}}. Would you like to talk about selling, or would you prefer I leave it here?',
+  })) }
+}

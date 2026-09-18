@@ -1,3 +1,4 @@
+import { cleanReplyCandidates } from './routing';
 import "server-only";
 import { deliveryEventTypes, reduceDeliveryEvent } from "./delivery";
 import { createHash, randomUUID } from "node:crypto";
@@ -91,6 +92,7 @@ export function createResendWebhookHttp(deps: {
             connection_id: binding.connection_id as string,
             provider_email_id: parsed.data.data.email_id,
             type: parsed.data.type,
+            messageId: typeof parsed.data.data.message_id === "string" ? parsed.data.data.message_id : undefined,
           };
           await tx`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,state,encrypted_payload,endpoint_id,provider_email_id,provider_created_at,hold_reason)
             values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${event.type},${hash},'pending',${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${event.provider_email_id},${new Date(parsed.data.created_at)},'awaiting_send_receipt')`;
@@ -119,26 +121,31 @@ export function createResendWebhookHttp(deps: {
           incoming?.success && matches.length === 1
             ? matches[0].thread_id
             : null;
+        const candidates = !matches.length && incoming?.success
+          ? await cleanReplyCandidates(tx, binding.workspace_id, binding.connection_id, incoming.data.from, addresses)
+          : [];
+        const needsHeaders = candidates.length > 0;
+        const affected = matched ? [matched] : candidates.map(c => c.thread_id);
         const holdReason = !parsed.success
           ? "unsupported_payload"
           : isReceived
             ? matched
               ? "awaiting_reply_content"
-              : "unmatched_reply"
+              : needsHeaders ? "awaiting_routing_headers" : "unmatched_reply"
             : "event_reducer_pending";
         await tx`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,state,encrypted_payload,endpoint_id,provider_email_id,provider_created_at,hold_reason,thread_id)
-          values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${parsed.success ? parsed.data.type : "unknown"},${hash},${matched ? "pending" : "quarantined"},${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${parsed.success ? (parsed.data.data.email_id ?? null) : null},${parsed.success ? new Date(parsed.data.created_at) : null},${holdReason},${matched})`;
+          values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${parsed.success ? parsed.data.type : "unknown"},${hash},${matched || needsHeaders ? "pending" : "quarantined"},${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${parsed.success ? (parsed.data.data.email_id ?? null) : null},${parsed.success ? new Date(parsed.data.created_at) : null},${holdReason},${matched})`;
         // Unknown routing or an unsupported event holds the workspace. Never guess by From alone.
-        if (!matched)
+        if (!matched && !needsHeaders)
           await tx`update em_workspaces set pause_reason=coalesce(pause_reason,'Resend event needs review'),revision=revision+1 where id=${binding.workspace_id}`;
-        await tx`update em_send_intents set state='cancelled',cancellation_reason=${holdReason} where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state in ('queued','held')`;
-        await tx`update em_drafts set state='stale' where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state='current'`;
-        await tx`update em_ai_generations set state='stale' where workspace_id=${binding.workspace_id} and (${!matched} or thread_id=${matched}) and state in ('queued','running','ready')`;
-        if (matched) {
-          await tx`update em_threads set inbound_pending=true,content_revision=content_revision+1,state=case when state in ('stopped','done') then state else 'needs_review' end where workspace_id=${binding.workspace_id} and id=${matched}`;
-          await tx`update em_enrollments set state=case when state in ('suppressed','completed','failed') then state else 'held' end where workspace_id=${binding.workspace_id} and id=(select enrollment_id from em_threads where id=${matched})`;
+        await tx`update em_send_intents set state='cancelled',cancellation_reason=${holdReason} where workspace_id=${binding.workspace_id} and (${!matched && !needsHeaders} or thread_id=any(${tx.array(affected)}::uuid[])) and state in ('queued','held')`;
+        await tx`update em_drafts set state='stale' where workspace_id=${binding.workspace_id} and (${!matched && !needsHeaders} or thread_id=any(${tx.array(affected)}::uuid[])) and state='current'`;
+        await tx`update em_ai_generations set state='stale' where workspace_id=${binding.workspace_id} and (${!matched && !needsHeaders} or thread_id=any(${tx.array(affected)}::uuid[])) and state in ('queued','running','ready')`;
+        for (const affectedId of affected) {
+          await tx`update em_threads set inbound_pending=true,content_revision=content_revision+1,state=case when state in ('stopped','done') then state else 'needs_review' end where workspace_id=${binding.workspace_id} and id=${affectedId}`;
+          await tx`update em_enrollments set state=case when state in ('suppressed','completed','failed') then state else 'held' end where workspace_id=${binding.workspace_id} and id=(select enrollment_id from em_threads where id=${affectedId})`;
         }
-        await tx`insert into em_jobs(workspace_id,kind,dedupe_key,entity_id,state) values(${binding.workspace_id},${matched ? "resend_receive_content" : "resend_event_review"},${`resend:${binding.connection_id}:${verified.id}`},${eventId},${matched ? "ready" : "dead"})`;
+        await tx`insert into em_jobs(workspace_id,kind,dedupe_key,entity_id,state) values(${binding.workspace_id},${matched || needsHeaders ? "resend_receive_content" : "resend_event_review"},${`resend:${binding.connection_id}:${verified.id}`},${eventId},${matched || needsHeaders ? "ready" : "dead"})`;
       });
       return Response.json(
         { ok: true },

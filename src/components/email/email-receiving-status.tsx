@@ -19,6 +19,8 @@ const reason: Record<string, string> = {
   REPLY_CONNECTION_REJECTED: 'Resend access needs attention.',
   REPLY_CONNECTION_REVIEW: 'Resend connection changed. Review setup.',
   REPLY_NOT_READY: 'Resend has not made the full message available yet.',
+  REPLY_ROUTING_NOT_READY: 'The reply has no unique match to an original email. Outreach is held; check the message in Resend before retrying.',
+  awaiting_routing_headers: 'Matching the reply to its original email. Outreach is held while this completes.',
   REPLY_RATE_LIMIT: 'Waiting for Resend’s rate limit to clear.',
   REPLY_PROVIDER_UNAVAILABLE: 'Resend could not be reached.',
   unmatched_reply: 'No unique conversation match. Automatic sending is paused.',

@@ -11,6 +11,7 @@ export interface RecipientReview {
   partyId: string
   name: string
   email: string
+  messages?: { subject: string; body: string }[]
   eligible: boolean
   reasons: string[]
 }
