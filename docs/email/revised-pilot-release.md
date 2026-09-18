@@ -41,3 +41,7 @@ Apply `20261110122000_email_reply_message_ids.sql` before the application releas
 `20261110123000_email_related_contacts.sql` adds the distinct `relative` relationship and preserves identity locks without new table privileges. Reviewed source records keep their import provenance. Relatives receive neutral right-person copy; only confirmed heirs receive family wording. An explicit callback can create a Lead for a reviewed relative or heir without treating that contact as a legal owner.
 
 Validation: 10 targeted database regressions passed, including source provenance, neutral copy, callback routing, duplicate prevention and runtime identity locks. TypeScript and changed-file lint passed.
+
+## Hosted identity review correction
+
+The first hosted save exposed that audience review attempted direct canonical writes although the email runtime only has SELECT on those tables. `20261110124000_email_review_identity_command.sql` replaces that path with a bounded definer command: active owner/marketer, current audience row, source evidence, matching existing identity, serialized identity/property resolution, no Lead creation. Canonical table write permissions remain unavailable to the runtime. The regression runs the complete review under a restricted database role and checks repeat safety and denied reader access.

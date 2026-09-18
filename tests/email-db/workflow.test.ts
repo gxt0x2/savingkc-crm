@@ -1,3 +1,4 @@
+import postgres from 'postgres'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHmac, randomUUID } from 'node:crypto'
@@ -58,7 +59,18 @@ withDb('owner confirms a reviewed recipient without creating a Lead', async (db)
     },
   }
   await rejects(executePilotCommand(db.sql, reader, command, now), 'FORBIDDEN')
-  const result = await executePilotCommand(db.sql, owner, command, now)
+  await db.sql`grant select on agent_profiles to service_role`
+  const restricted = postgres(db.url, {max:1, connection:{options:'-c role=service_role'}})
+  let result
+  try {
+    const [privileges] = await restricted`select has_table_privilege(current_user,'crm_people','INSERT') as can_insert,has_table_privilege(current_user,'crm_properties','UPDATE') as can_update`
+    assert.equal(privileges.can_insert,false)
+    assert.equal(privileges.can_update,false)
+    await assert.rejects(restricted`select * from resolve_email_review_identity(${db.workspaceId}::uuid,${reader}::uuid,${row.id}::uuid,'101 Fixture Avenue',${restricted.json(command.payload.evidence)}::jsonb)`, /FORBIDDEN/)
+    await rejects(executePilotCommand(restricted, reader, command, now), 'FORBIDDEN')
+    result = await executePilotCommand(restricted, owner, command, now)
+    assert.equal((await executePilotCommand(restricted, owner, command, now)).entityId,result.entityId)
+  } finally { await restricted.end() }
   assert.equal(result.state, 'recipient_identity_confirmed')
   assert.equal((await db.sql`select * from leads where email='reviewed@example.test'`).length, 0)
   const [confirmed] = await db.sql`select p.identity_state,p.canonical_person_id,pa.relationship,r.eligibility

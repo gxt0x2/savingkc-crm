@@ -333,25 +333,13 @@ export async function executePilotCommand(
             and s.id=(select id from em_audience_snapshots where workspace_id=${ws} and audience_id=${rowAudience.audience_id} order by source_revision desc limit 1)
           for update of r,p`
         check(row, 'RECIPIENT_NOT_FOUND', 404)
-        const [method] = await tx`select id,person_id from crm_contact_methods where method_type='email' and normalized_value=${row.normalized_address} for update`
-        let personId = method?.person_id as string | null
-        if (!personId) {
-          const [person] = await tx`insert into crm_people(display_name) values(${row.display_name}) returning id`
-          personId = person.id
-          if (method)
-            await tx`update crm_contact_methods set person_id=${personId},is_primary=true,deliverability_status='valid',updated_at=${now} where id=${method.id}`
-          else
-            await tx`insert into crm_contact_methods(person_id,method_type,raw_value,normalized_value,label,is_primary,deliverability_status,sms_consent_status,consent_source,consent_observed_at)
-              values(${personId},'email',${row.normalized_address},${row.normalized_address},'campaign verified',true,'valid','not_applicable','Reviewed identity evidence; mailbox verification tracked separately',${now})`
-        }
+        const [identity] = await tx`select * from resolve_email_review_identity(${ws}::uuid,${subject}::uuid,${row.id}::uuid,${command.payload.propertyRef},${tx.json(command.payload.evidence)}::jsonb)`
+        const personId = identity.person_id
+        const property = { id: identity.property_id, address: identity.property_address }
         await tx`update em_parties set kind='seller',identity_state='confirmed',canonical_person_id=${personId},identity_evidence=${tx.json({ source: command.payload.evidence[0].source, evidence: command.payload.evidence })},updated_at=${now}
           where workspace_id=${ws} and id=${row.party_id}`
         await tx`update em_party_addresses set relationship='confirmed',confirmed_by=${subject},confirmed_at=${now},evidence=${tx.json({ source: command.payload.evidence[0].source, evidence: command.payload.evidence })}
           where workspace_id=${ws} and party_id=${row.party_id} and address_id=${row.address_id}`
-        const normalizedProperty = command.payload.propertyRef.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
-        let [property] = await tx`select id,address from crm_properties where lower(address)=lower(${command.payload.propertyRef}) or normalized_address=${normalizedProperty} limit 2 for update`
-        if (!property)
-          [property] = await tx`insert into crm_properties(normalized_address,address) values(${normalizedProperty},${command.payload.propertyRef.trim()}) returning id,address`
         await tx`insert into em_party_properties(workspace_id,party_id,canonical_property_id,address,relationship,evidence)
           values(${ws},${row.party_id},${property.id},${property.address},${command.payload.relationship ?? 'representative'},${tx.json({ source: command.payload.evidence[0].source, evidence: command.payload.evidence })})
           on conflict(workspace_id,party_id,canonical_property_id) where canonical_property_id is not null
