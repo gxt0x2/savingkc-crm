@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
           propertyAddress: contact?.property_address ?? null,
           dueAt: item.dueAt,
           assignedTo: item.assignedTo,
+          role: item.role,
           department: item.department,
           priority: item.priority,
           status: item.status,

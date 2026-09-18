@@ -25,6 +25,7 @@ export interface ConversationHubLead {
   arv?: number | null
   offer_amount?: number | null
   appointment_date?: string | null
+  is_favorite?: boolean | null
   decision_tags?: ConversationDecisionTag[]
   created_at: string
 }

@@ -26,6 +26,7 @@ const LEAD_SELECT = [
   'dead_reason',
   'priority',
   'motivation_score',
+  'is_favorite',
   'seller_situation',
   'appointment_date',
   'assigned_agent',

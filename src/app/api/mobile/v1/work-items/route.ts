@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export function OPTIONS() { return mobileOptionsResponse() }
 
-const ALLOWED_KINDS = new Set(['task', 'follow_up', 'callback', 'send_offer'])
+const ALLOWED_KINDS = new Set(['task', 'appointment', 'follow_up', 'callback', 'send_offer'])
 const ALLOWED_ASSIGNEES = new Set((process.env.CRM_MOBILE_ALLOWED_ASSIGNEES || 'Ernest,Casey').split(',').map((value) => value.trim()).filter(Boolean))
 
 export async function POST(req: NextRequest) {

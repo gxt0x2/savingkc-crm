@@ -28,4 +28,14 @@ describe('mobile work-item create', () => {
     expect(response.status).toBe(400)
     expect(mocks.create).not.toHaveBeenCalled()
   })
+  it('accepts appointment records with their format role', async () => {
+    const response = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/work-items', {
+      method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json', 'Idempotency-Key': 'appointment-create-1' },
+      body: JSON.stringify({ title: 'Seller walk', leadId: 'lead-1', taskType: 'appointment', role: 'in_person', dueDate: '2026-09-19T15:00:00Z', assignedTo: 'Ernest' }),
+    }))
+    expect(response.status).toBe(201)
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'appointment', role: 'in_person', idempotencyKey: 'appointment-create-1',
+    }))
+  })
 })
