@@ -84,6 +84,25 @@ export async function queueControlledTest(
     await tx`insert into em_party_addresses(workspace_id,party_id,address_id,relationship,confirmed_at,evidence)
       values(${ws.id},${party.id},${address.id},'confirmed',${now},'{"source":"owner-authorized test"}'::jsonb) on conflict do nothing`;
     await selectInitialAddresses(tx, ws.id, party.id);
+    // A guard-cancelled, never-attempted sample cannot dispatch again. Retire its
+    // enrollment so an explicit new sample request does not hit the active lock.
+    const retired = await tx`update em_enrollments e set state='failed'
+      from em_campaigns c,em_threads t
+      where e.workspace_id=${ws.id} and e.party_id=${party.id} and e.address_id=${address.id}
+      and e.state in ('queued','held') and c.id=e.campaign_id and c.workspace_id=e.workspace_id and c.is_test
+      and t.enrollment_id=e.id and t.workspace_id=e.workspace_id and not t.inbound_pending
+      and exists(select 1 from em_send_intents i where i.thread_id=t.id and i.workspace_id=e.workspace_id)
+      and not exists(select 1 from em_send_intents i where i.thread_id=t.id and i.workspace_id=e.workspace_id
+        and (i.state<>'cancelled' or i.attempt_count<>0 or i.provider_message_id is not null))
+      returning t.id as thread_id`;
+    for (const old of retired) {
+      await tx`update em_threads set state='done' where workspace_id=${ws.id} and id=${old.thread_id}`;
+      await tx`insert into em_audit_events(workspace_id,actor_id,action,entity_id,request_id,detail,created_at)
+        values(${ws.id},${subject},'CONTROLLED-TEST-CANCELLED-RETIRED',${old.thread_id},${input.idempotencyKey},'{"reason":"new owner sample; prior test never attempted"}'::jsonb,${now})`;
+    }
+    const [pending] = await tx`select id from em_enrollments where workspace_id=${ws.id}
+      and (party_id=${party.id} or address_id=${address.id}) and state in ('queued','waiting_reply','held','replied') limit 1`;
+    check(!pending, 'CONTROLLED_TEST_ALREADY_PENDING');
     const [audience] =
       await tx`insert into em_audiences(workspace_id,name,program,state) values(${ws.id},'Controlled delivery test','seller_outreach','ready') returning id`;
     const [snapshot] =

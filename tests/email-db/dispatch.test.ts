@@ -354,6 +354,12 @@ test("controlled test is allowlisted, idempotent and excludes automatic follow-u
     });
     assert.equal(result.state, "accepted");
     assert.equal(sends, 2);
+    const cancelled = await queueControlledTest(db.sql, owner, { ...input, idempotencyKey: randomUUID() }, now);
+    await assert.rejects(queueControlledTest(db.sql, owner, { ...input, idempotencyKey: randomUUID() }, now), /CONTROLLED_TEST_ALREADY_PENDING/);
+    await db.sql`update em_send_intents set state='cancelled',cancellation_reason='dispatch_guard' where id=${cancelled.entityId}`;
+    await queueControlledTest(db.sql, owner, { ...input, idempotencyKey: randomUUID() }, now);
+    const [retired] = await db.sql`select e.state from em_enrollments e join em_threads t on t.enrollment_id=e.id where t.id=${cancelled.threadId}`;
+    assert.equal(retired.state, 'failed');
     const { contactHygieneReasons } = await import('../../src/lib/email/hygiene/guards');
     const [testThread] = await db.sql`select party_id,address_id from em_threads where id=${second.threadId}`;
     const hygieneInput = { workspaceId: db.workspaceId, partyId: testThread.party_id, addressId: testThread.address_id, threadId: second.threadId, now };

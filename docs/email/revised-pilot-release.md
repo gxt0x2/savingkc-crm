@@ -49,3 +49,5 @@ The first hosted save exposed that audience review attempted direct canonical wr
 ## Repeated owner sample correction
 
 Live sample dispatch was cancelled before the provider attempt because an older controlled sample remained active. Allowlisted controlled samples now ignore only other test conversations in the duplicate-conversation check. Real active conversations, opt-outs, identity checks and all other delivery guards remain enforced. Regression covers a second sample, ordinary duplicate-contact blocking and a real conversation blocking a test. Sample-send errors now use plain language.
+
+A new explicit sample request also retires a prior controlled enrollment only when all its intents were cancelled with zero attempts and no provider ID or pending inbound. The retirement is audited; pending, uncertain or real enrollments still block a new sample. This covers the cancelled-test enrollment left behind by the original guard failure.
