@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import { transcribeAudio } from '@/lib/mojo-transcriber'
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
   }
 
   // Alert eligible agents.
-  const urgentMsg = `[URGENT] Inbound seller voicemail from ${from}. Recording: ${recordingUrl}${leadId ? '\n' + BASE_URL + '/leads/' + leadId : ''}\nCall back NOW.`
+  const urgentMsg = `[URGENT] Inbound seller voicemail from ${formatPhone(from)}. Recording: ${recordingUrl}${leadId ? '\n' + BASE_URL + '/leads/' + leadId : ''}\nCall back NOW.`
   await sendTeamLeadAlert({
     leadId,
     smsBody: urgentMsg,
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
     calledNumber,
     push: leadId ? {
       title: 'Inbound Seller Voicemail',
-      body: `Voicemail from ${from}. Call back now.`,
+      body: `Voicemail from ${formatPhone(from)}. Call back now.`,
       url: `/leads/${leadId}`,
       tag: 'inbound-seller-voicemail',
     } : false,
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
     await supabase.from('ari_briefing_events').insert({
       event_type: 'inbound_seller_voicemail',
       priority: 'critical',
-      title: `[URGENT] Inbound seller voicemail from ${from}`,
+      title: `[URGENT] Inbound seller voicemail from ${formatPhone(from)}`,
       description: `Both agents missed. Voicemail left and the conversation needs a reply.`,
       lead_id: leadId,
       action_url: `/leads/${leadId}`

@@ -1,4 +1,5 @@
 import type { PilotThread } from '@/lib/email/workflow/types'
+import { formatPhone } from '@/lib/format'
 import styles from './email-workspace.module.css'
 
 export function EmailCallbackReview({ request, stopped, canWork, owns, blocked, busy, onBackToInbox, onApprove, onTakeOver }: {
@@ -22,7 +23,7 @@ export function EmailCallbackReview({ request, stopped, canWork, owns, blocked, 
         ? 'This message contains a test number. Finish the test to move this conversation to Done.'
         : request.explicitCall === false ? 'The sender shared a phone number. Review the conversation before approving a callback. No call or appointment has been scheduled.'
         : 'The sender asked for a call. Approve the handoff so CRM can check the Lead details and route the follow-up to your callback team.'}</p>
-      <p><strong>{request.phone}</strong>{request.time ? ` · ${request.time}` : ''}</p>
+      <p><strong>{formatPhone(request.phone)}</strong>{request.time ? ` · ${request.time}` : ''}</p>
       {request.testOnly && <p>No real Lead or callback task will be created.</p>}
       {canWork ? (owns
         ? <button className={styles.primary} disabled={blocked} onClick={onApprove}>{busy ? 'Saving…' : request.testOnly ? 'Finish test' : 'Approve & route callback'}</button>

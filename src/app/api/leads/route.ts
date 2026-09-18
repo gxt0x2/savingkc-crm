@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { notifyNewLead } from '@/lib/ari-briefing'
@@ -270,7 +271,7 @@ async function triggerWebsiteLeadSideEffects(input: {
   const publicLeadUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${leadUrl}`
   const addressPart = input.address ? ` at ${input.address}` : ''
   const label = input.isGoogleAds ? 'Google Ads website lead' : 'Website lead'
-  const alertBody = `New ${label}: ${input.fullName}${addressPart}. Phone: ${input.phone || 'not provided'}. ${publicLeadUrl}`
+  const alertBody = `New ${label}: ${input.fullName}${addressPart}. Phone: ${formatPhone(input.phone) || 'not provided'}. ${publicLeadUrl}`
 
   await Promise.allSettled([
     notifyNewLead(input.leadId, input.fullName, input.source),

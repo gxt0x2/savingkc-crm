@@ -125,7 +125,7 @@ function leadName(lead: LeadRow | undefined, meta: Record<string, unknown>): str
   return text(lead?.full_name)
     || text(meta.leadName)
     || text(meta.fullName)
-    || (from ? `Caller ${from}` : 'Unknown lead')
+    || (from ? `Caller ${formatPhone(from)}` : 'Unknown lead')
 }
 
 function relatedRowsFor(row: LeadActivityRow, callbackRows: LeadActivityRow[]): LeadAlertActivityLike[] {

@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
 import { getLeadQualificationStatuses, QUALIFICATION_PILLARS } from '@/lib/qualification-policy'
 
@@ -248,7 +249,7 @@ async function findDuplicateLeads(): Promise<AuditFinding[]> {
         findings.push({
           audit_type: 'duplicate',
           severity: 'medium',
-          description: `Phone number ${group.phone} appears on ${group.count} lead records. Review and merge duplicates.`,
+          description: `Phone number ${formatPhone(group.phone)} appears on ${group.count} lead records. Review and merge duplicates.`,
           metadata: { phone: group.phone, count: group.count },
         })
       }

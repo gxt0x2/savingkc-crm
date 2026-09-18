@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { formatPhone } from '@/lib/format'
 import {
   MAIN_DIALER_DISPOSITIONS,
   DEAD_REASONS,
@@ -407,7 +408,7 @@ export function DispositionModal({
               <div className="flex-1 min-w-0">
                 <div className="text-white text-[16px] font-semibold tracking-[-0.02em] truncate">{resolvedContact.name}</div>
                 <div className="text-[13px] text-[var(--skc-text-tertiary)] mt-0.5 truncate">
-                  {resolvedContact.phone || 'No phone'}
+                  {formatPhone(resolvedContact.phone) || 'No phone'}
                   {resolvedContact.leadId ? ` · Lead #${resolvedContact.leadId}` : ''}
                 </div>
               </div>
@@ -677,7 +678,7 @@ export function DispositionModal({
             <div className="flex-1 min-w-0">
               <div className="text-white text-[16px] font-semibold tracking-[-0.02em] truncate">{resolvedContact.name}</div>
               <div className="text-[13px] text-[var(--skc-text-tertiary)] mt-0.5 truncate">
-                {resolvedContact.phone || 'No phone'}
+                {formatPhone(resolvedContact.phone) || 'No phone'}
                 {resolvedContact.leadId ? ` · Lead #${resolvedContact.leadId}` : ''}
               </div>
             </div>

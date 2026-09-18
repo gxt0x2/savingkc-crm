@@ -1,5 +1,6 @@
 'use client'
 
+import { formatPhone } from '@/lib/format'
 import { FormEvent, useMemo, useState } from 'react'
 import { CampaignAiCadence } from '@/components/prospecting/campaign-ai-cadence'
 import { Icon } from '@/components/ui/icon'
@@ -83,7 +84,7 @@ function delayLabel(delayMinutes: number) {
 }
 
 function phoneLabel(phone: string, options: ReadonlyArray<{ value: string; label: string }>) {
-  return options.find((option) => option.value === phone)?.label || phone
+  return options.find((option) => option.value === phone)?.label || formatPhone(phone)
 }
 
 function sendDaySummary(days: number[]) {

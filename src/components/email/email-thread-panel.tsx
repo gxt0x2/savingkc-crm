@@ -1,6 +1,7 @@
 'use client'
 
 import { EmailContactRules } from './email-contact-rules'
+import { formatPhone } from '@/lib/format'
 import { EmailCallbackReview } from './email-callback-review'
 import { EmailSendIssue } from './email-send-issue'
 import { EmailMessageBody as MessageBody } from './email-message-body'
@@ -652,7 +653,7 @@ export function EmailThreadPanel({
                     </p>
                   ) : proposal?.phone ? (
                     <p>
-                      Phone provided: {proposal.phone}. Contact details are
+                      Phone provided: {formatPhone(proposal.phone)}. Contact details are
                       ready for your approval.
                     </p>
                   ) : (

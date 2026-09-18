@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import {
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
     const { error: activityError } = await supabase.from('lead_activities').insert({
       lead_id: resolvedLeadId,
       activity_type: 'status_change',
-      description: `${verified ? 'Verified' : 'Unverified'} ${phoneRow.contact_name || 'heir'} number ${phoneRow.phone || ''}`.trim(),
+      description: `${verified ? 'Verified' : 'Unverified'} ${phoneRow.contact_name || 'heir'} number ${formatPhone(phoneRow.phone)}`.trim(),
       agent: actor.name,
       metadata: {
         source: 'heir_dialer',

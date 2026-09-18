@@ -1,5 +1,6 @@
 'use client'
 
+import { formatPhone } from '@/lib/format'
 import { Icon } from '@/components/ui/icon'
 
 type IncomingCallCardProps = {
@@ -50,7 +51,7 @@ export function ActiveCallCard({ callTimer, dialNumber, leadName, muted, onHangu
         <Icon name="call" className={workspace ? connected ? 'text-[var(--prospecting-success)]' : 'text-[var(--prospecting-primary)]' : connected ? 'text-[#FF7A7A]' : 'text-white'} size="text-2xl" />
       </div>
       {leadName ? <p className={`text-base font-bold ${workspace ? 'text-[var(--ck-text)]' : 'text-white'}`}>{leadName}</p> : null}
-      <p className={`font-mono text-sm ${workspace ? 'text-[var(--ck-text-muted)]' : 'text-white/60'}`}>{dialNumber}</p>
+      <p className={`font-mono text-sm ${workspace ? 'text-[var(--ck-text-muted)]' : 'text-white/60'}`}>{formatPhone(dialNumber)}</p>
       {connected ? <p className={`mt-1 font-mono text-xl font-bold ${workspace ? 'text-[var(--prospecting-success)]' : 'text-[#FF7A7A]'}`}>{callTimer}</p> : <p className={`mt-1 animate-pulse text-sm ${workspace ? 'text-[var(--prospecting-primary)]' : 'text-white/80'}`}>Dialing...</p>}
     </div>
     <div className="flex gap-3">

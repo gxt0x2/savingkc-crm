@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -144,15 +145,15 @@ function tagLabel(tag: string | null): string | null {
 function actionDescription(action: ThreadStateAction, phone: string | null, dueAt: string | null, tag: string | null, resolutionReason: ResolutionReason | null): string {
   if (action === 'reminder_created') {
     const due = dueAt ? new Date(dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'soon'
-    return `Conversation reminder set for ${due}${phone ? `: ${phone}` : ''}`
+    return `Conversation reminder set for ${due}${phone ? `: ${formatPhone(phone)}` : ''}`
   }
   if (action === 'tag_added' || action === 'tag_removed') {
-    return `Conversation ${action === 'tag_added' ? 'tagged' : 'untagged'} ${tagLabel(tag) || 'Tag'}${phone ? `: ${phone}` : ''}`
+    return `Conversation ${action === 'tag_added' ? 'tagged' : 'untagged'} ${tagLabel(tag) || 'Tag'}${phone ? `: ${formatPhone(phone)}` : ''}`
   }
   if (action === 'mark_read' && resolutionReason) {
-    return `Conversation resolved — ${RESOLUTION_LABELS[resolutionReason]}${phone ? `: ${phone}` : ''}`
+    return `Conversation resolved — ${RESOLUTION_LABELS[resolutionReason]}${phone ? `: ${formatPhone(phone)}` : ''}`
   }
-  return `Conversation ${ACTION_LABELS[action]}${phone ? `: ${phone}` : ''}`
+  return `Conversation ${ACTION_LABELS[action]}${phone ? `: ${formatPhone(phone)}` : ''}`
 }
 
 export async function POST(req: Request) {

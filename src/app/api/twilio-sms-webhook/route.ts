@@ -168,7 +168,7 @@ export async function POST(req: Request) {
                          from === ERNEST_PHONE ? 'Ernest' :
                          from === '+18166088588' ? 'Ernest (co)' :
                          from === '+18167277667' ? 'Casey (co)' : 'Team'
-      const teamAlert = `📩 ${teamMember} texted ${to}: "${messageBody.slice(0, 100)}"`
+      const teamAlert = `📩 ${teamMember} texted ${formatPhone(to)}: "${messageBody.slice(0, 100)}"`
 
       // Push notification to CRM
       sendInboundSmsPush(to, {
@@ -323,7 +323,7 @@ export async function POST(req: Request) {
           event_type: 'yes_reply_seller',
           priority: 'critical',
           title: `🔥 ${leadName !== 'Unknown' ? leadName : from} replied YES — wants to sell`,
-          description: `Replied YES to auto-text. Casey notified. Phone: ${from}`,
+          description: `Replied YES to auto-text. Casey notified. Phone: ${formatPhone(from)}`,
           lead_id: yesLeadId,
           action_url: `/leads/${yesLeadId}`,
         })
@@ -437,7 +437,7 @@ export async function POST(req: Request) {
           title: prospectMatch ? 'Tax Prospect Texted!' : 'Unknown SMS',
           body: prospectMatch
             ? `${prospectMatch.owner_1 || from}: "${messageBody.slice(0, 60)}"`
-            : `${from}: "${messageBody.slice(0, 60)}"`,
+            : `${formatPhone(from)}: "${messageBody.slice(0, 60)}"`,
           url: `/leads/${newLeadId}`,
           tag: prospectMatch ? 'prospect-sms' : 'unknown-sms',
         }).catch(() => {})

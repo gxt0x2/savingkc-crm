@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
   await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'call',
-    description: `Cold call callback from ${from} — didn't press 1, auto-texting`,
+    description: `Cold call callback from ${formatPhone(from)} — didn't press 1, auto-texting`,
     agent: 'System',
     metadata: { direction: 'inbound', from, calledNumber, tag: 'cold_callback_no_input' }
   })

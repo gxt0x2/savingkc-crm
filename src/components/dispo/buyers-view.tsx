@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 import { cn, formatCurrency } from '@/lib/utils'
+import { formatPhone } from '@/lib/format'
 import {
   useBuyers,
   useCreateBuyer,
@@ -529,13 +530,13 @@ function BuyerPanel({ buyer, onClose, onSaved }: BuyerPanelProps) {
               {buyer.phone && (
                 <div className="flex items-center gap-2 text-sm text-[var(--crm-text)]">
                   <Icon name="call" size="text-sm" className="text-[var(--crm-text-dim)]" />
-                  {buyer.phone}
+                  {formatPhone(buyer.phone)}
                 </div>
               )}
               {buyer.phone_2 && (
                 <div className="flex items-center gap-2 text-sm text-[var(--crm-text)]">
                   <Icon name="phone_forwarded" size="text-sm" className="text-[var(--crm-text-dim)]" />
-                  {buyer.phone_2}
+                  {formatPhone(buyer.phone_2)}
                 </div>
               )}
               {buyer.email && (
@@ -915,7 +916,7 @@ export function BuyersView() {
                       {buyer.first_name} {buyer.last_name}
                     </td>
                     <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden md:table-cell">{buyer.company_name ?? '—'}</td>
-                    <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden sm:table-cell">{buyer.phone ?? '—'}</td>
+                    <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden sm:table-cell">{formatPhone(buyer.phone) || '—'}</td>
                     <td className="px-4 py-3 text-[var(--crm-text-muted)] hidden lg:table-cell truncate max-w-[180px]">{buyer.email ?? '—'}</td>
                     <td className="px-4 py-3 text-[var(--crm-text-muted)] text-xs hidden xl:table-cell max-w-[220px] truncate">
                       {formatBuyBox(buyer.buy_box ?? {})}

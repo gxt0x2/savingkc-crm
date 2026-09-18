@@ -6,6 +6,7 @@
  * Event-driven briefing system that surfaces what matters
  */
 
+import { formatPhone } from '@/lib/format'
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseAdminKey, getSupabaseUrl } from './supabase/env'
@@ -404,10 +405,10 @@ export async function notifyMissedCall(
   return createBriefingEvent({
     event_type: 'missed_call',
     priority: 'high',
-    title: `Missed call: ${leadName || phoneNumber}`,
+    title: `Missed call: ${leadName || formatPhone(phoneNumber)}`,
     description: leadId
       ? `Missed call from ${leadName}. Auto text-back sent and the conversation needs a reply.`
-      : `Missed call from unknown number ${phoneNumber}. Generic text-back sent.`,
+      : `Missed call from unknown number ${formatPhone(phoneNumber)}. Generic text-back sent.`,
     lead_id: leadId || undefined,
     action_url: leadId ? `/leads/${leadId}` : undefined,
     metadata: { phoneNumber },
