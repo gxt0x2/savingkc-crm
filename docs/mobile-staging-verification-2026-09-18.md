@@ -46,7 +46,7 @@ applied to staging. The receipt table is empty before behavioral testing.
 - Lead activities: 0; work items: 0; appointments: 0.
 - The canonical `contact_workspace_page_v4` RPC returns the authorized record
   in the `contacted` list with `is_favorite=false`.
-- Focused backend mobile API tests: 63 passed.
+- Focused backend mobile API tests: 71 passed across 21 files.
 - Standalone mobile tests: 72 passed.
 - Standalone mobile TypeScript check: passed.
 
@@ -56,11 +56,13 @@ production release are not verified by this note.
 
 ## Authenticated behavioral verification
 
-The clean backend source at `f5ed12c16d4cb0bbf672804c4b095a9674fa2767`
+The clean backend source at `5a4408f58453aa4cfb576b2904e40675759c68fa`
 was built with the branch-scoped preview environment. The canonical build gate,
 Next.js compile, TypeScript pass, 131-page static generation, and serverless
-function trace completed. Build output repeatedly confirmed `TEST_MODE` was
-active, so SMS and email provider delivery remained disabled.
+function trace completed. The successful local verification build used the
+supported webpack fallback because Turbopack could not bind its local worker
+port in the execution sandbox. Build output repeatedly confirmed `TEST_MODE`
+was active, so SMS and email provider delivery remained disabled.
 
 A local preview of that exact build authenticated against staging and proved:
 
@@ -74,9 +76,14 @@ A local preview of that exact build authenticated against staging and proved:
   activity id with one stored row;
 - one task, one in-person appointment, and one event were saved with distinct
   canonical ids; replay returned those same ids with `created=false`;
+- replaying the task key with changed content now returns `409`, while a
+  same-payload replay still returns the original canonical task with
+  `created=false`;
+- a missing work-item idempotency key returns `400`; the existing changed-note
+  replay returns `409`;
 - after a complete backend restart, all rows and ids were unchanged;
 - Casey's independent auth session sees the shared opportunity pin, note, and
-  three calendar rows while Casey's per-user chat pin remains `false`.
+  exactly three calendar rows while Casey's per-user chat pin remains `false`.
 
 The durable rows are explicitly titled or described `STAGING VERIFICATION` and
 state that no customer action is required. No call, SMS, email, or other
