@@ -219,7 +219,7 @@ export const emailCommandSchema = z.discriminatedUnion('command', [
   command('AUD-REFRESH', z.object({ audienceId: uuid, segmentDefinition: segmentDefinitionSchema }).strict()),
   command('AUD-RESOLVE', z.object({
     rowId: uuid, partyId: uuid.optional(), leadId: uuid.optional(), propertyRef: nonEmpty.max(500).optional(),
-    resolution: z.enum(['link_existing', 'mark_unresolved', 'exclude']), relationship: z.enum(['owner','representative','heir']).optional(), evidence: evidenceList,
+    resolution: z.enum(['link_existing', 'mark_unresolved', 'exclude']), relationship: z.enum(['owner','representative','heir','relative']).optional(), evidence: evidenceList,
   }).strict()),
   command('AUD-VERIFY', z.object({ selectionToken: hash, method: z.enum(['provider', 'import']), estimateHash: hash }).strict()),
   command('AUD-EXCLUDE', z.object({ rowIds: z.array(uuid).min(1).max(500), excluded: z.boolean(), reason: shortText }).strict()),

@@ -179,7 +179,8 @@ export function EmailWorkspace({
   const [newName, setNewName] = useState('')
   const [recipientProperties, setRecipientProperties] = useState<Record<string, string>>({})
   const [recipientEvidence, setRecipientEvidence] = useState<Record<string, string>>({})
-  const [recipientRelationships, setRecipientRelationships] = useState<Record<string, 'owner' | 'representative' | 'heir'>>({})
+  const [recipientEvidenceSources, setRecipientEvidenceSources] = useState<Record<string, 'import' | 'human_assessment'>>({})
+  const [recipientRelationships, setRecipientRelationships] = useState<Record<string, 'owner' | 'representative' | 'heir' | 'relative'>>({})
   const [samplePeople, setSamplePeople] = useState<Record<string, string>>({})
   const [sampleSenders, setSampleSenders] = useState<Record<string, string>>({})
   const [showSimulation, setShowSimulation] = useState(false)
@@ -983,7 +984,8 @@ export function EmailWorkspace({
                                                 }
                                               />
                                             </label>
-                                            <label>Verified relationship<select value={recipientRelationships[r.id] ?? 'representative'} onChange={event => setRecipientRelationships(current => ({ ...current, [r.id]: event.target.value as 'owner' | 'representative' | 'heir' }))}><option value="representative">Property contact / representative</option><option value="owner">Owner</option><option value="heir">Confirmed heir</option></select></label>
+                                            <label>Relationship supported by evidence<select value={recipientRelationships[r.id] ?? 'relative'} onChange={event => setRecipientRelationships(current => ({ ...current, [r.id]: event.target.value as 'owner' | 'representative' | 'heir' | 'relative' }))}><option value="representative">Confirmed representative</option><option value="relative">Source-reported relative (authority unconfirmed)</option><option value="owner">Owner</option><option value="heir">Confirmed heir</option></select></label>
+                                            <label>Evidence source<select value={recipientEvidenceSources[r.id] ?? 'import'} onChange={event => setRecipientEvidenceSources(current => ({ ...current, [r.id]: event.target.value as 'import' | 'human_assessment' }))}><option value="import">Reviewed source records</option><option value="human_assessment">Direct human confirmation</option></select></label>
                                             <label>Evidence for this person, email and property<textarea value={recipientEvidence[r.id] ?? ''} placeholder="Source and facts you checked; do not infer an heir from a shared last name." onChange={event => setRecipientEvidence(current => ({ ...current, [r.id]: event.target.value }))}/></label>
                                             <button
                                               disabled={busy || !(recipientProperties[r.id]?.trim()) || !(recipientEvidence[r.id]?.trim())}
@@ -996,10 +998,10 @@ export function EmailWorkspace({
                                                     partyId: r.partyId,
                                                     propertyRef: recipientProperties[r.id].trim(),
                                                     resolution: 'link_existing',
-                                                    relationship: recipientRelationships[r.id] ?? 'representative',
+                                                    relationship: recipientRelationships[r.id] ?? 'relative',
                                                     evidence: [
                                                       {
-                                                        source: 'human_assessment',
+                                                        source: recipientEvidenceSources[r.id] ?? 'import',
                                                         quote: recipientEvidence[r.id].trim(),
                                                       },
                                                     ],

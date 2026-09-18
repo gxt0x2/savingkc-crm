@@ -19,7 +19,7 @@ test('automatic eligibility requires unambiguous first-person callback instructi
     assert.equal(automaticCallbackRequest(text), null, text)
   }
 })
-for (const mode of ['success', 'identity', 'suppressed', 'pending', 'test'] as const) {
+for (const mode of ['success', 'relative', 'heir', 'identity', 'suppressed', 'pending', 'test'] as const) {
   test(`automatic callback ${mode} preserves routing and duplicate boundaries`, async () => {
     const db = await startDisposableDatabase()
     try {
@@ -28,6 +28,7 @@ for (const mode of ['success', 'identity', 'suppressed', 'pending', 'test'] as c
       const messageId = command.payload.factEvidence[0].messageId
       const [ws] = await db.sql`select id,config from em_workspaces limit 1`
       await db.sql`update em_workspaces set config=jsonb_set(config,'{team}',${db.sql.json({ reviewerId: owner, acquisitionOwnerId: agent, backupId: owner, hours: { timezone:'America/Chicago', weekdays:['monday','tuesday','wednesday','thursday','friday'],startLocal:'09:00',endLocal:'17:00' },sla:{urgentMinutes:30,ordinaryMinutes:60},calendarMode:'manual' })}) where id=${ws.id}`
+      if (mode === 'relative' || mode === 'heir') await db.sql`update em_party_properties set relationship=${mode} where party_id=(select party_id from em_threads where id=${threadId})`
       if (mode === 'identity') await db.sql`update em_parties set identity_state='unresolved' where id=(select party_id from em_threads where id=${threadId})`
       if (mode === 'suppressed') await db.sql`update em_threads set state='stopped' where id=${threadId}`
       if (mode === 'pending') await db.sql`update em_threads set inbound_pending=true where id=${threadId}`
@@ -37,7 +38,7 @@ for (const mode of ['success', 'identity', 'suppressed', 'pending', 'test'] as c
         return automaticallyHandoffCallback({tx,member:{workspace_id:ws.id,auth_user_id:owner,roles:['owner']},now},threadId,messageId)
       })
       const result = await run()
-      if (mode === 'success') {
+      if (mode === 'success' || mode === 'relative' || mode === 'heir') {
         assert.equal(result,true)
         assert.equal(await run(),false)
         const [lead] = await db.sql`select * from leads`

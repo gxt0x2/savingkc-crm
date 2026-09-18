@@ -520,6 +520,10 @@ test('personalized preview requires verified property evidence and freezes the r
   const representative = await renderCampaignCopy(db.sql as unknown as Tx, db.workspaceId, thread.party_id, steps);
   assert.match(representative[0].body, /right person/);
   assert.doesNotMatch(representative[0].body, /your family/);
+  await db.sql`update em_party_properties set relationship='relative' where party_id=${thread.party_id}`;
+  const relative = await renderCampaignCopy(db.sql as unknown as Tx, db.workspaceId, thread.party_id, steps);
+  assert.match(relative[0].body, /right person/);
+  assert.doesNotMatch(relative[0].body, /your family|inherited|tax debt/);
   await db.sql`update em_party_properties set relationship='heir' where party_id=${thread.party_id}`;
   const heir = await renderCampaignCopy(db.sql as unknown as Tx, db.workspaceId, thread.party_id, steps);
   assert.match(heir[0].body, /your family/);

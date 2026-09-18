@@ -21,7 +21,7 @@ export async function renderCampaignCopy(tx: Tx, workspaceId: string, partyId: s
   check(person?.identity_state === 'confirmed', 'PERSONALIZATION_IDENTITY_REQUIRED')
   const firstName = String(person.display_name).trim().split(/\s+/)[0]
   check(/^[\p{L}][\p{L}'’.-]*$/u.test(firstName) && !/\b(estate|trust|unknown|controlled)\b/i.test(firstName), 'PERSONALIZATION_NAME_REQUIRED')
-  const properties = await tx`select address,relationship,evidence from em_party_properties where workspace_id=${workspaceId} and party_id=${partyId} and canonical_property_id is not null and relationship in ('owner','representative','heir') order by id`
+  const properties = await tx`select address,relationship,evidence from em_party_properties where workspace_id=${workspaceId} and party_id=${partyId} and canonical_property_id is not null and relationship in ('owner','representative','heir','relative') order by id`
   check(properties.length === 1 && properties[0].address?.trim() && Object.keys(properties[0].evidence ?? {}).length > 0, 'PERSONALIZATION_PROPERTY_REQUIRED')
   const property = properties[0]
   const fields: Record<string,string> = {

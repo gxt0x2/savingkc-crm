@@ -53,7 +53,8 @@ withDb('owner confirms a reviewed recipient without creating a Lead', async (db)
       partyId: party.id,
       propertyRef: '101 Fixture Avenue',
       resolution: 'link_existing',
-      evidence: [{ source: 'human_assessment', quote: 'Two reviewed sources match this person and property.' }],
+      relationship: 'relative',
+      evidence: [{ source: 'import', quote: 'Source record links the person and mailbox as a possible child; authority is unconfirmed.' }],
     },
   }
   await rejects(executePilotCommand(db.sql, reader, command, now), 'FORBIDDEN')
@@ -68,6 +69,9 @@ withDb('owner confirms a reviewed recipient without creating a Lead', async (db)
   assert.ok(confirmed.canonical_person_id)
   assert.equal(confirmed.relationship, 'confirmed')
   assert.equal(confirmed.eligibility, 'eligible')
+  const [propertyEvidence] = await db.sql`select relationship,evidence from em_party_properties where party_id=${party.id}`
+  assert.equal(propertyEvidence.relationship, 'relative')
+  assert.equal(propertyEvidence.evidence.source, 'import')
 })
 
 withDb(

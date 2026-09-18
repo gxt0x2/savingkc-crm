@@ -245,7 +245,7 @@ export async function projectEmailHandoffToCrm(
     from em_party_properties ep
     join crm_properties cp on cp.id=ep.canonical_property_id
     where ep.workspace_id=${member.workspace_id} and ep.party_id=${thread.party_id}
-      and ep.relationship in ('owner','representative')
+      and ep.relationship in ('owner','representative','heir','relative')
       and ep.canonical_property_id is not null for share of ep`
   if (properties.length === 0)
     return holdBridge(

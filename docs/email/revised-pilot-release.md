@@ -30,8 +30,14 @@ Apply `20261110122000_email_reply_message_ids.sql` before the application releas
 
 ## Remaining launch evidence
 
-- The five imported candidates still require independent identity/property relationship review; a deliverable address is not proof of the contact's relationship to a property.
+- Review each imported candidate against the original parcel record, named relative and exact SmartSkip mailbox assignment. Record relatives as source-reported, without claiming heirship, title or authority. A deliverable mailbox alone does not establish the relationship.
 - Save the revised sequence in the pilot draft and review each eligible person's exact message.
 - Send the corrected sample to the approved owner inbox, inspect visible link, sender, reply address and placement; confirm a reply returns to the correct thread.
 - Verify the selected sender's live callback creates/links the intended Lead, assigned work item and SMS alert. Tests are not a replacement for this live proof.
 - Owner approval before starting the recipient campaign. A prior spam placement remains unresolved until a fresh sample is inspected.
+
+## Source-reported relatives correction
+
+`20261110123000_email_related_contacts.sql` adds the distinct `relative` relationship and preserves identity locks without new table privileges. Reviewed source records keep their import provenance. Relatives receive neutral right-person copy; only confirmed heirs receive family wording. An explicit callback can create a Lead for a reviewed relative or heir without treating that contact as a legal owner.
+
+Validation: 10 targeted database regressions passed, including source provenance, neutral copy, callback routing, duplicate prevention and runtime identity locks. TypeScript and changed-file lint passed.
