@@ -5,3 +5,5 @@ logs/
 test-results/
 deploy.log
 out/
+tmp/
+.env*.local
