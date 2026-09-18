@@ -6,6 +6,7 @@ import {
   mobileOptionsResponse,
   requireMobileUser,
 } from '@/lib/mobile-api/auth'
+import { listMobileAppointments } from '@/lib/server/mobile-appointments'
 import { listWorkItems, WorkItemError } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -19,12 +20,15 @@ export function OPTIONS() {
 export async function GET(req: NextRequest) {
   try {
     await requireMobileUser(req)
-    const workItems = await listWorkItems({
-      statuses: ['pending', 'blocked'],
-      limit: 300,
-    })
+    const [workItems, appointments] = await Promise.all([
+      listWorkItems({ statuses: ['pending', 'blocked'], limit: 300 }),
+      listMobileAppointments(300),
+    ])
     const scheduledItems = workItems.filter((item) => Boolean(item.dueAt))
-    const leadIds = [...new Set(scheduledItems.flatMap((item) => item.leadId ? [item.leadId] : []))]
+    const leadIds = [...new Set([
+      ...scheduledItems.flatMap((item) => item.leadId ? [item.leadId] : []),
+      ...appointments.map((appointment) => appointment.leadId),
+    ])]
     const contacts = new Map<string, { full_name: string | null; property_address: string | null }>()
 
     if (leadIds.length > 0) {
@@ -39,7 +43,32 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
-      items: scheduledItems.map((item) => {
+      items: [
+        ...appointments.map((appointment) => {
+          const contact = contacts.get(appointment.leadId)
+          return {
+            id: appointment.id,
+            recordKind: 'appointment',
+            appointmentId: appointment.id,
+            appointmentVersion: appointment.version,
+            type: appointment.type,
+            status: appointment.status,
+            title: appointment.title,
+            description: appointment.notes,
+            contactId: appointment.leadId,
+            contactName: contact?.full_name ?? null,
+            propertyAddress: contact?.property_address ?? null,
+            startsAt: appointment.scheduledAt,
+            endsAt: appointment.endsAt,
+            location: appointment.location,
+            timeZone: appointment.timeZone,
+            assignedTo: appointment.assignedTo,
+            sendReminder: appointment.sendReminder,
+            sync: appointment.sync,
+            updatedAt: appointment.updatedAt,
+          }
+        }),
+        ...scheduledItems.map((item) => {
         const contact = item.leadId ? contacts.get(item.leadId) : null
         return {
           id: item.key,
@@ -62,7 +91,8 @@ export async function GET(req: NextRequest) {
           status: item.status,
           updatedAt: item.updatedAt,
         }
-      }),
+        }),
+      ],
       serverNow: new Date().toISOString(),
     }, { headers: mobileNoStoreHeaders() })
   } catch (error) {

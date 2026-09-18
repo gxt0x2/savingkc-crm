@@ -8,13 +8,23 @@ export interface AppointmentRow {
   id: string
   lead_id: string
   scheduled_at: string
+  ends_at: string
+  title: string
   type: AppointmentType
   status: AppointmentStatus
   address: string | null
+  location: string | null
+  time_zone: string
   notes: string | null
   source: AppointmentSource
   source_call_id: string | null
   assigned_to: string | null
+  sequence_enabled: boolean
+  version: number
+  provider_event_id: string | null
+  provider_sync_status: 'not_configured' | 'pending' | 'synced' | 'failed'
+  provider_synced_at: string | null
+  provider_sync_error: string | null
   created_at: string
   updated_at: string
 }
