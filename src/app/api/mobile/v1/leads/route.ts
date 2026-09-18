@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       smartList: list,
       scope: 'active',
       limit,
-      cursor: null,
+      cursor: searchParams.get('cursor')?.trim() || null,
       sort: 'recent',
       search: searchParams.get('q')?.trim() || '',
       owner: '',

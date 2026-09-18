@@ -66,6 +66,14 @@ describe('mobile Pipeline', () => {
     }))
   })
 
+  it('forwards cursor and search without draining every page', async () => {
+    await GET(request('?list=all&limit=25&cursor=next-page&q=oak'))
+
+    expect(mocks.readPage).toHaveBeenCalledWith(expect.objectContaining({
+      smartList: 'all', cursor: 'next-page', search: 'oak', limit: 25,
+    }))
+  })
+
   it('fails closed before loading Pipeline data', async () => {
     const { MobileAuthError } = await import('@/lib/mobile-api/auth')
     mocks.requireMobileUser.mockRejectedValue(new MobileAuthError('Invalid bearer token'))
