@@ -86,6 +86,50 @@ describe('Mojo source integrity', () => {
     const dnc = await buildCallRecords([activity(6, 11, { group_name: 'Do Not Call' })], 0, 'test', new Map(), '', contact)
     expect(dnc.calls[0]).toMatchObject({ disposition: 'Do Not Call', phone_number: '9135550123', promotion_eligible: false })
   })
+  it('does not treat the type-30 side effect from the Follow Up group as seller qualification', async () => {
+    const recordings = indexMojoRecordings([{
+      contact_id: 7,
+      record_id: 87332080,
+      audio: 'https://example.com/linda.mp3',
+      duration_seconds: 171,
+      call_date: '09/17/2026 12:16 PM',
+    }])
+    const rows = [
+      activity(17471632, 3, { contents: '816-534-6183\n$16,393.08 5yrs' }, '09/17/2026 12:15 PM'),
+      activity(17471635, 6, { datetime: '2026-09-17T15:00:00-05:00' }, '09/17/2026 12:16 PM'),
+      activity(17471636, 11, { group_name: 'Follow Up' }, '09/17/2026 12:16 PM'),
+      activity(17471637, 30, { group_id: 7, group_name: 'Follow Up' }, '09/17/2026 12:16 PM'),
+    ]
+    const result = await buildCallRecords(rows, 0, 'test', recordings, '', contact)
+    expect(result.calls).toHaveLength(1)
+    expect(result.calls[0]).toMatchObject({
+      record_id: 'mojo-activity-7-17471635',
+      disposition: 'Callback Requested',
+      qualified_by_agent: false,
+      promotion_eligible: false,
+      qualification_status: 'ineligible',
+      qualification_reasons: ['missing_seller_intent_evidence'],
+    })
+  })
+  it('retains explicit agent qualification for a true Lead group', async () => {
+    const recordings = indexMojoRecordings([{
+      contact_id: 7,
+      record_id: 20,
+      audio: 'https://example.com/qualified.mp3',
+      duration_seconds: 180,
+      call_date: '09/17/2026 12:16 PM',
+    }])
+    const rows = [
+      activity(20, 6, { datetime: '2026-09-17T15:00:00-05:00' }, '09/17/2026 12:16 PM'),
+      activity(21, 30, { group_id: 1, group_name: 'Lead' }, '09/17/2026 12:16 PM'),
+    ]
+    const result = await buildCallRecords(rows, 0, 'test', recordings, '', contact)
+    expect(result.calls[0]).toMatchObject({
+      qualified_by_agent: true,
+      promotion_eligible: true,
+      qualification_reasons: ['agent_qualified', 'minimum_duration_met', 'callback_scheduled'],
+    })
+  })
   it('retains a batch for retry if contact enrichment fails', async () => {
     await expect(buildCallRecords([activity(5, 6, { datetime: '09/14/2026 12:00 PM' })], 0, 'test', new Map(), '', async () => { throw new Error('lookup failed') }))
       .rejects.toThrow('lookup failed')
