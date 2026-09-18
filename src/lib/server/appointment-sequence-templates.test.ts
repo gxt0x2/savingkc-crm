@@ -3,6 +3,15 @@ import { appointmentCopy } from './appointment-sequence-templates'
 
 const input = { firstName: 'Ernest Dodson', repName: 'Casey Davis', repPhone: '+18167277667', scheduledAt: '2026-09-16T22:00:00Z', bookedAt: '2026-09-14T18:00:00Z', type: 'in_person' }
 describe('appointment seller copy', () => {
+  it('formats the direct number in SMS, plain text email, and HTML without changing digits', () => {
+    for (const touch of ['booking_sms', 'booking_email'] as const) {
+      const result = appointmentCopy({ ...input, touch })
+      expect(result.body).toContain('(816) 727-7667')
+      expect(result.html).toContain('(816) 727-7667')
+      expect(result.body).not.toContain(input.repPhone)
+      expect(result.html).not.toContain(input.repPhone)
+    }
+  })
   it('uses the seller first name, rep identity, and Central appointment time', () => {
     const result = appointmentCopy({ ...input, touch: 'booking_sms' })
     expect(result.body).toContain("Hey Ernest, it's Casey")

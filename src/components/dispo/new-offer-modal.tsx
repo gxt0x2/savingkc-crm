@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '@/components/ui/icon'
+import { formatPhone } from '@/lib/format'
 
 interface LeadOption {
   id: string
@@ -210,7 +211,7 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
                   <p className="text-sm font-semibold text-[var(--crm-ink)]">
                     {selectedBuyer.name || selectedBuyer.company || 'Buyer'}
                   </p>
-                  <p className="text-xs text-[var(--crm-text-muted)]">{selectedBuyer.email || selectedBuyer.phone}</p>
+                  <p className="text-xs text-[var(--crm-text-muted)]">{selectedBuyer.email || formatPhone(selectedBuyer.phone)}</p>
                 </div>
                 <button type="button" onClick={() => { setSelectedBuyer(null); setBuyerQuery('') }} className="text-xs text-[var(--crm-danger)] font-semibold">Change</button>
               </div>
@@ -253,7 +254,7 @@ export function NewOfferModal({ onClose, onCreated }: Props) {
                         <p className="text-sm font-semibold text-[var(--crm-ink)]">
                           {b.name || b.company || 'Buyer'}
                         </p>
-                        <p className="text-xs text-[var(--crm-text-muted)]">{b.email || b.phone}</p>
+                        <p className="text-xs text-[var(--crm-text-muted)]">{b.email || formatPhone(b.phone)}</p>
                       </button>
                     ))}
                   </div>

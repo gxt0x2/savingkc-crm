@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { handleOptIn, handleOptOut } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
     }
 
     const suppression = await currentSuppression(phone)
-    const description = `Phone marked ${ACTION_LABELS[action]}${phone ? `: ${phone}` : ''}`
+    const description = `Phone marked ${ACTION_LABELS[action]}${phone ? `: ${formatPhone(phone)}` : ''}`
     const { error } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'status_change',

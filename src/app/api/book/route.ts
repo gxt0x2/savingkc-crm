@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
 import { detectCounty, parseAddressForCounty } from '@/lib/county-enrichment'
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
@@ -197,7 +198,7 @@ export async function POST(req: NextRequest) {
       activityId = activity?.id ?? null
       if (activityError) warnings.push('The appointment timeline entry is pending.')
 
-      const confirmationBody = `Hi ${firstName}! Your call with Saving KC Homebuyers is confirmed for ${formattedDate} at ${displayTime} CT. We'll call you at ${phone}. Questions? Call (816) 429-2900.`
+      const confirmationBody = `Hi ${firstName}! Your call with Saving KC Homebuyers is confirmed for ${formattedDate} at ${displayTime} CT. We'll call you at ${formatPhone(phone)}. Questions? Call (816) 429-2900.`
       const { error: queueError } = await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'sms',
@@ -226,7 +227,7 @@ export async function POST(req: NextRequest) {
 
       await sendTeamLeadAlert({
         leadId,
-        smsBody: `New call booked: ${firstName}${propertyAddress ? ` at ${propertyAddress}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${phone}`,
+        smsBody: `New call booked: ${firstName}${propertyAddress ? ` at ${propertyAddress}` : ''} — ${formattedDate} at ${displayTime}. Phone: ${formatPhone(phone)}`,
         trigger: 'booking_alert', source: bookingSource,
         trafficSource: isPpcBooking ? 'google_ads' : 'non_paid',
         push: {

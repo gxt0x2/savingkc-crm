@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       await supabase.from('lead_activities').insert({
         lead_id: null,
         activity_type: 'call',
-        description: `Spam filtered: repeat no-input caller ${from} (3+ in 7 days)`,
+        description: `Spam filtered: repeat no-input caller ${formatPhone(from)} (3+ in 7 days)`,
         agent: 'System',
         metadata: { direction: 'inbound', from, to: calledNumber, calledNumber, team: 'Acquisitions', tag: 'ivr_no_input', spam: true }
       })
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
     await supabase.from('lead_activities').insert({
       lead_id: noInputLeadId,
       activity_type: 'call',
-      description: `Inbound call from ${from} — no IVR input, routing to agents`,
+      description: `Inbound call from ${formatPhone(from)} — no IVR input, routing to agents`,
       agent: 'System',
       metadata: { direction: 'inbound', from, to: calledNumber, calledNumber, team: 'Acquisitions', tag: 'ivr_no_input' }
     })

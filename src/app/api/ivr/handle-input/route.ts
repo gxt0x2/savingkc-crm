@@ -83,8 +83,8 @@ export async function POST(req: Request) {
         lead_id: leadId || null,
         activity_type: 'call',
         description: isColdCall
-          ? `Cold call callback from ${from} — pressed 1, wants to sell`
-          : `Inbound seller call from ${from} — pressed 1`,
+          ? `Cold call callback from ${formatPhone(from)} — pressed 1, wants to sell`
+          : `Inbound seller call from ${formatPhone(from)} — pressed 1`,
         agent: 'System',
         metadata: { direction: 'inbound', from, callSid, source: isColdCall ? 'cold_callback_press_1' : 'ivr_press_1' }
       })
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
       await supabase.from('lead_activities').insert({
         lead_id: null,
         activity_type: 'call',
-        description: `Inbound call (Press 2 — non-seller inquiry) from ${from}`,
+        description: `Inbound call (Press 2 — non-seller inquiry) from ${formatPhone(from)}`,
         agent: 'System',
         metadata: { direction: 'inbound', from, callSid, tag: 'non_lead_inquiry' }
       })

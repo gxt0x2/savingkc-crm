@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import 'server-only'
 
 import { check, json, workflowHash, type Context } from './workflow/core'
@@ -452,7 +453,7 @@ export async function projectEmailHandoffToCrm(
     await tx`select config from em_workspaces where id=${member.workspace_id}`
   const team = emailWorkspaceConfigSchema.parse(workspace.config).team
   const callbackDue = pilotCallbackDue(now, team)
-  const phoneText = input.requestedContact.phone ?? 'not provided'
+  const phoneText = formatPhone(input.requestedContact.phone) || 'not provided'
   const requestedTime =
     input.requestedContact.requestedTimeText ?? 'not provided'
   const notes = [

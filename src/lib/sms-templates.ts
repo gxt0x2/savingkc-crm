@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
 
 /**
@@ -219,7 +220,7 @@ export function renderTemplate(
 
   let result = tpl.body
   for (const [key, value] of Object.entries(vars)) {
-    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value)
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), () => /^(phone|repPhone|agentPhone|twilioNumber)$/i.test(key) ? formatPhone(value) : value)
   }
   return result
 }

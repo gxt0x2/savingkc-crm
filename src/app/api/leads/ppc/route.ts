@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createHash } from 'node:crypto'
@@ -373,7 +374,7 @@ async function triggerPpcLeadSideEffects(params: {
   const leadUrl = `/leads/${params.leadId}`
   const publicLeadUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'}${leadUrl}`
   const addressPart = params.address ? ` at ${params.address}` : ''
-  const alertBody = `New PPC lead: ${params.fullName}${addressPart}. Phone: ${params.phone}. ${publicLeadUrl}`
+  const alertBody = `New PPC lead: ${params.fullName}${addressPart}. Phone: ${formatPhone(params.phone)}. ${publicLeadUrl}`
   const targets = getLeadAlertRecipients()
 
   const smsResults = process.env.TWILIO_PHONE_NUMBER && targets.length > 0

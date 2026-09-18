@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { CockpitModal } from '@/components/ui/cockpit-modal'
 import { useCardCollapse } from '@/hooks/use-card-collapse'
+import { formatPhone } from '@/lib/format'
 
 type PieceType = 'letter' | 'postcard' | 'thank_you'
 
@@ -228,7 +229,7 @@ export function MailTracker({ leadId, leadName, onLogged }: MailTrackerProps) {
                         style={{ color: 'var(--ck-text-dim)' }}
                       >
                         <Icon name="phone" className="!text-[10px]" />
-                        {p.phone_used}
+                        {formatPhone(p.phone_used)}
                       </p>
                     )}
                   </li>

@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 export type DirectInboundLeadSeedInput = {
   phone: string
   displayPhone: string
@@ -16,6 +17,6 @@ export function buildDirectInboundLeadSeed(input: DirectInboundLeadSeedInput) {
     priority: 'warm',
     classification: null,
     assigned_agent: input.assignedAgent,
-    notes: `Connected inbound call to ${input.calledNumber}. The seller has not been confirmed as an opportunity.`,
+    notes: `Connected inbound call to ${formatPhone(input.calledNumber)}. The seller has not been confirmed as an opportunity.`,
   }
 }

@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { DispoPageHeader } from '@/components/dispo/workspace-ui'
 import { cn } from '@/lib/utils'
+import { formatPhone } from '@/lib/format'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 // ---------------------------------------------------------------------------
@@ -732,7 +733,7 @@ export function VendorsView() {
                           onClick={e => e.stopPropagation()}
                           className="hover:text-[var(--crm-brand)] transition-colors"
                         >
-                          {v.phone}
+                          {formatPhone(v.phone)}
                         </a>
                       ) : <span className="text-[var(--crm-text-dim)]">—</span>}
                     </td>

@@ -398,7 +398,7 @@ export async function POST(req: Request) {
 
   // For direct calls, alert the agent who owns that number only (no tasks/SMS to caller)
   if (isDirect && from) {
-    const missedMsg = `MISSED: Direct call from ${from} to your company line. Going to voicemail.`
+    const missedMsg = `MISSED: Direct call from ${formatPhone(from)} to your company line. Going to voicemail.`
     await sendTeamLeadAlert({
       leadId: resolvedLeadId,
       smsBody: missedMsg,
@@ -407,7 +407,7 @@ export async function POST(req: Request) {
       calledNumber,
       push: {
         title: 'Missed Direct Call',
-        body: `${from} called your company line.`,
+        body: `${formatPhone(from)} called your company line.`,
         url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/conversations',
         tag: 'direct-missed-call',
       },
@@ -452,7 +452,7 @@ export async function POST(req: Request) {
 
     } else {
     // Alert both agents for IVR calls
-    const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${from} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
+    const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${formatPhone(from)} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
     await sendTeamLeadAlert({
       leadId: resolvedLeadId,
       smsBody: missedMsg,
@@ -461,7 +461,7 @@ export async function POST(req: Request) {
       calledNumber,
       push: {
         title: 'Missed Inbound Call',
-        body: `${type === 'seller' ? 'Seller' : 'Caller'} ${from} reached voicemail.`,
+        body: `${type === 'seller' ? 'Seller' : 'Caller'} ${formatPhone(from)} reached voicemail.`,
         url: `/leads/${resolvedLeadId}`,
         tag: 'ivr-missed-call',
       },
@@ -482,7 +482,7 @@ export async function POST(req: Request) {
     await supabase.from('lead_activities').insert({
       lead_id: resolvedLeadId,
       activity_type: 'call',
-      description: `Both agents missed inbound ${type} call from ${from}`,
+      description: `Both agents missed inbound ${type} call from ${formatPhone(from)}`,
       agent: 'System',
       metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type }
     })

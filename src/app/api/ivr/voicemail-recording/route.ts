@@ -86,7 +86,7 @@ export async function POST(req: Request) {
   })
 
   // Notify eligible agents.
-  const vmMsg = `New voicemail from ${from} (${recordingDuration}s). Listen: ${recordingUrl}${resolvedLeadId ? `\n${BASE_URL}/leads/${resolvedLeadId}` : ''}`
+  const vmMsg = `New voicemail from ${formatPhone(from)} (${recordingDuration}s). Listen: ${recordingUrl}${resolvedLeadId ? `\n${BASE_URL}/leads/${resolvedLeadId}` : ''}`
   await sendTeamLeadAlert({
     leadId: resolvedLeadId,
     smsBody: vmMsg,
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     calledNumber,
     push: {
       title: 'New Voicemail',
-      body: `Voicemail from ${from} (${recordingDuration}s)`,
+      body: `Voicemail from ${formatPhone(from)} (${recordingDuration}s)`,
       url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/',
       tag: 'voicemail',
     },
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
     await supabase.from('ari_briefing_events').insert({
       event_type: 'voicemail_received',
       priority: 'high',
-      title: `Voicemail from ${from} for ${agent || 'team'}`,
+      title: `Voicemail from ${formatPhone(from)} for ${agent || 'team'}`,
       description: `${recordingDuration}s voicemail. Recording: ${recordingUrl}`,
       lead_id: resolvedLeadId || null,
       action_url: resolvedLeadId ? `/leads/${resolvedLeadId}` : undefined,

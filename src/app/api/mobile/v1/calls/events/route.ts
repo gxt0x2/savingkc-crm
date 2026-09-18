@@ -1,3 +1,4 @@
+import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
     const duration = Math.max(0, Math.round(Number(body.durationSeconds || 0)))
     const outcome = body.outcome || (event === 'ended' ? 'unknown' : undefined)
     const description = event === 'started'
-      ? `Mobile outbound call to ${phone}`
+      ? `Mobile outbound call to ${formatPhone(phone)}`
       : `Mobile outbound call ended: ${outcome || 'unknown'}`
 
     const db = supabaseAdmin()
