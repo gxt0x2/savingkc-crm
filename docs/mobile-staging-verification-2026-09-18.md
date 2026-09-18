@@ -53,3 +53,45 @@ applied to staging. The receipt table is empty before behavioral testing.
 This environment is a limited staging surface. Native voice, external SMS or
 email delivery, EAS/TestFlight distribution, physical-device continuity, and
 production release are not verified by this note.
+
+## Authenticated behavioral verification
+
+The clean backend source at `f5ed12c16d4cb0bbf672804c4b095a9674fa2767`
+was built with the branch-scoped preview environment. The canonical build gate,
+Next.js compile, TypeScript pass, 131-page static generation, and serverless
+function trace completed. Build output repeatedly confirmed `TEST_MODE` was
+active, so SMS and email provider delivery remained disabled.
+
+A local preview of that exact build authenticated against staging and proved:
+
+- an unauthenticated mobile session returns `401`;
+- Ernest resolves to auth user `8fa104d1-2e2b-4a57-a841-3c2af14d2e83`;
+- the contacted pipeline initially contained exactly the authorized Ernest
+  Dodson record and no demo row;
+- the record initially had no pin, note, work item, appointment, or activity;
+- top-opportunity and Ernest's per-user chat pin both persisted as `true`;
+- one clearly labelled staging note was saved, and replay returned the same
+  activity id with one stored row;
+- one task, one in-person appointment, and one event were saved with distinct
+  canonical ids; replay returned those same ids with `created=false`;
+- after a complete backend restart, all rows and ids were unchanged;
+- Casey's independent auth session sees the shared opportunity pin, note, and
+  three calendar rows while Casey's per-user chat pin remains `false`.
+
+The durable rows are explicitly titled or described `STAGING VERIFICATION` and
+state that no customer action is required. No call, SMS, email, or other
+customer communication was attempted.
+
+## Hosted-preview incident boundary
+
+Vercel accepted two preview-only artifacts for this source:
+
+- Git preview `dpl_5TAk3x6u436F5otqyFwc3UbC2cHu`;
+- prebuilt preview `dpl_BL6MBuaV4Neks7zpJeEfiYLdKN9D`.
+
+Both remained `INITIALIZING` while their inner build object reported `READY`.
+Vercel incident `bwkmw4hmrgmk`, “Elevated Errors Triggering Deployments,” was
+open with major impact and the Builds component in partial outage at the time.
+The existing branch alias still resolved to the prior read-only deployment, so
+it was not accepted as staging evidence. Hosted status remains blocked until a
+new preview is `READY` and repeats the authenticated checks above.
