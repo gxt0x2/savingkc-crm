@@ -1,6 +1,7 @@
 import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { requireMobileActor, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { completeMobileCommand, mobileCommandPayloadHash, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -15,8 +16,9 @@ type CallEventBody = {
   phone?: string
   event?: 'started' | 'ended'
   durationSeconds?: number
-  outcome?: 'connected' | 'missed' | 'voicemail' | 'bad_number' | 'busy' | 'unknown'
+  outcome?: 'answered' | 'connected' | 'no_answer' | 'missed' | 'voicemail' | 'bad_number' | 'busy' | 'unknown'
   disposition?: string
+  note?: string
   clientCallId?: string
 }
 
@@ -32,24 +34,34 @@ function cleanPhone(phone: unknown): string | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireMobileUser(req)
+    const { actor } = await requireMobileActor(req)
+    const idempotencyKey = req.headers.get('idempotency-key')?.trim() || ''
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 200) {
+      return NextResponse.json({ error: 'A stable Idempotency-Key is required' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
     const body = readBody(await req.json().catch(() => null))
     const leadId = typeof body.leadId === 'string' && body.leadId ? body.leadId : null
     const phone = cleanPhone(body.phone)
     const event = body.event === 'ended' ? 'ended' : body.event === 'started' ? 'started' : null
 
-    if (!leadId || !phone || !event) {
+    if (!leadId || !phone || event !== 'ended') {
       return NextResponse.json(
-        { error: 'leadId, phone, and event are required' },
+        { error: 'leadId, phone, and an ended event are required' },
         { status: 400, headers: mobileNoStoreHeaders() },
       )
     }
 
     const duration = Math.max(0, Math.round(Number(body.durationSeconds || 0)))
-    const outcome = body.outcome || (event === 'ended' ? 'unknown' : undefined)
-    const description = event === 'started'
-      ? `Mobile outbound call to ${formatPhone(phone)}`
-      : `Mobile outbound call ended: ${outcome || 'unknown'}`
+    const outcome = body.outcome || 'unknown'
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 10_000) : ''
+    const description = note || `Mobile outbound call ended: ${outcome} · ${formatPhone(phone)}`
+    const payloadHash = mobileCommandPayloadHash({ leadId, phone, event, duration, outcome, disposition: body.disposition || null, note })
+    const reservation = await reserveMobileCommand({
+      actorEmail: actor.email, idempotencyKey, command: 'log_call_outcome', leadId, payloadHash,
+    })
+    if (reservation.kind === 'conflict') return NextResponse.json({ error: 'That Idempotency-Key belongs to a different call outcome' }, { status: 409, headers: mobileNoStoreHeaders() })
+    if (reservation.kind === 'pending') return NextResponse.json({ error: 'This call outcome is already processing. Refresh before retrying.', code: 'operation_pending' }, { status: 409, headers: mobileNoStoreHeaders() })
+    if (reservation.kind === 'replay') return NextResponse.json(reservation.result, { status: reservation.status, headers: mobileNoStoreHeaders() })
 
     const db = supabaseAdmin()
     const { data, error } = await db
@@ -58,20 +70,21 @@ export async function POST(req: NextRequest) {
         lead_id: leadId,
         activity_type: 'call',
         description,
-        agent: user.email || 'Mobile',
+        agent: actor.name,
         metadata: {
           source: 'savingkc_mobile',
           direction: 'outbound',
           phone,
           to: phone,
           event,
-          status: event === 'started' ? 'initiated' : 'completed',
-          outcome: outcome || null,
+          status: 'completed',
+          outcome,
           disposition: body.disposition || null,
           duration,
           clientCallId: body.clientCallId || null,
-          userId: user.id,
-          userEmail: user.email || null,
+          notes: note || null,
+          actor_email: actor.email,
+          idempotency_key: idempotencyKey,
         },
       })
       .select('id')
@@ -83,7 +96,14 @@ export async function POST(req: NextRequest) {
 
     await db.from('leads').update({ updated_at: new Date().toISOString() }).eq('id', leadId)
 
-    return NextResponse.json({ ok: true, activityId: data?.id ?? null }, { headers: mobileNoStoreHeaders() })
+    const result = { ok: true, activityId: data?.id ?? null }
+    try {
+      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey, status: 200, result })
+    } catch (receiptError) {
+      console.error('[mobile/call-event] receipt completion failed:', receiptError)
+      return NextResponse.json({ ...result, warning: 'Call saved, but retry reconciliation is pending. Refresh before retrying.' }, { headers: mobileNoStoreHeaders() })
+    }
+    return NextResponse.json(result, { headers: mobileNoStoreHeaders() })
   } catch (error) {
     const status = error instanceof MobileAuthError ? error.status : 500
     const message = error instanceof MobileAuthError ? error.message : 'Internal error'
