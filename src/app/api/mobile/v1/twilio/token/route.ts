@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import twilio from 'twilio'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { mobileVoiceCapabilities } from '@/lib/telephony/mobile-in-app-voice'
 import { cleanTwilioEnv, resolveTwimlAppSid } from '@/lib/telephony/twiml-app'
 
 export const dynamic = 'force-dynamic'
@@ -27,7 +28,6 @@ export async function GET(req: NextRequest) {
       !accountSid && 'TWILIO_ACCOUNT_SID',
       !apiKey && 'TWILIO_API_KEY',
       !apiSecret && 'TWILIO_API_SECRET',
-      !pushCredentialSid && 'TWILIO_VOIP_PUSH_CREDENTIAL_SID',
     ].filter(Boolean)
 
     if (missing.length > 0) {
@@ -51,15 +51,19 @@ export async function GET(req: NextRequest) {
     token.addGrant(new VoiceGrant({
       outgoingApplicationSid,
       incomingAllow: true,
-      pushCredentialSid,
+      ...(pushCredentialSid ? { pushCredentialSid } : {}),
     }))
 
+    const flags = mobileVoiceCapabilities()
     return NextResponse.json(
       {
         token: token.toJwt(),
         identity,
         callerId: profile.defaultCallerId,
         displayName: profile.displayName,
+        incomingPushConfigured: Boolean(pushCredentialSid),
+        personalForward: flags.personalForward,
+        inboundClientRing: flags.inboundClientRing,
       },
       { headers: mobileNoStoreHeaders() },
     )
