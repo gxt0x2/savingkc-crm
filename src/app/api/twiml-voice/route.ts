@@ -90,10 +90,11 @@ function outboundRecordingCallback(input: {
   return callback.toString().replaceAll('&', '&amp;')
 }
 
-function outboundStatusCallback(identity: string, clientAttemptId: string | null): string {
+function outboundStatusCallback(identity: string, clientAttemptId: string | null, leadId: string | null): string {
   const callback = new URL('/api/twilio-call-status', BASE_URL)
   callback.searchParams.set('identity', identity)
   if (clientAttemptId) callback.searchParams.set('clientAttemptId', clientAttemptId)
+  if (leadId) callback.searchParams.set('leadId', leadId)
   return callback.toString().replaceAll('&', '&amp;')
 }
 
@@ -329,7 +330,7 @@ export async function POST(req: Request) {
         return blockOutboundCall(decision, policyInput)
       }
 
-      const statusCallback = outboundStatusCallback(identity, clientAttemptId)
+      const statusCallback = outboundStatusCallback(identity, clientAttemptId, leadId)
       const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
       // Manual calls need time for a person (or their voicemail) to answer.
       // Keep explicit campaign ring counts and the legacy fallback intact.

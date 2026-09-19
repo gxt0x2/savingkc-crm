@@ -83,7 +83,7 @@ function database(state: DbState = {}) {
   }
 }
 
-function statusRequest(status = 'failed', clientAttemptId?: string) {
+function statusRequest(status = 'failed', clientAttemptId?: string, leadId?: string) {
   const form = new FormData()
   form.set('CallSid', 'CA11111111111111111111111111111111')
   form.set('ParentCallSid', 'CA22222222222222222222222222222222')
@@ -93,6 +93,7 @@ function statusRequest(status = 'failed', clientAttemptId?: string) {
   form.set('CallDuration', '0')
   const url = new URL('https://crm.savingkc.com/api/twilio-call-status?identity=ernest')
   if (clientAttemptId) url.searchParams.set('clientAttemptId', clientAttemptId)
+  if (leadId) url.searchParams.set('leadId', leadId)
   return new Request(url, {
     method: 'POST',
     body: form,
@@ -172,6 +173,16 @@ describe('Twilio call status callback containment', () => {
       p_provider_status: 'completed',
     }))
     expect(db.inserts).toHaveLength(1)
+  })
+
+  it('keeps the trusted lead identity carried by the signed TwiML callback', async () => {
+    const db = database()
+    mocks.createClient.mockReturnValue(db.client)
+
+    const response = await POST(statusRequest('no-answer', 'attempt-linked', 'lead-linked'))
+
+    expect(response.status).toBe(200)
+    expect(db.inserts).toContainEqual(expect.objectContaining({ lead_id: 'lead-linked' }))
   })
 
   it('treats a signed callback for a missing durable attempt as an idempotent no-op', async () => {

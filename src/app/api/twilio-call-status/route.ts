@@ -159,6 +159,7 @@ export async function POST(req: Request) {
     const url = new URL(req.url)
     const identity = url.searchParams.get('identity') || ''
     const clientAttemptId = url.searchParams.get('clientAttemptId')?.trim() || null
+    const linkedLeadId = url.searchParams.get('leadId')?.trim() || null
 
     const isTerminal = callStatus === 'completed' || callStatus === 'failed' || callStatus === 'canceled' || callStatus === 'busy' || callStatus === 'no-answer'
     const callbackSid = callSid || parentCallSid
@@ -167,6 +168,9 @@ export async function POST(req: Request) {
     }
     if (clientAttemptId && clientAttemptId.length > 200) {
       return NextResponse.json({ error: 'Invalid clientAttemptId' }, { status: 400 })
+    }
+    if (linkedLeadId && linkedLeadId.length > 200) {
+      return NextResponse.json({ error: 'Invalid leadId' }, { status: 400 })
     }
 
     let supabase: SupabaseClient | null = null
@@ -212,7 +216,7 @@ export async function POST(req: Request) {
 
     if (existingCallbackError) throw existingCallbackError
 
-    let leadId: string | null = existingCallback?.lead_id || null
+    let leadId: string | null = existingCallback?.lead_id || linkedLeadId
     if (!leadId) {
       for (const variant of phoneLookupVariants(to)) {
         const { data } = await supabase
