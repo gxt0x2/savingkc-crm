@@ -33,8 +33,11 @@ export async function GET(req: NextRequest) {
         .from('leads')
         .select('id, full_name, phone, email, property_address, city, state, zip, station, classification, assigned_agent, created_at, updated_at')
         .in('id', leadIds)
-      if (leadResult.error) throw new Error(leadResult.error.message)
-      leads = leadResult.data ?? []
+      if (leadResult.error) {
+        console.error('[mobile/calls/recent] linked leads unavailable', leadResult.error.message)
+      } else {
+        leads = leadResult.data ?? []
+      }
     }
 
     return NextResponse.json({ items, leads }, { headers: mobileNoStoreHeaders() })

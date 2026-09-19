@@ -44,9 +44,9 @@ export async function POST(req: NextRequest) {
     const phone = cleanPhone(body.phone)
     const event = body.event === 'ended' ? 'ended' : body.event === 'started' ? 'started' : null
 
-    if (!leadId || !phone || event !== 'ended') {
+    if (!phone || event !== 'ended') {
       return NextResponse.json(
-        { error: 'leadId, phone, and an ended event are required' },
+        { error: 'phone and an ended event are required' },
         { status: 400, headers: mobileNoStoreHeaders() },
       )
     }
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     const description = note || `Mobile outbound call ended: ${outcome} · ${formatPhone(phone)}`
     const payloadHash = mobileCommandPayloadHash({ leadId, phone, event, duration, outcome, disposition: body.disposition || null, note })
     const reservation = await reserveMobileCommand({
-      actorEmail: actor.email, idempotencyKey, command: 'log_call_outcome', leadId, payloadHash,
+      actorEmail: actor.email, idempotencyKey, command: 'log_call_outcome', leadId: leadId ?? 'unknown', payloadHash,
     })
     if (reservation.kind === 'conflict') return NextResponse.json({ error: 'That Idempotency-Key belongs to a different call outcome' }, { status: 409, headers: mobileNoStoreHeaders() })
     if (reservation.kind === 'pending') return NextResponse.json({ error: 'This call outcome is already processing. Refresh before retrying.', code: 'operation_pending' }, { status: 409, headers: mobileNoStoreHeaders() })
@@ -94,7 +94,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500, headers: mobileNoStoreHeaders() })
     }
 
-    await db.from('leads').update({ updated_at: new Date().toISOString() }).eq('id', leadId)
+    if (leadId) {
+      await db.from('leads').update({ updated_at: new Date().toISOString() }).eq('id', leadId)
+    }
 
     const result = { ok: true, activityId: data?.id ?? null }
     try {

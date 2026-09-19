@@ -65,6 +65,22 @@ describe('mobile recent calls', () => {
     })
   })
 
+  it('maps a missed inbound as inbound so Recents is not treated as an outbound preview', () => {
+    const calls = buildMobileRecentCalls([
+      row({
+        id: 'missed-1',
+        activity_type: 'missed_call',
+        metadata: { from: '+18165550999', direction: 'inbound', status: 'no-answer' },
+      }),
+    ])
+    expect(calls[0]).toMatchObject({
+      id: 'missed-1',
+      direction: 'inbound',
+      phone: '+18165550999',
+      outcome: 'no_answer',
+    })
+  })
+
   it('keeps bad number and DNC outcomes distinct', () => {
     const calls = buildMobileRecentCalls([
       row({ id: 'bad', metadata: { outcome: 'bad_number', phone: '+18165550123' } }),

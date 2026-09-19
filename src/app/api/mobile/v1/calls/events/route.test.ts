@@ -45,6 +45,17 @@ describe('mobile call outcomes', () => {
     expect(mocks.complete).toHaveBeenCalledTimes(1)
   })
 
+  it('logs an unknown-number hangup so Recents is not empty after a live attempt', async () => {
+    const response = await POST(request({
+      phone: '+18165550199', event: 'ended', outcome: 'no_answer', clientCallId: 'unknown-call-1',
+    }))
+    expect(response.status).toBe(200)
+    expect(mocks.insert.mock.calls[0][0]).toMatchObject({
+      lead_id: null,
+      metadata: { phone: '+18165550199', event: 'ended' },
+    })
+  })
+
   it('rejects a started event so the app cannot create duplicate call rows', async () => {
     const response = await POST(request({ leadId: 'lead-1', phone: '+18165550123', event: 'started', clientCallId: 'client-call-1' }))
     expect(response.status).toBe(400)

@@ -59,6 +59,40 @@ describe('mobile recent calls route', () => {
     })
   })
 
+  it('still returns call rows when linked seller lookup fails', async () => {
+    mocks.admin.mockReturnValue({
+      from: (table: string) => table === 'lead_activities'
+        ? {
+            select: () => ({
+              in: () => ({
+                order: () => ({
+                  limit: async () => ({
+                    data: [{
+                      id: 'call-1', lead_id: 'lead-1', activity_type: 'call',
+                      description: 'Outbound test call', created_at: '2026-09-18T18:00:00.000Z',
+                      metadata: { source: 'twilio_status_callback', status: 'completed', to: '+18165550123' },
+                    }],
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }
+        : {
+            select: () => ({
+              in: async () => ({ data: null, error: { message: 'leads unavailable' } }),
+            }),
+          },
+    })
+
+    const response = await GET(request())
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ id: 'call-1', phone: '+18165550123' }],
+      leads: [],
+    })
+  })
+
   it('fails closed before reading call history', async () => {
     const { MobileAuthError } = await import('@/lib/mobile-api/auth')
     mocks.user.mockRejectedValue(new MobileAuthError('Invalid bearer token'))
