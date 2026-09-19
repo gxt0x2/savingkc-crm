@@ -64,6 +64,7 @@ export interface CrmEntityContext {
     ownerIsOutOfState?: boolean | null
     dataSource?: string | null
     dataEnrichedAt?: string | null
+    updatedAt?: string | null
   } | null
   opportunity: {
     id: string
@@ -199,7 +200,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       .order('is_primary', { ascending: false }),
     linkData.property_id
       ? db.from('crm_properties')
-        .select('id, address, city, state, zip, county, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, assessed_value, land_value, improvement_value, tax_owed, tax_status, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, property_owner_name, owner_mailing_address, owner_is_deceased, owner_is_out_of_state, data_source, data_enriched_at')
+        .select('id, address, city, state, zip, county, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, assessed_value, land_value, improvement_value, tax_owed, tax_status, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, property_owner_name, owner_mailing_address, owner_is_deceased, owner_is_out_of_state, data_source, data_enriched_at, updated_at')
         .eq('id', linkData.property_id)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -285,6 +286,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       ownerIsOutOfState: property.owner_is_out_of_state,
       dataSource: property.data_source,
       dataEnrichedAt: property.data_enriched_at,
+      updatedAt: property.updated_at,
     } : null,
     opportunity: opportunity ? {
       id: opportunity.id,

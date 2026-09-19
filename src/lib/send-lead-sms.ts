@@ -38,6 +38,8 @@ export interface SendLeadSmsInput {
   leadId?: string | null
   phone: string
   body: string
+  mediaUrls?: string[]
+  activityType?: 'sms' | 'voice'
   /** Force a specific Twilio sending number; otherwise auto-detected. */
   fromPhone?: string
   agent?: string
@@ -132,13 +134,19 @@ export async function resolveSmsFromNumber(
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
   const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, signal, beforePersistence } = input
   const body = input.body.trim()
+  const mediaUrls = input.mediaUrls?.filter(Boolean) ?? []
+  const attachmentIds = Array.isArray(metadata?.attachment_ids)
+    ? metadata.attachment_ids.filter((value): value is string => typeof value === 'string')
+    : []
+  const dedupeBody = attachmentIds.length ? `${body}\n[attachments:${attachmentIds.join(',')}]` : body
 
   if (await isOptedOut(phone)) return { status: 'skipped', reason: 'opted_out' }
-  if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
+  if (await isDuplicateSms(phone, dedupeBody)) return { status: 'skipped', reason: 'duplicate' }
 
   const from = await resolveSmsFromNumber(leadId, phone, fromPhone)
   const msg = await safeSendSMS({
     body,
+    ...(mediaUrls.length ? { mediaUrl: mediaUrls } : {}),
     from,
     to: phone,
     senderUse: 'conversation',
@@ -186,7 +194,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
   try {
     const persistence = await supabase.from('lead_activities').insert({
       lead_id: leadId || null,
-      activity_type: 'sms',
+      activity_type: input.activityType === 'voice' ? 'voice' : 'sms',
       description: body,
       agent: agent || 'System',
       metadata: {
@@ -208,7 +216,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
   if (beforePersistence) {
     try {
       await beforePersistence()
-      await logSmsSend(phone, body, msg.from, leadId || undefined)
+      await logSmsSend(phone, dedupeBody, msg.from, leadId || undefined)
         .catch((err) => console.error('[SMS-DEDUP] Failed:', err))
 
       if (leadId) {
@@ -219,7 +227,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
       console.error('[SMS-SENDER] Protected follow-up CRM writes were skipped after dialing control changed:', error)
     }
   } else {
-    logSmsSend(phone, body, msg.from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
+    logSmsSend(phone, dedupeBody, msg.from, leadId || undefined).catch((err) => console.error('[SMS-DEDUP] Failed:', err))
 
     if (leadId) {
       checkAutoAdvance(leadId, 'outbound_contact').catch((err) => console.error('[AUTO-ADVANCE] Failed:', err))

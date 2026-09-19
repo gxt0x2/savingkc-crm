@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { operatingDepartmentForStage } from '@/lib/operating-model/department-responsibility'
+import { applyCrmEntityAuthority, safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
 import { listWorkItems } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -51,7 +52,7 @@ export async function GET(
     }
 
     const db = supabaseAdmin()
-    const [leadRes, activityRes, workItemsState, handoffsRes] = await Promise.all([
+    const [leadRes, activityRes, workItemsState, handoffsRes, entityContext] = await Promise.all([
       db.from('leads').select(LEAD_SELECT).eq('id', id).maybeSingle(),
       db
         .from('lead_activities')
@@ -69,6 +70,7 @@ export async function GET(
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(10),
+      safeReadLeadEntityContext(id),
     ])
 
     if (leadRes.error) {
@@ -89,7 +91,8 @@ export async function GET(
       )
     }
 
-    const lead = leadRes.data as unknown as MobileLeadRow
+    const compatibilityLead = leadRes.data as unknown as MobileLeadRow
+    const lead = applyCrmEntityAuthority(compatibilityLead, entityContext)
     if (workItemsState.error) console.error('[mobile/leads/:id] work-item read failed', workItemsState.error)
     if (handoffsRes.error) console.error('[mobile/leads/:id] handoff read failed', handoffsRes.error.message)
     const primaryNextAction = workItemsState.data.find((item) => item.primaryNextAction)
@@ -99,6 +102,7 @@ export async function GET(
     return NextResponse.json(
       {
         lead,
+        entityContext,
         activities: activityRes.data || [],
         operations: {
           department: operatingDepartmentForStage(lead.station),

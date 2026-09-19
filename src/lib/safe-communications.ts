@@ -74,6 +74,7 @@ interface SMSParams {
   to: string
   from: string
   body: string
+  mediaUrl?: string[]
   senderUse?: SmsSenderUse
   statusCallback?: string
   /** Cancels before provider submission when the protected request has already ended. */
@@ -185,6 +186,7 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
       to: sendParams.to,
       from: sendParams.from,
       body: sendParams.body,
+      ...(sendParams.mediaUrl?.length ? { mediaUrl: sendParams.mediaUrl } : {}),
       ...(sendParams.statusCallback ? { statusCallback: sendParams.statusCallback } : {}),
       ...(messagingServiceSid ? { messagingServiceSid } : {}),
     })

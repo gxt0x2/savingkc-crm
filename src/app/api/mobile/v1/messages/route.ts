@@ -4,6 +4,14 @@ import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { requireMobileActor, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { resolveMobileEmailSender } from '@/lib/mobile-api/email-sender'
 import { completeMobileCommand, mobileCommandPayloadHash, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
+import {
+  MobileAttachmentError,
+  publicAttachmentMetadata,
+  readMobileMessageAttachments,
+  resendMobileAttachments,
+  signedMobileAttachmentUrls,
+  validateMobileMmsAttachments,
+} from '@/lib/mobile-api/message-attachments'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -41,7 +49,16 @@ export async function POST(req: NextRequest) {
     if (idempotencyKey.length < 8 || idempotencyKey.length > 200) {
       return NextResponse.json({ error: 'A stable Idempotency-Key is required' }, { status: 400, headers: mobileNoStoreHeaders() })
     }
-    const input = await req.json().catch(() => null) as { leadId?: string; channel?: 'sms' | 'email'; body?: string; subject?: string } | null
+    const input = await req.json().catch(() => null) as {
+      leadId?: string
+      channel?: 'sms' | 'email'
+      body?: string
+      subject?: string
+      attachmentIds?: unknown
+      messageKind?: 'text' | 'voice'
+      durationSec?: unknown
+      waveform?: unknown
+    } | null
     const leadId = input?.leadId?.trim()
     const body = input?.body?.trim()
     const channel = input?.channel
@@ -53,6 +70,22 @@ export async function POST(req: NextRequest) {
     const { data: lead, error: leadError } = await db.from('leads').select('id, phone, email').eq('id', leadId).maybeSingle()
     if (leadError) throw new Error(leadError.message)
     if (!lead) return NextResponse.json({ error: 'Contact not found' }, { status: 404, headers: mobileNoStoreHeaders() })
+    const attachments = await readMobileMessageAttachments(leadId, input?.attachmentIds)
+    const messageKind = input?.messageKind === 'voice' ? 'voice' : 'text'
+    const durationSec = typeof input?.durationSec === 'number' && Number.isFinite(input.durationSec)
+      ? Math.max(1, Math.min(600, Math.round(input.durationSec)))
+      : null
+    const waveform = Array.isArray(input?.waveform)
+      ? input.waveform.slice(0, 120).map(Number).filter((value) => Number.isFinite(value) && value >= 0 && value <= 1)
+      : []
+    if (messageKind === 'voice' && (attachments.length !== 1 || !attachments[0].mimeType.startsWith('audio/'))) {
+      return NextResponse.json({ error: 'A voice note requires one uploaded audio recording.' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
+    if (messageKind === 'voice' && channel !== 'sms') {
+      return NextResponse.json({ error: 'Voice notes use the SMS/MMS channel.' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
+    if (channel === 'sms' && attachments.length) validateMobileMmsAttachments(attachments, body)
+    const attachmentMetadata = publicAttachmentMetadata(attachments)
 
     const profile = resolveAgentTelephonyProfile(actor.email)
     const subject = input?.subject?.trim() || 'Message from SavingKC Homebuyers'
@@ -73,7 +106,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, sent: false, persisted: false, deliveryState: 'sender_not_authorized', error: 'No approved email sender is configured for this user' }, { status: 403, headers: mobileNoStoreHeaders() })
     }
 
-    const payloadHash = mobileCommandPayloadHash({ leadId, channel, body, subject: channel === 'email' ? subject : null })
+    // Prepare private media before reserving the send command. Failures here are
+    // definitely pre-provider and therefore safe for the same draft to retry.
+    const mediaUrls = channel === 'sms' ? await signedMobileAttachmentUrls(attachments) : []
+    const emailAttachments = channel === 'email' ? await resendMobileAttachments(attachments) : []
+
+    const payloadHash = mobileCommandPayloadHash({
+      leadId,
+      channel,
+      body,
+      subject: channel === 'email' ? subject : null,
+      attachmentIds: attachments.map((attachment) => attachment.id),
+      messageKind,
+      durationSec,
+      waveform,
+    })
     const reservation = await reserveMobileCommand({
       actorEmail: actor.email,
       idempotencyKey,
@@ -102,7 +149,16 @@ export async function POST(req: NextRequest) {
         fromPhone: profile.defaultCallerId,
         agent: profile.displayName,
         source: 'mobile_app',
-        metadata: { actor_email: actor.email, idempotency_key: idempotencyKey },
+        mediaUrls,
+        activityType: messageKind === 'voice' ? 'voice' : 'sms',
+        metadata: {
+          actor_email: actor.email,
+          idempotency_key: idempotencyKey,
+          attachment_ids: attachments.map((attachment) => attachment.id),
+          attachments: attachmentMetadata,
+          ...(durationSec ? { duration: durationSec } : {}),
+          ...(waveform.length ? { waveform } : {}),
+        },
       })
       if (result.status === 'failed') return completedResponse(actor.email, idempotencyKey, result.deliveryState === 'delivery_unknown' ? 504 : 502, {
         error: result.error,
@@ -132,7 +188,13 @@ export async function POST(req: NextRequest) {
     let delivery: Awaited<ReturnType<typeof resend.emails.send>>
     try {
       delivery = await resend.emails.send(
-        { from: sender!.from, to: [lead.email!], subject, text: body },
+        {
+          from: sender!.from,
+          to: [lead.email!],
+          subject,
+          text: body,
+          ...(emailAttachments.length ? { attachments: emailAttachments } : {}),
+        },
         { idempotencyKey },
       )
     } catch (error) {
@@ -165,6 +227,8 @@ export async function POST(req: NextRequest) {
         direction: 'outbound', to: lead.email, subject, sent: true, source: 'mobile_app',
         actor_email: actor.email, provider: 'resend', provider_message_id: delivery.data.id,
         idempotency_key: idempotencyKey, sender: sender!.email,
+        attachment_ids: attachments.map((attachment) => attachment.id),
+        attachments: attachmentMetadata,
       },
     })
     if (activityError) {
@@ -180,7 +244,7 @@ export async function POST(req: NextRequest) {
       deliveryState: 'delivered_and_persisted', id: delivery.data.id, from: sender!.email,
     })
   } catch (error) {
-    const status = error instanceof MobileAuthError ? error.status : 500
+    const status = error instanceof MobileAuthError || error instanceof MobileAttachmentError ? error.status : 500
     const message = error instanceof Error ? error.message : 'Internal error'
     return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }

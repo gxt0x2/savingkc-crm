@@ -25,9 +25,10 @@ const chunkText = chunkRefs
   .filter((chunkPath) => existsSync(chunkPath))
   .map((chunkPath) => readFileSync(chunkPath, 'utf8'))
   .join('\n')
+const middlewareBundle = `${middlewareEntry}\n${chunkText}`
 
 assert(
-  chunkText.includes('x-skc-test-auth-bypass') && chunkText.includes('/api/twilio-token'),
+  middlewareBundle.includes('x-skc-test-auth-bypass') && middlewareBundle.includes('/api/twilio-token'),
   'Proxy registration failed: built middleware bundle does not include the CRM auth proxy code.'
 )
 

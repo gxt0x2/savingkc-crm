@@ -292,7 +292,7 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/contacts", "/leads/[id]", "/opportunities"],
-      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/leads/[id]/reenrich", "/api/mobile/v1/leads", "/api/mobile/v1/leads/[id]", "/api/mobile/v1/leads/[id]/owner", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
+      "apiRoutes": ["/api/contacts", "/api/contacts/import", "/api/leads", "/api/leads/[id]", "/api/leads/[id]/lifecycle", "/api/leads/[id]/qualification", "/api/leads/[id]/reenrich", "/api/mobile/v1/leads", "/api/mobile/v1/leads/[id]", "/api/mobile/v1/leads/[id]/owner", "/api/mobile/v1/leads/[id]/property", "/api/enrich", "/api/enrich/batch", "/api/workers/property-enrichment", "/api/admin/entity-health", "/api/admin/entity-conflicts"],
       "tables": ["leads", "lead_activities", "lead_tasks", "conversation_thread_state", "contact_workspace_activity_state", "crm_people", "crm_contact_methods", "crm_properties", "crm_property_enrichment_events", "crm_property_enrichment_jobs", "crm_opportunities", "crm_opportunity_people", "crm_lead_entity_links", "crm_identity_conflicts", "crm_consent_events", "crm_lifecycle_events", "crm_department_handoffs", "crm_lead_qualification_pillars"],
       "environment": ["CRON_SECRET"],
       "crons": [
@@ -309,8 +309,8 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/conversations"],
-      "apiRoutes": ["/api/conversations/hub", "/api/conversations/timeline", "/api/conversations/attention", "/api/conversations/attention-count", "/api/conversations/send", "/api/notifications"],
-      "tables": ["communications", "conversation_thread_state", "notifications", "sms_delivery_log"],
+      "apiRoutes": ["/api/conversations/hub", "/api/conversations/timeline", "/api/conversations/attention", "/api/conversations/attention-count", "/api/conversations/send", "/api/notifications", "/api/mobile/v1/messages", "/api/mobile/v1/leads/[id]/attachments", "/api/mobile/v1/leads/[id]/attachments/[attachmentId]", "/api/mobile/v1/leads/[id]/attachments/[attachmentId]/remove", "/api/mobile/v1/leads/[id]/transcriptions"],
+      "tables": ["communications", "conversation_thread_state", "notifications", "sms_delivery_log", "documents"],
       "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET"]
     },
     {
@@ -632,7 +632,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/cron/sweep-briefings", "/api/ari/generate-briefing"],
+      "apiRoutes": ["/api/cron/sweep-briefings", "/api/ari/generate-briefing", "/api/mobile/v1/leads/[id]/briefing"],
       "tables": ["briefings", "crm_briefing_jobs", "assistant_generations"],
       "environment": ["CRON_SECRET", "GROQ_API_KEY", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN"],
       "crons": [
