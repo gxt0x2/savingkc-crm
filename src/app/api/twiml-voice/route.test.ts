@@ -433,6 +433,7 @@ describe('TwiML request containment', () => {
 
 describe('verified inbound TwiML routing', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs()
     vi.clearAllMocks()
     mocks.validateTwilioWebhook.mockResolvedValue(true)
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
@@ -477,5 +478,30 @@ describe('verified inbound TwiML routing', () => {
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text.match(/<Number\b/g)).toHaveLength(1)
     expect(text).toContain('<Number>+18162262552</Number>')
+  })
+
+  it('rings the Twilio Client identity when in-app Voice is on and personal-forward is off', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+
+    const { text } = await responseText(inboundRequest('+18167277667'))
+
+    expect(text).toContain('<Client')
+    expect(text).toContain('>casey</Client>')
+    expect(text).toContain('callerId="+18167277667"')
+    expect(text).not.toContain('+18167564943')
+    expect(text).not.toContain('<Gather')
+  })
+
+  it('does not use a personal number as the emergency fallback when personal-forward is off', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    mocks.isGoogleAdsPhoneNumber.mockImplementationOnce(() => {
+      throw new Error('inbound routing unavailable')
+    })
+
+    const { text } = await responseText(inboundRequest('+18163077835'))
+
+    expect(text).toContain('<Hangup/>')
+    expect(text).not.toContain('+18162262552')
+    expect(text).not.toMatch(/<(?:Dial|Number|Client)\b/i)
   })
 })
