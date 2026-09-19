@@ -27,7 +27,6 @@ export async function GET(req: NextRequest) {
           email: true,
           outboundDeviceDialer: false,
           callDisposition: true,
-          twilioNativeVoice: true,
           ...mobileVoiceCapabilities(),
           workQueue: true,
           ownerAssignment: true,
