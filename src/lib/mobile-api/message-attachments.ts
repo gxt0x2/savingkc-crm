@@ -22,6 +22,12 @@ const ALLOWED_MIME_TYPES = new Set([
   'audio/wav',
   'audio/x-wav',
   'audio/webm',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
 ])
 
 const MMS_ALLOWED_MIME_TYPES = new Set([
@@ -58,6 +64,12 @@ const MIME_EXTENSION: Record<string, string> = {
   'audio/wav': 'wav',
   'audio/x-wav': 'wav',
   'audio/webm': 'webm',
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/plain': 'txt',
 }
 
 export type MobileMessageAttachment = {
@@ -92,7 +104,7 @@ export function safeMobileAttachmentFilename(value: string, mimeType: string): s
 export function validateMobileMessageFile(file: File) {
   const mimeType = file.type.toLowerCase()
   if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-    throw new MobileAttachmentError('Choose a JPEG, PNG, GIF, WebP, HEIC, or supported audio recording.', 415)
+    throw new MobileAttachmentError('Choose a supported image, audio recording, PDF, Word, Excel, or text file.', 415)
   }
   if (file.size < 1 || file.size > MOBILE_MESSAGE_ATTACHMENT_MAX_BYTES) {
     throw new MobileAttachmentError('Each attachment must be between 1 byte and 4 MB.', 413)

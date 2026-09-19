@@ -11,12 +11,16 @@ import {
 } from './message-attachments'
 
 describe('mobile message attachment validation', () => {
-  it('accepts a bounded photo and an actual voice recording', () => {
+  it('accepts bounded photos, voice recordings, and email documents', () => {
     expect(validateMobileMessageFile(new File(['photo'], 'house.jpg', { type: 'image/jpeg' }))).toEqual({
       filename: 'house.jpg',
       mimeType: 'image/jpeg',
     })
     expect(validateMobileMessageFile(new File(['audio'], 'memo.m4a', { type: 'audio/mp4' })).mimeType).toBe('audio/mp4')
+    expect(validateMobileMessageFile(new File(['offer'], 'purchase agreement.pdf', { type: 'application/pdf' }))).toEqual({
+      filename: 'purchase-agreeme.pdf',
+      mimeType: 'application/pdf',
+    })
   })
 
   it('rejects unsupported or oversized files', () => {
@@ -46,6 +50,12 @@ describe('mobile message attachment validation', () => {
     expect(() => validateMobileMmsAttachments([{
       ...base,
       mimeType: 'image/webp',
+      byteSize: 100,
+    }], 'Hi')).toThrow('cannot be sent by MMS')
+    expect(() => validateMobileMmsAttachments([{
+      ...base,
+      filename: 'offer.pdf',
+      mimeType: 'application/pdf',
       byteSize: 100,
     }], 'Hi')).toThrow('cannot be sent by MMS')
     expect(() => validateMobileMmsAttachments([{
