@@ -5,6 +5,11 @@ import { parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { verifyDialerCallIntent } from '@/lib/telephony/dialer-call-intent'
+import {
+  isMobilePersonalForwardEnabled,
+  mobileClientIdentityForNumber,
+  shouldRingMobileClient,
+} from '@/lib/telephony/mobile-in-app-voice'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import {
   evaluateOutboundDialerCall,
@@ -358,12 +363,25 @@ export async function POST(req: Request) {
       return xmlResponse(twiml)
     }
 
-    // ── DIRECT RING: Company numbers ring agent cell (no IVR) ──
-    if (DIRECT_RING_NUMBERS[to]) {
+    // ── DIRECT RING: Company numbers ring the in-app Client, or the cell fallback ──
+    if (DIRECT_RING_NUMBERS[to] || shouldRingMobileClient(to)) {
+      const identity = mobileClientIdentityForNumber(to)
+      const inboundStatus = outboundStatusCallback(identity || 'inbound', null, null)
+      const dialAction = `${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct`
+      if (identity && shouldRingMobileClient(to)) {
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial action="${dialAction}" method="POST" timeout="25" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+    <Client statusCallback="${inboundStatus}" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">${identity}</Client>
+  </Dial>
+</Response>`
+        return xmlResponse(twiml)
+      }
+
       const agentPhone = DIRECT_RING_NUMBERS[to]
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${dialAction}" method="POST" timeout="15" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     <Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}">${agentPhone}</Number>
   </Dial>
 </Response>`
@@ -405,6 +423,10 @@ export async function POST(req: Request) {
     // request was successfully classified as inbound. Unknown/parse failures
     // must not create a call leg.
     if (requestKind !== 'inbound') {
+      return xmlResponse(EMPTY_TWIML)
+    }
+
+    if (!isMobilePersonalForwardEnabled()) {
       return xmlResponse(EMPTY_TWIML)
     }
 
