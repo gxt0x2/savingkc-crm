@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { mobileVoiceCapabilities } from '@/lib/telephony/mobile-in-app-voice'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
           email: true,
           outboundDeviceDialer: false,
           callDisposition: true,
-          twilioNativeVoice: true,
+          ...mobileVoiceCapabilities(),
           workQueue: true,
           ownerAssignment: true,
           handoffAcceptance: true,

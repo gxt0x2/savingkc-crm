@@ -38,7 +38,7 @@ describe('mobile operating parity contract', () => {
     expect(twilioVoice).toContain("Platform.OS !== 'ios'")
     expect(twilioVoice).toContain('voice.initializePushRegistry()')
     expect(twilioTokenRoute).toContain("cleanTwilioEnv('TWILIO_VOIP_PUSH_CREDENTIAL_SID')")
-    expect(twilioTokenRoute).toContain('pushCredentialSid,')
+    expect(twilioTokenRoute).toContain('pushCredentialSid')
     expect(environmentExample).toContain('TWILIO_VOIP_PUSH_CREDENTIAL_SID=')
   })
 

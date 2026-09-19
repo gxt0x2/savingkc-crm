@@ -80,7 +80,10 @@ function evidenceRank(metadata: Record<string, unknown>): number {
 
 function mapRecentCall(row: RecentCallActivityRow): MobileRecentCallItem {
   const metadata = row.metadata ?? {}
-  const direction = text(metadata, 'direction') === 'inbound' ? 'inbound' : 'outbound'
+  const direction = text(metadata, 'direction') === 'inbound'
+    || row.activity_type === 'missed_call'
+    ? 'inbound'
+    : 'outbound'
   const phone = direction === 'inbound'
     ? text(metadata, 'from', 'phone', 'to') || ''
     : text(metadata, 'to', 'phone', 'from') || ''
