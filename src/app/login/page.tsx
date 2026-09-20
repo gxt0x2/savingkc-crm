@@ -211,10 +211,10 @@ export default function LoginPage() {
         <p className="text-center text-[11px] text-on-surface-variant/50 mt-6">
           Powered by Ari AI Chief of Staff
         </p>
-        <p className="text-center text-[11px] text-on-surface-variant/60 mt-3 space-x-3">
-          <a href="/product" className="hover:underline">About CRM</a>
-          <a href="/privacy" className="hover:underline">Privacy</a>
-          <a href="/terms" className="hover:underline">Terms</a>
+        <p className="text-center text-[12px] font-semibold mt-4 space-x-4">
+          <a href="/product" className="text-sky-400 hover:underline">About CRM</a>
+          <a href="/privacy" className="text-sky-400 hover:underline">Privacy</a>
+          <a href="/terms" className="text-sky-400 hover:underline">Terms</a>
         </p>
       </div>
     </div>
