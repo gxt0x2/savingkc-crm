@@ -2,6 +2,9 @@ import { PHONE_SYSTEM } from '@/lib/operating-model/phone-system'
 import { WORKFLOW_CATALOG, workflowCategoryLabel } from '@/lib/operating-model/workflow-catalog'
 import { readStoredWorkflowDefinitions } from '@/lib/operating-model/workflow-store'
 import { readOperatingSnapshot } from '@/lib/assistant/operating-snapshot'
+import { readGmailConnectionHealth } from '@/lib/gmail-oauth-health'
+import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
+import type { GmailHealthSnapshot } from '@/lib/gmail-oauth-status'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
 import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
@@ -90,7 +93,22 @@ async function leadMap(db: Db, ids: string[]) {
   return new Map(((data || []) as JsonRecord[]).map((row) => [String(row.id), row]))
 }
 
-export function readAssistantSourceCatalog(generatedAt = new Date().toISOString()) {
+export function gmailSourceCatalogEntry(gmail: GmailHealthSnapshot) {
+  const connected = gmail.oauthConfigured && gmail.accounts.some((account) => account.status === 'connected')
+  return {
+    id: 'gmail',
+    name: 'Google Gmail sync',
+    authority: 'Authorized Gmail threads matched to CRM leads. Daily poll only; calendar UI is CRM tasks, not Google Calendar two-way.',
+    freshness: gmail.lastSyncAt ? `last_sync_at ${gmail.lastSyncAt}` : 'no successful sync recorded',
+    connected,
+    oauthConfigured: gmail.oauthConfigured,
+    status: gmail.status,
+    lastSyncAt: gmail.lastSyncAt,
+    errorCode: gmail.errorCode,
+  }
+}
+
+export function buildAssistantSourceCatalog(generatedAt = new Date().toISOString(), gmail?: GmailHealthSnapshot | null) {
   return {
     generatedAt,
     readOnly: true,
@@ -99,11 +117,29 @@ export function readAssistantSourceCatalog(generatedAt = new Date().toISOString(
       { id: 'website-content', name: 'savingkc.com production content', authority: 'Published public claims and pages', freshness: 'live fetch by the Google Chat agent', connected: true },
       { id: 'website-first-party', name: 'Website first-party tracking', authority: 'Form steps, submissions, click IDs and attribution stored in CRM', freshness: 'live per request', connected: true },
       { id: 'google-ads-export', name: 'PPC conversion outbox', authority: 'Offline conversion queue and delivery status', freshness: 'live per request', connected: true },
+      ...(gmail ? [gmailSourceCatalogEntry(gmail)] : []),
       { id: 'google-analytics', name: 'Google Analytics 4', authority: 'Aggregated traffic and engagement', freshness: 'not connected to this assistant yet', connected: false },
       { id: 'search-console', name: 'Google Search Console', authority: 'Organic queries, indexing and search performance', freshness: 'not connected to this assistant yet', connected: false },
       { id: 'vercel', name: 'Vercel deployment/runtime telemetry', authority: 'Deployments, function errors and uptime', freshness: 'health probes available; authenticated telemetry not connected yet', connected: false },
     ],
   }
+}
+
+export async function readAssistantSourceCatalog(generatedAt = new Date().toISOString()) {
+  let gmail: GmailHealthSnapshot | null = null
+  try {
+    gmail = await readGmailConnectionHealth(supabaseAdmin())
+  } catch {
+    const oauthConfigured = hasGoogleOAuthConfig()
+    gmail = {
+      oauthConfigured,
+      status: oauthConfigured ? 'down' : 'not_configured',
+      lastSyncAt: null,
+      errorCode: oauthConfigured ? 'health_lookup_failed' : 'google_oauth_not_configured',
+      accounts: [],
+    }
+  }
+  return buildAssistantSourceCatalog(generatedAt, gmail)
 }
 
 export async function searchAssistantLeads(db: Db, actor: AssistantActor, queryValue: string, limit = 8) {

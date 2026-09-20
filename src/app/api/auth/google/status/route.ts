@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
 import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
-import { readOAuthHealth } from '@/lib/oauth-health'
+import { evaluateGoogleAccounts } from '@/lib/gmail-oauth-health'
 
 // GET /api/auth/google/status — list connected Google accounts
 export async function GET(req: NextRequest) {
@@ -21,9 +21,10 @@ export async function GET(req: NextRequest) {
   }
 
   const db = supabaseAdmin()
+  const oauthConfigured = hasGoogleOAuthConfig()
   const query = db
     .from('user_oauth_tokens')
-    .select('user_email, last_sync_at, created_at, scope')
+    .select('id, user_email, last_sync_at, created_at, scope, refresh_token, access_token, expires_at')
     .eq('provider', 'google')
     .eq('user_email', userEmail)
     .order('created_at', { ascending: false })
@@ -32,19 +33,14 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const accounts = await Promise.all((data || []).map(async (account) => {
-    const health = await readOAuthHealth(db, 'google', account.user_email)
-    return {
-      ...account,
-      connection_status: health?.status || 'connected',
-      connection_error_code: health?.errorCode || null,
-      connection_error_message: health?.errorMessage || null,
-      connection_checked_at: health?.checkedAt || null,
-    }
-  }))
+  const accounts = await evaluateGoogleAccounts({
+    db,
+    oauthConfigured,
+    accounts: data || [],
+  })
 
   return NextResponse.json({
     accounts,
-    oauthConfigured: hasGoogleOAuthConfig(),
+    oauthConfigured,
   })
 }

@@ -603,9 +603,9 @@
       "owner": "Operations",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/cron/sync-gmail"],
-      "tables": ["google_oauth_tokens", "lead_emails"],
-      "environment": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      "apiRoutes": ["/api/cron/sync-gmail", "/api/auth/google/status"],
+      "tables": ["user_oauth_tokens", "lead_emails", "system_config"],
+      "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
       "crons": [
         { "path": "/api/cron/sync-gmail", "schedule": "15 13 * * *" }
       ]
