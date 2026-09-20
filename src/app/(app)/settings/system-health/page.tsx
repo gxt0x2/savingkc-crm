@@ -20,9 +20,9 @@ function formatDate(value: string | null): string {
 function StatusPill({ status }: { status: string }) {
   const className = status === 'healthy' || status === 'success' || status === 'active'
     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-    : status === 'deprecated' || status === 'blocked' || status === 'degraded'
+    : status === 'deprecated' || status === 'blocked' || status === 'degraded' || status === 'attention' || status === 'disconnected'
       ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-      : status === 'failed' || status === 'down'
+      : status === 'failed' || status === 'down' || status === 'not_configured' || status === 'reauthorization_required' || status === 'error'
         ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
         : 'border-[var(--ck-border)] bg-[var(--ck-surface-elev)] text-[var(--ck-text-muted)]'
 
@@ -84,6 +84,51 @@ export default async function SystemHealthPage() {
 
       <MojoRecoveryStatus />
       <TwilioSecurityStatus />
+
+      <section className="mb-6 rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] p-5 shadow-sm" aria-label="Gmail connection health">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-black text-[var(--ck-text)]">Google Gmail connection</h2>
+            <p className="mt-1 text-xs text-[var(--ck-text-muted)]">
+              Fail-closed grant health for the daily Gmail poll. Dead or missing OAuth is visible here without opening Settings.
+            </p>
+          </div>
+          <StatusPill status={snapshot.gmail.status} />
+        </div>
+        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-[var(--ck-text-muted)]">OAuth configured</dt>
+            <dd className="font-semibold text-[var(--ck-text)]">{snapshot.gmail.oauthConfigured ? 'Yes' : 'No'}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--ck-text-muted)]">Last sync</dt>
+            <dd className="font-semibold text-[var(--ck-text)]">{formatDate(snapshot.gmail.lastSyncAt)}</dd>
+          </div>
+          <div>
+            <dt className="text-[var(--ck-text-muted)]">Error code</dt>
+            <dd className="font-semibold text-[var(--ck-text)]">{snapshot.gmail.errorCode || 'None'}</dd>
+          </div>
+        </dl>
+        {snapshot.gmail.accounts.length > 0 ? (
+          <ul className="mt-4 space-y-2">
+            {snapshot.gmail.accounts.map((account) => (
+              <li key={account.userEmail} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-4 py-3 text-sm">
+                <div>
+                  <p className="font-bold text-[var(--ck-text)]">{account.userEmail}</p>
+                  <p className="text-xs text-[var(--ck-text-muted)]">
+                    Last sync {formatDate(account.lastSyncAt)}
+                    {account.errorCode ? ` · ${account.errorCode}` : ''}
+                    {account.staleSync ? ' · sync older than 36 hours' : ''}
+                  </p>
+                </div>
+                <StatusPill status={account.status} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-[var(--ck-text-muted)]">No Gmail token rows are stored.</p>
+        )}
+      </section>
 
       <section className="mb-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <article className="overflow-hidden rounded-2xl border border-[var(--ck-border)] bg-[var(--ck-surface)] shadow-sm">

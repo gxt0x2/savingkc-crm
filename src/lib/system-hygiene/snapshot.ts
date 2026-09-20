@@ -1,4 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
+import { readGmailConnectionHealth } from '@/lib/gmail-oauth-health'
+import type { GmailHealthSnapshot } from '@/lib/gmail-oauth-status'
 import { getRegisteredCrons, systemRegistry } from '@/lib/system-hygiene/registry'
 
 export interface RetentionPolicySnapshot {
@@ -61,6 +64,7 @@ export interface SystemHygieneSnapshot {
     rows: WorkerSnapshot[]
     error: string | null
   }
+  gmail: GmailHealthSnapshot
 }
 
 export async function getSystemHygieneSnapshot(): Promise<SystemHygieneSnapshot> {
@@ -89,6 +93,13 @@ export async function getSystemHygieneSnapshot(): Promise<SystemHygieneSnapshot>
       available: false,
       rows: [],
       error: null,
+    },
+    gmail: {
+      oauthConfigured: hasGoogleOAuthConfig(),
+      status: hasGoogleOAuthConfig() ? 'down' : 'not_configured',
+      lastSyncAt: null,
+      errorCode: hasGoogleOAuthConfig() ? 'health_lookup_failed' : 'google_oauth_not_configured',
+      accounts: [],
     },
   }
 
@@ -123,6 +134,16 @@ export async function getSystemHygieneSnapshot(): Promise<SystemHygieneSnapshot>
       snapshot.workers.rows = (workersResult.data ?? []) as WorkerSnapshot[]
     } else {
       snapshot.workers.error = 'Worker telemetry is unavailable.'
+    }
+
+    try {
+      snapshot.gmail = await readGmailConnectionHealth(db)
+    } catch {
+      snapshot.gmail = {
+        ...snapshot.gmail,
+        status: snapshot.gmail.oauthConfigured ? 'down' : 'not_configured',
+        errorCode: 'health_lookup_failed',
+      }
     }
   } catch {
     snapshot.retention.error = 'Database health could not be read.'

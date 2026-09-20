@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assistantResultCount, readAssistantSourceCatalog, sanitizeAssistantMetadata } from '@/lib/assistant/queries'
+import { assistantResultCount, buildAssistantSourceCatalog, gmailSourceCatalogEntry, sanitizeAssistantMetadata } from '@/lib/assistant/queries'
 
 describe('assistant query safety helpers', () => {
   it('removes credential-shaped metadata while preserving operational evidence', () => {
@@ -25,10 +25,35 @@ describe('assistant query safety helpers', () => {
   })
 
   it('reports connected and explicitly missing sources', () => {
-    const catalog = readAssistantSourceCatalog('2026-08-19T12:00:00.000Z')
+    const catalog = buildAssistantSourceCatalog('2026-08-19T12:00:00.000Z')
     expect(catalog.readOnly).toBe(true)
     expect(catalog.sources.find((item) => item.id === 'crm')?.connected).toBe(true)
     expect(catalog.sources.find((item) => item.id === 'google-analytics')?.connected).toBe(false)
+  })
+
+  it('maps Gmail health so a dead grant is visible without opening Settings', () => {
+    const gmail = gmailSourceCatalogEntry({
+      oauthConfigured: true,
+      status: 'down',
+      lastSyncAt: '2026-09-18T13:15:00.000Z',
+      errorCode: 'invalid_grant',
+      accounts: [{
+        userEmail: 'ernest@savingkc.com',
+        status: 'reauthorization_required',
+        lastSyncAt: '2026-09-18T13:15:00.000Z',
+        errorCode: 'invalid_grant',
+        staleSync: true,
+      }],
+    })
+
+    expect(gmail).toMatchObject({
+      id: 'gmail',
+      connected: false,
+      oauthConfigured: true,
+      status: 'down',
+      lastSyncAt: '2026-09-18T13:15:00.000Z',
+      errorCode: 'invalid_grant',
+    })
   })
 
   it('counts common result shapes for metadata-only audit rows', () => {

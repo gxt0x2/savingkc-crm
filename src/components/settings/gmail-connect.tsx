@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
+import { isGmailSyncStale } from '@/lib/gmail-oauth-status'
 
 interface ConnectedAccount {
   user_email: string
@@ -56,7 +57,9 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
     }
     const returnTo = `${window.location.pathname}${window.location.search}`
     const params = new URLSearchParams({ return_to: returnTo })
-    window.location.href = `/api/auth/google/authorize?${params}`
+    // Full navigation is required so the browser follows the Google OAuth 302.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- OAuth authorize is a server 302, not an App Router page.
+    window.location.assign(`${window.location.origin}/api/auth/google/authorize?${params}`)
   }
 
   async function handleDisconnect(email: string) {
@@ -122,8 +125,8 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
         </div>
       )}
       {!oauthConfigured && (
-        <div className="mb-4 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[13px] rounded-lg px-4 py-3">
-          Gmail OAuth is not configured in Vercel. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, redeploy, then reconnect Gmail.
+        <div className="mb-4 bg-red-500/10 border border-red-400 text-red-500 text-[13px] rounded-lg px-4 py-3">
+          Gmail OAuth is not configured in this environment. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, redeploy, then reconnect Gmail. Existing accounts are not healthy.
         </div>
       )}
       {syncResult && (
@@ -144,33 +147,45 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
         <div className="space-y-2">
           {accounts.map(a => {
             const needsReconnect = a.connection_status === 'reauthorization_required'
+            const isError = a.connection_status === 'error' || !oauthConfigured
+            const isUnhealthy = needsReconnect || isError
+            const staleSync = a.connection_status === 'connected' && isGmailSyncStale(a.last_sync_at)
             return (
               <div
                 key={a.user_email}
-                className={`flex items-center justify-between p-3 rounded-lg bg-[var(--ck-surface-elev)] border ${needsReconnect ? 'border-red-400' : 'border-[var(--ck-border)]'}`}
+                className={`flex items-center justify-between p-3 rounded-lg bg-[var(--ck-surface-elev)] border ${isUnhealthy ? 'border-red-400' : staleSync ? 'border-amber-400' : 'border-[var(--ck-border)]'}`}
               >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-                  <Icon name="mail" size="text-base" className="text-emerald-400" />
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${isUnhealthy ? 'bg-red-500/10' : 'bg-emerald-500/10'}`}>
+                  <Icon name="mail" size="text-base" className={isUnhealthy ? 'text-red-500' : 'text-emerald-400'} />
                 </div>
                 <div className="min-w-0">
                   <p className="text-[14px] font-semibold text-[var(--ck-text)] truncate">{a.user_email}</p>
-                  <p className="text-[11px] text-[var(--ck-text-muted)]">
-                    {needsReconnect
-                      ? 'Authorization expired — reconnect to resume automatic sync'
+                  <p className={`text-[11px] ${isUnhealthy ? 'text-red-500' : 'text-[var(--ck-text-muted)]'}`}>
+                    {!oauthConfigured
+                      ? 'OAuth is not configured — this account is not connected'
+                      : needsReconnect
+                      ? 'Authorization expired — reconnect Gmail'
+                      : a.connection_status === 'error'
+                      ? (a.connection_error_message || 'Gmail connection error — reconnect')
                       : a.last_sync_at
                       ? `Last sync: ${new Date(a.last_sync_at).toLocaleString()}`
                       : 'Never synced'}
                   </p>
+                  {staleSync && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-300">
+                      Last sync is more than 36 hours old. Daily Gmail poll may be stalled — do not treat this as a live sync.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => needsReconnect ? handleConnect() : handleSyncNow(a.user_email)}
+                  onClick={() => isUnhealthy ? handleConnect() : handleSyncNow(a.user_email)}
                   disabled={syncing === a.user_email || !oauthConfigured}
-                  className={`text-[12px] font-semibold hover:underline disabled:opacity-50 ${needsReconnect ? 'text-red-500' : 'text-[var(--ck-accent)]'}`}
+                  className={`text-[12px] font-semibold hover:underline disabled:opacity-50 ${isUnhealthy ? 'text-red-500' : 'text-[var(--ck-accent)]'}`}
                 >
-                  {needsReconnect ? 'Reconnect Gmail' : syncing === a.user_email ? 'Syncing…' : 'Sync now'}
+                  {isUnhealthy ? 'Reconnect Gmail' : syncing === a.user_email ? 'Syncing…' : 'Sync now'}
                 </button>
                 <button
                   onClick={() => handleDisconnect(a.user_email)}
@@ -193,6 +208,8 @@ function formatGmailSyncError(error: string): string {
     google_oauth_not_configured: 'Google OAuth is not configured in Vercel.',
     token_refresh_failed: 'Google rejected the saved token. Reconnect Gmail.',
     reauthorization_required: 'Google authorization expired. Reconnect Gmail to resume syncing.',
+    missing_refresh_token: 'No Google refresh token is stored. Reconnect Gmail.',
+    connection_unverified: 'Gmail connection has not been verified. Reconnect if this persists.',
     no_token: 'No Gmail token is connected for this account.',
     no_refresh_token_revoke_and_retry: 'Google did not return a refresh token. Remove SavingKC CRM from your Google account permissions, then reconnect.',
     token_exchange_failed: 'Google token exchange failed. Check the OAuth client and redirect URI.',
