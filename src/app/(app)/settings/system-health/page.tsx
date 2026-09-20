@@ -119,6 +119,7 @@ export default async function SystemHealthPage() {
                     Last sync {formatDate(account.lastSyncAt)}
                     {account.errorCode ? ` · ${account.errorCode}` : ''}
                     {account.staleSync ? ' · sync older than 36 hours' : ''}
+                    {account.missingScopes.length > 0 ? ` · missing ${account.missingScopes.join(', ')}` : ''}
                   </p>
                 </div>
                 <StatusPill status={account.status} />

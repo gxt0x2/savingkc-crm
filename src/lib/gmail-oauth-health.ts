@@ -9,6 +9,7 @@ import {
   type GoogleProbeResult,
   type GoogleStatusAccount,
 } from '@/lib/gmail-oauth-status'
+import { CALENDAR_SCOPE, GMAIL_SEND_SCOPE, hasGoogleScope, missingGoogleScopes } from '@/lib/google-oauth-scopes'
 
 const REAUTH_MESSAGE = 'Google authorization expired. Reconnect Gmail.'
 
@@ -101,11 +102,15 @@ export async function evaluateGoogleAccounts(input: {
       })
     }
 
+    const scope = account.scope || ''
     return {
       user_email: account.user_email,
       last_sync_at: account.last_sync_at,
       created_at: account.created_at,
-      scope: account.scope || '',
+      scope,
+      missing_scopes: missingGoogleScopes(scope),
+      has_gmail_send: hasGoogleScope(scope, GMAIL_SEND_SCOPE),
+      has_calendar: hasGoogleScope(scope, CALENDAR_SCOPE),
       connection_status: resolved.connection_status,
       connection_error_code: resolved.connection_error_code,
       connection_error_message: resolved.connection_error_message,
@@ -121,7 +126,7 @@ export async function readGmailConnectionHealth(
   const oauthConfigured = hasGoogleOAuthConfig()
   const { data, error } = await db
     .from('user_oauth_tokens')
-    .select('user_email, last_sync_at, refresh_token')
+    .select('user_email, last_sync_at, refresh_token, scope')
     .eq('provider', 'google')
     .order('created_at', { ascending: false })
 
@@ -139,6 +144,7 @@ export async function readGmailConnectionHealth(
     userEmail: String(row.user_email || ''),
     hasRefreshToken: hasNonEmptyRefreshToken(row.refresh_token),
     lastSyncAt: typeof row.last_sync_at === 'string' ? row.last_sync_at : null,
+    scope: typeof row.scope === 'string' ? row.scope : '',
     health: String(row.user_email || '') ? await readOAuthHealth(db, 'google', String(row.user_email)) : null,
   })))
 

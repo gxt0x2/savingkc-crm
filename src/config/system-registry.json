@@ -346,7 +346,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/calendar", "/tasks"],
-      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete"],
+      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/leads/create-appointment", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete"],
       "tables": ["appointments", "leads", "lead_activities", "lead_tasks", "tc_tasks", "work_items", "work_item_events"],
       "environment": []
     },
@@ -603,7 +603,7 @@
       "owner": "Operations",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/cron/sync-gmail", "/api/auth/google/status"],
+      "apiRoutes": ["/api/cron/sync-gmail", "/api/auth/google/status", "/api/auth/google/send"],
       "tables": ["user_oauth_tokens", "lead_emails", "system_config"],
       "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
       "crons": [

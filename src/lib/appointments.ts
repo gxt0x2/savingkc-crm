@@ -15,6 +15,7 @@ export interface AppointmentRow {
   source: AppointmentSource
   source_call_id: string | null
   assigned_to: string | null
+  google_event_id?: string | null
   created_at: string
   updated_at: string
 }

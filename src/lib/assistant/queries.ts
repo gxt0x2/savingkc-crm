@@ -98,7 +98,7 @@ export function gmailSourceCatalogEntry(gmail: GmailHealthSnapshot) {
   return {
     id: 'gmail',
     name: 'Google Gmail sync',
-    authority: 'Authorized Gmail threads matched to CRM leads. Daily poll only; calendar UI is CRM tasks, not Google Calendar two-way.',
+    authority: 'Authorized Gmail threads matched to CRM leads. Outbound email uses Gmail API when the user grant includes gmail.send. CRM appointments owned by a connected user are written to that user primary Google Calendar. Bidirectional import of all Google events is not implemented.',
     freshness: gmail.lastSyncAt ? `last_sync_at ${gmail.lastSyncAt}` : 'no successful sync recorded',
     connected,
     oauthConfigured: gmail.oauthConfigured,

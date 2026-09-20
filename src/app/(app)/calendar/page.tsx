@@ -15,6 +15,7 @@ import { useAppMode } from '@/hooks/use-app-mode'
 import { toProperCase } from '@/lib/format'
 import type { Task } from '@/types'
 import type { CalendarDepartment } from '@/hooks/use-calendar-tasks'
+import { GoogleCalendarSyncBanner } from '@/components/calendar/google-calendar-sync-banner'
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -89,6 +90,7 @@ function CalendarContent() {
         onNextMonth={handleNextMonth}
         onNewTask={() => setShowNewTask(true)}
       />
+      <GoogleCalendarSyncBanner />
 
       <main className="px-4 sm:px-6 lg:px-8 pb-32">
         {viewParam === 'month' && (

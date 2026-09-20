@@ -8,12 +8,16 @@ const mocks = vi.hoisted(() => ({
   appointmentConversion: vi.fn(),
   activityInsert: vi.fn(),
   leadUpdate: vi.fn(),
+  calendar: vi.fn(),
 }))
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/appointments', () => ({ upsertAppointmentFromCall: mocks.appointment }))
 vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.advance }))
 vi.mock('@/lib/ppc/appointment-booked-conversion', () => ({
   queuePpcAppointmentBookedConversion: mocks.appointmentConversion,
+}))
+vi.mock('@/lib/google-calendar', () => ({
+  syncOwnedAppointmentToGoogleCalendar: mocks.calendar,
 }))
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: {
@@ -75,6 +79,7 @@ describe('appointment command route trust boundary', () => {
     })
     mocks.advance.mockResolvedValue({ advanced: true, from: 'contacted', to: 'appointment_set' })
     mocks.appointmentConversion.mockResolvedValue({ queued: true })
+    mocks.calendar.mockResolvedValue({ status: 'skipped', reason: 'no_token' })
   })
 
   it('rejects anonymous requests before parsing the body', async () => {
@@ -116,6 +121,27 @@ describe('appointment command route trust boundary', () => {
     expect(mocks.activityInsert).toHaveBeenCalledWith(expect.objectContaining({
       lead_id: 'lead-1', activity_type: 'appointment', agent: 'Ernest',
     }))
+    expect(mocks.calendar).toHaveBeenCalledWith(expect.objectContaining({
+      actorEmail: 'ernest@savingkc.com',
+      assignedTo: 'Ernest',
+      appointment: expect.objectContaining({ id: 'appointment-1' }),
+    }))
+  })
+
+  it('still saves the CRM appointment when Google Calendar sync is skipped', async () => {
+    mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com', name: 'Ernest' })
+    mocks.calendar.mockResolvedValue({ status: 'skipped', reason: 'no_token' })
+    const response = await POST(request({
+      leadId: 'lead-1',
+      scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      assignedTo: 'Ernest',
+    }))
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      appointmentId: 'appointment-1',
+      googleCalendar: { status: 'skipped', reason: 'no_token' },
+    })
   })
 
   it('does not invent an appointment id when canonical persistence fails', async () => {

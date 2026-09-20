@@ -1,4 +1,5 @@
 import type { OAuthConnectionStatus, OAuthHealth } from '@/lib/oauth-health'
+import { missingGoogleScopes } from '@/lib/google-oauth-scopes'
 
 export const GMAIL_STALE_SYNC_MS = 36 * 60 * 60 * 1000
 
@@ -29,6 +30,9 @@ export type GoogleStatusAccount = {
   last_sync_at: string | null
   created_at: string
   scope: string
+  missing_scopes: string[]
+  has_gmail_send: boolean
+  has_calendar: boolean
   connection_status: GoogleConnectionStatus
   connection_error_code: string | null
   connection_error_message: string | null
@@ -41,6 +45,7 @@ export type GmailHealthAccount = {
   lastSyncAt: string | null
   errorCode: string | null
   staleSync: boolean
+  missingScopes: string[]
 }
 
 export type GmailHealthSnapshot = {
@@ -175,6 +180,7 @@ export function mapGmailHealthSnapshot(input: {
     hasRefreshToken: boolean
     lastSyncAt: string | null
     health: HealthSlice | null
+    scope?: string | null
   }>
   now?: Date | number
 }): GmailHealthSnapshot {
@@ -185,12 +191,14 @@ export function mapGmailHealthSnapshot(input: {
       health: account.health,
       probe: null,
     })
+    const missingScopes = missingGoogleScopes(account.scope)
     return {
       userEmail: account.userEmail,
       status: resolved.connection_status,
       lastSyncAt: account.lastSyncAt,
       errorCode: resolved.connection_error_code,
       staleSync: resolved.connection_status === 'connected' && isGmailSyncStale(account.lastSyncAt, input.now),
+      missingScopes,
     }
   })
 
@@ -226,6 +234,10 @@ export function mapGmailHealthSnapshot(input: {
 
   if (accounts.some((account) => account.staleSync)) {
     return { oauthConfigured: true, status: 'attention', lastSyncAt, errorCode: 'stale_sync', accounts }
+  }
+
+  if (accounts.some((account) => account.missingScopes.length > 0)) {
+    return { oauthConfigured: true, status: 'attention', lastSyncAt, errorCode: 'missing_scopes', accounts }
   }
 
   return { oauthConfigured: true, status: 'healthy', lastSyncAt, errorCode: null, accounts }

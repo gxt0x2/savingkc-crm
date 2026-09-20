@@ -43,6 +43,7 @@ describe('assistant query safety helpers', () => {
         lastSyncAt: '2026-09-18T13:15:00.000Z',
         errorCode: 'invalid_grant',
         staleSync: true,
+        missingScopes: [],
       }],
     })
 
