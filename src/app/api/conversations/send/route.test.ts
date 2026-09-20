@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   profileMaybeSingle: vi.fn(),
   recipientMaybeSingle: vi.fn(),
   assertDialerControl: vi.fn(),
+  sendConnectedGmail: vi.fn(),
+  recordOutboundGmail: vi.fn(),
 }))
 
 vi.mock('@/lib/api/dialer-mutation-control', () => ({
@@ -47,6 +49,11 @@ vi.mock('resend', () => ({
   Resend: class {
     emails = { send: mocks.resendSend }
   },
+}))
+
+vi.mock('@/lib/gmail-send', () => ({
+  sendConnectedGmail: mocks.sendConnectedGmail,
+  recordOutboundGmail: mocks.recordOutboundGmail,
 }))
 
 import { POST } from './route'
@@ -96,6 +103,12 @@ describe('conversation sends', () => {
       deliveryState: 'delivered_and_persisted',
     })
     mocks.assertDialerControl.mockResolvedValue(null)
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: false,
+      code: 'no_token',
+      error: 'Gmail is not connected. Connect Gmail in Settings, then try again.',
+    })
+    mocks.recordOutboundGmail.mockResolvedValue({ persisted: true })
   })
 
   afterEach(() => {
@@ -459,6 +472,63 @@ describe('conversation sends', () => {
     releaseAutoAdvance()
     await posting
     expect(settled).toHaveBeenCalledOnce()
+  })
+
+  it('sends through Gmail when the actor has a connected send grant', async () => {
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: true,
+      id: 'gmail-1',
+      threadId: 'thread-1',
+      from: 'ernest@savingkc.com',
+    })
+
+    const response = await POST(request({
+      mode: 'email',
+      leadId: 'lead-1',
+      to: 'seller@example.com',
+      body: 'Hello from Gmail',
+      subject: 'Gmail demo',
+    }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({
+      success: true,
+      sent: true,
+      persisted: true,
+      provider: 'gmail',
+      id: 'gmail-1',
+    })
+    expect(mocks.resendSend).not.toHaveBeenCalled()
+    expect(mocks.recordOutboundGmail).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: 'lead-1',
+      gmailMessageId: 'gmail-1',
+      to: 'seller@example.com',
+    }))
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ provider: 'gmail', sent: true }),
+    }))
+  })
+
+  it('fails closed when Gmail is connected but missing gmail.send', async () => {
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: false,
+      code: 'missing_gmail_send',
+      error: 'This Google account is missing Gmail send permission. Reconnect Gmail in Settings and approve send access.',
+    })
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
+
+    const response = await POST(request({ mode: 'email', leadId: 'lead-1', to: 'seller@example.com', body: 'Hello' }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(payload).toMatchObject({
+      success: false,
+      sent: false,
+      code: 'missing_gmail_send',
+    })
+    expect(mocks.resendSend).not.toHaveBeenCalled()
+    expect(mocks.insert).not.toHaveBeenCalled()
   })
 
   it('reports delivered-but-not-persisted without turning delivery into a retryable failure', async () => {

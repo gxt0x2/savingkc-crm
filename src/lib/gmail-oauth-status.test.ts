@@ -261,6 +261,27 @@ describe('Gmail Andon health mapping', () => {
     expect(snapshot.status).toBe('down')
     expect(snapshot.errorCode).toBe('connection_unverified')
   })
+
+  it('flags a connected grant that is missing send or calendar after reconnect', () => {
+    const snapshot = mapGmailHealthSnapshot({
+      oauthConfigured: true,
+      now: new Date(now),
+      accounts: [{
+        userEmail: 'ernest@savingkc.com',
+        hasRefreshToken: true,
+        lastSyncAt: now,
+        scope: 'gmail.readonly',
+        health: health('connected'),
+      }],
+    })
+
+    expect(snapshot.status).toBe('attention')
+    expect(snapshot.errorCode).toBe('missing_scopes')
+    expect(snapshot.accounts[0]?.missingScopes).toEqual(expect.arrayContaining([
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/calendar',
+    ]))
+  })
 })
 
 describe('Gmail sync staleness helpers', () => {

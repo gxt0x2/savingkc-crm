@@ -16,6 +16,9 @@ function account(overrides: Record<string, unknown> = {}) {
     last_sync_at: '2026-09-20T12:00:00.000Z',
     created_at: '2026-01-01T00:00:00.000Z',
     scope: 'gmail.readonly',
+    missing_scopes: ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/calendar'],
+    has_gmail_send: false,
+    has_calendar: false,
     connection_status: 'connected',
     connection_error_code: null,
     connection_error_message: null,
@@ -76,5 +79,23 @@ describe('GmailConnect honesty', () => {
 
     await waitFor(() => expect(screen.getByText(/Last sync is more than 36 hours old/)).toBeInTheDocument())
     expect(screen.getByText('Sync now')).toBeInTheDocument()
+  })
+
+  it('surfaces Calendar sync and a Gmail send form when the grant is connected', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      oauthConfigured: true,
+      accounts: [account({
+        scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar',
+        missing_scopes: [],
+        has_gmail_send: true,
+        has_calendar: true,
+      })],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+
+    render(<GmailConnect userEmail="ernest@savingkc.com" />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send via Gmail' })).toBeInTheDocument())
+    expect(screen.getAllByText(/Google Calendar sync is on/).length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('Gmail recipient')).toBeInTheDocument()
   })
 })

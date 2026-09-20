@@ -13,6 +13,7 @@ import {
   dialerProviderSignal,
 } from '@/lib/server/dialer-provider-boundary'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { recordOutboundGmail, sendConnectedGmail } from '@/lib/gmail-send'
 
 const DIALER_OPERATION_UNCERTAIN_HEADERS = {
   'X-Dialer-Operation-Uncertain': 'true',
@@ -183,6 +184,104 @@ export async function POST(req: Request) {
           { status: 503 },
         )
       }
+
+      const gmail = await sendConnectedGmail({
+        userEmail: authenticatedActor.email,
+        to,
+        subject: emailSubject,
+        text: body.trim(),
+      })
+      if (gmail.ok) {
+        if (reassertPersistenceControl) {
+          try {
+            await reassertPersistenceControl()
+          } catch (error) {
+            console.error('[CONVERSATIONS] Gmail delivered but dialing control could not be revalidated:', error)
+            return NextResponse.json({
+              success: true,
+              sent: true,
+              persisted: false,
+              deliveryState: 'delivered_not_persisted',
+              provider: 'gmail',
+              warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.',
+              id: gmail.id,
+            })
+          }
+        }
+
+        let activityPersistenceError: unknown = null
+        try {
+          const { error } = await supabase.from('lead_activities').insert({
+            lead_id: leadId || null,
+            activity_type: 'email',
+            description: body.trim(),
+            agent: actor,
+            metadata: {
+              ...(activitySource ? { source: activitySource } : {}),
+              ...prospectMetadata,
+              direction: 'outbound',
+              to,
+              subject: emailSubject,
+              sent: true,
+              provider: 'gmail',
+              gmail_message_id: gmail.id,
+            },
+          })
+          activityPersistenceError = error
+        } catch (error) {
+          activityPersistenceError = error
+        }
+
+        if (leadId) {
+          await recordOutboundGmail({
+            leadId,
+            from: gmail.from,
+            to,
+            subject: emailSubject,
+            text: body.trim(),
+            gmailMessageId: gmail.id,
+            gmailThreadId: gmail.threadId,
+            syncedFromUser: authenticatedActor.email,
+          }).catch((error) => console.error('[CONVERSATIONS] Gmail lead_emails persist failed:', error))
+          if (reassertPersistenceControl) {
+            await checkAutoAdvance(leadId, 'outbound_contact', {
+              beforeMutation: reassertPersistenceControl,
+            }).catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+          } else {
+            checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
+          }
+        }
+
+        if (activityPersistenceError) {
+          console.error('[CONVERSATIONS] Gmail delivered but activity persistence failed:', activityPersistenceError)
+          return NextResponse.json({
+            success: true,
+            sent: true,
+            persisted: false,
+            deliveryState: 'delivered_not_persisted',
+            provider: 'gmail',
+            warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.',
+            id: gmail.id,
+          })
+        }
+
+        return NextResponse.json({
+          success: true,
+          sent: true,
+          persisted: true,
+          deliveryState: 'delivered_and_persisted',
+          provider: 'gmail',
+          id: gmail.id,
+        })
+      }
+
+      if (gmail.code !== 'no_token' && gmail.code !== 'google_oauth_not_configured') {
+        return NextResponse.json(
+          { success: false, sent: false, error: gmail.error, code: gmail.code },
+          { status: gmail.code === 'missing_gmail_send' || gmail.code === 'reauthorization_required' ? 403 : 502 },
+        )
+      }
+
       if (!process.env.RESEND_API_KEY) {
         return NextResponse.json(
           { success: false, sent: false, error: 'Email delivery is not configured' },

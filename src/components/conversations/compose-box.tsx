@@ -189,6 +189,9 @@ export function ComposeBox({ leadId, phone, email, onSent, replyFromPhone, draft
         {activeMode === 'email' ? (
           <div className="border-t border-[#eef1f4] px-5 py-2">
             <input aria-label="Email subject" value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Email subject" className="h-8 w-full border-0 bg-transparent text-xs font-semibold text-[var(--crm-text)] outline-none placeholder:text-[var(--crm-text-dim)]" />
+            <p className="pt-1 text-[11px] text-[var(--crm-text-muted)]">
+              Sends through your connected Gmail when Google is connected. If send permission is missing, the send fails instead of using another provider.
+            </p>
           </div>
         ) : null}
 

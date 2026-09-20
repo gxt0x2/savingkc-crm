@@ -4,12 +4,16 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { isGmailSyncStale } from '@/lib/gmail-oauth-status'
+import { formatGoogleScopeLabel, formatGmailSendError } from '@/lib/google-oauth-scopes'
 
 interface ConnectedAccount {
   user_email: string
   last_sync_at: string | null
   created_at: string
   scope: string
+  missing_scopes?: string[]
+  has_gmail_send?: boolean
+  has_calendar?: boolean
   connection_status: 'connected' | 'reauthorization_required' | 'error'
   connection_error_code: string | null
   connection_error_message: string | null
@@ -28,6 +32,12 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [sendTo, setSendTo] = useState('')
+  const [sendSubject, setSendSubject] = useState('Saving KC Gmail test')
+  const [sendBody, setSendBody] = useState('This message was sent from Saving KC CRM through the connected Gmail account.')
+  const [sending, setSending] = useState(false)
+  const [sendResult, setSendResult] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
 
   const oauthSuccess = searchParams.get('oauth_success')
   const oauthError = searchParams.get('oauth_error')
@@ -95,13 +105,44 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
     }
   }
 
+  async function handleSendGmail() {
+    setSending(true)
+    setSendError(null)
+    setSendResult(null)
+    try {
+      const res = await fetch('/api/auth/google/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_email: normalizedUserEmail || undefined,
+          to: sendTo.trim(),
+          subject: sendSubject.trim() || 'Message from Saving KC',
+          body: sendBody.trim(),
+        }),
+      })
+      const data = await res.json() as { error?: string; code?: string; id?: string }
+      if (!res.ok) {
+        throw new Error(data.error || (data.code ? formatGmailSendError(data.code) : 'Gmail send failed'))
+      }
+      setSendResult(`Sent through Gmail${data.id ? ` · ${data.id}` : ''}`)
+      setSendBody('')
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'Gmail send failed')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const connectedAccount = accounts.find((account) => account.connection_status === 'connected')
+  const calendarSyncOn = Boolean(connectedAccount && (connectedAccount.has_calendar ?? true) && oauthConfigured)
+
   return (
     <div className="ck-card p-5">
       <div className="flex items-start justify-between mb-4">
         <div>
           <h2 className="text-lg font-bold text-[var(--ck-text)] mb-1">Gmail Sync</h2>
           <p className="text-[13px] text-[var(--ck-text-muted)]">
-            Connect your Gmail to automatically sync email threads with leads. Sync runs daily; use Sync now for immediate updates.
+            Connect Gmail to sync inbound threads, send from your Google account, and write your CRM appointments to Google Calendar.
           </p>
         </div>
         <button
@@ -177,6 +218,16 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
                       Last sync is more than 36 hours old. Daily Gmail poll may be stalled — do not treat this as a live sync.
                     </p>
                   )}
+                  {a.connection_status === 'connected' && (a.has_calendar || (a.scope || '').includes('calendar')) && (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-300">
+                      Google Calendar sync is on — appointments you create are written to this Google account.
+                    </p>
+                  )}
+                  {a.connection_status === 'connected' && (a.missing_scopes?.length || 0) > 0 && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-300">
+                      Missing after reconnect: {a.missing_scopes!.map(formatGoogleScopeLabel).join(', ')}. Reconnect Gmail and approve every requested permission.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -197,6 +248,54 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {connectedAccount && (
+        <div className="mt-5 border-t border-[var(--ck-border)] pt-4">
+          <h3 className="text-sm font-bold text-[var(--ck-text)] mb-1">Send via Gmail</h3>
+          <p className="text-[12px] text-[var(--ck-text-muted)] mb-3">
+            Sends through Gmail API using {connectedAccount.user_email}. This is the connected Google mailbox, not Resend.
+          </p>
+          {calendarSyncOn && (
+            <p className="text-[12px] text-emerald-600 dark:text-emerald-300 mb-3">
+              Google Calendar sync is on for this connection.
+            </p>
+          )}
+          <div className="space-y-2">
+            <input
+              aria-label="Gmail recipient"
+              type="email"
+              value={sendTo}
+              onChange={(event) => setSendTo(event.target.value)}
+              placeholder="Recipient email"
+              className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm text-[var(--ck-text)]"
+            />
+            <input
+              aria-label="Gmail subject"
+              value={sendSubject}
+              onChange={(event) => setSendSubject(event.target.value)}
+              placeholder="Subject"
+              className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm text-[var(--ck-text)]"
+            />
+            <textarea
+              aria-label="Gmail message"
+              value={sendBody}
+              onChange={(event) => setSendBody(event.target.value)}
+              rows={3}
+              className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm text-[var(--ck-text)]"
+            />
+            {sendError && <p role="alert" className="text-[12px] font-medium text-red-500">{sendError}</p>}
+            {sendResult && <p role="status" className="text-[12px] font-medium text-emerald-500">{sendResult}</p>}
+            <button
+              type="button"
+              onClick={handleSendGmail}
+              disabled={sending || !sendTo.trim() || !sendBody.trim() || !oauthConfigured}
+              className="bg-[#E32E2E] hover:bg-[#c72626] disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            >
+              {sending ? 'Sending…' : 'Send via Gmail'}
+            </button>
+          </div>
         </div>
       )}
     </div>

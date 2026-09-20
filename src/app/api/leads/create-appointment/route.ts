@@ -5,6 +5,7 @@ import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { buildAppointmentCommand } from '@/lib/server/appointment-command'
+import { syncOwnedAppointmentToGoogleCalendar } from '@/lib/google-calendar'
 
 /**
  * POST /api/leads/create-appointment
@@ -109,12 +110,33 @@ export async function POST(req: NextRequest) {
       source: 'appointment_modal',
     }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 
+    const googleCalendar = await syncOwnedAppointmentToGoogleCalendar({
+      actorEmail: actor.email,
+      assignedTo,
+      appointment: {
+        id: appointmentId,
+        scheduled_at: scheduledIso,
+        type: canonicalAppointment.type || type,
+        notes: canonicalAppointment.notes ?? notes,
+        address: canonicalAppointment.address ?? address,
+        google_event_id: canonicalAppointment.google_event_id ?? null,
+      },
+      leadName: leadRow.full_name,
+    }).catch((error) => {
+      console.warn('[create-appointment] Google Calendar sync skipped:', error)
+      return { status: 'skipped' as const, reason: 'calendar_sync_failed' }
+    })
+    if (googleCalendar.status === 'skipped') {
+      console.info(`[create-appointment] Google Calendar sync skipped for ${appointmentId}: ${googleCalendar.reason}`)
+    }
+
     // The appointment trigger atomically enrolls the durable Ghost Protocol sequence.
 
     return NextResponse.json({
       success: true,
       appointmentId,
       lifecycleAdvanced: lifecycle.advanced,
+      googleCalendar,
       ...(warnings.length > 0 ? { warning: `Appointment saved. ${warnings.join(' ')} Do not create it again.` } : {}),
     })
   } catch (err) {
