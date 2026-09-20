@@ -57,6 +57,17 @@ describe('/api/leads proxy containment', () => {
     expect(response.headers.get('x-middleware-next')).toBe('1')
   })
 
+  it.each(['/product', '/privacy', '/terms'])('keeps Google OAuth branding page %s public', async (pathname) => {
+    const response = await proxy(
+      new NextRequest(`https://crm.savingkc.com${pathname}`),
+      event,
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
   it('serves the CRM icon font without invoking authenticated session handling', async () => {
     const response = await proxy(
       new NextRequest('https://crm.savingkc.com/fonts/material-symbols-savingkc.ttf'),

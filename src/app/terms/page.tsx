@@ -1,98 +1,108 @@
-export const metadata = {
-  title: 'Terms & Conditions | Saving KC',
-  description: 'Terms and Conditions for Saving KC Homebuyers LLC',
-};
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import { OauthPublicFrame } from '@/components/public/oauth-public-frame'
+import styles from '@/components/public/oauth-public-frame.module.css'
+
+export const metadata: Metadata = {
+  title: 'Terms of Use | Saving KC CRM',
+  description:
+    'Terms for using Saving KC CRM software and related Saving KC Homebuyers communications, including SMS.',
+  robots: { index: true, follow: true },
+}
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Terms & Conditions</h1>
-        <p className="text-sm text-gray-500 mb-8">Last updated April 16, 2026</p>
+    <OauthPublicFrame>
+      <article className={styles.card}>
+        <h1>Terms of Use</h1>
+        <p className={styles.updated}>Last updated September 20, 2026</p>
 
-        <div className="prose prose-gray max-w-none space-y-6">
+        <p>
+          These terms cover use of <strong>Saving KC CRM</strong> at{' '}
+          <a href="https://crm.savingkc.com">crm.savingkc.com</a> and related
+          communications from Saving KC Homebuyers LLC. By signing in to the CRM
+          or using our websites and messaging services, you agree to these terms.
+        </p>
+
+        <section>
+          <h2>Saving KC CRM software</h2>
           <p>
-            Welcome to Saving KC Homebuyers LLC. By using our website,
-            submitting a property inquiry, or communicating with us, you agree
-            to these Terms & Conditions.
+            Saving KC CRM is internal operations software for authorized company
+            staff. Access is provided for legitimate business use only. Users must
+            keep login credentials confidential, use connected Google accounts
+            only for company work, and not attempt to access other users&apos;
+            data or circumvent access controls.
           </p>
+          <p>
+            The CRM may connect to Google Gmail and Google Calendar when a user
+            chooses Connect Gmail. That connection is optional, can be revoked in
+            Settings, and is described in the{' '}
+            <Link href="/privacy">Privacy Policy</Link>. Use of Google APIs is
+            also subject to Google&apos;s terms and the Google API Services User
+            Data Policy.
+          </p>
+          <p>
+            We may suspend access for security, abuse, or employment changes. The
+            software is provided for business operations; we do not warrant
+            uninterrupted availability.
+          </p>
+        </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">Consent to Receive SMS Messages</h2>
-            <p>
-              By submitting your contact information to Saving KC Homebuyers or
-              requesting a property offer, you agree to receive SMS messages
-              related to your property inquiry, offer details, appointment
-              confirmations, and other service-related notifications.
-            </p>
-          </section>
+        <section>
+          <h2>Real estate services</h2>
+          <p>
+            Saving KC Homebuyers provides real estate services to property owners
+            in the Kansas City metro area, including cash offers on residential
+            and land properties, assistance with inherited properties, and
+            solutions for tax-delinquent real estate. We buy properties as
+            principal investors and are not a licensed real estate brokerage.
+          </p>
+        </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">Services</h2>
-            <p>
-              Saving KC Homebuyers provides real estate services to property
-              owners in the Kansas City metro area, including cash offers on
-              residential and land properties, assistance with inherited
-              properties, and solutions for tax-delinquent real estate.
-            </p>
-          </section>
+        <section>
+          <h2>Consent to receive SMS messages</h2>
+          <p>
+            By submitting contact information to Saving KC Homebuyers or
+            requesting a property offer, you agree to receive SMS messages related
+            to your property inquiry, offer details, appointment confirmations,
+            and other service-related notifications.
+          </p>
+        </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">Opt-Out Policy</h2>
-            <p>
-              You may opt out of receiving text messages at any time by replying
-              STOP. After opting out, you will no longer receive SMS updates but
-              may still receive email or phone communications as part of your
-              service agreement.
-            </p>
-          </section>
+        <section>
+          <h2>Opt-out, frequency, and carriers</h2>
+          <p>
+            Reply STOP at any time to unsubscribe from SMS. After opting out you
+            will no longer receive SMS updates but may still receive email or
+            phone communications as part of a service relationship. Reply HELP
+            for assistance. Message frequency varies with inquiry activity.
+            Message and data rates may apply. Messaging is supported on major US
+            carriers. Carriers are not liable for delayed or undelivered messages.
+          </p>
+        </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">Message Frequency and Rates</h2>
-            <p>
-              Message frequency will vary depending on your property inquiry and
-              account activity. Message and data rates may apply according to
-              your mobile carrier&apos;s plan.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">HELP and STOP Instructions</h2>
-            <p>
-              Reply HELP at any time for assistance. Reply STOP at any time to
-              unsubscribe from SMS communications.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">Supported Carriers</h2>
-            <p>
-              Messaging services are supported on all major US carriers. Carriers
-              are not liable for delayed or undelivered messages.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">Support and Contact</h2>
-            <p>
-              For questions about these Terms or assistance with SMS
-              communications, please contact us at{' '}
-              <a href="mailto:support@savingkc.com" className="text-blue-600 hover:underline">
-                support@savingkc.com
-              </a>{' '}
-              or{' '}
-              <a href="tel:+18164292900" className="text-blue-600 hover:underline">
-                (816) 429-2900
-              </a>.
-            </p>
-            <p className="mt-4">
-              Saving KC Homebuyers LLC<br />
-              7021 NW Winter Ave<br />
-              Kansas City, MO 64152
-            </p>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
+        <section>
+          <h2>Support and contact</h2>
+          <p>
+            Questions about these terms:{' '}
+            <a href="mailto:support@savingkc.com">support@savingkc.com</a>
+            {' · '}
+            <a href="tel:+18164292900">(816) 429-2900</a>
+          </p>
+          <p>
+            Saving KC Homebuyers LLC
+            <br />
+            7021 NW Winter Ave
+            <br />
+            Kansas City, MO 64152
+          </p>
+          <p>
+            <Link href="/product">CRM product overview</Link>
+            {' · '}
+            <Link href="/privacy">Privacy Policy</Link>
+          </p>
+        </section>
+      </article>
+    </OauthPublicFrame>
+  )
 }

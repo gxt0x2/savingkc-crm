@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { isGmailSyncStale } from '@/lib/gmail-oauth-status'
@@ -153,6 +154,13 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
           <Icon name="add" size="text-base" /> Connect Gmail
         </button>
       </div>
+      <p className="text-[12px] text-[var(--ck-text-muted)] mb-4">
+        Connecting Gmail lets Saving KC CRM read matched inbox threads, send from your Google account, and write CRM appointments to Google Calendar. We do not sell Google user data or use it for ads.{' '}
+        <Link href="/privacy" className="underline text-[var(--ck-accent)]">
+          Privacy Policy
+        </Link>
+        {' '}explains access, storage, and Google Limited Use. Disconnect stops further Google API access and removes stored OAuth tokens.
+      </p>
 
       {/* OAuth feedback banners */}
       {oauthSuccess && (
