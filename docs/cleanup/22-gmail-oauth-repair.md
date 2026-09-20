@@ -22,13 +22,10 @@ Create or locate a Google Auth Platform web OAuth client with this authorized re
 https://crm.savingkc.com/api/auth/google/callback
 ```
 
-Required scopes used by the CRM:
+Required scopes used by the CRM (Gmail read sync only; Google typically includes `openid` with these):
 
 ```text
 https://www.googleapis.com/auth/gmail.readonly
-https://www.googleapis.com/auth/gmail.send
-https://www.googleapis.com/auth/gmail.modify
-https://www.googleapis.com/auth/calendar
 https://www.googleapis.com/auth/userinfo.email
 https://www.googleapis.com/auth/userinfo.profile
 ```
