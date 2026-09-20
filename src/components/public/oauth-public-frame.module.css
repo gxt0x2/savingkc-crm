@@ -1,0 +1,164 @@
+.page {
+  min-height: 100vh;
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.header,
+.footer {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.footer {
+  border-top: 1px solid #e2e8f0;
+}
+
+.inner {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #0f172a !important;
+  text-decoration: none;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.brandName {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a !important;
+}
+
+.brandMeta {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b !important;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  font-size: 0.875rem;
+}
+
+.nav a,
+.footer a {
+  color: #1d4ed8 !important;
+  text-decoration: none;
+}
+
+.nav a:hover,
+.footer a:hover {
+  text-decoration: underline;
+}
+
+.main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.card {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  padding: 2rem;
+}
+
+.card h1,
+.card h2,
+.card h3 {
+  color: #0f172a !important;
+}
+
+.card h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+}
+
+.card h2 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  margin: 2rem 0 0.75rem;
+}
+
+.card h3 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.updated,
+.muted,
+.footerCopy {
+  color: #64748b !important;
+}
+
+.updated {
+  font-size: 0.875rem;
+  margin: 0 0 1.75rem;
+}
+
+.card p,
+.card li {
+  color: #334155 !important;
+  line-height: 1.65;
+  margin: 0 0 0.9rem;
+}
+
+.card ul {
+  margin: 0 0 0.9rem;
+  padding-left: 1.2rem;
+}
+
+.card a {
+  color: #1d4ed8 !important;
+}
+
+.footerInner {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.footerCopy {
+  margin: 0;
+}
+
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}

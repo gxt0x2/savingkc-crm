@@ -1,15 +1,12 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { REQUIRED_GOOGLE_OAUTH_SCOPES } from '@/lib/google-oauth-scopes'
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/gmail.modify',
-  'https://www.googleapis.com/auth/calendar',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
-]
+// Restricted-scope verification: request only the APIs this CRM calls.
+// gmail.modify is unused — sync is users.messages.list/get, send is
+// users.messages.send, appointments use Calendar. Do not add modify back
+// without a user-facing mailbox-mutation feature.
 
 // GET /api/auth/google/authorize?return_to=/settings
 // Redirects the user to Google OAuth consent screen.
@@ -32,7 +29,7 @@ export async function GET(req: NextRequest) {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: SCOPES.join(' '),
+    scope: REQUIRED_GOOGLE_OAUTH_SCOPES.join(' '),
     access_type: 'offline',
     prompt: 'consent',
     state: Buffer.from(JSON.stringify({ return_to: returnTo })).toString('base64url'),

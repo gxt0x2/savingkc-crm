@@ -49,6 +49,8 @@ describe('GmailConnect honesty', () => {
 
     render(<GmailConnect userEmail="ernest@savingkc.com" />)
 
+    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy')
+    expect(screen.getByText(/Disconnect stops further Google API access/)).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Reconnect Gmail')).toBeInTheDocument())
     expect(screen.getByText('Authorization expired — reconnect Gmail')).toBeInTheDocument()
     expect(screen.queryByText('Sync now')).not.toBeInTheDocument()

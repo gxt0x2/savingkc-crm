@@ -5,7 +5,7 @@ import { previewWriteBlocked } from '@/lib/preview-safety'
 import { hasVerifiedSubject } from '@/lib/auth/verified-claims'
 
 // Routes that don't require authentication
-const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/deals', '/ppc']
+const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', '/product', '/deals', '/ppc']
 const PUBLIC_PAGE_EXACT = new Set([
   '/.well-known/oauth-protected-resource',
   '/.well-known/oauth-authorization-server',

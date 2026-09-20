@@ -472,6 +472,16 @@
       "environment": []
     },
     {
+      "id": "google_oauth_branding",
+      "name": "Google OAuth public branding pages",
+      "owner": "Administration",
+      "status": "active",
+      "routes": ["/product", "/privacy", "/terms"],
+      "apiRoutes": [],
+      "tables": [],
+      "environment": []
+    },
+    {
       "id": "google_ads",
       "name": "Google Ads reporting and conversion export",
       "owner": "Marketing",

@@ -590,6 +590,16 @@ export default function SettingsPage() {
                 <span className={`w-2 h-2 rounded-full ${deployEnv === 'production' ? 'bg-secondary' : 'bg-amber-500'}`} /> {envLabel}
               </span>
             </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-on-surface-variant">Legal</span>
+              <span className="text-right text-xs font-semibold">
+                <Link href="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
+                {' · '}
+                <Link href="/terms" className="text-primary hover:underline">Terms</Link>
+                {' · '}
+                <Link href="/product" className="text-primary hover:underline">About CRM</Link>
+              </span>
+            </div>
           </div>
         </section>
       </div>
