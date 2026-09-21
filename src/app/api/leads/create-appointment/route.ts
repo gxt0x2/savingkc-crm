@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
       return { status: 'skipped' as const, reason: 'calendar_sync_failed' }
     })
     const calendarWarning = googleCalendarSyncWarning(googleCalendar)
-    if (calendarWarning) {
+    if (googleCalendar.status === 'skipped' && calendarWarning) {
       console.warn(`[create-appointment] Google Calendar sync failed for ${appointmentId}: ${googleCalendar.reason}`)
       warnings.push(calendarWarning)
     } else if (googleCalendar.status === 'skipped') {
