@@ -110,9 +110,14 @@ export async function POST(req: NextRequest) {
       source: 'appointment_modal',
     }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 
+    // Calendar writeback follows the signed-in Google connection (Settings /
+    // Calendar banner: "Appointments you create are written to your primary
+    // Google Calendar"). The CRM agent dropdown is only Ernest/Casey today, so
+    // using that assignee here silently skipped writeback for oauth-review@
+    // (Vercel: not_owner) even when Gmail send worked for the same session.
     const googleCalendar = await syncOwnedAppointmentToGoogleCalendar({
       actorEmail: actor.email,
-      assignedTo,
+      assignedTo: actor.email,
       appointment: {
         id: appointmentId,
         scheduled_at: scheduledIso,
