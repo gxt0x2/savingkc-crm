@@ -55,4 +55,26 @@ describe('AppointmentModal', () => {
     }).format(new Date(request.scheduledAt))
     expect(centralTime).toBe(`${tomorrow} 10:00`)
   })
+
+  it('keeps the saved appointment visible when Google Calendar writeback fails', async () => {
+    const onClose = vi.fn()
+    const onSuccess = vi.fn()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      warning: 'Appointment saved. Google Calendar was not updated. Do not create it again.',
+    }), { status: 200 })))
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    render(<AppointmentModal
+      lead={{ id: 'lead-1', full_name: 'Seller', phone: '+18165550100', property_address: '123 Main' }}
+      onClose={onClose}
+      onSuccess={onSuccess}
+    />)
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: tomorrow } })
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Google Calendar was not updated')
+    expect(onSuccess).toHaveBeenCalledOnce()
+    expect(onClose).not.toHaveBeenCalled()
+  })
 })

@@ -5,7 +5,7 @@ import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { buildAppointmentCommand } from '@/lib/server/appointment-command'
-import { syncOwnedAppointmentToGoogleCalendar } from '@/lib/google-calendar'
+import { googleCalendarSyncWarning, syncOwnedAppointmentToGoogleCalendar } from '@/lib/google-calendar'
 
 /**
  * POST /api/leads/create-appointment
@@ -123,10 +123,14 @@ export async function POST(req: NextRequest) {
       },
       leadName: leadRow.full_name,
     }).catch((error) => {
-      console.warn('[create-appointment] Google Calendar sync skipped:', error)
+      console.warn('[create-appointment] Google Calendar sync failed:', error)
       return { status: 'skipped' as const, reason: 'calendar_sync_failed' }
     })
-    if (googleCalendar.status === 'skipped') {
+    const calendarWarning = googleCalendarSyncWarning(googleCalendar)
+    if (googleCalendar.status === 'skipped' && calendarWarning) {
+      console.warn(`[create-appointment] Google Calendar sync failed for ${appointmentId}: ${googleCalendar.reason}`)
+      warnings.push(calendarWarning)
+    } else if (googleCalendar.status === 'skipped') {
       console.info(`[create-appointment] Google Calendar sync skipped for ${appointmentId}: ${googleCalendar.reason}`)
     }
 

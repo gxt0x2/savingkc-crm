@@ -16,9 +16,13 @@ vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.advance 
 vi.mock('@/lib/ppc/appointment-booked-conversion', () => ({
   queuePpcAppointmentBookedConversion: mocks.appointmentConversion,
 }))
-vi.mock('@/lib/google-calendar', () => ({
-  syncOwnedAppointmentToGoogleCalendar: mocks.calendar,
-}))
+vi.mock('@/lib/google-calendar', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/google-calendar')>()
+  return {
+    googleCalendarSyncWarning: actual.googleCalendarSyncWarning,
+    syncOwnedAppointmentToGoogleCalendar: mocks.calendar,
+  }
+})
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: {
     from(table: string) {
@@ -137,11 +141,27 @@ describe('appointment command route trust boundary', () => {
       assignedTo: 'Ernest',
     }))
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
-      success: true,
-      appointmentId: 'appointment-1',
-      googleCalendar: { status: 'skipped', reason: 'no_token' },
-    })
+    const body = await response.json() as { warning?: string; googleCalendar?: { reason?: string } }
+    expect(body.googleCalendar).toEqual({ status: 'skipped', reason: 'no_token' })
+    expect(body.warning).toBeUndefined()
+  })
+
+  it('tells the operator when an expected Google Calendar write fails', async () => {
+    mocks.actor.mockResolvedValue({ email: 'oauth-review@savingkc.com', name: 'OAuth Review (throwaway)' })
+    mocks.calendar.mockResolvedValue({ status: 'skipped', reason: 'calendar_api_failed' })
+    const response = await POST(request({
+      leadId: 'lead-1',
+      scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      assignedTo: 'Ernest',
+      notes: 'OAuth demo calendar writeback test',
+    }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json() as { success?: boolean; warning?: string; googleCalendar?: { reason?: string } }
+    expect(body.success).toBe(true)
+    expect(body.googleCalendar?.reason).toBe('calendar_api_failed')
+    expect(body.warning).toContain('Google Calendar was not updated.')
+    expect(body.warning).toContain('Do not create it again.')
   })
 
   it('does not invent an appointment id when canonical persistence fails', async () => {

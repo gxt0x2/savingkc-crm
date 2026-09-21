@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getValidAccessTokenResult, hasGoogleOAuthConfig } from '@/lib/gmail-sync'
 import { loadGoogleOAuthToken, type StoredGoogleToken } from '@/lib/gmail-send'
-import { CALENDAR_SCOPE, hasGoogleScope } from '@/lib/google-oauth-scopes'
+import { CALENDAR_SCOPE, formatGmailSendError, hasGoogleScope } from '@/lib/google-oauth-scopes'
 
 export type GoogleCalendarUpsertInput = {
   accessToken: string
@@ -50,6 +50,75 @@ export function appointmentBelongsToGoogleUser(input: {
   if (!assigned) return true
   const local = email.split('@')[0] || ''
   return assigned === email || assigned === local || assigned.includes(local) || local.includes(assigned)
+}
+
+function assigneeMatchKeys(assignedTo: string): Set<string> {
+  const assigned = assignedTo.trim().toLowerCase()
+  const first = assigned.split(/\s+/)[0] || ''
+  return new Set([assigned, first].filter(Boolean))
+}
+
+/**
+ * The calendar to update is the assignee's connected Google account.
+ * The CRM session user can schedule for that owner without being that mailbox.
+ */
+export function selectAppointmentGoogleOwnerEmail(input: {
+  actorEmail: string
+  assignedTo?: string | null
+  candidateEmails?: string[]
+}): string | null {
+  const actorEmail = input.actorEmail.trim().toLowerCase()
+  const assigned = (input.assignedTo || '').trim()
+  if (!assigned) return actorEmail || null
+  if (actorEmail && appointmentBelongsToGoogleUser({ actorEmail, assignedTo: assigned })) return actorEmail
+
+  const keys = assigneeMatchKeys(assigned)
+  const matches = (input.candidateEmails || [])
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email && email !== actorEmail)
+    .filter((email) => {
+      const local = email.split('@')[0] || ''
+      return keys.has(local) || appointmentBelongsToGoogleUser({ actorEmail: email, assignedTo: assigned })
+    })
+  const exact = matches.filter((email) => keys.has(email.split('@')[0] || ''))
+  if (exact.length === 1) return exact[0]
+  if (exact.length > 1) return null
+  return matches.length === 1 ? matches[0] : null
+}
+
+const EXPECTED_CALENDAR_SYNC_FAILURES = new Set([
+  'missing_calendar',
+  'token_refresh_failed',
+  'reauthorization_required',
+  'google_oauth_not_configured',
+  'calendar_api_failed',
+  'calendar_sync_failed',
+])
+
+export function googleCalendarSyncWarning(result: AppointmentCalendarSyncResult): string | null {
+  if (result.status !== 'skipped' || !EXPECTED_CALENDAR_SYNC_FAILURES.has(result.reason)) return null
+  if (result.reason === 'calendar_api_failed' || result.reason === 'calendar_sync_failed') {
+    return 'Google Calendar was not updated.'
+  }
+  return formatGmailSendError(result.reason)
+}
+
+async function listConnectedGoogleEmails(): Promise<string[]> {
+  const { data, error } = await supabaseAdmin()
+    .from('user_oauth_tokens')
+    .select('user_email')
+    .eq('provider', 'google')
+  if (error || !data) return []
+  return data
+    .map((row) => (typeof row.user_email === 'string' ? row.user_email : ''))
+    .filter(Boolean)
+}
+
+function skipCalendarSync(appointmentId: string, reason: string): AppointmentCalendarSyncResult {
+  const line = `[google-calendar] skip ${appointmentId}: ${reason}`
+  if (EXPECTED_CALENDAR_SYNC_FAILURES.has(reason)) console.warn(line)
+  else console.info(line)
+  return { status: 'skipped', reason }
 }
 
 function calendarEventBody(input: GoogleCalendarUpsertInput) {
@@ -105,34 +174,42 @@ export async function syncOwnedAppointmentToGoogleCalendar(input: {
   leadName?: string | null
   fetchImpl?: typeof fetch
   loadToken?: (email: string) => Promise<StoredGoogleToken | null>
+  listConnectedEmails?: () => Promise<string[]>
   getAccessToken?: typeof getValidAccessTokenResult
 }): Promise<AppointmentCalendarSyncResult> {
-  if (!appointmentBelongsToGoogleUser({ actorEmail: input.actorEmail, assignedTo: input.assignedTo })) {
+  let ownerEmail = selectAppointmentGoogleOwnerEmail({
+    actorEmail: input.actorEmail,
+    assignedTo: input.assignedTo,
+  })
+  if (!ownerEmail) {
+    const listConnectedEmails = input.listConnectedEmails || listConnectedGoogleEmails
+    ownerEmail = selectAppointmentGoogleOwnerEmail({
+      actorEmail: input.actorEmail,
+      assignedTo: input.assignedTo,
+      candidateEmails: await listConnectedEmails(),
+    })
+  }
+  if (!ownerEmail) {
     console.info(`[google-calendar] skip ${input.appointment.id}: appointment is assigned to someone else`)
     return { status: 'skipped', reason: 'not_owner' }
   }
   if (!hasGoogleOAuthConfig()) {
-    console.info(`[google-calendar] skip ${input.appointment.id}: google_oauth_not_configured`)
-    return { status: 'skipped', reason: 'google_oauth_not_configured' }
+    return skipCalendarSync(input.appointment.id, 'google_oauth_not_configured')
   }
 
   const loadToken = input.loadToken || loadGoogleOAuthToken
-  const token = await loadToken(input.actorEmail)
+  const token = await loadToken(ownerEmail)
   if (!token) {
-    console.info(`[google-calendar] skip ${input.appointment.id}: no_token`)
-    return { status: 'skipped', reason: 'no_token' }
+    return skipCalendarSync(input.appointment.id, 'no_token')
   }
   if (!hasGoogleScope(token.scope, CALENDAR_SCOPE)) {
-    console.info(`[google-calendar] skip ${input.appointment.id}: missing_calendar`)
-    return { status: 'skipped', reason: 'missing_calendar' }
+    return skipCalendarSync(input.appointment.id, 'missing_calendar')
   }
 
   const getAccessToken = input.getAccessToken || getValidAccessTokenResult
   const tokenResult = await getAccessToken(token)
   if (!tokenResult.accessToken) {
-    const reason = tokenResult.error || 'token_refresh_failed'
-    console.info(`[google-calendar] skip ${input.appointment.id}: ${reason}`)
-    return { status: 'skipped', reason }
+    return skipCalendarSync(input.appointment.id, tokenResult.error || 'token_refresh_failed')
   }
 
   const times = appointmentEventTimes(input.appointment.scheduled_at, input.appointment.type)
@@ -150,7 +227,7 @@ export async function syncOwnedAppointmentToGoogleCalendar(input: {
   })
 
   if (!upsert.ok) {
-    console.info(`[google-calendar] skip ${input.appointment.id}: ${upsert.error}`)
+    console.warn(`[google-calendar] skip ${input.appointment.id}: calendar_api_failed ${upsert.error}`)
     return { status: 'skipped', reason: 'calendar_api_failed' }
   }
 
