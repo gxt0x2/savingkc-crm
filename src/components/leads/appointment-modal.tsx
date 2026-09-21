@@ -84,12 +84,16 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
         }),
       })
 
+      const payload = await res.json().catch(() => ({})) as { error?: string; warning?: string }
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(payload.error || 'Appointment could not be saved')
       }
 
       onSuccess()
+      if (payload.warning) {
+        setError(payload.warning)
+        return
+      }
       onClose()
     } catch (error) {
       console.error('Failed to create appointment:', error)
