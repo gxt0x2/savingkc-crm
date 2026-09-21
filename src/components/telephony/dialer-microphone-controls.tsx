@@ -45,7 +45,7 @@ export function DialerMicrophoneControls({ deviceRef, status, open, sessionId = 
     void refresh()
     navigator.mediaDevices?.addEventListener('devicechange', refresh)
     return () => { cancelled = true; navigator.mediaDevices?.removeEventListener('devicechange', refresh) }
-  }, [open, status])
+  }, [deviceRef, open, status])
   useEffect(() => {
     if (!open) abortRef.current?.abort()
     return () => { abortRef.current?.abort() }
