@@ -123,7 +123,8 @@ describe('appointment command route trust boundary', () => {
     }))
     expect(mocks.calendar).toHaveBeenCalledWith(expect.objectContaining({
       actorEmail: 'ernest@savingkc.com',
-      assignedTo: 'Ernest',
+      // Writeback keys off the signed-in actor, not the CRM agent dropdown.
+      assignedTo: 'ernest@savingkc.com',
       appointment: expect.objectContaining({ id: 'appointment-1' }),
     }))
   })
