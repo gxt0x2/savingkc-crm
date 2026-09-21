@@ -31,6 +31,7 @@ import {
   DialerOperationHoldRetainedError,
   withDialerSessionControlOperation,
 } from '@/lib/telephony/dialer-control-operation-client'
+import { PROSPECTING_DIALER_RESET_CALL_CONTEXT_EVENT } from '@/lib/telephony/dialer-session-call-context'
 
 const HeirsSection = dynamic(() => import('@/components/leads/heirs-section').then((module) => module.HeirsSection))
 const SmsComposeModal = dynamic(() => import('@/components/leads/sms-compose-modal').then((module) => module.SmsComposeModal))
@@ -61,6 +62,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
   // Live queue state from telephony-bar
   const [queueState, setQueueState] = useState<QueueState | null>(null)
   const [autoQueueSubjectKey, setAutoQueueSubjectKey] = useState<string | null>(null)
+  const [callContextResetEpoch, setCallContextResetEpoch] = useState(0)
   const campaignPreview = useCampaignPreviewQueue(readOnlyPreview ? previewCampaignId : null)
 
   // SMS compose state
@@ -104,6 +106,17 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
     setSmsTarget(null)
     setShowMarkDead(false)
   }, [])
+
+  useEffect(() => {
+    function onResetCallContext(event: Event) {
+      const sessionId = ((event as CustomEvent).detail as { sessionId?: string } | null)?.sessionId
+      if (!durableSessionId || sessionId !== durableSessionId || !currentSubjectKey) return
+      setCallContextResetEpoch((current) => current + 1)
+      setAutoQueueSubjectKey(currentSubjectKey)
+    }
+    window.addEventListener(PROSPECTING_DIALER_RESET_CALL_CONTEXT_EVENT, onResetCallContext)
+    return () => window.removeEventListener(PROSPECTING_DIALER_RESET_CALL_CONTEXT_EVENT, onResetCallContext)
+  }, [currentSubjectKey, durableSessionId])
 
   const {
     session: durableSession,
@@ -590,7 +603,7 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           key={currentSubjectKey || 'current'}
           primaryWorkspace={currentSubject ? (
             <HeirsSection
-              key={`${currentSubjectKey}:${autoStartEpoch}`}
+              key={`${currentSubjectKey}:${autoStartEpoch}:${callContextResetEpoch}`}
               leadId={currentLeadId}
               prospectId={currentProspectId}
               campaignMemberId={currentSubject.campaignMemberId}

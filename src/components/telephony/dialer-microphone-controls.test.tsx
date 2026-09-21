@@ -7,9 +7,12 @@ import { DialerMicrophoneControls } from './dialer-microphone-controls'
 
 const testSelectedMicrophone = vi.fn()
 
+const chooseMicrophone = vi.fn()
+const preferredMicrophone = vi.fn(() => 'default')
+
 vi.mock('@/lib/telephony/selected-microphone', () => ({
-  chooseMicrophone: vi.fn(),
-  preferredMicrophone: () => 'default',
+  chooseMicrophone: (...args: unknown[]) => chooseMicrophone(...args),
+  preferredMicrophone: () => preferredMicrophone(),
   testSelectedMicrophone: (...args: unknown[]) => testSelectedMicrophone(...args),
 }))
 
@@ -17,6 +20,8 @@ describe('DialerMicrophoneControls', () => {
   beforeEach(() => {
     window.sessionStorage.clear()
     testSelectedMicrophone.mockReset()
+    chooseMicrophone.mockReset()
+    preferredMicrophone.mockReturnValue('default')
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
       value: {
@@ -65,5 +70,22 @@ describe('DialerMicrophoneControls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Test microphone' }))
     expect(await screen.findByText('No usable input signal detected. Select another microphone and test again.')).toBeVisible()
     expect(screen.getByRole('region', { name: 'Microphone check' })).toBeVisible()
+  })
+
+  it('falls back to the browser default when the saved microphone is gone', async () => {
+    preferredMicrophone.mockReturnValue('missing-device')
+    const device = { audio: {} }
+    render(<DialerMicrophoneControls
+      deviceRef={{ current: device } as never}
+      status="ready"
+      open
+      sessionId="session-1"
+      workspace
+    />)
+
+    expect(await screen.findByRole('combobox', { name: 'Call microphone' })).toHaveValue('default')
+    expect(chooseMicrophone).toHaveBeenCalledWith(device, 'default')
+    expect(screen.getByText('Previous microphone is unavailable. Browser default selected. Test it before calling.')).toBeVisible()
+    expect(screen.queryByRole('option', { name: 'Selected microphone unavailable' })).not.toBeInTheDocument()
   })
 })

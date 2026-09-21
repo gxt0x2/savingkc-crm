@@ -29,7 +29,17 @@ export function DialerMicrophoneControls({ deviceRef, status, open, sessionId = 
     const refresh = async () => {
       try {
         const all = await navigator.mediaDevices.enumerateDevices()
-        if (!cancelled) { setDevices(all.filter(d => d.kind === 'audioinput')); setSelected(preferredMicrophone()) }
+        if (cancelled) return
+        const inputs = all.filter(d => d.kind === 'audioinput')
+        setDevices(inputs)
+        const preferred = preferredMicrophone()
+        if (preferred !== 'default' && !inputs.some(d => d.deviceId === preferred)) {
+          setSelected('default')
+          try { if (deviceRef.current) chooseMicrophone(deviceRef.current, 'default') } catch { /* keep default even if the SDK is not ready */ }
+          setMessage('Previous microphone is unavailable. Browser default selected. Test it before calling.')
+          return
+        }
+        setSelected(preferred)
       } catch { if (!cancelled) setMessage('Could not list microphones. Reconnect the phone.') }
     }
     void refresh()
