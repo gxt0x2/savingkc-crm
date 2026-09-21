@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { REQUIRED_GOOGLE_OAUTH_SCOPES } from '@/lib/google-oauth-scopes'
+import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 
 // Restricted-scope verification: request only the APIs this CRM calls.
 // gmail.modify is unused — sync is users.messages.list/get, send is
@@ -15,6 +16,13 @@ export async function GET(req: NextRequest) {
   const returnTo = url.searchParams.get('return_to') || '/settings'
   const origin = url.origin
   const errorUrl = new URL(returnTo, origin)
+
+  const actor = await resolveAuthenticatedActor(req)
+  if (!actor?.email) {
+    errorUrl.searchParams.set('oauth_error', 'not_authenticated')
+    return NextResponse.redirect(errorUrl)
+  }
+  const crmEmail = actor.email.trim().toLowerCase()
 
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
@@ -32,7 +40,7 @@ export async function GET(req: NextRequest) {
     scope: REQUIRED_GOOGLE_OAUTH_SCOPES.join(' '),
     access_type: 'offline',
     prompt: 'consent',
-    state: Buffer.from(JSON.stringify({ return_to: returnTo })).toString('base64url'),
+    state: Buffer.from(JSON.stringify({ return_to: returnTo, crm_email: crmEmail })).toString('base64url'),
   })
 
   return NextResponse.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
