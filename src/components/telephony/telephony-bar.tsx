@@ -18,7 +18,7 @@ import {
 } from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { loadDialerAttemptHistory, transitionDurableDialerAttempt, transitionDurableDialerSession } from '@/lib/dialer-session-client'
+import { DialerSessionClientError, loadDialerAttemptHistory, transitionDurableDialerAttempt, transitionDurableDialerSession } from '@/lib/dialer-session-client'
 import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
 import { WorkspaceCallController } from './workspace-call-controller'
@@ -40,6 +40,7 @@ import { saveManualCallDisposition } from '@/lib/telephony/manual-call-dispositi
 import { findRecoverableDialerAttempt, type RecoverableDialerAttempt } from '@/lib/telephony/dialer-session-recovery'
 import { dialerPauseIsPending, dialerStopIsPending, postDispositionCommand } from '@/lib/telephony/dialer-lifecycle'
 import { MICROPHONE_SILENCE_MESSAGE } from '@/lib/telephony/microphone-preflight'
+import { useDialerSessionCallContext } from './use-dialer-session-call-context'
 import { prepareCallMicrophone, releaseCallMicrophone, monitorCallMicrophone } from '@/lib/telephony/selected-microphone'
 import { DialerMicrophoneControls } from './dialer-microphone-controls'
 import { initializeTwilioDevice } from './initialize-twilio-device'
@@ -186,6 +187,10 @@ export function SoftphoneCore({
     setDialNumber('')
     clearDispositionRequirement()
   }, [cancelQueuedAutoDial, clearDispositionRequirement])
+  const sessionCall = useDialerSessionCallContext({
+    pendingSessionId, queueItem, cancelQueuedAutoDial, endQueue, setError,
+    setWorkspaceSessionStatus, stopRequestedSessionIdRef, pausedSessionIdRef,
+  })
   const workspaceControlsUnavailable = useDialerControlLoss(pendingSessionId, cancelQueuedAutoDial, endQueue, callRef, callIntentPendingRef)
   // Handle pendingDial from ARI page click-to-call
   useEffect(() => {
@@ -237,6 +242,8 @@ export function SoftphoneCore({
   // Handle pendingQueue from HeirsSection — open heir-dialer queue mode.
   useEffect(() => {
     if (open && pendingQueue?.length) return deferEffectUpdate(() => {
+      const first = pendingQueue[0]
+      if (!sessionCall.acceptIncomingSessionQueue(first)) return
       setViewTab('dial')
       setQueue(pendingQueue)
       setQueueIndex(0)
@@ -254,7 +261,6 @@ export function SoftphoneCore({
         setSelectedCallerId(initialCallerId)
         setCallerIdLockedByUser(false)
       }
-      const first = pendingQueue[0]
       setSelectedLead({
         id: first.leadId ?? `prospect:${first.prospectId}`,
         full_name: first.heirName,
@@ -270,7 +276,7 @@ export function SoftphoneCore({
       setSearchQuery('')
       setSearchResults([])
     })
-  }, [cancelQueuedAutoDial, clearDispositionRequirement, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueRingCount, pendingSessionId])
+  }, [cancelQueuedAutoDial, clearDispositionRequirement, open, pendingQueue, pendingQueueCallerId, pendingQueueCallerPlan, pendingQueueRingCount, pendingSessionId, sessionCall])
 
   useEffect(() => {
     if (!open || !pendingSessionId) return
@@ -278,6 +284,7 @@ export function SoftphoneCore({
     void loadDialerAttemptHistory(pendingSessionId)
       .then(({ session, attempts }) => {
         if (cancelled) return
+        sessionCall.captureSessionCurrent(session)
         stopRequestedSessionIdRef.current = session.stopRequestedAt ? session.id : null
         pausedSessionIdRef.current = session.status === 'paused' ? session.id : null
         setWorkspaceSessionStatus(session.status)
@@ -330,20 +337,7 @@ export function SoftphoneCore({
         if (!cancelled) setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.')
       })
     return () => { cancelled = true }
-  }, [cancelQueuedAutoDial, open, pendingQueue, pendingSessionId, requireDisposition])
-
-  useEffect(() => {
-    function onSessionState(event: Event) {
-      const session = (event as CustomEvent).detail as { id?: string; status?: 'active' | 'paused' | 'completed' | 'stopped'; stopRequestedAt?: string | null } | null
-      if (!pendingSessionId || session?.id !== pendingSessionId || !session.status) return
-      setWorkspaceSessionStatus(session.status)
-      stopRequestedSessionIdRef.current = session.stopRequestedAt ? pendingSessionId : null
-      pausedSessionIdRef.current = session.status === 'paused' ? pendingSessionId : null
-      if (session.status !== 'active' || session.stopRequestedAt) cancelQueuedAutoDial()
-    }
-    window.addEventListener('dialer-session-state', onSessionState)
-    return () => window.removeEventListener('dialer-session-state', onSessionState)
-  }, [cancelQueuedAutoDial, pendingSessionId])
+  }, [cancelQueuedAutoDial, open, pendingQueue, pendingSessionId, requireDisposition, sessionCall])
 
   useEffect(() => {
     function onWorkspaceCallCommand(event: Event) {
@@ -551,11 +545,16 @@ export function SoftphoneCore({
     callIntentPendingRef.current = true
     const controlLossRevisionAtStart = dialerControlLossRevision(pendingSessionId)
     setError(null)
+    sessionCall.setSessionCallContextMismatch(false)
     try {
       const callerIdForThisCall = callerPlan.mode === 'rotation' && !callerIdLockedByUser
         ? rotatedCallerId
         : (effectiveCallerId || '')
       const queueItemAtStart = queueItem
+      if (pendingSessionId && queueItemAtStart && !sessionCall.queueMatchesActiveSession(queueItemAtStart)) {
+        sessionCall.clearStaleSessionCallContext()
+        return
+      }
       const leadIdAtStart = queueItemAtStart ? queueItemAtStart.leadId : selectedLead?.id || null
       const prospectIdAtStart = queueItemAtStart?.prospectId || null
       const prospectPhoneIdAtStart = queueItemAtStart?.prospect_phone_id || null
@@ -791,7 +790,11 @@ export function SoftphoneCore({
       const msg = extractTwilioErrorMessage(err)
       if (deviceRef.current) void releaseCallMicrophone(deviceRef.current).catch(() => {})
       log(`makeCall error: ${msg}`)
-      setError(msg)
+      if (err instanceof DialerSessionClientError && err.code === 'session_context_mismatch') {
+        sessionCall.clearStaleSessionCallContext(err.message)
+      } else {
+        setError(msg)
+      }
       setStatusLogged('ready')
       if (activeSessionIdRef.current && activeAttemptIdRef.current) {
         void transitionDurableDialerAttempt({
@@ -1299,17 +1302,13 @@ export function SoftphoneCore({
             the body forces the panel past the viewport. */}
         <div data-dialer-scroll-body className={isWorkspace ? 'flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2.5' : 'flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4'}>
           <DialerMicrophoneControls deviceRef={deviceRef} status={status} open={open} sessionId={pendingSessionId} workspace={isWorkspace} />
-          {/* Error banner */}
           {error && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-[#E32E2E]/10 border border-[#7D2626]">
               <Icon name="error" className="text-red-400" size="text-sm" />
               <span className="text-xs text-red-300 flex-1">{error}</span>
-              {(recoveryPending || status === 'offline') && <button
-                onClick={() => recoveryPending ? void finishRecoveredAttempt() : (setError(null), reconnectDevice())}
-                className="text-[10px] font-bold text-red-300 hover:text-white uppercase"
-              >
-                {recoveryPending ? 'Finish outcome' : 'Reconnect'}
-              </button>}
+              {sessionCall.sessionCallContextMismatch
+                ? <button type="button" onClick={sessionCall.resetSessionCallContext} className="text-[10px] font-bold text-red-300 hover:text-white uppercase">Reset session</button>
+                : (recoveryPending || status === 'offline') && <button onClick={() => recoveryPending ? void finishRecoveredAttempt() : (setError(null), reconnectDevice())} className="text-[10px] font-bold text-red-300 hover:text-white uppercase">{recoveryPending ? 'Finish outcome' : 'Reconnect'}</button>}
             </div>
           )}
 

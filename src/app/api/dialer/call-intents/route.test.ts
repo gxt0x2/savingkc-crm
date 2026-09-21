@@ -399,6 +399,92 @@ describe('web dialer call intent authorization', () => {
     expect(await blockedResponse.json()).toMatchObject({ reason: 'invalid_caller_id' })
   })
 
+  it('rejects a phone queue that no longer matches the active session seller', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000020'
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({
+      ...allowed,
+      leadId: '00000000-0000-4000-8000-000000000031',
+      prospectId: null,
+      prospectPhoneId: '00000000-0000-4000-8000-000000000032',
+    })
+    mocks.getDialerSession.mockResolvedValue({
+      id: sessionId,
+      currentSubjectKind: 'prospect',
+      currentSubjectId: '00000000-0000-4000-8000-000000000021',
+      currentCampaignMemberId: '00000000-0000-4000-8000-000000000023',
+      callerId: '+18167277667',
+    })
+
+    const response = await postProspectingCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'heir',
+      leadId: '00000000-0000-4000-8000-000000000031',
+      prospectPhoneId: '00000000-0000-4000-8000-000000000032',
+      campaignMemberId: '00000000-0000-4000-8000-000000000033',
+      sessionId,
+      clientAttemptId: 'attempt-stale-1',
+    }))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'session_context_mismatch',
+      error: 'Call context does not match the active session',
+    })
+    expect(mocks.createDialerCallIntent).not.toHaveBeenCalled()
+    expect(mocks.authorizeDialerSessionAttempt).not.toHaveBeenCalled()
+  })
+
+  it('keeps a matching Prospect session callable even if policy also resolved a Lead', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000020'
+    const prospectId = '00000000-0000-4000-8000-000000000021'
+    const prospectPhoneId = '00000000-0000-4000-8000-000000000022'
+    const campaignMemberId = '00000000-0000-4000-8000-000000000023'
+    mocks.evaluateOutboundDialerCall.mockResolvedValue({
+      ...allowed,
+      leadId: '00000000-0000-4000-8000-000000000024',
+      prospectId,
+      prospectPhoneId,
+    })
+    mocks.authorizeDialerSessionAttempt.mockResolvedValue({ id: 'attempt-row' })
+    mocks.createDialerCallIntent.mockReturnValue({
+      token: 'signed-prospect-intent',
+      claims: {
+        to: '+19135550123',
+        callerId: '+18167277667',
+        kind: 'prospect',
+        leadId: null,
+        prospectId,
+        prospectPhoneId,
+        campaignMemberId,
+        clientAttemptId: 'attempt-prospect-policy-1',
+        expiresAt: 123,
+      },
+    })
+    mocks.getDialerSession.mockResolvedValue({
+      id: sessionId,
+      currentSubjectKind: 'prospect',
+      currentSubjectId: prospectId,
+      currentCampaignMemberId: campaignMemberId,
+      callerId: '+18167277667',
+    })
+
+    const response = await postProspectingCallIntent(request({
+      phone: '(913) 555-0123',
+      callerId: '+18167277667',
+      kind: 'prospect',
+      prospectId,
+      prospectPhoneId,
+      campaignMemberId,
+      sessionId,
+      clientAttemptId: 'attempt-prospect-policy-1',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.authorizeDialerSessionAttempt).toHaveBeenCalled()
+  })
+
   it('authorizes a session-bound source Prospect without inventing a Lead', async () => {
     const sessionId = '00000000-0000-4000-8000-000000000020'
     const prospectId = '00000000-0000-4000-8000-000000000021'

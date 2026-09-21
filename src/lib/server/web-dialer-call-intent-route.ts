@@ -19,6 +19,10 @@ import {
   type DialerCallIntentKind,
   type DialerCallIntentSource,
 } from '@/lib/telephony/dialer-call-intent'
+import {
+  SESSION_CALL_CONTEXT_MISMATCH_MESSAGE,
+  prospectingCallMatchesSession,
+} from '@/lib/telephony/dialer-session-call-context'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import type { InteractiveDialerSurface } from '@/lib/telephony/dialer-surface'
 
@@ -166,12 +170,13 @@ export async function handleWebDialerCallIntent(request: Request, surface: Inter
   }
 
   try {
-    if (session && (
-      session.currentSubjectKind !== kind && !(session.currentSubjectKind === 'lead' && kind === 'heir')
-      || session.currentSubjectId !== (policy.leadId || policy.prospectId)
-      || session.currentCampaignMemberId !== campaignMemberId
-    )) {
-      return json({ allowed: false, error: 'Call context does not match the active session', reason: 'session_context_mismatch' }, 409)
+    if (session && !prospectingCallMatchesSession(session, {
+      kind,
+      leadId,
+      prospectId,
+      campaignMemberId,
+    })) {
+      return json({ allowed: false, error: SESSION_CALL_CONTEXT_MISMATCH_MESSAGE, reason: 'session_context_mismatch' }, 409)
     }
     const issued = createDialerCallIntent({
       identity: profile.identity,

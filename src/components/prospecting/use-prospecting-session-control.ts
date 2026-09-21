@@ -102,6 +102,7 @@ export function useProspectingSessionControl({
         && nextSession.status === 'active'
         && !nextSession.stopRequestedAt,
     )
+    window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: nextSession }))
   }, [onApplySession])
 
   const markUserActivity = useCallback((at: Date) => {
@@ -236,7 +237,6 @@ export function useProspectingSessionControl({
       if (operationRevision !== controlRevisionRef.current) return null
       if (action === 'resume' && nextSession.status === 'active') setAutoStartEpoch((current) => current + 1)
       applySession(nextSession)
-      window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: nextSession }))
       return nextSession
     } catch (error) {
       if (operationRevision !== controlRevisionRef.current) return null
@@ -293,7 +293,6 @@ export function useProspectingSessionControl({
       if (operationRevision !== controlRevisionRef.current) return
       if (!payload.session) throw new Error('Dialer session advance returned no state.')
       applySession(payload.session)
-      window.dispatchEvent(new CustomEvent('dialer-session-state', { detail: payload.session }))
     } catch (error) {
       if (operationRevision !== controlRevisionRef.current) return
       if (isDialerControlLossError(error)) showControlConflict(error, operationRevision)
