@@ -6,7 +6,11 @@ import { markOAuthConnected } from '@/lib/oauth-health'
 
 type GoogleOAuthProvider = 'google' | 'google_ads'
 
-function oauthStateFromState(state: string | null): { returnTo: string; provider: GoogleOAuthProvider } {
+function oauthStateFromState(state: string | null): {
+  returnTo: string
+  provider: GoogleOAuthProvider
+  crmEmail: string | null
+} {
   try {
     if (state) {
       const decoded = JSON.parse(Buffer.from(state, 'base64url').toString())
@@ -14,10 +18,13 @@ function oauthStateFromState(state: string | null): { returnTo: string; provider
         ? decoded.return_to
         : '/settings'
       const provider = decoded.provider === 'google_ads' ? 'google_ads' : 'google'
-      return { returnTo, provider }
+      const crmEmail = typeof decoded.crm_email === 'string' && decoded.crm_email.includes('@')
+        ? decoded.crm_email.trim().toLowerCase()
+        : null
+      return { returnTo, provider, crmEmail }
     }
   } catch { /* ignore */ }
-  return { returnTo: '/settings', provider: 'google' }
+  return { returnTo: '/settings', provider: 'google', crmEmail: null }
 }
 
 function statusKeys(provider: GoogleOAuthProvider) {
@@ -39,7 +46,7 @@ export async function GET(req: NextRequest) {
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   const error = url.searchParams.get('error')
-  const { returnTo, provider } = oauthStateFromState(state)
+  const { returnTo, provider, crmEmail } = oauthStateFromState(state)
   const keys = statusKeys(provider)
 
   if (error) {
@@ -103,6 +110,11 @@ export async function GET(req: NextRequest) {
     return redirectWithStatus(url.origin, returnTo, keys.error, 'no_email')
   }
 
+  // Key tokens by the signed-in CRM user when authorize put crm_email in state.
+  // Google account email can differ (demo: oauth-review@ CRM + personal Gmail).
+  // Gmail/Calendar API calls still use this refresh token's Google account.
+  const tokenEmail = crmEmail || userInfo.email.trim().toLowerCase()
+
   if (!tokens.refresh_token) {
     // Google doesn't return refresh token if user already granted access
     // User should revoke access at https://myaccount.google.com/permissions and retry
@@ -115,7 +127,7 @@ export async function GET(req: NextRequest) {
   const { error: upsertError } = await db
     .from('user_oauth_tokens')
     .upsert({
-      user_email: userInfo.email,
+      user_email: tokenEmail,
       provider,
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
@@ -130,7 +142,7 @@ export async function GET(req: NextRequest) {
     return redirectWithStatus(url.origin, returnTo, keys.error, 'storage_failed')
   }
 
-  await markOAuthConnected(db, provider, userInfo.email)
+  await markOAuthConnected(db, provider, tokenEmail)
 
-  return redirectWithStatus(url.origin, returnTo, keys.success, userInfo.email)
+  return redirectWithStatus(url.origin, returnTo, keys.success, tokenEmail)
 }
