@@ -3,11 +3,13 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getContactSignal, type ContactSignal, type OutreachStatus } from '@/lib/contact-display'
 import { communicationActivitySummary } from '@/lib/operating-model/conversation-presentation'
 import type { ConversationHubActivity, ConversationHubThread } from '@/lib/operating-model/conversation-hub'
 import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
+import { readOauthReviewContactDirectoryPage } from '@/lib/server/oauth-review-contact-directory'
 import { DEFAULT_CONTACT_SMART_LIST, DEFAULT_CONTACT_SORT } from '@/lib/contact-smart-lists'
 import type { DealStage } from '@/types/pipeline'
 
@@ -83,7 +85,8 @@ export async function GET(request: NextRequest) {
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 50) : 25
     const scope = smartList === 'prospects' ? 'prospects' : smartList === 'not_leads' ? 'not_leads' : 'active'
     try {
-      const page = await readContactDirectoryPage({
+      const sandboxLeadId = await resolveOauthReviewSandboxLeadId(request)
+      const directoryQuery = {
         smartList,
         scope,
         limit,
@@ -102,7 +105,10 @@ export async function GET(request: NextRequest) {
         outreach: params.get('outreach') ?? '',
         dataGap: params.get('gap') ?? '',
         referenceTime: new Date().toISOString(),
-      }, db)
+      }
+      const page = sandboxLeadId
+        ? await readOauthReviewContactDirectoryPage(directoryQuery, sandboxLeadId)
+        : await readContactDirectoryPage(directoryQuery, db)
 
       const items: ContactRow[] = page.items.map((item) => {
         const communication: ConversationHubActivity | null = item.last_communication_id && item.last_communication_type && item.last_communication_at ? {
@@ -191,6 +197,12 @@ function normalizeContactPhone(value: unknown): string | null {
 export async function POST(request: NextRequest) {
   const unauthorized = await requireAuthenticatedUser()
   if (unauthorized) return unauthorized
+  if (await resolveOauthReviewSandboxLeadId(request)) {
+    return NextResponse.json(
+      { error: 'This account cannot create contacts' },
+      { status: 403, headers: { 'Cache-Control': 'private, no-store' } },
+    )
+  }
 
   const payload = await request.json().catch(() => null) as Record<string, unknown> | null
   if (!payload) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })

@@ -4,6 +4,7 @@ import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabase } from '@/lib/supabase-lazy'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import {
   assertDialerMutationControl,
   dialerMutationControlErrorResponse,
@@ -59,6 +60,10 @@ export async function POST(req: Request) {
     }
 
     const json = await req.json()
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    if (sandboxLeadId && (typeof json?.leadId !== 'string' || json.leadId.trim().toLowerCase() !== sandboxLeadId)) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
     const {
       leadId,
       phone,

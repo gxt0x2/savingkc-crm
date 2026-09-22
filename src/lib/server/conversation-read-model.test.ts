@@ -213,3 +213,99 @@ describe('conversation timelines and attention', () => {
     expect(db.from).not.toHaveBeenCalled()
   })
 })
+
+describe('oauth review conversation scope', () => {
+  const sandboxLeadId = '1a301114-1184-475b-beda-f7541dd30724'
+
+  it('loads only the sandbox lead thread and skips the full inbox RPC', async () => {
+    const rpc = vi.fn()
+    const thread = projectionRow({
+      thread_key: `lead:${sandboxLeadId}`,
+      lead_id: sandboxLeadId,
+      phone: '+19137179716',
+      attention_state: 'waiting_on_contact',
+      last_channel: 'email',
+      owner: 'OAuth Review (throwaway)',
+      search_text: 'oauth demo',
+    })
+    const limit = vi.fn().mockResolvedValue({ data: [thread], error: null })
+    const eq = vi.fn(() => ({ limit }))
+    const select = vi.fn(() => ({ eq }))
+    const leadLimit = vi.fn().mockResolvedValue({
+      data: [{ id: sandboxLeadId, full_name: 'OAuth Demo — Ernest Dodson', phone: '+19137179716' }],
+      error: null,
+    })
+    const leadIn = vi.fn(() => ({ limit: leadLimit }))
+    const db = {
+      rpc,
+      from: vi.fn((table: string) => {
+        if (table === 'leads') return { select: () => ({ in: leadIn }) }
+        return { select }
+      }),
+    }
+
+    const page = await readConversationThreads({
+      queue: 'all',
+      timeframe: 'all',
+      restrictedLeadId: sandboxLeadId,
+    }, db as never)
+
+    expect(rpc).not.toHaveBeenCalled()
+    expect(eq).toHaveBeenCalledWith('lead_id', sandboxLeadId)
+    expect(page.items.map((item) => item.id)).toEqual([sandboxLeadId])
+    expect(page.unmatchedActivities).toEqual([])
+  })
+
+  it('keeps the sandbox email visible in the default Needs Reply inbox', async () => {
+    const limit = vi.fn().mockResolvedValue({
+      data: [projectionRow({
+        thread_key: `lead:${sandboxLeadId}`,
+        lead_id: sandboxLeadId,
+        attention_state: 'waiting_on_contact',
+        last_activity_at: '2020-01-01T00:00:00.000Z',
+      })],
+      error: null,
+    })
+    const leadLimit = vi.fn().mockResolvedValue({ data: [], error: null })
+    const db = {
+      rpc: vi.fn(),
+      from: vi.fn((table: string) => table === 'leads'
+        ? { select: () => ({ in: () => ({ limit: leadLimit }) }) }
+        : { select: () => ({ eq: () => ({ limit }) }) }),
+    }
+
+    const page = await readConversationThreads({
+      queue: 'needs_reply',
+      restrictedLeadId: sandboxLeadId,
+    }, db as never)
+
+    expect(page.items.map((item) => item.id)).toEqual([sandboxLeadId])
+    expect(db.rpc).not.toHaveBeenCalled()
+  })
+
+  it('returns an empty timeline for any other lead', async () => {
+    const db = { rpc: vi.fn(), from: vi.fn() }
+    const page = await readConversationTimeline({
+      threadId: '00000000-0000-4000-8000-000000000099',
+      restrictedLeadId: sandboxLeadId,
+    }, db as never)
+
+    expect(page.items).toEqual([])
+    expect(db.rpc).not.toHaveBeenCalled()
+  })
+
+  it('counts attention from the sandbox thread only', async () => {
+    const limit = vi.fn().mockResolvedValue({
+      data: [{ attention_state: 'waiting_on_contact', last_channel: 'email', primary_next_action_due_at: null }],
+      error: null,
+    })
+    const db = { from: vi.fn(() => ({ select: () => ({ eq: () => ({ limit }) }) })) }
+
+    await expect(readConversationAttention(db as never, sandboxLeadId)).resolves.toMatchObject({
+      needsReply: 0,
+      emails: 0,
+      calls: 0,
+      texts: 0,
+    })
+  })
+})

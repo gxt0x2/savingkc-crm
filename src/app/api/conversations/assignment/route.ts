@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const AGENT_NAMES = new Map([
@@ -35,6 +36,8 @@ export async function PATCH(req: Request) {
     if (!leadId || !UUID_PATTERN.test(leadId)) {
       return NextResponse.json({ success: false, error: 'A valid leadId is required' }, { status: 400 })
     }
+    const hiddenLead = await oauthReviewForeignLeadResponse(leadId, req)
+    if (hiddenLead) return hiddenLead
     if (assignedAgent === undefined) {
       return NextResponse.json({ success: false, error: 'Choose Ernest, Casey, Gertha, or Unassigned' }, { status: 400 })
     }

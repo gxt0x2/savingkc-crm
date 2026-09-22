@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { parseLeadOfferInput } from '@/lib/lead-offer'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -58,6 +59,8 @@ export async function POST(
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
+  const hiddenLead = await oauthReviewForeignLeadResponse(id, request)
+  if (hiddenLead) return hiddenLead
   if (!id || !UUID_PATTERN.test(id)) {
     return NextResponse.json({ error: 'A valid lead id is required.' }, { status: 400 })
   }
