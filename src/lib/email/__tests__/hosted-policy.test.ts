@@ -6,19 +6,19 @@ import {
 } from "../providers/hosted-policy";
 import { outreachFooter, outreachHtml } from "../providers/outreach-footer";
 
-const token = "1.abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE";
+const preferenceId = "1.test-unsub-0001";
 const origin = "https://crm.example.test";
 
 describe("hosted unsubscribe targets", () => {
   it("keeps one-click headers and a separate human preference link", () => {
-    const targets = hostedUnsubscribeTargets(origin, token);
+    const targets = hostedUnsubscribeTargets(origin, preferenceId);
     expect(targets.headers["List-Unsubscribe"]).toBe(
-      `<${origin}/api/email/unsubscribe/${token}>`,
+      `<${origin}/api/email/unsubscribe/${preferenceId}>`,
     );
     expect(targets.headers["List-Unsubscribe-Post"]).toBe(
       "List-Unsubscribe=One-Click",
     );
-    expect(targets.link).toBe(`${origin}/email/unsubscribe/${token}`);
+    expect(targets.link).toBe(`${origin}/email/unsubscribe/${preferenceId}`);
     const text = outreachFooter(
       "Saving KC Homebuyers LLC",
       "1705 Baltimore Ave, Kansas City, MO 64108",
@@ -31,7 +31,7 @@ describe("hosted unsubscribe targets", () => {
       targets.link,
     );
     expect(text).not.toContain(targets.link);
-    expect(text).not.toContain(token);
+    expect(text).not.toContain(preferenceId);
     expect(html).toContain(`href="${targets.link}"`);
     expect(html).toContain(">Unsubscribe</a>");
     expect(html.replace(`href="${targets.link}"`, 'href=""')).not.toContain(

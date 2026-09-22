@@ -32,7 +32,9 @@ regexes = [
   '''re_fixture[_A-Za-z0-9]*''',
   '''re_different_private_resend_[0-9]+''',
   '''re_very_secret_token''',
-  # Opaque preference-id fixture in hosted-policy.test.ts. The name `token`
-  # plus a long base64url-shaped id trips generic-api-key. Not a credential.
+  # Historical Email unsubscribe fixture in commit 6546413e
+  # (`const token = "1.abc…ABCDE"` in hosted-policy.test.ts). The current
+  # test uses the low-entropy id 1.test-unsub-0001. This allowlist only
+  # covers the old string still present in that commit. Not a credential.
   '''1\.abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE''',
 ]
