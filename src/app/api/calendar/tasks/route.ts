@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import {
   assertDialerMutationControl,
   dialerMutationControlErrorResponse,
@@ -337,22 +338,24 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const department = normalizeDepartment(searchParams.get('department'))
     const db = supabaseAdmin()
-    const items = await listWorkItems({
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    const items = (await listWorkItems({
       department,
       statuses: ['pending', 'blocked', 'completed'],
       limit: 500,
-    })
+    })).filter((item) => !sandboxLeadId || item.leadId === sandboxLeadId)
     const [leadsMap, prospectsMap] = await Promise.all([
       loadLeadMap(db, items.flatMap((item) => item.leadId ? [item.leadId] : [])),
       loadProspectMap(db, items.flatMap((item) => item.prospectId ? [item.prospectId] : [])),
     ])
     const activityTasks = items.map((item) => workItemToTask(item, leadsMap, prospectsMap))
 
-    const departmentTasks = department === 'tc'
+    const departmentTasks = (department === 'tc'
       ? (await loadTcCalendarTasks(db)).filter((task) => task.id.startsWith('tc-file-'))
       : department === 'dispositions'
         ? await loadDispositionCalendarTasks(db)
         : []
+    ).filter((task) => !sandboxLeadId || task.contact_id === sandboxLeadId)
     const tasks = [...activityTasks, ...departmentTasks]
       .sort((a, b) => {
         const dateA = a.due_date ? new Date(a.due_date).getTime() : 0
@@ -378,6 +381,10 @@ export async function POST(req: NextRequest) {
     const title = typeof body.title === 'string' ? body.title.trim() : ''
     const leadId = typeof body.leadId === 'string' && body.leadId.trim() ? body.leadId.trim() : null
     const prospectId = typeof body.prospectId === 'string' && body.prospectId.trim() ? body.prospectId.trim() : null
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    if (sandboxLeadId && (prospectId || (leadId && leadId.toLowerCase() !== sandboxLeadId))) {
+      return NextResponse.json({ success: false, error: 'Lead not found' }, { status: 404 })
+    }
     const campaignMemberId = typeof body.campaignMemberId === 'string' && body.campaignMemberId.trim() ? body.campaignMemberId.trim() : null
     const dialerSessionId = typeof body.dialerSessionId === 'string' && body.dialerSessionId.trim() ? body.dialerSessionId.trim() : null
 

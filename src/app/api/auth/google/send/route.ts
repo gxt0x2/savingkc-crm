@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { recordOutboundGmail, sendConnectedGmail } from '@/lib/gmail-send'
 import { supabase } from '@/lib/supabase-lazy'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
   const subject = typeof json.subject === 'string' && json.subject.trim() ? json.subject.trim() : 'Message from Saving KC'
   const body = typeof json.body === 'string' ? json.body.trim() : ''
   const leadId = typeof json.leadId === 'string' && json.leadId.trim() ? json.leadId.trim() : null
+  if (leadId) {
+    const hiddenLead = await oauthReviewForeignLeadResponse(leadId, req)
+    if (hiddenLead) return hiddenLead
+  }
   if (!to || !body) {
     return NextResponse.json({ error: 'Recipient and message body are required' }, { status: 400 })
   }

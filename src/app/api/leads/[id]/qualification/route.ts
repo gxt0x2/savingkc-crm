@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabase } from '@/lib/supabase-lazy'
 
 const PILLARS = ['TIMELINE', 'CONDITION', 'MOTIVATION', 'PRICE'] as const
@@ -58,6 +59,8 @@ export async function GET(
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: noStoreHeaders() })
 
   const { id } = await params
+  const hiddenLead = await oauthReviewForeignLeadResponse(id, _req)
+  if (hiddenLead) return hiddenLead
   try {
     return NextResponse.json(await readQualification(id), { headers: noStoreHeaders() })
   } catch (error) {
@@ -74,6 +77,8 @@ export async function PATCH(
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: noStoreHeaders() })
 
   const { id } = await params
+  const hiddenLead = await oauthReviewForeignLeadResponse(id, req)
+  if (hiddenLead) return hiddenLead
   const body = await req.json().catch(() => null) as { pillars?: Record<string, unknown> } | null
   if (!body?.pillars || typeof body.pillars !== 'object' || Array.isArray(body.pillars)) {
     return NextResponse.json({ error: 'Provide qualification pillars' }, { status: 400, headers: noStoreHeaders() })

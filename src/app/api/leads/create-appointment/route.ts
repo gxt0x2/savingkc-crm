@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { upsertAppointmentFromCall } from '@/lib/appointments'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { buildAppointmentCommand } from '@/lib/server/appointment-command'
 import { googleCalendarSyncWarning, syncOwnedAppointmentToGoogleCalendar } from '@/lib/google-calendar'
@@ -19,6 +20,8 @@ export async function POST(req: NextRequest) {
     const parsed = buildAppointmentCommand(await req.json(), actor.name)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status })
     const { appointmentId: existingAppointmentId, leadId, type, scheduledAt, assignedTo, notes, sendReminder } = parsed.command
+    const hiddenLead = await oauthReviewForeignLeadResponse(leadId, req)
+    if (hiddenLead) return hiddenLead
 
     const { data: leadRow, error: leadError } = await supabase
       .from('leads')

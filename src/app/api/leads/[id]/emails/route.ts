@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 // GET /api/leads/:id/emails — list emails synced for this lead
@@ -9,6 +10,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+  const hiddenLead = await oauthReviewForeignLeadResponse(id, _req)
+  if (hiddenLead) return hiddenLead
   const db = supabaseAdmin()
   const { data, error } = await db
     .from('lead_emails')

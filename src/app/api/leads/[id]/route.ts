@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { applyCrmEntityAuthority, safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
 import { buildLeadProfilePatch } from '@/lib/server/lead-profile-command'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -144,6 +145,8 @@ export async function GET(
 
   const { id } = await params
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+  const hiddenLead = await oauthReviewForeignLeadResponse(id, req)
+  if (hiddenLead) return hiddenLead
 
   const db = supabaseAdmin()
 
@@ -207,6 +210,8 @@ export async function PATCH(
 
   const { id } = await params
   if (!id) return NextResponse.json({ success: false, error: 'Contact id is required' }, { status: 400 })
+  const hiddenLead = await oauthReviewForeignLeadResponse(id, req)
+  if (hiddenLead) return hiddenLead
 
   let body: unknown
   try {

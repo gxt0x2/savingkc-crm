@@ -6,7 +6,9 @@ import {
   mobileOptionsResponse,
   requireMobileUser,
 } from '@/lib/mobile-api/auth'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
+import { readOauthReviewContactDirectoryPage } from '@/lib/server/oauth-review-contact-directory'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -40,7 +42,7 @@ export async function GET(req: NextRequest) {
       ? Math.min(Math.max(requestedLimit, 1), 50)
       : 25
     const list = pipelineList(searchParams.get('list'))
-    const page = await readContactDirectoryPage({
+    const directoryQuery = {
       smartList: list,
       scope: 'active',
       limit,
@@ -57,7 +59,11 @@ export async function GET(req: NextRequest) {
       outreach: '',
       dataGap: '',
       referenceTime: new Date().toISOString(),
-    })
+    }
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    const page = sandboxLeadId
+      ? await readOauthReviewContactDirectoryPage(directoryQuery, sandboxLeadId)
+      : await readContactDirectoryPage(directoryQuery)
 
     const leads = page.items.map((item) => ({
       id: item.id,

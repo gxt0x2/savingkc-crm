@@ -2,12 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import {
   ConversationReadModelUnavailableError,
   readConversationAttention,
 } from '@/lib/server/conversation-read-model'
 
-export async function GET() {
+export async function GET(request?: Request) {
   const startedAt = performance.now()
   try {
     const unauthorized = await requireAuthenticatedUser()
@@ -18,7 +19,8 @@ export async function GET() {
       unauthorized.headers.set('Vary', 'Cookie')
       return unauthorized
     }
-    const summary = await readConversationAttention()
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(request)
+    const summary = await readConversationAttention(undefined, sandboxLeadId)
     return NextResponse.json(summary, {
       headers: {
         'Cache-Control': 'private, no-store',

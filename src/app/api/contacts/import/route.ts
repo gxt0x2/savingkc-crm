@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { ProspectImportError, parseProspectImportRows } from '@/lib/server/prospect-import-command'
 
 export async function POST(request: NextRequest) {
   const actor = await resolveAuthenticatedActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (await resolveOauthReviewSandboxLeadId(request)) {
+    return NextResponse.json({ error: 'This account cannot import contacts' }, { status: 403 })
+  }
 
   let rows: ReturnType<typeof parseProspectImportRows>
   let campaignId: string | null = null

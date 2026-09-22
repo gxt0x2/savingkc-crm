@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 function cleanPhone(phone: unknown) {
@@ -12,19 +13,26 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q')?.trim().toLowerCase() || ''
     const db = supabaseAdmin()
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    let sellerQuery = db
+      .from('leads')
+      .select('id, full_name, phone, email, property_address, city, state, priority, station, updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(120)
+    if (sandboxLeadId) sellerQuery = sellerQuery.eq('id', sandboxLeadId)
 
     const [sellerRes, buyerRes, vendorRes] = await Promise.all([
-      db
-        .from('leads')
-        .select('id, full_name, phone, email, property_address, city, state, priority, station, updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(120),
-      db
+      sellerQuery,
+      sandboxLeadId
+        ? Promise.resolve({ data: [] as Array<Record<string, never>> })
+        : db
         .from('buyers')
         .select('id, name, company, phone, email, updated_at, created_at')
         .order('updated_at', { ascending: false })
         .limit(120),
-      db
+      sandboxLeadId
+        ? Promise.resolve({ data: [] as Array<Record<string, never>> })
+        : db
         .from('vendors')
         .select('id, name, company_name, category, phone, email, status, is_preferred, updated_at, created_at')
         .order('is_preferred', { ascending: false })

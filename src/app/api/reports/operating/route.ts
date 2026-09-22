@@ -3,6 +3,7 @@ export const revalidate = 0
 export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 
 import { buildOperatingReport, type OperatingActivity, type OperatingBuyer, type OperatingDeal, type OperatingLead, type OperatingMarketingOutcome, type OperatingMoneyRow, type OperatingOffer, type OperatingReportPeriod } from '@/lib/operating-report'
 import { isNotLeadOutcome } from '@/lib/lead-outcomes'
@@ -88,6 +89,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'The report start date must be before the end date.' }, { status: 400, headers: NO_STORE_HEADERS })
   }
   const db = supabaseAdmin()
+  const sandboxLeadId = await resolveOauthReviewSandboxLeadId(request)
 
   let leadQuery = db
     .from('leads')
@@ -97,6 +99,7 @@ export async function GET(request: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
   if (since) leadQuery = leadQuery.gte('created_at', since.toISOString())
+  if (sandboxLeadId) leadQuery = leadQuery.eq('id', sandboxLeadId)
 
   let activityQuery = db
     .from('lead_activities')
@@ -105,27 +108,31 @@ export async function GET(request: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(OPERATING_REPORT_ACTIVITY_LIMIT + 1)
   if (since) activityQuery = activityQuery.gte('created_at', since.toISOString())
+  if (sandboxLeadId) activityQuery = activityQuery.eq('lead_id', sandboxLeadId)
 
-  const appointmentQuery = db
+  let appointmentQuery = db
     .from('appointments')
     .select('id, lead_id, status, source, scheduled_at, created_at')
     .or(periodOrFilter('scheduled_at', 'created_at', since, until))
     .order('scheduled_at', { ascending: false, nullsFirst: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
+  if (sandboxLeadId) appointmentQuery = appointmentQuery.eq('lead_id', sandboxLeadId)
 
-  const dealQuery = db
+  let dealQuery = db
     .from('dispo_deals')
     .select(DEAL_SELECT)
     .or(dealPeriodFilter(since, until))
     .order('updated_at', { ascending: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
+  if (sandboxLeadId) dealQuery = dealQuery.eq('lead_id', sandboxLeadId)
 
-  const buyersQuery = db
+  let buyersQuery = db
     .from('buyers')
     .select('*')
     .lte('created_at', until.toISOString())
     .order('created_at', { ascending: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
+  if (sandboxLeadId) buyersQuery = buyersQuery.eq('id', sandboxLeadId)
 
   let revenueQuery = db
     .from('revenue_transactions')
@@ -135,6 +142,7 @@ export async function GET(request: NextRequest) {
     .order('date', { ascending: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
   if (since) revenueQuery = revenueQuery.gte('date', since.toISOString().slice(0, 10))
+  if (sandboxLeadId) revenueQuery = revenueQuery.eq('id', sandboxLeadId)
 
   let expensesQuery = db
     .from('expense_transactions')
@@ -144,6 +152,7 @@ export async function GET(request: NextRequest) {
     .order('date', { ascending: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
   if (since) expensesQuery = expensesQuery.gte('date', since.toISOString().slice(0, 10))
+  if (sandboxLeadId) expensesQuery = expensesQuery.eq('id', sandboxLeadId)
 
   let marketingOutcomeQuery = db
     .from('crm_marketing_outcomes')
@@ -152,6 +161,7 @@ export async function GET(request: NextRequest) {
     .order('occurred_at', { ascending: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
   if (since) marketingOutcomeQuery = marketingOutcomeQuery.gte('occurred_at', since.toISOString())
+  if (sandboxLeadId) marketingOutcomeQuery = marketingOutcomeQuery.eq('lead_id', sandboxLeadId)
 
   const [leadResult, activitySourceResult, appointmentsSourceResult, enhancedDealsResult, buyersSourceResult, revenueSourceResult, expensesSourceResult, marketingOutcomeSourceResult, rolesResult] = await Promise.all([
     leadQuery,
@@ -171,12 +181,14 @@ export async function GET(request: NextRequest) {
 
   let dealsResult = enhancedDealsResult
   if (enhancedDealsResult.error) {
-    dealsResult = await db
+    let fallbackDealQuery = db
       .from('dispo_deals')
       .select(DEAL_FALLBACK_SELECT)
       .or(dealPeriodFilter(since, until))
       .order('updated_at', { ascending: false })
-      .limit(OPERATING_REPORT_ROW_LIMIT + 1) as typeof enhancedDealsResult
+      .limit(OPERATING_REPORT_ROW_LIMIT + 1)
+    if (sandboxLeadId) fallbackDealQuery = fallbackDealQuery.eq('lead_id', sandboxLeadId)
+    dealsResult = await fallbackDealQuery as typeof enhancedDealsResult
   }
 
   const leadBounded = takeBoundedRows((leadResult.data ?? []) as unknown as OperatingLead[], OPERATING_REPORT_ROW_LIMIT)
@@ -188,12 +200,13 @@ export async function GET(request: NextRequest) {
   const expenseBounded = takeBoundedRows((expensesSourceResult.data ?? []) as OperatingMoneyRow[], OPERATING_REPORT_ROW_LIMIT)
   const marketingOutcomeBounded = takeBoundedRows((marketingOutcomeSourceResult.data ?? []) as OperatingMarketingOutcome[], OPERATING_REPORT_ROW_LIMIT)
 
-  const offerPeriodQuery = db
+  let offerPeriodQuery = db
     .from('buyer_offers')
     .select(OFFER_SELECT)
     .or(periodOrFilter('submitted_at', 'created_at', since, until))
     .order('created_at', { ascending: false })
     .limit(OPERATING_REPORT_ROW_LIMIT + 1)
+  if (sandboxLeadId) offerPeriodQuery = offerPeriodQuery.eq('lead_id', sandboxLeadId)
   const offerPeriodResult = await offerPeriodQuery
 
   const dealLeadIds = [...new Set(dealBounded.rows.map((deal) => deal.lead_id).filter(Boolean))]

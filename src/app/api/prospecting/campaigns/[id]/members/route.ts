@@ -1,4 +1,5 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { prospectingError, prospectingJson } from '@/lib/api/prospecting-response'
 import { parseCountyParcelIds, parseLeadIds } from '@/lib/prospecting/campaign-contract'
 import { enrollCountyProspectingCampaignMembers, enrollCountyProspectingCampaignMembersByIds, enrollProspectingCampaignMembers, removeProspectingCampaignMember } from '@/lib/server/prospecting-campaigns'
@@ -16,6 +17,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     if (!CAMPAIGN_MEMBER_FILTERS.includes(status as CampaignMemberFilter)) {
       return prospectingJson({ error: 'Campaign audience status is invalid', code: 'invalid_member_status' }, { status: 400 })
+    }
+    if (await resolveOauthReviewSandboxLeadId(request)) {
+      const requestedLimit = Number(url.searchParams.get('limit') || 50)
+      const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50
+      return prospectingJson({ items: [], pageInfo: { limit, hasMore: false, nextCursor: null } })
     }
     return prospectingJson(await listProspectingCampaignMembers(actor, (await params).id, {
       limit: Number(url.searchParams.get('limit') || 50),

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import {
   assertDialerMutationControl,
   dialerMutationControlErrorResponse,
@@ -52,6 +53,8 @@ export async function POST(
 
   const { id } = await params
   if (!id) return NextResponse.json({ success: false, error: 'Contact id is required' }, { status: 400 })
+  const hiddenLead = await oauthReviewForeignLeadResponse(id, req)
+  if (hiddenLead) return hiddenLead
 
   let body: LifecycleBody
   try {

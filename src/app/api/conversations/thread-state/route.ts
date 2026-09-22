@@ -1,6 +1,7 @@
 import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -175,6 +176,10 @@ export async function POST(req: Request) {
 
     if (!action) {
       return NextResponse.json({ error: 'Valid action is required' }, { status: 400 })
+    }
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    if (sandboxLeadId && thread?.leadId?.toLowerCase() !== sandboxLeadId) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
     if (!thread) {
       return NextResponse.json({ error: 'A valid, matching conversation threadKey is required' }, { status: 400 })

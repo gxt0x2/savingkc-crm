@@ -105,12 +105,15 @@ export interface ReadConversationThreadsInput {
   kind?: ConversationKindFilter
   timeframe?: ConversationTimeframe
   query?: string | null
+  /** When set, the inbox is loaded for this lead only. Omitted for every other agent. */
+  restrictedLeadId?: string | null
 }
 
 export interface ReadConversationTimelineInput {
   threadId: string
   limit?: number
   cursor?: string | null
+  restrictedLeadId?: string | null
 }
 
 interface ConversationProjectionRow {
@@ -133,6 +136,7 @@ interface ConversationProjectionRow {
   primary_next_action_title: string | null
   primary_next_action_due_at: string | null
   primary_next_action_owner: string | null
+  search_text?: string | null
 }
 
 type ConversationDatabase = ReturnType<typeof supabaseAdmin>
@@ -270,6 +274,62 @@ function projectionThread(
   }
 }
 
+function sandboxThreadMatches(
+  row: ConversationProjectionRow,
+  input: ReadConversationThreadsInput,
+  now: Date,
+): boolean {
+  const queue = conversationQueue(input.queue)
+  const kind = conversationKindFilter(input.kind)
+  const timeframe = conversationTimeframe(input.timeframe)
+  const query = conversationSearchQuery(input.query)
+  if (kind === 'unmatched' || !row.lead_id) return false
+  // The review account has one thread. Queue and timeframe filters would hide
+  // that email from the default inbox, so those filters stay open here.
+  void queue
+  if (input.channel && row.last_channel !== input.channel) return false
+  if (query) {
+    const haystack = `${row.search_text ?? ''} ${row.phone ?? ''} ${row.owner ?? ''}`.toLowerCase()
+    if (!haystack.includes(query.toLowerCase())) return false
+  }
+  void timeframe
+  void now
+  const cursor = decodeConversationThreadCursor(input.cursor)
+  if (!cursor) return true
+  return row.attention_rank > cursor.rank
+    || (row.attention_rank === cursor.rank && row.last_activity_at < cursor.at)
+    || (row.attention_rank === cursor.rank && row.last_activity_at === cursor.at && row.thread_key < cursor.key)
+}
+
+async function readRestrictedConversationThreads(
+  input: ReadConversationThreadsInput,
+  db: ConversationDatabase,
+  leadId: string,
+): Promise<ConversationThreadPage> {
+  const limit = conversationPageLimit(input.limit)
+  const result = await db
+    .from('conversation_thread_state')
+    .select('*')
+    .eq('lead_id', leadId)
+    .limit(5)
+  if (result.error) {
+    if (isConversationReadModelMissing(result.error)) throw new ConversationReadModelUnavailableError()
+    throwDatabaseError(result.error, 'Conversation inbox could not be loaded')
+  }
+  const now = new Date()
+  const pageRows = ((result.data ?? []) as ConversationProjectionRow[])
+    .filter((row) => sandboxThreadMatches(row, input, now))
+    .slice(0, limit)
+  const leads = await fetchLeadContext(db, pageRows.flatMap((row) => row.lead_id ? [row.lead_id] : []))
+  return {
+    items: pageRows.map((row) => projectionThread(row, row.lead_id ? leads.get(row.lead_id) : undefined, now)),
+    unmatchedActivities: [],
+    pageInfo: { limit, hasMore: false, nextCursor: null },
+    source: 'projection',
+    degraded: false,
+  }
+}
+
 function projectionCursor(row: ConversationProjectionRow): string {
   return encodeConversationThreadCursor({
     rank: row.attention_rank,
@@ -294,6 +354,9 @@ export async function readConversationThreads(
   const cursor = decodeConversationThreadCursor(input.cursor)
   if (queue === 'mine' && !text(input.actorName)) {
     throw new ConversationReadModelInputError('The mine queue requires an authenticated actor')
+  }
+  if (input.restrictedLeadId) {
+    return readRestrictedConversationThreads(input, db, input.restrictedLeadId)
   }
 
   const { data, error } = await db.rpc('conversation_thread_page_v3', {
@@ -371,6 +434,16 @@ export async function readConversationTimeline(
   const threadId = input.threadId.trim()
   const threadKey = conversationThreadKey(threadId)
   const limit = conversationPageLimit(input.limit)
+  if (input.restrictedLeadId && threadKey !== `lead:${input.restrictedLeadId}`) {
+    return {
+      threadId,
+      threadKey,
+      items: [],
+      pageInfo: { limit, hasMore: false, nextCursor: null },
+      source: 'projection',
+      degraded: false,
+    }
+  }
   const cursor = decodeConversationTimelineCursor(input.cursor)
   const { data, error } = await db.rpc('conversation_timeline_page_v1', {
     target_thread_key: threadKey,
@@ -402,9 +475,39 @@ export async function readConversationTimeline(
 }
 
 export async function readConversationAttention(
-  db: ConversationDatabase = supabaseAdmin(),
+  db?: ConversationDatabase,
+  restrictedLeadId?: string | null,
 ): Promise<ConversationAttentionSummary> {
-  const { data, error } = await db.rpc('conversation_attention_summary_v1')
+  const database = db ?? supabaseAdmin()
+  if (restrictedLeadId) {
+    const result = await database
+      .from('conversation_thread_state')
+      .select('attention_state, last_channel, primary_next_action_due_at')
+      .eq('lead_id', restrictedLeadId)
+      .limit(1)
+    if (result.error) {
+      if (isConversationReadModelMissing(result.error)) throw new ConversationReadModelUnavailableError()
+      throwDatabaseError(result.error, 'Conversation attention could not be loaded')
+    }
+    const row = ((result.data ?? []) as Array<{
+      attention_state?: string | null
+      last_channel?: string | null
+      primary_next_action_due_at?: string | null
+    }>)[0]
+    const needsReply = row?.attention_state === 'needs_reply'
+    const channel = row?.last_channel
+    const dueAt = text(row?.primary_next_action_due_at)
+    return {
+      needsReply: needsReply ? 1 : 0,
+      calls: needsReply && (channel === 'call' || channel === 'voicemail') ? 1 : 0,
+      emails: needsReply && channel === 'email' ? 1 : 0,
+      texts: needsReply && channel === 'sms' ? 1 : 0,
+      overdue: dueAt && new Date(dueAt).getTime() < Date.now() ? 1 : 0,
+      source: 'projection',
+      degraded: false,
+    }
+  }
+  const { data, error } = await database.rpc('conversation_attention_summary_v1')
   if (error) {
     if (isConversationReadModelMissing(error)) throw new ConversationReadModelUnavailableError()
     throwDatabaseError(error, 'Conversation attention could not be loaded')

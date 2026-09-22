@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { isWithinDialerCallingHours } from '@/lib/dialer-call-policy'
 import { readDialerQueuePage } from '@/lib/server/dialer-queue-read-model'
 import { parseDialerQueueLeadIds } from '@/lib/server/dialer-queue-route'
@@ -75,21 +76,37 @@ export async function GET(req: NextRequest) {
       ? []
       : await resolveCohortLeadIds(searchParams.get('cohort'))
     const requestedLeadIds = explicitLeadIds.length > 0 ? explicitLeadIds : cohortLeadIds
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    const visibleLeadIds = sandboxLeadId
+      ? (requestedLeadIds.length > 0 ? requestedLeadIds.filter((id) => id === sandboxLeadId) : [sandboxLeadId])
+      : requestedLeadIds
+    const visibleProspectIds = sandboxLeadId ? [] : explicitProspectIds
     const idsOnly = searchParams.get('ids_only') === '1'
     const limitParam = Number(searchParams.get('limit') || '1000')
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 1000) : 1000
 
     if (idsOnly) {
-      return NextResponse.json({ success: true, leadIds: requestedLeadIds, prospectIds: explicitProspectIds }, { headers: NO_STORE_HEADERS })
+      return NextResponse.json({ success: true, leadIds: visibleLeadIds, prospectIds: visibleProspectIds }, { headers: NO_STORE_HEADERS })
     }
 
-    if (requestedLeadIds.length === 0 && explicitProspectIds.length > 0) {
+    if (sandboxLeadId && visibleLeadIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        leads: [],
+        queueContext: [],
+        queueMetrics: null,
+        prospects: [],
+        queuePolicy: { callingWindowOpen: isWithinDialerCallingHours() },
+      }, { headers: NO_STORE_HEADERS })
+    }
+
+    if (visibleLeadIds.length === 0 && visibleProspectIds.length > 0) {
       const projectionStartedAt = performance.now()
       const { data, error } = await supabase
         .from('prospects')
         .select(EXPANDED_PROSPECT_SELECT)
-        .in('id', explicitProspectIds)
-        .limit(explicitProspectIds.length)
+        .in('id', visibleProspectIds)
+        .limit(visibleProspectIds.length)
       if (error) {
         console.error('[dialer/queue] Prospect context lookup failed', error.message)
         return NextResponse.json({ success: false, error: 'Dialer context is unavailable' }, { status: 500, headers: NO_STORE_HEADERS })
@@ -108,15 +125,15 @@ export async function GET(req: NextRequest) {
 
     const projectionStartedAt = performance.now()
     const page = await readDialerQueuePage({
-      limit: requestedLeadIds.length > 0 ? Math.max(requestedLeadIds.length, 1) : limit,
-      leadIds: requestedLeadIds.length > 0 ? requestedLeadIds : undefined,
+      limit: visibleLeadIds.length > 0 ? Math.max(visibleLeadIds.length, 1) : limit,
+      leadIds: visibleLeadIds.length > 0 ? visibleLeadIds : undefined,
     })
     const projectionDuration = performance.now() - projectionStartedAt
     const leadIds = page.leads
       .map((row) => typeof row.id === 'string' ? row.id : null)
       .filter((id): id is string => Boolean(id))
 
-    if (requestedLeadIds.length > 0) {
+    if (visibleLeadIds.length > 0) {
       if (leadIds.length === 0) {
         return NextResponse.json({
           success: true,
@@ -141,8 +158,8 @@ export async function GET(req: NextRequest) {
           .select(EXPANDED_PROSPECT_SELECT)
           .in('lead_id', leadIds)
           .limit(Math.min(Math.max(leadIds.length * 5, 100), 1000)),
-        explicitProspectIds.length > 0
-          ? supabase.from('prospects').select(EXPANDED_PROSPECT_SELECT).in('id', explicitProspectIds).limit(explicitProspectIds.length)
+        visibleProspectIds.length > 0
+          ? supabase.from('prospects').select(EXPANDED_PROSPECT_SELECT).in('id', visibleProspectIds).limit(visibleProspectIds.length)
           : Promise.resolve({ data: [], error: null }),
         supabase
           .from('lead_co_owners')
