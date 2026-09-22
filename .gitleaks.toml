@@ -32,4 +32,7 @@ regexes = [
   '''re_fixture[_A-Za-z0-9]*''',
   '''re_different_private_resend_[0-9]+''',
   '''re_very_secret_token''',
+  # Opaque preference-id fixture in hosted-policy.test.ts. The name `token`
+  # plus a long base64url-shaped id trips generic-api-key. Not a credential.
+  '''1\.abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE''',
 ]
