@@ -30,8 +30,13 @@ describe("hosted unsubscribe targets", () => {
       "1705 Baltimore Ave, Kansas City, MO 64108",
       targets.link,
     );
+    expect(text).toContain("———");
+    expect(text).toContain("Saving KC Homebuyers");
+    expect(text).not.toContain("LLC");
     expect(text).not.toContain(targets.link);
     expect(text).not.toContain(preferenceId);
+    expect(html).toContain('bgcolor="#333333"');
+    expect(html).not.toContain("LLC");
     expect(html).toContain(`href="${targets.link}"`);
     expect(html).toContain(">Unsubscribe</a>");
     expect(html.replace(`href="${targets.link}"`, 'href=""')).not.toContain(
