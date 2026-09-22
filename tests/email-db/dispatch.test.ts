@@ -29,10 +29,10 @@ async function ready(db: DB) {
  values(${connectionId},${ws},${owner},${randomUUID()},'fixture','resend','Fixture','fixture',${sql.json(encryptEmailSecret("fixture-secret", key, `${ws}/${connectionId}/resend/1`, 1))},'checked',0)`;
   const [domain] =
     await sql`insert into em_domains(workspace_id,connection_id,name_ascii,provider_domain_id,brand_url,state,sending_state,receiving_state,paused,created_by,last_verified_at)
- values(${ws},${connectionId},'outreach.example.test',${randomUUID()},'https://example.test','provider_verified','enabled','enabled',false,${owner},${now}) returning id`;
+ values(${ws},${connectionId},'talktosavingkc.com',${randomUUID()},'https://example.test','provider_verified','enabled','enabled',false,${owner},${now}) returning id`;
   const [sender] =
     await sql`insert into em_senders(workspace_id,domain_id,from_name,local_part,state,hourly_limit,daily_limit)
- values(${ws},${domain.id},'SavingKC','hello','active',2,10) returning id`;
+ values(${ws},${domain.id},'Ari','ari','active',2,10) returning id`;
   const config = {
     audienceId: db.audienceId,
     playbookVersionId: randomUUID(),
@@ -166,7 +166,26 @@ test("two workers send one immutable intent once and persist provider acceptance
       await db.sql`select * from em_messages where intent_id=${intent.id}`;
     assert.equal(message.transport, "resend");
     assert.equal(message.provider_email_id, saved.provider_message_id);
-    assert.match(message.text_body, /Unsubscribe: https:\/\//);
+    assert.match(
+      message.text_body,
+      /tap Unsubscribe and I'll take you off today/,
+    );
+    assert.doesNotMatch(message.text_body, /email\/unsubscribe\//);
+    const payload = saved.provider_payload;
+    assert.equal(payload.from, "Ari <ari@talktosavingkc.com>");
+    assert.equal(
+      payload.headers["List-Unsubscribe-Post"],
+      "List-Unsubscribe=One-Click",
+    );
+    assert.match(
+      payload.headers["List-Unsubscribe"],
+      /^<https:\/\/crm\.example\.test\/api\/email\/unsubscribe\/[^>]+>$/,
+    );
+    assert.match(
+      payload.html,
+      /<a href="https:\/\/crm\.example\.test\/email\/unsubscribe\/[^"]+"[^>]*>Unsubscribe<\/a>/,
+    );
+    assert.doesNotMatch(payload.text, /email\/unsubscribe\//);
   }));
 test("uncertain requests remain held from automatic retry and create no sent message", () =>
   withDB(async (db) => {

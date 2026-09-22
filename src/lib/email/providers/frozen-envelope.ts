@@ -1,4 +1,5 @@
 import "server-only";
+import { decideHostedFrom, hostedUnsubscribeTargets } from "./hosted-policy";
 import { outreachFooter, outreachHtml } from "./outreach-footer";
 import { createHmac, randomBytes } from "node:crypto";
 import { preferenceKeys } from "../preferences/service";
@@ -19,7 +20,7 @@ export async function freezeHostedEnvelope(
 }> {
   const { tx, member, now } = context;
   const [thread] =
-    await tx`select t.*,c.is_test,v.config as campaign_config,a.normalized_address
+    await tx`select t.*,c.is_test,c.program as campaign_program,v.config as campaign_config,a.normalized_address
     from em_threads t join em_campaigns c on c.id=t.campaign_id and c.workspace_id=t.workspace_id
     join em_enrollments e on e.id=t.enrollment_id and e.workspace_id=t.workspace_id
     join em_campaign_versions v on v.id=e.campaign_version_id and v.workspace_id=t.workspace_id
@@ -51,9 +52,19 @@ export async function freezeHostedEnvelope(
       new Date(sender.last_verified_at).getTime() > now.getTime() - 86_400_000,
     "SENDER_VERIFICATION_REQUIRED",
   );
+  const fromDecision = decideHostedFrom({
+    localPart: String(sender.local_part),
+    domain: String(sender.name_ascii),
+    program: String(thread.campaign_program ?? ""),
+    fromName: String(sender.from_name ?? ""),
+  });
+  check(
+    fromDecision.ok,
+    fromDecision.ok ? "HOSTED_FROM_INVALID" : fromDecision.code,
+  );
   if (!thread.sender_id)
     await tx`update em_threads set sender_id=${sender.id} where workspace_id=${member.workspace_id} and id=${threadId}`;
-  const alias = `reply+${threadId.replaceAll("-", "")}@${sender.name_ascii}`;
+  const alias = `reply+${threadId.replaceAll("-", "")}@${fromDecision.mailbox.split("@")[1]}`;
   await tx`insert into em_reply_aliases(workspace_id,connection_id,thread_id,address)
     values(${member.workspace_id},${sender.connection_id},${threadId},${alias}) on conflict do nothing`;
   const keys = preferenceKeys(),
@@ -73,21 +84,23 @@ export async function freezeHostedEnvelope(
     "EMAIL_PUBLIC_ORIGIN_REQUIRED",
     503,
   );
-  const link = `${origin}/email/unsubscribe/${token}`;
+  const targets = hostedUnsubscribeTargets(origin, token);
   return {
     connectionId: sender.connection_id,
     isTest: Boolean(thread.is_test),
     payload: {
-      from: `${String(sender.from_name).replace(/[<>\r\n]/g, "")} <${sender.local_part}@${sender.name_ascii}>`,
+      from: `${String(sender.from_name).replace(/[<>\r\n]/g, "")} <${fromDecision.mailbox}>`,
       to: [thread.normalized_address],
       subject,
-      text: `${body}\n\n${outreachFooter(config.business.name, config.business.address, link)}`,
-      html: outreachHtml(body, config.business.name, config.business.address, link),
+      text: `${body}\n\n${outreachFooter(config.business.name, config.business.address, targets.link)}`,
+      html: outreachHtml(
+        body,
+        config.business.name,
+        config.business.address,
+        targets.link,
+      ),
       reply_to: alias,
-      headers: {
-        "List-Unsubscribe": `<${origin}/api/email/unsubscribe/${token}>`,
-        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-      },
+      headers: targets.headers,
     },
   };
 }
