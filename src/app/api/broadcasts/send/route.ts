@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { safeSendSMS } from '@/lib/safe-communications'
+import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { BROADCAST_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 // Round-robin counter for Twilio numbers (resets on restart, fine for this)
@@ -130,41 +131,49 @@ export async function POST(req: NextRequest) {
       // --- SMS ---
       if (buyer.sms_opted_in && buyer.phone) {
         try {
-          const defaultSmsBody = [
-            `${buyerFirst}, new deal from Saving KC:`,
-            `${address} - ${pType}`,
-            `ARV: ${arv} | Price: ${price}`,
-            `${beds}bd/${baths}ba | ${sqft}sf`,
-            smsDealPageUrl ? `Details: ${smsDealPageUrl}` : '',
-            'Reply STOP to opt out',
-          ].filter(Boolean).join('\n')
+          const blockReason = await automatedSmsBlockReason({ phone: buyer.phone })
+          if (blockReason) {
+            await db
+              .from('broadcast_recipients')
+              .update({ sms_status: 'skipped' })
+              .eq('id', recipient.id)
+          } else {
+            const defaultSmsBody = [
+              `${buyerFirst}, new deal from Saving KC:`,
+              `${address} - ${pType}`,
+              `ARV: ${arv} | Price: ${price}`,
+              `${beds}bd/${baths}ba | ${sqft}sf`,
+              smsDealPageUrl ? `Details: ${smsDealPageUrl}` : '',
+              'Reply STOP to opt out',
+            ].filter(Boolean).join('\n')
 
-          const messageBody = sms_body
-            ? sms_body
-                .replace('{buyerFirst}', buyerFirst)
-                .replace('{address}', address)
-                .replace('{type}', pType)
-                .replace('{arv}', arv)
-                .replace('{price}', price)
-                .replace('{beds}', String(beds))
-                .replace('{baths}', String(baths))
-                .replace('{sqft}', sqft)
-                .replace('{dealPageUrl}', smsDealPageUrl)
-            : defaultSmsBody
+            const messageBody = sms_body
+              ? sms_body
+                  .replace('{buyerFirst}', buyerFirst)
+                  .replace('{address}', address)
+                  .replace('{type}', pType)
+                  .replace('{arv}', arv)
+                  .replace('{price}', price)
+                  .replace('{beds}', String(beds))
+                  .replace('{baths}', String(baths))
+                  .replace('{sqft}', sqft)
+                  .replace('{dealPageUrl}', smsDealPageUrl)
+              : defaultSmsBody
 
-          await safeSendSMS({
-            to: buyer.phone,
-            from: nextTwilioNumber(),
-            body: messageBody,
-            senderUse: 'broadcast',
-          })
+            await safeSendSMS({
+              to: buyer.phone,
+              from: nextTwilioNumber(),
+              body: messageBody,
+              senderUse: 'broadcast',
+            })
 
-          await db
-            .from('broadcast_recipients')
-            .update({ sms_status: 'sent', sms_sent_at: new Date().toISOString() })
-            .eq('id', recipient.id)
+            await db
+              .from('broadcast_recipients')
+              .update({ sms_status: 'sent', sms_sent_at: new Date().toISOString() })
+              .eq('id', recipient.id)
 
-          smsSent++
+            smsSent++
+          }
         } catch (smsErr) {
           console.error(`[broadcast send] SMS failed for buyer ${buyer.id}:`, smsErr)
           await db

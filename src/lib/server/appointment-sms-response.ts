@@ -1,3 +1,4 @@
+import { isSmsOptOutMessage } from '@/lib/sms-opt-out'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 
@@ -15,7 +16,7 @@ export function classifyAppointmentSmsReply(message: string): AppointmentSmsRepl
 export interface AppointmentSmsResponseResult { handled: boolean; appointmentId?: string; response?: 'confirm' | 'reschedule' | 'review' }
 
 export async function recordAppointmentSmsResponse(input: { leadId: string; message: string; messageSid: string | null }): Promise<AppointmentSmsResponseResult> {
-  if (/^(stop|stopall|unsubscribe|cancel|end|quit|start|help)$/i.test(input.message.trim())) return { handled: false }
+  if (isSmsOptOutMessage(input.message) || /^(start|unstop|help)$/i.test(input.message.trim())) return { handled: false }
   const response = classifyAppointmentSmsReply(input.message) || 'review'
   const providerKey = input.messageSid || `${input.leadId}:${response}:${input.message.trim()}`
   const { data, error } = await supabaseAdmin().rpc('appointment_sequence_reply_v1', {

@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
   insert: vi.fn(),
-  isOptedOut: vi.fn(),
+  automatedSmsBlockReason: vi.fn(),
   isDuplicateSms: vi.fn(),
   logSmsSend: vi.fn(),
   safeSendSMS: vi.fn(),
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: { rpc: mocks.rpc, from: mocks.from },
 }))
-vi.mock('@/lib/sms-opt-out', () => ({ isOptedOut: mocks.isOptedOut }))
+vi.mock('@/lib/sms-send-gate', () => ({ automatedSmsBlockReason: mocks.automatedSmsBlockReason }))
 vi.mock('@/lib/sms-dedup', () => ({
   isDuplicateSms: mocks.isDuplicateSms,
   logSmsSend: mocks.logSmsSend,
@@ -28,7 +28,7 @@ describe('conversation SMS sender resolution and persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.rpc.mockResolvedValue({ data: [], error: null })
-    mocks.isOptedOut.mockResolvedValue(false)
+    mocks.automatedSmsBlockReason.mockResolvedValue(null)
     mocks.isDuplicateSms.mockResolvedValue(false)
     mocks.logSmsSend.mockResolvedValue(undefined)
     mocks.safeSendSMS.mockImplementation(async (params: { beforePostProviderWrite?: () => Promise<void> }) => {
@@ -107,6 +107,20 @@ describe('conversation SMS sender resolution and persistence', () => {
       target_thread_key: 'phone:+19135550123',
       page_limit: 101,
     }))
+  })
+
+  it('does not send when the automated SMS gate blocks the number', async () => {
+    mocks.automatedSmsBlockReason.mockResolvedValue('opted_out')
+
+    const result = await sendLeadSms({
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Cash offer',
+      fromPhone: '+18166088552',
+    })
+
+    expect(result).toEqual({ status: 'skipped', reason: 'opted_out' })
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
   })
 
   it('reports delivered-but-not-persisted and warns against resending', async () => {

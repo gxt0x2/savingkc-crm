@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { isOptedOut } from '@/lib/sms-opt-out'
+import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp, phoneRateLimit } from '@/middleware/rate-limit'
 import { safeSendSMS } from '@/lib/safe-communications'
@@ -138,8 +138,8 @@ export async function POST(req: Request) {
         })
 
         // Send auto-text if approved by messaging system (rate limits, timing, etc.)
+        let missedCallAutoQueued = false
         if (response?.shouldSend && response.message) {
-          const optedOut = await isOptedOut(from)
           const { allowed: phoneAllowed } = phoneRateLimit(from)
           const replyFromRaw = to || TWILIO_PHONE
           const fromPhone = from // Capture for closure
@@ -150,35 +150,49 @@ export async function POST(req: Request) {
             return new NextResponse('OK', { status: 200 })
           }
 
-          if (!optedOut && phoneAllowed) {
-            sendDelayed(async () => {
-              // Safe type assertions: all checked above
-              await safeSendSMS({
-                body: response.message as string,
-                from: replyFromRaw as string,
-                to: fromPhone as string,
-                senderUse: 'reply',
-              })
-              await supabase.from('lead_activities').insert({
-                lead_id: leadId,
-                activity_type: 'sms',
-                description: response.message,
-                agent: 'System',
-                metadata: {
-                  direction: 'outbound',
-                  from: replyFromRaw as string,
-                  to: fromPhone,
-                  trigger: 'missed_call_auto',
-                  variant: response.variant,
-                  agent_name: response.agentName,
-                }
-              })
-            }, response.delaySeconds, response.delaySeconds + 5)
+          if (phoneAllowed) {
+            try {
+              const blockReason = await automatedSmsBlockReason({ phone: fromPhone, leadId })
+              if (blockReason) {
+                console.info('[twilio-missed-call] missed_call_auto blocked', { reason: blockReason })
+              } else {
+                missedCallAutoQueued = true
+                sendDelayed(async () => {
+                  const stillBlocked = await automatedSmsBlockReason({ phone: fromPhone, leadId })
+                  if (stillBlocked) {
+                    console.info('[twilio-missed-call] missed_call_auto blocked', { reason: stillBlocked })
+                    return
+                  }
+                  await safeSendSMS({
+                    body: response.message as string,
+                    from: replyFromRaw as string,
+                    to: fromPhone as string,
+                    senderUse: 'reply',
+                  })
+                  await supabase.from('lead_activities').insert({
+                    lead_id: leadId,
+                    activity_type: 'sms',
+                    description: response.message,
+                    agent: 'System',
+                    metadata: {
+                      direction: 'outbound',
+                      from: replyFromRaw as string,
+                      to: fromPhone,
+                      trigger: 'missed_call_auto',
+                      variant: response.variant,
+                      agent_name: response.agentName,
+                    }
+                  })
+                }, response.delaySeconds, response.delaySeconds + 5)
+              }
+            } catch (error) {
+              console.error('[twilio-missed-call] missed_call_auto suppression check failed closed:', error)
+            }
           }
         }
 
         // Alert eligible agents about known lead missed call.
-        const missedAlert = `🔥 Missed call from ${leadName} (hot lead)${response?.shouldSend ? '. Auto-text sent' : ''}. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
+        const missedAlert = `🔥 Missed call from ${leadName} (hot lead)${missedCallAutoQueued ? '. Auto-text sent' : ''}. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
         await sendTeamLeadAlert({
           leadId,
           smsBody: missedAlert,
@@ -195,7 +209,7 @@ export async function POST(req: Request) {
             from,
             calledNumber: to || TWILIO_PHONE,
             callSid,
-            auto_text_sent: Boolean(response?.shouldSend),
+            auto_text_sent: missedCallAutoQueued,
           },
         })
 
@@ -249,42 +263,57 @@ export async function POST(req: Request) {
         })
 
         // Send auto-text if approved
+        let unknownAutoQueued = false
         if (response?.shouldSend && response.message) {
-          const unknownOptedOut = await isOptedOut(from)
           const { allowed: unknownPhoneAllowed } = phoneRateLimit(from)
           const unknownReplyFromRaw = to || TWILIO_PHONE
           const fromPhoneUnknown = from
 
           if (!unknownReplyFromRaw || !fromPhoneUnknown) {
             console.error('Missing phone numbers for unknown SMS')
-          } else if (!unknownOptedOut && unknownPhoneAllowed) {
-            sendDelayed(async () => {
-              await safeSendSMS({
-                body: response.message as string,
-                from: unknownReplyFromRaw as string,
-                to: fromPhoneUnknown as string,
-                senderUse: 'reply',
-              })
-              await supabase.from('lead_activities').insert({
-                lead_id: newLeadId,
-                activity_type: 'sms',
-                description: response.message,
-                agent: 'System',
-                metadata: {
-                  direction: 'outbound',
-                  from: unknownReplyFromRaw as string,
-                  to: fromPhoneUnknown,
-                  trigger: 'missed_call_auto',
-                  variant: response.variant,
-                  agent_name: response.agentName,
-                }
-              })
-            }, response.delaySeconds, response.delaySeconds + 5)
+          } else if (unknownPhoneAllowed) {
+            try {
+              const blockReason = await automatedSmsBlockReason({ phone: fromPhoneUnknown, leadId: newLeadId })
+              if (blockReason) {
+                console.info('[twilio-missed-call] missed_call_auto blocked', { reason: blockReason })
+              } else {
+                unknownAutoQueued = true
+                sendDelayed(async () => {
+                  const stillBlocked = await automatedSmsBlockReason({ phone: fromPhoneUnknown, leadId: newLeadId })
+                  if (stillBlocked) {
+                    console.info('[twilio-missed-call] missed_call_auto blocked', { reason: stillBlocked })
+                    return
+                  }
+                  await safeSendSMS({
+                    body: response.message as string,
+                    from: unknownReplyFromRaw as string,
+                    to: fromPhoneUnknown as string,
+                    senderUse: 'reply',
+                  })
+                  await supabase.from('lead_activities').insert({
+                    lead_id: newLeadId,
+                    activity_type: 'sms',
+                    description: response.message,
+                    agent: 'System',
+                    metadata: {
+                      direction: 'outbound',
+                      from: unknownReplyFromRaw as string,
+                      to: fromPhoneUnknown,
+                      trigger: 'missed_call_auto',
+                      variant: response.variant,
+                      agent_name: response.agentName,
+                    }
+                  })
+                }, response.delaySeconds, response.delaySeconds + 5)
+              }
+            } catch (error) {
+              console.error('[twilio-missed-call] missed_call_auto suppression check failed closed:', error)
+            }
           }
         }
 
         // Alert eligible agents about unknown caller.
-        const agentAlert = `📞 Missed call from unknown number ${formatPhone(from)}${response?.shouldSend ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
+        const agentAlert = `📞 Missed call from unknown number ${formatPhone(from)}${unknownAutoQueued ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
         await sendTeamLeadAlert({
           leadId: newLeadId,
           smsBody: agentAlert,
@@ -301,7 +330,7 @@ export async function POST(req: Request) {
             from,
             calledNumber: to || TWILIO_PHONE,
             callSid,
-            auto_text_sent: Boolean(response?.shouldSend),
+            auto_text_sent: unknownAutoQueued,
           },
         })
 
@@ -311,7 +340,7 @@ export async function POST(req: Request) {
             event_type: 'missed_call',
             priority: 'high',
             title: `Missed call from unknown: ${formatPhone(from)}`,
-            description: `Unknown caller${response?.shouldSend ? ', auto-text sent' : ''}. Watch for YES reply.`,
+            description: `Unknown caller${unknownAutoQueued ? ', auto-text sent' : ''}. Watch for YES reply.`,
             lead_id: newLeadId,
             action_url: newLeadId ? `/leads/${newLeadId}` : undefined,
           })

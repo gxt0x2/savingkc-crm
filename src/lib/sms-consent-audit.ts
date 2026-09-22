@@ -1,6 +1,6 @@
 import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
-import { handleOptIn, handleOptOut, isOptedOut, isStartKeyword, isStopKeyword } from '@/lib/sms-opt-out'
+import { classifySmsOptOut, handleOptIn, handleOptOut, isOptedOut, isStartKeyword } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 import { isUniqueViolation, stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 
@@ -10,6 +10,7 @@ export interface SmsConsentAuditInput {
   keyword: string
   messageSid: string | null
   source: 'twilio_sms_webhook' | 'carrier_sms_fallback'
+  inboundExcerpt?: string | null
 }
 
 interface InboundSmsConsentInput extends SmsConsentAuditInput {
@@ -21,8 +22,13 @@ const OPT_IN_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Message>Y
 
 /** Apply carrier consent commands before any normal inbound-message processing. */
 export async function processInboundSmsConsent(input: InboundSmsConsentInput): Promise<string | null> {
-  if (isStopKeyword(input.keyword)) {
-    await persistSmsOptOutWithAudit(input)
+  const optOut = classifySmsOptOut(input.keyword)
+  if (optOut) {
+    await persistSmsOptOutWithAudit({
+      ...input,
+      keyword: optOut.reason,
+      inboundExcerpt: optOut.reason === 'NATURAL_LANGUAGE_OPT_OUT' ? input.keyword.trim().slice(0, 180) : null,
+    })
     return OPT_OUT_TWIML
   }
   if (isStartKeyword(input.keyword) || (
@@ -75,6 +81,7 @@ export async function recordSmsOptOutActivity(input: SmsConsentAuditInput): Prom
       source: input.source,
       event: 'sms_opt_out',
       hub_action: 'mark_read',
+      ...(input.inboundExcerpt ? { inbound_excerpt: input.inboundExcerpt } : {}),
       phone,
       from: phone,
       ...(input.to ? { to: input.to } : {}),

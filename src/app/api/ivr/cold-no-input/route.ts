@@ -2,7 +2,7 @@ import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 
-import { isOptedOut } from '@/lib/sms-opt-out'
+import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { safeSendSMS } from '@/lib/safe-communications'
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'call',
-    description: `Cold call callback from ${formatPhone(from)} — didn't press 1, auto-texting`,
+    description: `Cold call callback from ${formatPhone(from)} — didn't press 1`,
     agent: 'System',
     metadata: { direction: 'inbound', from, calledNumber, tag: 'cold_callback_no_input' }
   })
@@ -59,34 +59,53 @@ export async function POST(req: Request) {
     }
   }
 
-  // Auto-text (delayed 60-120s, with dedup)
-  const optedOut = await isOptedOut(from)
+  // Auto-text (delayed 60-120s, with dedup). Recheck suppression inside the
+  // delay so a stop that lands after this webhook still cancels the send.
+  let autoTextScheduled = false
   const { allowed: phoneOk } = phoneRateLimit(from)
-  if (!optedOut && phoneOk) {
+  if (phoneOk) {
     const autoText = `Hey! We recently tried reaching you about a property in your area. If you've thought about selling, we'd love to make you a cash offer — no repairs, no fees. Just reply YES if you're interested.`
     const isDupe = await isDuplicateSms(from, autoText)
     if (!isDupe) {
-      sendDelayed(async () => {
-        await safeSendSMS({ body: autoText, from: calledNumber, to: from, senderUse: 'reply' })
-        await logSmsSend(from, autoText, calledNumber, leadId || undefined)
-        if (leadId) {
-          await supabase.from('lead_activities').insert({
-            lead_id: leadId,
-            activity_type: 'sms',
-            description: autoText,
-            agent: 'System',
-            metadata: { direction: 'outbound', to: from, trigger: 'cold_callback_auto_text' }
-          })
+      try {
+        const blockReason = await automatedSmsBlockReason({ phone: from, leadId })
+        if (blockReason) {
+          console.info('[IVR/cold-no-input] cold_callback_auto_text blocked', { reason: blockReason })
+        } else {
+          autoTextScheduled = true
+          sendDelayed(async () => {
+            const stillBlocked = await automatedSmsBlockReason({ phone: from, leadId })
+            if (stillBlocked) {
+              console.info('[IVR/cold-no-input] cold_callback_auto_text blocked', { reason: stillBlocked })
+              return
+            }
+            await safeSendSMS({ body: autoText, from: calledNumber, to: from, senderUse: 'reply' })
+            await logSmsSend(from, autoText, calledNumber, leadId || undefined)
+            if (leadId) {
+              await supabase.from('lead_activities').insert({
+                lead_id: leadId,
+                activity_type: 'sms',
+                description: autoText,
+                agent: 'System',
+                metadata: { direction: 'outbound', to: from, trigger: 'cold_callback_auto_text' }
+              })
+            }
+          }, 60, 120)
         }
-      }, 60, 120)
+      } catch (error) {
+        console.error('[IVR/cold-no-input] cold_callback_auto_text suppression check failed closed:', error)
+      }
     }
   }
 
   // Hang up — don't waste agent time
+  const spoken = autoTextScheduled
+    ? "No problem. We'll send you a quick text with more info. Have a great day."
+    : 'No problem. Have a great day.'
   return new NextResponse(
     `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Matthew">No problem. We'll send you a quick text with more info. Have a great day.</Say>
+  <Say voice="Polly.Matthew">${spoken}</Say>
   <Hangup />
 </Response>`,
     { headers: { 'Content-Type': 'text/xml' } }

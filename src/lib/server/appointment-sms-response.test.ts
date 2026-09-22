@@ -14,6 +14,15 @@ describe('appointment SMS replies', () => {
   it.each(['Thanks', 'Call me', 'Maybe', 'Stop by later', 'yes but maybe later'])('leaves unclear replies for the rep: %s', message => {
     expect(classifyAppointmentSmsReply(message)).toBeNull()
   })
+  it('does not apply a natural-language stop as an appointment reply', async () => {
+    await expect(recordAppointmentSmsResponse({
+      leadId: 'lead-1',
+      message: 'Please stop texting me',
+      messageSid: 'SM-stop',
+    })).resolves.toEqual({ handled: false })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
   it('uses one atomic idempotent reply transaction', async () => {
     rpc.mockResolvedValue({ data: 'appointment-1', error: null })
     await expect(recordAppointmentSmsResponse({ leadId: 'lead-1', message: 'yes', messageSid: 'SM123' })).resolves.toEqual({ handled: true, appointmentId: 'appointment-1', response: 'confirm' })

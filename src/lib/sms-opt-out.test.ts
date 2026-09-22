@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { from: mocks.from } }))
 
-import { handleOptIn, handleOptOut, isOptedOut } from './sms-opt-out'
+import { classifySmsOptOut, handleOptIn, handleOptOut, isOptedOut, isSmsOptOutMessage } from './sms-opt-out'
 
 describe('SMS suppression persistence', () => {
   beforeEach(() => {
@@ -46,5 +46,55 @@ describe('SMS suppression persistence', () => {
     mocks.upsert.mockResolvedValue({ error: { message: 'write failed' } })
 
     await expect(handleOptIn('+19135550123')).rejects.toThrow('could not be saved')
+  })
+})
+
+describe('SMS opt-out language', () => {
+  it.each([
+    'STOP',
+    'stop',
+    'STOP.',
+    'UNSUBSCRIBE',
+    'CANCEL',
+    'END',
+    'QUIT',
+    'STOPALL',
+    'stop all',
+  ])('treats exact carrier keyword %j as STOP-class opt-out', (message) => {
+    expect(isSmsOptOutMessage(message)).toBe(true)
+    expect(classifySmsOptOut(message)?.reason).not.toBe('NATURAL_LANGUAGE_OPT_OUT')
+  })
+
+  it.each([
+    'Please stop texting me',
+    'Stop texting this number',
+    'Do not contact me',
+    "Don't call or text me again",
+    'Take me off your list',
+    'Please remove me from your texts',
+    'Unsubscribe me',
+    'I want to opt out',
+    'No more texts please',
+    'DND',
+    'This is a do not call number',
+    'Leave me alone',
+  ])('treats natural-language opt-out %j as an opt-out', (message) => {
+    expect(classifySmsOptOut(message)).toEqual({ reason: 'NATURAL_LANGUAGE_OPT_OUT' })
+  })
+
+  it.each([
+    'Yes I might want to sell',
+    'Can you stop by the house Thursday?',
+    'Please cancel the appointment',
+    'Cancel please',
+    'Stop by later',
+    "Don't stop, I'm interested",
+    'Please do not unsubscribe me',
+    'Never stop texting me',
+    "Don't call until Thursday",
+    'End of the month works',
+    'What is your offer?',
+  ])('does not treat ordinary seller language %j as an opt-out', (message) => {
+    expect(isSmsOptOutMessage(message)).toBe(false)
   })
 })

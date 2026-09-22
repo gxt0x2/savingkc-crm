@@ -5,7 +5,7 @@
 // Both the canonical single-send endpoint (/api/conversations/send) and the bulk
 // sender (/api/sms/bulk) call this so they never drift apart.
 
-import { isOptedOut } from '@/lib/sms-opt-out'
+import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
@@ -133,7 +133,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
   const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, signal, beforePersistence } = input
   const body = input.body.trim()
 
-  if (await isOptedOut(phone)) return { status: 'skipped', reason: 'opted_out' }
+  if (await automatedSmsBlockReason({ phone, leadId: leadId ?? null })) return { status: 'skipped', reason: 'opted_out' }
   if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
 
   const from = await resolveSmsFromNumber(leadId, phone, fromPhone)
