@@ -10,7 +10,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { isOptedOut } from '@/lib/sms-opt-out'
+import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { getTemplate, resolveTemplate, incrementUsage } from '@/lib/sms-templates'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
@@ -111,16 +111,28 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Check opt-out
+      // Check opt-out. Internal alerts are team operational texts, not seller A2P.
       const isInternal = meta.is_internal === true || meta.internal_alert === true
-      if (!isInternal && (await isOptedOut(phone))) {
-        // Mark as skipped
-        await supabase
-          .from('lead_activities')
-          .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'opted_out' } })
-          .eq('id', task.id)
-        skipped++
-        continue
+      if (!isInternal) {
+        try {
+          const blockReason = await automatedSmsBlockReason({ phone, leadId: task.lead_id })
+          if (blockReason) {
+            await supabase
+              .from('lead_activities')
+              .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'opted_out', suppression_reason: blockReason } })
+              .eq('id', task.id)
+            skipped++
+            continue
+          }
+        } catch (error) {
+          console.error('[sms-sender] suppression check failed closed:', error)
+          await supabase
+            .from('lead_activities')
+            .update({ metadata: { ...meta, status: 'skipped', skip_reason: 'consent_unverified' } })
+            .eq('id', task.id)
+          skipped++
+          continue
+        }
       }
 
       // Prefer the rendered body stored by v2 producers. Template fallback is

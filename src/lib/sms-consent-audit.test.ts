@@ -10,13 +10,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/supabase-lazy', () => ({ supabase: { from: mocks.from } }))
 vi.mock('@/lib/google-ads-phone', () => ({ phoneLookupVariants: (phone: string) => [phone] }))
-vi.mock('@/lib/sms-opt-out', () => ({
-  handleOptOut: mocks.handleOptOut,
-  handleOptIn: mocks.handleOptIn,
-  isOptedOut: mocks.isOptedOut,
-  isStopKeyword: (value: string) => value.trim().toUpperCase() === 'STOP',
-  isStartKeyword: (value: string) => value.trim().toUpperCase() === 'START',
-}))
+vi.mock('@/lib/sms-opt-out', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/sms-opt-out')>('@/lib/sms-opt-out')
+  return {
+    ...actual,
+    handleOptOut: mocks.handleOptOut,
+    handleOptIn: mocks.handleOptIn,
+    isOptedOut: mocks.isOptedOut,
+  }
+})
 
 import { processInboundSmsConsent } from './sms-consent-audit'
 
@@ -75,6 +77,25 @@ describe('SMS consent persistence and audit', () => {
     mocks.insert.mockResolvedValue({ error: { message: 'audit unavailable' } })
 
     await expect(processInboundSmsConsent(input)).resolves.toContain('unsubscribed')
+  })
+
+  it('persists natural-language opt-out the same way as STOP', async () => {
+    const keyword = 'Please stop texting me and take me off your list'
+    await expect(processInboundSmsConsent({ ...input, keyword })).resolves.toContain('unsubscribed')
+
+    expect(mocks.handleOptOut).toHaveBeenCalledWith(input.from, 'NATURAL_LANGUAGE_OPT_OUT')
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
+      description: 'SMS opt-out recorded (NATURAL_LANGUAGE_OPT_OUT)',
+      metadata: expect.objectContaining({
+        event: 'sms_opt_out',
+        inbound_excerpt: keyword,
+      }),
+    }))
+  })
+
+  it('does not record opt-out for appointment or scheduling language', async () => {
+    await expect(processInboundSmsConsent({ ...input, keyword: 'Please cancel the appointment' })).resolves.toBeNull()
+    expect(mocks.handleOptOut).not.toHaveBeenCalled()
   })
 
   it('persists START and returns an opt-in confirmation', async () => {

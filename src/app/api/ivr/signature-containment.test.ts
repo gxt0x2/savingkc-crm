@@ -77,9 +77,10 @@ vi.mock('@/lib/prospect-to-lead', () => ({
   createEnrichedLeadFromProspect: mocks.createEnrichedLeadFromProspect,
 }))
 
-vi.mock('@/lib/sms-opt-out', () => ({
-  isOptedOut: mocks.isOptedOut,
-}))
+vi.mock('@/lib/sms-opt-out', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/sms-opt-out')>('@/lib/sms-opt-out')
+  return { ...actual, isOptedOut: mocks.isOptedOut }
+})
 
 vi.mock('@/lib/sms-dedup', () => ({
   isDuplicateSms: mocks.isDuplicateSms,

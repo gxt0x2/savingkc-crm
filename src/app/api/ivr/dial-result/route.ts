@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
-import { isOptedOut } from '@/lib/sms-opt-out'
+import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
 import { phoneRateLimit } from '@/middleware/rate-limit'
 import { safeSendSMS } from '@/lib/safe-communications'
@@ -492,9 +492,8 @@ export async function POST(req: Request) {
 
   // Auto-text ONLY when both agents miss IVR calls (not direct calls)
   if (from && resolvedLeadId && !isDirect && !isInternalTestCaller) {
-    const optedOut = await isOptedOut(from)
     const { allowed: phoneOk } = phoneRateLimit(from)
-    if (!optedOut && phoneOk) {
+    if (phoneOk) {
       const isColdCallback = calledNumber && ['+18163100845','+18162538313','+18164761344','+18164761589','+18166404701','+18165788107','+18166408032','+18166536616'].includes(calledNumber)
       const autoText = isGoogleAdsCall
         ? googleAdsMissedCallerMessage(calledNumber)
@@ -503,32 +502,47 @@ export async function POST(req: Request) {
         : type === 'seller'
           ? `Hi, this is Saving KC Homebuyers. Sorry we missed your call! Are you still looking to sell your property? We'd love to chat — reply YES or call us back anytime.`
           : `Hi, this is Saving KC Homebuyers. Sorry we missed your call! How can we help? Feel free to call back or reply to this text.`
+      const followupTrigger = isGoogleAdsCall ? 'google_ads_missed_call_followup' : 'missed_call_followup'
       const isDupe = await isDuplicateSms(from, autoText)
       if (!isDupe) {
-        sendDelayed(async () => {
-          await safeSendSMS({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from, senderUse: 'reply' })
-          await logSmsSend(from, autoText, calledNumber || TWILIO_PHONE, resolvedLeadId)
-          await supabase.from('lead_activities').insert({
-            lead_id: resolvedLeadId,
-            activity_type: 'sms',
-            description: autoText,
-            agent: 'System',
-            metadata: {
-              direction: 'outbound',
-              to: from,
-              trigger: isGoogleAdsCall ? 'google_ads_missed_call_followup' : 'missed_call_followup',
-              ...(isGoogleAdsCall && {
-                source: googleAdsProfile.source,
-                traffic_source: 'google_ads',
-                campaign: googleAdsProfile.campaign,
-                tracking_number: googleAdsProfile.trackingDigits,
-                landing_page: googleAdsProfile.landingPage,
-                phone_profile: googleAdsProfile.key,
-                calledNumber,
-              }),
-            }
-          })
-        }, isGoogleAdsCall ? 60 : 180, isGoogleAdsCall ? 90 : 300)
+        try {
+          const blockReason = await automatedSmsBlockReason({ phone: from, leadId: resolvedLeadId })
+          if (blockReason) {
+            console.info(`[IVR/dial-result] ${followupTrigger} blocked`, { reason: blockReason })
+          } else {
+            sendDelayed(async () => {
+              const stillBlocked = await automatedSmsBlockReason({ phone: from, leadId: resolvedLeadId })
+              if (stillBlocked) {
+                console.info(`[IVR/dial-result] ${followupTrigger} blocked`, { reason: stillBlocked })
+                return
+              }
+              await safeSendSMS({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from, senderUse: 'reply' })
+              await logSmsSend(from, autoText, calledNumber || TWILIO_PHONE, resolvedLeadId)
+              await supabase.from('lead_activities').insert({
+                lead_id: resolvedLeadId,
+                activity_type: 'sms',
+                description: autoText,
+                agent: 'System',
+                metadata: {
+                  direction: 'outbound',
+                  to: from,
+                  trigger: followupTrigger,
+                  ...(isGoogleAdsCall && {
+                    source: googleAdsProfile.source,
+                    traffic_source: 'google_ads',
+                    campaign: googleAdsProfile.campaign,
+                    tracking_number: googleAdsProfile.trackingDigits,
+                    landing_page: googleAdsProfile.landingPage,
+                    phone_profile: googleAdsProfile.key,
+                    calledNumber,
+                  }),
+                }
+              })
+            }, isGoogleAdsCall ? 60 : 180, isGoogleAdsCall ? 90 : 300)
+          }
+        } catch (error) {
+          console.error(`[IVR/dial-result] ${followupTrigger} suppression check failed closed:`, error)
+        }
       }
     }
   }

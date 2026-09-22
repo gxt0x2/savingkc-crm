@@ -110,14 +110,25 @@ async function sendEmailDraft(draft: SendDraftRow, body: string, fromEmail?: str
 async function sendSmsDraft(draft: SendDraftRow, body: string, fromPhone?: string): Promise<DeliveryResult> {
   if (!draft.recipient_phone) throw new DraftSendError('Draft has no recipient phone', 400)
 
-  const [{ isOptedOut }, { isDuplicateSms, logSmsSend }, { safeSendSMS }] = await Promise.all([
-    import('@/lib/sms-opt-out'),
+  const [{ automatedSmsBlockReason }, { isDuplicateSms, logSmsSend }, { safeSendSMS }] = await Promise.all([
+    import('@/lib/sms-send-gate'),
     import('@/lib/sms-dedup'),
     import('@/lib/safe-communications'),
   ])
 
-  if (await isOptedOut(draft.recipient_phone)) {
-    throw new DraftSendError('This number has opted out of SMS messages', 400)
+  if (draft.recipient_role !== 'internal') {
+    let blockReason: string | null
+    try {
+      blockReason = await automatedSmsBlockReason({
+        phone: draft.recipient_phone,
+        leadId: draft.recipient_role === 'seller' ? draft.lead_id : null,
+      })
+    } catch {
+      throw new DraftSendError('SMS suppression status could not be verified', 503)
+    }
+    if (blockReason) {
+      throw new DraftSendError('This number has opted out of SMS messages', 400)
+    }
   }
   if (await isDuplicateSms(draft.recipient_phone, body)) {
     throw new DraftSendError('Duplicate SMS - same message sent to this number within 24 hours', 409)
