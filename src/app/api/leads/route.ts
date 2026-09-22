@@ -5,6 +5,7 @@ import { notifyNewLead } from '@/lib/ari-briefing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
@@ -651,9 +652,12 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = (page - 1) * limit
 
-    const { data, error, count } = await supabase
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    let leadQuery = supabase
       .from('leads')
       .select('*', { count: 'exact' })
+    if (sandboxLeadId) leadQuery = leadQuery.eq('id', sandboxLeadId)
+    const { data, error, count } = await leadQuery
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 

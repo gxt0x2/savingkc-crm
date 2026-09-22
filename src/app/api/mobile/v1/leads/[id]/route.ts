@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { operatingDepartmentForStage } from '@/lib/operating-model/department-responsibility'
 import { listWorkItems } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -48,6 +49,8 @@ export async function GET(
     if (!id) {
       return NextResponse.json({ error: 'id required' }, { status: 400, headers: mobileNoStoreHeaders() })
     }
+    const hiddenLead = await oauthReviewForeignLeadResponse(id, req)
+    if (hiddenLead) return hiddenLead
 
     const db = supabaseAdmin()
     const [leadRes, activityRes, workItemsState, handoffsRes] = await Promise.all([

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
+import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-session'
 import { buildLeadActivityInsert } from '@/lib/server/lead-activity-command'
 
 export async function GET(
@@ -15,6 +16,8 @@ export async function GET(
     if (unauthorized) return unauthorized
 
     const { id } = await params
+    const hiddenLead = await oauthReviewForeignLeadResponse(id, req)
+    if (hiddenLead) return hiddenLead
     const limitParam = parseInt(req.nextUrl.searchParams.get('limit') || '50', 10)
     const limit = Math.min(Math.max(limitParam, 1), 100)
     const activityType = req.nextUrl.searchParams.get('type')?.trim() || null
@@ -59,6 +62,8 @@ export async function POST(
     }
 
     const { id } = await params
+    const hiddenLead = await oauthReviewForeignLeadResponse(id, req)
+    if (hiddenLead) return hiddenLead
     const body = await req.json()
 
     if (!id) {

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import {
   ConversationReadModelInputError,
   ConversationReadModelUnavailableError,
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
       actorName = actor.name
     }
 
+    const sandboxLeadId = await resolveOauthReviewSandboxLeadId(request)
     const page = await readConversationThreads({
       limit,
       queue,
@@ -67,6 +69,7 @@ export async function GET(request: Request) {
       timeframe,
       actorName,
       cursor: searchParams.get('cursor'),
+      ...(sandboxLeadId ? { restrictedLeadId: sandboxLeadId } : {}),
     })
     return NextResponse.json(page, {
       headers: {

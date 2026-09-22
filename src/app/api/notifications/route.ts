@@ -1,10 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 // GET /api/notifications — list recent notifications
 export async function GET(req: NextRequest) {
+  if (await resolveOauthReviewSandboxLeadId(req)) {
+    return NextResponse.json({ notifications: [], unread_count: 0 })
+  }
   const db = supabaseAdmin()
   const url = new URL(req.url)
   const unreadOnly = url.searchParams.get('unread') === '1'
@@ -39,6 +43,9 @@ export async function GET(req: NextRequest) {
 
 // PATCH /api/notifications — mark notifications as read
 export async function PATCH(req: NextRequest) {
+  if (await resolveOauthReviewSandboxLeadId(req)) {
+    return NextResponse.json({ ok: true })
+  }
   const db = supabaseAdmin()
   const body = await req.json()
 
