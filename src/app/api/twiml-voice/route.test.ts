@@ -431,6 +431,21 @@ describe('TwiML request containment', () => {
   })
 })
 
+const COLD_CALLBACK_NUMBERS = [
+  '+18163100845',
+  '+18162538313',
+  '+18164761344',
+  '+18164761589',
+  '+18166404701',
+  '+18165788107',
+  '+18166408032',
+  '+18166536616',
+]
+
+const COLD_CALLBACK_PROMPT = "Hey, thanks for calling. We buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press one. For anything else, press two."
+
+const COMPANY_NAME = /saving\s*kc|savingkc|homebuyers/i
+
 describe('verified inbound TwiML routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -464,6 +479,23 @@ describe('verified inbound TwiML routing', () => {
 
     expect(text).toContain('<Gather')
     expect(text).toContain('/api/ivr/handle-input')
+    expect(text).toContain('/api/audio/ivr-greeting.mp3')
+    expect(text).not.toContain('coldcall=1')
+    expect(text).not.toContain(COLD_CALLBACK_PROMPT)
+  })
+
+  it.each(COLD_CALLBACK_NUMBERS)('plays the unbranded press-1/press-2 script for cold callback %s', async (to) => {
+    const { text } = await responseText(inboundRequest(to))
+    const gather = text.match(/<Gather\b[^>]*>/)?.[0] ?? ''
+
+    expect(gather).toContain('numDigits="1"')
+    expect(gather).toContain('coldcall=1')
+    expect(gather).toContain('timeout="15"')
+    expect(text).toContain(`<Say voice="Polly.Matthew">${COLD_CALLBACK_PROMPT}</Say>`)
+    expect(text).toContain('/api/ivr/cold-no-input')
+    expect(text).not.toContain('ivr-press1.mp3')
+    expect(text).not.toContain('ivr-greeting.mp3')
+    expect(text).not.toMatch(COMPANY_NAME)
   })
 
   it('preserves emergency dialing only after a verified request is classified inbound', async () => {
