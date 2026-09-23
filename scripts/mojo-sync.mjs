@@ -478,7 +478,8 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
       // multiple calls in one day, so longest-per-contact is not a safe identity.
       const recording = matchMojoRecording(recordingMap, contactId, callAt)
       if (recording) {
-        log(`  Found recording for contact ${contactId}: ${recording.duration}s (record_id: ${recording.recordId})`)
+        const extras = recording.secondaryRecordIds?.length ? `; also ${recording.secondaryRecordIds.join(',')}` : ''
+        log(`  Found recording for contact ${contactId}: ${recording.duration}s (record_id: ${recording.recordId}${extras})`)
       }
 
       // Use follow-up date from activity stream or contact details
@@ -513,6 +514,9 @@ export async function buildCallRecords(activities, lastActivityId, sessionId, re
         provider_action_id: String(canonicalActivityId),
         provider_activity_ids: entry.activityIds.map(String),
         provider_recording_id: recording?.recordId || '',
+        ...(recording?.secondaryRecordIds?.length
+          ? { secondary_provider_recording_ids: recording.secondaryRecordIds }
+          : {}),
         qualified_by_agent: entry.isQualifiedLead,
         has_appointment: entry.hasAppointment,
         follow_up_date: followUpDate,

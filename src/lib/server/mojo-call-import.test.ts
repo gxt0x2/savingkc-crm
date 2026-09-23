@@ -116,6 +116,13 @@ describe('canonical Mojo call import', () => {
       },
     })
     expect(mergeMojoCallEvidence(merged.call, merged.call).improved).toBe(false)
+    const withSecondary = mergeMojoCallEvidence(merged.call, {
+      ...merged.call,
+      secondary_provider_recording_ids: ['87428384'],
+    })
+    expect(withSecondary.call.secondary_provider_recording_ids).toEqual(['87428384'])
+    expect(withSecondary.improved).toBe(true)
+    expect(mergeMojoCallEvidence(withSecondary.call, withSecondary.call).improved).toBe(false)
   })
 
   it('preserves a governed qualification exception across later provider syncs', () => {

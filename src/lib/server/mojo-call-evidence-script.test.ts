@@ -15,12 +15,51 @@ describe('Mojo script evidence helpers', () => {
       expect(matchMojoRecording(index, 7, parseMojoTimestamp('09/10/2026 10:00 AM'))).toBeNull()
     }
   })
-  it('holds multiple plausible recordings instead of guessing by length or proximity', () => {
+  it('picks the nearest in-window recording and keeps the other id for review', () => {
     const index = indexMojoRecordings([
       { contact_id: 7, audio: 'https://example.com/a.mp3', duration: '01:00', record_id: 1, call_date: '09/10/2026 10:00 AM' },
       { contact_id: 7, audio: 'https://example.com/b.mp3', duration: '05:00', record_id: 2, call_date: '09/10/2026 10:10 AM' },
     ])
-    expect(matchMojoRecording(index, 7, parseMojoTimestamp('09/10/2026 10:01 AM'))).toBeNull()
+    expect(matchMojoRecording(index, 7, parseMojoTimestamp('09/10/2026 10:01 AM'))).toMatchObject({
+      audio: 'https://example.com/a.mp3',
+      duration: 60,
+      recordId: '1',
+      secondaryRecordIds: ['2'],
+    })
+    expect(matchMojoRecording(index, 7, parseMojoTimestamp('09/10/2026 10:09 AM'))).toMatchObject({
+      audio: 'https://example.com/b.mp3',
+      recordId: '2',
+    })
+  })
+  it('breaks an equal-distance tie by longest duration', () => {
+    const index = indexMojoRecordings([
+      { contact_id: 6815, audio: 'https://example.com/drop.mp3', duration_seconds: 74, record_id: 87428384, call_date: '09/10/2026 10:00 AM' },
+      { contact_id: 6815, audio: 'https://example.com/reconnect.mp3', duration_seconds: 2273, record_id: 87429607, call_date: '09/10/2026 10:10 AM' },
+    ])
+    expect(matchMojoRecording(index, 6815, parseMojoTimestamp('09/10/2026 10:05 AM'))).toMatchObject({
+      audio: 'https://example.com/reconnect.mp3',
+      duration: 2273,
+      recordId: '87429607',
+      secondaryRecordIds: ['87428384'],
+    })
+  })
+  it('picks the longer reconnect recording when it is the nearest timed candidate', () => {
+    const index = indexMojoRecordings([
+      { contact_id: 6815, audio: 'https://example.com/drop.mp3', duration_seconds: 74, record_id: 87428384, call_date: '09/10/2026 10:00 AM' },
+      { contact_id: 6815, audio: 'https://example.com/reconnect.mp3', duration_seconds: 2273, record_id: 87429607, call_date: '09/10/2026 10:02 AM' },
+    ])
+    expect(matchMojoRecording(index, 6815, parseMojoTimestamp('09/10/2026 10:40 AM'))).toMatchObject({
+      recordId: '87429607',
+      duration: 2273,
+      secondaryRecordIds: ['87428384'],
+    })
+  })
+  it('stays unmatched when every dated recording is outside the window', () => {
+    const index = indexMojoRecordings([
+      { contact_id: 7, audio: 'https://example.com/a.mp3', duration: '01:00', record_id: 1, call_date: '09/10/2026 08:00 AM' },
+      { contact_id: 7, audio: 'https://example.com/b.mp3', duration: '05:00', record_id: 2, call_date: '09/10/2026 12:00 PM' },
+    ])
+    expect(matchMojoRecording(index, 7, parseMojoTimestamp('09/10/2026 10:00 AM'))).toBeNull()
   })
   it('uses the Central calendar date and real DST offset', () => {
     expect(centralDateString(new Date('2026-09-09T02:00:00Z'))).toBe('2026-09-08')

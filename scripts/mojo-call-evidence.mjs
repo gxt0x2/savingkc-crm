@@ -134,15 +134,20 @@ export function matchMojoRecording(recordingIndex, contactId, callAt) {
       .filter(({ distance }) => distance <= RECORDING_MATCH_WINDOW_MS)
       .sort((left, right) => left.distance - right.distance || right.recording.duration - left.recording.duration)
     : []
-  // Contact identity alone is insufficient. Ambiguous or undated evidence
-  // remains unassociated for review; never choose an old sole candidate.
-  const match = timed.length === 1 ? timed[0].recording : null
+  // Contact identity alone is insufficient. Undated and out-of-window
+  // recordings stay unassociated, including a sole undated contact match.
+  // Several dated recordings inside the window take the nearest timestamp,
+  // then the longest duration. Other in-window ids stay available for a
+  // later call and are returned for review.
+  const match = timed[0]?.recording ?? null
   if (!match) return null
   match.consumed = true
+  const secondaryRecordIds = timed.slice(1).map(({ recording }) => recording.recordId).filter(Boolean)
   return {
     audio: match.audio,
     duration: match.duration,
     recordId: match.recordId,
     callAt: new Date(match.timestamp).toISOString(),
+    ...(secondaryRecordIds.length ? { secondaryRecordIds } : {}),
   }
 }
