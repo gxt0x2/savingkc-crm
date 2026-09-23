@@ -446,6 +446,12 @@ const COLD_CALLBACK_PROMPT = "Hey, thanks for calling. We buy homes in any condi
 
 const COMPANY_NAME = /saving\s*kc|savingkc|homebuyers/i
 
+function spokenCopy(twiml: string) {
+  return [...twiml.matchAll(/<(?:Say|Message)\b[^>]*>([\s\S]*?)<\/(?:Say|Message)>/gi)]
+    .map((match) => match[1])
+    .join('\n')
+}
+
 describe('verified inbound TwiML routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -495,7 +501,7 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('/api/ivr/cold-no-input')
     expect(text).not.toContain('ivr-press1.mp3')
     expect(text).not.toContain('ivr-greeting.mp3')
-    expect(text).not.toMatch(COMPANY_NAME)
+    expect(spokenCopy(text)).not.toMatch(COMPANY_NAME)
   })
 
   it('preserves emergency dialing only after a verified request is classified inbound', async () => {

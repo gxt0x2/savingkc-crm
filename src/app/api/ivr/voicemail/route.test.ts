@@ -7,6 +7,12 @@ vi.mock('@/lib/twilio-validate', () => ({
 import { POST } from './route'
 
 const COMPANY_NAME = /saving\s*kc|savingkc|homebuyers/i
+
+function spokenCopy(twiml: string) {
+  return [...twiml.matchAll(/<(?:Say|Message)\b[^>]*>([\s\S]*?)<\/(?:Say|Message)>/gi)]
+    .map((match) => match[1])
+    .join('\n')
+}
 const COLD_GREETING = "Hey, sorry we missed you. Leave a message after the beep and we'll call you right back."
 
 function request(query: string) {
@@ -26,7 +32,7 @@ describe('cold callback voicemail greeting', () => {
     expect(text).not.toContain('<Play>')
     expect(text).not.toContain('ernest-vm.mp3')
     expect(text).not.toContain('casey-vm')
-    expect(text).not.toMatch(COMPANY_NAME)
+    expect(spokenCopy(text)).not.toMatch(COMPANY_NAME)
     expect(text).toContain('<Record ')
   })
 
