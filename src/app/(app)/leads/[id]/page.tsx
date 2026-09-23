@@ -766,6 +766,7 @@ export default function LeadDetailPage() {
         lead={presentationLead}
         activities={workspaceActivities}
         appointment={activeAppointment ? {
+          appointmentId: activeAppointment.appointmentId,
           scheduledAt: activeAppointment.scheduledAt,
           address: activeAppointment.address,
           type: activeAppointment.type,
@@ -784,6 +785,7 @@ export default function LeadDetailPage() {
         }}
         onAppointment={() => dispatchLeadActionModal({ type: 'open', modal: 'appointment' })}
         onAppointmentOutcome={() => setOutcomeModalOpen(true)}
+        onAppointmentDeleted={() => { refreshAll() }}
         onTask={() => dispatchLeadActionModal({ type: 'open', modal: 'task' })}
         onContract={() => setContractModalOpen(true)}
         onOpenProperty={() => setDetailsExpanded(true)}

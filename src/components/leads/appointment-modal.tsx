@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { DeleteAppointmentButton } from '@/components/leads/delete-appointment-button'
 import { Icon } from '@/components/ui/icon'
 
 interface AppointmentModalProps {
@@ -219,7 +220,19 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
             )}
           </div>
 
-          <div className="px-6 py-4 border-t border-[color:var(--ck-border)] flex gap-3">
+          <div className="px-6 py-4 border-t border-[color:var(--ck-border)] flex items-center gap-3">
+            {initialAppointment?.appointmentId || initialAppointment?.scheduledAt ? (
+              <DeleteAppointmentButton
+                leadId={lead.id}
+                appointmentId={initialAppointment.appointmentId}
+                scheduledAt={initialAppointment.scheduledAt}
+                onDeleted={() => {
+                  onSuccess()
+                  onClose()
+                }}
+                className="text-sm font-bold text-[color:var(--crm-danger)]"
+              />
+            ) : null}
             <button
               type="button"
               onClick={onClose}

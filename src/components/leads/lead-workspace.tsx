@@ -61,6 +61,7 @@ export interface LeadWorkspaceActivity extends LeadConversationActivity {
 }
 
 interface LeadWorkspaceAppointment {
+  appointmentId?: string | null
   scheduledAt: string
   address?: string | null
   type?: string | null
@@ -78,6 +79,7 @@ interface LeadWorkspaceProps {
   onEmail: () => void
   onAppointment: () => void
   onAppointmentOutcome: () => void
+  onAppointmentDeleted?: () => void
   onTask: () => void
   onContract: () => void
   onOpenProperty: () => void
@@ -153,6 +155,7 @@ export function LeadWorkspace({
   onEmail,
   onAppointment,
   onAppointmentOutcome,
+  onAppointmentDeleted,
   onTask,
   onContract,
   onOpenProperty,
@@ -706,6 +709,7 @@ export function LeadWorkspace({
             onCall={onCall}
             onAppointment={onAppointment}
             onAppointmentOutcome={onAppointmentOutcome}
+            onAppointmentDeleted={onAppointmentDeleted}
             onOffer={openOffer}
             onContract={onContract}
             onTask={onTask}

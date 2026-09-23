@@ -19,6 +19,9 @@ vi.mock('@/lib/supabase/admin', () => ({
 import {
   appointmentBelongsToGoogleUser,
   appointmentEventTimes,
+  deleteGoogleCalendarEvent,
+  deleteOwnedAppointmentGoogleEvent,
+  googleCalendarDeleteWarning,
   googleCalendarSyncWarning,
   selectAppointmentGoogleOwnerEmail,
   syncOwnedAppointmentToGoogleCalendar,
@@ -239,7 +242,54 @@ describe('Google Calendar upsert helper', () => {
   it('warns when the owner calendar grant cannot complete the write', () => {
     expect(googleCalendarSyncWarning({ status: 'skipped', reason: 'no_token' })).toBeNull()
     expect(googleCalendarSyncWarning({ status: 'skipped', reason: 'calendar_api_failed' })).toBe('Google Calendar was not updated.')
+    expect(googleCalendarSyncWarning({ status: 'skipped', reason: 'calendar_delete_failed' })).toBe('Google Calendar event was not removed.')
     expect(googleCalendarSyncWarning({ status: 'skipped', reason: 'missing_calendar' })).toMatch(/Calendar permission/)
     expect(googleCalendarSyncWarning({ status: 'synced', eventId: 'evt-1' })).toBeNull()
+    expect(googleCalendarDeleteWarning({ status: 'skipped', reason: 'not_owner' }, true)).toBe('Google Calendar event was not removed.')
+    expect(googleCalendarDeleteWarning({ status: 'skipped', reason: 'no_event' }, false)).toBeNull()
+  })
+
+  it('deletes the stored primary-calendar event and treats a missing event as already gone', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response('gone', { status: 404 }))
+    await expect(deleteGoogleCalendarEvent({
+      accessToken: 'live-token',
+      eventId: 'evt owner',
+      fetchImpl,
+    })).resolves.toEqual({ ok: true, eventId: 'evt owner' })
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events/evt%20owner',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    await expect(deleteGoogleCalendarEvent({
+      accessToken: 'live-token',
+      eventId: 'missing',
+      fetchImpl,
+    })).resolves.toEqual({ ok: true, eventId: 'missing' })
+  })
+
+  it('asks the assignee calendar to delete and still reports a soft failure', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: 'backend' } }), { status: 500 }))
+    const result = await deleteOwnedAppointmentGoogleEvent({
+      actorEmail: 'ernest@savingkc.com',
+      assignedTo: 'ernest',
+      appointment: { id: 'appt-1', google_event_id: 'evt-1' },
+      loadToken: async () => token,
+      fetchImpl,
+    })
+    expect(result).toEqual({ status: 'skipped', reason: 'calendar_delete_failed' })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events/evt-1',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    await expect(deleteOwnedAppointmentGoogleEvent({
+      actorEmail: 'ernest@savingkc.com',
+      assignedTo: 'ernest',
+      appointment: { id: 'appt-2', google_event_id: null },
+      fetchImpl,
+    })).resolves.toEqual({ status: 'skipped', reason: 'no_event' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 })
