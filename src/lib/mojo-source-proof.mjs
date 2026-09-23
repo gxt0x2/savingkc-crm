@@ -25,6 +25,26 @@ export function validateMojoSourceCall(call, payload) {
       || parseMojoRecordingDuration(recording.duration_seconds ?? recording.duration) !== call.call_duration
       || Math.abs(timestamp - Date.parse(parseMojoTimestamp(action[3]))) > 90 * 60 * 1000) return 'recording_chronology_mismatch'
   } else if (Date.parse(call.call_date) !== Date.parse(parseMojoTimestamp(action[3]))) return 'activity_chronology_mismatch'
+  const secondaryIds = Array.isArray(call.secondary_provider_recording_ids) ? call.secondary_provider_recording_ids : []
+  if (secondaryIds.length) {
+    if (!call.provider_recording_id) return 'secondary_recording_without_primary'
+    const actionTime = Date.parse(parseMojoTimestamp(action[3]))
+    const seen = new Set()
+    for (const id of secondaryIds) {
+      if (typeof id !== 'string' || !/^\d+$/.test(id) || seen.has(id) || id === String(call.provider_recording_id)) {
+        return 'secondary_recording_source_mismatch'
+      }
+      seen.add(id)
+      const secondary = payload.recordings.find(row => String(row.record_id) === id)
+      if (!secondary || String(secondary.contact?.id ?? secondary.contact_id) !== call.provider_contact_id) {
+        return 'secondary_recording_source_mismatch'
+      }
+      const secondaryTimestamp = recordingTimestamp(secondary)
+      if (secondaryTimestamp == null || !Number.isFinite(actionTime) || Math.abs(secondaryTimestamp - actionTime) > 90 * 60 * 1000) {
+        return 'secondary_recording_chronology_mismatch'
+      }
+    }
+  }
   return null
 }
 

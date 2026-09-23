@@ -41,6 +41,11 @@ describe('Mojo source admission and callback continuity', () => {
       expect(validateMojoSourceCall({ ...recorded, ...change }, source)).not.toBeNull()
     }
     expect(validateMojoSourceCall({ ...recorded, call_date: '2026-08-24T19:20:00Z' }, { ...source, recordings: [{ ...recording, call_date: '08/24/2026 02:20 PM' }] })).toBe('recording_chronology_mismatch')
+    const secondary = { record_id: 456, contact_id: 7, audio: 'https://provider.example/audio/456', duration: 74, call_date: '09/08/2026 02:18 PM' }
+    const withSecondary = { ...source, recordings: [recording, secondary] }
+    expect(validateMojoSourceCall({ ...recorded, secondary_provider_recording_ids: ['456'] }, withSecondary)).toBeNull()
+    expect(validateMojoSourceCall({ ...recorded, secondary_provider_recording_ids: ['999'] }, withSecondary)).toBe('secondary_recording_source_mismatch')
+    expect(validateMojoSourceCall({ ...recorded, secondary_provider_recording_ids: ['456'] }, { ...source, recordings: [recording, { ...secondary, call_date: undefined }] })).toBe('secondary_recording_chronology_mismatch')
   })
   it('records intake success separately from historical exceptions and operational failure', () => {
     const health = { status: 'attention', runtime: { verified: true }, sessionStatus: 'healthy', syncHealth: 'healthy', businessHours: true, lastSyncAgeMinutes: 1, reconciliation: { counts: { evidencePendingAllAges: 4 } } }

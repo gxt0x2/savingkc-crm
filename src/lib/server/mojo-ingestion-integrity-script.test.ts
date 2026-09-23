@@ -143,6 +143,22 @@ describe('Mojo source integrity', () => {
     const changed = [...later, activity(90, 6, { datetime: '09/15/2026 12:00 PM' })]
     await expect(buildCallRecords(changed, 0, 'test', new Map(), '', contact)).rejects.toThrow('Conflicting scheduled actions')
   })
+  it('attaches the best in-window recording when a dropped call leaves two', async () => {
+    const recordings = indexMojoRecordings([
+      { contact_id: 7, record_id: 87428384, audio: 'https://example.com/drop.mp3', duration_seconds: 74, call_date: '09/10/2026 10:00 AM' },
+      { contact_id: 7, record_id: 87429607, audio: 'https://example.com/reconnect.mp3', duration_seconds: 2273, call_date: '09/10/2026 10:02 AM' },
+    ])
+    const rows = [activity(5, 3, { contents: 'Motivation: wants to sell' }, '09/10/2026 10:40 AM')]
+    const result = await buildCallRecords(rows, 0, 'test', recordings, '', contact)
+    expect(result.calls).toHaveLength(1)
+    expect(result.calls[0]).toMatchObject({
+      provider_recording_id: '87429607',
+      call_duration: 2273,
+      recording_url: 'https://example.com/reconnect.mp3',
+      secondary_provider_recording_ids: ['87428384'],
+      call_date: '2026-09-10T15:02:00.000Z',
+    })
+  })
   it('keeps separate days and uses the matched recording timestamp for call chronology', async () => {
     const recordings = indexMojoRecordings([{ contact_id: 7, record_id: 10, audio: 'https://example.com/a.mp3', duration_seconds: 180, call_date: '09/10/2026 09:50 AM' }])
     const rows = [activity(5, 3, { contents: 'Motivation: wants to sell' }), activity(4, 3, { contents: 'Timeline: 60 days' }, '09/09/2026 10:00 AM')]
