@@ -93,14 +93,24 @@ const EXPECTED_CALENDAR_SYNC_FAILURES = new Set([
   'google_oauth_not_configured',
   'calendar_api_failed',
   'calendar_sync_failed',
+  'calendar_delete_failed',
 ])
 
 export function googleCalendarSyncWarning(result: AppointmentCalendarSyncResult): string | null {
   if (result.status !== 'skipped' || !EXPECTED_CALENDAR_SYNC_FAILURES.has(result.reason)) return null
+  if (result.reason === 'calendar_delete_failed') return 'Google Calendar event was not removed.'
   if (result.reason === 'calendar_api_failed' || result.reason === 'calendar_sync_failed') {
     return 'Google Calendar was not updated.'
   }
   return formatGmailSendError(result.reason)
+}
+
+export function googleCalendarDeleteWarning(
+  result: AppointmentCalendarSyncResult,
+  hadEvent: boolean,
+): string | null {
+  if (!hadEvent || result.status === 'synced' || result.reason === 'no_event') return null
+  return googleCalendarSyncWarning(result) ?? 'Google Calendar event was not removed.'
 }
 
 async function listConnectedGoogleEmails(): Promise<string[]> {
@@ -132,6 +142,25 @@ function calendarEventBody(input: GoogleCalendarUpsertInput) {
   }
 }
 
+export async function deleteGoogleCalendarEvent(input: {
+  accessToken: string
+  eventId: string
+  fetchImpl?: typeof fetch
+}): Promise<GoogleCalendarUpsertResult> {
+  const eventId = input.eventId.trim()
+  if (!eventId) return { ok: false, error: 'Missing Google Calendar event id', status: 400 }
+  const fetchImpl = input.fetchImpl || fetch
+  const res = await fetchImpl(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${input.accessToken}` } },
+  )
+  if (res.ok || res.status === 404 || res.status === 410) return { ok: true, eventId }
+  const payload = await res.json().catch(() => ({})) as { error?: { message?: string } }
+  const error = payload.error?.message || `Google Calendar delete failed (${res.status})`
+  console.warn(`[google-calendar] delete failed: ${res.status} ${error}`)
+  return { ok: false, error, status: res.status }
+}
+
 export async function upsertGoogleCalendarEvent(input: GoogleCalendarUpsertInput): Promise<GoogleCalendarUpsertResult> {
   const fetchImpl = input.fetchImpl || fetch
   const headers = {
@@ -160,6 +189,88 @@ export async function upsertGoogleCalendarEvent(input: GoogleCalendarUpsertInput
   return { ok: true, eventId: data.id }
 }
 
+type CalendarAccessInput = {
+  actorEmail: string
+  assignedTo?: string | null
+  appointmentId: string
+  loadToken?: (email: string) => Promise<StoredGoogleToken | null>
+  listConnectedEmails?: () => Promise<string[]>
+  getAccessToken?: typeof getValidAccessTokenResult
+}
+
+async function resolveAppointmentCalendarAccess(input: CalendarAccessInput): Promise<
+  | { ok: true; accessToken: string }
+  | { ok: false; result: AppointmentCalendarSyncResult }
+> {
+  let ownerEmail = selectAppointmentGoogleOwnerEmail({
+    actorEmail: input.actorEmail,
+    assignedTo: input.assignedTo,
+  })
+  if (!ownerEmail) {
+    const listConnectedEmails = input.listConnectedEmails || listConnectedGoogleEmails
+    ownerEmail = selectAppointmentGoogleOwnerEmail({
+      actorEmail: input.actorEmail,
+      assignedTo: input.assignedTo,
+      candidateEmails: await listConnectedEmails(),
+    })
+  }
+  if (!ownerEmail) {
+    console.info(`[google-calendar] skip ${input.appointmentId}: appointment is assigned to someone else`)
+    return { ok: false, result: { status: 'skipped', reason: 'not_owner' } }
+  }
+  if (!hasGoogleOAuthConfig()) {
+    return { ok: false, result: skipCalendarSync(input.appointmentId, 'google_oauth_not_configured') }
+  }
+
+  const loadToken = input.loadToken || loadGoogleOAuthToken
+  const token = await loadToken(ownerEmail)
+  if (!token) {
+    return { ok: false, result: skipCalendarSync(input.appointmentId, 'no_token') }
+  }
+  if (!hasGoogleScope(token.scope, CALENDAR_SCOPE)) {
+    return { ok: false, result: skipCalendarSync(input.appointmentId, 'missing_calendar') }
+  }
+
+  const getAccessToken = input.getAccessToken || getValidAccessTokenResult
+  const tokenResult = await getAccessToken(token)
+  if (!tokenResult.accessToken) {
+    return { ok: false, result: skipCalendarSync(input.appointmentId, tokenResult.error || 'token_refresh_failed') }
+  }
+  return { ok: true, accessToken: tokenResult.accessToken }
+}
+
+export async function deleteOwnedAppointmentGoogleEvent(input: {
+  actorEmail: string
+  assignedTo?: string | null
+  appointment: { id: string; google_event_id?: string | null }
+  fetchImpl?: typeof fetch
+  loadToken?: (email: string) => Promise<StoredGoogleToken | null>
+  listConnectedEmails?: () => Promise<string[]>
+  getAccessToken?: typeof getValidAccessTokenResult
+}): Promise<AppointmentCalendarSyncResult> {
+  const eventId = input.appointment.google_event_id?.trim() || ''
+  if (!eventId) return { status: 'skipped', reason: 'no_event' }
+  const access = await resolveAppointmentCalendarAccess({
+    actorEmail: input.actorEmail,
+    assignedTo: input.assignedTo,
+    appointmentId: input.appointment.id,
+    loadToken: input.loadToken,
+    listConnectedEmails: input.listConnectedEmails,
+    getAccessToken: input.getAccessToken,
+  })
+  if (!access.ok) return access.result
+  const deleted = await deleteGoogleCalendarEvent({
+    accessToken: access.accessToken,
+    eventId,
+    fetchImpl: input.fetchImpl,
+  })
+  if (!deleted.ok) {
+    console.warn(`[google-calendar] delete ${input.appointment.id}: ${deleted.error}`)
+    return { status: 'skipped', reason: 'calendar_delete_failed' }
+  }
+  return { status: 'synced', eventId }
+}
+
 export async function syncOwnedAppointmentToGoogleCalendar(input: {
   actorEmail: string
   assignedTo?: string | null
@@ -177,46 +288,21 @@ export async function syncOwnedAppointmentToGoogleCalendar(input: {
   listConnectedEmails?: () => Promise<string[]>
   getAccessToken?: typeof getValidAccessTokenResult
 }): Promise<AppointmentCalendarSyncResult> {
-  let ownerEmail = selectAppointmentGoogleOwnerEmail({
+  const access = await resolveAppointmentCalendarAccess({
     actorEmail: input.actorEmail,
     assignedTo: input.assignedTo,
+    appointmentId: input.appointment.id,
+    loadToken: input.loadToken,
+    listConnectedEmails: input.listConnectedEmails,
+    getAccessToken: input.getAccessToken,
   })
-  if (!ownerEmail) {
-    const listConnectedEmails = input.listConnectedEmails || listConnectedGoogleEmails
-    ownerEmail = selectAppointmentGoogleOwnerEmail({
-      actorEmail: input.actorEmail,
-      assignedTo: input.assignedTo,
-      candidateEmails: await listConnectedEmails(),
-    })
-  }
-  if (!ownerEmail) {
-    console.info(`[google-calendar] skip ${input.appointment.id}: appointment is assigned to someone else`)
-    return { status: 'skipped', reason: 'not_owner' }
-  }
-  if (!hasGoogleOAuthConfig()) {
-    return skipCalendarSync(input.appointment.id, 'google_oauth_not_configured')
-  }
-
-  const loadToken = input.loadToken || loadGoogleOAuthToken
-  const token = await loadToken(ownerEmail)
-  if (!token) {
-    return skipCalendarSync(input.appointment.id, 'no_token')
-  }
-  if (!hasGoogleScope(token.scope, CALENDAR_SCOPE)) {
-    return skipCalendarSync(input.appointment.id, 'missing_calendar')
-  }
-
-  const getAccessToken = input.getAccessToken || getValidAccessTokenResult
-  const tokenResult = await getAccessToken(token)
-  if (!tokenResult.accessToken) {
-    return skipCalendarSync(input.appointment.id, tokenResult.error || 'token_refresh_failed')
-  }
+  if (!access.ok) return access.result
 
   const times = appointmentEventTimes(input.appointment.scheduled_at, input.appointment.type)
   const typeLabel = TYPE_LABELS[input.appointment.type || ''] || 'Appointment'
   const leadName = input.leadName?.trim() || 'seller'
   const upsert = await upsertGoogleCalendarEvent({
-    accessToken: tokenResult.accessToken,
+    accessToken: access.accessToken,
     eventId: input.appointment.google_event_id,
     summary: `${typeLabel} with ${leadName}`,
     description: input.appointment.notes || `CRM appointment ${input.appointment.id}`,

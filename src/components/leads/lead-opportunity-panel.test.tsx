@@ -61,10 +61,47 @@ describe('Opportunity panel', () => {
     )
 
     expect(screen.getByText('Current: Appointment set')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Delete appointment' })).not.toBeInTheDocument()
     expect(screen.getByText('Synced from the scheduled appointment')).toBeVisible()
     expect(screen.getByText('We are the favorite')).toBeVisible()
     const favorite = screen.getByText('Favorite or Fool')
     const qualificationHeading = await screen.findByText('Four-pillar qualification')
     expect(favorite.compareDocumentPosition(qualificationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('offers delete on the appointment card without removing the softer outcome action', () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => qualification }))
+    render(
+      <LeadOpportunityPanel
+        leadId="10000000-0000-4000-8000-000000000001"
+        nextActionTask={null}
+        station="appointment_set"
+        source="inbound_call"
+        notes={null}
+        sellerSituation={null}
+        isFavorite={false}
+        activities={[]}
+        score={null}
+        motivationScore={null}
+        estimatedValue={null}
+        offerAmount={null}
+        offerMethod={null}
+        phoneAvailable
+        propertyAddress="123 Main St"
+        appointment={{ appointmentId: '20000000-0000-4000-8000-000000000002', scheduledAt: '2026-09-18T15:00:00.000Z' }}
+        appointmentIsPast
+        onCall={() => undefined}
+        onAppointment={() => undefined}
+        onAppointmentOutcome={() => undefined}
+        onAppointmentDeleted={() => undefined}
+        onOffer={() => undefined}
+        onContract={() => undefined}
+        onTask={() => undefined}
+        onEdit={() => undefined}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /Record appointment outcome/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Delete appointment' })).toBeVisible()
   })
 })

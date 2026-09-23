@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { DeleteAppointmentButton } from '@/components/leads/delete-appointment-button'
 import { GovernedNextAction, type LeadNextActionTask } from '@/components/leads/governed-next-action'
 import { FavoriteOrFoolSignal } from '@/components/leads/favorite-or-fool-signal'
 import { LeadQualificationPanel } from '@/components/leads/lead-qualification-panel'
@@ -32,11 +33,12 @@ interface LeadOpportunityPanelProps {
   offerMethod: 'Verbal' | 'Written' | null
   phoneAvailable: boolean
   propertyAddress: string | null
-  appointment: { scheduledAt: string; address?: string | null } | null
+  appointment: { scheduledAt: string; address?: string | null; appointmentId?: string | null } | null
   appointmentIsPast: boolean
   onCall: () => void
   onAppointment: () => void
   onAppointmentOutcome: () => void
+  onAppointmentDeleted?: () => void
   onOffer: () => void
   onContract: () => void
   onTask: () => void
@@ -68,6 +70,7 @@ export function LeadOpportunityPanel({
   onCall,
   onAppointment,
   onAppointmentOutcome,
+  onAppointmentDeleted,
   onOffer,
   onContract,
   onTask,
@@ -173,14 +176,25 @@ export function LeadOpportunityPanel({
         </div>
 
         {appointment ? (
-          <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="mt-5 flex w-full items-start gap-3 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] p-4 text-left hover:brightness-95">
-            <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--crm-violet)] text-xs font-black text-white">APPT</span>
-            <span>
-              <span className="block text-xs font-black uppercase tracking-[0.08em] text-[var(--crm-violet)]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
-              <span className="mt-1 block text-sm font-bold text-[var(--crm-ink)]">{new Date(appointment.scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-              <span className="mt-0.5 block text-xs text-[var(--crm-text-muted)]">{appointment.address || propertyAddress}</span>
-            </span>
-          </button>
+          <div className="mt-5 rounded-lg border border-[var(--crm-border-strong)] bg-[var(--crm-violet-soft)] p-4">
+            <button type="button" onClick={appointmentIsPast ? onAppointmentOutcome : onAppointment} className="flex w-full items-start gap-3 text-left hover:brightness-95">
+              <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--crm-violet)] text-xs font-black text-white">APPT</span>
+              <span>
+                <span className="block text-xs font-black uppercase tracking-[0.08em] text-[var(--crm-violet)]">{appointmentIsPast ? 'Appointment outcome required' : 'Appointment scheduled'}</span>
+                <span className="mt-1 block text-sm font-bold text-[var(--crm-ink)]">{new Date(appointment.scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                <span className="mt-0.5 block text-xs text-[var(--crm-text-muted)]">{appointment.address || propertyAddress}</span>
+              </span>
+            </button>
+            {onAppointmentDeleted ? (
+              <DeleteAppointmentButton
+                leadId={leadId}
+                appointmentId={appointment.appointmentId}
+                scheduledAt={appointment.scheduledAt}
+                onDeleted={onAppointmentDeleted}
+                className="mt-3 text-xs font-bold text-[var(--crm-danger)] underline-offset-2 hover:underline"
+              />
+            ) : null}
+          </div>
         ) : (
           <button type="button" onClick={onAppointment} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--crm-brand-border)] px-4 py-4 text-sm font-bold text-[var(--crm-brand)] hover:bg-[var(--crm-brand-soft)]">
             Schedule appointment

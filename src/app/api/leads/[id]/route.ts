@@ -154,17 +154,26 @@ export async function GET(
 
   // Fetch the compatibility aggregate, canonical appointment, and canonical
   // entity projection in parallel. Manifest is historical and is not read.
-  const [leadRes, appointmentRes, appointmentTaskRes, entityContext] = await Promise.all([
+  const appointmentColumns = 'id, scheduled_at, type, status, address, notes, source, assigned_to, confirmation_status, no_show_risk, reschedule_requested_at'
+  const [leadRes, appointmentRes, pastAppointmentRes, appointmentTaskRes, entityContext] = await Promise.all([
     db.from('leads')
       .select('*')
       .eq('id', id)
       .single(),
     db.from('appointments')
-      .select('id, scheduled_at, type, status, address, notes, source, assigned_to, confirmation_status, no_show_risk, reschedule_requested_at')
+      .select(appointmentColumns)
       .eq('lead_id', id)
       .in('status', ['scheduled', 'confirmed', 'rescheduled'])
       .gte('scheduled_at', nowIso)
       .order('scheduled_at', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    db.from('appointments')
+      .select(appointmentColumns)
+      .eq('lead_id', id)
+      .in('status', ['scheduled', 'confirmed', 'rescheduled'])
+      .lt('scheduled_at', nowIso)
+      .order('scheduled_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
     db.from('lead_activities')
@@ -181,7 +190,9 @@ export async function GET(
   }
 
   const lead = applyCrmEntityAuthority(leadRes.data as LeadPayload, entityContext)
-  const nextAppointment = normalizeAppointment((appointmentRes.data as AppointmentDbRow | null) ?? null)
+  const canonicalAppointment = (appointmentRes.data as AppointmentDbRow | null)
+    ?? (pastAppointmentRes.data as AppointmentDbRow | null)
+  const nextAppointment = normalizeAppointment(canonicalAppointment)
     ?? normalizeAppointment({
       id: null,
       scheduledAt: lead.appointment_date ?? null,
