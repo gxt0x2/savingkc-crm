@@ -1,24 +1,12 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { crmEmailForConnectedGoogleAccount, decodeGoogleOAuthState } from '@/lib/google-oauth-state'
 import { markOAuthConnected } from '@/lib/oauth-health'
 
 type GoogleOAuthProvider = 'google' | 'google_ads'
-
-function oauthStateFromState(state: string | null): { returnTo: string; provider: GoogleOAuthProvider } {
-  try {
-    if (state) {
-      const decoded = JSON.parse(Buffer.from(state, 'base64url').toString())
-      const returnTo = typeof decoded.return_to === 'string' && decoded.return_to.startsWith('/')
-        ? decoded.return_to
-        : '/settings'
-      const provider = decoded.provider === 'google_ads' ? 'google_ads' : 'google'
-      return { returnTo, provider }
-    }
-  } catch { /* ignore */ }
-  return { returnTo: '/settings', provider: 'google' }
-}
 
 function statusKeys(provider: GoogleOAuthProvider) {
   return provider === 'google_ads'
@@ -39,7 +27,7 @@ export async function GET(req: NextRequest) {
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   const error = url.searchParams.get('error')
-  const { returnTo, provider } = oauthStateFromState(state)
+  const { returnTo, provider, crmEmail: stateCrmEmail } = decodeGoogleOAuthState(state)
   const keys = statusKeys(provider)
 
   if (error) {
@@ -110,27 +98,48 @@ export async function GET(req: NextRequest) {
   }
 
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+  const googleEmail = userInfo.email.trim().toLowerCase()
+  const sessionEmail = await getCurrentUserEmail()
+  const crmEmail = crmEmailForConnectedGoogleAccount({ sessionEmail, stateCrmEmail })
 
   const db = supabaseAdmin()
-  const { error: upsertError } = await db
+  const tokenRow = {
+    user_email: googleEmail,
+    provider,
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    token_type: tokens.token_type,
+    expires_at: expiresAt,
+    scope: tokens.scope,
+    updated_at: new Date().toISOString(),
+    ...(crmEmail ? { crm_user_email: crmEmail } : {}),
+  }
+  if (crmEmail) {
+    await db
+      .from('user_oauth_tokens')
+      .update({ crm_user_email: null, updated_at: tokenRow.updated_at })
+      .eq('provider', provider)
+      .eq('crm_user_email', crmEmail)
+      .neq('user_email', googleEmail)
+  }
+  let { error: upsertError } = await db
     .from('user_oauth_tokens')
-    .upsert({
-      user_email: userInfo.email,
-      provider,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      token_type: tokens.token_type,
-      expires_at: expiresAt,
-      scope: tokens.scope,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_email,provider' })
+    .upsert(tokenRow, { onConflict: 'user_email,provider' })
+  if (upsertError && crmEmail && /crm_user_email/i.test(upsertError.message || '')) {
+    const withoutCrmLink = { ...tokenRow }
+    delete withoutCrmLink.crm_user_email
+    const retry = await db
+      .from('user_oauth_tokens')
+      .upsert(withoutCrmLink, { onConflict: 'user_email,provider' })
+    upsertError = retry.error
+  }
 
   if (upsertError) {
     console.error('[oauth/callback] Token upsert failed:', upsertError)
     return redirectWithStatus(url.origin, returnTo, keys.error, 'storage_failed')
   }
 
-  await markOAuthConnected(db, provider, userInfo.email)
+  await markOAuthConnected(db, provider, googleEmail)
 
-  return redirectWithStatus(url.origin, returnTo, keys.success, userInfo.email)
+  return redirectWithStatus(url.origin, returnTo, keys.success, googleEmail)
 }

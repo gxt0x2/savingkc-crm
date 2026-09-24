@@ -22,21 +22,35 @@ export async function GET(req: NextRequest) {
 
   const db = supabaseAdmin()
   const oauthConfigured = hasGoogleOAuthConfig()
-  const query = db
+  const columns = 'id, user_email, last_sync_at, created_at, scope, refresh_token, access_token, expires_at'
+  const direct = await db
     .from('user_oauth_tokens')
-    .select('id, user_email, last_sync_at, created_at, scope, refresh_token, access_token, expires_at')
+    .select(columns)
     .eq('provider', 'google')
     .eq('user_email', userEmail)
     .order('created_at', { ascending: false })
 
-  const { data, error } = await query
+  if (direct.error) return NextResponse.json({ error: direct.error.message }, { status: 500 })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  let data = direct.data || []
+  if (data.length === 0) {
+    const linked = await db
+      .from('user_oauth_tokens')
+      .select(columns)
+      .eq('provider', 'google')
+      .eq('crm_user_email', userEmail)
+      .order('created_at', { ascending: false })
+    const missingLinkColumn = /crm_user_email/i.test(linked.error?.message || '')
+    if (linked.error && !missingLinkColumn) {
+      return NextResponse.json({ error: linked.error.message }, { status: 500 })
+    }
+    if (!linked.error) data = linked.data || []
+  }
 
   const accounts = await evaluateGoogleAccounts({
     db,
     oauthConfigured,
-    accounts: data || [],
+    accounts: data,
   })
 
   return NextResponse.json({

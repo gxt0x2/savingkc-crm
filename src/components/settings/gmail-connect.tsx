@@ -322,6 +322,7 @@ function formatGmailSyncError(error: string): string {
     token_exchange_failed: 'Google token exchange failed. Check the OAuth client and redirect URI.',
     storage_failed: 'The Gmail token could not be saved.',
     no_email: 'Google did not return an email address.',
+    unauthorized: 'Sign in to Saving KC CRM before connecting Gmail.',
   }
 
   return labels[error] || error.replace(/_/g, ' ')

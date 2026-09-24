@@ -115,6 +115,52 @@ describe('GET /api/auth/google/status fail-closed', () => {
     )
   })
 
+  it('returns the Google mailbox linked to the CRM login when the addresses differ', async () => {
+    mocks.getCurrentUserEmail.mockResolvedValue('oauth-review@savingkc.com')
+    mocks.readOAuthHealth.mockResolvedValue({
+      provider: 'google',
+      userEmail: 'savingkc@gmail.com',
+      status: 'connected',
+      errorCode: null,
+      errorMessage: null,
+      checkedAt: '2026-09-24T15:00:00.000Z',
+    })
+    let calls = 0
+    mocks.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            order: async () => {
+              calls += 1
+              if (calls === 1) return { data: [], error: null }
+              return {
+                data: [{
+                  id: 'tok-review',
+                  user_email: 'savingkc@gmail.com',
+                  last_sync_at: null,
+                  created_at: '2026-09-24T00:00:00.000Z',
+                  scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar',
+                  refresh_token: 'stored-refresh',
+                  access_token: 'access',
+                  expires_at: '2026-09-24T16:00:00.000Z',
+                }],
+                error: null,
+              }
+            },
+          }),
+        }),
+      }),
+    }))
+
+    const response = await GET(request('/api/auth/google/status'))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.accounts[0].user_email).toBe('savingkc@gmail.com')
+    expect(body.accounts[0].connection_status).toBe('connected')
+    expect(body.accounts[0].has_calendar).toBe(true)
+  })
+
   it('keeps stored accounts unhealthy when OAuth env is missing', async () => {
     mocks.hasGoogleOAuthConfig.mockReturnValue(false)
     mocks.readOAuthHealth.mockResolvedValue({

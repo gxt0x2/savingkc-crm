@@ -5,16 +5,35 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AppointmentModal } from './appointment-modal'
 
+vi.mock('@/hooks/use-auth', () => ({
+  useAuth: () => ({ user: null }),
+}))
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function mockFetch(appointment: { body: unknown; status?: number }) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/settings')) return jsonResponse({ profile: null })
+    return jsonResponse(appointment.body, appointment.status ?? 200)
+  })
+}
+
 describe('AppointmentModal', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('keeps the modal open and shows the server error when saving fails', async () => {
     const onClose = vi.fn()
     const onSuccess = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Appointment assignee is not authorized' }), {
+    vi.stubGlobal('fetch', mockFetch({
       status: 403,
-      headers: { 'content-type': 'application/json' },
-    })))
+      body: { error: 'Appointment assignee is not authorized' },
+    }))
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     render(<AppointmentModal
@@ -34,7 +53,7 @@ describe('AppointmentModal', () => {
   it('closes only after the appointment is confirmed by the server', async () => {
     const onClose = vi.fn()
     const onSuccess = vi.fn()
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }))
+    const fetchMock = mockFetch({ body: { success: true } })
     vi.stubGlobal('fetch', fetchMock)
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
@@ -48,7 +67,8 @@ describe('AppointmentModal', () => {
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
     expect(onClose).toHaveBeenCalledOnce()
-    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { scheduledAt: string }
+    const appointmentCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/leads/create-appointment'))
+    const request = JSON.parse(String(appointmentCall?.[1]?.body)) as { scheduledAt: string }
     const centralTime = new Intl.DateTimeFormat('sv-SE', {
       timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -59,10 +79,12 @@ describe('AppointmentModal', () => {
   it('keeps the saved appointment visible when Google Calendar writeback fails', async () => {
     const onClose = vi.fn()
     const onSuccess = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      success: true,
-      warning: 'Appointment saved. Google Calendar was not updated. Do not create it again.',
-    }), { status: 200 })))
+    vi.stubGlobal('fetch', mockFetch({
+      body: {
+        success: true,
+        warning: 'Appointment saved. Google Calendar was not updated. Do not create it again.',
+      },
+    }))
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     render(<AppointmentModal
@@ -76,5 +98,31 @@ describe('AppointmentModal', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Google Calendar was not updated')
     expect(onSuccess).toHaveBeenCalledOnce()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('defaults the agent to the signed-in user and still posts that assignee', async () => {
+    const fetchMock = mockFetch({ body: { success: true } })
+    vi.stubGlobal('fetch', fetchMock)
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    render(<AppointmentModal
+      lead={{ id: 'lead-1', full_name: 'Seller', phone: '+18165550100', property_address: '123 Main' }}
+      actorName="OAuth Review (throwaway)"
+      onClose={vi.fn()}
+      onSuccess={vi.fn()}
+    />)
+
+    expect(screen.getByLabelText('Agent')).toHaveValue('OAuth Review (throwaway)')
+    expect(screen.getByRole('option', { name: 'OAuth Review (throwaway)' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Ernest Dodson' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Casey Davis' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: tomorrow } })
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const appointmentCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/leads/create-appointment'))
+    const request = JSON.parse(String(appointmentCall?.[1]?.body)) as { assignedTo: string }
+    expect(request.assignedTo).toBe('OAuth Review (throwaway)')
   })
 })

@@ -113,6 +113,8 @@ export async function POST(req: NextRequest) {
       source: 'appointment_modal',
     }).catch((error) => console.error('[create-appointment] PPC appointment conversion queue failed:', error))
 
+    // Calendar writeback uses the signed-in user's Google tokens. assignedTo
+    // stays the operations owner and does not select the mailbox.
     const googleCalendar = await syncOwnedAppointmentToGoogleCalendar({
       actorEmail: actor.email,
       assignedTo,
