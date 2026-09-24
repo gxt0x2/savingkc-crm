@@ -17,11 +17,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (requestedEmail !== currentEmail && !(await isCurrentUserAdmin())) {
+  const db = supabaseAdmin()
+  const { data: tokenRow, error: tokenLookupError } = await db
+    .from('user_oauth_tokens')
+    .select('crm_user_email')
+    .eq('user_email', requestedEmail)
+    .eq('provider', 'google')
+    .maybeSingle()
+  const missingLinkColumn = /crm_user_email/i.test(tokenLookupError?.message || '')
+  if (tokenLookupError && !missingLinkColumn) {
+    return NextResponse.json({ error: tokenLookupError.message }, { status: 500 })
+  }
+  const linkedCrm = typeof tokenRow?.crm_user_email === 'string'
+    ? tokenRow.crm_user_email.trim().toLowerCase()
+    : ''
+  const ownsToken = requestedEmail === currentEmail || linkedCrm === currentEmail
+  if (!ownsToken && !(await isCurrentUserAdmin())) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const db = supabaseAdmin()
   const { error } = await db
     .from('user_oauth_tokens')
     .delete()

@@ -17,7 +17,6 @@ vi.mock('@/lib/supabase/admin', () => ({
 }))
 
 import {
-  appointmentBelongsToGoogleUser,
   appointmentEventTimes,
   deleteGoogleCalendarEvent,
   deleteOwnedAppointmentGoogleEvent,
@@ -129,9 +128,9 @@ describe('Google Calendar upsert helper', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('upserts and stores google_event_id for the owner', async () => {
+  it('upserts and stores google_event_id for the signed-in owner', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'evt-9' }), { status: 200 }))
-    const listConnectedEmails = vi.fn()
+    const loadToken = vi.fn().mockResolvedValue(token)
     const result = await syncOwnedAppointmentToGoogleCalendar({
       actorEmail: 'ernest@savingkc.com',
       assignedTo: 'ernest',
@@ -143,38 +142,23 @@ describe('Google Calendar upsert helper', () => {
         address: '123 Main',
       },
       leadName: 'Jordan Seller',
-      loadToken: async () => token,
-      listConnectedEmails,
+      loadToken,
       fetchImpl,
     })
-    expect(listConnectedEmails).not.toHaveBeenCalled()
+    expect(loadToken).toHaveBeenCalledWith('ernest@savingkc.com')
     expect(result).toEqual({ status: 'synced', eventId: 'evt-9' })
     expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ google_event_id: 'evt-9' }))
     const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))
     expect(body.summary).toBe('In-Person Visit with Jordan Seller')
     expect(body.location).toBe('123 Main')
-  })
-
-  it('treats Ernest-owned appointments as belonging to ernest@savingkc.com', () => {
-    expect(appointmentBelongsToGoogleUser({ actorEmail: 'ernest@savingkc.com', assignedTo: 'ernest' })).toBe(true)
-    expect(appointmentBelongsToGoogleUser({ actorEmail: 'ernest@savingkc.com', assignedTo: 'casey' })).toBe(false)
     expect(appointmentEventTimes('2026-09-21T16:00:00.000Z', 'phone_call').end).toBe('2026-09-21T16:30:00.000Z')
-    expect(selectAppointmentGoogleOwnerEmail({
-      actorEmail: 'oauth-review@savingkc.com',
-      assignedTo: 'Ernest',
-      candidateEmails: ['casey@savingkc.com', 'ernest@savingkc.com', 'ernest@gmail.com'],
-    })).toBeNull()
-    expect(selectAppointmentGoogleOwnerEmail({
-      actorEmail: 'oauth-review@savingkc.com',
-      assignedTo: 'Ernest',
-      candidateEmails: ['casey@savingkc.com', 'ernest@savingkc.com'],
-    })).toBe('ernest@savingkc.com')
   })
 
-  it('writes the assignee primary calendar when another user schedules it', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'evt-owner' }), { status: 200 }))
+  it('writes the signed-in user calendar when the assignee is a different agent', async () => {
+    const reviewToken = { ...token, user_email: 'savingkc@gmail.com' }
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'evt-actor' }), { status: 200 }))
     const loadToken = vi.fn().mockImplementation(async (email: string) => (
-      email === 'ernest@savingkc.com' ? token : null
+      email === 'oauth-review@savingkc.com' ? reviewToken : null
     ))
     const result = await syncOwnedAppointmentToGoogleCalendar({
       actorEmail: 'oauth-review@savingkc.com',
@@ -187,24 +171,56 @@ describe('Google Calendar upsert helper', () => {
       },
       leadName: 'Seller',
       loadToken,
-      listConnectedEmails: async () => ['casey@savingkc.com', 'ernest@savingkc.com'],
       fetchImpl,
     })
 
-    expect(result).toEqual({ status: 'synced', eventId: 'evt-owner' })
-    expect(loadToken).toHaveBeenCalledWith('ernest@savingkc.com')
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-      expect.objectContaining({ method: 'POST' }),
-    )
+    expect(selectAppointmentGoogleOwnerEmail({
+      actorEmail: 'oauth-review@savingkc.com',
+      assignedTo: 'Ernest',
+    })).toBe('oauth-review@savingkc.com')
+    expect(result).toEqual({ status: 'synced', eventId: 'evt-actor' })
+    expect(loadToken).toHaveBeenCalledTimes(1)
+    expect(loadToken).toHaveBeenCalledWith('oauth-review@savingkc.com')
+    expect(loadToken).not.toHaveBeenCalledWith('ernest@savingkc.com')
     const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))
     expect(body.summary).toBe('Google Meet with Seller')
     expect(body.description).toBe('OAuth demo calendar writeback test.')
-    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ google_event_id: 'evt-owner' }))
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ google_event_id: 'evt-actor' }))
   })
 
-  it('patches the assignee event when the appointment already has a google_event_id', async () => {
+  it('keeps Ernest and Casey on their own calendars when they are the signed-in user', async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ id: 'evt-owner' }), { status: 200 }))
+    const loadToken = vi.fn().mockImplementation(async (email: string) => {
+      if (email === 'ernest@savingkc.com') return token
+      if (email === 'casey@savingkc.com') return { ...token, user_email: 'casey@savingkc.com' }
+      return null
+    })
+
+    const ernest = await syncOwnedAppointmentToGoogleCalendar({
+      actorEmail: 'ernest@savingkc.com',
+      assignedTo: 'Casey',
+      appointment: { id: 'appt-ernest', scheduled_at: '2026-09-22T15:00:00.000Z', type: 'phone_call' },
+      loadToken,
+      fetchImpl,
+    })
+    const casey = await syncOwnedAppointmentToGoogleCalendar({
+      actorEmail: 'casey@savingkc.com',
+      assignedTo: 'casey',
+      appointment: { id: 'appt-casey', scheduled_at: '2026-09-22T16:00:00.000Z', type: 'google_meet' },
+      loadToken,
+      fetchImpl,
+    })
+
+    expect(ernest).toEqual({ status: 'synced', eventId: 'evt-owner' })
+    expect(casey).toEqual({ status: 'synced', eventId: 'evt-owner' })
+    expect(loadToken).toHaveBeenNthCalledWith(1, 'ernest@savingkc.com')
+    expect(loadToken).toHaveBeenNthCalledWith(2, 'casey@savingkc.com')
+    expect(loadToken).not.toHaveBeenCalledWith('casey')
+  })
+
+  it('patches the actor event when the appointment already has a google_event_id', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'evt-owner' }), { status: 200 }))
+    const loadToken = vi.fn().mockResolvedValue({ ...token, user_email: 'savingkc@gmail.com' })
     const result = await syncOwnedAppointmentToGoogleCalendar({
       actorEmail: 'oauth-review@savingkc.com',
       assignedTo: 'Ernest',
@@ -214,27 +230,30 @@ describe('Google Calendar upsert helper', () => {
         type: 'in_person',
         google_event_id: 'evt-owner',
       },
-      loadToken: async () => token,
-      listConnectedEmails: async () => ['ernest@savingkc.com'],
+      loadToken,
       fetchImpl,
     })
     expect(result).toEqual({ status: 'synced', eventId: 'evt-owner' })
+    expect(loadToken).toHaveBeenCalledWith('oauth-review@savingkc.com')
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://www.googleapis.com/calendar/v3/calendars/primary/events/evt-owner',
       expect.objectContaining({ method: 'PATCH' }),
     )
   })
 
-  it('stays quiet when no connected Google account owns the appointment', async () => {
+  it('does not fall back to the assignee mailbox when the actor has no Google token', async () => {
     const fetchImpl = vi.fn()
+    const loadToken = vi.fn().mockResolvedValue(null)
     const result = await syncOwnedAppointmentToGoogleCalendar({
       actorEmail: 'oauth-review@savingkc.com',
       assignedTo: 'Casey',
       appointment: { id: 'appt-2', scheduled_at: '2026-09-22T15:00:00.000Z', type: 'phone_call' },
-      listConnectedEmails: async () => ['ernest@savingkc.com'],
+      loadToken,
       fetchImpl,
     })
-    expect(result).toEqual({ status: 'skipped', reason: 'not_owner' })
+    expect(result).toEqual({ status: 'skipped', reason: 'no_token' })
+    expect(loadToken).toHaveBeenCalledWith('oauth-review@savingkc.com')
+    expect(loadToken).not.toHaveBeenCalledWith('casey@savingkc.com')
     expect(fetchImpl).not.toHaveBeenCalled()
     expect(googleCalendarSyncWarning(result)).toBeNull()
   })

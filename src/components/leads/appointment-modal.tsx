@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { appointmentAgentChoices, appointmentAgentValue } from '@/components/leads/appointment-agents'
 import { DeleteAppointmentButton } from '@/components/leads/delete-appointment-button'
 import { Icon } from '@/components/ui/icon'
+import { useAuth } from '@/hooks/use-auth'
 
 interface AppointmentModalProps {
   lead: {
@@ -20,6 +22,7 @@ interface AppointmentModalProps {
   } | null
   onClose: () => void
   onSuccess: () => void
+  actorName?: string | null
 }
 
 function appointmentToInputs(initialAppointment: AppointmentModalProps['initialAppointment']) {
@@ -32,24 +35,51 @@ function appointmentToInputs(initialAppointment: AppointmentModalProps['initialA
   return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}` }
 }
 
-function agentLabel(value: string | null | undefined) {
-  const normalized = (value || '').toLowerCase()
-  if (normalized.includes('casey')) return 'Casey Davis'
-  return 'Ernest Dodson'
+function profileActorName(profile: { full_name?: unknown; email?: unknown } | null | undefined): string | null {
+  if (typeof profile?.full_name === 'string' && profile.full_name.trim()) return profile.full_name.trim()
+  if (typeof profile?.email === 'string' && profile.email.trim()) return profile.email.trim()
+  return null
 }
 
-export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess }: AppointmentModalProps) {
+export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess, actorName: actorNameProp }: AppointmentModalProps) {
+  const { user } = useAuth()
   const initialInputs = appointmentToInputs(initialAppointment)
+  const [actorName, setActorName] = useState<string | null>(actorNameProp?.trim() || null)
+  const [agentTouched, setAgentTouched] = useState(Boolean(initialAppointment?.assignedTo))
   const [form, setForm] = useState({
     type: initialAppointment?.type || 'in_person',
     date: initialInputs.date,
     time: initialInputs.time,
-    agent: agentLabel(initialAppointment?.assignedTo),
+    agent: appointmentAgentValue(actorNameProp, initialAppointment?.assignedTo),
     notes: initialAppointment?.notes || '',
     sendReminder: true,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const agentChoices = appointmentAgentChoices(actorName)
+
+  useEffect(() => {
+    if (actorNameProp?.trim()) {
+      setActorName(actorNameProp.trim())
+      return
+    }
+    const sessionEmail = user?.email?.trim() || ''
+    let cancelled = false
+    fetch('/api/settings')
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((data: { profile?: { full_name?: unknown; email?: unknown } | null } | null) => {
+        if (cancelled || !data) return
+        const fromProfile = profileActorName(data.profile)
+        setActorName(fromProfile || (data.profile === null ? sessionEmail || null : null))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [actorNameProp, user?.email])
+
+  useEffect(() => {
+    if (agentTouched) return
+    setForm((current) => ({ ...current, agent: appointmentAgentValue(actorName, initialAppointment?.assignedTo) }))
+  }, [actorName, agentTouched, initialAppointment?.assignedTo])
 
   const typeOptions = [
     { value: 'in_person', label: 'In-Person Visit', icon: 'home' },
@@ -67,7 +97,7 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
     const offset = zone?.match(/^GMT([+-]\d{2}:\d{2})$/)?.[1]
     if (!offset) { setSaving(false); setError('Central time could not be determined'); return }
     const appointmentDate = new Date(`${form.date}T${form.time}:00${offset}`).toISOString()
-    const assignedTo = form.agent.toLowerCase().includes('casey') ? 'casey' : 'ernest'
+    const assignedTo = form.agent
 
     try {
       // Server-side appointment creation (bypasses RLS on manifests table)
@@ -172,13 +202,21 @@ export function AppointmentModal({ lead, initialAppointment, onClose, onSuccess 
               <label htmlFor="appointment-agent" className="block text-xs font-bold text-[color:var(--ck-text-muted)] uppercase mb-1">Agent</label>
               <select
                 id="appointment-agent"
+                aria-describedby="appointment-agent-calendar"
                 value={form.agent}
-                onChange={(e) => setForm(f => ({ ...f, agent: e.target.value }))}
+                onChange={(e) => {
+                  setAgentTouched(true)
+                  setForm(f => ({ ...f, agent: e.target.value }))
+                }}
                 className="w-full rounded-lg border border-[color:var(--ck-border)] bg-[color:var(--ck-surface-elev)] px-3 py-2 text-sm text-[color:var(--ck-text)] focus:border-[color:var(--ck-accent)] focus:outline-none focus:ring-2 focus:ring-red-500/20"
               >
-                <option value="Ernest Dodson">Ernest Dodson</option>
-                <option value="Casey Davis">Casey Davis</option>
+                {agentChoices.map((choice) => (
+                  <option key={choice.value} value={choice.value}>{choice.label}</option>
+                ))}
               </select>
+              <p id="appointment-agent-calendar" className="mt-1 text-[11px] text-[color:var(--ck-text-muted)]">
+                Google Calendar uses the Google account connected to your login.
+              </p>
             </div>
 
             {/* Notes */}

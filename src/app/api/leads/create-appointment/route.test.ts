@@ -132,6 +132,29 @@ describe('appointment command route trust boundary', () => {
     }))
   })
 
+  it('syncs Google Calendar with the signed-in actor when the assignee is someone else', async () => {
+    mocks.actor.mockResolvedValue({ email: 'oauth-review@savingkc.com', name: 'OAuth Review (throwaway)' })
+    mocks.calendar.mockResolvedValue({ status: 'synced', eventId: 'evt-actor' })
+    const response = await POST(request({
+      leadId: 'lead-1',
+      scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      assignedTo: 'Ernest',
+      type: 'google_meet',
+      notes: 'OAuth demo calendar writeback test',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mocks.appointment).toHaveBeenCalledWith(expect.objectContaining({ assignedTo: 'Ernest' }))
+    expect(mocks.calendar).toHaveBeenCalledWith(expect.objectContaining({
+      actorEmail: 'oauth-review@savingkc.com',
+      assignedTo: 'Ernest',
+    }))
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      googleCalendar: { status: 'synced', eventId: 'evt-actor' },
+    })
+  })
+
   it('still saves the CRM appointment when Google Calendar sync is skipped', async () => {
     mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com', name: 'Ernest' })
     mocks.calendar.mockResolvedValue({ status: 'skipped', reason: 'no_token' })

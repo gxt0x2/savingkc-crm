@@ -18,6 +18,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 import {
   encodeRfc822Message,
   isValidEmailAddress,
+  loadActorGoogleOAuthToken,
   sendConnectedGmail,
   sendGmailMessage,
 } from '@/lib/gmail-send'
@@ -141,6 +142,57 @@ describe('Gmail send helper', () => {
     })
     expect(result).toMatchObject({ ok: false, code: 'reauthorization_required' })
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('loads the Google mailbox linked to the CRM actor when the addresses differ', async () => {
+    const linked = { ...token, user_email: 'savingkc@gmail.com' }
+    mocks.from.mockImplementation(() => {
+      const filters: Record<string, string> = {}
+      const api = {
+        select() { return api },
+        eq(column: string, value: string) {
+          filters[column] = value
+          return api
+        },
+        order() { return api },
+        limit() { return api },
+        async maybeSingle() {
+          if (filters.user_email) return { data: null, error: null }
+          if (filters.crm_user_email === 'oauth-review@savingkc.com') return { data: linked, error: null }
+          return { data: null, error: null }
+        },
+      }
+      return api
+    })
+
+    const loaded = await loadActorGoogleOAuthToken('oauth-review@savingkc.com')
+    expect(loaded?.user_email).toBe('savingkc@gmail.com')
+  })
+
+  it('keeps Ernest and Casey on the token stored under their own CRM email', async () => {
+    mocks.from.mockImplementation(() => {
+      const filters: Record<string, string> = {}
+      const api = {
+        select() { return api },
+        eq(column: string, value: string) {
+          filters[column] = value
+          return api
+        },
+        order() { return api },
+        limit() { return api },
+        async maybeSingle() {
+          if (filters.user_email === 'ernest@savingkc.com') return { data: token, error: null }
+          if (filters.user_email === 'casey@savingkc.com') {
+            return { data: { ...token, user_email: 'casey@savingkc.com' }, error: null }
+          }
+          return { data: { ...token, user_email: 'savingkc@gmail.com' }, error: null }
+        },
+      }
+      return api
+    })
+
+    expect((await loadActorGoogleOAuthToken('ernest@savingkc.com'))?.user_email).toBe('ernest@savingkc.com')
+    expect((await loadActorGoogleOAuthToken('casey@savingkc.com'))?.user_email).toBe('casey@savingkc.com')
   })
 
   it('uses a refreshed access token to send', async () => {

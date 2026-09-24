@@ -87,17 +87,45 @@ export async function sendGmailMessage(input: {
   return { ok: true, id: data.id, threadId: data.threadId || null, from: input.from }
 }
 
+const GOOGLE_TOKEN_COLUMNS = 'id, user_email, access_token, refresh_token, expires_at, last_sync_at, scope'
+
+function tokenFromRow(data: { refresh_token?: string | null } | null, error: { message?: string } | null): StoredGoogleToken | null {
+  if (error || !data?.refresh_token) return null
+  return data as StoredGoogleToken
+}
+
 export async function loadGoogleOAuthToken(userEmail: string): Promise<StoredGoogleToken | null> {
   const email = userEmail.trim().toLowerCase()
   if (!email) return null
   const { data, error } = await supabaseAdmin()
     .from('user_oauth_tokens')
-    .select('id, user_email, access_token, refresh_token, expires_at, last_sync_at, scope')
+    .select(GOOGLE_TOKEN_COLUMNS)
     .eq('user_email', email)
     .eq('provider', 'google')
     .maybeSingle()
-  if (error || !data?.refresh_token) return null
-  return data as StoredGoogleToken
+  return tokenFromRow(data, error)
+}
+
+/**
+ * Tokens are keyed by the Google mailbox. Ernest and Casey match on that
+ * address. A CRM login whose Google account is different (oauth-review →
+ * savingkc@gmail.com) is stored on crm_user_email and resolved here.
+ */
+export async function loadActorGoogleOAuthToken(actorEmail: string): Promise<StoredGoogleToken | null> {
+  const email = actorEmail.trim().toLowerCase()
+  if (!email) return null
+  const direct = await loadGoogleOAuthToken(email)
+  if (direct) return direct
+  const { data, error } = await supabaseAdmin()
+    .from('user_oauth_tokens')
+    .select(GOOGLE_TOKEN_COLUMNS)
+    .eq('crm_user_email', email)
+    .eq('provider', 'google')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) return null
+  return tokenFromRow(data, null)
 }
 
 export async function sendConnectedGmail(input: {
@@ -116,7 +144,7 @@ export async function sendConnectedGmail(input: {
     return { ok: false, code: 'invalid_recipient', error: formatGmailSendError('invalid_recipient') }
   }
 
-  const loadToken = input.loadToken || loadGoogleOAuthToken
+  const loadToken = input.loadToken || loadActorGoogleOAuthToken
   const token = await loadToken(input.userEmail)
   if (!token) {
     return { ok: false, code: 'no_token', error: formatGmailSendError('no_token') }

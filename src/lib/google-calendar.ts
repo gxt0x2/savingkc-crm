@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getValidAccessTokenResult, hasGoogleOAuthConfig } from '@/lib/gmail-sync'
-import { loadGoogleOAuthToken, type StoredGoogleToken } from '@/lib/gmail-send'
+import { loadActorGoogleOAuthToken, type StoredGoogleToken } from '@/lib/gmail-send'
 import { CALENDAR_SCOPE, formatGmailSendError, hasGoogleScope } from '@/lib/google-oauth-scopes'
 
 export type GoogleCalendarUpsertInput = {
@@ -40,50 +40,18 @@ export function appointmentEventTimes(scheduledAt: string, type?: string | null)
   }
 }
 
-export function appointmentBelongsToGoogleUser(input: {
-  actorEmail: string
-  assignedTo?: string | null
-}): boolean {
-  const email = input.actorEmail.trim().toLowerCase()
-  const assigned = (input.assignedTo || '').trim().toLowerCase()
-  if (!email) return false
-  if (!assigned) return true
-  const local = email.split('@')[0] || ''
-  return assigned === email || assigned === local || assigned.includes(local) || local.includes(assigned)
-}
-
-function assigneeMatchKeys(assignedTo: string): Set<string> {
-  const assigned = assignedTo.trim().toLowerCase()
-  const first = assigned.split(/\s+/)[0] || ''
-  return new Set([assigned, first].filter(Boolean))
-}
-
 /**
- * The calendar to update is the assignee's connected Google account.
- * The CRM session user can schedule for that owner without being that mailbox.
+ * Calendar writeback uses the signed-in CRM user's connected Google account.
+ * The appointment assignee stays an operations field and does not choose the mailbox.
  */
 export function selectAppointmentGoogleOwnerEmail(input: {
   actorEmail: string
   assignedTo?: string | null
-  candidateEmails?: string[]
 }): string | null {
+  // assignedTo is the CRM owner. It must not select another person's Google account.
+  void input.assignedTo
   const actorEmail = input.actorEmail.trim().toLowerCase()
-  const assigned = (input.assignedTo || '').trim()
-  if (!assigned) return actorEmail || null
-  if (actorEmail && appointmentBelongsToGoogleUser({ actorEmail, assignedTo: assigned })) return actorEmail
-
-  const keys = assigneeMatchKeys(assigned)
-  const matches = (input.candidateEmails || [])
-    .map((email) => email.trim().toLowerCase())
-    .filter((email) => email && email !== actorEmail)
-    .filter((email) => {
-      const local = email.split('@')[0] || ''
-      return keys.has(local) || appointmentBelongsToGoogleUser({ actorEmail: email, assignedTo: assigned })
-    })
-  const exact = matches.filter((email) => keys.has(email.split('@')[0] || ''))
-  if (exact.length === 1) return exact[0]
-  if (exact.length > 1) return null
-  return matches.length === 1 ? matches[0] : null
+  return actorEmail || null
 }
 
 const EXPECTED_CALENDAR_SYNC_FAILURES = new Set([
@@ -111,17 +79,6 @@ export function googleCalendarDeleteWarning(
 ): string | null {
   if (!hadEvent || result.status === 'synced' || result.reason === 'no_event') return null
   return googleCalendarSyncWarning(result) ?? 'Google Calendar event was not removed.'
-}
-
-async function listConnectedGoogleEmails(): Promise<string[]> {
-  const { data, error } = await supabaseAdmin()
-    .from('user_oauth_tokens')
-    .select('user_email')
-    .eq('provider', 'google')
-  if (error || !data) return []
-  return data
-    .map((row) => (typeof row.user_email === 'string' ? row.user_email : ''))
-    .filter(Boolean)
 }
 
 function skipCalendarSync(appointmentId: string, reason: string): AppointmentCalendarSyncResult {
@@ -194,7 +151,6 @@ type CalendarAccessInput = {
   assignedTo?: string | null
   appointmentId: string
   loadToken?: (email: string) => Promise<StoredGoogleToken | null>
-  listConnectedEmails?: () => Promise<string[]>
   getAccessToken?: typeof getValidAccessTokenResult
 }
 
@@ -202,27 +158,19 @@ async function resolveAppointmentCalendarAccess(input: CalendarAccessInput): Pro
   | { ok: true; accessToken: string }
   | { ok: false; result: AppointmentCalendarSyncResult }
 > {
-  let ownerEmail = selectAppointmentGoogleOwnerEmail({
+  const ownerEmail = selectAppointmentGoogleOwnerEmail({
     actorEmail: input.actorEmail,
     assignedTo: input.assignedTo,
   })
   if (!ownerEmail) {
-    const listConnectedEmails = input.listConnectedEmails || listConnectedGoogleEmails
-    ownerEmail = selectAppointmentGoogleOwnerEmail({
-      actorEmail: input.actorEmail,
-      assignedTo: input.assignedTo,
-      candidateEmails: await listConnectedEmails(),
-    })
-  }
-  if (!ownerEmail) {
-    console.info(`[google-calendar] skip ${input.appointmentId}: appointment is assigned to someone else`)
+    console.info(`[google-calendar] skip ${input.appointmentId}: no signed-in user for calendar writeback`)
     return { ok: false, result: { status: 'skipped', reason: 'not_owner' } }
   }
   if (!hasGoogleOAuthConfig()) {
     return { ok: false, result: skipCalendarSync(input.appointmentId, 'google_oauth_not_configured') }
   }
 
-  const loadToken = input.loadToken || loadGoogleOAuthToken
+  const loadToken = input.loadToken || loadActorGoogleOAuthToken
   const token = await loadToken(ownerEmail)
   if (!token) {
     return { ok: false, result: skipCalendarSync(input.appointmentId, 'no_token') }
@@ -245,7 +193,6 @@ export async function deleteOwnedAppointmentGoogleEvent(input: {
   appointment: { id: string; google_event_id?: string | null }
   fetchImpl?: typeof fetch
   loadToken?: (email: string) => Promise<StoredGoogleToken | null>
-  listConnectedEmails?: () => Promise<string[]>
   getAccessToken?: typeof getValidAccessTokenResult
 }): Promise<AppointmentCalendarSyncResult> {
   const eventId = input.appointment.google_event_id?.trim() || ''
@@ -255,7 +202,6 @@ export async function deleteOwnedAppointmentGoogleEvent(input: {
     assignedTo: input.assignedTo,
     appointmentId: input.appointment.id,
     loadToken: input.loadToken,
-    listConnectedEmails: input.listConnectedEmails,
     getAccessToken: input.getAccessToken,
   })
   if (!access.ok) return access.result
@@ -285,7 +231,6 @@ export async function syncOwnedAppointmentToGoogleCalendar(input: {
   leadName?: string | null
   fetchImpl?: typeof fetch
   loadToken?: (email: string) => Promise<StoredGoogleToken | null>
-  listConnectedEmails?: () => Promise<string[]>
   getAccessToken?: typeof getValidAccessTokenResult
 }): Promise<AppointmentCalendarSyncResult> {
   const access = await resolveAppointmentCalendarAccess({
@@ -293,7 +238,6 @@ export async function syncOwnedAppointmentToGoogleCalendar(input: {
     assignedTo: input.assignedTo,
     appointmentId: input.appointment.id,
     loadToken: input.loadToken,
-    listConnectedEmails: input.listConnectedEmails,
     getAccessToken: input.getAccessToken,
   })
   if (!access.ok) return access.result
