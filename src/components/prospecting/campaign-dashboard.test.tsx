@@ -136,7 +136,7 @@ describe('CampaignDashboard', () => {
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({
       startBehavior: 'resume',
       callerMode: 'static',
-      callerIds: ['+18163100845'],
+      callerIds: ['+18166404701'],
       ringCount: 7,
     }))
     expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
@@ -268,7 +268,11 @@ describe('CampaignDashboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
     expect(screen.getByRole('region', { name: 'Calling session setup' })).toBeVisible()
-    expect(screen.getByText('(816) 310-0845')).toBeVisible()
+    expect(screen.getByText('(816) 640-4701')).toBeVisible()
+    expect(screen.queryByText('(816) 310-0845')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 253-8313')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 476-1589')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 640-8032')).not.toBeInTheDocument()
     expect(screen.queryByText('(816) 608-8588')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Rings before no answer' })).toHaveValue('7')
     expect(screen.getByRole('combobox', { name: 'Not dialed time frame' })).toHaveValue('')

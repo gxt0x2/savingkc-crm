@@ -111,14 +111,20 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       team: 'Acquisitions',
       routeType: 'cold_callback',
       health: 'healthy',
-      healthNote: 'Callback identity and reply-from number remain the dialed number.',
+      healthNote: config.dialerEligible
+        ? 'Callback identity and reply-from number remain the dialed number.'
+        : 'PARKED 2026-09-23 owner — spam/high-risk community flags; outbound disabled; Twilio ownership retained; do not release.',
       workflowId: 'cold-call-callback-flow',
       inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
       answeredPath: 'A seller who presses 1 is routed to the acquisition team and the call is recorded after answer.',
       noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input, ends the call, and queues a same-number SMS follow-up.',
       smsPath: 'Replies enter /api/twilio-sms-webhook and remain associated with the callback number.',
-      smsSenderPolicy: 'Approved for conversation, callback reply, and broadcast use; the API validates the selected sender.',
-      outboundUse: 'Available for dialer, conversations, and approved broadcasts.',
+      smsSenderPolicy: config.broadcastEligible
+        ? 'Approved for conversation, callback reply, and broadcast use; the API validates the selected sender.'
+        : 'Approved for conversation and callback reply; excluded from broadcasts. The API validates the selected sender.',
+      outboundUse: config.dialerEligible
+        ? 'Available for dialer, conversations, and approved broadcasts.'
+        : 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
       carrierFallback: 'Voice falls back to the route owner and SMS is durably captured with the callback number preserved. Live carrier configuration is verified from this registry.',
       sourceFiles: [...sourceFiles, '/api/ivr/handle-input', '/api/ivr/cold-no-input'],
     }
