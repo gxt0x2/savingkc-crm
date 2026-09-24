@@ -34,6 +34,33 @@ describe('master phone system', () => {
     })
     expect(PHONE_SYSTEM.find((record) => record.number === '+18163754666')).toMatchObject({
       owner: 'Casey', routeType: 'legacy', health: 'healthy',
+      outboundUse: 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
     })
+  })
+
+  it('keeps parked cold numbers on the callback IVR and out of outbound rotation', () => {
+    const parkedNote = 'PARKED 2026-09-23 owner — spam/high-risk community flags; outbound disabled; Twilio ownership retained; do not release.'
+    for (const number of ['+18162538313', '+18166408032', '+18163100845', '+18164761589']) {
+      expect(PHONE_SYSTEM.find((record) => record.number === number)).toMatchObject({
+        routeType: 'cold_callback',
+        health: 'healthy',
+        healthNote: parkedNote,
+        workflowId: 'cold-call-callback-flow',
+        outboundUse: 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
+        inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
+        noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input, ends the call, and queues a same-number SMS follow-up.',
+      })
+    }
+    for (const number of ['+18166404701', '+18165788107', '+18166536616', '+18164761344']) {
+      expect(PHONE_SYSTEM.find((record) => record.number === number)).toMatchObject({
+        routeType: 'cold_callback',
+        healthNote: 'Callback identity and reply-from number remain the dialed number.',
+        outboundUse: 'Available for dialer, conversations, and approved broadcasts.',
+      })
+    }
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18163077835')?.outboundUse)
+      .toBe('Available for dialer, conversations, and approved broadcasts.')
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18167277667')?.outboundUse)
+      .toBe('Available as an approved conversation, broadcast, and dialer caller ID.')
   })
 })

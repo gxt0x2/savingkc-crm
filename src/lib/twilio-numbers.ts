@@ -31,12 +31,14 @@ export const TWILIO_NUMBERS = [
   { label: '(816) 608-8552', value: '+18166088552', purpose: 'general', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 608-8559', value: '+18166088559', purpose: 'general', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 608-6699', value: '+18166086699', purpose: 'general', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
-  { label: '(816) 310-0845', value: '+18163100845', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
-  { label: '(816) 253-8313', value: '+18162538313', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
-  { label: '(816) 476-1589', value: '+18164761589', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
+  // PARKED 2026-09-23 owner: spam/high-risk. Same restriction as Casey Legacy —
+  // kept in the registry, excluded from dialer rotation and broadcasts. Do not release.
+  { label: '(816) 310-0845 - PARKED', value: '+18163100845', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
+  { label: '(816) 253-8313 - PARKED', value: '+18162538313', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
+  { label: '(816) 476-1589 - PARKED', value: '+18164761589', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
   { label: '(816) 640-4701', value: '+18166404701', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 578-8107', value: '+18165788107', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
-  { label: '(816) 640-8032', value: '+18166408032', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
+  { label: '(816) 640-8032 - PARKED', value: '+18166408032', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
   { label: '(816) 653-6616', value: '+18166536616', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 608-6648 - Google Ads: Property Tax', value: GOOGLE_ADS_PROPERTY_TAX_TWILIO_NUMBER, purpose: 'google_ads', smsEligible: true, conversationEligible: false, broadcastEligible: false, dialerEligible: false, reservedFor: 'google_ads' },
   { label: '(816) 608-6999', value: '+18166086999', purpose: 'general', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },

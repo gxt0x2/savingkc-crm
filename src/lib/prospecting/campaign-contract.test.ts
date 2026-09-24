@@ -95,14 +95,14 @@ describe('prospecting campaign contract', () => {
     expect(parseProspectingDialerSessionSetup({
       startBehavior: 'first_unworked',
       callerMode: 'rotation',
-      callerIds: ['(816) 310-0845', '+18162538313'],
+      callerIds: ['(816) 640-4701', '+18165788107'],
       ringCount: 5,
       notDialedHours: 72,
       notContactedHours: 168,
     })).toEqual({
       startBehavior: 'first_unworked',
       callerMode: 'rotation',
-      callerIds: ['+18163100845', '+18162538313'],
+      callerIds: ['+18166404701', '+18165788107'],
       ringCount: 5,
       notDialedHours: 72,
       notContactedHours: 168,
@@ -117,13 +117,20 @@ describe('prospecting campaign contract', () => {
       callerIds: Array.from({ length: 6 }, (_, index) => `+1816310084${index}`),
       ringCount: 7,
     })).toThrow(/between 1 and 5/i)
+    for (const parked of ['+18162538313', '+18166408032', '+18163100845', '+18164761589']) {
+      expect(() => parseProspectingDialerSessionSetup({
+        callerMode: 'static',
+        callerIds: [parked],
+        ringCount: 7,
+      })).toThrow(/only designated cold-call numbers/i)
+    }
   })
 
   it('defaults safely without hiding fresh sellers', () => {
     expect(parseProspectingDialerSessionSetup({})).toMatchObject({
       startBehavior: 'resume',
       callerMode: 'static',
-      callerIds: ['+18163100845'],
+      callerIds: ['+18166404701'],
       ringCount: 7,
       notDialedHours: null,
       notContactedHours: null,
@@ -206,13 +213,18 @@ describe('prospecting campaign contract', () => {
     expect(() => parseCreateProspectingCampaignInput({
       name: 'Jackson · Tax 3+ · Deceased · Aug 30',
       kind: 'dialer',
-      callerId: '+18163100845',
+      callerId: '+18166404701',
     })).toThrow(/separate piles/)
     expect(parseCreateProspectingCampaignInput({
       name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
       kind: 'dialer',
-      callerId: '+18163100845',
+      callerId: '+18166404701',
     })).toMatchObject({ name: 'Jackson · Tax 3+ · 7 zips · Aug 30', kind: 'dialer' })
+    expect(() => parseCreateProspectingCampaignInput({
+      name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
+      kind: 'dialer',
+      callerId: '+18163100845',
+    })).toThrow(/approved calling number/)
   })
 
   it('checks the member timezone instead of the server timezone', () => {
