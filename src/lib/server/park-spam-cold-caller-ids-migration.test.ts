@@ -12,7 +12,7 @@ const stillOutbound = ['+18166404701', '+18165788107', '+18166536616', '+1816476
 
 describe('park spam cold caller ids migration', () => {
   it('replaces the prospecting allowlist with the four remaining cold lines', () => {
-    const replacement = migration.match(/\$array\$(.*)\$array\$/s)?.[1] ?? ''
+    const replacement = migration.match(/\$array\$([\s\S]*)\$array\$/)?.[1] ?? ''
     expect(replacement).toBe("allowed_caller_ids constant text[] := ARRAY['+18166404701', '+18165788107', '+18166536616', '+18164761344'];")
     for (const number of stillOutbound) expect(replacement).toContain(number)
     for (const number of parked) expect(replacement).not.toContain(number)
