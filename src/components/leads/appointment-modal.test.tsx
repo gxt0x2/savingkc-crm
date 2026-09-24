@@ -17,11 +17,16 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function mockFetch(appointment: { body: unknown; status?: number }) {
-  return vi.fn(async (input: RequestInfo | URL) => {
+  return vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input) => {
     const url = String(input)
     if (url.includes('/api/settings')) return jsonResponse({ profile: null })
     return jsonResponse(appointment.body, appointment.status ?? 200)
   })
+}
+
+function appointmentRequestBody(fetchMock: ReturnType<typeof mockFetch>): string {
+  const appointmentCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/leads/create-appointment'))
+  return String(appointmentCall?.[1]?.body ?? '')
 }
 
 describe('AppointmentModal', () => {
@@ -67,8 +72,7 @@ describe('AppointmentModal', () => {
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
     expect(onClose).toHaveBeenCalledOnce()
-    const appointmentCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/leads/create-appointment'))
-    const request = JSON.parse(String(appointmentCall?.[1]?.body)) as { scheduledAt: string }
+    const request = JSON.parse(appointmentRequestBody(fetchMock)) as { scheduledAt: string }
     const centralTime = new Intl.DateTimeFormat('sv-SE', {
       timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -121,8 +125,7 @@ describe('AppointmentModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    const appointmentCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/leads/create-appointment'))
-    const request = JSON.parse(String(appointmentCall?.[1]?.body)) as { assignedTo: string }
+    const request = JSON.parse(appointmentRequestBody(fetchMock)) as { assignedTo: string }
     expect(request.assignedTo).toBe('OAuth Review (throwaway)')
   })
 })
