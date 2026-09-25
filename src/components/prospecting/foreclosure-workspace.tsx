@@ -1,28 +1,17 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
+import { ForeclosureListTable } from '@/components/prospecting/foreclosure-list-table'
 import { ForeclosureMap } from '@/components/prospecting/foreclosure-map'
-import { ForeclosureKpis, ForeclosureStatusPill } from '@/components/prospecting/foreclosure-mobile'
 import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
-import { Icon } from '@/components/ui/icon'
-import { formatPhone } from '@/lib/format'
 import {
   FIRST_FORECLOSURE_COUNTIES,
   NOTICE_TYPE_LABELS,
   STATUS_LABELS,
-  auctionUrgency,
-  chicagoDate,
-  daysUntilSale,
   foreclosureMapPins,
-  formatEquity,
-  formatLtv,
-  formatNoticeOrdinal,
   formatUsDate,
-  listRowPhones,
-  loanToValuePercent,
   type EquityBand,
   type ForeclosureNoticeType,
   type ForeclosureStatus,
@@ -67,17 +56,12 @@ async function readJson<T>(response: Response): Promise<T & { error?: string }> 
   return await response.json() as T & { error?: string }
 }
 
-function outreachOf(item: { outreachCount?: number; noticesSent?: number }) {
-  return item.outreachCount ?? item.noticesSent ?? 0
-}
-
 function countyLabel(county: string, state: string) {
   return FIRST_FORECLOSURE_COUNTIES.find((item) => item.county === county)?.label ?? `${county} ${state}`
 }
 
 export function ForeclosureWorkspace() {
   const router = useRouter()
-  const today = chicagoDate()
   const [prospects, setProspects] = useState<ForeclosureListItem[]>([])
   const [controls, setControls] = useState<IngestControl[]>([])
   const [county, setCounty] = useState('')
@@ -351,46 +335,10 @@ export function ForeclosureWorkspace() {
           </div>
         </details>
         </section>
-        <section className="space-y-2" aria-label="Foreclosure prospects">
+        <section aria-label="Foreclosure queue">
           {loading ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospects…</p> : null}
           {!loading && prospects.length === 0 ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">No mortgage foreclosure prospects in this queue.</p> : null}
-          {prospects.map((prospect) => {
-            const phones = listRowPhones(prospect.dialReady, prospect.phones)
-            const days = daysUntilSale(prospect.saleDate, today)
-            const noticeType = prospect.noticeType ? NOTICE_TYPE_LABELS[prospect.noticeType] : null
-            return <article key={prospect.id} className="crm-panel p-3 sm:p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="fc-kicker">{countyLabel(prospect.county, prospect.state)}{noticeType ? ` · ${noticeType}` : ''}</p>
-                  <Link href={`/prospecting/foreclosure/${prospect.id}`} className="fc-card-link">{prospect.ownerName}</Link>
-                  <p className="text-sm text-[var(--fc-text-secondary)]">{prospect.situs}{prospect.city ? `, ${prospect.city}` : ''} {prospect.state}</p>
-                </div>
-                <ForeclosureStatusPill status={prospect.status} />
-              </div>
-              <div className="mt-3">
-                <ForeclosureKpis items={[
-                  { label: 'Equity', value: formatEquity(prospect.estEquity) },
-                  { label: 'Loan balance', value: formatEquity(prospect.estDebt ?? null) },
-                  { label: 'LTV', value: formatLtv(loanToValuePercent(prospect.estValue ?? null, prospect.estDebt ?? null)) },
-                  { label: 'Days to auction', value: days == null ? '—' : String(days), tone: auctionUrgency(days) },
-                ]} />
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-[var(--fc-text-secondary)]">
-                  {formatNoticeOrdinal(prospect.noticeNumber ?? null) ? <span className="fc-chip">{formatNoticeOrdinal(prospect.noticeNumber ?? null)}</span> : null}
-                  <span className="fc-chip">Sale <span>{formatUsDate(prospect.saleDate)}</span></span>
-                  <span className="fc-chip">Filed <span>{formatUsDate(prospect.noticeOrFilingDate)}</span></span>
-                  <span className="fc-chip"><span>Outreach</span> <span>{outreachOf(prospect)}</span></span>
-                  {prospect.caseNumber ? <span className="fc-chip">{prospect.caseNumber}</span> : null}
-                  {prospect.absentee || (prospect.ownerEntity && prospect.ownerEntity !== 'person') ? <span className="fc-chip">Phones held</span> : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold">{phones.length > 0 ? phones.map((phone) => formatPhone(phone)).join(', ') : '—'}</span>
-                  {prospect.dialReady ? <button type="button" disabled={busy} onClick={() => void startCall(prospect.id)} className="fc-call inline-flex h-9 items-center gap-1 px-4 text-xs font-black"><Icon name="call" />Call</button> : <span className="text-xs font-bold text-[var(--fc-text-secondary)]">Not dial-ready</span>}
-                </div>
-              </div>
-            </article>
-          })}
+          {!loading && prospects.length > 0 ? <ForeclosureListTable prospects={prospects} busy={busy} onCall={(id) => void startCall(id)} /> : null}
         </section>
         </div>
         <div className="fc-stage-map">
