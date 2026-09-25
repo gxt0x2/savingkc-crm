@@ -1,0 +1,180 @@
+/* SavingKC mobile lavender/purple, applied to the whole CRM.
+   Brand red stays on shell controls that hardcode it (dialer, logo).
+   Danger reds stay on --crm-danger / --crm-red and are not aliased to brand. */
+
+.crm-workspace-shell {
+  --crm-canvas: #E4E9FF;
+  --crm-surface: #ffffff;
+  --crm-surface-subtle: #F0F2FF;
+  --crm-surface-raised: #ffffff;
+  --crm-surface-hover: #EEF0FF;
+  --crm-surface-selected: #E4E6FF;
+  --crm-border: #ECEEF6;
+  --crm-border-strong: #D5D8EA;
+  --crm-ink: #1B1D2C;
+  --crm-text: #2A2E3F;
+  --crm-text-muted: #5E6478;
+  --crm-text-dim: #8E93A8;
+  --crm-brand: #4E51D4;
+  --crm-brand-hover: #3F42C4;
+  --crm-brand-active: #3A3DC4;
+  --crm-brand-soft: #EEF0FF;
+  --crm-brand-border: #C9CCF6;
+  --crm-on-brand: #ffffff;
+  --crm-focus: #4E51D4;
+  --crm-nav-active: #3A3568;
+  --crm-nav-accent: #C5C8FF;
+  --crm-red: #c8242d;
+  --crm-red-soft: #fbeaec;
+  --crm-coral: #c8242d;
+  --crm-coral-soft: #fbeaec;
+  --ck-bg: var(--crm-canvas);
+  --ck-surface: #ffffff;
+  --ck-surface-elev: var(--crm-surface-subtle);
+  --ck-surface-hi: #E4E6FF;
+  --ck-border: var(--crm-border);
+  --ck-border-strong: var(--crm-border-strong);
+  --ck-accent: #4E51D4;
+  --ck-accent-bright: #5A5DE6;
+}
+
+.crm-workspace-shell[data-theme="dark"] {
+  --crm-canvas: #17181a;
+  --crm-surface: #202225;
+  --crm-surface-subtle: #292c30;
+  --crm-surface-raised: #25272b;
+  --crm-surface-hover: #2A2C44;
+  --crm-surface-selected: #2E315C;
+  --crm-border: #35383d;
+  --crm-border-strong: #4a4e54;
+  --crm-brand: #5A5DE6;
+  --crm-brand-hover: #6D70F5;
+  --crm-brand-active: #4E51D4;
+  --crm-brand-soft: #2A2C55;
+  --crm-brand-border: #6A6EBF;
+  --crm-focus: #A9B0FF;
+  --crm-nav-active: #2E315C;
+  --crm-nav-accent: #C5C8FF;
+  --crm-red: #f06a72;
+  --crm-red-soft: #44272b;
+  --crm-coral: #f06a72;
+  --crm-coral-soft: #44272b;
+  --crm-action: #A9B0FF;
+  --crm-action-soft: #2A2C55;
+  --crm-action-border: #6A6EBF;
+  --ck-accent: #A9B0FF;
+  --ck-accent-bright: #C5C8FF;
+}
+
+.ck-dark {
+  --ck-accent: #A9B0FF;
+  --ck-accent-bright: #C5C8FF;
+}
+
+.theme-light .lead-cockpit {
+  --ck-bg: #E4E9FF;
+  --ck-surface: #ffffff;
+  --ck-surface-elev: #F0F2FF;
+  --ck-surface-hi: #E4E6FF;
+  --ck-border: #D5D8EA;
+  --ck-border-strong: #C9CCF6;
+  --ck-accent: #4E51D4;
+  --ck-accent-bright: #5A5DE6;
+}
+
+.crm-modal-surface {
+  --crm-canvas: #E4E9FF;
+  --crm-surface: #ffffff;
+  --crm-surface-subtle: #F0F2FF;
+  --crm-surface-raised: #ffffff;
+  --crm-border: #ECEEF6;
+  --crm-border-strong: #D5D8EA;
+  --crm-brand: #4E51D4;
+  --crm-brand-hover: #3F42C4;
+  --crm-brand-soft: #EEF0FF;
+  --crm-brand-border: #C9CCF6;
+  --crm-focus: #4E51D4;
+  --crm-action: #4E51D4;
+  --crm-action-soft: #EEF0FF;
+  --crm-action-border: #C9CCF6;
+  --ck-bg: #E4E9FF;
+  --ck-surface: #ffffff;
+  --ck-surface-elev: #F0F2FF;
+  --ck-surface-hi: #E4E6FF;
+  --ck-border: #ECEEF6;
+  --ck-accent: #4E51D4;
+  --ck-accent-bright: #5A5DE6;
+  --crm-violet: #4E51D4;
+  --crm-violet-soft: #EEF0FF;
+  --crm-violet-border: #C9CCF6;
+}
+
+html.dark .crm-modal-surface {
+  --crm-brand: #5A5DE6;
+  --crm-brand-hover: #6D70F5;
+  --crm-brand-soft: #2A2C55;
+  --crm-brand-border: #6A6EBF;
+  --crm-focus: #A9B0FF;
+  --crm-action: #A9B0FF;
+  --crm-action-soft: #2A2C55;
+  --crm-action-border: #6A6EBF;
+  --ck-accent: #A9B0FF;
+  --ck-accent-bright: #C5C8FF;
+  --crm-violet: #A9B0FF;
+  --crm-violet-soft: #2A2C55;
+  --crm-violet-border: #6A6EBF;
+}
+
+/* Light workspace sits inside the always-on ck-dark shell. Beat the dark
+   input fill so selects and fields stay lavender with dark ink. */
+.ck-dark .crm-workspace-shell[data-theme="light"] :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+  background-color: var(--crm-surface-subtle) !important;
+  border-color: var(--crm-border-strong) !important;
+  color: var(--crm-ink) !important;
+  color-scheme: light !important;
+}
+
+.ck-dark .crm-workspace-shell[data-theme="light"] .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+  background-color: var(--fc-purple-soft) !important;
+  border-color: var(--fc-canvas) !important;
+  color: var(--fc-text) !important;
+  color-scheme: light !important;
+}
+
+.ck-dark .crm-workspace-shell[data-theme="light"] :is(input, textarea)::placeholder {
+  color: var(--crm-text-dim) !important;
+}
+
+/* Page primary fills that hardcoded the old brand red. Shell dialer is
+   outside this shell. Soft danger washes (bg-[#E32E2E]/10) are a different class. */
+.crm-workspace-shell .bg-\[\#E32E2E\] {
+  background-color: var(--crm-brand) !important;
+}
+
+.crm-workspace-shell .hover\:bg-\[\#C42626\]:hover,
+.crm-workspace-shell .hover\:bg-\[\#c72626\]:hover {
+  background-color: var(--crm-brand-hover) !important;
+}
+
+.crm-workspace-shell [class*="focus:border-[#E32E2E]"]:focus,
+.crm-workspace-shell [class*="focus:border-[#E32E2E]"]:focus-visible {
+  border-color: var(--crm-focus) !important;
+}
+
+.crm-workspace-shell [class*="focus:ring-[#E32E2E]"]:focus,
+.crm-workspace-shell [class*="focus:ring-[#E32E2E]"]:focus-visible {
+  --tw-ring-color: var(--crm-focus);
+}
+
+/* Keep prospecting danger hovers on red once brand is purple. */
+.crm-workspace-shell .prospecting-answer-workspace {
+  --prospecting-danger-hover: var(--crm-danger);
+}
+
+@font-face {
+  font-family: 'Material Symbols Blank';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/material-symbols-blank.ttf') format('truetype');
+}

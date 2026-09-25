@@ -144,7 +144,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // compatibility for previously shared session links.
   const isProspectingPreviewFloor = pathname?.startsWith('/prospecting') && Boolean(searchParams.get('preview_campaign'))
   const isProspectingCallingFloor = pathname?.startsWith('/prospecting') && Boolean(
-    searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('cohort') || isProspectingPreviewFloor,
+    searchParams.get('session_id') || searchParams.get('lead_ids') || searchParams.get('prospect_ids') || searchParams.get('cohort') || isProspectingPreviewFloor,
   )
   const isProspectingCallingFloorRef = useRef(Boolean(isProspectingCallingFloor))
   isProspectingCallingFloorRef.current = Boolean(isProspectingCallingFloor)

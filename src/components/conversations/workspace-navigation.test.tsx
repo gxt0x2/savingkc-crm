@@ -58,6 +58,7 @@ describe('workspace navigation', () => {
     const sections = screen.getByRole('navigation', { name: 'Prospecting sections' })
     expect(within(sections).getByRole('link', { name: 'Email' })).toHaveAttribute('href', '/marketing/email')
     expect(within(sections).getByRole('link', { name: 'Dialer' })).toHaveAttribute('href', '/prospecting')
+    expect(within(sections).getByRole('link', { name: 'Foreclosure' })).toHaveAttribute('href', '/prospecting/foreclosure')
     expect(within(sections).queryByRole('link', { name: /SMS/ })).not.toBeInTheDocument()
     expect(within(sections).getByText(/Not connected/)).toBeVisible()
     fireEvent.keyDown(document, { key: 'Escape' })

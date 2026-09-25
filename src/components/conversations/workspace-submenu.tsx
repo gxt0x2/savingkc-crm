@@ -6,10 +6,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/components/ui/icon'
 
-type Section = { label: string; href?: string; description?: string }
+type Section = { label: string; href?: string; description?: string; activePrefix?: boolean }
 export const WORKSPACE_SECTIONS: Record<string, Section[]> = {
   Prospecting: [
     { label: 'Dialer', href: '/prospecting', description: 'Prospecting dialer' },
+    { label: 'Foreclosure', href: '/prospecting/foreclosure', description: 'Mortgage foreclosure prospects', activePrefix: true },
     { label: 'Email', href: '/marketing/email', description: 'Email campaigns and replies' },
     { label: 'SMS', description: 'Text campaigns · not connected yet' },
   ],
@@ -39,6 +40,13 @@ export const WORKSPACE_SECTIONS: Record<string, Section[]> = {
     { label: 'Finance', href: '/reports/finance' },
     { label: 'Calls & SMS', href: '/reports/call-sms' },
   ],
+}
+
+function sectionIsCurrent(pathname: string, search: { get(name: string): string | null }, item: Section) {
+  if (!item.href) return false
+  const [path, queryString = ''] = item.href.split('?')
+  const pathMatches = pathname === path || Boolean(item.activePrefix && pathname.startsWith(`${path}/`))
+  return pathMatches && Array.from(new URLSearchParams(queryString)).every(([key, value]) => search.get(key) === value)
 }
 
 /** Expanded rails show a nested tree; collapsed rails use a compact flyout. */
@@ -96,7 +104,7 @@ export function WorkspaceSubmenu({ label, collapsed, children }: {
       className={collapsed ? "fixed z-[100] w-48 max-h-[80dvh] overflow-y-auto rounded-xl border border-[var(--crm-nav-hover)] bg-[var(--crm-nav)] p-2 text-[var(--crm-nav-text)] shadow-xl" : "ml-6 mt-1 mb-2 border-l border-[var(--crm-nav-hover)] pl-2 text-[var(--crm-nav-text)]"}
       style={collapsed && position ? position : undefined}>
       {items.map((item) => item.href ? <Link key={item.label} href={item.href} prefetch={false} onClick={() => setPosition(null)}
-        aria-current={pathname === item.href.split('?')[0] && Array.from(new URLSearchParams(item.href.split('?')[1] ?? '')).every(([key, value]) => search.get(key) === value) ? 'page' : undefined}
+        aria-current={sectionIsCurrent(pathname, search, item) ? 'page' : undefined}
         className="relative block rounded-lg px-3 py-2 text-xs text-[var(--crm-nav-muted)] before:absolute before:-left-2 before:top-1/2 before:h-px before:w-2 before:bg-[var(--crm-nav-hover)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)] focus-visible:outline-2 focus-visible:outline-[var(--crm-brand)] aria-[current=page]:bg-[var(--crm-nav-active)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--crm-nav-text)]">
         {item.label}
       </Link> : <div key={item.label} aria-disabled="true" title={item.description} className="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs text-[var(--crm-nav-muted)]"><span>{item.label}</span><span className="text-[10px]">Not connected</span></div>)}
