@@ -61,6 +61,12 @@ const prospect = {
   priority: true,
   preferable: true,
   phones: ['+19137179716'],
+  noticeNumber: 1,
+  skipPhones: [
+    { phone: '+19137179716', contactName: 'Ernest Dodson', relationship: 'subject', rank: 1 },
+    { phone: '+19135550101', contactName: 'Morgan Dodson', relationship: 'spouse', rank: 2 },
+    { phone: '+19135550102', contactName: 'Riley Dodson', relationship: 'child', rank: 3 },
+  ],
   latitude: 39.084,
   longitude: -94.585,
   email: 'savingkc@gmail.com',
@@ -103,6 +109,9 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.queryByText('2026-10-15')).not.toBeInTheDocument()
     expect(screen.queryByText(/Jackson MO and Johnson KS first/)).not.toBeInTheDocument()
     expect(screen.getByText('(913) 717-9716')).toBeInTheDocument()
+    expect(screen.getByText('1st notice')).toBeInTheDocument()
+    expect(screen.queryByText(/sorts first/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Foreclosure sale map' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
     expect(screen.getByRole('link', { name: 'Foreclosure' })).toHaveAttribute('href', '/prospecting/foreclosure')
@@ -118,6 +127,13 @@ describe('foreclosure prospecting workspace', () => {
     expect(await screen.findByRole('button', { name: 'Call' })).toBeEnabled()
     expect(screen.getByRole('link', { name: 'Open lead file' })).toHaveAttribute('href', '/leads/dddddddd-dddd-4ddd-8ddd-dddddddddddd')
     expect(screen.getByText(/\$150,000/)).toBeInTheDocument()
+    expect(screen.getAllByText('1st notice').length).toBeGreaterThan(0)
+    expect(screen.getByText('Morgan Dodson')).toBeInTheDocument()
+    expect(screen.getByText('Riley Dodson')).toBeInTheDocument()
+    expect(screen.getByText('Spouse')).toBeInTheDocument()
+    expect(screen.queryByText(/sorts first/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Phones can follow the equity floor/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Call' }))
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(`/api/prospecting/foreclosure/${prospect.id}/call`, { method: 'POST' }))
   })

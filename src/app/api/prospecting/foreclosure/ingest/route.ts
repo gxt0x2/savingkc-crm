@@ -1,10 +1,10 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingJson } from '@/lib/api/prospecting-response'
 import {
-  ForeclosureError,
   listForeclosureIngestControls,
   setForeclosureIngestControl,
-} from '@/lib/server/foreclosure-prospects'
+} from '@/lib/server/foreclosure-ingest'
+import { ForeclosureError } from '@/lib/server/foreclosure-prospects'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0

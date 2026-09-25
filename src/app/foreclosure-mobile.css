@@ -58,7 +58,14 @@
   --ck-text-muted: var(--fc-text-secondary);
   --ck-text-dim: var(--fc-text-muted);
   --ck-surface: var(--fc-card);
-  --ck-border: var(--fc-border);
+  --ck-surface-elev: var(--fc-purple-soft);
+  --ck-surface-hi: var(--fc-purple-mist);
+  --ck-border: var(--fc-canvas);
+  --fc-warning-ink: #8A5A00;
+  --fc-warning-soft: #FFF3DE;
+  --fc-later-ink: #5E6478;
+  --fc-urgent-ink: #B4334E;
+  --fc-near-ink: #3A3DC4;
 
   background: linear-gradient(180deg, var(--fc-canvas-light) 0%, var(--fc-screen) 28%, var(--fc-screen-bottom) 100%);
   color: var(--fc-text);
@@ -221,4 +228,120 @@
   color: var(--fc-text);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+/* Dark shell paints selects with !important. Beat it only inside this workspace. */
+.ck-dark .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+  background-color: var(--fc-purple-soft) !important;
+  border: 1px solid var(--fc-canvas) !important;
+  color: var(--fc-text) !important;
+  color-scheme: light !important;
+}
+
+.ck-dark .fc-mobile select option,
+.ck-dark .fc-mobile select optgroup {
+  background-color: var(--fc-card);
+  color: var(--fc-text);
+}
+
+.fc-stage {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.fc-map-canvas {
+  height: 11rem;
+}
+
+@media (min-width: 1100px) {
+  .fc-stage {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+    align-items: start;
+  }
+
+  .fc-stage-map {
+    position: sticky;
+    top: 0.5rem;
+  }
+
+  .fc-map-canvas {
+    height: min(68vh, 560px);
+  }
+}
+
+.fc-import > summary {
+  list-style: none;
+}
+
+.fc-import > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fc-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 0.85rem;
+  margin-top: 0.75rem;
+}
+
+@media (min-width: 800px) {
+  .fc-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.fc-meta dt {
+  color: var(--fc-text-secondary);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fc-meta dd {
+  margin: 0;
+  color: var(--fc-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.fc-kpi dd.fc-days-urgent { color: var(--fc-urgent-ink); }
+.fc-kpi dd.fc-days-soon { color: var(--fc-warning-ink); }
+.fc-kpi dd.fc-days-near { color: var(--fc-near-ink); }
+.fc-kpi dd.fc-days-later { color: var(--fc-later-ink); }
+
+.fc-kpi.fc-kpi-urgent { background: var(--fc-danger-soft); }
+.fc-kpi.fc-kpi-soon { background: var(--fc-warning-soft); }
+.fc-kpi.fc-kpi-near { background: var(--fc-purple-soft); }
+
+.fc-phones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.fc-phone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.45rem 0.65rem;
+  align-items: center;
+  border-radius: var(--fc-radius-md);
+  background: var(--fc-screen);
+  padding: 0.35rem 0.65rem;
+  color: var(--fc-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.fc-phone-rank,
+.fc-phone-role {
+  color: var(--fc-purple-deep);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.fc-phone-role {
+  color: var(--fc-text-secondary);
 }

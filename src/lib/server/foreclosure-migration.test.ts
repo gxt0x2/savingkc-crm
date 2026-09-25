@@ -6,6 +6,7 @@ const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20261114
 const coordinates = readFileSync(join(process.cwd(), 'supabase/migrations/20261115120000_mortgage_foreclosure_coordinates.sql'), 'utf8')
 const noticesSent = readFileSync(join(process.cwd(), 'supabase/migrations/20261116120000_mortgage_foreclosure_notices_sent.sql'), 'utf8')
 const noticeFile = readFileSync(join(process.cwd(), 'supabase/migrations/20261117120000_mortgage_foreclosure_notice_file.sql'), 'utf8')
+const noticeNumber = readFileSync(join(process.cwd(), 'supabase/migrations/20261118120000_mortgage_foreclosure_notice_number_and_skip_phones.sql'), 'utf8')
 const countyEnrollment = readFileSync(join(process.cwd(), 'supabase/migrations/20261023120000_enroll_county_prospects_by_parcel_ids.sql'), 'utf8')
 
 describe('mortgage foreclosure migration', () => {
@@ -51,5 +52,15 @@ describe('mortgage foreclosure migration', () => {
     expect(noticeFile).toContain('updated_since')
     expect(noticeFile).toContain('Relatives skip is intentionally not stored')
     expect(noticeFile).not.toMatch(/INSERT INTO/i)
+  })
+
+  it('stores the notice sequence and a ranked phone list without a relatives-skip product', () => {
+    expect(noticeNumber).toContain('ADD COLUMN IF NOT EXISTS notice_number integer')
+    expect(noticeNumber).toContain('ADD COLUMN IF NOT EXISTS skip_phones jsonb')
+    expect(noticeNumber).toContain('notice_number >= 1 AND notice_number <= 20')
+    expect(noticeNumber).toContain("jsonb_typeof(skip_phones) = 'array'")
+    expect(noticeNumber).toContain('notices_sent')
+    expect(noticeNumber).toContain('Not a relatives-skip product')
+    expect(noticeNumber).not.toMatch(/INSERT INTO/i)
   })
 })

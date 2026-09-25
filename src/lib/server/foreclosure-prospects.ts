@@ -2,22 +2,22 @@ import type { AuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { phoneLookupVariants } from '@/lib/dialer-call-policy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import {
-  type ForeclosureNoticeType,
   type ForeclosureStatus,
-  type IngestControl,
   type NormalizedForeclosure,
+  type SkipPhone,
   FORECLOSURE_STATUSES,
   appendNoticeFileEvents,
   assertForeclosureStatusChange,
+  buildRankedSkipPhones,
   chicagoDate,
   compareForeclosureQueue,
   dialReadyBlockers,
   foreclosureCallingHref,
+  isSandboxForeclosureAddress,
   loanToValuePercent,
-  mergeIngestControls,
-  normalizeCounty,
   normalizeForeclosureInput,
   parseForeclosureCsv,
+  parseNoticeNumber,
   parseNoticeTimeline,
   parseNoticeType,
   parseSaleStatus,
@@ -96,6 +96,8 @@ export interface ForeclosureView {
   absentee: boolean
   ownerSignals: string[]
   mailingAddress: string | null
+  noticeNumber: number | null
+  skipPhones: SkipPhone[]
   loanBalance: number | null
   ltv: number | null
   updatedAt: string
@@ -165,11 +167,12 @@ interface ForeclosureRow {
   absentee_owner?: boolean | null
   owner_signals?: string[] | null
   mailing_address?: string | null
+  notice_number?: number | string | null
+  skip_phones?: unknown
   updated_at: string
 }
 
 const TABLE = 'mortgage_foreclosure_prospects'
-const INGEST_TABLE = 'mortgage_foreclosure_ingest_controls'
 
 function databaseError(error: { message?: string; code?: string } | null | undefined): ForeclosureError {
   const detail = `${error?.message || ''} ${error?.code || ''}`.toLowerCase()
@@ -259,6 +262,14 @@ function toView(row: ForeclosureRow): ForeclosureView {
     absentee: Boolean(row.absentee_owner),
     ownerSignals: Array.isArray(row.owner_signals) ? row.owner_signals.filter((signal) => typeof signal === 'string') : [],
     mailingAddress: row.mailing_address ?? null,
+    noticeNumber: parseNoticeNumber(row.notice_number) ?? (isSandboxForeclosureAddress(row.situs) ? 1 : null),
+    skipPhones: buildRankedSkipPhones({
+      allow: row.owner_entity === 'person' && phones.length > 0,
+      ownerName: row.owner_name,
+      phones,
+      raw: row.skip_phones,
+      sandbox: isSandboxForeclosureAddress(row.situs),
+    }),
     loanBalance: numberOrNull(row.est_debt),
     ltv: loanToValuePercent(numberOrNull(row.est_value), numberOrNull(row.est_debt)),
     dialReady: dialBlockers.length === 0,
@@ -330,6 +341,8 @@ function payload(record: NormalizedForeclosure, actor: AuthenticatedActor) {
     absentee_owner: record.absentee,
     owner_signals: record.ownerSignals,
     mailing_address: record.mailingAddress,
+    notice_number: record.noticeNumber,
+    skip_phones: record.skipPhones,
     updated_by: actor.email,
     updated_at: new Date().toISOString(),
   }
@@ -584,66 +597,10 @@ function viewToInput(view: ForeclosureView): Record<string, unknown> {
     noticeTypeSource: view.noticeTypeSource,
     noticeTimeline: view.noticeTimeline,
     mailingAddress: view.mailingAddress,
+    noticeNumber: view.noticeNumber,
+    skipPhones: view.skipPhones,
     ownerState: null,
   }
-}
-
-export async function listForeclosureIngestControls(): Promise<IngestControl[]> {
-  const { data, error } = await supabase.from(INGEST_TABLE).select('county,notice_type,paused,updated_since')
-  if (error) throw databaseError(error)
-  const rows = ((data ?? []) as Array<{ county: string; notice_type: string; paused: boolean; updated_since: string | null }>)
-    .flatMap((row) => {
-      const noticeType = parseNoticeType(row.notice_type)
-      const county = normalizeCounty(row.county)
-      if (!noticeType || !county) return []
-      return [{ county, noticeType, paused: Boolean(row.paused), updatedSince: row.updated_since }]
-    })
-  return mergeIngestControls(rows)
-}
-
-export async function setForeclosureIngestControl(
-  actor: AuthenticatedActor,
-  input: { county?: unknown; noticeType?: unknown; paused?: unknown; updatedSince?: unknown },
-): Promise<IngestControl> {
-  const county = normalizeCounty(input.county)
-  const noticeType = parseNoticeType(input.noticeType)
-  if (!county || !noticeType) {
-    throw new ForeclosureError('invalid_ingest', 400, 'County and notice type are required to pause ingest.')
-  }
-  const existing = await supabase.from(INGEST_TABLE).select('paused,updated_since').eq('county', county).eq('notice_type', noticeType).maybeSingle<{ paused: boolean; updated_since: string | null }>()
-  if (existing.error) throw databaseError(existing.error)
-  const nextPaused = input.paused === undefined
-    ? Boolean(existing.data?.paused)
-    : input.paused === true || input.paused === 'true' || input.paused === '1'
-  let nextWatermark = existing.data?.updated_since ?? null
-  if (input.updatedSince !== undefined) {
-    if (input.updatedSince == null || input.updatedSince === '') {
-      nextWatermark = null
-    } else {
-      const watermark = timestampOrNull(input.updatedSince)
-      if (!watermark) throw new ForeclosureError('invalid_ingest', 400, 'updated_since must be a date or timestamp.')
-      nextWatermark = watermark
-    }
-  }
-  const { error } = await supabase.from(INGEST_TABLE).upsert({
-    county,
-    notice_type: noticeType,
-    paused: nextPaused,
-    updated_since: nextWatermark,
-    updated_by: actor.email,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'county,notice_type' })
-  if (error) throw databaseError(error)
-  return { county, noticeType: noticeType as ForeclosureNoticeType, paused: nextPaused, updatedSince: nextWatermark }
-}
-
-function timestampOrNull(raw: unknown): string | null {
-  if (typeof raw !== 'string' || !raw.trim()) return null
-  const value = raw.trim()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}T00:00:00.000Z`
-  const parsed = Date.parse(value)
-  if (!Number.isFinite(parsed)) return null
-  return new Date(parsed).toISOString()
 }
 
 async function placeCoordinates(record: NormalizedForeclosure): Promise<NormalizedForeclosure> {

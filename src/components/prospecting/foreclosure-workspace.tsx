@@ -10,15 +10,16 @@ import { ProspectingSectionNav } from '@/components/prospecting/prospecting-sect
 import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
 import {
-  EQUITY_BAND_LABELS,
   FIRST_FORECLOSURE_COUNTIES,
   NOTICE_TYPE_LABELS,
   STATUS_LABELS,
+  auctionUrgency,
   chicagoDate,
   daysUntilSale,
   foreclosureMapPins,
   formatEquity,
   formatLtv,
+  formatNoticeOrdinal,
   formatUsDate,
   listRowPhones,
   loanToValuePercent,
@@ -52,6 +53,7 @@ interface ForeclosureListItem {
   noticeType?: ForeclosureNoticeType | null
   ownerEntity?: string
   absentee?: boolean
+  noticeNumber?: number | null
 }
 
 interface IngestControl {
@@ -226,7 +228,7 @@ export function ForeclosureWorkspace() {
   return <>
     <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
     <main className="fc-mobile min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-      <div className="mx-auto max-w-[90rem] space-y-3">
+        <div className="mx-auto max-w-[90rem] space-y-3">
         <ProspectingSectionNav current="foreclosure" />
         <div className="flex flex-wrap items-center gap-1.5">
           {FIRST_FORECLOSURE_COUNTIES.map((item) => <span key={item.county} className="fc-chip">{item.label}</span>)}
@@ -234,15 +236,16 @@ export function ForeclosureWorkspace() {
         </div>
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
-        <ForeclosureMap pins={pins} heightClass="h-40" />
-        <section className="crm-panel flex flex-wrap items-end gap-2 p-3">
-          <label className="text-xs font-bold text-[var(--fc-text-secondary)]">County
+        <div className="fc-stage">
+        <div className="min-w-0 space-y-3">
+        <section className="crm-panel flex flex-wrap items-end gap-2 p-2">
+          <label className="text-xs font-bold text-[var(--fc-text)]">County
             <select aria-label="County" value={county} onChange={(event) => setCounty(event.target.value)} className="crm-field mt-1 block h-9 px-2 text-sm font-semibold">
               <option value="">All counties</option>
               {FIRST_FORECLOSURE_COUNTIES.map((item) => <option key={item.county} value={item.county}>{item.label}</option>)}
             </select>
           </label>
-          <label className="text-xs font-bold text-[var(--fc-text-secondary)]">Status
+          <label className="text-xs font-bold text-[var(--fc-text)]">Status
             <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)} className="crm-field mt-1 block h-9 px-2 text-sm font-semibold">
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -256,9 +259,8 @@ export function ForeclosureWorkspace() {
             <input type="checkbox" checked={saleThisWeek} onChange={(event) => setSaleThisWeek(event.target.checked)} />
             Sale this week
           </label>
-        </section>
-        <details className="crm-panel px-3 py-2">
-          <summary className="cursor-pointer text-xs font-black text-[var(--fc-text-secondary)]">Import or add a prospect</summary>
+          <details className="fc-import">
+          <summary className="crm-secondary-button inline-flex h-9 cursor-pointer items-center px-3 text-xs font-black">Import or add a prospect</summary>
           <div className="mt-3 space-y-3">
             <form aria-label="Import foreclosure CSV" onSubmit={(event) => void importCsv(event)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <label className="min-w-0 flex-1 text-xs font-bold text-[var(--fc-text-secondary)]">Pilot CSV
@@ -348,6 +350,7 @@ export function ForeclosureWorkspace() {
         </section> : null}
           </div>
         </details>
+        </section>
         <section className="space-y-2" aria-label="Foreclosure prospects">
           {loading ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospects…</p> : null}
           {!loading && prospects.length === 0 ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">No mortgage foreclosure prospects in this queue.</p> : null}
@@ -369,12 +372,12 @@ export function ForeclosureWorkspace() {
                   { label: 'Equity', value: formatEquity(prospect.estEquity) },
                   { label: 'Loan balance', value: formatEquity(prospect.estDebt ?? null) },
                   { label: 'LTV', value: formatLtv(loanToValuePercent(prospect.estValue ?? null, prospect.estDebt ?? null)) },
-                  { label: 'Days to auction', value: days == null ? '—' : String(days) },
+                  { label: 'Days to auction', value: days == null ? '—' : String(days), tone: auctionUrgency(days) },
                 ]} />
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-[var(--fc-text-secondary)]">
-                  <span className="fc-chip">{EQUITY_BAND_LABELS[prospect.equityBand]}{prospect.priority ? ' · sorts first' : ''}</span>
+                  {formatNoticeOrdinal(prospect.noticeNumber ?? null) ? <span className="fc-chip">{formatNoticeOrdinal(prospect.noticeNumber ?? null)}</span> : null}
                   <span className="fc-chip">Sale <span>{formatUsDate(prospect.saleDate)}</span></span>
                   <span className="fc-chip">Filed <span>{formatUsDate(prospect.noticeOrFilingDate)}</span></span>
                   <span className="fc-chip"><span>Outreach</span> <span>{outreachOf(prospect)}</span></span>
@@ -389,6 +392,11 @@ export function ForeclosureWorkspace() {
             </article>
           })}
         </section>
+        </div>
+        <div className="fc-stage-map">
+          <ForeclosureMap pins={pins} heightClass="fc-map-canvas" />
+        </div>
+        </div>
       </div>
     </main>
   </>

@@ -14,8 +14,10 @@ import {
   normalizeForeclosureInput,
   parseForeclosureCsv,
   appendNoticeFileEvents,
+  auctionUrgency,
   describeNoticeEvent,
   formatLtv,
+  formatNoticeOrdinal,
   formatUsDate,
   loanToValuePercent,
   mergeIngestControls,
@@ -163,7 +165,11 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
       longitude: SANDBOX_FORECLOSURE_POINT.longitude,
       noticesSent: 1,
       noticeOrFilingDate: '2026-09-01',
+      noticeNumber: 1,
     })
+    expect(parsed.accepted[0].skipPhones.map((row) => row.contactName)).toEqual(['Ernest Dodson', 'Morgan Dodson', 'Riley Dodson'])
+    expect(parsed.accepted[0].skipPhones.map((row) => row.rank)).toEqual([1, 2, 3])
+    expect(parsed.accepted[0].phones).toEqual(['+19137179716'])
     expect(foreclosureCallingHref('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'))
       .toContain('prospect_ids=11111111-1111-4111-8111-111111111111')
   })
@@ -244,6 +250,8 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
       attorneyName: 'Ada Attorney',
       saleStatus: 'unknown',
       absentee: true,
+      skipPhones: [],
+      noticeNumber: null,
     })
     expect(row.ok && row.record.ownerSignals).toEqual(expect.arrayContaining(['trust', 'mailing_differs', 'out_of_state']))
     expect(ownerNameSignals('Sandbox Holdings LLC')).toEqual(['llc'])
@@ -263,5 +271,28 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
     expect(controls).toHaveLength(8)
     expect(controls.find((item) => item.county === 'jackson' && item.noticeType === 'nod')).toMatchObject({ paused: true })
     expect(scrapeUpdatedSince(controls[0] && controls.find((item) => item.noticeType === 'nod' && item.county === 'jackson') || controls[0])).toBe('2026-09-01T00:00:00.000Z')
+    expect(formatNoticeOrdinal(1)).toBe('1st notice')
+    expect(formatNoticeOrdinal(2)).toBe('2nd notice')
+    expect(formatNoticeOrdinal(3)).toBe('3rd notice')
+    expect(formatNoticeOrdinal(11)).toBe('11th notice')
+    expect(auctionUrgency(3)).toBe('urgent')
+    expect(auctionUrgency(-2)).toBe('urgent')
+    expect(auctionUrgency(10)).toBe('soon')
+    expect(auctionUrgency(20)).toBe('near')
+    expect(auctionUrgency(45)).toBe('later')
+    expect(auctionUrgency(null)).toBe('none')
+    const held = normalizeForeclosureInput({
+      county: 'jackson',
+      ownerName: 'Sandbox Holdings LLC',
+      situs: '100 Sandbox Court',
+      estValue: 240000,
+      estDebt: 90000,
+      skiptraceVendor: 'smartskip',
+      phone1: '9135550199',
+      notice_number: 2,
+    })
+    expect(held.ok && held.record.phones).toEqual([])
+    expect(held.ok && held.record.skipPhones).toEqual([])
+    expect(held.ok && held.record.noticeNumber).toBe(2)
   })
 })

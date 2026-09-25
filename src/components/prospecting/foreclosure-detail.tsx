@@ -10,17 +10,19 @@ import { ProspectingSectionNav } from '@/components/prospecting/prospecting-sect
 import { Icon } from '@/components/ui/icon'
 import { formatPhone } from '@/lib/format'
 import {
-  EQUITY_BAND_LABELS,
   FIRST_FORECLOSURE_COUNTIES,
   NOTICE_TYPE_LABELS,
   SALE_STATUS_LABELS,
+  SKIP_RELATIONSHIP_LABELS,
   STATUS_LABELS,
+  auctionUrgency,
   chicagoDate,
   daysUntilSale,
   describeNoticeEvent,
   foreclosureMapPins,
   formatEquity,
   formatLtv,
+  formatNoticeOrdinal,
   formatSaleDate,
   formatUsDate,
   loanToValuePercent,
@@ -30,6 +32,8 @@ import {
   type ForeclosureStatus,
   type NoticeTimelineEvent,
   type SaleStatus,
+  type SkipPhone,
+  type SkipRelationship,
 } from '@/lib/prospecting/foreclosure'
 
 interface ForeclosureDetailRecord {
@@ -84,6 +88,8 @@ interface ForeclosureDetailRecord {
   ownerSignals?: string[]
   mailingAddress?: string | null
   ltv?: number | null
+  noticeNumber?: number | null
+  skipPhones?: SkipPhone[]
 }
 
 async function readJson<T>(response: Response): Promise<T & { error?: string }> {
@@ -92,6 +98,17 @@ async function readJson<T>(response: Response): Promise<T & { error?: string }> 
 
 function outreachOf(prospect: { outreachCount?: number; noticesSent?: number }) {
   return prospect.outreachCount ?? prospect.noticesSent ?? 0
+}
+
+function rankedPhones(prospect: ForeclosureDetailRecord | null): SkipPhone[] {
+  if (!prospect) return []
+  if (prospect.skipPhones && prospect.skipPhones.length > 0) return [...prospect.skipPhones].sort((left, right) => left.rank - right.rank)
+  return prospect.phones.map((phone, index) => ({
+    phone,
+    contactName: index === 0 ? prospect.ownerName : 'Contact',
+    relationship: (index === 0 ? 'subject' : 'other') as SkipRelationship,
+    rank: index + 1,
+  }))
 }
 
 function saleStatusOf(prospect: ForeclosureDetailRecord): SaleStatus {
@@ -173,6 +190,7 @@ export function ForeclosureDetail({ id }: { id: string }) {
           attorneyName: form.get('attorneyName'),
           outreachCount: form.get('outreachCount'),
           noticeType: form.get('noticeType'),
+          noticeNumber: form.get('noticeNumber'),
         }),
       })
       const body = await readJson<{ prospect: ForeclosureDetailRecord }>(response)
@@ -227,48 +245,59 @@ export function ForeclosureDetail({ id }: { id: string }) {
   const days = prospect ? daysUntilSale(prospect.saleDate, today) : null
   const timeline = prospect?.noticeTimeline ?? []
   const noticeType = prospect?.noticeType ? NOTICE_TYPE_LABELS[prospect.noticeType] : null
+  const noticeOrdinal = formatNoticeOrdinal(prospect?.noticeNumber ?? null)
+  const skipPhones = rankedPhones(prospect)
 
   return <>
     <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
     <main className="fc-mobile min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-      <div className="mx-auto max-w-4xl space-y-3">
+      <div className="mx-auto max-w-[90rem] space-y-3">
         <ProspectingSectionNav current="foreclosure" />
         <Link href="/prospecting/foreclosure" className="inline-flex items-center gap-1 text-sm font-bold text-[var(--fc-text-secondary)] hover:text-[var(--fc-text)]"><Icon name="arrow_back" />All foreclosure prospects</Link>
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
-        {!prospect ? <p className="text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospect…</p> : <article className="space-y-3">
-          <section className="crm-panel p-4 sm:p-5">
+        {!prospect ? <p className="text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospect…</p> : <div className="fc-stage">
+        <article className="min-w-0 space-y-3">
+          <section className="crm-panel p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="fc-kicker">{county} · {SALE_STATUS_LABELS[saleStatus]}{noticeType ? ` · ${noticeType}` : ''}</p>
+              <p className="fc-kicker">{county} · {SALE_STATUS_LABELS[saleStatus]}{noticeType ? ` · ${noticeType}` : ''}{noticeOrdinal ? ` · ${noticeOrdinal}` : ''}</p>
               <ForeclosureStatusPill status={prospect.status} />
             </div>
-            <h2 className="mt-2 text-2xl font-black text-[var(--fc-text)]">{prospect.ownerName}</h2>
-            <p className="mt-1 text-sm text-[var(--fc-text-secondary)]">{prospect.situs}{prospect.city ? `, ${prospect.city}` : ''} {prospect.state} {prospect.zip || ''}</p>
-            <p className="mt-2 text-sm font-bold">Owner is a {prospect.ownerEntity}. {prospect.ownerEntity === 'person' ? 'Phones can follow the equity floor.' : 'Owner-name gate holds phones.'}{prospect.absentee ? ' Absentee signal is on.' : ''}</p>
-            <div className="mt-4">
+            <h2 className="mt-1 text-2xl font-black text-[var(--fc-text)]">{prospect.ownerName}</h2>
+            <p className="text-sm text-[var(--fc-text-secondary)]">{prospect.situs}{prospect.city ? `, ${prospect.city}` : ''} {prospect.state} {prospect.zip || ''}</p>
+            <div className="mt-3">
               <ForeclosureKpis items={[
                 { label: 'Equity', value: formatEquity(prospect.estEquity) },
                 { label: 'Loan balance', value: formatEquity(prospect.estDebt) },
                 { label: 'LTV', value: formatLtv(prospect.ltv ?? loanToValuePercent(prospect.estValue, prospect.estDebt)) },
-                { label: 'Days to auction', value: days == null ? '—' : String(days) },
+                { label: 'Days to auction', value: days == null ? '—' : String(days), tone: auctionUrgency(days) },
               ]} />
             </div>
-            <p className="mt-3 text-sm font-bold text-[var(--fc-text-secondary)]">{EQUITY_BAND_LABELS[prospect.equityBand]}{prospect.priority ? ' · sorts first' : ''}</p>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Sale status</dt><dd>{SALE_STATUS_LABELS[saleStatus]}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Date of sale</dt><dd>{formatSaleDate(prospect.saleDate)}{prospect.saleTime ? ` · ${prospect.saleTime}` : ''} · {saleTimingLabel(prospect.saleDate, today)}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Attorney</dt><dd>{prospect.attorneyName || 'Not recorded'}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Outreach</dt><dd>{outreachOf(prospect)}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Filing</dt><dd>{formatUsDate(prospect.noticeOrFilingDate)}{noticeType ? ` · ${noticeType}` : ''}{prospect.noticeTypeSource ? ` · ${prospect.noticeTypeSource}` : ''}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Case</dt><dd>{prospect.caseNumber || prospect.instrumentNumber || 'Not recorded'}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Lender / firm</dt><dd>{prospect.plaintiffLender || 'Not recorded'}{prospect.trusteeOrFirm ? ` · ${prospect.trusteeOrFirm}` : ''}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Location</dt><dd>{prospect.saleLocation || 'Venue not recorded'}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Phones</dt><dd>{prospect.phones.length > 0 ? prospect.phones.map((phone) => formatPhone(phone)).join(', ') : 'No SmartSkip phone'}</dd></div>
-              <div><dt className="font-bold text-[var(--fc-text-secondary)]">Source</dt><dd>{prospect.sourceUrl ? <a href={prospect.sourceUrl} className="font-bold text-[var(--fc-info)] hover:underline">{prospect.sourceName || 'Notice source'}</a> : (prospect.sourceName || 'Not recorded')}</dd></div>
+            <dl className="fc-meta">
+              <div><dt>Notice</dt><dd>{noticeOrdinal || 'Not numbered'}</dd></div>
+              <div><dt>Sale status</dt><dd>{SALE_STATUS_LABELS[saleStatus]}</dd></div>
+              <div><dt>Date of sale</dt><dd>{formatSaleDate(prospect.saleDate)}{prospect.saleTime ? ` · ${prospect.saleTime}` : ''} · {saleTimingLabel(prospect.saleDate, today)}</dd></div>
+              <div><dt>Attorney</dt><dd>{prospect.attorneyName || 'Not recorded'}</dd></div>
+              <div><dt>Outreach</dt><dd>{outreachOf(prospect)}</dd></div>
+              <div><dt>Filing</dt><dd>{formatUsDate(prospect.noticeOrFilingDate)}{noticeType ? ` · ${noticeType}` : ''}</dd></div>
+              <div><dt>Case</dt><dd>{prospect.caseNumber || prospect.instrumentNumber || 'Not recorded'}</dd></div>
+              <div><dt>Lender / firm</dt><dd>{[prospect.plaintiffLender, prospect.trusteeOrFirm].filter(Boolean).join(' · ') || 'Not recorded'}</dd></div>
+              <div><dt>Location</dt><dd>{prospect.saleLocation || 'Venue not recorded'}</dd></div>
+              <div><dt>Source</dt><dd>{prospect.sourceUrl ? <a href={prospect.sourceUrl} className="font-bold text-[var(--fc-info)] hover:underline">{prospect.sourceName || 'Notice source'}</a> : (prospect.sourceName || 'Not recorded')}</dd></div>
             </dl>
-            <p className="mt-3 text-xs text-[var(--fc-text-secondary)]">Value {formatEquity(prospect.estValue)} ({prospect.estValueSource || 'no source'}) minus debt {formatEquity(prospect.estDebt)} ({prospect.estDebtSource || 'no source'}). Preferable haircut is a sort flag only{prospect.preferable ? ' and this row clears it' : ''}.</p>
+            <section aria-label="Skip-trace phones" className="fc-phones">
+              <h3 className="fc-kicker">Skip-trace phones</h3>
+              {skipPhones.length === 0 ? <p className="text-sm font-bold text-[var(--fc-text-secondary)]">No SmartSkip phone</p> : <ol className="space-y-1">
+                {skipPhones.map((row) => <li key={`${row.rank}-${row.phone}`} className="fc-phone">
+                  <span className="fc-phone-rank">{row.rank}</span>
+                  <span>{row.contactName}</span>
+                  <span className="fc-phone-role">{SKIP_RELATIONSHIP_LABELS[row.relationship] || row.relationship}</span>
+                  <span>{formatPhone(row.phone)}</span>
+                </li>)}
+              </ol>}
+            </section>
             {prospect.notes ? <p className="mt-3 text-sm">{prospect.notes}</p> : null}
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               {prospect.dialReady ? <button type="button" disabled={busy} onClick={() => void startCall()} className="fc-call inline-flex h-10 items-center gap-2 px-4 text-sm font-black"><Icon name="call" />Call</button> : <p className="text-sm font-bold text-[var(--fc-text-secondary)]">{prospect.dialBlockers[0] || 'Not dial-ready'}</p>}
               {prospect.leadId ? <Link href={`/leads/${prospect.leadId}`} className="crm-secondary-button inline-flex h-10 items-center px-4 text-sm font-black">Open lead file</Link> : null}
               {prospect.status === 'callable' || prospect.status === 'skip_traced' ? <button type="button" disabled={busy} onClick={() => void setStatus('contacted')} className="crm-secondary-button h-10 px-4 text-sm font-black">Mark contacted</button> : null}
@@ -276,7 +305,6 @@ export function ForeclosureDetail({ id }: { id: string }) {
               <button type="button" disabled={busy} onClick={() => void setStatus('dead')} className="crm-secondary-button h-10 px-4 text-sm font-black">Mark dead</button>
             </div>
           </section>
-          {prospect.latitude != null && prospect.longitude != null ? <ForeclosureMap pins={foreclosureMapPins([prospect])} heightClass="h-48" /> : null}
           <form aria-label="Notice file" onSubmit={(event) => void saveNoticeFile(event)} className="crm-panel grid gap-3 p-4 sm:grid-cols-2">
             <h3 className="text-base font-black sm:col-span-2">Notice file</h3>
             <label className="text-xs font-bold text-[var(--fc-text-secondary)]">Sale status
@@ -293,7 +321,10 @@ export function ForeclosureDetail({ id }: { id: string }) {
             <label className="text-xs font-bold text-[var(--fc-text-secondary)]">Outreach
               <input name="outreachCount" inputMode="numeric" aria-label="Outreach count" defaultValue={outreachOf(prospect)} className="crm-field mt-1 h-10 w-full px-3 text-sm" />
             </label>
-            <label className="text-xs font-bold text-[var(--fc-text-secondary)] sm:col-span-2">Notice type
+            <label className="text-xs font-bold text-[var(--fc-text-secondary)]">Notice number
+              <input name="noticeNumber" inputMode="numeric" aria-label="Notice number" defaultValue={prospect.noticeNumber ?? ''} className="crm-field mt-1 h-10 w-full px-3 text-sm" />
+            </label>
+            <label className="text-xs font-bold text-[var(--fc-text-secondary)]">Notice type
               <select name="noticeType" aria-label="Notice type" defaultValue={prospect.noticeType ?? ''} className="crm-field mt-1 h-10 w-full px-3 text-sm">
                 <option value="">Unknown filing</option>
                 {Object.entries(NOTICE_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -338,7 +369,9 @@ export function ForeclosureDetail({ id }: { id: string }) {
             <p className="text-xs leading-5 text-[var(--fc-text-secondary)] sm:col-span-2">SmartSkip runs only after the $75,000 equity floor, and only for a person owner. LLC, trust, and estate names are gated before phones. Relatives skip is not used.</p>
             <button type="submit" disabled={busy} className="fc-call h-10 text-sm font-black sm:col-span-2">Save equity and phones</button>
           </form>
-        </article>}
+        </article>
+        {prospect.latitude != null && prospect.longitude != null ? <div className="fc-stage-map"><ForeclosureMap pins={foreclosureMapPins([prospect])} heightClass="fc-map-canvas" /></div> : null}
+        </div>}
       </div>
     </main>
   </>

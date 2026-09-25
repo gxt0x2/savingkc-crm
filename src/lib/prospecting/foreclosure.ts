@@ -2,7 +2,9 @@ import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { parseForeclosureCsvTable } from '@/lib/prospecting/foreclosure-csv'
 import {
   absenteeOwnerSignal,
+  buildRankedSkipPhones,
   ownerNameSignals,
+  parseNoticeNumber,
   parseNoticeTimeline,
   parseNoticeType,
   parseOutreachCount,
@@ -10,6 +12,7 @@ import {
   type ForeclosureNoticeType,
   type NoticeTimelineEvent,
   type SaleStatus,
+  type SkipPhone,
 } from '@/lib/prospecting/foreclosure-notice'
 
 export * from '@/lib/prospecting/foreclosure-notice'
@@ -148,6 +151,8 @@ export interface NormalizedForeclosure {
   absentee: boolean
   ownerSignals: string[]
   mailingAddress: string | null
+  noticeNumber: number | null
+  skipPhones: SkipPhone[]
 }
 
 export type ForeclosureNormalizeResult = {
@@ -597,6 +602,15 @@ export function normalizeForeclosureInput(
         ...absentee.signals.filter((signal) => signal === 'mailing_differs' || signal === 'out_of_state'),
       ],
       mailingAddress,
+      noticeNumber: parseNoticeNumber(input.noticeNumber ?? input.notice_number ?? input.notice_sequence)
+        ?? (isSandboxForeclosureAddress(situs) ? 1 : null),
+      skipPhones: buildRankedSkipPhones({
+        allow: ownerEntity === 'person' && phones.length > 0,
+        ownerName,
+        phones,
+        raw: input,
+        sandbox: isSandboxForeclosureAddress(situs),
+      }),
     },
   }
 }
