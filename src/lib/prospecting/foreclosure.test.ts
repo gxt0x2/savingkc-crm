@@ -13,6 +13,8 @@ import {
   listRowPhones,
   normalizeForeclosureInput,
   parseForeclosureCsv,
+  formatUsDate,
+  parseNoticesSent,
   saleTimingLabel,
   saleWithinWeek,
 } from './foreclosure'
@@ -150,6 +152,8 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
       skiptraceVendor: 'smartskip',
       latitude: SANDBOX_FORECLOSURE_POINT.latitude,
       longitude: SANDBOX_FORECLOSURE_POINT.longitude,
+      noticesSent: 1,
+      noticeOrFilingDate: '2026-09-01',
     })
     expect(foreclosureCallingHref('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'))
       .toContain('prospect_ids=11111111-1111-4111-8111-111111111111')
@@ -166,6 +170,10 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
     expect(saleWithinWeek(null, '2026-09-25')).toBe(false)
     expect(saleTimingLabel('2026-09-27', '2026-09-25')).toBe('In 2 days')
     expect(saleTimingLabel('2026-09-25', '2026-09-25')).toBe('Today')
+    expect(formatUsDate('2026-10-15')).toBe('10/15/2026')
+    expect(formatUsDate('2026-09-01')).toBe('09/01/2026')
+    expect(formatUsDate(null)).toBe('—')
+    expect(formatUsDate('2026-10-15T10:00:00')).toBe('—')
   })
 
   it('shows phones on dial-ready rows and builds map pins only when coordinates exist', () => {
@@ -196,5 +204,9 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
       estDebt: 90000,
     })
     expect(elsewhere.ok && elsewhere.record.latitude).toBeNull()
+    expect(elsewhere.ok && elsewhere.record.noticesSent).toBe(0)
+    expect(parseNoticesSent('')).toEqual({ count: 0, warning: null })
+    expect(parseNoticesSent('nope')).toEqual({ count: 0, warning: 'Notices sent was ignored because it was not a count from 0 to 999.' })
+    expect(parseNoticesSent(2)).toEqual({ count: 2, warning: null })
   })
 })

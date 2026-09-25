@@ -123,6 +123,7 @@ export interface NormalizedForeclosure {
   skiptraceNotes: string | null
   latitude: number | null
   longitude: number | null
+  noticesSent: number
 }
 
 export type ForeclosureNormalizeResult = {
@@ -328,10 +329,23 @@ export function saleTimingLabel(saleDate: string | null, today: string): string 
   return `${Math.abs(days)} days ago`
 }
 
+export function formatUsDate(isoDate: string | null): string {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return '—'
+  const [year, month, day] = isoDate.split('-')
+  return `${month}/${day}/${year}`
+}
+
 export function formatSaleDate(isoDate: string | null): string {
-  if (!isoDate) return 'No sale date'
-  const [year, month, day] = isoDate.split('-').map(Number)
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)))
+  return formatUsDate(isoDate)
+}
+
+export function parseNoticesSent(raw: unknown): { count: number; warning: string | null } {
+  if (raw == null || raw === '') return { count: 0, warning: null }
+  const value = typeof raw === 'number' ? raw : Number(String(raw).trim())
+  if (!Number.isFinite(value) || value < 0 || value > 999) {
+    return { count: 0, warning: 'Notices sent was ignored because it was not a count from 0 to 999.' }
+  }
+  return { count: Math.floor(value), warning: null }
 }
 
 export function listRowPhones(dialReady: boolean, phones: string[]): string[] {
@@ -462,6 +476,8 @@ export function normalizeForeclosureInput(
     warnings.push('Latitude and longitude were ignored because the pair was incomplete or out of range.')
   }
   const coordinates = explicitCoordinates ?? (isSandboxForeclosureAddress(situs) ? SANDBOX_FORECLOSURE_POINT : null)
+  const notices = parseNoticesSent(input.noticesSent ?? input.notices_sent ?? input.notice_count)
+  if (notices.warning) warnings.push(notices.warning)
 
   const facts = {
     ownerEntity,
@@ -526,6 +542,7 @@ export function normalizeForeclosureInput(
       skiptraceNotes,
       latitude: coordinates?.latitude ?? null,
       longitude: coordinates?.longitude ?? null,
+      noticesSent: notices.count,
     },
   }
 }

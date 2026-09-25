@@ -12,9 +12,11 @@ import {
   EQUITY_BAND_LABELS,
   STATUS_LABELS,
   chicagoDate,
+  daysUntilSale,
   foreclosureMapPins,
   formatEquity,
   formatSaleDate,
+  formatUsDate,
   saleTimingLabel,
   type EquityBand,
   type ForeclosureStatus,
@@ -32,6 +34,8 @@ interface ForeclosureDetailRecord {
   status: ForeclosureStatus
   noticeLifecycle: string
   saleDate: string | null
+  noticeOrFilingDate: string | null
+  noticesSent: number
   saleTime: string | null
   saleLocation: string | null
   caseNumber: string | null
@@ -166,9 +170,9 @@ export function ForeclosureDetail({ id }: { id: string }) {
         {!prospect ? <p className="text-sm text-[var(--crm-text-muted)]">Loading foreclosure prospect…</p> : <article className="space-y-4">
           <section className="crm-panel rounded-2xl p-4 sm:p-5">
             <p className="crm-eyebrow capitalize">{prospect.county} {prospect.state} · {prospect.noticeLifecycle.split('_').join(' ')}</p>
-            <p className="mt-2 text-sm font-bold uppercase tracking-wide text-[var(--crm-text-muted)]">Sale</p>
+            <p className="mt-2 text-sm font-bold uppercase tracking-wide text-[var(--crm-text-muted)]">Auction</p>
             <p className="text-2xl font-black text-[var(--crm-ink)]">{formatSaleDate(prospect.saleDate)}{prospect.saleTime ? ` · ${prospect.saleTime}` : ''}</p>
-            <p className="text-sm font-bold text-[var(--crm-text)]">{saleTimingLabel(prospect.saleDate, chicagoDate())} · {prospect.saleLocation || 'Venue not recorded'}</p>
+            <p className="text-sm font-bold text-[var(--crm-text)]">{daysUntilSale(prospect.saleDate, chicagoDate()) ?? '—'} days to auction · {saleTimingLabel(prospect.saleDate, chicagoDate())} · {prospect.saleLocation || 'Venue not recorded'}</p>
             <h2 className="mt-4 text-xl font-black text-[var(--crm-ink)]">{prospect.ownerName}</h2>
             <p className="mt-1 text-sm text-[var(--crm-text-muted)]">{prospect.situs}{prospect.city ? `, ${prospect.city}` : ''} {prospect.state} {prospect.zip || ''}</p>
             <p className="mt-1 text-sm font-bold">Owner is a {prospect.ownerEntity}. Status: {STATUS_LABELS[prospect.status]}.</p>
@@ -184,6 +188,7 @@ export function ForeclosureDetail({ id }: { id: string }) {
               </div>
             </div>
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div><dt className="font-bold text-[var(--crm-text-muted)]">Notice</dt><dd>{formatUsDate(prospect.noticeOrFilingDate)} · {prospect.noticesSent ?? 0} sent</dd></div>
               <div><dt className="font-bold text-[var(--crm-text-muted)]">Case</dt><dd>{prospect.caseNumber || prospect.instrumentNumber || 'Not recorded'}</dd></div>
               <div><dt className="font-bold text-[var(--crm-text-muted)]">Lender / firm</dt><dd>{prospect.plaintiffLender || 'Not recorded'}{prospect.trusteeOrFirm ? ` · ${prospect.trusteeOrFirm}` : ''}</dd></div>
               <div><dt className="font-bold text-[var(--crm-text-muted)]">Source</dt><dd>{prospect.sourceUrl ? <a href={prospect.sourceUrl} className="font-bold text-[var(--crm-info)] hover:underline">{prospect.sourceName || 'Notice source'}</a> : (prospect.sourceName || 'Not recorded')}</dd></div>

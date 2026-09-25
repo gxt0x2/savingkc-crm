@@ -13,11 +13,11 @@ import {
   FIRST_FORECLOSURE_COUNTIES,
   STATUS_LABELS,
   chicagoDate,
+  daysUntilSale,
   foreclosureMapPins,
   formatEquity,
-  formatSaleDate,
+  formatUsDate,
   listRowPhones,
-  saleTimingLabel,
   type EquityBand,
   type ForeclosureStatus,
 } from '@/lib/prospecting/foreclosure'
@@ -30,6 +30,8 @@ interface ForeclosureListItem {
   state: string
   county: string
   saleDate: string | null
+  noticeOrFilingDate: string | null
+  noticesSent: number
   caseNumber: string | null
   status: ForeclosureStatus
   estEquity: number | null
@@ -133,6 +135,7 @@ export function ForeclosureWorkspace() {
           deceased: form.get('deceased') === 'on',
           latitude: form.get('latitude'),
           longitude: form.get('longitude'),
+          noticesSent: form.get('noticesSent'),
         }),
       })
       const body = await readJson<{ prospect: { id: string } }>(response)
@@ -162,37 +165,40 @@ export function ForeclosureWorkspace() {
 
   return <>
     <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
-    <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--crm-canvas)] p-3 sm:p-5 lg:p-7">
-      <div className="mx-auto max-w-6xl space-y-3">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--crm-canvas)] p-3 sm:p-4">
+      <div className="mx-auto max-w-[90rem] space-y-2">
         <ProspectingSectionNav current="foreclosure" />
-        <p className="text-sm text-[var(--crm-text-muted)]">Jackson MO and Johnson KS mortgage sales. $75k equity floor. Calls use the Prospecting dialer.</p>
-        {error ? <p role="alert" className="rounded-xl border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
-        {notice ? <p role="status" className="rounded-xl border border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
-        <ForeclosureMap pins={pins} />
-        <section className="crm-panel flex flex-wrap items-end gap-3 rounded-2xl p-3">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-[var(--crm-text-muted)]">
+          {FIRST_FORECLOSURE_COUNTIES.map((item) => <span key={item.county} className="rounded-full border border-[var(--crm-border)] px-2 py-0.5">{item.label}</span>)}
+          <span>$75k floor · Prospecting dialer</span>
+        </div>
+        {error ? <p role="alert" className="rounded-lg border border-[var(--crm-danger)]/30 bg-[var(--crm-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
+        {notice ? <p role="status" className="rounded-lg border border-[var(--crm-success)]/30 bg-[var(--crm-success-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
+        <ForeclosureMap pins={pins} heightClass="h-40" />
+        <section className="crm-panel flex flex-wrap items-end gap-2 rounded-xl p-2">
           <label className="text-xs font-bold text-[var(--crm-text-muted)]">County
-            <select aria-label="County" value={county} onChange={(event) => setCounty(event.target.value)} className="crm-field mt-1 block h-10 rounded-lg px-3 text-sm font-semibold">
+            <select aria-label="County" value={county} onChange={(event) => setCounty(event.target.value)} className="crm-field mt-1 block h-9 rounded-lg px-2 text-sm font-semibold">
               <option value="">All counties</option>
               {FIRST_FORECLOSURE_COUNTIES.map((item) => <option key={item.county} value={item.county}>{item.label}</option>)}
             </select>
           </label>
           <label className="text-xs font-bold text-[var(--crm-text-muted)]">Status
-            <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)} className="crm-field mt-1 block h-10 rounded-lg px-3 text-sm font-semibold">
+            <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)} className="crm-field mt-1 block h-9 rounded-lg px-2 text-sm font-semibold">
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          <label className="flex h-10 items-center gap-2 text-sm font-bold text-[var(--crm-text)]">
+          <label className="flex h-9 items-center gap-2 text-sm font-bold text-[var(--crm-text)]">
             <input type="checkbox" checked={dialReadyOnly} onChange={(event) => setDialReadyOnly(event.target.checked)} />
             Dial-ready only
           </label>
-          <label className="flex h-10 items-center gap-2 text-sm font-bold text-[var(--crm-text)]">
+          <label className="flex h-9 items-center gap-2 text-sm font-bold text-[var(--crm-text)]">
             <input type="checkbox" checked={saleThisWeek} onChange={(event) => setSaleThisWeek(event.target.checked)} />
             Sale this week
           </label>
         </section>
-        <details className="crm-panel rounded-2xl px-4 py-3">
-          <summary className="cursor-pointer text-sm font-black text-[var(--crm-text-muted)]">Import or add a prospect</summary>
+        <details className="crm-panel rounded-xl px-3 py-2">
+          <summary className="cursor-pointer text-xs font-black text-[var(--crm-text-muted)]">Import or add a prospect</summary>
           <div className="mt-3 space-y-3">
             <form aria-label="Import foreclosure CSV" onSubmit={(event) => void importCsv(event)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <label className="min-w-0 flex-1 text-xs font-bold text-[var(--crm-text-muted)]">Pilot CSV
@@ -239,6 +245,9 @@ export function ForeclosureWorkspace() {
               <label className="text-xs font-bold text-[var(--crm-text-muted)]">Longitude
                 <input name="longitude" inputMode="decimal" aria-label="Longitude" className="crm-field mt-1 h-10 w-full rounded-lg px-3 text-sm" />
               </label>
+              <label className="text-xs font-bold text-[var(--crm-text-muted)]">Notices sent
+                <input name="noticesSent" inputMode="numeric" aria-label="Notices sent" className="crm-field mt-1 h-10 w-full rounded-lg px-3 text-sm" />
+              </label>
               <label className="text-xs font-bold text-[var(--crm-text-muted)] sm:col-span-2">SmartSkip phone
                 <input name="phone1" aria-label="SmartSkip phone" className="crm-field mt-1 h-10 w-full rounded-lg px-3 text-sm" />
               </label>
@@ -248,41 +257,48 @@ export function ForeclosureWorkspace() {
             </form>
           </div>
         </details>
-        <section className="crm-panel overflow-x-auto rounded-2xl" aria-label="Foreclosure prospects">
-          <table className="w-full min-w-[860px] text-left text-sm">
+        <section className="crm-panel overflow-x-auto rounded-xl" aria-label="Foreclosure prospects">
+          <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="text-xs uppercase tracking-wide text-[var(--crm-text-muted)]">
               <tr>
-                <th className="px-4 py-3 font-black">Sale</th>
-                <th className="px-4 py-3 font-black">Owner / property</th>
-                <th className="px-4 py-3 font-black">Equity</th>
-                <th className="px-4 py-3 font-black">Phones</th>
-                <th className="px-4 py-3 font-black">Status</th>
-                <th className="px-4 py-3 font-black">Call</th>
+                <th className="px-3 py-2 font-black">Owner / property</th>
+                <th className="px-3 py-2 font-black">Notice</th>
+                <th className="px-3 py-2 font-black">Equity</th>
+                <th className="px-3 py-2 font-black">Status</th>
+                <th className="px-3 py-2 font-black">Days to auction</th>
+                <th className="px-3 py-2 font-black">Notices sent</th>
+                <th className="px-3 py-2 font-black">Phones</th>
+                <th className="px-3 py-2 font-black">Call</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={6} className="px-4 py-8 text-[var(--crm-text-muted)]">Loading foreclosure prospects…</td></tr> : null}
-              {!loading && prospects.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-[var(--crm-text-muted)]">No mortgage foreclosure prospects in this queue.</td></tr> : null}
+              {loading ? <tr><td colSpan={8} className="px-3 py-6 text-[var(--crm-text-muted)]">Loading foreclosure prospects…</td></tr> : null}
+              {!loading && prospects.length === 0 ? <tr><td colSpan={8} className="px-3 py-6 text-[var(--crm-text-muted)]">No mortgage foreclosure prospects in this queue.</td></tr> : null}
               {prospects.map((prospect) => {
                 const phones = listRowPhones(prospect.dialReady, prospect.phones)
+                const days = daysUntilSale(prospect.saleDate, today)
                 return <tr key={prospect.id} className="border-t border-[var(--crm-border)]">
-                  <td className="px-4 py-3">
-                    <p className="font-black">{formatSaleDate(prospect.saleDate)}</p>
-                    <p className="text-[var(--crm-text-muted)]">{saleTimingLabel(prospect.saleDate, today)}</p>
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <Link href={`/prospecting/foreclosure/${prospect.id}`} className="font-black text-[var(--crm-ink)] hover:underline">{prospect.ownerName}</Link>
                     <p className="text-[var(--crm-text-muted)]">{prospect.situs}{prospect.city ? `, ${prospect.city}` : ''} {prospect.state}</p>
-                    <p className="text-xs capitalize text-[var(--crm-text-muted)]">{prospect.county}{prospect.caseNumber ? ` · ${prospect.caseNumber}` : ''}</p>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
+                    <p className="font-black">{formatUsDate(prospect.noticeOrFilingDate)}</p>
+                    <p className="text-[var(--crm-text-muted)]">{prospect.caseNumber || '—'}</p>
+                  </td>
+                  <td className="px-3 py-2">
                     <p className="font-black">{formatEquity(prospect.estEquity)}</p>
                     <p className="text-[var(--crm-text-muted)]">{EQUITY_BAND_LABELS[prospect.equityBand]}{prospect.priority ? ' · sorts first' : ''}</p>
                   </td>
-                  <td className="px-4 py-3 font-bold">{phones.length > 0 ? phones.map((phone) => formatPhone(phone)).join(', ') : '—'}</td>
-                  <td className="px-4 py-3 font-bold">{STATUS_LABELS[prospect.status]}</td>
-                  <td className="px-4 py-3">
-                    {prospect.dialReady ? <button type="button" disabled={busy} onClick={() => void startCall(prospect.id)} className="crm-primary-button inline-flex h-9 items-center gap-1 rounded-lg px-3 text-xs font-black"><Icon name="call" />Call</button> : <span className="text-xs font-bold text-[var(--crm-text-muted)]">Not dial-ready</span>}
+                  <td className="px-3 py-2 font-bold">{STATUS_LABELS[prospect.status]}</td>
+                  <td className="px-3 py-2">
+                    <p className="font-black">{days == null ? '—' : days}</p>
+                    <p className="text-[var(--crm-text-muted)]">{formatUsDate(prospect.saleDate)}</p>
+                  </td>
+                  <td className="px-3 py-2 font-black">{prospect.noticesSent ?? 0}</td>
+                  <td className="px-3 py-2 font-bold">{phones.length > 0 ? phones.map((phone) => formatPhone(phone)).join(', ') : '—'}</td>
+                  <td className="px-3 py-2">
+                    {prospect.dialReady ? <button type="button" disabled={busy} onClick={() => void startCall(prospect.id)} className="crm-primary-button inline-flex h-8 items-center gap-1 rounded-lg px-3 text-xs font-black"><Icon name="call" />Call</button> : <span className="text-xs font-bold text-[var(--crm-text-muted)]">Not dial-ready</span>}
                   </td>
                 </tr>
               })}

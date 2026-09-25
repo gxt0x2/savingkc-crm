@@ -41,6 +41,8 @@ const prospect = {
   zip: '64108',
   county: 'jackson',
   saleDate: '2026-10-15',
+  noticeOrFilingDate: '2026-09-01',
+  noticesSent: 1,
   caseNumber: 'SANDBOX-FC-001',
   status: 'callable',
   noticeLifecycle: 'scheduled_sale',
@@ -90,6 +92,13 @@ describe('foreclosure prospecting workspace', () => {
     render(<ForeclosureWorkspace />)
     expect(await screen.findByRole('link', { name: 'Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
     expect(screen.getByRole('checkbox', { name: 'Sale this week' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Days to auction' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Notices sent' })).toBeInTheDocument()
+    expect(screen.getByText('10/15/2026')).toBeInTheDocument()
+    expect(screen.getByText('09/01/2026')).toBeInTheDocument()
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.queryByText('2026-10-15')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Jackson MO and Johnson KS first/)).not.toBeInTheDocument()
     expect(screen.getByText('(913) 717-9716')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Foreclosure sale map' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)

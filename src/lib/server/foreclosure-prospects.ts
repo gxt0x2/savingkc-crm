@@ -77,6 +77,7 @@ export interface ForeclosureView {
   dialBlockers: string[]
   latitude: number | null
   longitude: number | null
+  noticesSent: number
   updatedAt: string
 }
 
@@ -134,6 +135,7 @@ interface ForeclosureRow {
   lead_id: string | null
   latitude: number | string | null
   longitude: number | string | null
+  notices_sent: number | string | null
   updated_at: string
 }
 
@@ -217,6 +219,7 @@ function toView(row: ForeclosureRow): ForeclosureView {
     leadId: row.lead_id,
     latitude: numberOrNull(row.latitude),
     longitude: numberOrNull(row.longitude),
+    noticesSent: countNotices(row.notices_sent),
     dialReady: dialBlockers.length === 0,
     dialBlockers,
     updatedAt: row.updated_at,
@@ -276,6 +279,7 @@ function payload(record: NormalizedForeclosure, actor: AuthenticatedActor) {
     skiptrace_notes: record.skiptraceNotes,
     latitude: record.latitude,
     longitude: record.longitude,
+    notices_sent: record.noticesSent,
     updated_by: actor.email,
     updated_at: new Date().toISOString(),
   }
@@ -510,6 +514,7 @@ function viewToInput(view: ForeclosureView): Record<string, unknown> {
     skiptraceNotes: view.skiptraceNotes,
     latitude: view.latitude,
     longitude: view.longitude,
+    noticesSent: view.noticesSent,
   }
 }
 
@@ -537,6 +542,12 @@ async function geocodeForeclosureAddress(record: NormalizedForeclosure): Promise
   } catch {
     return null
   }
+}
+
+function countNotices(value: number | string | null | undefined): number {
+  const parsed = numberOrNull(value ?? null)
+  if (parsed == null || parsed < 0) return 0
+  return Math.min(999, Math.floor(parsed))
 }
 
 function numberOrNull(value: number | string | null): number | null {
