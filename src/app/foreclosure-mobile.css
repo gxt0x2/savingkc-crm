@@ -1,0 +1,224 @@
+/* Foreclosure prospecting uses the SavingKC mobile CRM surface.
+   Tokens match src/theme.ts in the mobile app. Brand red stays outside
+   this scope. The shell can remain dark; this workspace stays the light phone. */
+.fc-mobile {
+  --fc-canvas: #C9CCF6;
+  --fc-canvas-deep: #B7BAF0;
+  --fc-canvas-light: #E4E9FF;
+  --fc-screen: #F4F6FB;
+  --fc-screen-top: #F0F2FF;
+  --fc-screen-bottom: #E8EEFF;
+  --fc-card: #FFFFFF;
+  --fc-text: #1B1D2C;
+  --fc-text-secondary: #8E93A8;
+  --fc-text-muted: #B4B8C8;
+  --fc-purple: #6D70F5;
+  --fc-purple-deep: #5A5DE6;
+  --fc-purple-soft: #EEF0FF;
+  --fc-purple-mist: #E4E6FF;
+  --fc-success: #2FCB8B;
+  --fc-danger: #F0627D;
+  --fc-danger-soft: #FDE8EC;
+  --fc-warning: #F5B942;
+  --fc-info: #5B8DEF;
+  --fc-border: #ECEEF6;
+  --fc-hairline: #F0F1F7;
+  --fc-shadow: 0 10px 28px rgba(107, 112, 196, 0.08);
+  --fc-radius-sm: 10px;
+  --fc-radius-md: 14px;
+  --fc-radius-lg: 18px;
+  --fc-radius-xl: 24px;
+  --fc-radius-pill: 999px;
+
+  --crm-canvas: var(--fc-screen);
+  --crm-surface: var(--fc-card);
+  --crm-surface-subtle: var(--fc-screen-top);
+  --crm-surface-raised: var(--fc-card);
+  --crm-surface-hover: var(--fc-purple-soft);
+  --crm-border: var(--fc-border);
+  --crm-border-strong: #D9DCEC;
+  --crm-ink: var(--fc-text);
+  --crm-text: var(--fc-text);
+  --crm-text-muted: var(--fc-text-secondary);
+  --crm-text-dim: var(--fc-text-muted);
+  --crm-brand: var(--fc-purple);
+  --crm-brand-hover: var(--fc-purple-deep);
+  --crm-brand-active: #4E51D4;
+  --crm-brand-soft: var(--fc-purple-soft);
+  --crm-brand-border: var(--fc-canvas);
+  --crm-on-brand: #ffffff;
+  --crm-focus: var(--fc-purple);
+  --crm-success: #178A5C;
+  --crm-success-soft: #E7F8F1;
+  --crm-danger: #C43B56;
+  --crm-danger-soft: var(--fc-danger-soft);
+  --crm-info: #2E5EAE;
+  --crm-info-soft: #E7F0FF;
+  --ck-text: var(--fc-text);
+  --ck-text-muted: var(--fc-text-secondary);
+  --ck-text-dim: var(--fc-text-muted);
+  --ck-surface: var(--fc-card);
+  --ck-border: var(--fc-border);
+
+  background: linear-gradient(180deg, var(--fc-canvas-light) 0%, var(--fc-screen) 28%, var(--fc-screen-bottom) 100%);
+  color: var(--fc-text);
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.fc-mobile :is(h1, h2, h3) {
+  letter-spacing: -0.03em;
+}
+
+.fc-mobile .crm-panel {
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-lg);
+  background: var(--fc-card);
+  box-shadow: var(--fc-shadow);
+  color: var(--fc-text);
+}
+
+.fc-mobile .crm-field {
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-md);
+  background: var(--fc-screen);
+  color: var(--fc-text);
+}
+
+.fc-mobile .crm-primary-button,
+.fc-mobile .fc-call {
+  border: 0;
+  border-radius: var(--fc-radius-pill);
+  background: var(--fc-purple);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(109, 112, 245, 0.28);
+}
+
+.fc-mobile .crm-primary-button:hover,
+.fc-mobile .fc-call:hover {
+  background: var(--fc-purple-deep);
+}
+
+.fc-mobile .crm-secondary-button {
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-pill);
+  background: var(--fc-card);
+  color: var(--fc-text);
+}
+
+.fc-mobile .crm-secondary-button:hover {
+  border-color: var(--fc-purple);
+  background: var(--fc-purple-soft);
+  color: var(--fc-purple-deep);
+}
+
+.fc-kicker {
+  color: var(--fc-purple);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fc-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--fc-radius-pill);
+  background: var(--fc-purple-soft);
+  color: var(--fc-purple-deep);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.fc-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--fc-radius-pill);
+  padding: 0.22rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.fc-pill-callable {
+  background: var(--fc-purple);
+  color: #ffffff;
+}
+
+.fc-pill-contacted {
+  background: #E7F0FF;
+  color: #2E5EAE;
+}
+
+.fc-pill-skip_traced,
+.fc-pill-equity_screened,
+.fc-pill-new {
+  background: var(--fc-purple-soft);
+  color: var(--fc-purple-deep);
+}
+
+.fc-pill-dnc,
+.fc-pill-dead {
+  background: var(--fc-danger-soft);
+  color: #C43B56;
+}
+
+.fc-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+@media (min-width: 720px) {
+  .fc-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.fc-kpi {
+  border-radius: var(--fc-radius-md);
+  background: var(--fc-screen);
+  padding: 0.55rem 0.7rem;
+}
+
+.fc-kpi dt {
+  color: var(--fc-text-secondary);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fc-kpi dd {
+  margin-top: 0.15rem;
+  color: var(--fc-text);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.fc-card-link {
+  color: var(--fc-text);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.fc-card-link:hover {
+  color: var(--fc-purple-deep);
+}
+
+.fc-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.fc-timeline li {
+  border-left: 3px solid var(--fc-purple);
+  padding-left: 0.7rem;
+  color: var(--fc-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}

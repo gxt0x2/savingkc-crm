@@ -13,8 +13,17 @@ import {
   listRowPhones,
   normalizeForeclosureInput,
   parseForeclosureCsv,
+  appendNoticeFileEvents,
+  describeNoticeEvent,
+  formatLtv,
   formatUsDate,
+  loanToValuePercent,
+  mergeIngestControls,
+  ownerNameSignals,
+  parseNoticeType,
   parseNoticesSent,
+  parseOutreachCount,
+  scrapeUpdatedSince,
   saleTimingLabel,
   saleWithinWeek,
 } from './foreclosure'
@@ -208,5 +217,51 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
     expect(parseNoticesSent('')).toEqual({ count: 0, warning: null })
     expect(parseNoticesSent('nope')).toEqual({ count: 0, warning: 'Notices sent was ignored because it was not a count from 0 to 999.' })
     expect(parseNoticesSent(2)).toEqual({ count: 2, warning: null })
+  })
+
+  it('keeps outreach separate from the legal notice and gates entity names before phones', () => {
+    const row = normalizeForeclosureInput({
+      county: 'jackson',
+      ownerName: 'Dodson Family Trust',
+      situs: '200 Sandbox Court',
+      mailing_address: 'PO Box 1, Dallas TX',
+      owner_state: 'TX',
+      estValue: 300000,
+      estDebt: 100000,
+      doc_type: 'Lis Pendens',
+      attorney_name: 'Ada Attorney',
+      sale_date: '2026-11-02',
+      outreach_count: 3,
+      skiptraceVendor: 'smartskip',
+      phone1: '9135550100',
+    })
+    expect(row.ok && row.record).toMatchObject({
+      ownerEntity: 'trust',
+      phones: [],
+      outreachCount: 3,
+      noticesSent: 3,
+      noticeType: 'lis_pendens',
+      attorneyName: 'Ada Attorney',
+      saleStatus: 'unknown',
+      absentee: true,
+    })
+    expect(row.ok && row.record.ownerSignals).toEqual(expect.arrayContaining(['trust', 'mailing_differs', 'out_of_state']))
+    expect(ownerNameSignals('Sandbox Holdings LLC')).toEqual(['llc'])
+    expect(parseNoticeType('NOD')).toBe('nod')
+    expect(parseNoticeType(null, 'Sheriff Sale')).toBe('sheriff_sale')
+    expect(loanToValuePercent(240000, 90000)).toBe(37.5)
+    expect(formatLtv(37.5)).toBe('37.5%')
+    expect(formatLtv(null)).toBe('—')
+    expect(parseOutreachCount('nope').warning).toMatch(/Outreach/)
+    const timeline = appendNoticeFileEvents([], { saleDate: null, attorneyName: null }, { saleDate: '2026-11-02', attorneyName: 'Ada Attorney' }, '2026-09-25T12:00:00.000Z')
+    expect(timeline).toHaveLength(2)
+    expect(describeNoticeEvent(timeline[0])).toBe('09/25/2026: Date of sale set to 11/02/2026')
+    const changed = appendNoticeFileEvents(timeline, { saleDate: '2026-11-02', attorneyName: 'Ada Attorney' }, { saleDate: '2026-11-09', attorneyName: 'Ada Attorney' }, '2026-10-01T12:00:00.000Z')
+    expect(changed).toHaveLength(3)
+    expect(describeNoticeEvent(changed[2])).toBe('10/01/2026: Date of sale changed from 11/02/2026 to 11/09/2026')
+    const controls = mergeIngestControls([{ county: 'jackson', noticeType: 'nod', paused: true, updatedSince: '2026-09-01T00:00:00.000Z' }])
+    expect(controls).toHaveLength(8)
+    expect(controls.find((item) => item.county === 'jackson' && item.noticeType === 'nod')).toMatchObject({ paused: true })
+    expect(scrapeUpdatedSince(controls[0] && controls.find((item) => item.noticeType === 'nod' && item.county === 'jackson') || controls[0])).toBe('2026-09-01T00:00:00.000Z')
   })
 })

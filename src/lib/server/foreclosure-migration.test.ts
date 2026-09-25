@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20261114120000_mortgage_foreclosure_prospects.sql'), 'utf8')
 const coordinates = readFileSync(join(process.cwd(), 'supabase/migrations/20261115120000_mortgage_foreclosure_coordinates.sql'), 'utf8')
 const noticesSent = readFileSync(join(process.cwd(), 'supabase/migrations/20261116120000_mortgage_foreclosure_notices_sent.sql'), 'utf8')
+const noticeFile = readFileSync(join(process.cwd(), 'supabase/migrations/20261117120000_mortgage_foreclosure_notice_file.sql'), 'utf8')
 const countyEnrollment = readFileSync(join(process.cwd(), 'supabase/migrations/20261023120000_enroll_county_prospects_by_parcel_ids.sql'), 'utf8')
 
 describe('mortgage foreclosure migration', () => {
@@ -38,5 +39,17 @@ describe('mortgage foreclosure migration', () => {
     expect(noticesSent).toContain('ADD COLUMN IF NOT EXISTS notices_sent integer NOT NULL DEFAULT 0')
     expect(noticesSent).toContain('notices_sent >= 0 AND notices_sent <= 999')
     expect(noticesSent).not.toMatch(/INSERT INTO/i)
+  })
+
+  it('stores the living notice file, outreach alias, and county ingest watermark', () => {
+    expect(noticeFile).toContain('ADD COLUMN IF NOT EXISTS outreach_count integer')
+    expect(noticeFile).toContain('notices_sent')
+    expect(noticeFile).toContain('sync_mortgage_foreclosure_outreach')
+    expect(noticeFile).toContain("'lis_pendens', 'nod', 'notice_of_sale', 'sheriff_sale'")
+    expect(noticeFile).toContain('notice_timeline')
+    expect(noticeFile).toContain('CREATE TABLE IF NOT EXISTS public.mortgage_foreclosure_ingest_controls')
+    expect(noticeFile).toContain('updated_since')
+    expect(noticeFile).toContain('Relatives skip is intentionally not stored')
+    expect(noticeFile).not.toMatch(/INSERT INTO/i)
   })
 })

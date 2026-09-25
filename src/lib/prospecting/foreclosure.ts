@@ -1,4 +1,18 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { parseForeclosureCsvTable } from '@/lib/prospecting/foreclosure-csv'
+import {
+  absenteeOwnerSignal,
+  ownerNameSignals,
+  parseNoticeTimeline,
+  parseNoticeType,
+  parseOutreachCount,
+  parseSaleStatus,
+  type ForeclosureNoticeType,
+  type NoticeTimelineEvent,
+  type SaleStatus,
+} from '@/lib/prospecting/foreclosure-notice'
+
+export * from '@/lib/prospecting/foreclosure-notice'
 
 export const FORECLOSURE_EQUITY_FLOOR = 75_000
 export const FORECLOSURE_PRIORITY_EQUITY = 100_000
@@ -123,7 +137,17 @@ export interface NormalizedForeclosure {
   skiptraceNotes: string | null
   latitude: number | null
   longitude: number | null
+  /** @deprecated Alias of outreachCount. Legal filings are noticeType, not this count. */
   noticesSent: number
+  outreachCount: number
+  attorneyName: string | null
+  saleStatus: SaleStatus
+  noticeType: ForeclosureNoticeType | null
+  noticeTypeSource: string | null
+  noticeTimeline: NoticeTimelineEvent[]
+  absentee: boolean
+  ownerSignals: string[]
+  mailingAddress: string | null
 }
 
 export type ForeclosureNormalizeResult = {
@@ -167,12 +191,11 @@ export function normalizeLegacyEquityBand(raw: unknown): EquityBand | null {
 }
 
 export function classifyOwnerEntity(name: string | null | undefined): OwnerEntity {
-  const value = text(name)
-  if (!value) return 'unknown'
-  if (/\bestate\b/i.test(value)) return 'estate'
-  if (/\btrust(ee)?\b/i.test(value)) return 'trust'
-  if (/\b(l\.?\s*l\.?\s*c\.?|limited liability|inc\.?|corp\.?|corporation|holdings|partners|l\.?\s*l\.?\s*p\.?|\blp\b)\b/i.test(value)) return 'llc'
-  return 'person'
+  const signals = ownerNameSignals(name)
+  if (signals.includes('estate')) return 'estate'
+  if (signals.includes('trust')) return 'trust'
+  if (signals.includes('llc')) return 'llc'
+  return text(name) ? 'person' : 'unknown'
 }
 
 export function normalizeCounty(raw: unknown): string | null {
@@ -419,7 +442,18 @@ export function normalizeForeclosureInput(
   if (!ownerName) return { ok: false, reason: 'Owner name is required.' }
   if (!situs) return { ok: false, reason: 'Property address is required.' }
 
+  const nameSignals = ownerNameSignals(ownerName)
   const ownerEntity = classifyOwnerEntity(ownerName)
+  const mailingAddress = clip(input.mailingAddress ?? input.mailing_address ?? input.owner_mailing, 300)
+  const absentee = absenteeOwnerSignal({
+    ownerEntity,
+    mailingAddress,
+    situs,
+    ownerState: text(input.ownerState ?? input.owner_state),
+    propertyState: state,
+  })
+  // Entity and absentee signals are recorded before phones. Relatives skip is
+  // not part of this pass; a late-stage optional skip can be added without a vendor.
   const estValue = parseMoney(input.estValue ?? input.est_value)
   const estDebt = parseMoney(input.estDebt ?? input.est_debt)
   const equity = estValue != null && estDebt != null
@@ -444,7 +478,7 @@ export function normalizeForeclosureInput(
     skiptraceNotes = null
   }
   if ((vendor === 'smartskip' || phones.length > 0) && ownerEntity !== 'person') {
-    warnings.push('SmartSkip was ignored because the owner is not a person.')
+    warnings.push(`SmartSkip was ignored because the owner is not a person. Owner-name signals (${nameSignals.join(', ') || ownerEntity}) were applied before phones.`)
     vendor = null
     phones = []
     deceased = false
@@ -476,8 +510,16 @@ export function normalizeForeclosureInput(
     warnings.push('Latitude and longitude were ignored because the pair was incomplete or out of range.')
   }
   const coordinates = explicitCoordinates ?? (isSandboxForeclosureAddress(situs) ? SANDBOX_FORECLOSURE_POINT : null)
-  const notices = parseNoticesSent(input.noticesSent ?? input.notices_sent ?? input.notice_count)
-  if (notices.warning) warnings.push(notices.warning)
+  const outreach = parseOutreachCount(
+    input.outreachCount ?? input.outreach_count ?? input.noticesSent ?? input.notices_sent ?? input.notice_count,
+  )
+  if (outreach.warning) warnings.push(outreach.warning)
+  const noticeLifecycle = parseNoticeLifecycle(input.noticeLifecycle ?? input.lifecycle_status)
+  const noticeType = parseNoticeType(input.noticeType ?? input.notice_type, input.docType ?? input.doc_type)
+  const noticeTypeSource = clip(
+    input.noticeTypeSource ?? input.notice_type_source ?? input.sourceName ?? input.source_name,
+    120,
+  )
 
   const facts = {
     ownerEntity,
@@ -498,7 +540,7 @@ export function normalizeForeclosureInput(
       county,
       state,
       status,
-      noticeLifecycle: parseNoticeLifecycle(input.noticeLifecycle ?? input.lifecycle_status),
+      noticeLifecycle,
       sourceName: clip(input.sourceName ?? input.source_name, 120),
       sourceUrl: clip(input.sourceUrl ?? input.source_url, 400),
       sourceLayer: clip(input.sourceLayer ?? input.layer, 40),
@@ -542,7 +584,19 @@ export function normalizeForeclosureInput(
       skiptraceNotes,
       latitude: coordinates?.latitude ?? null,
       longitude: coordinates?.longitude ?? null,
-      noticesSent: notices.count,
+      noticesSent: outreach.count,
+      outreachCount: outreach.count,
+      attorneyName: clip(input.attorneyName ?? input.attorney_name ?? input.attorney, 160),
+      saleStatus: parseSaleStatus(input.saleStatus ?? input.sale_status, noticeLifecycle),
+      noticeType,
+      noticeTypeSource: noticeType ? noticeTypeSource : null,
+      noticeTimeline: parseNoticeTimeline(input.noticeTimeline ?? input.notice_timeline),
+      absentee: absentee.absentee,
+      ownerSignals: [
+        ...nameSignals,
+        ...absentee.signals.filter((signal) => signal === 'mailing_differs' || signal === 'out_of_state'),
+      ],
+      mailingAddress,
     },
   }
 }
@@ -557,7 +611,7 @@ function parseCoordinate(raw: unknown, kind: 'lat' | 'lng'): number | null {
 }
 
 export function parseForeclosureCsv(csv: string): ForeclosureCsvResult {
-  const table = parseCsvTable(csv)
+  const table = parseForeclosureCsvTable(csv)
   if (table.length < 2) return { accepted: [], rejected: [], warnings: [] }
   const headers = table[0].map((header) => header.trim().toLowerCase())
   const accepted: NormalizedForeclosure[] = []
@@ -607,48 +661,6 @@ function isTaxRecord(input: Record<string, unknown>): boolean {
   if (parseFlag(input.taxOrDltFlag ?? input.tax_or_dlt_flag)) return true
   const blob = `${text(input.excludeReason ?? input.exclude_reason) ?? ''} ${text(input.docType ?? input.doc_type) ?? ''}`.toLowerCase()
   return /\b(tax sale|delinquent tax|tax deed|certificate of purchase|\bdlt\b)\b/.test(blob)
-}
-
-function parseCsvTable(csv: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let cell = ''
-  let quoted = false
-  const input = csv.replace(/^\uFEFF/, '')
-  for (let index = 0; index < input.length; index += 1) {
-    const char = input[index]
-    if (quoted) {
-      if (char === '"') {
-        if (input[index + 1] === '"') {
-          cell += '"'
-          index += 1
-        } else {
-          quoted = false
-        }
-      } else {
-        cell += char
-      }
-      continue
-    }
-    if (char === '"') {
-      quoted = true
-    } else if (char === ',') {
-      row.push(cell)
-      cell = ''
-    } else if (char === '\n') {
-      row.push(cell)
-      rows.push(row)
-      row = []
-      cell = ''
-    } else if (char !== '\r') {
-      cell += char
-    }
-  }
-  if (cell.length > 0 || row.length > 0) {
-    row.push(cell)
-    rows.push(row)
-  }
-  return rows.filter((cells) => cells.some((value) => value.trim()))
 }
 
 function text(raw: unknown): string | null {

@@ -63,22 +63,27 @@ body {
 }
 
 /* SavingKC CRM design system
-   The logo red and charcoal anchor the product. Neutral surfaces do most of
-   the visual work; semantic color is reserved for operational meaning. */
+   Light workspace surfaces follow the mobile CRM: soft blue screens, white
+   cards, and a purple-tinted shadow. Logo red stays the brand accent. */
 .crm-workspace-shell {
-  --crm-canvas: #f6f7f9;
+  --crm-canvas: #F4F6FB;
   --crm-surface: #ffffff;
-  --crm-surface-subtle: #f1f3f5;
+  --crm-surface-subtle: #F0F2FF;
   --crm-surface-raised: #ffffff;
-  --crm-surface-hover: #f4f5fb;
-  --crm-surface-selected: #eeefff;
-  --crm-border: #e1e4e8;
-  --crm-border-strong: #c9cdd3;
-  --crm-ink: #202124;
-  --crm-text: #32353a;
-  --crm-text-muted: #5f6368;
-  --crm-text-dim: #7c828a;
-  --crm-text-disabled: #a7abb1;
+  --crm-surface-hover: #EEF0FF;
+  --crm-surface-selected: #E4E6FF;
+  --crm-border: #ECEEF6;
+  --crm-border-strong: #D5D8EA;
+  --crm-ink: #1B1D2C;
+  --crm-text: #2A2E3F;
+  --crm-text-muted: #5E6478;
+  --crm-text-dim: #8E93A8;
+  --crm-text-disabled: #B4B8C8;
+  --crm-radius-sm: 10px;
+  --crm-radius-md: 14px;
+  --crm-radius-lg: 18px;
+  --crm-radius-xl: 24px;
+  --crm-radius-pill: 999px;
   --crm-brand: #c8242d;
   --crm-brand-hover: #aa1e26;
   --crm-brand-active: #8c1820;
@@ -100,24 +105,24 @@ body {
   --crm-info: #2563a6;
   --crm-info-soft: #eaf2fb;
   --crm-info-border: #94b9df;
-  --crm-violet: #6d4cb3;
-  --crm-violet-soft: #f0ecfa;
-  --crm-violet-border: #b7a6dc;
-  --crm-action: #4f46d9;
-  --crm-action-soft: #eeefff;
-  --crm-action-border: #9aa4ff;
+  --crm-violet: #6D70F5;
+  --crm-violet-soft: #EEF0FF;
+  --crm-violet-border: #C9CCF6;
+  --crm-action: #6D70F5;
+  --crm-action-soft: #EEF0FF;
+  --crm-action-border: #C9CCF6;
   --crm-nav: #323232;
   --crm-nav-hover: #404043;
   --crm-nav-active: #4a3b3d;
   --crm-nav-text: #f7f7f8;
   --crm-nav-muted: #c5c7cb;
-  --crm-shadow-sm: 0 1px 2px rgba(32, 33, 36, 0.06);
-  --crm-shadow-md: 0 6px 20px rgba(32, 33, 36, 0.10);
+  --crm-shadow-sm: 0 8px 20px rgba(107, 112, 196, 0.06);
+  --crm-shadow-md: 0 14px 32px rgba(107, 112, 196, 0.08);
 
   --ck-bg: var(--crm-canvas);
   --ck-surface: #ffffff;
   --ck-surface-elev: var(--crm-surface-subtle);
-  --ck-surface-hi: #e9ebee;
+  --ck-surface-hi: #E4E6FF;
   --ck-border: var(--crm-border);
   --ck-border-strong: var(--crm-border-strong);
   --ck-text: var(--crm-ink);
@@ -140,6 +145,15 @@ body {
   --crm-blue-soft: var(--crm-info-soft);
   --crm-shadow: var(--crm-shadow-md);
   color-scheme: light;
+}
+
+.crm-workspace-shell[data-theme="light"] :is(h1, h2, h3) {
+  letter-spacing: -0.03em;
+}
+
+.crm-workspace-shell[data-theme="light"] .crm-panel,
+.crm-workspace-shell[data-theme="light"] .crm-panel-raised {
+  border-radius: var(--crm-radius-lg);
 }
 
 .crm-workspace-shell[data-theme="dark"] {
