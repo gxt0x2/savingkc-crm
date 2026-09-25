@@ -4,14 +4,20 @@ import Link from 'next/link'
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
+import { ForeclosureMap } from '@/components/prospecting/foreclosure-map'
 import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
 import { Icon } from '@/components/ui/icon'
+import { formatPhone } from '@/lib/format'
 import {
   EQUITY_BAND_LABELS,
   STATUS_LABELS,
+  chicagoDate,
+  foreclosureMapPins,
+  formatEquity,
+  formatSaleDate,
+  saleTimingLabel,
   type EquityBand,
   type ForeclosureStatus,
-  formatEquity,
 } from '@/lib/prospecting/foreclosure'
 
 interface ForeclosureDetailRecord {
@@ -49,6 +55,8 @@ interface ForeclosureDetailRecord {
   skiptraceDate: string | null
   dialReady: boolean
   dialBlockers: string[]
+  latitude: number | null
+  longitude: number | null
   prospectId: string | null
   leadId: string | null
   notes: string | null
@@ -158,16 +166,27 @@ export function ForeclosureDetail({ id }: { id: string }) {
         {!prospect ? <p className="text-sm text-[var(--crm-text-muted)]">Loading foreclosure prospect…</p> : <article className="space-y-4">
           <section className="crm-panel rounded-2xl p-4 sm:p-5">
             <p className="crm-eyebrow capitalize">{prospect.county} {prospect.state} · {prospect.noticeLifecycle.split('_').join(' ')}</p>
-            <h2 className="mt-1 text-2xl font-black text-[var(--crm-ink)]">{prospect.ownerName}</h2>
+            <p className="mt-2 text-sm font-bold uppercase tracking-wide text-[var(--crm-text-muted)]">Sale</p>
+            <p className="text-2xl font-black text-[var(--crm-ink)]">{formatSaleDate(prospect.saleDate)}{prospect.saleTime ? ` · ${prospect.saleTime}` : ''}</p>
+            <p className="text-sm font-bold text-[var(--crm-text)]">{saleTimingLabel(prospect.saleDate, chicagoDate())} · {prospect.saleLocation || 'Venue not recorded'}</p>
+            <h2 className="mt-4 text-xl font-black text-[var(--crm-ink)]">{prospect.ownerName}</h2>
             <p className="mt-1 text-sm text-[var(--crm-text-muted)]">{prospect.situs}{prospect.city ? `, ${prospect.city}` : ''} {prospect.state} {prospect.zip || ''}</p>
-            <p className="mt-2 text-sm font-bold">Owner is a {prospect.ownerEntity}. Status: {STATUS_LABELS[prospect.status]}.</p>
+            <p className="mt-1 text-sm font-bold">Owner is a {prospect.ownerEntity}. Status: {STATUS_LABELS[prospect.status]}.</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-[var(--crm-border)] px-3 py-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--crm-text-muted)]">Equity</p>
+                <p className="text-xl font-black">{formatEquity(prospect.estEquity)}</p>
+                <p className="text-sm text-[var(--crm-text-muted)]">{EQUITY_BAND_LABELS[prospect.equityBand]}{prospect.priority ? ' · sorts first' : ''}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--crm-border)] px-3 py-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--crm-text-muted)]">Phones</p>
+                {prospect.phones.length > 0 ? prospect.phones.map((phone) => <p key={phone} className="text-lg font-black">{formatPhone(phone)}</p>) : <p className="text-sm font-bold text-[var(--crm-text-muted)]">No SmartSkip phone</p>}
+              </div>
+            </div>
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              <div><dt className="font-bold text-[var(--crm-text-muted)]">Sale</dt><dd>{prospect.saleDate || 'Not scheduled'}{prospect.saleTime ? ` · ${prospect.saleTime}` : ''}</dd></div>
-              <div><dt className="font-bold text-[var(--crm-text-muted)]">Location</dt><dd>{prospect.saleLocation || 'Not recorded'}</dd></div>
               <div><dt className="font-bold text-[var(--crm-text-muted)]">Case</dt><dd>{prospect.caseNumber || prospect.instrumentNumber || 'Not recorded'}</dd></div>
               <div><dt className="font-bold text-[var(--crm-text-muted)]">Lender / firm</dt><dd>{prospect.plaintiffLender || 'Not recorded'}{prospect.trusteeOrFirm ? ` · ${prospect.trusteeOrFirm}` : ''}</dd></div>
               <div><dt className="font-bold text-[var(--crm-text-muted)]">Source</dt><dd>{prospect.sourceUrl ? <a href={prospect.sourceUrl} className="font-bold text-[var(--crm-info)] hover:underline">{prospect.sourceName || 'Notice source'}</a> : (prospect.sourceName || 'Not recorded')}</dd></div>
-              <div><dt className="font-bold text-[var(--crm-text-muted)]">Equity</dt><dd className="font-black">{formatEquity(prospect.estEquity)} · {EQUITY_BAND_LABELS[prospect.equityBand]}{prospect.priority ? ' · sorts first' : ''}</dd></div>
             </dl>
             <p className="mt-3 text-xs text-[var(--crm-text-muted)]">Value {formatEquity(prospect.estValue)} ({prospect.estValueSource || 'no source'}) minus debt {formatEquity(prospect.estDebt)} ({prospect.estDebtSource || 'no source'}). Preferable haircut is a sort flag only{prospect.preferable ? ' and this row clears it' : ''}.</p>
             {prospect.notes ? <p className="mt-3 text-sm">{prospect.notes}</p> : null}
@@ -179,6 +198,7 @@ export function ForeclosureDetail({ id }: { id: string }) {
               <button type="button" disabled={busy} onClick={() => void setStatus('dead')} className="crm-secondary-button h-10 rounded-lg px-4 text-sm font-black">Mark dead</button>
             </div>
           </section>
+          {prospect.latitude != null && prospect.longitude != null ? <ForeclosureMap pins={foreclosureMapPins([prospect])} heightClass="h-48" /> : null}
           <form aria-label="Equity and SmartSkip" onSubmit={(event) => void saveFacts(event)} className="crm-panel grid gap-3 rounded-2xl p-4 sm:grid-cols-2">
             <h3 className="text-base font-black sm:col-span-2">Equity and SmartSkip</h3>
             <label className="text-xs font-bold text-[var(--crm-text-muted)]">Est. value

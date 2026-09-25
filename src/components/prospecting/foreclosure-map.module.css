@@ -1,0 +1,20 @@
+.host {
+  background: var(--crm-surface-subtle);
+}
+
+.host :global(.leaflet-container) {
+  height: 100%;
+  width: 100%;
+  background: var(--crm-surface-subtle);
+  font: inherit;
+}
+
+.pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 3px solid white;
+  background: var(--crm-danger);
+  box-shadow: 0 1px 3px color-mix(in srgb, black 35%, transparent);
+  cursor: pointer;
+}

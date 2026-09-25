@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20261114120000_mortgage_foreclosure_prospects.sql'), 'utf8')
+const coordinates = readFileSync(join(process.cwd(), 'supabase/migrations/20261115120000_mortgage_foreclosure_coordinates.sql'), 'utf8')
 const countyEnrollment = readFileSync(join(process.cwd(), 'supabase/migrations/20261023120000_enroll_county_prospects_by_parcel_ids.sql'), 'utf8')
 
 describe('mortgage foreclosure migration', () => {
@@ -23,5 +24,12 @@ describe('mortgage foreclosure migration', () => {
     expect(migration).toContain("delinquent_years_category NOT IN ('2yr', '3yr_plus')")
     expect(countyEnrollment).toContain("lower(trim(coalesce(prospect.county, ''))) = 'jackson'")
     expect(countyEnrollment).toContain('requested.parcel_id = prospect.parcel_id')
+  })
+
+  it('adds optional coordinates without seeding a person', () => {
+    expect(coordinates).toContain('ADD COLUMN IF NOT EXISTS latitude')
+    expect(coordinates).toContain('ADD COLUMN IF NOT EXISTS longitude')
+    expect(coordinates).toContain('latitude BETWEEN -90 AND 90')
+    expect(coordinates).not.toMatch(/INSERT INTO/i)
   })
 })

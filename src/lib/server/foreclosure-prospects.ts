@@ -6,10 +6,13 @@ import {
   type NormalizedForeclosure,
   FORECLOSURE_STATUSES,
   assertForeclosureStatusChange,
+  chicagoDate,
+  compareForeclosureQueue,
   dialReadyBlockers,
   foreclosureCallingHref,
   normalizeForeclosureInput,
   parseForeclosureCsv,
+  saleWithinWeek,
 } from '@/lib/prospecting/foreclosure'
 import { supabase } from '@/lib/supabase-lazy'
 
@@ -72,6 +75,8 @@ export interface ForeclosureView {
   leadId: string | null
   dialReady: boolean
   dialBlockers: string[]
+  latitude: number | null
+  longitude: number | null
   updatedAt: string
 }
 
@@ -127,6 +132,8 @@ interface ForeclosureRow {
   skiptrace_notes: string | null
   prospect_id: string | null
   lead_id: string | null
+  latitude: number | string | null
+  longitude: number | string | null
   updated_at: string
 }
 
@@ -208,6 +215,8 @@ function toView(row: ForeclosureRow): ForeclosureView {
     skiptraceNotes: row.skiptrace_notes,
     prospectId: row.prospect_id,
     leadId: row.lead_id,
+    latitude: numberOrNull(row.latitude),
+    longitude: numberOrNull(row.longitude),
     dialReady: dialBlockers.length === 0,
     dialBlockers,
     updatedAt: row.updated_at,
@@ -265,6 +274,8 @@ function payload(record: NormalizedForeclosure, actor: AuthenticatedActor) {
     email_1: record.email,
     deceased_flag: record.deceased,
     skiptrace_notes: record.skiptraceNotes,
+    latitude: record.latitude,
+    longitude: record.longitude,
     updated_by: actor.email,
     updated_at: new Date().toISOString(),
   }
@@ -276,8 +287,8 @@ function requireNormalized(input: Record<string, unknown>, current: ForeclosureS
   return normalized.record
 }
 
-export async function listForeclosureProspects(filters: { county?: string | null; status?: string | null; dialReady?: boolean }) {
-  let query = supabase.from(TABLE).select('*').order('est_equity', { ascending: false, nullsFirst: false }).limit(200)
+export async function listForeclosureProspects(filters: { county?: string | null; status?: string | null; dialReady?: boolean; saleThisWeek?: boolean }) {
+  let query = supabase.from(TABLE).select('*').order('sale_date', { ascending: true, nullsFirst: false }).limit(200)
   if (filters.county) query = query.eq('county', filters.county)
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.dialReady) {
@@ -285,9 +296,11 @@ export async function listForeclosureProspects(filters: { county?: string | null
   }
   const { data, error } = await query
   if (error) throw databaseError(error)
+  const today = chicagoDate()
   return ((data ?? []) as ForeclosureRow[])
     .map(toView)
-    .sort((left, right) => queueRank(left) - queueRank(right) || (right.estEquity ?? -1) - (left.estEquity ?? -1))
+    .filter((view) => !filters.saleThisWeek || saleWithinWeek(view.saleDate, today))
+    .sort(compareForeclosureQueue)
 }
 
 export async function getForeclosureProspect(id: string) {
@@ -299,7 +312,7 @@ export async function getForeclosureProspect(id: string) {
 }
 
 export async function createForeclosureProspect(actor: AuthenticatedActor, input: Record<string, unknown>) {
-  const record = requireNormalized(input)
+  const record = await placeCoordinates(requireNormalized(input))
   const { data, error } = await supabase.from(TABLE).insert({ ...payload(record, actor), created_by: actor.email }).select('*').single<ForeclosureRow>()
   if (error) throw databaseError(error)
   return toView(data)
@@ -344,7 +357,7 @@ export async function importForeclosureCsv(actor: AuthenticatedActor, csv: strin
   }
   let imported = 0
   for (const record of parsed.accepted) {
-    await upsertImported(actor, record)
+    await upsertImported(actor, await placeCoordinates(record))
     imported += 1
   }
   return { imported, rejected: parsed.rejected, warnings: parsed.warnings }
@@ -495,17 +508,39 @@ function viewToInput(view: ForeclosureView): Record<string, unknown> {
     email: view.email,
     deceased: view.deceased,
     skiptraceNotes: view.skiptraceNotes,
+    latitude: view.latitude,
+    longitude: view.longitude,
   }
 }
 
-function queueRank(view: ForeclosureView): number {
-  if (view.estEquity != null && view.estEquity >= 100_000) return 0
-  if (view.estEquity != null && view.estEquity >= 75_000) return 1
-  return 2
+async function placeCoordinates(record: NormalizedForeclosure): Promise<NormalizedForeclosure> {
+  if (record.latitude != null && record.longitude != null) return record
+  const geocoded = await geocodeForeclosureAddress(record)
+  return geocoded ? { ...record, ...geocoded } : record
 }
 
-function numberOrNull(value: number | null): number | null {
-  if (value == null) return null
+async function geocodeForeclosureAddress(record: NormalizedForeclosure): Promise<{ latitude: number; longitude: number } | null> {
+  const key = process.env.GOOGLE_MAPS_API_KEY?.trim()
+  if (!key || !record.situs || !record.city || !record.state || !record.zip) return null
+  const address = `${record.situs}, ${record.city}, ${record.state} ${record.zip}`
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
+    url.searchParams.set('address', address)
+    url.searchParams.set('key', key)
+    const response = await fetch(url, { signal: AbortSignal.timeout(4000) })
+    if (!response.ok) return null
+    const body = await response.json() as { results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }> }
+    const location = body.results?.[0]?.geometry?.location
+    if (typeof location?.lat !== 'number' || typeof location.lng !== 'number') return null
+    if (Math.abs(location.lat) > 90 || Math.abs(location.lng) > 180) return null
+    return { latitude: location.lat, longitude: location.lng }
+  } catch {
+    return null
+  }
+}
+
+function numberOrNull(value: number | string | null): number | null {
+  if (value == null || value === '') return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
 }

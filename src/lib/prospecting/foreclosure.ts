@@ -121,6 +121,8 @@ export interface NormalizedForeclosure {
   email: string | null
   deceased: boolean
   skiptraceNotes: string | null
+  latitude: number | null
+  longitude: number | null
 }
 
 export type ForeclosureNormalizeResult = {
@@ -137,6 +139,10 @@ export interface ForeclosureCsvResult {
   rejected: Array<{ row: number; reason: string }>
   warnings: Array<{ row: number; message: string }>
 }
+
+/** Fixed downtown Kansas City pin for the fictional 100 Sandbox Court row. Not a geocoded residence. */
+export const SANDBOX_FORECLOSURE_POINT = { latitude: 39.084, longitude: -94.585 }
+export const FORECLOSURE_SALE_WEEK_DAYS = 7
 
 export function formatEquity(value: number | null): string {
   if (value == null) return 'Unknown'
@@ -274,6 +280,103 @@ export function deriveForeclosureStatus(
   return 'new'
 }
 
+export function isSandboxForeclosureAddress(situs: string | null | undefined): boolean {
+  return (situs ?? '').trim().toLowerCase() === '100 sandbox court'
+}
+
+export function explicitForeclosureCoordinates(input: { latitude?: unknown; longitude?: unknown }): { latitude: number; longitude: number } | null {
+  const latitude = parseCoordinate(input.latitude, 'lat')
+  const longitude = parseCoordinate(input.longitude, 'lng')
+  if (latitude == null || longitude == null) return null
+  return { latitude, longitude }
+}
+
+export function foreclosureCoordinates(input: { latitude?: unknown; longitude?: unknown; situs?: string | null }): { latitude: number; longitude: number } | null {
+  return explicitForeclosureCoordinates(input) ?? (isSandboxForeclosureAddress(input.situs) ? SANDBOX_FORECLOSURE_POINT : null)
+}
+
+export function chicagoDate(now = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+}
+
+export function addIsoDays(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+export function saleWithinWeek(saleDate: string | null, today: string): boolean {
+  if (!saleDate) return false
+  return saleDate >= today && saleDate <= addIsoDays(today, FORECLOSURE_SALE_WEEK_DAYS - 1)
+}
+
+export function daysUntilSale(saleDate: string | null, today: string): number | null {
+  if (!saleDate) return null
+  const start = Date.parse(`${today}T00:00:00Z`)
+  const end = Date.parse(`${saleDate}T00:00:00Z`)
+  return Math.round((end - start) / 86_400_000)
+}
+
+export function saleTimingLabel(saleDate: string | null, today: string): string {
+  const days = daysUntilSale(saleDate, today)
+  if (days == null) return 'No sale date'
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  if (days > 1) return `In ${days} days`
+  if (days === -1) return 'Yesterday'
+  return `${Math.abs(days)} days ago`
+}
+
+export function formatSaleDate(isoDate: string | null): string {
+  if (!isoDate) return 'No sale date'
+  const [year, month, day] = isoDate.split('-').map(Number)
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)))
+}
+
+export function listRowPhones(dialReady: boolean, phones: string[]): string[] {
+  return dialReady ? phones.filter(Boolean) : []
+}
+
+export interface ForeclosureMapPin {
+  id: string
+  ownerName: string
+  latitude: number
+  longitude: number
+  dialReady: boolean
+}
+
+export function foreclosureMapPins(rows: Array<{
+  id: string
+  ownerName: string
+  latitude: number | null
+  longitude: number | null
+  dialReady: boolean
+}>): ForeclosureMapPin[] {
+  return rows.flatMap((row) => {
+    if (row.latitude == null || row.longitude == null) return []
+    if (!Number.isFinite(row.latitude) || !Number.isFinite(row.longitude)) return []
+    return [{ id: row.id, ownerName: row.ownerName, latitude: row.latitude, longitude: row.longitude, dialReady: row.dialReady }]
+  })
+}
+
+export function compareForeclosureQueue(
+  left: { saleDate: string | null; estEquity: number | null },
+  right: { saleDate: string | null; estEquity: number | null },
+): number {
+  const leftSale = left.saleDate ?? '9999-12-31'
+  const rightSale = right.saleDate ?? '9999-12-31'
+  if (leftSale !== rightSale) return leftSale < rightSale ? -1 : 1
+  const rank = (equity: number | null) => {
+    if (equity != null && equity >= FORECLOSURE_PRIORITY_EQUITY) return 0
+    if (equity != null && equity >= FORECLOSURE_EQUITY_FLOOR) return 1
+    return 2
+  }
+  const byRank = rank(left.estEquity) - rank(right.estEquity)
+  if (byRank !== 0) return byRank
+  return (right.estEquity ?? -1) - (left.estEquity ?? -1)
+}
+
 export function foreclosureCallingHref(prospectId: string, recordId: string): string {
   const query = new URLSearchParams({
     prospect_ids: prospectId,
@@ -352,6 +455,14 @@ export function normalizeForeclosureInput(
     warnings.push('SmartSkip was recorded without a usable phone.')
   }
 
+  const latitudeRaw = input.latitude ?? input.lat
+  const longitudeRaw = input.longitude ?? input.lng ?? input.lon
+  const explicitCoordinates = explicitForeclosureCoordinates({ latitude: latitudeRaw, longitude: longitudeRaw })
+  if ((text(latitudeRaw) || text(longitudeRaw)) && !explicitCoordinates) {
+    warnings.push('Latitude and longitude were ignored because the pair was incomplete or out of range.')
+  }
+  const coordinates = explicitCoordinates ?? (isSandboxForeclosureAddress(situs) ? SANDBOX_FORECLOSURE_POINT : null)
+
   const facts = {
     ownerEntity,
     deceased,
@@ -413,8 +524,19 @@ export function normalizeForeclosureInput(
       email: clip(input.email ?? input.email_1, 160),
       deceased,
       skiptraceNotes,
+      latitude: coordinates?.latitude ?? null,
+      longitude: coordinates?.longitude ?? null,
     },
   }
+}
+
+function parseCoordinate(raw: unknown, kind: 'lat' | 'lng'): number | null {
+  if (raw == null || raw === '') return null
+  const value = typeof raw === 'number' ? raw : Number(text(raw))
+  if (!Number.isFinite(value)) return null
+  const limit = kind === 'lat' ? 90 : 180
+  if (Math.abs(value) > limit) return null
+  return Math.round(value * 1_000_000) / 1_000_000
 }
 
 export function parseForeclosureCsv(csv: string): ForeclosureCsvResult {

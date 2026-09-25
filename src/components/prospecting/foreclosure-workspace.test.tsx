@@ -23,6 +23,14 @@ vi.mock('@/components/ui/icon', () => ({
   Icon: () => null,
 }))
 
+vi.mock('./foreclosure-map', () => ({
+  ForeclosureMap: ({ pins }: { pins: Array<{ id: string; ownerName: string }> }) => (
+    <div role="region" aria-label="Foreclosure sale map">
+      {pins.map((pin) => <a key={pin.id} href={`/prospecting/foreclosure/${pin.id}`}>{`Open ${pin.ownerName}`}</a>)}
+    </div>
+  ),
+}))
+
 const prospect = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   ownerName: 'Ernest Dodson',
@@ -51,6 +59,8 @@ const prospect = {
   priority: true,
   preferable: true,
   phones: ['+19137179716'],
+  latitude: 39.084,
+  longitude: -94.585,
   email: 'savingkc@gmail.com',
   deceased: false,
   skiptraceVendor: 'smartskip',
@@ -79,6 +89,10 @@ describe('foreclosure prospecting workspace', () => {
     })
     render(<ForeclosureWorkspace />)
     expect(await screen.findByRole('link', { name: 'Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
+    expect(screen.getByRole('checkbox', { name: 'Sale this week' })).toBeInTheDocument()
+    expect(screen.getByText('(913) 717-9716')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Foreclosure sale map' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
     expect(screen.getByRole('link', { name: 'Foreclosure' })).toHaveAttribute('href', '/prospecting/foreclosure')
     fireEvent.click(screen.getByRole('button', { name: 'Call' }))
     await waitFor(() => expect(navigation.push).toHaveBeenCalledWith(expect.stringContaining('prospect_ids=')))

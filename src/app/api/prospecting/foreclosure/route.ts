@@ -29,6 +29,7 @@ export async function GET(request: Request) {
       county: params.get('county'),
       status,
       dialReady: params.get('dialReady') === '1',
+      saleThisWeek: params.get('saleThisWeek') === '1',
     })
     return prospectingJson({ prospects })
   } catch (error) {

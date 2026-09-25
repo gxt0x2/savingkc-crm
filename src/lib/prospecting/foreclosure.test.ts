@@ -2,13 +2,19 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  SANDBOX_FORECLOSURE_POINT,
   classifyOwnerEntity,
+  compareForeclosureQueue,
   deriveForeclosureStatus,
   dialReadyBlockers,
   equityBand,
   foreclosureCallingHref,
+  foreclosureMapPins,
+  listRowPhones,
   normalizeForeclosureInput,
   parseForeclosureCsv,
+  saleTimingLabel,
+  saleWithinWeek,
 } from './foreclosure'
 
 const sandboxCsv = readFileSync(join(process.cwd(), 'docs/prospecting/mortgage-foreclosure-sandbox.csv'), 'utf8')
@@ -142,8 +148,53 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
       phones: ['+19137179716'],
       email: 'savingkc@gmail.com',
       skiptraceVendor: 'smartskip',
+      latitude: SANDBOX_FORECLOSURE_POINT.latitude,
+      longitude: SANDBOX_FORECLOSURE_POINT.longitude,
     })
     expect(foreclosureCallingHref('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'))
       .toContain('prospect_ids=11111111-1111-4111-8111-111111111111')
+  })
+
+  it('sorts the sale queue by date, then equity, and filters this week', () => {
+    const soon = { saleDate: '2026-09-28', estEquity: 80_000 }
+    const laterPriority = { saleDate: '2026-10-02', estEquity: 150_000 }
+    const sameDayThin = { saleDate: '2026-09-28', estEquity: 40_000 }
+    expect([laterPriority, sameDayThin, soon].sort(compareForeclosureQueue)).toEqual([soon, sameDayThin, laterPriority])
+    expect(saleWithinWeek('2026-09-25', '2026-09-25')).toBe(true)
+    expect(saleWithinWeek('2026-10-01', '2026-09-25')).toBe(true)
+    expect(saleWithinWeek('2026-10-02', '2026-09-25')).toBe(false)
+    expect(saleWithinWeek(null, '2026-09-25')).toBe(false)
+    expect(saleTimingLabel('2026-09-27', '2026-09-25')).toBe('In 2 days')
+    expect(saleTimingLabel('2026-09-25', '2026-09-25')).toBe('Today')
+  })
+
+  it('shows phones on dial-ready rows and builds map pins only when coordinates exist', () => {
+    expect(listRowPhones(true, ['+19137179716'])).toEqual(['+19137179716'])
+    expect(listRowPhones(false, ['+19137179716'])).toEqual([])
+    const mapped = foreclosureMapPins([
+      { id: 'pin-1', ownerName: 'Ernest Dodson', latitude: 39.084, longitude: -94.585, dialReady: true },
+      { id: 'pin-2', ownerName: 'No coordinates', latitude: null, longitude: null, dialReady: false },
+    ])
+    expect(mapped).toEqual([{ id: 'pin-1', ownerName: 'Ernest Dodson', latitude: 39.084, longitude: -94.585, dialReady: true }])
+  })
+
+  it('uses the sandbox Kansas City pin when a fictional address has no coordinates', () => {
+    const row = normalizeForeclosureInput({
+      county: 'jackson',
+      ownerName: 'Ernest Dodson',
+      situs: '100 Sandbox Court',
+      estValue: 240000,
+      estDebt: 90000,
+    })
+    expect(row.ok && row.record.latitude).toBe(SANDBOX_FORECLOSURE_POINT.latitude)
+    expect(row.ok && row.record.longitude).toBe(SANDBOX_FORECLOSURE_POINT.longitude)
+    const elsewhere = normalizeForeclosureInput({
+      county: 'jackson',
+      ownerName: 'Ernest Dodson',
+      situs: '200 Other Court',
+      estValue: 240000,
+      estDebt: 90000,
+    })
+    expect(elsewhere.ok && elsewhere.record.latitude).toBeNull()
   })
 })
