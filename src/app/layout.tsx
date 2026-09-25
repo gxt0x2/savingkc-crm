@@ -5,6 +5,7 @@ import './prospecting.css'
 import './daily-rhythm.css'
 import './mobile-crm.css'
 import './foreclosure-mobile.css'
+import './crm-mobile-theme.css'
 
 export const metadata: Metadata = {
   title: 'Savings KC | Acquisitions CRM',

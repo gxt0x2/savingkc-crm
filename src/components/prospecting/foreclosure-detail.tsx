@@ -330,12 +330,12 @@ export function ForeclosureDetail({ id }: { id: string }) {
                 {Object.entries(NOTICE_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
-            <div className="sm:col-span-2">
+            {timeline.length > 0 ? <div className="sm:col-span-2">
               <h4 className="text-xs font-black uppercase tracking-wide text-[var(--fc-text-secondary)]">Update timeline</h4>
-              {timeline.length === 0 ? <p className="mt-2 text-sm text-[var(--fc-text-secondary)]">No attorney or sale-date changes yet.</p> : <ul className="fc-timeline mt-2">
+              <ul className="fc-timeline mt-2">
                 {timeline.map((event, index) => <li key={`${event.at}-${event.field}-${index}`}>{describeNoticeEvent(event)}</li>)}
-              </ul>}
-            </div>
+              </ul>
+            </div> : null}
             <button type="submit" disabled={busy} className="fc-call h-10 text-sm font-black sm:col-span-2">Save notice file</button>
           </form>
           <form aria-label="Equity and SmartSkip" onSubmit={(event) => void saveFacts(event)} className="crm-panel grid gap-3 p-4 sm:grid-cols-2">

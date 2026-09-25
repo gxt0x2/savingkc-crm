@@ -181,7 +181,7 @@ export function DealStatsPanel({ slug }: { slug: string }) {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={`px-3 py-2 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
-                tab === t.id ? 'border-[#E32E2E] text-[#E32E2E]' : 'border-transparent text-slate-500 hover:text-slate-900'
+                tab === t.id ? 'border-[var(--ck-accent)] text-[var(--ck-accent)]' : 'border-transparent text-slate-500 hover:text-slate-900'
               }`}
             >
               {t.label}

@@ -134,7 +134,23 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.queryByText(/sorts first/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Phones can follow the equity floor/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /update timeline/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/No attorney or sale-date changes yet/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save notice file' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Call' }))
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(`/api/prospecting/foreclosure/${prospect.id}/call`, { method: 'POST' }))
+  })
+
+  it('shows the update timeline only after an attorney or sale-date change', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      prospect: {
+        ...prospect,
+        noticeTimeline: [{ at: '2026-09-20T15:00:00.000Z', field: 'attorney', from: null, to: 'Sandbox Trustee' }],
+      },
+    }), { status: 200 }))
+    render(<ForeclosureDetail id={prospect.id} />)
+    expect(await screen.findByRole('heading', { name: /update timeline/i })).toBeInTheDocument()
+    expect(screen.getByText(/Attorney set to Sandbox Trustee/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save notice file' })).toBeInTheDocument()
   })
 })

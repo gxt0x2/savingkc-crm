@@ -68,11 +68,11 @@ function WorkspaceNavLink({ item, pathname, collapsed, needsReply }: { item: Nav
         'relative flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 py-2 text-[12px] font-semibold transition-colors',
         collapsed && 'justify-center',
         active
-          ? 'bg-[var(--crm-nav-active)] text-[var(--crm-nav-text)] before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-[var(--crm-brand)]'
+          ? 'bg-[var(--crm-nav-active)] text-[var(--crm-nav-text)] before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-[var(--crm-nav-accent,var(--crm-brand))]'
           : 'text-[var(--crm-nav-muted)] hover:bg-[var(--crm-nav-hover)] hover:text-[var(--crm-nav-text)]',
       )}
     >
-      <Icon name={item.icon} className={cn('text-[19px]', active ? 'text-[var(--crm-brand)]' : 'text-current')} />
+      <Icon name={item.icon} className={cn('text-[19px]', active ? 'text-[var(--crm-nav-accent,var(--crm-brand))]' : 'text-current')} />
       <span className={cn('min-w-0 flex-1 truncate', collapsed && 'sr-only')}>{item.label}</span>
       {item.label === 'Conversations' && needsReply !== null && needsReply > 0 ? <span className="rounded-full bg-[var(--crm-brand)] px-1.5 py-0.5 text-[9px] font-black text-white">{needsReply}</span> : null}
     </Link>

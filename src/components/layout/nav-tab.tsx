@@ -48,8 +48,8 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
   const isTcNav = mode === 'tc'
   const activeText = isTcNav ? 'text-[var(--ck-text)]' : 'text-white'
   const inactiveText = isTcNav
-    ? 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-[var(--ck-text)]'
-    : 'text-[var(--ck-text-muted)] hover:bg-[#E32E2E]/15 hover:text-white'
+    ? 'text-[var(--ck-text-muted)] hover:bg-[color-mix(in_srgb,var(--ck-accent)_15%,transparent)] hover:text-[var(--ck-text)]'
+    : 'text-[var(--ck-text-muted)] hover:bg-[color-mix(in_srgb,var(--ck-accent)_15%,transparent)] hover:text-white'
 
   function isActive(href: string): boolean {
     const baseHref = href.split('?')[0]
@@ -105,7 +105,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
               onClick={onNavigate}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-colors ${
                 active
-                  ? `bg-[#E32E2E]/15 ${activeText} border-l-2 border-[#E32E2E]`
+                  ? `bg-[color-mix(in_srgb,var(--ck-accent)_18%,transparent)] ${activeText} border-l-2 border-[var(--ck-accent)]`
                   : inactiveText
               }`}
             >
@@ -128,7 +128,7 @@ export function NavTabs({ onNavigate, mobile }: NavTabsProps) {
             onClick={onNavigate}
             className={`relative flex items-center gap-1.5 px-2.5 py-2 text-sm font-bold rounded-lg transition-colors whitespace-nowrap flex-shrink-0 ${
               active
-                ? `bg-[#E32E2E]/15 ${activeText}`
+                ? `bg-[color-mix(in_srgb,var(--ck-accent)_18%,transparent)] ${activeText}`
                 : inactiveText
             }`}
           >
