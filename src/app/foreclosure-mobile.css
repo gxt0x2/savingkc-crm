@@ -253,7 +253,7 @@
   height: 11rem;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1680px) {
   .fc-stage {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
     align-items: start;
@@ -344,4 +344,230 @@
 
 .fc-phone-role {
   color: var(--fc-text-secondary);
+}
+
+.fc-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-lg);
+  background: var(--fc-card);
+  box-shadow: var(--fc-shadow);
+}
+
+.fc-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  color: var(--fc-text);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.fc-table thead th {
+  background: var(--fc-text);
+  color: var(--crm-on-brand);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fc-table tbody td {
+  padding: 0.38rem 0.6rem;
+  border-bottom: 1px solid var(--fc-hairline);
+  vertical-align: middle;
+  white-space: nowrap;
+  background: var(--fc-card);
+}
+
+.fc-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.fc-row {
+  cursor: pointer;
+}
+
+.fc-row:hover td {
+  background: var(--fc-purple-soft);
+}
+
+.fc-table thead th:last-child,
+.fc-table tbody td:last-child {
+  position: sticky;
+  right: 0;
+}
+
+.fc-table thead th:last-child {
+  z-index: 2;
+}
+
+.fc-table tbody td:last-child {
+  z-index: 1;
+  box-shadow: -8px 0 12px rgba(27, 29, 44, 0.05);
+}
+
+.fc-row:focus-within td {
+  background: var(--fc-screen-top);
+}
+
+.fc-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.fc-sort:focus-visible,
+.fc-view:focus-visible,
+.fc-owner-link:focus-visible,
+.fc-table .fc-call:focus-visible {
+  outline: 2px solid var(--fc-purple-mist);
+  outline-offset: 2px;
+}
+
+.fc-glyph {
+  font-size: 0.95rem;
+}
+
+.fc-sort-desc {
+  transform: rotate(180deg);
+}
+
+.fc-clip {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-street {
+  max-width: 18rem;
+  font-weight: 700;
+}
+
+.fc-owner-link {
+  color: var(--fc-text);
+  font-weight: 800;
+}
+
+.fc-owner-link:hover {
+  color: var(--fc-purple-deep);
+}
+
+.fc-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
+.fc-table thead .fc-num,
+.fc-table thead .fc-sort {
+  text-align: inherit;
+}
+
+.fc-table .fc-chip,
+.fc-table .fc-pill,
+.fc-table .fc-type {
+  white-space: nowrap;
+}
+
+.fc-table .fc-pill {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.66rem;
+}
+
+.fc-table .fc-chip {
+  padding: 0.08rem 0.45rem;
+  font-size: 0.66rem;
+}
+
+.fc-type {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--fc-radius-pill);
+  background: var(--fc-purple-mist);
+  color: var(--fc-purple-deep);
+  padding: 0.1rem 0.45rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.fc-sale {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  border-radius: var(--fc-radius-sm);
+  padding: 0.05rem 0.28rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.fc-sale-days {
+  font-size: 0.64rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.fc-sale-urgent { color: var(--fc-urgent-ink); background: var(--fc-danger-soft); }
+.fc-sale-soon { color: var(--fc-warning-ink); background: var(--fc-warning-soft); }
+.fc-sale-near { color: var(--fc-near-ink); background: var(--fc-purple-soft); }
+.fc-sale-later { color: var(--fc-later-ink); }
+
+.fc-phone-cell {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.fc-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fc-view,
+.fc-table .fc-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  height: 1.6rem;
+  padding: 0 0.55rem;
+  border-radius: var(--fc-radius-pill);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fc-view {
+  border: 0;
+  background: var(--fc-purple);
+  color: var(--crm-on-brand);
+  box-shadow: 0 4px 10px rgba(109, 112, 245, 0.22);
+}
+
+.fc-view:hover {
+  background: var(--fc-purple-deep);
+}
+
+.fc-table .fc-call {
+  box-shadow: none;
+}
+
+/* Shell dark mode keeps this list on the lavender tokens above.
+   Re-state ink and surfaces so a dark wrapper cannot wash the row out. */
+.crm-workspace-shell[data-theme="dark"] .fc-mobile .fc-table-wrap,
+.ck-dark .fc-mobile .fc-table-wrap {
+  background: var(--fc-card);
+  color: var(--fc-text);
 }

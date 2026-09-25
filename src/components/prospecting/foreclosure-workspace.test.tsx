@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ForeclosureDetail } from './foreclosure-detail'
 import { ForeclosureWorkspace } from './foreclosure-workspace'
@@ -98,25 +98,68 @@ describe('foreclosure prospecting workspace', () => {
     render(<ForeclosureWorkspace />)
     expect(await screen.findByRole('link', { name: 'Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
     expect(screen.getByRole('checkbox', { name: 'Sale this week' })).toBeInTheDocument()
-    expect(screen.getByText('Days to auction')).toBeInTheDocument()
-    expect(screen.getByText('Outreach')).toBeInTheDocument()
-    expect(screen.getByText('Equity')).toBeInTheDocument()
-    expect(screen.getByText('Loan balance')).toBeInTheDocument()
-    expect(screen.getByText('LTV')).toBeInTheDocument()
-    expect(screen.getByText('10/15/2026')).toBeInTheDocument()
-    expect(screen.getByText('09/01/2026')).toBeInTheDocument()
-    expect(screen.getByText('1')).toBeInTheDocument()
-    expect(screen.queryByText('2026-10-15')).not.toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Foreclosure prospects' })
+    expect(within(table).getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Street' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'County · ST' })).toBeInTheDocument()
+    expect(within(table).getByText('100 Sandbox Court')).toBeInTheDocument()
+    expect(within(table).getByText('Jackson MO')).toBeInTheDocument()
+    expect(within(table).getByText('Callable')).toBeInTheDocument()
+    expect(within(table).getByText('$150,000')).toBeInTheDocument()
+    expect(within(table).getByText('$90,000')).toBeInTheDocument()
+    expect(within(table).getByText('10/15/2026')).toBeInTheDocument()
+    expect(within(table).queryByText('2026-10-15')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Days to auction')).not.toBeInTheDocument()
+    expect(within(table).queryByText('LTV')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Phones held')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Not dial-ready')).not.toBeInTheDocument()
+    expect(within(table).queryByText('1st notice')).not.toBeInTheDocument()
     expect(screen.queryByText(/Jackson MO and Johnson KS first/)).not.toBeInTheDocument()
-    expect(screen.getByText('(913) 717-9716')).toBeInTheDocument()
-    expect(screen.getByText('1st notice')).toBeInTheDocument()
+    expect(within(table).getByText('(913) 717-9716')).toBeInTheDocument()
     expect(screen.queryByText(/sorts first/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Foreclosure sale map' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
+    expect(screen.getByRole('link', { name: 'View' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
     expect(screen.getByRole('link', { name: 'Foreclosure' })).toHaveAttribute('href', '/prospecting/foreclosure')
+    fireEvent.click(within(table).getByText('100 Sandbox Court'))
+    expect(navigation.push).toHaveBeenCalledWith(`/prospecting/foreclosure/${prospect.id}`)
     fireEvent.click(screen.getByRole('button', { name: 'Call' }))
     await waitFor(() => expect(navigation.push).toHaveBeenCalledWith(expect.stringContaining('prospect_ids=')))
+  })
+
+  it('sorts the queue from the sale date and equity headers and keeps a missing owner to a dash', async () => {
+    const second = {
+      ...prospect,
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      ownerName: 'UNKNOWN',
+      situs: '7125 Park Rd, Kansas City, MO 64129, Kansas City MO',
+      zip: '64129',
+      saleDate: '2026-11-02',
+      estEquity: 400000,
+      estDebt: null,
+      phones: [],
+      dialReady: false,
+      noticeType: 'nod',
+      status: 'new',
+    }
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ prospects: [prospect, second] }), { status: 200 }))
+    render(<ForeclosureWorkspace />)
+    const table = await screen.findByRole('table', { name: 'Foreclosure prospects' })
+    expect(within(table).getByRole('link', { name: 'Open prospect' })).toHaveTextContent('—')
+    expect(within(table).getByText('7125 Park Rd')).toBeInTheDocument()
+    expect(within(table).getByText('NOD')).toBeInTheDocument()
+    expect(within(table).queryByRole('button', { name: 'Call' })).toBeInTheDocument()
+    expect(within(table).getAllByRole('button', { name: 'Call' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by equity' }))
+    expect(screen.getByRole('columnheader', { name: 'Equity' })).toHaveAttribute('aria-sort', 'descending')
+    const owners = within(table).getAllByRole('link').filter((link) => link.className.includes('fc-owner-link')).map((link) => link.textContent)
+    expect(owners[0]).toBe('—')
+    expect(owners[1]).toBe('Ernest Dodson')
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by sale date' }))
+    expect(screen.getByRole('columnheader', { name: 'Sale date' })).toHaveAttribute('aria-sort', 'ascending')
+    const saleOrder = within(table).getAllByRole('link').filter((link) => link.className.includes('fc-owner-link')).map((link) => link.textContent)
+    expect(saleOrder).toEqual(['Ernest Dodson', '—'])
   })
 
   it('shows the call affordance and lead link on the detail record', async () => {
