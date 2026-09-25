@@ -77,7 +77,7 @@ describe('ProspectingCallReportView', () => {
     expect(screen.getByRole('combobox', { name: 'Report campaign' })).toHaveDisplayValue(campaign.name)
     expect(screen.getByRole('combobox', { name: 'Report agent' })).toHaveDisplayValue('All agents')
     expect(screen.getByRole('combobox', { name: 'Report caller ID' })).toHaveDisplayValue('All caller IDs')
-    expect(screen.getByRole('navigation', { name: 'Prospecting sections' })).toHaveTextContent('Campaigns|Call Reports')
+    expect(screen.getByRole('navigation', { name: 'Prospecting sections' })).toHaveTextContent('Campaigns|Foreclosure|Call Reports')
     expect(screen.getByRole('navigation', { name: 'Call report views' })).toHaveTextContent('Call Detail (3)Sessions (1)Recordings (1)')
     expect(screen.getByRole('link', { name: 'Sessions (1)' })).toHaveAttribute('data-scroll', 'preserve')
     expect(screen.getByText('Call details').closest('details')).toHaveAttribute('open')

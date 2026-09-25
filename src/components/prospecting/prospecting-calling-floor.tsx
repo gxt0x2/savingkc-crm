@@ -219,6 +219,13 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
         setLoading(false)
         return
       }
+      const explicitProspects = params.get('prospect_ids')
+      if (explicitProspects) {
+        const ids = explicitProspects.split(',').map((item) => item.trim()).filter(Boolean)
+        setSubjects(ids.map((id: string) => ({ kind: 'prospect', id, leadId: null, prospectId: id, campaignMemberId: null })))
+        setLoading(false)
+        return
+      }
       const cohort = params.get('cohort')
       if (cohort === 'deceased-2-3yr') {
         const response = await fetch('/api/dialer/queue?cohort=deceased-2-3yr&ids_only=1', { cache: 'no-store' })
