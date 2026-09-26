@@ -1,6 +1,5 @@
-/* Foreclosure prospecting uses the SavingKC mobile CRM surface.
-   Tokens match src/theme.ts in the mobile app. Brand red stays outside
-   this scope. The shell can remain dark; this workspace stays the light phone. */
+/* Foreclosure prospecting uses the SavingKC lavender surface and follows
+   the active workspace theme. Brand red stays outside this scope. */
 .fc-mobile {
   --fc-canvas: #C9CCF6;
   --fc-canvas-deep: #B7BAF0;
@@ -230,12 +229,24 @@
   font-weight: 600;
 }
 
-/* Dark shell paints selects with !important. Beat it only inside this workspace. */
-.ck-dark .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+/* Dark shell paints selects with !important. Beat it inside this workspace,
+   and keep checkboxes on the same color scheme so they are not black squares. */
+.crm-workspace-shell[data-theme="light"] .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea),
+.ck-dark .crm-workspace-shell[data-theme="light"] .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
   background-color: var(--fc-purple-soft) !important;
   border: 1px solid var(--fc-canvas) !important;
   color: var(--fc-text) !important;
   color-scheme: light !important;
+}
+
+.fc-mobile input[type="checkbox"] {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--fc-purple);
+}
+
+.crm-workspace-shell[data-theme="light"] .fc-mobile input[type="checkbox"] {
+  color-scheme: light;
 }
 
 .ck-dark .fc-mobile select option,
@@ -365,8 +376,8 @@
 }
 
 .fc-table thead th {
-  background: var(--fc-text);
-  color: var(--crm-on-brand);
+  background: #4E51D4;
+  color: #ffffff;
   padding: 0.45rem 0.6rem;
   font-size: 0.64rem;
   font-weight: 800;
@@ -381,6 +392,11 @@
   vertical-align: middle;
   white-space: nowrap;
   background: var(--fc-card);
+}
+
+.fc-table tbody td.fc-street,
+.fc-table tbody td.fc-owner-cell {
+  white-space: normal;
 }
 
 .fc-table tbody tr:last-child td {
@@ -431,30 +447,37 @@
 
 .fc-sort:focus-visible,
 .fc-view:focus-visible,
-.fc-owner-link:focus-visible,
-.fc-table .fc-call:focus-visible {
+.fc-owner-link:focus-visible {
   outline: 2px solid var(--fc-purple-mist);
   outline-offset: 2px;
 }
 
-.fc-glyph {
-  font-size: 0.95rem;
+.fc-sort-mark {
+  font-size: 0.72rem;
+  line-height: 1;
 }
 
 .fc-sort-desc {
   transform: rotate(180deg);
 }
 
-.fc-clip {
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.fc-owners { display: flex; flex-direction: column; gap: 0.05rem; white-space: normal; }
+.fc-owner-line { display: block; }
+.fc-owner-heading { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.15rem; color: var(--fc-text); font-size: 1.35rem; font-weight: 900; line-height: 1.15; }
+.fc-street { max-width: 16rem; font-weight: 700; white-space: normal; }
+.fc-street-line, .fc-street-unit { display: block; }
+.fc-street-unit { color: var(--fc-text-secondary); font-size: 0.68rem; font-weight: 700; }
 
-.fc-street {
-  max-width: 18rem;
-  font-weight: 700;
-}
+.fc-days-urgent { color: var(--fc-urgent-ink); }
+.fc-days-soon { color: var(--fc-warning-ink); }
+.fc-days-near { color: var(--fc-near-ink); }
+.fc-days-later { color: var(--fc-later-ink); }
+
+.fc-check { display: inline-flex; height: 2.25rem; align-items: center; gap: 0.4rem; border-radius: var(--fc-radius-pill); background: var(--fc-purple-soft); color: var(--fc-purple-deep); padding: 0 0.7rem; font-size: 0.78rem; font-weight: 800; }
+.fc-queue-note { color: var(--fc-text-secondary); padding: 0.35rem 0.15rem; font-size: 0.85rem; font-weight: 700; }
+.fc-file-tabs { display: flex; }
+.fc-file-tabs button { border: 1px solid var(--fc-border); border-radius: var(--fc-radius-pill); background: var(--fc-card); color: var(--fc-purple-deep); padding: 0.35rem 0.8rem; font-size: 0.75rem; font-weight: 800; }
+.fc-file-tabs button[aria-selected="true"] { background: var(--fc-purple); color: #ffffff; border-color: transparent; }
 
 .fc-owner-link {
   color: var(--fc-text);
@@ -477,8 +500,7 @@
 }
 
 .fc-table .fc-chip,
-.fc-table .fc-pill,
-.fc-table .fc-type {
+.fc-table .fc-pill {
   white-space: nowrap;
 }
 
@@ -492,17 +514,6 @@
   font-size: 0.66rem;
 }
 
-.fc-type {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--fc-radius-pill);
-  background: var(--fc-purple-mist);
-  color: var(--fc-purple-deep);
-  padding: 0.1rem 0.45rem;
-  font-size: 0.66rem;
-  font-weight: 800;
-}
-
 .fc-sale {
   display: inline-flex;
   align-items: baseline;
@@ -511,12 +522,6 @@
   padding: 0.05rem 0.28rem;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
-}
-
-.fc-sale-days {
-  font-size: 0.64rem;
-  font-weight: 700;
-  opacity: 0.8;
 }
 
 .fc-sale-urgent { color: var(--fc-urgent-ink); background: var(--fc-danger-soft); }
@@ -535,8 +540,7 @@
   gap: 0.35rem;
 }
 
-.fc-view,
-.fc-table .fc-call {
+.fc-view {
   display: inline-flex;
   align-items: center;
   gap: 0.15rem;
@@ -560,14 +564,70 @@
   background: var(--fc-purple-deep);
 }
 
-.fc-table .fc-call {
-  box-shadow: none;
+/* Dark theme follows the shell instead of a light card on black chrome. */
+.crm-workspace-shell[data-theme="dark"] .fc-mobile {
+  --fc-canvas: #2A2C44;
+  --fc-canvas-deep: #23253A;
+  --fc-canvas-light: #1C1E2E;
+  --fc-screen: #17181a;
+  --fc-screen-top: #202225;
+  --fc-screen-bottom: #141518;
+  --fc-card: #202225;
+  --fc-text: #f5f7fa;
+  --fc-text-secondary: #c1c5cb;
+  --fc-text-muted: #959ba3;
+  --fc-purple: #8B8EFF;
+  --fc-purple-deep: #C5C8FF;
+  --fc-purple-soft: #2A2C55;
+  --fc-purple-mist: #2E315C;
+  --fc-border: #35383d;
+  --fc-hairline: #2E3136;
+  --fc-danger-soft: #44272b;
+  --fc-warning-soft: #3e3221;
+  --fc-warning-ink: #f0ae52;
+  --fc-urgent-ink: #f06a72;
+  --fc-later-ink: #c1c5cb;
+  --fc-near-ink: #C5C8FF;
+  --fc-shadow: none;
+  color-scheme: dark;
+  background: var(--fc-screen);
 }
 
-/* Shell dark mode keeps this list on the lavender tokens above.
-   Re-state ink and surfaces so a dark wrapper cannot wash the row out. */
-.crm-workspace-shell[data-theme="dark"] .fc-mobile .fc-table-wrap,
-.ck-dark .fc-mobile .fc-table-wrap {
-  background: var(--fc-card);
-  color: var(--fc-text);
+.crm-workspace-shell[data-theme="dark"] .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+  background-color: var(--fc-screen-top) !important;
+  border-color: var(--fc-border) !important;
+  color: var(--fc-text) !important;
+  color-scheme: dark !important;
+}
+
+.crm-workspace-shell[data-theme="dark"] .fc-mobile input[type="checkbox"] {
+  color-scheme: dark;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="light"] {
+  --crm-nav: #4E51D4;
+  --crm-nav-hover: #5A5DE6;
+  --crm-nav-active: #3A3DC4;
+  --crm-nav-text: #F4F6FB;
+  --crm-nav-muted: #C9CCF6;
+  --crm-nav-accent: #C5C8FF;
+  color-scheme: light;
+  scrollbar-color: #C5C8F0 transparent;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="light"] .crm-shell-header {
+  background: #F7F8FF;
+  color: #1B1D2C;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #C5C8F0;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="dark"] {
+  scrollbar-color: #4a4e54 transparent;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #4a4e54;
 }

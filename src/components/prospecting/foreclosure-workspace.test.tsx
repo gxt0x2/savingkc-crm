@@ -115,6 +115,9 @@ describe('foreclosure prospecting workspace', () => {
     expect(within(table).queryByText('Not dial-ready')).not.toBeInTheDocument()
     expect(within(table).queryByText('1st notice')).not.toBeInTheDocument()
     expect(screen.queryByText(/Jackson MO and Johnson KS first/)).not.toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Days' })).toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: 'Notice' })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('new')
     expect(within(table).getByText('(913) 717-9716')).toBeInTheDocument()
     expect(screen.queryByText(/sorts first/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
@@ -124,8 +127,7 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.getByRole('link', { name: 'Foreclosure' })).toHaveAttribute('href', '/prospecting/foreclosure')
     fireEvent.click(within(table).getByText('100 Sandbox Court'))
     expect(navigation.push).toHaveBeenCalledWith(`/prospecting/foreclosure/${prospect.id}`)
-    fireEvent.click(screen.getByRole('button', { name: 'Call' }))
-    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith(expect.stringContaining('prospect_ids=')))
+    expect(within(table).queryByRole('button', { name: 'Call' })).not.toBeInTheDocument()
   })
 
   it('sorts the queue from the sale date and equity headers and keeps a missing owner to a dash', async () => {
@@ -148,9 +150,7 @@ describe('foreclosure prospecting workspace', () => {
     const table = await screen.findByRole('table', { name: 'Foreclosure prospects' })
     expect(within(table).getByRole('link', { name: 'Open prospect' })).toHaveTextContent('—')
     expect(within(table).getByText('7125 Park Rd')).toBeInTheDocument()
-    expect(within(table).getByText('NOD')).toBeInTheDocument()
-    expect(within(table).queryByRole('button', { name: 'Call' })).toBeInTheDocument()
-    expect(within(table).getAllByRole('button', { name: 'Call' })).toHaveLength(1)
+    expect(within(table).queryByRole('button', { name: 'Call' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Sort by equity' }))
     expect(screen.getByRole('columnheader', { name: 'Equity' })).toHaveAttribute('aria-sort', 'descending')
     const owners = within(table).getAllByRole('link').filter((link) => link.className.includes('fc-owner-link')).map((link) => link.textContent)
@@ -160,6 +160,37 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.getByRole('columnheader', { name: 'Sale date' })).toHaveAttribute('aria-sort', 'ascending')
     const saleOrder = within(table).getAllByRole('link').filter((link) => link.className.includes('fc-owner-link')).map((link) => link.textContent)
     expect(saleOrder).toEqual(['Ernest Dodson', '—'])
+  })
+
+  it('hides below-floor equity from the default New queue and formats multi-owner names', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      prospects: [
+        {
+          ...prospect,
+          ownerName: 'HALL BENJAMIN PATRICK; HALL CHRISTINE PAIGE',
+          status: 'new',
+          estEquity: 90000,
+          phones: [],
+        },
+        {
+          ...prospect,
+          id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          ownerName: 'LOW EQUITY LLC',
+          status: 'new',
+          estEquity: 10000,
+          phones: [],
+          dialReady: false,
+        },
+      ],
+    }), { status: 200 }))
+    render(<ForeclosureWorkspace />)
+    const table = await screen.findByRole('table', { name: 'Foreclosure prospects' })
+    expect(within(table).getByText('Owner 1 Benjamin Hall')).toBeInTheDocument()
+    expect(within(table).getByText('Owner 2 Christine Hall')).toBeInTheDocument()
+    expect(within(table).queryByText(/HALL BENJAMIN/)).not.toBeInTheDocument()
+    expect(within(table).queryByText('Low Equity LLC')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: '' } })
+    expect(await screen.findByText('Low Equity LLC')).toBeInTheDocument()
   })
 
   it('shows the call affordance and lead link on the detail record', async () => {
@@ -179,6 +210,9 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.queryByText(/Phones can follow the equity floor/)).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /update timeline/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/No attorney or sale-date changes yet/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save notice file' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/75,000 floor/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Notice file' }))
     expect(screen.getByRole('button', { name: 'Save notice file' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Call' }))
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(`/api/prospecting/foreclosure/${prospect.id}/call`, { method: 'POST' }))
@@ -192,8 +226,38 @@ describe('foreclosure prospecting workspace', () => {
       },
     }), { status: 200 }))
     render(<ForeclosureDetail id={prospect.id} />)
-    expect(await screen.findByRole('heading', { name: /update timeline/i })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('tab', { name: 'Notice file' }))
+    expect(screen.getByRole('heading', { name: /update timeline/i })).toBeInTheDocument()
     expect(screen.getByText(/Attorney set to Sandbox Trustee/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save notice file' })).toBeInTheDocument()
+  })
+
+  it('shows a readable owner and one address, and keeps raw notes and the floor lecture off the screen', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      prospect: {
+        ...prospect,
+        ownerName: 'HALL BENJAMIN PATRICK; HALL CHRISTINE PAIGE',
+        situs: '401 N Locust St, Gardner, KS 66030, Gardner KS 66030',
+        city: 'Gardner',
+        state: 'KS',
+        zip: '66030',
+        notes: 'week1 backfill; pub_in_week=True; needs_propstream; needs_smartskip',
+        dialReady: false,
+        dialBlockers: ['Estimated equity is below the $75,000 floor.'],
+        deceased: true,
+        phones: [],
+        skipPhones: [],
+      },
+    }), { status: 200 }))
+    render(<ForeclosureDetail id={prospect.id} />)
+    expect(await screen.findByText('Owner 1 Benjamin Hall')).toBeInTheDocument()
+    expect(screen.getByText('Owner 2 Christine Hall')).toBeInTheDocument()
+    expect(screen.getByText('401 N Locust St, Gardner, KS 66030')).toBeInTheDocument()
+    expect(screen.getAllByText(/Gardner/)).toHaveLength(1)
+    expect(document.querySelector('.fc-pill-dead')).toHaveTextContent('Deceased')
+    expect(screen.queryByText(/week1 backfill/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/75,000 floor/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/HALL BENJAMIN/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save notice file' })).not.toBeInTheDocument()
   })
 })

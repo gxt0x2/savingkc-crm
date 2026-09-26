@@ -6,6 +6,7 @@ import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { ForeclosureListTable } from '@/components/prospecting/foreclosure-list-table'
 import { ForeclosureMap } from '@/components/prospecting/foreclosure-map'
 import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
+import { foreclosureClearsDialFloor, foreclosureOwnerLabel } from '@/lib/prospecting/foreclosure-list'
 import {
   FIRST_FORECLOSURE_COUNTIES,
   NOTICE_TYPE_LABELS,
@@ -65,7 +66,7 @@ export function ForeclosureWorkspace() {
   const [prospects, setProspects] = useState<ForeclosureListItem[]>([])
   const [controls, setControls] = useState<IngestControl[]>([])
   const [county, setCounty] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState('new')
   const [dialReadyOnly, setDialReadyOnly] = useState(false)
   const [saleThisWeek, setSaleThisWeek] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -174,20 +175,6 @@ export function ForeclosureWorkspace() {
     }
   }
 
-  async function startCall(id: string) {
-    setBusy(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/prospecting/foreclosure/${id}/call`, { method: 'POST' })
-      const body = await readJson<{ href: string }>(response)
-      if (!response.ok || !body.href) throw new Error(body.error || 'This prospect is not ready to call.')
-      router.push(body.href)
-    } catch (callError) {
-      setError(callError instanceof Error ? callError.message : 'This prospect is not ready to call.')
-      setBusy(false)
-    }
-  }
-
   async function toggleIngest(control: IngestControl) {
     setBusy(true)
     setError(null)
@@ -207,7 +194,8 @@ export function ForeclosureWorkspace() {
     }
   }
 
-  const pins = foreclosureMapPins(prospects)
+  const visible = status === 'new' ? prospects.filter((row) => foreclosureClearsDialFloor(row.estEquity)) : prospects
+  const pins = foreclosureMapPins(visible.map((row) => ({ ...row, ownerName: foreclosureOwnerLabel(row.ownerName) })))
 
   return <>
     <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
@@ -235,11 +223,11 @@ export function ForeclosureWorkspace() {
               {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          <label className="flex h-9 items-center gap-2 text-sm font-bold">
+          <label className="fc-check">
             <input type="checkbox" checked={dialReadyOnly} onChange={(event) => setDialReadyOnly(event.target.checked)} />
             Dial-ready only
           </label>
-          <label className="flex h-9 items-center gap-2 text-sm font-bold">
+          <label className="fc-check">
             <input type="checkbox" checked={saleThisWeek} onChange={(event) => setSaleThisWeek(event.target.checked)} />
             Sale this week
           </label>
@@ -336,9 +324,9 @@ export function ForeclosureWorkspace() {
         </details>
         </section>
         <section aria-label="Foreclosure queue">
-          {loading ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospects…</p> : null}
-          {!loading && prospects.length === 0 ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">No mortgage foreclosure prospects in this queue.</p> : null}
-          {!loading && prospects.length > 0 ? <ForeclosureListTable prospects={prospects} busy={busy} onCall={(id) => void startCall(id)} /> : null}
+          {loading ? <p className="fc-queue-note">Loading foreclosure prospects…</p> : null}
+          {!loading && visible.length === 0 ? <p className="fc-queue-note">No mortgage foreclosure prospects in this queue.</p> : null}
+          {!loading && visible.length > 0 ? <ForeclosureListTable prospects={visible} /> : null}
         </section>
         </div>
         <div className="fc-stage-map">

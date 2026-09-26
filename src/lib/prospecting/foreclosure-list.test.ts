@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
+  foreclosureClearsDialFloor,
   foreclosureCountyState,
   foreclosureListHasPhone,
   foreclosureListPhone,
   foreclosureMoney,
   foreclosureNoticeBadge,
   foreclosureOwnerLabel,
+  foreclosureOwnerLines,
+  foreclosurePersonLabel,
+  foreclosurePostalAddress,
   foreclosureSalePresentation,
   foreclosureStreetLine,
+  foreclosureStreetParts,
   sortForeclosureList,
 } from '@/lib/prospecting/foreclosure-list'
 
@@ -16,7 +21,29 @@ describe('foreclosure list display', () => {
     expect(foreclosureOwnerLabel('')).toBe('—')
     expect(foreclosureOwnerLabel('  UNKNOWN  ')).toBe('—')
     expect(foreclosureOwnerLabel('Unknown')).toBe('—')
-    expect(foreclosureOwnerLabel('Juan Ramon Corpus Jr')).toBe('Juan Ramon Corpus Jr')
+    expect(foreclosureOwnerLabel('Juan Ramon Corpus Jr')).toBe('Juan Corpus Jr')
+    expect(foreclosureOwnerLines('HALL BENJAMIN PATRICK; HALL CHRISTINE PAIGE')).toEqual([
+      'Owner 1 Benjamin Hall',
+      'Owner 2 Christine Hall',
+    ])
+    expect(foreclosureOwnerLines('HALL, BENJAMIN, PATRICK')).toEqual(['Benjamin Hall'])
+    expect(foreclosureOwnerLines('JUANITA IZORA JONES')).toEqual(['Juanita Jones'])
+    expect(foreclosureOwnerLines('JENNIFER M CARR')).toEqual(['Jennifer Carr'])
+    expect(foreclosureOwnerLines('ACKER REX T, ACKER KATHLE')).toEqual([
+      'Owner 1 Rex Acker',
+      'Owner 2 Kathle Acker',
+    ])
+    expect(foreclosureOwnerLines('KEINAN PROPERTIES LLC')).toEqual(['Keinan Properties LLC'])
+    expect(foreclosureOwnerLines('Ernest Dodson')).toEqual(['Ernest Dodson'])
+    expect(foreclosurePersonLabel('HALL BENJAMIN PATRICK', 'HALL BENJAMIN PATRICK; HALL CHRISTINE PAIGE')).toBe('Benjamin Hall')
+    expect(foreclosurePersonLabel('Morgan Dodson', 'Ernest Dodson')).toBe('Morgan Dodson')
+    expect(foreclosureOwnerLines('Jordan S. Stivers & Roxann')).toEqual([
+      'Owner 1 Jordan Stivers',
+      'Owner 2 Roxann',
+    ])
+    expect(foreclosureClearsDialFloor(150000)).toBe(true)
+    expect(foreclosureClearsDialFloor(null)).toBe(true)
+    expect(foreclosureClearsDialFloor(10000)).toBe(false)
   })
 
   it('keeps the situs street and drops city, state, ZIP, and the county echo', () => {
@@ -37,6 +64,16 @@ describe('foreclosure list display', () => {
       zip: '66223',
     })).toBe('8205 W 153rd St')
     expect(foreclosureStreetLine(null)).toBe('—')
+    expect(foreclosureStreetParts('11922 Tomahawk Creek Pkwy #J', { city: 'Leawood', state: 'KS', zip: '66209' })).toEqual({
+      street: '11922 Tomahawk Creek Pkwy',
+      unit: '#J',
+    })
+    expect(foreclosurePostalAddress('401 N Locust St, Gardner, KS 66030, Gardner KS 66030', {
+      city: 'Gardner',
+      state: 'KS',
+      zip: '66030',
+    })).toBe('401 N Locust St, Gardner, KS 66030')
+    expect(foreclosurePostalAddress('10 Main St', { city: 'Belton, Belton', state: 'MO, MO', zip: '64012, 64012' })).toBe('10 Main St, Belton, MO 64012')
   })
 
   it('labels county and state, money, notice type, and phone_1', () => {

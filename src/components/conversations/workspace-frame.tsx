@@ -142,6 +142,7 @@ export function WorkspaceFrame({
     <div
       className="crm-workspace-shell flex h-[100dvh] overflow-hidden bg-[var(--crm-canvas)] text-[var(--crm-ink)]"
       data-theme={resolvedTheme}
+      data-surface={pathname?.startsWith('/prospecting/foreclosure') ? 'foreclosure' : undefined}
     >
       {focusedCalling ? null : <WorkspaceNav needsReply={resolvedNeedsReply ?? null} userEmail={userEmail} canReviewCalls={canReviewCalls} />}
       <div className="flex min-w-0 flex-1 flex-col">
