@@ -203,45 +203,52 @@ export function ForeclosureWorkspace() {
     return true
   })
   const pins = foreclosureMapPins(visible.map((row) => ({ ...row, ownerName: foreclosureOwnerLabel(row.ownerName) })))
+  const activeFilters = Number(Boolean(status)) + Number(Boolean(county)) + Number(dialReadyOnly) + Number(saleThisWeek) + Number(newToday)
 
   return <>
     <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
     <main className="fc-mobile min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="mx-auto max-w-[90rem] space-y-3">
         <ProspectingSectionNav current="foreclosure" />
-        <div className="flex flex-wrap items-center gap-1.5">
-          {FIRST_FORECLOSURE_COUNTIES.map((item) => <span key={item.county} className="fc-chip">{item.label}</span>)}
-          <span className="fc-chip">$75k floor</span>
-        </div>
+        <p className="fc-crumb">Prospecting <span aria-hidden="true">›</span> Foreclosure</p>
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
         <div className="fc-stage">
         <div className="min-w-0 space-y-3">
-        <section className="crm-panel flex flex-wrap items-end gap-2 p-2">
-          <label className="text-xs font-bold text-[var(--fc-text)]">County
-            <select aria-label="County" value={county} onChange={(event) => setCounty(event.target.value)} className="crm-field mt-1 block h-9 px-2 text-sm font-semibold">
-              <option value="">All counties</option>
-              {FIRST_FORECLOSURE_COUNTIES.map((item) => <option key={item.county} value={item.county}>{item.label}</option>)}
-            </select>
-          </label>
-          <label className="text-xs font-bold text-[var(--fc-text)]">Status
-            <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)} className="crm-field mt-1 block h-9 px-2 text-sm font-semibold">
-              <option value="">All statuses</option>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <div className="fc-quick" aria-label="Quick filters">
-            <button type="button" aria-pressed={dialReadyOnly} onClick={() => setDialReadyOnly((value) => !value)}>Dial-ready</button>
-            <button type="button" aria-pressed={saleThisWeek} onClick={() => setSaleThisWeek((value) => !value)}>Sale this week</button>
-            <button type="button" aria-pressed={newToday} onClick={() => setNewToday((value) => !value)}>New today</button>
-            <button type="button" className="fc-clear" onClick={() => { setCounty(''); setStatus('new'); setDialReadyOnly(false); setSaleThisWeek(false); setNewToday(false) }}>Clear filters</button>
+        <section className="fc-filters" aria-label="Foreclosure filters">
+          <h2 className="fc-filter-heading">Quick filters</h2>
+          <div className="fc-filter-row">
+            <div className="fc-quick" aria-label="Quick filters">
+              <button type="button" aria-pressed={dialReadyOnly} onClick={() => setDialReadyOnly((value) => !value)}>Dial-ready</button>
+              <button type="button" aria-pressed={saleThisWeek} onClick={() => setSaleThisWeek((value) => !value)}>Sale this week</button>
+              <button type="button" aria-pressed={newToday} onClick={() => setNewToday((value) => !value)}>New today</button>
+            </div>
+            <div className="fc-filter-actions">
+              <span className="fc-filter-count">{activeFilters} {activeFilters === 1 ? 'filter' : 'filters'}</span>
+              <button type="button" className="fc-clear" onClick={() => { setCounty(''); setStatus('new'); setDialReadyOnly(false); setSaleThisWeek(false); setNewToday(false) }}>Clear filters</button>
+            </div>
+          </div>
+          <h2 className="fc-filter-heading">Advanced filters</h2>
+          <div className="fc-advanced">
+            <label className="fc-advanced-field">County
+              <select aria-label="County" value={county} onChange={(event) => setCounty(event.target.value)}>
+                <option value="">All counties</option>
+                {FIRST_FORECLOSURE_COUNTIES.map((item) => <option key={item.county} value={item.county}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="fc-advanced-field">Status
+              <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="">All statuses</option>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
           </div>
           <div className="fc-active-filters">
-            {status ? <button type="button" className="fc-filter-chip" onClick={() => setStatus('')}>{`Status: ${STATUS_LABELS[status as ForeclosureStatus] ?? status}`}</button> : null}
-            {county ? <button type="button" className="fc-filter-chip" onClick={() => setCounty('')}>{countyLabel(county, '')}</button> : null}
-            {dialReadyOnly ? <button type="button" className="fc-filter-chip" onClick={() => setDialReadyOnly(false)}>Dial-ready</button> : null}
-            {saleThisWeek ? <button type="button" className="fc-filter-chip" onClick={() => setSaleThisWeek(false)}>Sale this week</button> : null}
-            {newToday ? <button type="button" className="fc-filter-chip" onClick={() => setNewToday(false)}>New today</button> : null}
+            {status ? <button type="button" className="fc-filter-chip" aria-label={`Status: ${STATUS_LABELS[status as ForeclosureStatus] ?? status}`} onClick={() => setStatus('')}><span>Status: {STATUS_LABELS[status as ForeclosureStatus] ?? status}</span><span aria-hidden="true">×</span></button> : null}
+            {county ? <button type="button" className="fc-filter-chip" aria-label={countyLabel(county, '')} onClick={() => setCounty('')}><span>{countyLabel(county, '')}</span><span aria-hidden="true">×</span></button> : null}
+            {dialReadyOnly ? <button type="button" className="fc-filter-chip" aria-label="Dial-ready" onClick={() => setDialReadyOnly(false)}><span>Dial-ready</span><span aria-hidden="true">×</span></button> : null}
+            {saleThisWeek ? <button type="button" className="fc-filter-chip" aria-label="Sale this week" onClick={() => setSaleThisWeek(false)}><span>Sale this week</span><span aria-hidden="true">×</span></button> : null}
+            {newToday ? <button type="button" className="fc-filter-chip" aria-label="New today" onClick={() => setNewToday(false)}><span>New today</span><span aria-hidden="true">×</span></button> : null}
           </div>
           <details className="fc-import">
           <summary className="crm-secondary-button inline-flex h-9 cursor-pointer items-center px-3 text-xs font-black">Import or add a prospect</summary>
