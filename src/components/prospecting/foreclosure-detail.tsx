@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { FormEvent, useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
-import { ForeclosureMap } from '@/components/prospecting/foreclosure-map'
+import { ForeclosureMap, ForeclosureStreetView } from '@/components/prospecting/foreclosure-map'
 import { ForeclosureStatusPill } from '@/components/prospecting/foreclosure-mobile'
 import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
 import { formatPhone } from '@/lib/format'
@@ -16,18 +16,12 @@ import {
   SALE_STATUS_LABELS,
   SKIP_RELATIONSHIP_LABELS,
   STATUS_LABELS,
-  auctionUrgency,
-  chicagoDate,
-  daysUntilSale,
   describeNoticeEvent,
   foreclosureMapPins,
   formatEquity,
   formatLtv,
   formatNoticeOrdinal,
-  formatSaleDate,
-  formatUsDate,
   loanToValuePercent,
-  saleTimingLabel,
   type EquityBand,
   type ForeclosureNoticeType,
   type ForeclosureStatus,
@@ -96,6 +90,16 @@ interface ForeclosureDetailRecord {
 
 function Fact({ term, children }: { term: string; children: ReactNode }) {
   return <div className="fc-fact"><dt>{term}</dt><dd>{children}</dd></div>
+}
+
+function moneyOrDash(value: number | null): string {
+  return value == null ? '—' : formatEquity(value)
+}
+
+function longDate(iso: string | null): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '—'
+  const [year, month, day] = iso.split('-').map(Number)
+  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)))
 }
 
 function Flag({ value }: { value: string }) {
@@ -275,10 +279,8 @@ export function ForeclosureDetail({ id }: { id: string }) {
     }
   }
 
-  const today = chicagoDate()
   const county = prospect ? (FIRST_FORECLOSURE_COUNTIES.find((item) => item.county === prospect.county)?.label ?? `${prospect.county} ${prospect.state}`) : ''
   const saleStatus = prospect ? saleStatusOf(prospect) : 'unknown'
-  const days = prospect ? daysUntilSale(prospect.saleDate, today) : null
   const timeline = prospect?.noticeTimeline ?? []
   const noticeType = prospect?.noticeType ? NOTICE_TYPE_LABELS[prospect.noticeType] : null
   const noticeOrdinal = formatNoticeOrdinal(prospect?.noticeNumber ?? null)
@@ -289,24 +291,24 @@ export function ForeclosureDetail({ id }: { id: string }) {
   const dialNote = prospect?.dialBlockers.find((item) => !/equity floor|\$75,000|75,000/i.test(item)) ?? null
   const agentNote = foreclosureAgentNote(prospect?.notes)
   const systemNotesHidden = Boolean(prospect?.notes && !agentNote)
-  const llc = prospect ? (prospect.ownerEntity === 'llc' || classifyOwnerEntity(prospect.ownerName) === 'llc' ? 'Yes' : 'No') : 'Unknown'
+  const llc = !prospect?.ownerName?.trim() ? '—' : (prospect.ownerEntity === 'llc' || classifyOwnerEntity(prospect.ownerName) === 'llc' ? 'Yes' : 'No')
   const absentee = prospect?.absentee ? 'Yes' : prospect?.mailingAddress
     ? (address.split(',')[0] && prospect.mailingAddress.toLowerCase().includes(address.split(',')[0].toLowerCase()) ? 'No' : 'Yes')
-    : 'Unknown'
+    : '—'
   const ltv = prospect ? formatLtv(prospect.ltv ?? loanToValuePercent(prospect.estValue, prospect.estDebt)) : '—'
   const mapsQuery = encodeURIComponent(address)
+  const heroTitle = prospect?.externalRowId ? `Notice # ${prospect.externalRowId}` : address
   const tabs = [
     ['details', 'Details'],
     ['ownership', 'Ownership'],
     ['financials', 'Financials'],
-    ['contacts', 'Contacts'],
+    ['contacts', 'Homeowner contacts'],
     ['notes', 'Notes'],
     ['notice', 'Notice file'],
     ['maps', 'Maps'],
   ] as const
 
-  const daysTone = auctionUrgency(days)
-  const lender = [prospect?.plaintiffLender, prospect?.trusteeOrFirm].filter(Boolean).join(' · ') || 'Not recorded'
+  const lender = [prospect?.plaintiffLender, prospect?.trusteeOrFirm].filter(Boolean).join(' · ') || '—'
   const mapsHref = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`
 
   return <>
@@ -317,34 +319,37 @@ export function ForeclosureDetail({ id }: { id: string }) {
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
         {!prospect ? <p className="text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospect…</p> : <article className="space-y-3">
+          <p className="fc-crumb"><Link href="/prospecting/foreclosure">Foreclosure</Link> <span aria-hidden="true">›</span> Details</p>
           <header className="fc-hero">
             <div>
-              <Link href="/prospecting/foreclosure" className="fc-back">← Back</Link>
+              <h2>{heroTitle}</h2>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="fc-badge">Foreclosures</span>
                 <ForeclosureStatusPill status={prospect.status} />
                 {deceased ? <span className="fc-pill fc-pill-dead">Deceased</span> : null}
               </div>
-              <h2>{address}</h2>
-              <p className="mt-1 text-sm font-bold text-[var(--fc-text-secondary)]">{county}{prospect.externalRowId ? ` · Notice ${prospect.externalRowId}` : ''}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {prospect.dialReady ? <button type="button" disabled={busy} onClick={() => void startCall()} className="fc-call inline-flex h-10 items-center px-4 text-sm font-black">Call</button> : dialNote ? <p className="text-sm font-bold text-[var(--fc-text-secondary)]">{dialNote}</p> : null}
               {prospect.leadId ? <Link href={`/leads/${prospect.leadId}`} className="crm-secondary-button inline-flex h-10 items-center px-4 text-sm font-black">Open lead file</Link> : null}
               {prospect.status === 'callable' || prospect.status === 'skip_traced' ? <button type="button" disabled={busy} onClick={() => void setStatus('contacted')} className="crm-secondary-button h-10 px-4 text-sm font-black">Mark contacted</button> : null}
               <button type="button" disabled={busy} onClick={() => void setStatus('dnc')} className="crm-secondary-button h-10 px-4 text-sm font-black">Mark DNC</button>
               <button type="button" disabled={busy} onClick={() => void setStatus('dead')} className="crm-secondary-button h-10 px-4 text-sm font-black">Mark dead</button>
+              <Link href="/prospecting/foreclosure" className="fc-back">← Back</Link>
             </div>
           </header>
-          <dl className="fc-kpi-strip" aria-label="Key performance indicators">
-            <div><dt>Est. equity</dt><dd>{formatEquity(prospect.estEquity)}</dd></div>
-            <div><dt>Est. debt</dt><dd>{formatEquity(prospect.estDebt)}</dd></div>
-            <div><dt>LTV</dt><dd>{ltv}</dd></div>
-            <div><dt>Days to auction</dt><dd className={daysTone === 'none' ? undefined : `fc-days-${daysTone}`}>{days == null ? '—' : String(days)}</dd></div>
-            <div><dt>Sale status</dt><dd>{SALE_STATUS_LABELS[saleStatus]}</dd></div>
-            <div><dt>LLC owned</dt><dd><Flag value={llc} /></dd></div>
-            <div><dt>Absentee</dt><dd><Flag value={absentee} /></dd></div>
-          </dl>
+          <section className="fc-kpi-card" aria-label="Key performance indicators">
+            <h2>Key Performance Indicators</h2>
+            <dl className="fc-kpi-strip">
+              <div><dt>Est. value</dt><dd>{moneyOrDash(prospect.estValue)}</dd></div>
+              <div><dt>Available equity</dt><dd>{moneyOrDash(prospect.estEquity)}</dd></div>
+              <div><dt>LTV</dt><dd>{ltv}</dd></div>
+              <div><dt>LLC owned</dt><dd><Flag value={llc} /></dd></div>
+              <div><dt>Absentee owned</dt><dd><Flag value={absentee} /></dd></div>
+              <div><dt>Open liens</dt><dd>—</dd></div>
+              <div><dt>More than 1 mtg</dt><dd>—</dd></div>
+            </dl>
+          </section>
           <div className="fc-tabbar" role="tablist" aria-label="Prospect file">
             {tabs.map(([id, label]) => (
               <button key={id} type="button" role="tab" id={`fc-tab-${id}`} aria-controls={`fc-panel-${id}`} aria-selected={tab === id} onClick={() => setTab(id)}>{label}</button>
@@ -352,11 +357,12 @@ export function ForeclosureDetail({ id }: { id: string }) {
           </div>
           {tab === 'details' ? <div id="fc-panel-details" role="tabpanel" aria-labelledby="fc-tab-details" className="fc-split">
             <section className="fc-panel-card">
-              <h3>Property</h3>
+              <h3>Property information</h3>
               <dl>
+                <Fact term="Full address">{address}</Fact>
+                <Fact term="Date of sale">{longDate(prospect.saleDate)}{prospect.saleTime ? ` · ${prospect.saleTime}` : ''}</Fact>
+                <Fact term="Created">{longDate(prospect.noticeOrFilingDate)}{noticeType ? ` · ${noticeType}` : ''}</Fact>
                 <Fact term="Owners">{owners.length === 0 ? 'Owner unknown' : owners.map((line) => <span key={line} className="block">{line}</span>)}</Fact>
-                <Fact term="Date of sale">{formatSaleDate(prospect.saleDate)}{prospect.saleTime ? ` · ${prospect.saleTime}` : ''} · {saleTimingLabel(prospect.saleDate, today)}</Fact>
-                <Fact term="Filed">{formatUsDate(prospect.noticeOrFilingDate)}{noticeType ? ` · ${noticeType}` : ''}</Fact>
                 <Fact term="Notice">{noticeOrdinal || 'Not numbered'}</Fact>
                 <Fact term="County">{county}</Fact>
                 {prospect.saleLocation ? <Fact term="Sale location">{prospect.saleLocation}</Fact> : null}
@@ -365,41 +371,64 @@ export function ForeclosureDetail({ id }: { id: string }) {
             <section className="fc-panel-card">
               <h3>Financial & legal</h3>
               <dl>
-                <Fact term="Sale status">{SALE_STATUS_LABELS[saleStatus]}</Fact>
-                <Fact term="Est. equity">{formatEquity(prospect.estEquity)}</Fact>
-                <Fact term="Est. debt">{formatEquity(prospect.estDebt)}</Fact>
-                <Fact term="Attorney">{prospect.attorneyName || 'Not recorded'}</Fact>
+                <Fact term="Sale status"><span className={saleStatus === 'scheduled' ? 'fc-live' : undefined}>{SALE_STATUS_LABELS[saleStatus]}</span></Fact>
+                <Fact term="Est. value">{moneyOrDash(prospect.estValue)}</Fact>
+                <Fact term="Estimated equity">{moneyOrDash(prospect.estEquity)}</Fact>
+                <Fact term="Estimated loan balance">{moneyOrDash(prospect.estDebt)}</Fact>
+                <Fact term="Attorney">{prospect.attorneyName || '—'}</Fact>
                 <Fact term="Lender / firm">{lender}</Fact>
-                <Fact term="Case">{prospect.caseNumber || prospect.instrumentNumber || 'Not recorded'}</Fact>
-                <Fact term="Source">{prospect.sourceUrl ? <a href={prospect.sourceUrl} className="font-bold text-[var(--fc-info)] hover:underline">{prospect.sourceName || 'Notice source'}</a> : (prospect.sourceName || 'Not recorded')}</Fact>
-                {prospect.legalDescription ? <Fact term="Notice text">{prospect.legalDescription}</Fact> : null}
+                <Fact term="Case">{prospect.caseNumber || prospect.instrumentNumber || '—'}</Fact>
+                <Fact term="LLC owned">{llc === 'No' ? <span className="fc-flag-no" aria-label="No">×</span> : <Flag value={llc} />}</Fact>
+                <Fact term="Source">{prospect.sourceUrl ? <a href={prospect.sourceUrl} className="font-bold text-[var(--fc-info)] hover:underline">{prospect.sourceName || 'Notice source'}</a> : (prospect.sourceName || '—')}</Fact>
+              </dl>
+            </section>
+            {prospect.legalDescription ? <section className="fc-panel-card fc-span-2">
+              <h3>Notice content</h3>
+              <p className="whitespace-pre-wrap text-sm font-semibold text-[var(--fc-text)]">{prospect.legalDescription}</p>
+            </section> : null}
+          </div> : null}
+          {tab === 'ownership' ? <div id="fc-panel-ownership" role="tabpanel" aria-labelledby="fc-tab-ownership" className="fc-split">
+            <section className="fc-panel-card">
+              <h3>Owner data</h3>
+              {owners.length === 0 && !prospect.mailingAddress ? <p className="fc-empty">No owner or mailing address is on this record.</p> : <dl>
+                {owners.map((line) => <Fact key={line} term="Owner">{line}</Fact>)}
+                <Fact term="Absentee owned"><Flag value={absentee} /></Fact>
+                <Fact term="Mailing">{prospect.mailingAddress || '—'}</Fact>
+                {prospect.legalDescription ? <Fact term="Legal description">{prospect.legalDescription}</Fact> : null}
+              </dl>}
+            </section>
+            <section className="fc-panel-card">
+              <h3>Sale history</h3>
+              <p className="fc-empty">Sale history is not on this record.</p>
+            </section>
+          </div> : null}
+          {tab === 'financials' ? <div id="fc-panel-financials" role="tabpanel" aria-labelledby="fc-tab-financials" className="fc-split">
+            <section className="fc-panel-card">
+              <h3>Mortgage & loan</h3>
+              <dl>
+                <Fact term="Lender">{prospect.plaintiffLender || '—'}</Fact>
+                <Fact term="Firm">{prospect.trusteeOrFirm || '—'}</Fact>
+                <Fact term="Attorney">{prospect.attorneyName || '—'}</Fact>
+                <Fact term="Case">{prospect.caseNumber || prospect.instrumentNumber || '—'}</Fact>
+              </dl>
+            </section>
+            <section className="fc-panel-card">
+              <h3>Equity & tax</h3>
+              <dl>
+                <Fact term="Estimated equity">{moneyOrDash(prospect.estEquity)}</Fact>
+                <Fact term="Estimated loan balance">{moneyOrDash(prospect.estDebt)}</Fact>
+                <Fact term="More than one mortgage">—</Fact>
+                <Fact term="LTV">{ltv}</Fact>
               </dl>
             </section>
           </div> : null}
-          {tab === 'ownership' ? <div id="fc-panel-ownership" role="tabpanel" aria-labelledby="fc-tab-ownership" className="fc-panel-card">
-            <h3>Owner data</h3>
-            {owners.length === 0 && !prospect.mailingAddress ? <p className="fc-empty">No owner or mailing address is on this record.</p> : <dl>
-              {owners.map((line) => <Fact key={line} term="Owner">{line}</Fact>)}
-              <Fact term="Mailing">{prospect.mailingAddress || 'Not recorded'}</Fact>
-              {prospect.legalDescription ? <Fact term="Legal description">{prospect.legalDescription}</Fact> : null}
-            </dl>}
-          </div> : null}
-          {tab === 'financials' ? <div id="fc-panel-financials" role="tabpanel" aria-labelledby="fc-tab-financials" className="fc-panel-card">
-            <h3>Equity and loan</h3>
-            <dl>
-              <Fact term="Est. value">{formatEquity(prospect.estValue)}{prospect.estValueSource ? ` · ${prospect.estValueSource}` : ''}</Fact>
-              <Fact term="Est. equity">{formatEquity(prospect.estEquity)}</Fact>
-              <Fact term="Est. debt">{formatEquity(prospect.estDebt)}{prospect.estDebtSource ? ` · ${prospect.estDebtSource}` : ''}</Fact>
-              <Fact term="LTV">{ltv}</Fact>
-              <Fact term="More than one mortgage">Not recorded</Fact>
-            </dl>
-          </div> : null}
           {tab === 'contacts' ? <div id="fc-panel-contacts" role="tabpanel" aria-labelledby="fc-tab-contacts" className="fc-panel-card">
             <h3>Owner information</h3>
-            <dl>
-              <Fact term="Life status">{deceased ? <span className="fc-pill fc-pill-dead">Deceased</span> : prospect.skiptraceVendor ? <span className="fc-flag-yes">Alive</span> : 'Not recorded'}</Fact>
-              {prospect.email ? <Fact term="Email">{prospect.email}</Fact> : null}
-            </dl>
+            <div className="fc-contact-row">
+              <Fact term="Name">{owners[0]?.replace(/^Owner \d+ /, '') || '—'}</Fact>
+              <Fact term="Life status">{deceased ? <span className="fc-pill fc-pill-dead">Deceased</span> : prospect.skiptraceVendor ? <span className="fc-flag-yes">Alive</span> : '—'}</Fact>
+              <Fact term="Address">{address}</Fact>
+            </div>
             <section aria-label="Phones" className="fc-phones">
               <h4 className="fc-kicker">Phones</h4>
               {skipPhones.length === 0 ? <p className="fc-empty">No phone on file.</p> : <ol className="space-y-1">
@@ -416,13 +445,15 @@ export function ForeclosureDetail({ id }: { id: string }) {
             </section>
           </div> : null}
           {tab === 'notes' ? <div id="fc-panel-notes" role="tabpanel" aria-labelledby="fc-tab-notes" className="fc-panel-card">
-            <h3>Notes</h3>
+            <h3>Notes & comments</h3>
             {systemNotesHidden ? <p className="fc-empty">Import notes are stored with the record and are not shown here.</p> : <>
-              {agentNote ? <p className="mb-3 text-sm font-bold text-[var(--fc-text)]">{agentNote}</p> : <p className="fc-empty mb-3">No notes have been added yet.</p>}
+              {agentNote ? <p className="mb-3 text-sm font-bold text-[var(--fc-text)]">{agentNote}</p> : <div className="fc-note-empty">
+                <p>No notes have been added yet</p>
+                <p>Start by adding your first note below.</p>
+              </div>}
               <form aria-label="Prospect note" onSubmit={(event) => void saveNote(event)} className="grid gap-2">
-                <label className="text-xs font-bold text-[var(--fc-text-secondary)]">Note
-                  <textarea name="notes" aria-label="Note" defaultValue={agentNote ?? ''} rows={3} className="crm-field mt-1 w-full px-3 py-2 text-sm" placeholder="Add a note…" />
-                </label>
+                <label className="sr-only" htmlFor={`fc-note-${id}`}>Note</label>
+                <textarea id={`fc-note-${id}`} name="notes" aria-label="Note" defaultValue={agentNote ?? ''} rows={4} className="crm-field w-full px-3 py-2 text-sm" placeholder="Add a note..." />
                 <button type="submit" disabled={busy} className="fc-call h-10 text-sm font-black">Save note</button>
               </form>
             </>}
@@ -493,14 +524,22 @@ export function ForeclosureDetail({ id }: { id: string }) {
             </form>
           </div> : null}
           {tab === 'maps' ? <div id="fc-panel-maps" role="tabpanel" aria-labelledby="fc-tab-maps" className="space-y-3">
-            <div className="fc-panel-card flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-bold text-[var(--fc-text)]">{address}</p>
+            <div className="fc-panel-card fc-map-strip">
+              <p><span className="fc-kicker">Property location</span><br />{address}</p>
               <a className="fc-call inline-flex h-10 items-center px-4 text-sm font-black" href={mapsHref} target="_blank" rel="noreferrer">Open in Google Maps</a>
             </div>
-            {prospect.latitude != null && prospect.longitude != null
-              ? <ForeclosureMap pins={foreclosureMapPins([{ ...prospect, ownerName: foreclosureOwnerLabel(prospect.ownerName) }])} heightClass="fc-map-canvas" />
-              : <p className="fc-empty">Map coordinates are not on this record.</p>}
-            <p className="fc-empty">Street View is not loaded on this page. Open Google Maps for the panorama.</p>
+            <div className="fc-map-pair">
+              <section className="fc-panel-card">
+                <h3>Map</h3>
+                {prospect.latitude != null && prospect.longitude != null
+                  ? <ForeclosureMap quiet pins={foreclosureMapPins([{ ...prospect, ownerName: foreclosureOwnerLabel(prospect.ownerName) }])} heightClass="fc-map-canvas" />
+                  : <p className="fc-empty">Map coordinates are not on this record.</p>}
+              </section>
+              <section className="fc-panel-card">
+                <h3>Street View</h3>
+                <ForeclosureStreetView address={address} latitude={prospect.latitude} longitude={prospect.longitude} />
+              </section>
+            </div>
           </div> : null}
         </article>}
       </div>

@@ -29,6 +29,7 @@ vi.mock('./foreclosure-map', () => ({
       {pins.map((pin) => <a key={pin.id} href={`/prospecting/foreclosure/${pin.id}`}>{`Open ${pin.ownerName}`}</a>)}
     </div>
   ),
+  ForeclosureStreetView: () => <p>Street View is not available for this location</p>,
 }))
 
 const prospect = {
@@ -204,7 +205,7 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.getByRole('link', { name: 'Open lead file' })).toHaveAttribute('href', '/leads/dddddddd-dddd-4ddd-8ddd-dddddddddddd')
     expect(screen.getAllByText('$150,000').length).toBeGreaterThan(0)
     expect(screen.getAllByText('1st notice').length).toBeGreaterThan(0)
-    fireEvent.click(screen.getByRole('tab', { name: 'Contacts' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Homeowner contacts' }))
     expect(screen.getByText('Morgan Dodson')).toBeInTheDocument()
     expect(screen.getByText('Riley Dodson')).toBeInTheDocument()
     expect(screen.getByText('Spouse')).toBeInTheDocument()
@@ -212,7 +213,7 @@ describe('foreclosure prospecting workspace', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Maps' }))
     expect(screen.getByRole('region', { name: 'Foreclosure sale map' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open in Google Maps' })).toHaveAttribute('href', expect.stringContaining('google.com/maps'))
-    expect(screen.getByText(/Street View is not loaded/)).toBeInTheDocument()
+    expect(screen.getByText(/Street View is not available/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Details' }))
     expect(screen.queryByText(/sorts first/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
@@ -261,8 +262,8 @@ describe('foreclosure prospecting workspace', () => {
     render(<ForeclosureDetail id={prospect.id} />)
     expect(await screen.findByText('Owner 1 Benjamin Hall')).toBeInTheDocument()
     expect(screen.getByText('Owner 2 Christine Hall')).toBeInTheDocument()
-    expect(screen.getByText('401 N Locust St, Gardner, KS 66030')).toBeInTheDocument()
-    expect(screen.getAllByText(/Gardner/)).toHaveLength(1)
+    expect(screen.getAllByText('401 N Locust St, Gardner, KS 66030')).toHaveLength(2)
+    expect(screen.queryByText(/Gardner, Gardner|Gardner KS 66030, Gardner/)).not.toBeInTheDocument()
     expect(document.querySelector('.fc-pill-dead')).toHaveTextContent('Deceased')
     expect(screen.queryByText(/week1 backfill/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Notes' }))

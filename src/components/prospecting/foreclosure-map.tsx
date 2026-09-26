@@ -29,7 +29,7 @@ interface SaleMaps {
   }
 }
 
-export function ForeclosureMap({ pins, heightClass = 'h-72' }: { pins: ForeclosureMapPin[]; heightClass?: string }) {
+export function ForeclosureMap({ pins, heightClass = 'h-72', quiet = false }: { pins: ForeclosureMapPin[]; heightClass?: string; quiet?: boolean }) {
   const router = useRouter()
   const host = useRef<HTMLDivElement>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -76,13 +76,91 @@ export function ForeclosureMap({ pins, heightClass = 'h-72' }: { pins: Foreclosu
 
   const countLabel = pins.length === 0 ? 'No coordinates in this queue' : `${pins.length} pin${pins.length === 1 ? '' : 's'}`
   return (
-    <section aria-label="Foreclosure sale map" className="crm-panel overflow-hidden rounded-2xl">
-      <div className="flex items-center justify-between gap-3 px-4 py-2">
+    <section aria-label="Foreclosure sale map" className={quiet ? 'fc-map-quiet' : 'crm-panel overflow-hidden rounded-2xl'}>
+      {quiet ? null : <div className="flex items-center justify-between gap-3 px-4 py-2">
         <p className="text-xs font-black uppercase tracking-wide text-[var(--crm-text-muted)]">Sale map</p>
         <p className="text-xs font-bold text-[var(--crm-text-muted)]">{countLabel}</p>
-      </div>
+      </div>}
       {message ? <p className="px-4 pb-3 text-sm font-bold text-[var(--crm-text-muted)]">{message}</p> : null}
       <div ref={host} className={`${styles.host} ${heightClass} w-full`} />
     </section>
+  )
+}
+
+export function ForeclosureStreetView(props: {
+  address: string
+  latitude: number | null
+  longitude: number | null
+}) {
+  return <StreetViewBody key={`${props.latitude ?? ''}:${props.longitude ?? ''}:${props.address}`} {...props} />
+}
+
+function StreetViewBody({
+  address,
+  latitude,
+  longitude,
+}: {
+  address: string
+  latitude: number | null
+  longitude: number | null
+}) {
+  const host = useRef<HTMLDivElement>(null)
+  const [pano, setPano] = useState<'pending' | 'ready' | 'none'>(latitude == null || longitude == null ? 'none' : 'pending')
+  const tryHref = latitude != null && longitude != null
+    ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latitude},${longitude}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+
+  useEffect(() => {
+    if (latitude == null || longitude == null) return
+    let cancelled = false
+    void loadMapsJs()
+      .then((google) => {
+        if (cancelled || !host.current) return
+        const maps = google as unknown as {
+          maps: {
+            StreetViewService?: new () => {
+              getPanorama: (
+                request: { location: { lat: number; lng: number }; radius: number },
+                callback: (data: { location?: { pano?: string } } | null, status: string) => void,
+              ) => void
+            }
+            StreetViewPanorama?: new (element: HTMLElement, options: Record<string, unknown>) => void
+          }
+        }
+        if (!maps.maps.StreetViewService || !maps.maps.StreetViewPanorama || !host.current) {
+          setPano('none')
+          return
+        }
+        const canvas = host.current
+        const service = new maps.maps.StreetViewService()
+        service.getPanorama({ location: { lat: latitude, lng: longitude }, radius: 80 }, (data, status) => {
+          if (cancelled) return
+          if (status !== 'OK' || !data?.location?.pano) {
+            setPano('none')
+            return
+          }
+          new maps.maps.StreetViewPanorama!(canvas, {
+            pano: data.location.pano,
+            visible: true,
+            addressControl: false,
+            fullscreenControl: true,
+          })
+          setPano('ready')
+        })
+      })
+      .catch(() => { if (!cancelled) setPano('none') })
+    return () => { cancelled = true }
+  }, [latitude, longitude])
+
+  return (
+    <div className="fc-street">
+      <div ref={host} className={`${styles.host} fc-map-canvas w-full`} hidden={pano !== 'ready'} />
+      {pano === 'ready' ? null : (
+        <div className="fc-street-empty">
+          <p>{pano === 'pending' ? 'Checking Street View…' : 'Street View is not available for this location'}</p>
+          <a href={tryHref} target="_blank" rel="noreferrer">Try on Google Maps</a>
+        </div>
+      )}
+    </div>
   )
 }

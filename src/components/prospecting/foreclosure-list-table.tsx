@@ -69,10 +69,16 @@ export function ForeclosureListTable({
   const router = useRouter()
   const today = chicagoDate()
   const [sort, setSort] = useState<{ key: ForeclosureListSortKey; direction: ForeclosureListSortDirection } | null>(null)
+  const [page, setPage] = useState(0)
   const rows = useMemo(
     () => (sort ? sortForeclosureList(prospects, sort.key, sort.direction) : prospects),
     [prospects, sort],
   )
+  const pageCount = Math.max(1, Math.ceil(rows.length / 15))
+  const currentPage = Math.min(page, pageCount - 1)
+  const pageRows = rows.slice(currentPage * 15, currentPage * 15 + 15)
+  const rangeStart = rows.length === 0 ? 0 : currentPage * 15 + 1
+  const rangeEnd = Math.min(rows.length, currentPage * 15 + 15)
 
   function toggleSort(key: ForeclosureListSortKey) {
     setSort((current) => {
@@ -84,6 +90,7 @@ export function ForeclosureListTable({
   }
 
   return (
+    <div className="fc-queue">
     <div className="fc-table-wrap">
       <table className="fc-table" aria-label="Foreclosure prospects">
         <thead>
@@ -101,7 +108,7 @@ export function ForeclosureListTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((prospect) => {
+          {pageRows.map((prospect) => {
             const href = `/prospecting/foreclosure/${prospect.id}`
             const owners = foreclosureOwnerLines(prospect.ownerName)
             const street = foreclosureStreetParts(prospect.situs, prospect)
@@ -148,6 +155,19 @@ export function ForeclosureListTable({
           })}
         </tbody>
       </table>
+    </div>
+    <div className="fc-pager">
+      <p>Showing {rangeStart}–{rangeEnd} of {rows.length}</p>
+      <div className="fc-pager-controls" role="navigation" aria-label="Pages">
+        <button type="button" aria-label="First page" disabled={currentPage === 0} onClick={() => setPage(0)}>«</button>
+        <button type="button" aria-label="Previous page" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>‹</button>
+        {Array.from({ length: pageCount }, (_, index) => (
+          <button key={index} type="button" aria-label={`Page ${index + 1}`} aria-current={index === currentPage ? 'page' : undefined} onClick={() => setPage(index)}>{index + 1}</button>
+        ))}
+        <button type="button" aria-label="Next page" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>›</button>
+        <button type="button" aria-label="Last page" disabled={currentPage >= pageCount - 1} onClick={() => setPage(pageCount - 1)}>»</button>
+      </div>
+    </div>
     </div>
   )
 }
