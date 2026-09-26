@@ -1,6 +1,5 @@
-/* Foreclosure prospecting uses the SavingKC mobile CRM surface.
-   Tokens match src/theme.ts in the mobile app. Brand red stays outside
-   this scope. The shell can remain dark; this workspace stays the light phone. */
+/* Foreclosure prospecting uses the SavingKC lavender surface and follows
+   the active workspace theme. Brand red stays outside this scope. */
 .fc-mobile {
   --fc-canvas: #C9CCF6;
   --fc-canvas-deep: #B7BAF0;
@@ -230,12 +229,24 @@
   font-weight: 600;
 }
 
-/* Dark shell paints selects with !important. Beat it only inside this workspace. */
-.ck-dark .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+/* Dark shell paints selects with !important. Beat it inside this workspace,
+   and keep checkboxes on the same color scheme so they are not black squares. */
+.crm-workspace-shell[data-theme="light"] .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea),
+.ck-dark .crm-workspace-shell[data-theme="light"] .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
   background-color: var(--fc-purple-soft) !important;
   border: 1px solid var(--fc-canvas) !important;
   color: var(--fc-text) !important;
   color-scheme: light !important;
+}
+
+.fc-mobile input[type="checkbox"] {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--fc-purple);
+}
+
+.crm-workspace-shell[data-theme="light"] .fc-mobile input[type="checkbox"] {
+  color-scheme: light;
 }
 
 .ck-dark .fc-mobile select option,
@@ -244,30 +255,9 @@
   color: var(--fc-text);
 }
 
-.fc-stage {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.fc-map-canvas {
-  height: 11rem;
-}
-
-@media (min-width: 1100px) {
-  .fc-stage {
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
-    align-items: start;
-  }
-
-  .fc-stage-map {
-    position: sticky;
-    top: 0.5rem;
-  }
-
-  .fc-map-canvas {
-    height: min(68vh, 560px);
-  }
-}
+.fc-stage { display: grid; gap: 0.75rem; }
+.fc-map-canvas { height: 16rem; }
+.fc-stage-map { max-width: 100%; }
 
 .fc-import > summary {
   list-style: none;
@@ -345,3 +335,315 @@
 .fc-phone-role {
   color: var(--fc-text-secondary);
 }
+
+.fc-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-lg);
+  background: var(--fc-card);
+  box-shadow: var(--fc-shadow);
+}
+
+.fc-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  color: var(--fc-text);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.fc-table thead th {
+  background: #4E51D4;
+  color: #ffffff;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fc-table tbody td {
+  padding: 0.38rem 0.6rem;
+  border-bottom: 1px solid var(--fc-hairline);
+  vertical-align: middle;
+  white-space: nowrap;
+  background: var(--fc-card);
+}
+
+.fc-table tbody td.fc-street,
+.fc-table tbody td.fc-owner-cell {
+  white-space: normal;
+}
+
+.fc-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.fc-row {
+  cursor: pointer;
+}
+
+.fc-row:hover td {
+  background: var(--fc-purple-soft);
+}
+
+.fc-table thead th:last-child,
+.fc-table tbody td:last-child {
+  position: sticky;
+  right: 0;
+}
+
+.fc-table thead th:last-child {
+  z-index: 2;
+}
+
+.fc-table tbody td:last-child {
+  z-index: 1;
+  box-shadow: -8px 0 12px rgba(27, 29, 44, 0.05);
+}
+
+.fc-row:focus-within td {
+  background: var(--fc-screen-top);
+}
+
+.fc-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.fc-sort:focus-visible,
+.fc-view:focus-visible,
+.fc-owner-link:focus-visible {
+  outline: 2px solid var(--fc-purple-mist);
+  outline-offset: 2px;
+}
+
+.fc-sort-mark {
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.fc-sort-desc {
+  transform: rotate(180deg);
+}
+
+.fc-owners { display: flex; flex-direction: column; gap: 0.05rem; white-space: normal; }
+.fc-owner-line { display: block; }
+.fc-owner-heading { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.15rem; color: var(--fc-text); font-size: 1.35rem; font-weight: 900; line-height: 1.15; }
+.fc-street { max-width: 16rem; font-weight: 700; white-space: normal; }
+.fc-street-line, .fc-street-unit { display: block; }
+.fc-street-unit { color: var(--fc-text-secondary); font-size: 0.68rem; font-weight: 700; }
+
+.fc-days-urgent { color: var(--fc-urgent-ink); }
+.fc-days-soon { color: var(--fc-warning-ink); }
+.fc-days-near { color: var(--fc-near-ink); }
+.fc-days-later { color: var(--fc-later-ink); }
+
+.fc-check { display: inline-flex; height: 2.25rem; align-items: center; gap: 0.4rem; border-radius: var(--fc-radius-pill); background: var(--fc-purple-soft); color: var(--fc-purple-deep); padding: 0 0.7rem; font-size: 0.78rem; font-weight: 800; }
+.fc-queue-note { color: var(--fc-text-secondary); padding: 0.35rem 0.15rem; font-size: 0.85rem; font-weight: 700; }
+.fc-file-tabs { display: flex; }
+.fc-file-tabs button { border: 1px solid var(--fc-border); border-radius: var(--fc-radius-pill); background: var(--fc-card); color: var(--fc-purple-deep); padding: 0.35rem 0.8rem; font-size: 0.75rem; font-weight: 800; }
+.fc-file-tabs button[aria-selected="true"] { background: var(--fc-purple); color: #ffffff; border-color: transparent; }
+
+.fc-owner-link {
+  color: var(--fc-text);
+  font-weight: 800;
+}
+
+.fc-owner-link:hover {
+  color: var(--fc-purple-deep);
+}
+
+.fc-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
+.fc-table thead .fc-num,
+.fc-table thead .fc-sort {
+  text-align: inherit;
+}
+
+.fc-table .fc-chip,
+.fc-table .fc-pill {
+  white-space: nowrap;
+}
+
+.fc-table .fc-pill {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.66rem;
+}
+
+.fc-table .fc-chip {
+  padding: 0.08rem 0.45rem;
+  font-size: 0.66rem;
+}
+
+.fc-sale {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  border-radius: var(--fc-radius-sm);
+  padding: 0.05rem 0.28rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.fc-sale-urgent { color: var(--fc-urgent-ink); background: var(--fc-danger-soft); }
+.fc-sale-soon { color: var(--fc-warning-ink); background: var(--fc-warning-soft); }
+.fc-sale-near { color: var(--fc-near-ink); background: var(--fc-purple-soft); }
+.fc-sale-later { color: var(--fc-later-ink); }
+
+.fc-phone-cell {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.fc-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fc-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  height: 1.6rem;
+  padding: 0 0.55rem;
+  border-radius: var(--fc-radius-pill);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fc-view {
+  border: 0;
+  background: var(--fc-purple);
+  color: var(--crm-on-brand);
+  box-shadow: 0 4px 10px rgba(109, 112, 245, 0.22);
+}
+
+.fc-view:hover {
+  background: var(--fc-purple-deep);
+}
+
+/* Dark theme follows the shell instead of a light card on black chrome. */
+.crm-workspace-shell[data-theme="dark"] .fc-mobile {
+  --fc-canvas: #2A2C44;
+  --fc-canvas-deep: #23253A;
+  --fc-canvas-light: #1C1E2E;
+  --fc-screen: #17181a;
+  --fc-screen-top: #202225;
+  --fc-screen-bottom: #141518;
+  --fc-card: #202225;
+  --fc-text: #f5f7fa;
+  --fc-text-secondary: #c1c5cb;
+  --fc-text-muted: #959ba3;
+  --fc-purple: #8B8EFF;
+  --fc-purple-deep: #C5C8FF;
+  --fc-purple-soft: #2A2C55;
+  --fc-purple-mist: #2E315C;
+  --fc-border: #35383d;
+  --fc-hairline: #2E3136;
+  --fc-danger-soft: #44272b;
+  --fc-warning-soft: #3e3221;
+  --fc-warning-ink: #f0ae52;
+  --fc-urgent-ink: #f06a72;
+  --fc-later-ink: #c1c5cb;
+  --fc-near-ink: #C5C8FF;
+  --fc-shadow: none;
+  color-scheme: dark;
+  background: var(--fc-screen);
+}
+
+.crm-workspace-shell[data-theme="dark"] .fc-mobile :is(select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+  background-color: var(--fc-screen-top) !important;
+  border-color: var(--fc-border) !important;
+  color: var(--fc-text) !important;
+  color-scheme: dark !important;
+}
+
+.crm-workspace-shell[data-theme="dark"] .fc-mobile input[type="checkbox"] {
+  color-scheme: dark;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="light"] {
+  --crm-nav: #4E51D4;
+  --crm-nav-hover: #5A5DE6;
+  --crm-nav-active: #3A3DC4;
+  --crm-nav-text: #F4F6FB;
+  --crm-nav-muted: #C9CCF6;
+  --crm-nav-accent: #C5C8FF;
+  color-scheme: light;
+  scrollbar-color: #C5C8F0 transparent;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="light"] .crm-shell-header {
+  background: #F7F8FF;
+  color: #1B1D2C;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #C5C8F0;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="dark"] {
+  scrollbar-color: #4a4e54 transparent;
+}
+
+.crm-workspace-shell[data-surface="foreclosure"][data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #4a4e54;
+}
+
+.fc-quick { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.fc-quick button, .fc-filter-chip, .fc-back {
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-pill);
+  background: var(--fc-card);
+  color: var(--fc-purple-deep);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+.fc-quick button[aria-pressed="true"], .fc-filter-chip { background: var(--fc-purple-soft); }
+.fc-clear { background: var(--fc-purple) !important; color: #fff !important; border-color: transparent !important; }
+.fc-active-filters { display: flex; flex-wrap: wrap; gap: 0.35rem; width: 100%; }
+.fc-county { display: inline-flex; border: 1px solid var(--fc-purple); border-radius: var(--fc-radius-pill); background: var(--fc-card); color: var(--fc-purple-deep); padding: 0.08rem 0.45rem; font-size: 0.66rem; font-weight: 800; }
+.fc-eye { width: 0.9rem; height: 0.9rem; }
+.fc-row:hover td { background: var(--fc-purple-mist); }
+.fc-back { display: inline-flex; align-items: center; }
+.fc-hero { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+.fc-badge { display: inline-flex; border-radius: var(--fc-radius-pill); background: var(--fc-purple); color: #fff; padding: 0.2rem 0.65rem; font-size: 0.72rem; font-weight: 800; }
+.fc-hero h2 { margin: 0.35rem 0 0; font-size: 1.45rem; font-weight: 900; line-height: 1.2; color: var(--fc-text); }
+.fc-panel-card { border-radius: var(--fc-radius-md); background: var(--fc-card); padding: 1rem 1.1rem; }
+.fc-panel-card h3 { margin: 0 0 0.8rem; border-bottom: 2px solid var(--fc-purple); padding-bottom: 0.35rem; font-size: 1rem; font-weight: 900; color: var(--fc-text); }
+.fc-kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: 0.45rem; text-align: center; }
+.fc-kpi-strip div { border-radius: var(--fc-radius-md); background: var(--fc-screen); padding: 0.55rem 0.35rem; }
+.fc-kpi-strip dt { color: var(--fc-text-secondary); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.fc-kpi-strip dd { margin: 0.15rem 0 0; color: var(--fc-text); font-size: 0.95rem; font-weight: 900; }
+.fc-tabbar { display: flex; gap: 0.15rem; overflow-x: auto; border-bottom: 1px solid var(--fc-border); }
+.fc-tabbar button { border: 0; background: transparent; color: var(--fc-text-secondary); padding: 0.55rem 0.7rem; font-size: 0.78rem; font-weight: 800; white-space: nowrap; }
+.fc-tabbar button[aria-selected="true"] { color: var(--fc-purple-deep); box-shadow: inset 0 -2px 0 var(--fc-purple); }
+.fc-split { display: grid; gap: 0.75rem; }
+@media (min-width: 900px) { .fc-split { grid-template-columns: 1fr 1fr; align-items: start; } }
+.fc-fact dt { color: var(--fc-text-secondary); font-size: 0.65rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.fc-fact dd { margin: 0.1rem 0 0.7rem; color: var(--fc-text); font-size: 0.92rem; font-weight: 800; }
+.fc-empty { color: var(--fc-text-secondary); font-size: 0.85rem; font-weight: 700; }
+.fc-flag-no { color: var(--fc-danger); font-weight: 900; }
+.fc-flag-yes { color: var(--crm-success); font-weight: 900; }

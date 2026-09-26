@@ -100,7 +100,7 @@ async function getMapsKey(): Promise<string> {
   return key
 }
 
-async function loadMapsJs(): Promise<GoogleMapsApi> {
+export async function loadMapsJs(): Promise<GoogleMapsApi> {
   if (typeof window === 'undefined') return Promise.reject(new Error('Maps cannot load during SSR.'))
   if (window.google?.maps) return Promise.resolve(window.google)
   if (window.__savingkcGmapsLoader) return window.__savingkcGmapsLoader
