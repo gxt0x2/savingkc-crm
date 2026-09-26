@@ -11,7 +11,7 @@ import {
   type ForeclosureNoticeType,
 } from '@/lib/prospecting/foreclosure'
 
-export type ForeclosureListSortKey = 'sale' | 'equity'
+export type ForeclosureListSortKey = 'sale' | 'equity' | 'days' | 'owner'
 export type ForeclosureListSortDirection = 'asc' | 'desc'
 
 const EM_DASH = '—'
@@ -123,6 +123,14 @@ export function foreclosurePersonLabel(name: string | null | undefined, ownerNam
   }
   const direct = foreclosureOwnerLines(name)
   return direct[0]?.replace(/^Owner \d+ /, '') || 'Contact'
+}
+
+/** Ingest flags stay in the database. The agent Notes tab does not show them. */
+export function foreclosureAgentNote(notes: string | null | undefined): string | null {
+  const value = notes?.replace(/\s+/g, ' ').trim() ?? ''
+  if (!value) return null
+  if (/pub_in_week|needs_propstream|needs_smartskip|backfill|est_debt|est_equity/i.test(value)) return null
+  return value
 }
 
 /** Known below-floor equity stays out of the default New dial queue. Unknown equity stays. */
@@ -263,15 +271,15 @@ function compareNullableNumber(left: number | null, right: number | null, factor
   return (left < right ? -1 : 1) * factor
 }
 
-export function sortForeclosureList<T extends { saleDate: string | null; estEquity: number | null }>(
+export function sortForeclosureList<T extends { saleDate: string | null; estEquity: number | null; ownerName?: string | null }>(
   rows: readonly T[],
   key: ForeclosureListSortKey,
   direction: ForeclosureListSortDirection,
 ): T[] {
   const factor = direction === 'asc' ? 1 : -1
-  return [...rows].sort((left, right) => (
-    key === 'sale'
-      ? compareNullableText(left.saleDate, right.saleDate, factor)
-      : compareNullableNumber(left.estEquity, right.estEquity, factor)
-  ))
+  return [...rows].sort((left, right) => {
+    if (key === 'equity') return compareNullableNumber(left.estEquity, right.estEquity, factor)
+    if (key === 'owner') return compareNullableText(foreclosureOwnerLabel(left.ownerName), foreclosureOwnerLabel(right.ownerName), factor)
+    return compareNullableText(left.saleDate, right.saleDate, factor)
+  })
 }

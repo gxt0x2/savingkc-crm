@@ -11,6 +11,7 @@ import {
   FIRST_FORECLOSURE_COUNTIES,
   NOTICE_TYPE_LABELS,
   STATUS_LABELS,
+  chicagoDate,
   foreclosureMapPins,
   formatUsDate,
   type EquityBand,
@@ -26,7 +27,7 @@ interface ForeclosureListItem {
   state: string
   county: string
   saleDate: string | null
-  noticeOrFilingDate: string | null
+  noticeOrFilingDate?: string | null
   noticesSent?: number
   outreachCount?: number
   caseNumber: string | null
@@ -69,6 +70,7 @@ export function ForeclosureWorkspace() {
   const [status, setStatus] = useState('new')
   const [dialReadyOnly, setDialReadyOnly] = useState(false)
   const [saleThisWeek, setSaleThisWeek] = useState(false)
+  const [newToday, setNewToday] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -194,7 +196,12 @@ export function ForeclosureWorkspace() {
     }
   }
 
-  const visible = status === 'new' ? prospects.filter((row) => foreclosureClearsDialFloor(row.estEquity)) : prospects
+  const today = chicagoDate()
+  const visible = prospects.filter((row) => {
+    if (status === 'new' && !foreclosureClearsDialFloor(row.estEquity)) return false
+    if (newToday && row.noticeOrFilingDate !== today) return false
+    return true
+  })
   const pins = foreclosureMapPins(visible.map((row) => ({ ...row, ownerName: foreclosureOwnerLabel(row.ownerName) })))
 
   return <>
@@ -223,14 +230,19 @@ export function ForeclosureWorkspace() {
               {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          <label className="fc-check">
-            <input type="checkbox" checked={dialReadyOnly} onChange={(event) => setDialReadyOnly(event.target.checked)} />
-            Dial-ready only
-          </label>
-          <label className="fc-check">
-            <input type="checkbox" checked={saleThisWeek} onChange={(event) => setSaleThisWeek(event.target.checked)} />
-            Sale this week
-          </label>
+          <div className="fc-quick" aria-label="Quick filters">
+            <button type="button" aria-pressed={dialReadyOnly} onClick={() => setDialReadyOnly((value) => !value)}>Dial-ready</button>
+            <button type="button" aria-pressed={saleThisWeek} onClick={() => setSaleThisWeek((value) => !value)}>Sale this week</button>
+            <button type="button" aria-pressed={newToday} onClick={() => setNewToday((value) => !value)}>New today</button>
+            <button type="button" className="fc-clear" onClick={() => { setCounty(''); setStatus('new'); setDialReadyOnly(false); setSaleThisWeek(false); setNewToday(false) }}>Clear filters</button>
+          </div>
+          <div className="fc-active-filters">
+            {status ? <button type="button" className="fc-filter-chip" onClick={() => setStatus('')}>{`Status: ${STATUS_LABELS[status as ForeclosureStatus] ?? status}`}</button> : null}
+            {county ? <button type="button" className="fc-filter-chip" onClick={() => setCounty('')}>{countyLabel(county, '')}</button> : null}
+            {dialReadyOnly ? <button type="button" className="fc-filter-chip" onClick={() => setDialReadyOnly(false)}>Dial-ready</button> : null}
+            {saleThisWeek ? <button type="button" className="fc-filter-chip" onClick={() => setSaleThisWeek(false)}>Sale this week</button> : null}
+            {newToday ? <button type="button" className="fc-filter-chip" onClick={() => setNewToday(false)}>New today</button> : null}
+          </div>
           <details className="fc-import">
           <summary className="crm-secondary-button inline-flex h-9 cursor-pointer items-center px-3 text-xs font-black">Import or add a prospect</summary>
           <div className="mt-3 space-y-3">
