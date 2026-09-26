@@ -4,16 +4,13 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ForeclosureStatusPill } from '@/components/prospecting/foreclosure-mobile'
-import { Icon } from '@/components/ui/icon'
 import {
   foreclosureCountyState,
-  foreclosureListHasPhone,
   foreclosureListPhone,
   foreclosureMoney,
-  foreclosureNoticeBadge,
-  foreclosureOwnerLabel,
+  foreclosureOwnerLines,
   foreclosureSalePresentation,
-  foreclosureStreetLine,
+  foreclosureStreetParts,
   sortForeclosureList,
   type ForeclosureListSortDirection,
   type ForeclosureListSortKey,
@@ -58,7 +55,7 @@ function SortHeader({
     <th scope="col" aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <button type="button" className="fc-sort" aria-label={`Sort by ${label.toLowerCase()}`} onClick={() => onSort(sortKey)}>
         {label}
-        <Icon name={active ? 'arrow_upward' : 'swap_vert'} className={active && direction === 'desc' ? 'fc-glyph fc-sort-desc' : 'fc-glyph'} />
+        <span aria-hidden="true" className={active && direction === 'desc' ? 'fc-sort-mark fc-sort-desc' : 'fc-sort-mark'}>{active ? '↑' : '↕'}</span>
       </button>
     </th>
   )
@@ -66,12 +63,8 @@ function SortHeader({
 
 export function ForeclosureListTable({
   prospects,
-  busy,
-  onCall,
 }: {
   prospects: ForeclosureTableRow[]
-  busy: boolean
-  onCall: (id: string) => void
 }) {
   const router = useRouter()
   const today = chicagoDate()
@@ -100,9 +93,9 @@ export function ForeclosureListTable({
             <th scope="col">Street</th>
             <th scope="col">County · ST</th>
             <SortHeader label="Sale date" sortKey="sale" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'asc'} onSort={toggleSort} />
+            <th scope="col">Days</th>
             <SortHeader label="Equity" sortKey="equity" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'desc'} onSort={toggleSort} />
             <th scope="col" className="fc-num">Debt</th>
-            <th scope="col">Notice</th>
             <th scope="col">Phone</th>
             <th scope="col">Actions</th>
           </tr>
@@ -110,12 +103,10 @@ export function ForeclosureListTable({
         <tbody>
           {rows.map((prospect) => {
             const href = `/prospecting/foreclosure/${prospect.id}`
-            const owner = foreclosureOwnerLabel(prospect.ownerName)
-            const street = foreclosureStreetLine(prospect.situs, prospect)
+            const owners = foreclosureOwnerLines(prospect.ownerName)
+            const street = foreclosureStreetParts(prospect.situs, prospect)
             const sale = foreclosureSalePresentation(prospect.saleDate, today)
-            const notice = foreclosureNoticeBadge(prospect.noticeType)
             const phone = foreclosureListPhone(prospect.phones)
-            const hasPhone = foreclosureListHasPhone(prospect.phones)
             return (
               <tr
                 key={prospect.id}
@@ -127,41 +118,26 @@ export function ForeclosureListTable({
                 }}
               >
                 <td><ForeclosureStatusPill status={prospect.status} /></td>
-                <td className="fc-clip" title={owner === '—' ? undefined : owner}>
-                  <Link href={href} className="fc-owner-link" aria-label={owner === '—' ? 'Open prospect' : undefined}>{owner}</Link>
+                <td className="fc-owner-cell" title={owners.length === 0 ? undefined : owners.join(', ')}>
+                  <Link href={href} className="fc-owner-link fc-owners" aria-label={owners.length === 0 ? 'Open prospect' : undefined}>
+                    {owners.length === 0 ? '—' : owners.map((line) => <span key={line} className="fc-owner-line">{line}</span>)}
+                  </Link>
                 </td>
-                <td className="fc-clip fc-street" title={street === '—' ? undefined : street}>{street}</td>
+                <td className="fc-street" title={street.unit ? `${street.street} ${street.unit}` : street.street}>
+                  <span className="fc-street-line">{street.street}</span>
+                  {street.unit ? <span className="fc-street-unit">{street.unit}</span> : null}
+                </td>
                 <td><span className="fc-chip">{foreclosureCountyState(prospect.county, prospect.state)}</span></td>
                 <td>
-                  <span className={sale.tone === 'none' ? 'fc-sale' : `fc-sale fc-sale-${sale.tone}`}>
-                    {sale.label}
-                    {sale.days != null ? <span className="fc-sale-days">{sale.days}d</span> : null}
-                  </span>
+                  <span className={sale.tone === 'none' ? 'fc-sale' : `fc-sale fc-sale-${sale.tone}`}>{sale.label}</span>
                 </td>
+                <td className={sale.days == null ? 'fc-num' : `fc-num fc-days fc-days-${sale.tone}`}>{sale.days == null ? '—' : sale.days}</td>
                 <td className="fc-num">{foreclosureMoney(prospect.estEquity)}</td>
                 <td className="fc-num">{foreclosureMoney(prospect.estDebt ?? null)}</td>
-                <td>{notice ? <span className="fc-type" title={prospect.noticeType ?? undefined}>{notice}</span> : '—'}</td>
                 <td className="fc-phone-cell">{phone}</td>
                 <td>
                   <div className="fc-actions">
-                    <Link href={href} className="fc-view" onClick={(event) => event.stopPropagation()}>
-                      <Icon name="visibility" className="fc-glyph" />
-                      View
-                    </Link>
-                    {hasPhone ? (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onCall(prospect.id)
-                        }}
-                        className="fc-call"
-                      >
-                        <Icon name="call" className="fc-glyph" />
-                        Call
-                      </button>
-                    ) : null}
+                    <Link href={href} className="fc-view" onClick={(event) => event.stopPropagation()}>View</Link>
                   </div>
                 </td>
               </tr>
