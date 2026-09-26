@@ -55,7 +55,7 @@ function SortHeader({
     <th scope="col" aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <button type="button" className="fc-sort" aria-label={`Sort by ${label.toLowerCase()}`} onClick={() => onSort(sortKey)}>
         {label}
-        <span aria-hidden="true" className={active && direction === 'desc' ? 'fc-sort-mark fc-sort-desc' : 'fc-sort-mark'}>{active ? '↑' : '↕'}</span>
+        <span aria-hidden="true" className="fc-sort-mark">{active ? (direction === 'asc' ? '▴' : '▾') : '▾'}</span>
       </button>
     </th>
   )
@@ -89,11 +89,11 @@ export function ForeclosureListTable({
         <thead>
           <tr>
             <th scope="col">Status</th>
-            <th scope="col">Owner</th>
+            <SortHeader label="Owner" sortKey="owner" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'asc'} onSort={toggleSort} />
             <th scope="col">Street</th>
             <th scope="col">County · ST</th>
             <SortHeader label="Sale date" sortKey="sale" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'asc'} onSort={toggleSort} />
-            <th scope="col">Days</th>
+            <SortHeader label="Days" sortKey="days" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'asc'} onSort={toggleSort} />
             <SortHeader label="Equity" sortKey="equity" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'desc'} onSort={toggleSort} />
             <th scope="col" className="fc-num">Debt</th>
             <th scope="col">Phone</th>
@@ -127,7 +127,7 @@ export function ForeclosureListTable({
                   <span className="fc-street-line">{street.street}</span>
                   {street.unit ? <span className="fc-street-unit">{street.unit}</span> : null}
                 </td>
-                <td><span className="fc-chip">{foreclosureCountyState(prospect.county, prospect.state)}</span></td>
+                <td><span className="fc-county">{foreclosureCountyState(prospect.county, prospect.state)}</span></td>
                 <td>
                   <span className={sale.tone === 'none' ? 'fc-sale' : `fc-sale fc-sale-${sale.tone}`}>{sale.label}</span>
                 </td>
@@ -137,7 +137,10 @@ export function ForeclosureListTable({
                 <td className="fc-phone-cell">{phone}</td>
                 <td>
                   <div className="fc-actions">
-                    <Link href={href} className="fc-view" onClick={(event) => event.stopPropagation()}>View</Link>
+                    <Link href={href} className="fc-view" onClick={(event) => event.stopPropagation()}>
+                      <svg viewBox="0 0 24 24" className="fc-eye" aria-hidden="true"><path fill="currentColor" d="M12 5c5 0 9 4.5 10 7-1 2.5-5 7-10 7S3 14.5 2 12c1-2.5 5-7 10-7zm0 2.2a4.8 4.8 0 1 0 .1 9.6 4.8 4.8 0 0 0-.1-9.6zm0 2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6z" /></svg>
+                      View
+                    </Link>
                   </div>
                 </td>
               </tr>

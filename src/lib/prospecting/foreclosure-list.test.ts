@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  foreclosureAgentNote,
   foreclosureClearsDialFloor,
   foreclosureCountyState,
   foreclosureListHasPhone,
@@ -108,5 +109,11 @@ describe('foreclosure list display', () => {
     expect(sortForeclosureList(rows, 'sale', 'desc').map((row) => row.id)).toEqual(['late-rich', 'soon-thin', 'blank'])
     expect(sortForeclosureList(rows, 'equity', 'desc').map((row) => row.id)).toEqual(['late-rich', 'soon-thin', 'blank'])
     expect(sortForeclosureList(rows, 'equity', 'asc').map((row) => row.id)).toEqual(['soon-thin', 'late-rich', 'blank'])
+  })
+
+  it('hides ingest flags from the agent note and keeps a human note', () => {
+    expect(foreclosureAgentNote(null)).toBeNull()
+    expect(foreclosureAgentNote('week1 backfill; pub_in_week=True; needs_propstream')).toBeNull()
+    expect(foreclosureAgentNote('Called Tuesday, left voicemail.')).toBe('Called Tuesday, left voicemail.')
   })
 })
