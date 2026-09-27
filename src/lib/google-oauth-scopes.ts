@@ -7,9 +7,9 @@ export const USERINFO_PROFILE_SCOPE = 'https://www.googleapis.com/auth/userinfo.
 
 /**
  * Same grant requested by /api/auth/google/authorize.
- * gmail.modify is intentionally omitted: inbox sync uses users.messages.list/get
- * (gmail.readonly) and outbound mail uses users.messages.send (gmail.send).
- * Keep GMAIL_MODIFY_SCOPE above so leftover grants still parse for labels.
+ * gmail.modify is intentionally omitted. Inbox pull and history.list use
+ * gmail.readonly. users.watch uses gmail.readonly. Outbound mail uses
+ * gmail.send. Keep GMAIL_MODIFY_SCOPE above so leftover grants still parse.
  */
 export const REQUIRED_GOOGLE_OAUTH_SCOPES = [
   GMAIL_READONLY_SCOPE,

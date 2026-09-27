@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { syncUserGmail } from '@/lib/gmail-sync'
+import { renewGmailWatchForMailbox } from '@/lib/gmail-watch'
 import { requireUserOrSecret } from '@/lib/api/admin-auth'
 import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
 
@@ -21,5 +22,8 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await syncUserGmail(requestedEmail, days_back || 7)
+  if (!result.error) {
+    await renewGmailWatchForMailbox(requestedEmail).catch(() => undefined)
+  }
   return NextResponse.json(result)
 }

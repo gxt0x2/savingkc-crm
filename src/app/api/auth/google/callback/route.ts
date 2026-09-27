@@ -5,6 +5,7 @@ import { getCurrentUserEmail } from '@/lib/auth/admin'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { crmEmailForConnectedGoogleAccount, decodeGoogleOAuthState } from '@/lib/google-oauth-state'
 import { markOAuthConnected } from '@/lib/oauth-health'
+import { ensureGmailWatch } from '@/lib/gmail-watch'
 
 type GoogleOAuthProvider = 'google' | 'google_ads'
 
@@ -140,6 +141,23 @@ export async function GET(req: NextRequest) {
   }
 
   await markOAuthConnected(db, provider, googleEmail)
+
+  if (provider === 'google') {
+    try {
+      const watch = await ensureGmailWatch({
+        userEmail: googleEmail,
+        accessToken: tokens.access_token,
+        crmEmail,
+        scope: tokens.scope,
+        force: true,
+      })
+      if (!watch.ok && watch.code !== 'pubsub_not_configured' && watch.code !== 'mailbox_not_eligible') {
+        console.warn(`[oauth/callback] Gmail watch not started: ${watch.code}`)
+      }
+    } catch {
+      console.warn('[oauth/callback] Gmail watch failed')
+    }
+  }
 
   return redirectWithStatus(url.origin, returnTo, keys.success, googleEmail)
 }

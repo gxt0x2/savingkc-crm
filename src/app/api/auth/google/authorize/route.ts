@@ -6,9 +6,9 @@ import { REQUIRED_GOOGLE_OAUTH_SCOPES } from '@/lib/google-oauth-scopes'
 import { encodeGoogleOAuthState } from '@/lib/google-oauth-state'
 
 // Restricted-scope verification: request only the APIs this CRM calls.
-// gmail.modify is unused — sync is users.messages.list/get, send is
-// users.messages.send, appointments use Calendar. Do not add modify back
-// without a user-facing mailbox-mutation feature.
+// gmail.modify is unused — sync is users.messages.list/get and history.list,
+// push is users.watch, send is users.messages.send, appointments use Calendar.
+// Do not add modify back without a user-facing mailbox-mutation feature.
 
 // GET /api/auth/google/authorize?return_to=/settings
 // Redirects the user to Google OAuth consent screen.

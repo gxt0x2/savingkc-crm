@@ -613,9 +613,9 @@
       "owner": "Operations",
       "status": "active",
       "routes": [],
-      "apiRoutes": ["/api/cron/sync-gmail", "/api/auth/google/status", "/api/auth/google/send"],
-      "tables": ["user_oauth_tokens", "lead_emails", "system_config"],
-      "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
+      "apiRoutes": ["/api/cron/sync-gmail", "/api/auth/google/status", "/api/auth/google/send", "/api/webhooks/google/gmail"],
+      "tables": ["user_oauth_tokens", "lead_emails", "gmail_push_receipts", "system_config"],
+      "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_PUBSUB_TOPIC", "GOOGLE_PUBSUB_SUBSCRIPTION", "GOOGLE_PUBSUB_PUSH_AUDIENCE", "GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT", "GOOGLE_PUBSUB_PUSH_SECRET", "GMAIL_WATCH_MAILBOX_ALLOWLIST"],
       "crons": [
         { "path": "/api/cron/sync-gmail", "schedule": "15 13 * * *" }
       ]

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { syncUserGmail } from '@/lib/gmail-sync'
+import { renewDueGmailWatches } from '@/lib/gmail-watch'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 
 // GET /api/cron/sync-gmail — runs sync for every user with tokens
@@ -26,5 +27,15 @@ export async function GET(req: NextRequest) {
     results.push({ user_email: t.user_email, ...result })
   }
 
-  return NextResponse.json({ results, total_users: tokens.length })
+  let watch: { code: string; results: Array<{ user_email: string; code: string }> } = {
+    code: 'not_run',
+    results: [],
+  }
+  try {
+    watch = await renewDueGmailWatches()
+  } catch {
+    watch = { code: 'watch_renew_failed', results: [] }
+  }
+
+  return NextResponse.json({ results, total_users: tokens.length, watch })
 }
