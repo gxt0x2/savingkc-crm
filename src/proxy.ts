@@ -15,6 +15,8 @@ const PUBLIC_PAGE_EXACT = new Set([
 const PUBLIC_API_EXACT = new Set([
   // Resend authenticates the raw payload with its endpoint signing secret.
   '/api/webhooks/email/resend',
+  // Gmail Pub/Sub push verifies OIDC or GOOGLE_PUBSUB_PUSH_SECRET in the route.
+  '/api/webhooks/google/gmail',
   // Twilio authenticates delivery receipts inside this fixed callback route.
   '/api/webhooks/email/lead-sms',
   // The receiving-only worker validates a separate scoped bearer inside its route.

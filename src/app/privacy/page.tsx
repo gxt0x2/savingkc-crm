@@ -70,7 +70,9 @@ export default function PrivacyPage() {
           <ul>
             <li>
               Provide user-facing CRM features: inbox sync, send-via-Gmail, and
-              appointment write to Google Calendar
+              appointment write to Google Calendar. Near-realtime sync can use
+              Gmail watch, which notifies us with the mailbox address and a
+              history id only — not the message body.
             </li>
             <li>
               Store OAuth refresh and access tokens encrypted at rest in our database

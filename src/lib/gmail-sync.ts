@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { markOAuthConnected, persistOAuthHealth, readOAuthHealth } from '@/lib/oauth-health'
 
@@ -176,6 +177,85 @@ function parseAddrList(s: string): string[] {
   }).filter(Boolean)
 }
 
+export type GmailMessageStub = { id: string; threadId: string }
+
+export async function loadLeadsForGmailMatch(db: SupabaseClient): Promise<LeadMatchRow[]> {
+  const { data: leads } = await db
+    .from('leads')
+    .select('id, email, full_name, property_address')
+    .or('email.not.is.null,property_address.not.is.null,full_name.not.is.null')
+    .limit(5000)
+  return (leads || []) as LeadMatchRow[]
+}
+
+// Shared by manual Sync now and Pub/Sub history ingest. Upsert ignores a
+// lead_id + gmail_message_id that is already stored, so a repeated push
+// cannot insert a second CRM row for the same Gmail message.
+export async function ingestGmailMessageStubs(input: {
+  db: SupabaseClient
+  accessToken: string
+  userEmail: string
+  stubs: GmailMessageStub[]
+  leads: LeadMatchRow[]
+  fetchImpl?: typeof fetch
+}): Promise<{ scanned: number; matched: number; inserted: number }> {
+  const fetchImpl = input.fetchImpl || fetch
+  const seen = new Set<string>()
+  const stubs = input.stubs.filter((stub) => {
+    if (!stub.id || seen.has(stub.id)) return false
+    seen.add(stub.id)
+    return true
+  })
+
+  let matched = 0
+  let inserted = 0
+
+  for (const stub of stubs) {
+    const msgRes = await fetchImpl(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(stub.id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
+      { headers: { Authorization: `Bearer ${input.accessToken}` } }
+    )
+    if (!msgRes.ok) continue
+    const msg = await msgRes.json() as GmailMessage
+
+    const fromHeader = header(msg, 'From')
+    const fromAddr = (fromHeader.match(/<([^>]+)>/) || [null, fromHeader])[1]?.toLowerCase().trim() || ''
+    const toAddrs = parseAddrList(header(msg, 'To'))
+    const ccAddrs = parseAddrList(header(msg, 'Cc'))
+    const subject = header(msg, 'Subject')
+    const snippet = msg.snippet || ''
+    const sentAt = msg.internalDate
+      ? new Date(Number(msg.internalDate)).toISOString()
+      : new Date(header(msg, 'Date')).toISOString()
+
+    const leadId = matchLeadToMessage(fromAddr, [...toAddrs, ...ccAddrs], subject, snippet, input.leads)
+    if (!leadId) continue
+    matched++
+
+    const direction = fromAddr === input.userEmail.toLowerCase() ? 'outbound' : 'inbound'
+
+    const { error: insertError } = await input.db
+      .from('lead_emails')
+      .upsert({
+        lead_id: leadId,
+        gmail_thread_id: msg.threadId || stub.threadId,
+        gmail_message_id: stub.id,
+        subject,
+        from_address: fromAddr,
+        to_addresses: toAddrs,
+        cc_addresses: ccAddrs,
+        body_snippet: snippet,
+        sent_at: sentAt,
+        direction,
+        synced_from_user: input.userEmail,
+      }, { onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
+
+    if (!insertError) inserted++
+  }
+
+  return { scanned: stubs.length, matched, inserted }
+}
+
 // ---------------------------------------------------------------------------
 // Sync recent Gmail messages for one user, match to leads, insert to lead_emails
 // Returns { scanned, matched, inserted }
@@ -209,18 +289,13 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
   }
   const accessToken = tokenResult.accessToken
 
-  // Fetch leads for matching
-  const { data: leads } = await db
-    .from('leads')
-    .select('id, email, full_name, property_address')
-    .or('email.not.is.null,property_address.not.is.null,full_name.not.is.null')
-    .limit(5000)
-
-  if (!leads || leads.length === 0) {
+  const leads = await loadLeadsForGmailMatch(db)
+  if (leads.length === 0) {
     return { scanned: 0, matched: 0, inserted: 0 }
   }
 
-  // Search Gmail for recent messages
+  // Search Gmail for recent messages. Pull sync stays available when Pub/Sub
+  // push is not configured.
   const query = `newer_than:${daysBack}d`
   const listRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=100`,
@@ -229,59 +304,19 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
   if (!listRes.ok) {
     return { scanned: 0, matched: 0, inserted: 0, error: `gmail_list_${listRes.status}` }
   }
-  const listData = await listRes.json() as { messages?: { id: string; threadId: string }[] }
+  const listData = await listRes.json() as { messages?: GmailMessageStub[] }
   const messageStubs = listData.messages || []
+  const ingested = await ingestGmailMessageStubs({
+    db,
+    accessToken,
+    userEmail,
+    stubs: messageStubs,
+    leads,
+  })
 
-  let matched = 0
-  let inserted = 0
-
-  for (const stub of messageStubs) {
-    const msgRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${stub.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-    if (!msgRes.ok) continue
-    const msg = await msgRes.json() as GmailMessage
-
-    const fromHeader = header(msg, 'From')
-    const fromAddr = (fromHeader.match(/<([^>]+)>/) || [null, fromHeader])[1]?.toLowerCase().trim() || ''
-    const toAddrs = parseAddrList(header(msg, 'To'))
-    const ccAddrs = parseAddrList(header(msg, 'Cc'))
-    const subject = header(msg, 'Subject')
-    const snippet = msg.snippet || ''
-    const sentAt = msg.internalDate
-      ? new Date(Number(msg.internalDate)).toISOString()
-      : new Date(header(msg, 'Date')).toISOString()
-
-    const leadId = matchLeadToMessage(fromAddr, [...toAddrs, ...ccAddrs], subject, snippet, leads)
-    if (!leadId) continue
-    matched++
-
-    const direction = fromAddr === userEmail.toLowerCase() ? 'outbound' : 'inbound'
-
-    const { error: insertError } = await db
-      .from('lead_emails')
-      .upsert({
-        lead_id: leadId,
-        gmail_thread_id: stub.threadId,
-        gmail_message_id: stub.id,
-        subject,
-        from_address: fromAddr,
-        to_addresses: toAddrs,
-        cc_addresses: ccAddrs,
-        body_snippet: snippet,
-        sent_at: sentAt,
-        direction,
-        synced_from_user: userEmail,
-      }, { onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
-
-    if (!insertError) inserted++
-  }
-
-  // Update last sync
   await db.from('user_oauth_tokens').update({
     last_sync_at: new Date().toISOString(),
   }).eq('id', tokenRow.id)
 
-  return { scanned: messageStubs.length, matched, inserted }
+  return ingested
 }

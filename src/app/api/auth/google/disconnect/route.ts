@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getCurrentUserEmail, isCurrentUserAdmin } from '@/lib/auth/admin'
+import type { StoredToken } from '@/lib/gmail-sync'
+import { stopConnectedGmailWatch } from '@/lib/gmail-watch'
 
 // POST /api/auth/google/disconnect { user_email }
 export async function POST(req: NextRequest) {
@@ -20,7 +22,7 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin()
   const { data: tokenRow, error: tokenLookupError } = await db
     .from('user_oauth_tokens')
-    .select('crm_user_email')
+    .select('*')
     .eq('user_email', requestedEmail)
     .eq('provider', 'google')
     .maybeSingle()
@@ -34,6 +36,13 @@ export async function POST(req: NextRequest) {
   const ownsToken = requestedEmail === currentEmail || linkedCrm === currentEmail
   if (!ownsToken && !(await isCurrentUserAdmin())) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  if (tokenRow?.refresh_token) {
+    const stopped = await stopConnectedGmailWatch(tokenRow as StoredToken)
+    if (stopped.code !== 'watch_stopped' && stopped.code !== 'reauthorization_required' && stopped.code !== 'no_access_token') {
+      console.warn(`[google/disconnect] Gmail watch stop: ${stopped.code}`)
+    }
   }
 
   const { error } = await db
