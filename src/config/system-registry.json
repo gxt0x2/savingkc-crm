@@ -341,6 +341,16 @@
       ]
     },
     {
+      "id": "wholesale_market_watch",
+      "name": "Wholesale Market Watch",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": ["/market-watch"],
+      "apiRoutes": ["/api/market-watch"],
+      "tables": ["wholesale_market_snapshots"],
+      "environment": []
+    },
+    {
       "id": "calendar_tasks",
       "name": "Calendar and tasks",
       "owner": "Operations",

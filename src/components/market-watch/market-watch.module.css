@@ -1,0 +1,466 @@
+.root {
+  --purple: #7c5cbf;
+  --purple-dark: #5e4299;
+  --purple-soft: #ede7f6;
+  --purple-mid: #b39ddb;
+  --ink: #1a1a2e;
+  --muted: #5c5c72;
+  --line: #e2e0ea;
+  --bg: #f7f6fa;
+  --card: #ffffff;
+  --tight: #0d7a4f;
+  --tight-bg: #e6f5ee;
+  --balanced: #2b6cb0;
+  --balanced-bg: #e8f1fb;
+  --soft: #b45309;
+  --soft-bg: #fef3c7;
+  --ceil: #7c3aed;
+  --ceil-bg: #f3e8ff;
+  --floor: #9f1239;
+  --floor-bg: #fce7f3;
+  --fast: #0369a1;
+  --fast-bg: #e0f2fe;
+  color: var(--ink);
+  background: var(--bg);
+  min-height: 100%;
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+
+.hero {
+  background: linear-gradient(135deg, var(--purple-dark), var(--purple));
+  color: #fff;
+  border-radius: 14px;
+  padding: 1.4rem 1.5rem 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 8px 24px rgba(94, 66, 153, 0.25);
+}
+
+.hero h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.sub {
+  opacity: 0.92;
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.monthSelect {
+  color: var(--ink);
+  background: #fff;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-weight: 700;
+}
+
+.section {
+  margin-bottom: 1.5rem;
+}
+
+.section h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+  color: var(--purple-dark);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  letter-spacing: 0;
+}
+
+.hint {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.75rem;
+}
+
+.kpi {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.85rem 0.9rem;
+  box-shadow: 0 1px 3px rgba(26, 26, 46, 0.04);
+}
+
+.kpiAccent {
+  border-top: 3px solid var(--purple);
+}
+
+.kpiLabel {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.kpiValue {
+  font-size: 1.45rem;
+  font-weight: 700;
+  margin-top: 0.15rem;
+  letter-spacing: -0.02em;
+}
+
+.kpiNote {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.chip {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--purple);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  min-width: 180px;
+  flex: 1 1 200px;
+  max-width: 280px;
+}
+
+.kind {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--purple-dark);
+  font-weight: 700;
+}
+
+.zipCode {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0.1rem 0;
+}
+
+.detail {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(26, 26, 46, 0.04);
+}
+
+.tableWrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.tableWrap th,
+.tableWrap td {
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.tableWrap th {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.center {
+  text-align: center;
+}
+
+.tableWrap tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tableWrap tbody tr:hover {
+  background: #f3f0fa;
+}
+
+.kcrar {
+  background: #f0f4f8;
+  color: #334155;
+}
+
+.subhead {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+}
+
+.ctrl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ctrl label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ctrl input,
+.ctrl select {
+  font: inherit;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-width: 120px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.ctrl input:focus,
+.ctrl select:focus {
+  outline: 2px solid var(--purple-mid);
+  border-color: var(--purple);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.6rem;
+  background: var(--purple-soft);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--purple);
+  width: 1rem;
+  height: 1rem;
+}
+
+.count {
+  margin-left: auto;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--purple-dark);
+  padding: 0.4rem 0.2rem;
+}
+
+.rule {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: -0.35rem 0 0.75rem;
+}
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.num .sortButton {
+  justify-content: flex-end;
+}
+
+.arrow {
+  opacity: 0.35;
+  font-size: 0.7em;
+}
+
+.active .arrow {
+  opacity: 1;
+  color: var(--purple);
+}
+
+.flag {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  margin: 0.05rem 0.15rem 0.05rem 0;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.tight { background: var(--tight-bg); color: var(--tight); }
+.balanced { background: var(--balanced-bg); color: var(--balanced); }
+.soft { background: var(--soft-bg); color: var(--soft); }
+.ceil { background: var(--ceil-bg); color: var(--ceil); }
+.floor { background: var(--floor-bg); color: var(--floor); }
+.fast { background: var(--fast-bg); color: var(--fast); }
+
+.flags {
+  white-space: normal;
+  min-width: 160px;
+}
+
+.moiBar {
+  display: inline-block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--purple-mid);
+  vertical-align: middle;
+  margin-right: 0.35rem;
+  max-width: 48px;
+}
+
+.primaryDot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--purple);
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+.method {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.15rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.method ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.method li {
+  margin: 0.25rem 0;
+}
+
+.gaps {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--line);
+}
+
+.gaps strong {
+  color: #92400e;
+}
+
+.footer {
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.upload {
+  margin-top: 1rem;
+  background: var(--card);
+  border: 1px dashed var(--purple-mid);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.upload summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--purple-dark);
+}
+
+.upload p {
+  margin: 0.55rem 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.upload button {
+  margin-left: 0.5rem;
+  background: var(--purple);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  font-weight: 700;
+}
+
+.status {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 960px) {
+  .kpis { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .count { margin-left: 0; }
+}
