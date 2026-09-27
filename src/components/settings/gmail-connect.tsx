@@ -1,11 +1,9 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Icon } from '@/components/ui/icon'
 import { isGmailSyncStale } from '@/lib/gmail-oauth-status'
-import { formatGoogleScopeLabel, formatGmailSendError } from '@/lib/google-oauth-scopes'
+import { formatGoogleScopeLabel } from '@/lib/google-oauth-scopes'
 
 interface ConnectedAccount {
   user_email: string
@@ -33,12 +31,6 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
-  const [sendTo, setSendTo] = useState('')
-  const [sendSubject, setSendSubject] = useState('Saving KC Gmail test')
-  const [sendBody, setSendBody] = useState('This message was sent from Saving KC CRM through the connected Gmail account.')
-  const [sending, setSending] = useState(false)
-  const [sendResult, setSendResult] = useState<string | null>(null)
-  const [sendError, setSendError] = useState<string | null>(null)
 
   const oauthSuccess = searchParams.get('oauth_success')
   const oauthError = searchParams.get('oauth_error')
@@ -106,207 +98,164 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
     }
   }
 
-  async function handleSendGmail() {
-    setSending(true)
-    setSendError(null)
-    setSendResult(null)
-    try {
-      const res = await fetch('/api/auth/google/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_email: normalizedUserEmail || undefined,
-          to: sendTo.trim(),
-          subject: sendSubject.trim() || 'Message from Saving KC',
-          body: sendBody.trim(),
-        }),
-      })
-      const data = await res.json() as { error?: string; code?: string; id?: string }
-      if (!res.ok) {
-        throw new Error(data.error || (data.code ? formatGmailSendError(data.code) : 'Gmail send failed'))
-      }
-      setSendResult(`Sent through Gmail${data.id ? ` · ${data.id}` : ''}`)
-      setSendBody('')
-    } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Gmail send failed')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const connectedAccount = accounts.find((account) => account.connection_status === 'connected')
-  const calendarSyncOn = Boolean(connectedAccount && (connectedAccount.has_calendar ?? true) && oauthConfigured)
+  const disconnected = !loading && accounts.length === 0
+  const showConnectButton = !loading && (accounts.length === 0 || !oauthConfigured)
 
   return (
-    <div className="ck-card p-5">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-bold text-[var(--ck-text)] mb-1">Gmail Sync</h2>
-          <p className="text-[13px] text-[var(--ck-text-muted)]">
-            Connect Gmail to sync inbound threads, send from your Google account, and write your CRM appointments to Google Calendar.
-          </p>
-        </div>
-        <button
-          onClick={handleConnect}
-          disabled={!oauthConfigured}
-          className="bg-[#E32E2E] hover:bg-[#c72626] text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-        >
-          <Icon name="add" size="text-base" /> Connect Gmail
-        </button>
+    <section className="ck-card p-4 sm:p-5" aria-labelledby="gmail-settings-title">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--crm-brand-soft)] text-[var(--ck-accent)]">
+          <MailGlyph />
+        </span>
+        <h2 id="gmail-settings-title" className="text-[17px] font-semibold tracking-tight text-[var(--ck-text)]">
+          Gmail
+        </h2>
       </div>
-      <p className="text-[12px] text-[var(--ck-text-muted)] mb-4">
-        Connecting Gmail lets Saving KC CRM read matched inbox threads, send from your Google account, and write CRM appointments to Google Calendar. We do not sell Google user data or use it for ads.{' '}
-        <Link href="/privacy" className="underline text-[var(--ck-accent)]">
-          Privacy Policy
-        </Link>
-        {' '}explains access, storage, and Google Limited Use. Disconnect stops further Google API access and removes stored OAuth tokens.
-      </p>
+      {disconnected && (
+        <p className="mt-3 text-[13px] leading-snug text-[var(--ck-text-muted)]">
+          Sync mail and calendar with your @savingkc.com Google account.
+        </p>
+      )}
 
-      {/* OAuth feedback banners */}
-      {oauthSuccess && (
-        <div className="mb-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[13px] rounded-lg px-4 py-3">
-          ✓ Connected {oauthSuccess}
-        </div>
+      {oauthSuccess && accounts.length === 0 && !loading && (
+        <p className="mt-3 text-[13px] font-medium text-[var(--crm-success)]">Connected {oauthSuccess}</p>
       )}
       {oauthError && (
-        <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-400 text-[13px] rounded-lg px-4 py-3">
-          Error: {formatGmailSyncError(oauthError)}
-        </div>
+        <p role="alert" className="mt-3 text-[13px] text-[var(--crm-danger)]">
+          {formatGmailSyncError(oauthError)}
+        </p>
       )}
       {!oauthConfigured && (
-        <div className="mb-4 bg-red-500/10 border border-red-400 text-red-500 text-[13px] rounded-lg px-4 py-3">
-          Gmail OAuth is not configured in this environment. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, redeploy, then reconnect Gmail. Existing accounts are not healthy.
-        </div>
+        <p role="alert" className="mt-3 text-[13px] leading-snug text-[var(--crm-danger)]">
+          Gmail OAuth is not configured in this environment. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, redeploy, then reconnect Gmail.
+        </p>
       )}
-      {syncResult && (
-        <div className="mb-4 bg-sky-500/10 border border-sky-500/30 text-sky-400 text-[13px] rounded-lg px-4 py-3">
-          {syncResult}
-        </div>
+      {showConnectButton && (
+        <button
+          type="button"
+          onClick={handleConnect}
+          disabled={!oauthConfigured}
+          className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-xl bg-[var(--crm-brand)] px-4 text-sm font-semibold text-[var(--crm-on-brand)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+        >
+          Connect Gmail
+        </button>
       )}
 
-      {/* Connected accounts */}
       {loading ? (
-        <p className="text-sm text-[var(--ck-text-muted)]">Loading…</p>
-      ) : accounts.length === 0 ? (
-        <div className="text-center py-8 text-sm text-[var(--ck-text-muted)]">
-          <Icon name="mail" size="text-3xl" className="text-[var(--ck-text-dim)] mb-2 block mx-auto" />
-          {normalizedUserEmail ? `No Gmail connected for ${normalizedUserEmail}` : 'No Gmail accounts connected yet'}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {accounts.map(a => {
-            const needsReconnect = a.connection_status === 'reauthorization_required'
-            const isError = a.connection_status === 'error' || !oauthConfigured
+        <p className="mt-3 text-sm text-[var(--ck-text-muted)]">Loading…</p>
+      ) : accounts.length > 0 ? (
+        <div className="mt-4 space-y-3 border-t border-[var(--ck-border)] pt-3">
+          {accounts.map((account) => {
+            const needsReconnect = account.connection_status === 'reauthorization_required'
+            const isError = account.connection_status === 'error' || !oauthConfigured
             const isUnhealthy = needsReconnect || isError
-            const staleSync = a.connection_status === 'connected' && isGmailSyncStale(a.last_sync_at)
+            const staleSync = account.connection_status === 'connected' && isGmailSyncStale(account.last_sync_at)
+            const calendarOn = account.connection_status === 'connected'
+              && oauthConfigured
+              && Boolean(account.has_calendar || (account.scope || '').includes('calendar'))
+            const statusLabel = !oauthConfigured
+              ? 'OAuth is not configured — this account is not connected'
+              : needsReconnect
+                ? 'Authorization expired — reconnect Gmail'
+                : account.connection_status === 'error'
+                  ? (account.connection_error_message || 'Gmail connection error — reconnect')
+                  : 'Connected'
+
             return (
-              <div
-                key={a.user_email}
-                className={`flex items-center justify-between p-3 rounded-lg bg-[var(--ck-surface-elev)] border ${isUnhealthy ? 'border-red-400' : staleSync ? 'border-amber-400' : 'border-[var(--ck-border)]'}`}
-              >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${isUnhealthy ? 'bg-red-500/10' : 'bg-emerald-500/10'}`}>
-                  <Icon name="mail" size="text-base" className={isUnhealthy ? 'text-red-500' : 'text-emerald-400'} />
+              <div key={account.user_email} className="min-w-0">
+                <p className={`flex items-center gap-1.5 text-[13px] font-semibold ${isUnhealthy ? 'text-[var(--crm-danger)]' : 'text-[var(--crm-success)]'}`}>
+                  {!isUnhealthy && <CheckGlyph />}
+                  {statusLabel}
+                </p>
+                <p className="truncate text-[15px] font-semibold text-[var(--ck-text)]">{account.user_email}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {!isUnhealthy && (
+                    <span className="text-[13px] text-[var(--ck-text-muted)]">{formatSyncAge(account.last_sync_at)}</span>
+                  )}
+                  {oauthConfigured && (
+                    <button
+                      type="button"
+                      onClick={() => isUnhealthy ? handleConnect() : handleSyncNow(account.user_email)}
+                      disabled={syncing === account.user_email}
+                      className={`text-[13px] font-semibold hover:underline disabled:opacity-50 ${isUnhealthy ? 'text-[var(--crm-danger)]' : 'text-[var(--ck-accent)]'}`}
+                    >
+                      {isUnhealthy ? 'Reconnect Gmail' : syncing === account.user_email ? 'Syncing…' : 'Sync now'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDisconnect(account.user_email)}
+                    className="text-[13px] font-medium text-[var(--crm-danger)] hover:underline"
+                  >
+                    Disconnect
+                  </button>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-[14px] font-semibold text-[var(--ck-text)] truncate">{a.user_email}</p>
-                  <p className={`text-[11px] ${isUnhealthy ? 'text-red-500' : 'text-[var(--ck-text-muted)]'}`}>
-                    {!oauthConfigured
-                      ? 'OAuth is not configured — this account is not connected'
-                      : needsReconnect
-                      ? 'Authorization expired — reconnect Gmail'
-                      : a.connection_status === 'error'
-                      ? (a.connection_error_message || 'Gmail connection error — reconnect')
-                      : a.last_sync_at
-                      ? `Last sync: ${new Date(a.last_sync_at).toLocaleString()}`
-                      : 'Never synced'}
+                {calendarOn && (
+                  <p className="mt-2 flex items-center gap-1.5 text-[12px] text-[var(--ck-text-muted)]">
+                    <CalendarGlyph />
+                    Calendar sync on
                   </p>
-                  {staleSync && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-300">
-                      Last sync is more than 36 hours old. Daily Gmail poll may be stalled — do not treat this as a live sync.
-                    </p>
-                  )}
-                  {a.connection_status === 'connected' && (a.has_calendar || (a.scope || '').includes('calendar')) && (
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-300">
-                      Google Calendar sync is on — appointments you create are written to this Google account.
-                    </p>
-                  )}
-                  {a.connection_status === 'connected' && (a.missing_scopes?.length || 0) > 0 && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-300">
-                      Missing after reconnect: {a.missing_scopes!.map(formatGoogleScopeLabel).join(', ')}. Reconnect Gmail and approve every requested permission.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => isUnhealthy ? handleConnect() : handleSyncNow(a.user_email)}
-                  disabled={syncing === a.user_email || !oauthConfigured}
-                  className={`text-[12px] font-semibold hover:underline disabled:opacity-50 ${isUnhealthy ? 'text-red-500' : 'text-[var(--ck-accent)]'}`}
-                >
-                  {isUnhealthy ? 'Reconnect Gmail' : syncing === a.user_email ? 'Syncing…' : 'Sync now'}
-                </button>
-                <button
-                  onClick={() => handleDisconnect(a.user_email)}
-                  className="text-[12px] font-medium text-red-400 hover:underline"
-                >
-                  Disconnect
-                </button>
-              </div>
+                )}
+                {staleSync && (
+                  <p className="mt-1.5 text-[12px] leading-snug text-[var(--crm-warning)]">
+                    Last sync is more than 36 hours old. Daily Gmail poll may be stalled — do not treat this as a live sync.
+                  </p>
+                )}
+                {account.connection_status === 'connected' && (account.missing_scopes?.length || 0) > 0 && (
+                  <p className="mt-1.5 text-[12px] leading-snug text-[var(--crm-warning)]">
+                    Missing after reconnect: {account.missing_scopes!.map(formatGoogleScopeLabel).join(', ')}. Reconnect Gmail and approve every requested permission.
+                  </p>
+                )}
               </div>
             )
           })}
         </div>
-      )}
+      ) : null}
 
-      {connectedAccount && (
-        <div className="mt-5 border-t border-[var(--ck-border)] pt-4">
-          <h3 className="text-sm font-bold text-[var(--ck-text)] mb-1">Send via Gmail</h3>
-          <p className="text-[12px] text-[var(--ck-text-muted)] mb-3">
-            Sends through Gmail API using {connectedAccount.user_email}. This is the connected Google mailbox, not Resend.
-          </p>
-          {calendarSyncOn && (
-            <p className="text-[12px] text-emerald-600 dark:text-emerald-300 mb-3">
-              Google Calendar sync is on for this connection.
-            </p>
-          )}
-          <div className="space-y-2">
-            <input
-              aria-label="Gmail recipient"
-              type="email"
-              value={sendTo}
-              onChange={(event) => setSendTo(event.target.value)}
-              placeholder="Recipient email"
-              className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm text-[var(--ck-text)]"
-            />
-            <input
-              aria-label="Gmail subject"
-              value={sendSubject}
-              onChange={(event) => setSendSubject(event.target.value)}
-              placeholder="Subject"
-              className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm text-[var(--ck-text)]"
-            />
-            <textarea
-              aria-label="Gmail message"
-              value={sendBody}
-              onChange={(event) => setSendBody(event.target.value)}
-              rows={3}
-              className="w-full rounded-lg border border-[var(--ck-border)] bg-[var(--ck-surface-elev)] px-3 py-2 text-sm text-[var(--ck-text)]"
-            />
-            {sendError && <p role="alert" className="text-[12px] font-medium text-red-500">{sendError}</p>}
-            {sendResult && <p role="status" className="text-[12px] font-medium text-emerald-500">{sendResult}</p>}
-            <button
-              type="button"
-              onClick={handleSendGmail}
-              disabled={sending || !sendTo.trim() || !sendBody.trim() || !oauthConfigured}
-              className="bg-[#E32E2E] hover:bg-[#c72626] disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg"
-            >
-              {sending ? 'Sending…' : 'Send via Gmail'}
-            </button>
-          </div>
-        </div>
+      {syncResult && (
+        <p role="status" className="mt-3 text-[13px] text-[var(--ck-text)]">{syncResult}</p>
       )}
-    </div>
+    </section>
+  )
+}
+
+function formatSyncAge(lastSyncAt: string | null): string {
+  if (!lastSyncAt) return 'Never synced'
+  const then = new Date(lastSyncAt).getTime()
+  if (Number.isNaN(then)) return 'Never synced'
+  const mins = Math.floor((Date.now() - then) / 60000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 14) return `${days}d ago`
+  return new Date(lastSyncAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function MailGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+      <path d="m4.5 7.5 7.5 5.5 7.5-5.5" />
+    </svg>
+  )
+}
+
+function CheckGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m5 12 5 5L20 7" />
+    </svg>
+  )
+}
+
+function CalendarGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M8 3.5v3M16 3.5v3M4 9.5h16" />
+    </svg>
   )
 }
 
