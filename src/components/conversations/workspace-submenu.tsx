@@ -11,6 +11,7 @@ export const WORKSPACE_SECTIONS: Record<string, Section[]> = {
   Prospecting: [
     { label: 'Dialer', href: '/prospecting', description: 'Prospecting dialer' },
     { label: 'Foreclosure', href: '/prospecting/foreclosure', description: 'Mortgage foreclosure prospects', activePrefix: true },
+    { label: 'Excess proceeds', href: '/prospecting/excess-proceeds', description: 'Jackson County surplus claims', activePrefix: true },
     { label: 'Email', href: '/marketing/email', description: 'Email campaigns and replies' },
     { label: 'SMS', description: 'Text campaigns · not connected yet' },
   ],

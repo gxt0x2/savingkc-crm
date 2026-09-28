@@ -7,6 +7,7 @@ import {
   DealLedgerError,
   listDealLedgerLines,
   postDealLedgerLine,
+  summarizeDealLedgerYear,
 } from '@/lib/server/deal-ledger'
 
 const noStore = { 'Cache-Control': 'private, no-store, max-age=0' }
@@ -21,7 +22,7 @@ const postSchema = z
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     source: z.string().trim().min(1).max(200),
     memo: z.string().trim().max(1000).nullable().optional(),
-    category: z.enum(['assignment_fee', 'transaction_fee', 'emd', 'overhead', 'other']),
+    category: z.enum(['assignment_fee', 'transaction_fee', 'emd', 'overhead', 'other', 'excess_proceeds_recovery', 'excess_proceeds_fee']),
     idempotency_key: z.string().trim().min(8).max(200).optional(),
     actor: z.string().trim().min(1).max(120).optional(),
   })
@@ -43,6 +44,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = new URL(request.url)
+    if (url.searchParams.get('summary') === 'ytd') {
+      const requested = url.searchParams.get('year')
+      const year = requested ? Number(requested) : new Date().getFullYear()
+      const summary = await summarizeDealLedgerYear(year)
+      return NextResponse.json(summary, { headers: noStore })
+    }
     const lines = await listDealLedgerLines({
       leadId: url.searchParams.get('lead_id'),
       fileNumber: url.searchParams.get('file_number'),
