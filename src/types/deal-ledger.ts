@@ -4,6 +4,8 @@ export const DEAL_LEDGER_CATEGORIES = [
   'emd',
   'overhead',
   'other',
+  'excess_proceeds_recovery',
+  'excess_proceeds_fee',
 ] as const
 
 export const DEAL_LEDGER_DIRECTIONS = ['in', 'out'] as const
@@ -35,4 +37,20 @@ export const DEAL_LEDGER_CATEGORY_LABELS: Record<DealLedgerCategory, string> = {
   emd: 'EMD',
   overhead: 'Overhead',
   other: 'Other',
+  excess_proceeds_recovery: 'Excess proceeds recovered',
+  excess_proceeds_fee: 'Excess proceeds fee income',
+}
+
+export interface DealLedgerYearRow {
+  category: DealLedgerCategory
+  direction: DealLedgerDirection
+  amount: number
+  line_count: number
+}
+
+export interface DealLedgerYearSummary {
+  year: number
+  rows: DealLedgerYearRow[]
+  excessProceedsFeeIncome: number
+  excessProceedsRecovered: number
 }

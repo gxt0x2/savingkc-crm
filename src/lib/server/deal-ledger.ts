@@ -5,6 +5,8 @@ import {
   type DealLedgerCategory,
   type DealLedgerDirection,
   type DealLedgerLine,
+  type DealLedgerYearRow,
+  type DealLedgerYearSummary,
 } from '@/types/deal-ledger'
 
 export {
@@ -157,4 +159,38 @@ export async function listDealLedgerLines(query: DealLedgerListQuery): Promise<D
     const line = asLine(row)
     return line ? [line] : []
   })
+}
+
+function sumCategory(rows: DealLedgerYearRow[], category: DealLedgerCategory, direction: DealLedgerDirection) {
+  return rows.reduce((sum, row) => (
+    row.category === category && row.direction === direction ? sum + row.amount : sum
+  ), 0)
+}
+
+export async function summarizeDealLedgerYear(year: number): Promise<DealLedgerYearSummary> {
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new DealLedgerError('Ledger year is invalid.', 'invalid', 400)
+  }
+  const { data, error } = await supabaseAdmin().rpc('crm_deal_ledger_ytd_v1', { target_year: year })
+  if (error) throw new DealLedgerError('Deal File ledger is unavailable.', 'unavailable', 503)
+  const payload = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null
+  const rawRows = Array.isArray(payload?.rows) ? payload.rows : []
+  const rows = rawRows.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const row = value as Record<string, unknown>
+    const amount = typeof row.amount === 'number' ? row.amount : Number(row.amount)
+    if (!Number.isFinite(amount) || !isDealLedgerCategory(row.category) || !isDealLedgerDirection(row.direction)) return []
+    return [{
+      category: row.category,
+      direction: row.direction,
+      amount,
+      line_count: Number(row.line_count) || 0,
+    }]
+  })
+  return {
+    year: typeof payload?.year === 'number' ? payload.year : year,
+    rows,
+    excessProceedsFeeIncome: sumCategory(rows, 'excess_proceeds_fee', 'in'),
+    excessProceedsRecovered: sumCategory(rows, 'excess_proceeds_recovery', 'in'),
+  }
 }
