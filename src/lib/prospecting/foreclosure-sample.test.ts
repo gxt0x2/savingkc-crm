@@ -43,7 +43,11 @@ describe('foreclosure sample contact', () => {
     expect(foreclosureSampleContactEnabled()).toBe(true)
     expect(foreclosureSampleById(FORECLOSURE_SAMPLE_ID)?.ownerName).toBe('Sample Homeowner')
     expect(foreclosureSampleById('other')).toBeNull()
-    const merged = mergeForeclosureSample([], { status: 'new' }, '2026-09-29')
+    const merged = mergeForeclosureSample(
+      [] as Array<{ id: string; externalRowId: string | null }>,
+      { status: 'new' },
+      '2026-09-29',
+    )
     expect(merged.map((row) => row.id)).toEqual([FORECLOSURE_SAMPLE_ID])
     expect(mergeForeclosureSample([], { status: 'callable' }, '2026-09-29')).toHaveLength(0)
     expect(mergeForeclosureSample([], { county: 'johnson' }, '2026-09-29')).toHaveLength(0)
