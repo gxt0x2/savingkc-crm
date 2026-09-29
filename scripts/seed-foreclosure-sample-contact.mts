@@ -8,11 +8,11 @@
  * Name: Sample Homeowner
  * Phones: (816) 555-0101 mobile, (816) 555-0198 landline. Fictional. Labeled Sample.
  *
- * This script upserts that one row only when you pass
- * FORECLOSURE_SAMPLE_SEED_CONFIRM=1 and service-role credentials are available
- * in the environment or .env.local. It refuses when VERCEL_ENV=production.
+ * This script upserts that one row only when you pass --confirm and service-role
+ * credentials are available in the environment or .env.local. It refuses when
+ * VERCEL_ENV=production.
  *
- *   FORECLOSURE_SAMPLE_SEED_CONFIRM=1 npx tsx scripts/seed-foreclosure-sample-contact.mts
+ *   npx tsx scripts/seed-foreclosure-sample-contact.mts --confirm
  */
 
 import { readFileSync } from 'node:fs'
@@ -42,16 +42,16 @@ if (process.env.VERCEL_ENV === 'production') {
   process.exit(1)
 }
 
-if (process.env.FORECLOSURE_SAMPLE_SEED_CONFIRM !== '1') {
+if (!process.argv.includes('--confirm')) {
   console.log('Preview already shows Sample Homeowner without a database write.')
   console.log(`Open /prospecting/foreclosure/${FORECLOSURE_SAMPLE_ID}`)
   console.log('Phones: (816) 555-0101 mobile and (816) 555-0198 landline.')
-  console.log('To copy that one row into a database, re-run with FORECLOSURE_SAMPLE_SEED_CONFIRM=1.')
+  console.log('To copy that one row into a database, re-run with --confirm.')
   process.exit(0)
 }
 
 if (!url || !key) {
-  console.error('Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, then re-run with FORECLOSURE_SAMPLE_SEED_CONFIRM=1.')
+  console.error('Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, then re-run with --confirm.')
   process.exit(1)
 }
 

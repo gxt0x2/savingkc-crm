@@ -132,10 +132,8 @@ export function foreclosureSampleProspect(): ForeclosureSampleProspect {
 
 /** Preview and local dev show the sample. Production does not. */
 export function foreclosureSampleContactEnabled(): boolean {
-  if (process.env.FORECLOSURE_SAMPLE_CONTACT === '0') return false
   if (process.env.VERCEL_ENV === 'production') return false
   if (process.env.VERCEL_ENV === 'preview') return true
-  if (process.env.FORECLOSURE_SAMPLE_CONTACT === '1') return true
   return process.env.NODE_ENV === 'development'
 }
 

@@ -33,13 +33,13 @@ describe('foreclosure sample contact', () => {
 
   it('shows on preview and stays out of production', () => {
     vi.stubEnv('VERCEL_ENV', 'production')
-    vi.stubEnv('FORECLOSURE_SAMPLE_CONTACT', '1')
+    vi.stubEnv('NODE_ENV', 'development')
     expect(foreclosureSampleContactEnabled()).toBe(false)
     expect(foreclosureSampleById(FORECLOSURE_SAMPLE_ID)).toBeNull()
     expect(mergeForeclosureSample([{ id: 'row', externalRowId: null }], { status: 'new' }, '2026-09-29')).toHaveLength(1)
 
     vi.stubEnv('VERCEL_ENV', 'preview')
-    vi.stubEnv('FORECLOSURE_SAMPLE_CONTACT', '')
+    vi.stubEnv('NODE_ENV', 'production')
     expect(foreclosureSampleContactEnabled()).toBe(true)
     expect(foreclosureSampleById(FORECLOSURE_SAMPLE_ID)?.ownerName).toBe('Sample Homeowner')
     expect(foreclosureSampleById('other')).toBeNull()
