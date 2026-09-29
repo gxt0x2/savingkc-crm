@@ -89,7 +89,7 @@ function splitOwners(value: string): { parts: string[]; lastFirst: boolean } {
   return { parts: [value], lastFirst: false }
 }
 
-/** Natural owner lines. One person is "First Last"; several are Owner 1 / Owner 2. */
+/** Person and company names only. Multiple owners are not labeled Owner 1 / Owner 2. */
 export function foreclosureOwnerLines(name: string | null | undefined): string[] {
   const value = name?.replace(/\s+/g, ' ').trim() ?? ''
   if (!value || /^(unknown|n\/a|na)$/i.test(value)) return []
@@ -103,13 +103,16 @@ export function foreclosureOwnerLines(name: string | null | undefined): string[]
     seen.add(key)
     unique.push(line)
   }
-  if (unique.length <= 1) return unique
-  return unique.map((line, index) => `Owner ${index + 1} ${line}`)
+  return unique
 }
 
+/** One owner is the name. Several are combined as "Ada Hall & Ben Hall". */
 export function foreclosureOwnerLabel(name: string | null | undefined): string {
   const lines = foreclosureOwnerLines(name)
-  return lines.length > 0 ? lines.join(' ') : EM_DASH
+  if (lines.length === 0) return EM_DASH
+  if (lines.length === 1) return lines[0]
+  if (lines.length === 2) return `${lines[0]} & ${lines[1]}`
+  return `${lines.slice(0, -1).join(', ')} & ${lines[lines.length - 1]}`
 }
 
 /** Phone rows use the same person as the heading when the contact is one of the owners. */
@@ -213,6 +216,12 @@ export function foreclosurePostalAddress(
   const locality = [city, [state, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')
   if (street === EM_DASH) return locality || EM_DASH
   return locality ? `${street}, ${locality}` : street
+}
+
+/** ZIP by itself. The street cell does not carry it. */
+export function foreclosureZip(zip: string | null | undefined): string {
+  const match = (zip ?? '').match(/\d{5}(?:-\d{4})?/)
+  return match?.[0] ?? EM_DASH
 }
 
 export function foreclosureCountyState(county: string | null | undefined, state: string | null | undefined): string {

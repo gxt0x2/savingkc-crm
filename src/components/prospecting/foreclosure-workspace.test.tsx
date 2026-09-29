@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { FORECLOSURE_SAMPLE_ID, foreclosureSampleProspect } from '@/lib/prospecting/foreclosure-sample'
 import { ForeclosureDetail } from './foreclosure-detail'
 import { ForeclosureWorkspace } from './foreclosure-workspace'
 
@@ -98,12 +99,17 @@ describe('foreclosure prospecting workspace', () => {
     })
     render(<ForeclosureWorkspace />)
     expect(await screen.findByRole('link', { name: 'Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
+    expect(screen.getByRole('button', { name: 'Dial-ready' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Sale this week' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Status: New' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Quick filters' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Status: New' })).not.toBeInTheDocument()
     const table = screen.getByRole('table', { name: 'Foreclosure prospects' })
     expect(within(table).getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
     expect(within(table).getByRole('columnheader', { name: 'Street' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Zip' })).toBeInTheDocument()
+    expect(within(table).getByText('64108')).toBeInTheDocument()
     expect(within(table).getByRole('columnheader', { name: 'County · ST' })).toBeInTheDocument()
     expect(within(table).getByText('100 Sandbox Court')).toBeInTheDocument()
     expect(within(table).getByText('Jackson MO')).toBeInTheDocument()
@@ -124,8 +130,7 @@ describe('foreclosure prospecting workspace', () => {
     expect(within(table).getByText('(913) 717-9716')).toBeInTheDocument()
     expect(screen.queryByText(/sorts first/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Foreclosure sale map' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open Ernest Dodson' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
+    expect(screen.queryByRole('region', { name: 'Foreclosure sale map' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
     expect(screen.getByRole('link', { name: 'Foreclosure' })).toHaveAttribute('href', '/prospecting/foreclosure')
     fireEvent.click(within(table).getByText('100 Sandbox Court'))
@@ -188,8 +193,9 @@ describe('foreclosure prospecting workspace', () => {
     }), { status: 200 }))
     render(<ForeclosureWorkspace />)
     const table = await screen.findByRole('table', { name: 'Foreclosure prospects' })
-    expect(within(table).getByText('Owner 1 Benjamin Hall')).toBeInTheDocument()
-    expect(within(table).getByText('Owner 2 Christine Hall')).toBeInTheDocument()
+    expect(within(table).getByText('Benjamin Hall & Christine Hall')).toBeInTheDocument()
+    expect(within(table).queryByText(/Owner 1/)).not.toBeInTheDocument()
+    expect(within(table).queryByText(/Owner 2/)).not.toBeInTheDocument()
     expect(within(table).queryByText(/HALL BENJAMIN/)).not.toBeInTheDocument()
     expect(within(table).queryByText('Low Equity LLC')).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: '' } })
@@ -260,8 +266,10 @@ describe('foreclosure prospecting workspace', () => {
       },
     }), { status: 200 }))
     render(<ForeclosureDetail id={prospect.id} />)
-    expect(await screen.findByText('Owner 1 Benjamin Hall')).toBeInTheDocument()
-    expect(screen.getByText('Owner 2 Christine Hall')).toBeInTheDocument()
+    expect(await screen.findByText('Benjamin Hall')).toBeInTheDocument()
+    expect(screen.getByText('Christine Hall')).toBeInTheDocument()
+    expect(screen.queryByText(/Owner 1/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Owner 2/)).not.toBeInTheDocument()
     expect(screen.getAllByText('401 N Locust St, Gardner, KS 66030')).toHaveLength(2)
     expect(screen.queryByText(/Gardner, Gardner|Gardner KS 66030, Gardner/)).not.toBeInTheDocument()
     expect(document.querySelector('.fc-pill-dead')).toHaveTextContent('Deceased')
@@ -273,5 +281,29 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.queryByText(/75,000 floor/)).not.toBeInTheDocument()
     expect(screen.queryByText(/HALL BENJAMIN/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save notice file' })).not.toBeInTheDocument()
+  })
+
+  it('labels the sample row in the queue and keeps the homepage map off', async () => {
+    const sample = foreclosureSampleProspect()
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ prospects: [sample] }), { status: 200 }))
+    render(<ForeclosureWorkspace />)
+    const table = await screen.findByRole('table', { name: 'Foreclosure prospects' })
+    expect(within(table).getByText('Sample Homeowner')).toBeInTheDocument()
+    expect(within(table).getByText('Sample')).toBeInTheDocument()
+    expect(within(table).getByText('64108')).toBeInTheDocument()
+    expect(within(table).getByText('418 Sample Lane')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Foreclosure sale map' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Owner 1/)).not.toBeInTheDocument()
+  })
+
+  it('shows the sample homeowner mobile and landline on Homeowner contacts', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ prospect: foreclosureSampleProspect() }), { status: 200 }))
+    render(<ForeclosureDetail id={FORECLOSURE_SAMPLE_ID} />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Homeowner contacts' }))
+    expect(screen.getAllByText('Sample Homeowner').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Subject')).toHaveLength(2)
+    expect(screen.getByText('(816) 555-0101 · Mobile')).toBeInTheDocument()
+    expect(screen.getByText('(816) 555-0198 · Landline')).toBeInTheDocument()
+    expect(screen.getByText('Alive')).toBeInTheDocument()
   })
 })

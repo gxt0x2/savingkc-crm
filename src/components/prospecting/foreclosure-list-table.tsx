@@ -8,9 +8,10 @@ import {
   foreclosureCountyState,
   foreclosureListPhone,
   foreclosureMoney,
-  foreclosureOwnerLines,
+  foreclosureOwnerLabel,
   foreclosureSalePresentation,
   foreclosureStreetParts,
+  foreclosureZip,
   sortForeclosureList,
   type ForeclosureListSortDirection,
   type ForeclosureListSortKey,
@@ -35,6 +36,7 @@ export interface ForeclosureTableRow {
   estDebt?: number | null
   noticeType?: ForeclosureNoticeType | null
   phones: string[]
+  demo?: boolean
 }
 
 function SortHeader({
@@ -98,6 +100,7 @@ export function ForeclosureListTable({
             <th scope="col">Status</th>
             <SortHeader label="Owner" sortKey="owner" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'asc'} onSort={toggleSort} />
             <th scope="col">Street</th>
+            <th scope="col">Zip</th>
             <th scope="col">County · ST</th>
             <SortHeader label="Sale date" sortKey="sale" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'asc'} onSort={toggleSort} />
             <SortHeader label="Days" sortKey="days" activeKey={sort?.key ?? null} direction={sort?.direction ?? 'asc'} onSort={toggleSort} />
@@ -110,7 +113,7 @@ export function ForeclosureListTable({
         <tbody>
           {pageRows.map((prospect) => {
             const href = `/prospecting/foreclosure/${prospect.id}`
-            const owners = foreclosureOwnerLines(prospect.ownerName)
+            const owner = foreclosureOwnerLabel(prospect.ownerName)
             const street = foreclosureStreetParts(prospect.situs, prospect)
             const sale = foreclosureSalePresentation(prospect.saleDate, today)
             const phone = foreclosureListPhone(prospect.phones)
@@ -124,16 +127,20 @@ export function ForeclosureListTable({
                   router.push(href)
                 }}
               >
-                <td><ForeclosureStatusPill status={prospect.status} /></td>
-                <td className="fc-owner-cell" title={owners.length === 0 ? undefined : owners.join(', ')}>
-                  <Link href={href} className="fc-owner-link fc-owners" aria-label={owners.length === 0 ? 'Open prospect' : undefined}>
-                    {owners.length === 0 ? '—' : owners.map((line) => <span key={line} className="fc-owner-line">{line}</span>)}
-                  </Link>
+                <td>
+                  <span className="fc-status-cell">
+                    <ForeclosureStatusPill status={prospect.status} />
+                    {prospect.demo ? <span className="fc-sample">Sample</span> : null}
+                  </span>
+                </td>
+                <td className="fc-owner-cell" title={owner === '—' ? undefined : owner}>
+                  <Link href={href} className="fc-owner-link" aria-label={owner === '—' ? 'Open prospect' : undefined}>{owner}</Link>
                 </td>
                 <td className="fc-street" title={street.unit ? `${street.street} ${street.unit}` : street.street}>
                   <span className="fc-street-line">{street.street}</span>
                   {street.unit ? <span className="fc-street-unit">{street.unit}</span> : null}
                 </td>
+                <td className="fc-zip">{foreclosureZip(prospect.zip)}</td>
                 <td><span className="fc-county">{foreclosureCountyState(prospect.county, prospect.state)}</span></td>
                 <td>
                   <span className={sale.tone === 'none' ? 'fc-sale' : `fc-sale fc-sale-${sale.tone}`}>{sale.label}</span>

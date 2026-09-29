@@ -438,7 +438,7 @@ export function ForeclosureDetail({ id }: { id: string }) {
                     <span className="fc-phone-rank">{row.rank}</span>
                     <span>{contact}</span>
                     <span className="fc-phone-role">{SKIP_RELATIONSHIP_LABELS[row.relationship] || row.relationship}</span>
-                    <span>{formatPhone(row.phone)}</span>
+                    <span>{formatPhone(row.phone)}{row.line === 'mobile' ? ' · Mobile' : row.line === 'landline' ? ' · Landline' : ''}</span>
                   </li>
                 })}
               </ol>}

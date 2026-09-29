@@ -13,11 +13,18 @@
 
 .fc-filters {
   display: grid;
-  gap: 0.7rem;
-  border-radius: 22px;
+  gap: 0.2rem;
+  border-radius: 12px;
   background: var(--fc-card);
   box-shadow: var(--fc-shadow);
-  padding: 1rem 1.1rem 1.1rem;
+  padding: 0.28rem 0.4rem 0.32rem;
+}
+
+.fc-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.4rem;
 }
 
 .fc-filter-heading {
@@ -62,36 +69,37 @@
   border-radius: 999px;
   background: var(--fc-purple-soft);
   color: var(--fc-purple-deep);
-  padding: 0.45rem 0.75rem;
-  font-size: 0.78rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.68rem;
   font-weight: 800;
 }
 
 .fc-clear {
-  height: 2.4rem;
-  border-radius: 12px;
-  padding: 0 1rem;
-  font-size: 0.82rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  padding: 0 0.65rem;
+  font-size: 0.72rem;
 }
 
 .fc-advanced-field {
-  display: grid;
-  gap: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
   color: var(--fc-text-secondary);
   font-size: 0.68rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .fc-advanced-field select {
-  height: 2.4rem;
+  height: 1.65rem;
   border: 1px solid var(--fc-border);
   border-radius: 999px;
   background: var(--fc-purple-soft);
   color: var(--fc-purple-deep);
-  padding: 0 0.9rem;
-  font-size: 0.82rem;
+  padding: 0 0.55rem;
+  font-size: 0.72rem;
   font-weight: 800;
 }
 
@@ -176,10 +184,6 @@
   opacity: 0.35;
 }
 
-.fc-stage-map .fc-map-canvas {
-  height: 11rem;
-}
-
 .fc-hero {
   align-items: flex-start;
 }
@@ -204,8 +208,7 @@ a.fc-back {
 }
 
 .fc-kpi-card,
-.fc-panel-card,
-.fc-filters {
+.fc-panel-card {
   border-radius: 22px;
 }
 

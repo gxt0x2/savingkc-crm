@@ -14,6 +14,7 @@ import {
   foreclosureSalePresentation,
   foreclosureStreetLine,
   foreclosureStreetParts,
+  foreclosureZip,
   sortForeclosureList,
 } from '@/lib/prospecting/foreclosure-list'
 
@@ -24,24 +25,31 @@ describe('foreclosure list display', () => {
     expect(foreclosureOwnerLabel('Unknown')).toBe('—')
     expect(foreclosureOwnerLabel('Juan Ramon Corpus Jr')).toBe('Juan Corpus Jr')
     expect(foreclosureOwnerLines('HALL BENJAMIN PATRICK; HALL CHRISTINE PAIGE')).toEqual([
-      'Owner 1 Benjamin Hall',
-      'Owner 2 Christine Hall',
+      'Benjamin Hall',
+      'Christine Hall',
     ])
+    expect(foreclosureOwnerLabel('HALL BENJAMIN PATRICK; HALL CHRISTINE PAIGE')).toBe('Benjamin Hall & Christine Hall')
     expect(foreclosureOwnerLines('HALL, BENJAMIN, PATRICK')).toEqual(['Benjamin Hall'])
     expect(foreclosureOwnerLines('JUANITA IZORA JONES')).toEqual(['Juanita Jones'])
     expect(foreclosureOwnerLines('JENNIFER M CARR')).toEqual(['Jennifer Carr'])
     expect(foreclosureOwnerLines('ACKER REX T, ACKER KATHLE')).toEqual([
-      'Owner 1 Rex Acker',
-      'Owner 2 Kathle Acker',
+      'Rex Acker',
+      'Kathle Acker',
     ])
+    expect(foreclosureOwnerLabel('ACKER REX T, ACKER KATHLE')).toBe('Rex Acker & Kathle Acker')
     expect(foreclosureOwnerLines('KEINAN PROPERTIES LLC')).toEqual(['Keinan Properties LLC'])
     expect(foreclosureOwnerLines('Ernest Dodson')).toEqual(['Ernest Dodson'])
     expect(foreclosurePersonLabel('HALL BENJAMIN PATRICK', 'HALL BENJAMIN PATRICK; HALL CHRISTINE PAIGE')).toBe('Benjamin Hall')
     expect(foreclosurePersonLabel('Morgan Dodson', 'Ernest Dodson')).toBe('Morgan Dodson')
     expect(foreclosureOwnerLines('Jordan S. Stivers & Roxann')).toEqual([
-      'Owner 1 Jordan Stivers',
-      'Owner 2 Roxann',
+      'Jordan Stivers',
+      'Roxann',
     ])
+    expect(foreclosureOwnerLabel('Jordan S. Stivers & Roxann')).toBe('Jordan Stivers & Roxann')
+    expect(foreclosureZip('64108')).toBe('64108')
+    expect(foreclosureZip('MO 64108-1234')).toBe('64108-1234')
+    expect(foreclosureZip(null)).toBe('—')
+    expect(foreclosureZip('')).toBe('—')
     expect(foreclosureClearsDialFloor(150000)).toBe(true)
     expect(foreclosureClearsDialFloor(null)).toBe(true)
     expect(foreclosureClearsDialFloor(10000)).toBe(false)

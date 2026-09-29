@@ -1,5 +1,6 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingJson } from '@/lib/api/prospecting-response'
+import { foreclosureSampleById } from '@/lib/prospecting/foreclosure-sample'
 import {
   ForeclosureError,
   getForeclosureProspect,
@@ -19,7 +20,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const actor = await resolveAuthenticatedActor()
   if (!actor) return prospectingJson({ error: 'Unauthorized' }, { status: 401 })
   try {
-    return prospectingJson({ prospect: await getForeclosureProspect((await context.params).id) })
+    const id = (await context.params).id
+    return prospectingJson({ prospect: foreclosureSampleById(id) ?? await getForeclosureProspect(id) })
   } catch (error) {
     return foreclosureError(error)
   }
