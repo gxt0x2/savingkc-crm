@@ -99,15 +99,17 @@ describe('mobile Twilio Voice token application integrity', () => {
     expect(mocks.accessToken).not.toHaveBeenCalled()
   })
 
-  it('fails closed when the production VoIP push credential is missing', async () => {
+  it('allows outbound calling without the inbound VoIP push credential', async () => {
     delete mocks.env.TWILIO_VOIP_PUSH_CREDENTIAL_SID
 
     const response = await GET(request() as never)
     const body = await response.json()
 
-    expect(response.status).toBe(503)
-    expect(body).toEqual({ error: 'Calling is temporarily unavailable' })
-    expect(mocks.resolveTwimlAppSid).not.toHaveBeenCalled()
-    expect(mocks.voiceGrant).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({ token: 'header.payload.signature', incomingPushConfigured: false })
+    expect(mocks.voiceGrant).toHaveBeenCalledWith({
+      outgoingApplicationSid: `AP${'c'.repeat(32)}`,
+      incomingAllow: true,
+    })
   })
 })

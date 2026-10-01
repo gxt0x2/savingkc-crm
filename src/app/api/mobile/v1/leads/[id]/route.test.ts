@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mocks = vi.hoisted(() => ({ requireMobileUser: vi.fn(), admin: vi.fn(), listWorkItems: vi.fn() }))
+const mocks = vi.hoisted(() => ({ requireMobileUser: vi.fn(), authorizeLead: vi.fn(), admin: vi.fn(), listWorkItems: vi.fn() }))
 vi.mock('@/lib/mobile-api/auth', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/mobile-api/auth')>(), requireMobileUser: mocks.requireMobileUser,
 }))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: mocks.admin }))
+vi.mock('@/lib/mobile-api/authorized-lead', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/mobile-api/authorized-lead')>(),
+  requireAuthorizedMobileLead: mocks.authorizeLead,
+}))
 vi.mock('@/lib/server/work-items', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/server/work-items')>(), listWorkItems: mocks.listWorkItems,
 }))
@@ -40,6 +44,7 @@ describe('mobile lead operations detail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.requireMobileUser.mockResolvedValue({ user: { email: 'casey@savingkc.com' } })
+    mocks.authorizeLead.mockResolvedValue({ actor: { email: 'casey@savingkc.com' }, lead: { id: 'lead-1' } })
     mocks.admin.mockReturnValue(database())
     mocks.listWorkItems.mockResolvedValue([{ key: 'activity:task-1', primaryNextAction: true }])
   })
@@ -71,5 +76,14 @@ describe('mobile lead operations detail', () => {
     await expect(response.json()).resolves.toMatchObject({
       operations: { primaryNextAction: null, tasksAvailable: false },
     })
+  })
+
+  it('returns property fact inputs only after actor authorization', async () => {
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/leads/lead-1', {
+      headers: { Authorization: 'Bearer token' },
+    }), context)
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ propertyFacts: { lead: {}, property: null } })
+    expect(mocks.authorizeLead).toHaveBeenCalledOnce()
   })
 })

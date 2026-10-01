@@ -27,7 +27,6 @@ export async function GET(req: NextRequest) {
       !accountSid && 'TWILIO_ACCOUNT_SID',
       !apiKey && 'TWILIO_API_KEY',
       !apiSecret && 'TWILIO_API_SECRET',
-      !pushCredentialSid && 'TWILIO_VOIP_PUSH_CREDENTIAL_SID',
     ].filter(Boolean)
 
     if (missing.length > 0) {
@@ -51,7 +50,7 @@ export async function GET(req: NextRequest) {
     token.addGrant(new VoiceGrant({
       outgoingApplicationSid,
       incomingAllow: true,
-      pushCredentialSid,
+      ...(pushCredentialSid ? { pushCredentialSid } : {}),
     }))
 
     return NextResponse.json(
@@ -60,6 +59,7 @@ export async function GET(req: NextRequest) {
         identity,
         callerId: profile.defaultCallerId,
         displayName: profile.displayName,
+        incomingPushConfigured: Boolean(pushCredentialSid),
       },
       { headers: mobileNoStoreHeaders() },
     )
