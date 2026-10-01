@@ -54,6 +54,8 @@ export const DIALER_CALLER_ID_NUMBERS = TWILIO_NUMBERS.filter((number) => number
 export const COLD_CALL_DIALER_NUMBERS = TWILIO_NUMBERS.filter((number) => (
   number.purpose === 'cold_call' && number.dialerEligible
 ))
+/** Every cold-callback DID, including parked numbers that may still receive callbacks. */
+export const COLD_CALL_CALLBACK_NUMBERS = TWILIO_NUMBERS.filter((number) => number.purpose === 'cold_call')
 
 export type SmsSenderUse = 'conversation' | 'broadcast' | 'reply' | 'system'
 
@@ -88,6 +90,10 @@ export function isDialerCallerIdNumber(value: string | null | undefined): boolea
 
 export function isColdCallDialerNumber(value: string | null | undefined): boolean {
   return Boolean(value && COLD_CALL_DIALER_NUMBERS.some((number) => number.value === value))
+}
+
+export function isColdCallCallbackNumber(value: string | null | undefined): boolean {
+  return Boolean(value && COLD_CALL_CALLBACK_NUMBERS.some((number) => number.value === value))
 }
 
 export function isReservedTwilioNumber(value: string | null | undefined): boolean {
