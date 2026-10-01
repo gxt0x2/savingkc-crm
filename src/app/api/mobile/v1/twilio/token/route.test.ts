@@ -85,6 +85,7 @@ describe('mobile Twilio Voice token application integrity', () => {
     expect(body).toMatchObject({
       token: 'header.payload.signature',
       identity: 'casey',
+      incomingPushConfigured: true,
     })
     expect(mocks.resolveTwimlAppSid.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.voiceGrant.mock.invocationCallOrder[0])
