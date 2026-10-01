@@ -135,6 +135,8 @@ export async function GET(
             seller_situation: compatibilityLead.seller_situation,
           },
           property: canonicalProperty ? {
+            id: canonicalProperty.id,
+            updated_at: canonicalProperty.updatedAt,
             address: canonicalProperty.address,
             city: canonicalProperty.city,
             state: canonicalProperty.state,

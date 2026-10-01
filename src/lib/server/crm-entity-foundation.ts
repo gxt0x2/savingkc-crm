@@ -23,6 +23,7 @@ export interface CrmEntityContext {
   }>
   property: {
     id: string
+    updatedAt?: string | null
     address: string
     city: string | null
     state: string | null
@@ -199,7 +200,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
       .order('is_primary', { ascending: false }),
     linkData.property_id
       ? db.from('crm_properties')
-        .select('id, address, city, state, zip, county, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, assessed_value, land_value, improvement_value, tax_owed, tax_status, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, property_owner_name, owner_mailing_address, owner_is_deceased, owner_is_out_of_state, data_source, data_enriched_at')
+        .select('id, updated_at, address, city, state, zip, county, parcel_id, property_type, bedrooms, bathrooms, bathrooms_full, bathrooms_half, sqft, lot_size, year_built, basement_type, stories, garage_spaces, roof_type, heating, cooling, zoning, hoa_amount, tax_assessment, assessed_value, land_value, improvement_value, tax_owed, tax_status, first_delinquent_year, last_sale_date, last_sale_price, zestimate, redfin_estimate, total_market_value, occupancy_status, property_owner_name, owner_mailing_address, owner_is_deceased, owner_is_out_of_state, data_source, data_enriched_at')
         .eq('id', linkData.property_id)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -244,6 +245,7 @@ export async function readLeadEntityContext(leadId: string): Promise<CrmEntityCo
     })),
     property: property ? {
       id: property.id,
+      updatedAt: property.updated_at,
       address: property.address,
       city: property.city,
       state: property.state,

@@ -6,8 +6,11 @@ const mocks = vi.hoisted(() => ({
   accessToken: vi.fn(),
   addGrant: vi.fn(),
   voiceGrant: vi.fn(),
+  actor: vi.fn(),
   env: {} as Record<string, string>,
 }))
+
+vi.mock('@/lib/mobile-api/authorized-lead', () => ({ resolveMobileScopedActor: mocks.actor }))
 
 vi.mock('@/lib/mobile-api/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/mobile-api/auth')>()
@@ -63,7 +66,15 @@ describe('mobile Twilio Voice token application integrity', () => {
       TWILIO_VOIP_PUSH_CREDENTIAL_SID: `CR${'d'.repeat(32)}`,
     }
     mocks.requireMobileUser.mockResolvedValue({ user: { email: 'casey@savingkc.com' } })
+    mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com' })
     mocks.resolveTwimlAppSid.mockResolvedValue(`AP${'c'.repeat(32)}`)
+  })
+
+  it('does not issue voice credentials to an unregistered authenticated account', async () => {
+    mocks.actor.mockResolvedValue(null)
+    const response = await GET(request() as never)
+    expect(response.status).toBe(403)
+    expect(mocks.accessToken).not.toHaveBeenCalled()
   })
 
   it('resolves application integrity before minting the Voice grant', async () => {
