@@ -55,7 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       console.error('[mobile-transcription] provider rejected recording', { status: response.status, error: payload?.error?.message })
       const result = { error: 'The recording could not be transcribed. Your audio draft is still available.' }
       try {
-        await completeMobileCommand({ actorEmail: actor.email, idempotencyKey: key, status: 502, result })
+        await completeMobileCommand({ actorEmail: actor.email, idempotencyKey: key, token: reservation.token, status: 502, result })
       } catch (receiptError) {
         console.error('[mobile-transcription] failure receipt completion failed:', receiptError)
         return NextResponse.json({
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const result = { success: true, text, provider: 'groq', model: 'whisper-large-v3-turbo' }
     try {
-      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey: key, status: 200, result })
+      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey: key, token: reservation.token, status: 200, result })
     } catch (receiptError) {
       console.error('[mobile-transcription] success receipt completion failed:', receiptError)
       return NextResponse.json({

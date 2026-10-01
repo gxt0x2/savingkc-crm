@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MobileAuthError, mobileNoStoreHeaders, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
-import { completeMobileCommand, mobileCommandPayloadHash, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
-import { getCanonicalLeadBriefingState, queueCanonicalLeadBriefing } from '@/lib/server/canonical-lead-briefing'
+import { mobileCommandPayloadHash, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
+import { getCanonicalLeadBriefingState } from '@/lib/server/canonical-lead-briefing'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -50,19 +51,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (reservation.kind === 'pending') return NextResponse.json({ error: 'This briefing refresh is already processing. Refresh the lead before retrying.', code: 'operation_pending' }, { status: 409, headers: mobileNoStoreHeaders() })
     if (reservation.kind === 'replay') return NextResponse.json(reservation.result, { status: reservation.status, headers: mobileNoStoreHeaders() })
 
-    const revision = await queueCanonicalLeadBriefing({
-      leadId: id,
-      reason: 'mobile_manual_refresh',
-      requestedBy: actor.email,
-      delaySeconds: 0,
+    const { data: result, error } = await supabaseAdmin().rpc('apply_mobile_briefing_refresh_v1', {
+      p_actor_email: actor.email,
+      p_idempotency_key: idempotencyKey,
+      p_lease_token: reservation.token,
     })
-    const result = { queued: true, leadId: id, revision, status: 'pending' }
-    try {
-      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey, status: 202, result })
-    } catch (receiptError) {
-      console.error('[mobile/briefing] receipt completion failed', receiptError)
-      return NextResponse.json({ ...result, warning: 'Briefing refresh was queued, but retry reconciliation is pending. Refresh the lead before retrying.' }, { status: 202, headers: mobileNoStoreHeaders() })
-    }
+    if (error || !result || typeof result !== 'object') throw new Error(error?.message || 'Briefing queue returned no result')
     return NextResponse.json(result, { status: 202, headers: mobileNoStoreHeaders() })
   } catch (error) {
     return failure(error)

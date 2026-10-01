@@ -49,6 +49,8 @@ export async function updateMobilePropertyDetails(input: {
   leadId: string
   actor: { email: string; name: string }
   patch: MobilePropertyPatch
+  idempotencyKey: string
+  leaseToken: string
 }) {
   const db = supabaseAdmin()
   const linkResult = await db
@@ -89,46 +91,17 @@ export async function updateMobilePropertyDetails(input: {
     expectedUpdatedAt = baseline.updated_at
   }
 
-  const { data: property, error: updateError } = await db
-    .from('crm_properties')
-    .update({
-      bedrooms: input.patch.bedrooms,
-      bathrooms: input.patch.bathrooms,
-      sqft: input.patch.sqft,
-      year_built: input.patch.yearBuilt,
-      occupancy_status: input.patch.occupancyStatus,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', link.property_id)
-    .eq('updated_at', expectedUpdatedAt)
-    .select('id,bedrooms,bathrooms,sqft,year_built,occupancy_status,updated_at')
-    .maybeSingle()
-  if (updateError) throw new MobilePropertyError(updateError.message, 503)
-  if (!property) throw new MobilePropertyError('Property facts changed on another device. Refresh before saving again.', 409)
-
-  const { error: auditError } = await db.from('lead_activities').insert({
-    lead_id: input.leadId,
-    activity_type: 'property_update',
-    description: 'Updated property facts',
-    agent: input.actor.name,
-    metadata: {
-      source: 'mobile_app',
-      actor_email: input.actor.email,
-      property_id: property.id,
-      fields: ['bedrooms', 'bathrooms', 'sqft', 'year_built', 'occupancy_status'],
-    },
+  const { data, error } = await db.rpc('apply_mobile_property_command_v1', {
+    p_actor_email: input.actor.email,
+    p_actor_name: input.actor.name,
+    p_idempotency_key: input.idempotencyKey,
+    p_lease_token: input.leaseToken,
+    p_property_id: link.property_id,
+    p_expected_updated_at: expectedUpdatedAt,
+    p_patch: input.patch,
   })
-
-  return {
-    property: {
-      id: property.id,
-      bedrooms: property.bedrooms,
-      bathrooms: property.bathrooms,
-      sqft: property.sqft,
-      yearBuilt: property.year_built,
-      occupancyStatus: property.occupancy_status,
-      updatedAt: property.updated_at,
-    },
-    warning: auditError ? 'Property facts were saved, but the audit entry could not be written.' : undefined,
-  }
+  if (error || !data || typeof data !== 'object') throw new MobilePropertyError(error?.message || 'Property update returned no result.', 503)
+  const response = data as { status?: number; result?: Record<string, unknown> }
+  if (!response.result || (response.status !== 200 && response.status !== 409)) throw new MobilePropertyError('Property update returned invalid result.', 503)
+  return { status: response.status, result: response.result }
 }

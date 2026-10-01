@@ -34,4 +34,17 @@ describe('mobile recent call projection', () => {
       id: 'operator', outcome: 'voicemail', recordingUrl: `/api/mobile/v1/calls/${recordingActivityId}/recording`, agent: 'Casey',
     }])
   })
+
+  it('keeps a copied Mojo recording on its source call while rejecting uncopied provider URLs', () => {
+    const activityId = '11111111-1111-4111-8111-111111111111'
+    const eventId = '22222222-2222-4222-8222-222222222222'
+    const items = buildMobileRecentCalls([
+      row(activityId, { source: 'mojo_call_event', provider: 'mojo', event_id: eventId,
+        recording_storage_path: `events/${eventId}.mp3`, recordingUrl: `/api/recordings/mojo/${eventId}` }),
+      row('uncopied', { source: 'mojo_call_event', provider: 'mojo', event_id: eventId,
+        recording_url: 'https://app71.mojosells.com/audio.mp3' }, '2026-10-01T11:00:00Z'),
+    ])
+    expect(items.find((item) => item.id === activityId)?.recordingUrl).toBe(`/api/mobile/v1/calls/${activityId}/recording`)
+    expect(items.find((item) => item.id === 'uncopied')?.recordingUrl).toBeNull()
+  })
 })

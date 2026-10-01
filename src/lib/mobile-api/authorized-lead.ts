@@ -64,5 +64,5 @@ export async function requireAuthorizedMobileLead(req: Request, leadId: string) 
   if (!mobileActorCanReadAssignedLead(actor, data.assigned_agent)) {
     throw new MobileLeadAccessError('This contact is outside your authorized scope', 403)
   }
-  return { actor, lead: data as AuthorizedMobileLead }
+  return { actor, user, lead: data as AuthorizedMobileLead }
 }

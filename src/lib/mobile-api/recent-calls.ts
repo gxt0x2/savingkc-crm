@@ -1,4 +1,5 @@
 import { twilioRecordingSid } from '@/lib/mobile-api/twilio-recording'
+import { mobileRecordingUrl } from '@/lib/mobile-api/mojo-recording'
 
 export type RecentCallActivityRow = {
   id: string
@@ -114,8 +115,9 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
     providerStatus: text(metadata, 'status'),
     recordingUrl: (() => {
       const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim()
-      const recording = groupedRows.find((candidate) => twilioRecordingSid(candidate.metadata ?? {}, accountSid))
-      return recording?.lead_id ? `/api/mobile/v1/calls/${encodeURIComponent(recording.id)}/recording` : null
+      const recording = groupedRows.find((candidate) => candidate.lead_id
+        && mobileRecordingUrl(candidate.id, candidate.metadata ?? {}, accountSid, twilioRecordingSid))
+      return recording ? mobileRecordingUrl(recording.id, recording.metadata ?? {}, accountSid, twilioRecordingSid) : null
     })(),
     agent: actualAgent,
     metadata: combined,

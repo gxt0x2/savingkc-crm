@@ -48,17 +48,49 @@ describe('mobile recent calls route', () => {
     expect(mocks.admin).not.toHaveBeenCalled()
   })
 
-  it('does not return another operator’s calls to an agent', async () => {
+  it('filters calls by trusted assignment before the recent page limit', async () => {
     mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', fullName: 'Casey', access: 'agent', assignmentAliases: ['Casey'] })
+    const steps: string[] = []
     mocks.admin.mockReturnValue({
-      from: (table: string) => table === 'lead_activities'
-        ? { select: () => ({ in: () => ({ order: () => ({ limit: async () => ({
-          data: [{ id: 'call-1', lead_id: 'lead-1', activity_type: 'call', created_at: '2026-10-01T12:00:00Z', metadata: { to: '+18165550123' } }], error: null,
-        }) }) }) }) }
-        : { select: () => ({ in: async () => ({ data: [{ id: 'lead-1', assigned_agent: 'Ernest' }], error: null }) }) },
+      from: (table: string) => {
+        expect(table).toBe('lead_activities')
+        return {
+          select: (columns: string) => { steps.push('select'); expect(columns).toContain('leads!inner'); return {
+            in: () => { steps.push('in'); return {
+              ilike: (column: string, owner: string) => { steps.push('scope'); expect(column).toBe('leads.assigned_agent'); expect(owner).toBe('Casey'); return {
+                order: () => { steps.push('order'); return {
+                  limit: async () => { steps.push('limit'); return { data: [{ id: 'call-casey', lead_id: 'lead-casey', activity_type: 'call', created_at: '2026-10-01T12:00:00Z', metadata: { to: '+18165550123' }, leads: { id: 'lead-casey', assigned_agent: 'Casey' } }], error: null } },
+                } },
+              } },
+            } },
+          } },
+        }
+      },
     })
     const response = await GET(request())
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ items: [], leads: [] })
+    expect(steps).toEqual(['select', 'in', 'scope', 'order', 'limit'])
+    await expect(response.json()).resolves.toMatchObject({ items: [{ id: 'call-casey' }], leads: [{ id: 'lead-casey' }] })
+  })
+
+  it.each([
+    { name: 'one-row relation array', leads: [{ id: 'lead-casey', assigned_agent: 'Casey' }], visible: true },
+    { name: 'mismatched lead', leads: { id: 'lead-other', assigned_agent: 'Casey' }, visible: false },
+    { name: 'different owner', leads: { id: 'lead-casey', assigned_agent: 'Other' }, visible: false },
+    { name: 'ambiguous relation', leads: [{ id: 'lead-casey', assigned_agent: 'Casey' }, { id: 'lead-other', assigned_agent: 'Casey' }], visible: false },
+    { name: 'missing relation', leads: null, visible: false },
+  ])('validates the joined lead: $name', async ({ leads, visible }) => {
+    mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', fullName: 'Casey', access: 'agent', assignmentAliases: ['Casey'] })
+    const query = {
+      select: vi.fn().mockReturnThis(), in: vi.fn().mockReturnThis(),
+      ilike: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [{ id: 'call-casey', lead_id: 'lead-casey', activity_type: 'call', created_at: '2026-10-01T12:00:00Z', metadata: {}, leads }], error: null }),
+    }
+    mocks.admin.mockReturnValue({ from: () => query })
+    const response = await GET(request())
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.items.map((item: { id: string }) => item.id)).toEqual(visible ? ['call-casey'] : [])
+    expect(body.leads.map((lead: { id: string }) => lead.id)).toEqual(visible ? ['lead-casey'] : [])
   })
 })

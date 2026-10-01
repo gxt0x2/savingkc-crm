@@ -9,6 +9,7 @@ import {
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { syncMobileAppointmentCalendar } from '@/lib/server/mobile-appointment-calendar'
 
 type AppointmentCommand = 'create' | 'edit' | 'reschedule' | 'outcome'
 
@@ -34,6 +35,7 @@ type AppointmentDbRow = {
   provider_sync_status?: string | null
   provider_synced_at?: string | null
   provider_sync_error?: string | null
+  mobile_appointment_calendar_sync?: { owner_email: string } | Array<{ owner_email: string }> | null
 }
 
 type AppointmentRpcResult = {
@@ -73,6 +75,9 @@ function providerStatus(value: string | null | undefined): MobileAppointmentProv
 
 export function mapMobileAppointment(row: AppointmentDbRow): MobileAppointment {
   const reminders = row.sequence_enabled === true ? 'enabled' : 'disabled'
+  const calendarOwner = Array.isArray(row.mobile_appointment_calendar_sync)
+    ? row.mobile_appointment_calendar_sync[0]?.owner_email
+    : row.mobile_appointment_calendar_sync?.owner_email
   return {
     id: row.id,
     leadId: row.lead_id,
@@ -96,6 +101,7 @@ export function mapMobileAppointment(row: AppointmentDbRow): MobileAppointment {
       providerEventId: row.provider_event_id ?? null,
       providerSyncedAt: row.provider_synced_at ?? null,
       providerError: row.provider_sync_error ?? null,
+      ownerEmail: calendarOwner ?? null,
     },
   }
 }
@@ -157,7 +163,7 @@ export async function executeMobileAppointmentCommand(input: {
 
   const result = data as unknown as AppointmentRpcResult
   if (!result.appointment?.id) throw new AppointmentCommandError('Appointment service returned an invalid record.', 'unavailable')
-  const appointment = mapMobileAppointment(result.appointment)
+  let appointment = mapMobileAppointment(result.appointment)
   let lifecycle: MobileAppointmentCommandResult['sideEffects']['lifecycle'] = 'not_applicable'
   let conversion: MobileAppointmentCommandResult['sideEffects']['conversion'] = 'not_applicable'
   const warnings: string[] = []
@@ -195,6 +201,36 @@ export async function executeMobileAppointmentCommand(input: {
     }
   }
 
+  const calendarCommand = input.command === 'create' || input.command === 'edit' || input.command === 'reschedule'
+    || (input.command === 'outcome' && input.payload.outcome === 'cancelled')
+  const needsCalendar = calendarCommand && (result.replayed || result.changed) && (
+    appointment.status === 'scheduled' || appointment.status === 'confirmed'
+      || appointment.status === 'rescheduled' || appointment.status === 'cancelled'
+  )
+  if (needsCalendar) {
+    try {
+      const calendar = await syncMobileAppointmentCalendar({
+        appointmentId: appointment.id,
+        actorEmail: input.actor.email,
+      })
+      if (calendar.warning) warnings.push(calendar.warning)
+      const { data: current, error: readError } = await supabaseAdmin()
+        .from('appointments')
+        .select('id,lead_id,type,status,scheduled_at,ends_at,title,location,address,time_zone,assigned_to,notes,sequence_enabled,version,source,created_at,updated_at,provider_event_id,provider_sync_status,provider_synced_at,provider_sync_error,mobile_appointment_calendar_sync(owner_email)')
+        .eq('id', appointment.id)
+        .single()
+      if (!readError && current) appointment = mapMobileAppointment(current as AppointmentDbRow)
+      else {
+        appointment.sync.provider = calendar.status
+        warnings.push('The latest calendar sync state could not be refreshed.')
+      }
+    } catch (calendarError) {
+      console.error('[mobile/appointments] calendar sync orchestration failed', calendarError)
+      appointment.sync.provider = 'pending'
+      warnings.push('Google Calendar sync is pending.')
+    }
+  }
+
   return {
     success: true,
     created: result.created === true,
@@ -208,7 +244,7 @@ export async function executeMobileAppointmentCommand(input: {
       reminders: appointment.sync.reminders,
       provider: appointment.sync.provider,
     },
-    ...(warnings.length ? { warning: `Appointment saved. ${warnings.join(' ')} Do not submit it again.` } : {}),
+    ...(warnings.length ? { warning: `Appointment saved. ${warnings.join(' ')}` } : {}),
   }
 }
 
@@ -216,10 +252,20 @@ export async function listMobileAppointments(limit = 300): Promise<MobileAppoint
   const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 500)
   const { data, error } = await supabaseAdmin()
     .from('appointments')
-    .select('id,lead_id,type,status,scheduled_at,ends_at,title,location,address,time_zone,assigned_to,notes,sequence_enabled,version,source,created_at,updated_at,provider_event_id,provider_sync_status,provider_synced_at,provider_sync_error')
+    .select('id,lead_id,type,status,scheduled_at,ends_at,title,location,address,time_zone,assigned_to,notes,sequence_enabled,version,source,created_at,updated_at,provider_event_id,provider_sync_status,provider_synced_at,provider_sync_error,mobile_appointment_calendar_sync(owner_email)')
     .in('status', ['scheduled', 'confirmed', 'rescheduled'])
     .order('scheduled_at', { ascending: true })
     .limit(safeLimit)
   if (error) throw new AppointmentCommandError('Appointments are temporarily unavailable.', 'unavailable')
   return (data ?? []).map((row) => mapMobileAppointment(row as AppointmentDbRow))
+}
+
+export async function getMobileAppointmentById(id: string): Promise<MobileAppointment> {
+  const { data, error } = await supabaseAdmin()
+    .from('appointments')
+    .select('id,lead_id,type,status,scheduled_at,ends_at,title,location,address,time_zone,assigned_to,notes,sequence_enabled,version,source,created_at,updated_at,provider_event_id,provider_sync_status,provider_synced_at,provider_sync_error,mobile_appointment_calendar_sync(owner_email)')
+    .eq('id', id)
+    .single()
+  if (error || !data) throw new AppointmentCommandError('Appointment not found.', 'not_found')
+  return mapMobileAppointment(data as AppointmentDbRow)
 }

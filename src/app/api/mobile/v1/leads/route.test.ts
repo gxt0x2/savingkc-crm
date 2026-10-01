@@ -2,15 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({
-  requireMobileUser: vi.fn(),
+  requireMobileCommandActor: vi.fn(),
   readPage: vi.fn(),
 }))
 
-vi.mock('@/lib/mobile-api/auth', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/lib/mobile-api/auth')>(),
-  requireMobileUser: mocks.requireMobileUser,
+vi.mock('@/lib/mobile-api/mobile-command-access', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/mobile-api/mobile-command-access')>(),
+  requireMobileCommandActor: mocks.requireMobileCommandActor,
 }))
-vi.mock('@/lib/server/contact-directory-read-model', () => ({
+vi.mock('@/lib/server/contact-directory-read-model', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/server/contact-directory-read-model')>(),
   readContactDirectoryPage: mocks.readPage,
 }))
 
@@ -25,7 +26,7 @@ function request(query = '') {
 describe('mobile Pipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.requireMobileUser.mockResolvedValue({ user: { email: 'ernest@savingkc.com' } })
+    mocks.requireMobileCommandActor.mockResolvedValue({ scopedActor: { email: 'ernest@savingkc.com', fullName: 'Ernest', access: 'owner', assignmentAliases: [] } })
     mocks.readPage.mockResolvedValue({
       items: [{
         id: 'lead-1', full_name: 'Morgan Seller', phone: '+18165550100', email: null,
@@ -66,13 +67,46 @@ describe('mobile Pipeline', () => {
     }))
   })
 
+  it('uses the canonical next-page cursor instead of repeating page one', async () => {
+    const cursor = { id: '00000000-0000-4000-8000-000000000001', name: 'Morgan Seller', lastActivityAt: '2026-09-17T12:00:00Z', score: 88, attentionRank: 1 }
+    const encoded = Buffer.from(JSON.stringify(cursor)).toString('base64url')
+    const response = await GET(request(`?cursor=${encoded}`))
+    expect(response.status).toBe(200)
+    expect(mocks.readPage).toHaveBeenCalledWith(expect.objectContaining({ cursor }))
+  })
+
+  it('rejects malformed cursors before querying the directory', async () => {
+    const response = await GET(request('?cursor=not-a-page'))
+    expect(response.status).toBe(400)
+    expect(mocks.readPage).not.toHaveBeenCalled()
+  })
+
   it('fails closed before loading Pipeline data', async () => {
     const { MobileAuthError } = await import('@/lib/mobile-api/auth')
-    mocks.requireMobileUser.mockRejectedValue(new MobileAuthError('Invalid bearer token'))
+    mocks.requireMobileCommandActor.mockRejectedValue(new MobileAuthError('Invalid bearer token'))
 
     const response = await GET(request())
 
     expect(response.status).toBe(401)
+    expect(mocks.readPage).not.toHaveBeenCalled()
+  })
+
+  it('scopes the page and all stage counts before pagination for an agent', async () => {
+    mocks.requireMobileCommandActor.mockResolvedValue({ scopedActor: { email: 'casey@savingkc.com', fullName: 'Casey', access: 'agent', assignmentAliases: ['Casey'] } })
+    mocks.readPage.mockImplementation(async (query: { smartList: string; owner: string }) => ({
+      items: [], totalCount: query.smartList === 'all' ? 2 : 1, hasMore: false, nextCursor: null,
+      smartListCounts: { all: 9999, contacted: 9999 },
+    }))
+    const response = await GET(request('?list=qualified'))
+    expect(response.status).toBe(200)
+    expect(mocks.readPage).toHaveBeenCalledTimes(7)
+    for (const [query] of mocks.readPage.mock.calls) expect(query.owner).toBe('Casey')
+    await expect(response.json()).resolves.toMatchObject({ counts: { all: 2, contacted: 1, qualified: 1 }, pageInfo: { total: 1 } })
+  })
+
+  it('rejects the directory unassigned sentinel as an operator alias', async () => {
+    mocks.requireMobileCommandActor.mockResolvedValue({ scopedActor: { email: 'agent@savingkc.com', fullName: '__unassigned', access: 'agent', assignmentAliases: ['__unassigned'] } })
+    expect((await GET(request())).status).toBe(403)
     expect(mocks.readPage).not.toHaveBeenCalled()
   })
 })

@@ -30,6 +30,7 @@ export type MobileAppointment = {
     providerEventId: string | null
     providerSyncedAt: string | null
     providerError: string | null
+    ownerEmail?: string | null
   }
 }
 

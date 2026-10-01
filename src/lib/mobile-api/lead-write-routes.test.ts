@@ -22,6 +22,7 @@ vi.mock('@/lib/server/mobile-property-details', async (importOriginal) => ({
 }))
 
 import { MobileLeadAccessError } from '@/lib/mobile-api/authorized-lead'
+import { mobileCommandIdentityUuid } from '@/lib/mobile-api/command-receipts'
 import { MobilePropertyError, parseMobilePropertyPatch } from '@/lib/server/mobile-property-details'
 import { MobileAttachmentError, safeMobileAttachmentFilename, validateMobileMessageFile } from '@/lib/mobile-api/message-attachments'
 import { POST as postNote } from '@/app/api/mobile/v1/leads/[id]/notes/route'
@@ -48,7 +49,7 @@ describe('actor-scoped mobile lead-write routes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.authorize.mockResolvedValue({ actor: { email: 'casey@savingkc.com', fullName: 'Casey' }, lead: { id } })
-    mocks.reserve.mockResolvedValue({ kind: 'reserved' })
+    mocks.reserve.mockResolvedValue({ kind: 'reserved', token: 'claim-1', plan: null })
     mocks.complete.mockResolvedValue(undefined)
   })
 
@@ -77,14 +78,30 @@ describe('actor-scoped mobile lead-write routes', () => {
   })
 
   it('inserts a note with the verified actor and completes its receipt', async () => {
+    const noteId = '8fc5f683-9780-4d76-a58f-426e83af5894'
     const insert = vi.fn().mockReturnValue({ select: () => ({ single: async () => ({
-      data: { id: 'note-1', lead_id: id, activity_type: 'note', description: 'Follow up', agent: 'Casey' }, error: null,
+      data: { id: noteId, lead_id: id, activity_type: 'note', description: 'Follow up', agent: 'Casey', metadata: { actor_email: 'casey@savingkc.com', idempotency_key: 'stable-key-123' } }, error: null,
     }) }) })
-    mocks.admin.mockReturnValue({ from: () => ({ insert }) })
+    mocks.admin.mockReturnValue({ from: () => ({ insert, select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) })
     const response = await postNote(request(`leads/${id}/notes`, 'POST', { description: 'Follow up' }), context)
     expect(response.status).toBe(201)
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ lead_id: id, agent: 'Casey', description: 'Follow up' }))
-    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ status: 201 }))
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ id: expect.any(String), lead_id: id, agent: 'Casey', description: 'Follow up' }))
+    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ token: 'claim-1', status: 201 }))
+  })
+
+  it('reconciles an expired note claim from its stable activity without inserting again', async () => {
+    mocks.reserve.mockResolvedValue({ kind: 'recovered', token: 'claim-2', plan: null })
+    const insert = vi.fn()
+    const activity = { id: mobileCommandIdentityUuid('casey@savingkc.com', 'stable-key-123', 'add_note'),
+      lead_id: id, activity_type: 'note', description: 'Follow up', agent: 'Casey',
+      metadata: { actor_email: 'casey@savingkc.com', idempotency_key: 'stable-key-123' } }
+    mocks.admin.mockReturnValue({ from: () => ({ insert,
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: activity, error: null }) }) }),
+    }) })
+    const response = await postNote(request(`leads/${id}/notes`, 'POST', { description: 'Follow up' }), context)
+    expect(response.status).toBe(201)
+    expect(insert).not.toHaveBeenCalled()
+    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ token: 'claim-2', result: { success: true, activity } }))
   })
 
   it('reports idempotency conflicts without writing the property', async () => {
@@ -96,22 +113,28 @@ describe('actor-scoped mobile lead-write routes', () => {
     expect(mocks.updateProperty).not.toHaveBeenCalled()
   })
 
-  it('completes a deterministic stale-property conflict receipt', async () => {
-    mocks.updateProperty.mockRejectedValue(new MobilePropertyError('Refresh before saving', 409))
+  it('returns the atomic property conflict receipt without a second completion write', async () => {
+    mocks.updateProperty.mockResolvedValue({ status: 409, result: { error: 'Refresh before saving' } })
     const response = await postProperty(request(`leads/${id}/property`, 'POST', {
       bedrooms: 3, bathrooms: 2, sqft: 1200, yearBuilt: 1970, occupancyStatus: 'vacant', expectedUpdatedAt: '2026-10-01T00:00:00Z',
     }), context)
     expect(response.status).toBe(409)
-    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ status: 409, result: { error: 'Refresh before saving' } }))
+    expect(mocks.updateProperty).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'stable-key-123', leaseToken: 'claim-1' }))
+    expect(mocks.complete).not.toHaveBeenCalled()
   })
 
   it('uploads an authorized attachment and stores lead-scoped document metadata', async () => {
     const upload = vi.fn().mockResolvedValue({ error: null })
+    const stableDocumentId = mobileCommandIdentityUuid('casey@savingkc.com', 'stable-key-123', 'upload_message_attachment')
+    const stablePath = `lead/${id}/mobile/${stableDocumentId}-house.pdf`
     const insert = vi.fn().mockReturnValue({ select: () => ({ single: async () => ({
-      data: { id: attachmentId, filename: 'house.pdf', mime_type: 'application/pdf', byte_size: 3, uploaded_at: '2026-10-01T00:00:00Z' }, error: null,
+      data: { id: stableDocumentId, entity_type: 'lead', entity_id: id, doc_type: 'message_attachment', filename: 'house.pdf', storage_path: stablePath, mime_type: 'application/pdf', byte_size: 3, uploaded_by: 'casey@savingkc.com', uploaded_at: '2026-10-01T00:00:00Z' }, error: null,
     }) }) })
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }))
+    const eq = vi.fn(() => ({ maybeSingle }))
     mocks.admin.mockReturnValue({
-      storage: { from: () => ({ upload }) }, from: () => ({ insert }),
+      storage: { from: () => ({ upload }) },
+      from: () => ({ insert, select: () => ({ eq }) }),
     })
     const form = new FormData()
     form.append('file', new File(['pdf'], 'house.pdf', { type: 'application/pdf' }))
@@ -121,7 +144,33 @@ describe('actor-scoped mobile lead-write routes', () => {
     expect(response.status).toBe(201)
     expect(upload).toHaveBeenCalledWith(expect.stringContaining(id), expect.any(Uint8Array), expect.objectContaining({ contentType: 'application/pdf', upsert: false }))
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ entity_type: 'lead', entity_id: id, doc_type: 'message_attachment', uploaded_by: 'casey@savingkc.com' }))
-    await expect(response.json()).resolves.toMatchObject({ attachment: { id: attachmentId, filename: 'house.pdf' } })
+    await expect(response.json()).resolves.toMatchObject({ attachment: { id: stableDocumentId, filename: 'house.pdf' } })
+  })
+
+  it('reconciles a completed upload without putting another storage object', async () => {
+    mocks.reserve.mockResolvedValue({ kind: 'recovered', token: 'claim-2', plan: null })
+    const stableDocumentId = mobileCommandIdentityUuid('casey@savingkc.com', 'stable-key-123', 'upload_message_attachment')
+    const stablePath = `lead/${id}/mobile/${stableDocumentId}-house.pdf`
+    const upload = vi.fn()
+    const download = vi.fn(async () => ({ data: new Blob(['pdf']), error: null }))
+    const insert = vi.fn()
+    mocks.admin.mockReturnValue({
+      storage: { from: () => ({ upload, download }) },
+      from: () => ({ insert, select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: {
+        id: stableDocumentId, entity_type: 'lead', entity_id: id, doc_type: 'message_attachment',
+        filename: 'house.pdf', storage_path: stablePath, mime_type: 'application/pdf', byte_size: 3,
+        uploaded_by: 'casey@savingkc.com', uploaded_at: '2026-10-01T00:00:00Z',
+      }, error: null }) }) }) }),
+    })
+    const form = new FormData()
+    form.append('file', new File(['pdf'], 'house.pdf', { type: 'application/pdf' }))
+    const response = await postAttachment(new NextRequest(`https://crm.savingkc.com/api/mobile/v1/leads/${id}/attachments`, {
+      method: 'POST', headers: { Authorization: 'Bearer token', 'Idempotency-Key': 'stable-key-123' }, body: form,
+    }), context)
+    expect(response.status).toBe(201)
+    expect(upload).not.toHaveBeenCalled()
+    expect(download).toHaveBeenCalledWith(stablePath)
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it('signs only a matching lead attachment after scope authorization', async () => {

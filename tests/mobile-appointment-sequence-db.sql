@@ -23,6 +23,7 @@ RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN RETURN '{}'; END $$;
 
 \ir ../supabase/migrations/20261106120000_appointment_show_rate_sequence.sql
 \ir ../supabase/migrations/20261121122000_mobile_appointment_commands.sql
+\ir ../supabase/migrations/20261121123000_mobile_appointment_calendar_sync.sql
 
 DO $$
 DECLARE
@@ -35,6 +36,8 @@ DECLARE
   result jsonb;
   before_steps integer;
   before_queued integer;
+  calendar_claim uuid := gen_random_uuid();
+  calendar_result jsonb;
 BEGIN
   INSERT INTO public.leads(id, full_name) VALUES (seller_id, 'Sequence Test Seller');
 
@@ -53,6 +56,62 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.appointment_sequence_steps WHERE appointment_id = mobile_id) THEN
     RAISE EXCEPTION 'disabled mobile reminder enrolled seller messages';
   END IF;
+  IF (SELECT provider_sync_status FROM public.appointments WHERE id=mobile_id) <> 'pending'
+  THEN RAISE EXCEPTION 'new mobile appointment calendar sync was not pending'; END IF;
+  IF (SELECT owner_email FROM public.mobile_appointment_calendar_sync WHERE appointment_id=mobile_id)
+    <> 'casey@savingkc.com' THEN RAISE EXCEPTION 'calendar owner not captured atomically'; END IF;
+  calendar_result := public.claim_mobile_appointment_calendar_sync_v1(mobile_id, 'ernest@savingkc.com', gen_random_uuid());
+  IF calendar_result->>'status' <> 'not_owner' THEN RAISE EXCEPTION 'cross-actor calendar claim allowed'; END IF;
+  calendar_result := public.claim_mobile_appointment_calendar_sync_v1(mobile_id, 'casey@savingkc.com', calendar_claim);
+  IF calendar_result->>'status' <> 'claimed'
+    OR calendar_result->>'eventId' <> 'skc' || replace(mobile_id::text, '-', '')
+  THEN RAISE EXCEPTION 'original owner calendar claim failed'; END IF;
+  IF (SELECT version FROM public.appointments WHERE id=mobile_id) <> 1
+  THEN RAISE EXCEPTION 'provider claim incremented business version'; END IF;
+  calendar_result := public.finish_mobile_appointment_calendar_sync_v1(mobile_id, calendar_claim, 'synced', NULL);
+  IF calendar_result->>'status' <> 'synced'
+    OR (SELECT version FROM public.appointments WHERE id=mobile_id) <> 1
+    OR (SELECT provider_sync_status FROM public.appointments WHERE id=mobile_id) <> 'synced'
+  THEN RAISE EXCEPTION 'provider finish did not preserve business version'; END IF;
+  calendar_result := public.claim_mobile_appointment_calendar_sync_v1(mobile_id, 'casey@savingkc.com', gen_random_uuid());
+  IF calendar_result->>'status' <> 'synced' THEN RAISE EXCEPTION 'completed sync was not idempotent'; END IF;
+
+  result := public.apply_mobile_appointment_command_v1(
+    'casey@savingkc.com', 'Casey', 'mobile-calendar-edit-1', 'edit', mobile_id,
+    seller_id, 1, repeat('e',64), '{"title":"Updated mobile seller call"}'::jsonb
+  );
+  IF result#>>'{appointment,version}' <> '2'
+    OR (SELECT provider_sync_status FROM public.appointments WHERE id=mobile_id) <> 'pending'
+  THEN RAISE EXCEPTION 'business edit did not invalidate calendar sync'; END IF;
+  calendar_result := public.claim_mobile_appointment_calendar_sync_v1(
+    mobile_id, 'casey@savingkc.com', gen_random_uuid(), 1
+  );
+  IF calendar_result->>'status' <> 'version_conflict'
+  THEN RAISE EXCEPTION 'stale calendar retry version was accepted'; END IF;
+  calendar_claim := gen_random_uuid();
+  calendar_result := public.claim_mobile_appointment_calendar_sync_v1(mobile_id, 'casey@savingkc.com', calendar_claim);
+  IF calendar_result->>'status' <> 'claimed' OR calendar_result->>'version' <> '2'
+  THEN RAISE EXCEPTION 'new version was not claimed'; END IF;
+  result := public.apply_mobile_appointment_command_v1(
+    'casey@savingkc.com', 'Casey', 'mobile-calendar-edit-2', 'edit', mobile_id,
+    seller_id, 2, repeat('f',64), '{"title":"Third mobile seller call"}'::jsonb
+  );
+  calendar_result := public.finish_mobile_appointment_calendar_sync_v1(mobile_id, calendar_claim, 'synced', NULL);
+  IF calendar_result->>'status' <> 'superseded'
+    OR (SELECT version FROM public.appointments WHERE id=mobile_id) <> 3
+    OR (SELECT provider_sync_status FROM public.appointments WHERE id=mobile_id) <> 'pending'
+  THEN RAISE EXCEPTION 'stale provider finish hid newer CRM revision'; END IF;
+  calendar_claim := gen_random_uuid();
+  calendar_result := public.claim_mobile_appointment_calendar_sync_v1(mobile_id, 'casey@savingkc.com', calendar_claim);
+  IF calendar_result->>'status' <> 'claimed' THEN RAISE EXCEPTION 'new calendar claim failed'; END IF;
+  UPDATE public.mobile_appointment_calendar_sync
+  SET claim_expires_at = clock_timestamp() - interval '1 second'
+  WHERE appointment_id = mobile_id;
+  calendar_result := public.claim_mobile_appointment_calendar_sync_v1(mobile_id, 'casey@savingkc.com', gen_random_uuid());
+  IF calendar_result->>'status' <> 'review_required'
+    OR (SELECT claim_token FROM public.mobile_appointment_calendar_sync WHERE appointment_id=mobile_id) <> calendar_claim
+    OR (SELECT provider_sync_status FROM public.appointments WHERE id=mobile_id) <> 'pending'
+  THEN RAISE EXCEPTION 'expired calendar claim was automatically stolen or marked complete'; END IF;
 
   INSERT INTO public.appointments (lead_id, scheduled_at, type, assigned_to, address, sequence_enabled)
   VALUES (seller_id, initial_time, 'in_person', 'Casey', '123 Main St', true)
@@ -96,4 +155,4 @@ BEGIN
   THEN RAISE EXCEPTION 'mobile cancellation left sequence messages queued'; END IF;
 END $$;
 
-SELECT 'PASS: disabled mobile reminders do not enroll; enabled edit retains sequence; reschedule rotates; cancellation skips queued steps' AS result;
+SELECT 'PASS: expired calendar claims require review; actor-owned claims preserve versions; appointment sequence semantics hold' AS result;

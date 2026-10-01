@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { MobileAuthError, mobileNoStoreHeaders, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
-import { completeMobileCommand, mobileCommandPayloadHash, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
+import { completeMobileCommand, mobileCommandIdentityUuid, mobileCommandPayloadHash, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
 import { buildLeadActivityInsert } from '@/lib/server/lead-activity-command'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -27,13 +27,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (reservation.kind === 'conflict') return NextResponse.json({ error: 'That Idempotency-Key belongs to a different note' }, { status: 409, headers: mobileNoStoreHeaders() })
     if (reservation.kind === 'pending') return NextResponse.json({ error: 'This note is already processing. Refresh before retrying.', code: 'operation_pending' }, { status: 409, headers: mobileNoStoreHeaders() })
     if (reservation.kind === 'replay') return NextResponse.json(reservation.result, { status: reservation.status, headers: mobileNoStoreHeaders() })
-
-    const { data, error } = await supabaseAdmin().from('lead_activities').insert(command.insert)
+    const activityId = mobileCommandIdentityUuid(actor.email, key, 'add_note')
+    const db = supabaseAdmin()
+    const existing = await db.from('lead_activities')
+      .select('id,lead_id,activity_type,description,agent,metadata,created_at').eq('id', activityId).maybeSingle()
+    if (existing.error) throw new Error(existing.error.message)
+    const inserted = existing.data ? null : await db.from('lead_activities').insert({ ...command.insert, id: activityId })
       .select('id,lead_id,activity_type,description,agent,metadata,created_at').single()
+    if (inserted?.error && inserted.error.code !== '23505') throw new Error(inserted.error.message)
+    const recovered = inserted?.error ? await db.from('lead_activities')
+      .select('id,lead_id,activity_type,description,agent,metadata,created_at').eq('id', activityId).maybeSingle() : null
+    const data = existing.data || inserted?.data || recovered?.data
+    const error = recovered?.error
     if (error || !data) throw new Error(error?.message || 'Note insert returned no activity')
+    if (data.lead_id !== id || data.activity_type !== 'note' || data.description !== command.insert.description
+      || (data.metadata as Record<string, unknown> | null)?.actor_email !== actor.email
+      || (data.metadata as Record<string, unknown> | null)?.idempotency_key !== key) {
+      throw new Error('Note identity conflict')
+    }
     const result = { success: true, activity: data }
     try {
-      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey: key, status: 201, result })
+      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey: key, token: reservation.token, status: 201, result })
     } catch (error) {
       console.error('[mobile/note] receipt completion failed:', error)
       return NextResponse.json({ ...result, warning: 'Note saved, but retry reconciliation is pending. Refresh before retrying.' }, { status: 201, headers: mobileNoStoreHeaders() })

@@ -1,20 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mocks = vi.hoisted(() => ({ authorize: vi.fn(), state: vi.fn(), reserve: vi.fn(), queue: vi.fn(), complete: vi.fn() }))
+const mocks = vi.hoisted(() => ({ authorize: vi.fn(), state: vi.fn(), reserve: vi.fn(), rpc: vi.fn() }))
 vi.mock('@/lib/mobile-api/authorized-lead', async (original) => ({
   ...await original<typeof import('@/lib/mobile-api/authorized-lead')>(),
   requireAuthorizedMobileLead: mocks.authorize,
 }))
 vi.mock('@/lib/mobile-api/command-receipts', () => ({
   reserveMobileCommand: mocks.reserve,
-  completeMobileCommand: mocks.complete,
   mobileCommandPayloadHash: vi.fn(() => 'hash'),
 }))
 vi.mock('@/lib/server/canonical-lead-briefing', () => ({
   getCanonicalLeadBriefingState: mocks.state,
-  queueCanonicalLeadBriefing: mocks.queue,
 }))
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc }) }))
 
 import { GET, POST } from './route'
 import { MobileLeadAccessError } from '@/lib/mobile-api/authorized-lead'
@@ -33,9 +32,8 @@ describe('mobile canonical briefing', () => {
     vi.clearAllMocks()
     mocks.authorize.mockResolvedValue({ actor: { email: 'casey@savingkc.com' }, lead: { id } })
     mocks.state.mockResolvedValue({ leadId: id, briefing: null, freshness: 'missing', refresh: null })
-    mocks.reserve.mockResolvedValue({ kind: 'reserved' })
-    mocks.queue.mockResolvedValue(3)
-    mocks.complete.mockResolvedValue(undefined)
+    mocks.reserve.mockResolvedValue({ kind: 'reserved', token: 'claim-1' })
+    mocks.rpc.mockResolvedValue({ data: { queued: true, leadId: id, revision: 3, status: 'pending' }, error: null })
   })
 
   it('reads canonical state as the signed-in lead actor', async () => {
@@ -57,6 +55,8 @@ describe('mobile canonical briefing', () => {
     expect(response.status).toBe(202)
     await expect(response.json()).resolves.toMatchObject({ queued: true, leadId: id, revision: 3 })
     expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({ actorEmail: 'casey@savingkc.com', leadId: id }))
-    expect(mocks.complete).toHaveBeenCalledOnce()
+    expect(mocks.rpc).toHaveBeenCalledWith('apply_mobile_briefing_refresh_v1', {
+      p_actor_email: 'casey@savingkc.com', p_idempotency_key: 'briefing-1', p_lease_token: 'claim-1',
+    })
   })
 })

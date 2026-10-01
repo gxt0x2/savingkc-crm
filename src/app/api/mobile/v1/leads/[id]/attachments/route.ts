@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { buildStoragePath, DOCUMENTS_BUCKET } from '@/lib/documents'
+import { DOCUMENTS_BUCKET } from '@/lib/documents'
 import { MobileAttachmentError, validateMobileMessageFile } from '@/lib/mobile-api/message-attachments'
 import { MobileAuthError, mobileNoStoreHeaders, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
-import { completeMobileCommand, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
+import { completeMobileCommand, mobileCommandIdentityUuid, reserveMobileCommand } from '@/lib/mobile-api/command-receipts'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -46,24 +46,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (reservation.kind === 'conflict') return NextResponse.json({ error: 'That Idempotency-Key belongs to a different attachment.' }, { status: 409, headers: mobileNoStoreHeaders() })
     if (reservation.kind === 'pending') return NextResponse.json({ error: 'This attachment upload is already processing. Refresh before retrying.', code: 'operation_pending' }, { status: 409, headers: mobileNoStoreHeaders() })
     if (reservation.kind === 'replay') return NextResponse.json(reservation.result, { status: reservation.status, headers: mobileNoStoreHeaders() })
-    const path = buildStoragePath('lead', id, filename)
-    const { error: uploadError } = await db.storage.from(DOCUMENTS_BUCKET).upload(path, bytes, { contentType: mimeType, upsert: false })
-    if (uploadError) throw new MobileAttachmentError('Attachment upload failed.', 503)
-    const { data: row, error: insertError } = await db.from('documents').insert({
-      entity_type: 'lead',
-      entity_id: id,
-      doc_type: 'message_attachment',
-      filename,
-      storage_path: path,
-      mime_type: mimeType,
-      byte_size: file.size,
-      notes: 'Mobile message attachment',
-      uploaded_by: actor.email,
-    }).select('id,filename,mime_type,byte_size,uploaded_at').single()
-    if (insertError || !row) {
-      await db.storage.from(DOCUMENTS_BUCKET).remove([path]).catch(() => undefined)
-      throw new MobileAttachmentError('Attachment metadata could not be saved.', 503)
+    const documentId = mobileCommandIdentityUuid(actor.email, idempotencyKey, 'upload_message_attachment')
+    const path = `lead/${id}/mobile/${documentId}-${filename.replace(/[^\w.\-]+/g, '_').slice(0, 120)}`
+    const select = 'id,entity_type,entity_id,doc_type,filename,storage_path,mime_type,byte_size,uploaded_by,uploaded_at'
+    const { data: initialRow, error: readError } = await db.from('documents').select(select).eq('id', documentId).maybeSingle()
+    let row = initialRow
+    if (readError) throw new MobileAttachmentError(readError.message, 503)
+    const verifyStoredBytes = async () => {
+      const { data: stored, error: downloadError } = await db.storage.from(DOCUMENTS_BUCKET).download(path)
+      if (downloadError || !stored) throw new MobileAttachmentError('Attachment upload could not be reconciled.', 503)
+      const storedBytes = new Uint8Array(await stored.arrayBuffer())
+      if (createHash('sha256').update(storedBytes).digest('hex') !== createHash('sha256').update(bytes).digest('hex')) {
+        throw new MobileAttachmentError('Attachment storage identity conflict.', 409)
+      }
     }
+    if (!row) {
+      const { error: uploadError } = await db.storage.from(DOCUMENTS_BUCKET).upload(path, bytes, { contentType: mimeType, upsert: false })
+      if (uploadError) {
+        // The previous attempt may have uploaded the object before losing its response.
+        await verifyStoredBytes()
+      }
+      const inserted = await db.from('documents').insert({
+        id: documentId, entity_type: 'lead', entity_id: id, doc_type: 'message_attachment',
+        filename, storage_path: path, mime_type: mimeType, byte_size: file.size,
+        notes: 'Mobile message attachment', uploaded_by: actor.email,
+      }).select(select).single()
+      if (inserted.error && inserted.error.code !== '23505') throw new MobileAttachmentError('Attachment metadata could not be saved.', 503)
+      if (inserted.error) {
+        const reread = await db.from('documents').select(select).eq('id', documentId).maybeSingle()
+        if (reread.error) throw new MobileAttachmentError(reread.error.message, 503)
+        row = reread.data
+      } else row = inserted.data
+    }
+    if (!row || row.entity_type !== 'lead' || row.entity_id !== id || row.doc_type !== 'message_attachment'
+      || row.filename !== filename || row.storage_path !== path || row.mime_type !== mimeType
+      || Number(row.byte_size) !== file.size || row.uploaded_by !== actor.email) {
+      throw new MobileAttachmentError('Attachment identity conflict.', 409)
+    }
+    if (reservation.kind === 'recovered') await verifyStoredBytes()
     const result = {
       success: true,
       attachment: {
@@ -75,7 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     }
     try {
-      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey, status: 201, result })
+      await completeMobileCommand({ actorEmail: actor.email, idempotencyKey, token: reservation.token, status: 201, result })
     } catch (receiptError) {
       console.error('[mobile/attachment] receipt completion failed:', receiptError)
       return NextResponse.json({

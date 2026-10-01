@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     const scheduledItems = workItems.filter((item) => Boolean(item.dueAt))
     const { data: appointmentRows, error: appointmentError } = await supabaseAdmin()
       .from('appointments')
-      .select('id,lead_id,type,status,scheduled_at,ends_at,title,location,address,time_zone,assigned_to,notes,sequence_enabled,version,source,created_at,updated_at,provider_event_id,provider_sync_status,provider_synced_at,provider_sync_error')
+      .select('id,lead_id,type,status,scheduled_at,ends_at,title,location,address,time_zone,assigned_to,notes,sequence_enabled,version,source,created_at,updated_at,provider_event_id,provider_sync_status,provider_synced_at,provider_sync_error,mobile_appointment_calendar_sync(owner_email)')
       .order('scheduled_at', { ascending: false }).limit(300)
     if (appointmentError) throw new Error('calendar appointment read failed')
     const leadIds = [...new Set([
