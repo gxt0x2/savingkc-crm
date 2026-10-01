@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({ actor: vi.fn(), access: vi.fn(), execute: vi.fn() }))
@@ -28,9 +28,11 @@ function request(payload: unknown = body, key = 'appointment-create-1') {
 describe('mobile appointment create', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T12:00:00Z'))
     mocks.actor.mockResolvedValue({ actor: { email: 'ernest@savingkc.com', name: 'Ernest' } })
     mocks.execute.mockResolvedValue({ success: true, created: true, appointment: { id: 'appointment-1' } })
   })
+  afterEach(() => vi.restoreAllMocks())
 
   it('uses the authenticated actor and complete canonical editor payload', async () => {
     const response = await POST(request())
