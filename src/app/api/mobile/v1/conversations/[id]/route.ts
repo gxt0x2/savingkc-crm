@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
+import { mobileInboundRoute } from '@/lib/mobile-api/inbound-route'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!leadResult.data) return NextResponse.json({ error: 'Contact not found' }, { status: 404, headers: mobileNoStoreHeaders() })
     if (activityResult.error) throw new Error(activityResult.error.message)
 
-    return NextResponse.json({ contact: leadResult.data, activities: activityResult.data ?? [] }, { headers: mobileNoStoreHeaders() })
+    const activities = (activityResult.data ?? []).map((activity) => {
+      if (!['call', 'missed_call', 'voicemail'].includes(activity.activity_type)) return activity
+      const metadata = activity.metadata && typeof activity.metadata === 'object' && !Array.isArray(activity.metadata)
+        ? activity.metadata as Record<string, unknown> : {}
+      const inboundRoute = mobileInboundRoute(metadata, activity.description)
+      return inboundRoute ? { ...activity, metadata: { ...metadata, inboundRoute } } : activity
+    })
+    return NextResponse.json({ contact: leadResult.data, activities }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
     const status = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.status : 500
     const message = error instanceof Error ? error.message : 'Internal error'
