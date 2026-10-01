@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -12,9 +13,9 @@ export function OPTIONS() {
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireMobileUser(req)
     const { id } = await params
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400, headers: mobileNoStoreHeaders() })
+    await requireAuthorizedMobileLead(req, id)
 
     const db = supabaseAdmin()
     const [leadResult, activityResult] = await Promise.all([
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     return NextResponse.json({ contact: leadResult.data, activities: activityResult.data ?? [] }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
-    const status = error instanceof MobileAuthError ? error.status : 500
+    const status = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.status : 500
     const message = error instanceof Error ? error.message : 'Internal error'
     return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }

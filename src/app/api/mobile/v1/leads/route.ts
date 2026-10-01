@@ -4,10 +4,12 @@ import {
   MobileAuthError,
   mobileNoStoreHeaders,
   mobileOptionsResponse,
-  requireMobileUser,
 } from '@/lib/mobile-api/auth'
+import { assistantActorCanReadCompanyWide } from '@/lib/assistant/auth'
+import { MobileLeadAccessError, mobileActorCanReadAssignedLead, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
+import { MobileCommandAccessError, requireMobileCommandActor } from '@/lib/mobile-api/mobile-command-access'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
-import { readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
+import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
 import { readOauthReviewContactDirectoryPage } from '@/lib/server/oauth-review-contact-directory'
 
 export const dynamic = 'force-dynamic'
@@ -35,21 +37,29 @@ function pipelineList(value: string | null): PipelineList {
 
 export async function GET(req: NextRequest) {
   try {
-    await requireMobileUser(req)
+    const { scopedActor } = await requireMobileCommandActor(req)
+    const companyWide = assistantActorCanReadCompanyWide(scopedActor)
+    const owner = companyWide ? '' : scopedActor.assignmentAliases[0]
+    if (!companyWide && (!owner || owner === '__unassigned')) return NextResponse.json({ error: 'CRM assignment unavailable' }, { status: 403, headers: mobileNoStoreHeaders() })
     const { searchParams } = new URL(req.url)
     const requestedLimit = Number(searchParams.get('limit') || '25')
     const limit = Number.isInteger(requestedLimit)
       ? Math.min(Math.max(requestedLimit, 1), 50)
       : 25
     const list = pipelineList(searchParams.get('list'))
+    const rawCursor = searchParams.get('cursor')?.trim() || null
+    const cursor = rawCursor && rawCursor.length <= 2048 ? decodeContactDirectoryCursor(rawCursor) : null
+    if (rawCursor && !cursor) {
+      return NextResponse.json({ error: 'Invalid Pipeline page cursor.' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
     const directoryQuery = {
       smartList: list,
       scope: 'active',
       limit,
-      cursor: null,
+      cursor,
       sort: 'recent',
       search: searchParams.get('q')?.trim() || '',
-      owner: '',
+      owner,
       stage: '',
       minimumStage: '',
       source: '',
@@ -61,11 +71,23 @@ export async function GET(req: NextRequest) {
       referenceTime: new Date().toISOString(),
     }
     const sandboxLeadId = await resolveOauthReviewSandboxLeadId(req)
+    if (sandboxLeadId) await requireAuthorizedMobileLead(req, sandboxLeadId)
     const page = sandboxLeadId
       ? await readOauthReviewContactDirectoryPage(directoryQuery, sandboxLeadId)
       : await readContactDirectoryPage(directoryQuery)
+    // v4's page/total are owner-filtered, but smartListCounts are global. Never
+    // return those counts to a scoped operator. Each replacement count is read
+    // with the same owner predicate before page limiting.
+    const scopedCounts = companyWide || sandboxLeadId ? page.smartListCounts : Object.fromEntries(await Promise.all(
+      PIPELINE_LISTS.map(async (key) => {
+        const countPage = key === list && !directoryQuery.search && !directoryQuery.cursor
+          ? page
+          : await readContactDirectoryPage({ ...directoryQuery, smartList: key, limit: 1, cursor: null, search: '' })
+        return [key, countPage.totalCount] as const
+      }),
+    ))
 
-    const leads = page.items.map((item) => ({
+    const leads = page.items.filter((item) => mobileActorCanReadAssignedLead(scopedActor, item.owner)).map((item) => ({
       id: item.id,
       full_name: item.full_name,
       phone: item.phone,
@@ -100,7 +122,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       leads,
-      counts: Object.fromEntries(PIPELINE_LISTS.map((key) => [key, page.smartListCounts[key] ?? 0])),
+      counts: Object.fromEntries(PIPELINE_LISTS.map((key) => [key, scopedCounts[key] ?? 0])),
       pageInfo: {
         total: page.totalCount,
         hasMore: page.hasMore,
@@ -114,6 +136,8 @@ export async function GET(req: NextRequest) {
         { status: error.status, headers: mobileNoStoreHeaders() },
       )
     }
+    if (error instanceof MobileCommandAccessError) return NextResponse.json({ error: error.message }, { status: error.status, headers: mobileNoStoreHeaders() })
+    if (error instanceof MobileLeadAccessError) return NextResponse.json({ error: error.message }, { status: error.status, headers: mobileNoStoreHeaders() })
     console.error('[mobile/leads] canonical pipeline read failed', error)
     return NextResponse.json(
       { error: 'Mobile Pipeline is temporarily unavailable.' },

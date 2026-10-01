@@ -3,8 +3,9 @@ import {
   MobileAuthError,
   mobileNoStoreHeaders,
   mobileOptionsResponse,
-  requireMobileActor,
 } from '@/lib/mobile-api/auth'
+import { MobileLeadAccessError } from '@/lib/mobile-api/authorized-lead'
+import { MobileCommandAccessError, requireAuthorizedMobileWorkItem } from '@/lib/mobile-api/mobile-command-access'
 import { transitionWorkItem, WorkItemError } from '@/lib/server/work-items'
 
 export const dynamic = 'force-dynamic'
@@ -16,16 +17,24 @@ export function OPTIONS() {
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { actor } = await requireMobileActor(req)
     const { id } = await params
     if (!id) return NextResponse.json({ error: 'Work item id is required.' }, { status: 400, headers: mobileNoStoreHeaders() })
-    const body = await req.json().catch(() => ({})) as { expectedVersion?: unknown }
+    const idempotencyKey = req.headers.get('idempotency-key')?.trim() || ''
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 200) {
+      return NextResponse.json({ error: 'A stable Idempotency-Key is required.' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
+    const body = await req.json().catch(() => null) as { expectedVersion?: unknown } | null
+    const expectedVersion = body?.expectedVersion
+    if (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
+      return NextResponse.json({ error: 'A positive expectedVersion is required.' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
+    const { actor } = await requireAuthorizedMobileWorkItem(req, id)
     const result = await transitionWorkItem({
       key: id,
       actor: actor.name,
       action: 'complete',
-      idempotencyKey: req.headers.get('idempotency-key')?.trim() || crypto.randomUUID(),
-      expectedVersion: typeof body.expectedVersion === 'number' ? body.expectedVersion : null,
+      idempotencyKey,
+      expectedVersion,
     })
     return NextResponse.json({
       success: true,
@@ -35,6 +44,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
     if (error instanceof MobileAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status, headers: mobileNoStoreHeaders() })
+    }
+    if (error instanceof MobileLeadAccessError || error instanceof MobileCommandAccessError) {
       return NextResponse.json({ error: error.message }, { status: error.status, headers: mobileNoStoreHeaders() })
     }
     if (error instanceof WorkItemError) {

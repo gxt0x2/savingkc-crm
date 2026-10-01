@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({ actor: vi.fn(), transition: vi.fn() }))
-vi.mock('@/lib/mobile-api/auth', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/lib/mobile-api/auth')>(), requireMobileActor: mocks.actor,
+vi.mock('@/lib/mobile-api/mobile-command-access', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/mobile-api/mobile-command-access')>(), requireAuthorizedMobileWorkItem: mocks.actor,
 }))
 vi.mock('@/lib/server/work-items', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/server/work-items')>(), transitionWorkItem: mocks.transition,
@@ -22,12 +22,13 @@ describe('mobile work-item completion', () => {
 
   it('completes through the versioned canonical work-item service', async () => {
     const response = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/work-items/x/complete', {
-      method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: 2 }),
+      method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json', 'Idempotency-Key': 'task-complete-stable-1' }, body: JSON.stringify({ expectedVersion: 2 }),
     }), context)
 
     expect(response.status).toBe(200)
+    expect(mocks.actor).toHaveBeenCalledWith(expect.any(NextRequest), 'activity:task-1')
     expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
-      key: 'activity:task-1', actor: 'Casey', action: 'complete', expectedVersion: 2,
+      key: 'activity:task-1', actor: 'Casey', action: 'complete', expectedVersion: 2, idempotencyKey: 'task-complete-stable-1',
     }))
   })
 
@@ -36,10 +37,22 @@ describe('mobile work-item completion', () => {
     mocks.actor.mockRejectedValue(new MobileAuthError('Invalid bearer token'))
 
     const response = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/work-items/x/complete', {
-      method: 'POST', headers: { Authorization: 'Bearer bad' },
+      method: 'POST', headers: { Authorization: 'Bearer bad', 'Idempotency-Key': 'task-complete-stable-1' }, body: JSON.stringify({ expectedVersion: 2 }),
     }), context)
 
     expect(response.status).toBe(401)
+    expect(mocks.transition).not.toHaveBeenCalled()
+  })
+
+  it('rejects missing version and unstable request identities before scope/command', async () => {
+    const noVersion = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/work-items/x/complete', {
+      method: 'POST', headers: { 'Idempotency-Key': 'task-complete-stable-1' }, body: '{}',
+    }), context)
+    const noKey = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/work-items/x/complete', {
+      method: 'POST', body: JSON.stringify({ expectedVersion: 2 }),
+    }), context)
+    expect(noVersion.status).toBe(400)
+    expect(noKey.status).toBe(400)
     expect(mocks.transition).not.toHaveBeenCalled()
   })
 })
