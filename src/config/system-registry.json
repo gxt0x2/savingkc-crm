@@ -604,7 +604,7 @@
       "environment": [],
       "retirement": {
         "reason": "The CRM paid-media workspace is Google Ads only. Historical rows remain available during the retention review.",
-        "targetDate": "2026-09-30"
+        "targetDate": "2026-10-08"
       }
     },
     {
