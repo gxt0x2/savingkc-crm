@@ -329,14 +329,19 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/prospecting", "/prospecting/foreclosure", "/prospecting/foreclosure/[id]", "/prospecting/excess-proceeds", "/dialer", "/conversations"],
-      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/members/[memberId]/contacts", "/api/prospecting/campaigns/[id]/launch", "/api/prospecting/contact-notes", "/api/prospecting/foreclosure", "/api/prospecting/foreclosure/import", "/api/prospecting/foreclosure/ingest", "/api/prospecting/foreclosure/[id]", "/api/prospecting/foreclosure/[id]/call", "/api/prospecting/excess-proceeds", "/api/prospecting/excess-proceeds/import", "/api/prospecting/excess-proceeds/[leadId]", "/api/workers/prospecting-campaigns"],
+      "apiRoutes": ["/api/prospecting/campaigns", "/api/prospecting/campaigns/[id]", "/api/prospecting/campaigns/[id]/members", "/api/prospecting/campaigns/[id]/members/[memberId]/contacts", "/api/prospecting/campaigns/[id]/launch", "/api/prospecting/contact-notes", "/api/prospecting/foreclosure", "/api/prospecting/foreclosure/import", "/api/prospecting/foreclosure/ingest", "/api/cron/foreclosure-ingest", "/api/prospecting/foreclosure/[id]", "/api/prospecting/foreclosure/[id]/call", "/api/prospecting/excess-proceeds", "/api/prospecting/excess-proceeds/import", "/api/prospecting/excess-proceeds/[leadId]", "/api/workers/prospecting-campaigns"],
       "tables": ["prospecting_campaigns", "prospecting_campaign_steps", "prospecting_campaign_members", "prospecting_campaign_member_contacts", "prospecting_campaign_actions", "prospecting_sms_reservations", "prospecting_campaign_events", "dialer_sessions", "lead_activities", "leads", "prospects", "prospect_phones", "mortgage_foreclosure_prospects", "mortgage_foreclosure_ingest_controls", "county_source_reconciliation_audit", "sms_opt_outs", "sms_delivery_log", "crm_excess_proceeds"],
-      "environment": ["CRON_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ACCESS_TOKEN", "CRM_ENV_FILE", "GOOGLE_MAPS_API_KEY"],
+      "environment": ["CRON_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ACCESS_TOKEN", "CRM_ENV_FILE", "GOOGLE_MAPS_API_KEY", "FORECLOSURE_INGEST_PROVIDER", "FORECLOSURE_NR_PAGE_CAP", "FORECLOSURE_STALE_ALERT_TO", "RESEND_API_KEY", "RESEND_FROM_EMAIL"],
       "crons": [
         {
           "path": "/api/workers/prospecting-campaigns",
           "schedule": "*/5 * * * *",
           "highFrequencyReason": "Claim a small durable batch so contact-timezone windows, reply cancellation, and SMS pacing stay accurate without large bursts."
+        },
+        {
+          "path": "/api/cron/foreclosure-ingest",
+          "schedule": "30 13 * * 1-5",
+          "highFrequencyReason": "Weekday county_public foreclosure pull (JoCo sheriff, Legal Record, SouthLaw, NoticeRegistry) plus 24h stale email. No PropStream ingest."
         }
       ]
     },
