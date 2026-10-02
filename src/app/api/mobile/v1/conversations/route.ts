@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { assistantActorCanReadCompanyWide } from '@/lib/assistant/auth'
+import { mobileActorCanReadAssignedLead } from '@/lib/mobile-api/authorized-lead'
+import { MobileCommandAccessError, requireMobileCommandActor } from '@/lib/mobile-api/mobile-command-access'
 import {
   buildConversationHubThreads,
   type ConversationHubActivity,
@@ -19,18 +22,25 @@ export function OPTIONS() {
 
 export async function GET(req: NextRequest) {
   try {
-    await requireMobileUser(req)
+    const { scopedActor } = await requireMobileCommandActor(req)
     const db = supabaseAdmin()
-    const { data: leads, error: leadsError } = await db
-      .from('leads')
-      .select('id, full_name, phone, email, property_address, city, county, station, priority, assigned_agent, classification, dead_reason, source, motivation_score, arv, offer_amount, appointment_date, created_at')
-      .or('station.is.null,station.not.in.(dead,closed_lost)')
-      .or('classification.is.null,classification.neq.dead')
-      .order('created_at', { ascending: false })
-      .limit(100)
-
-    if (leadsError) throw new Error(leadsError.message)
-    const leadRows = (leads ?? []) as ConversationHubLead[]
+    const aliases = assistantActorCanReadCompanyWide(scopedActor) ? [null] : scopedActor.assignmentAliases
+    if (!aliases.length) return NextResponse.json({ error: 'CRM assignment unavailable' }, { status: 403, headers: mobileNoStoreHeaders() })
+    const leadPages = await Promise.all(aliases.map(async (alias) => {
+      let query = db.from('leads')
+        .select('id, full_name, phone, email, property_address, city, county, station, priority, assigned_agent, classification, dead_reason, source, motivation_score, arv, offer_amount, appointment_date, created_at')
+        .or('station.is.null,station.not.in.(dead,closed_lost)')
+        .or('classification.is.null,classification.neq.dead')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (alias) query = query.ilike('assigned_agent', alias)
+      const { data, error } = await query
+      if (error) throw new Error(error.message)
+      return (data ?? []) as ConversationHubLead[]
+    }))
+    const leadRows = [...new Map(leadPages.flat().filter((lead) => mobileActorCanReadAssignedLead(scopedActor, lead.assigned_agent)).map((lead) => [lead.id, lead])).values()]
+      .sort((left, right) => Date.parse(right.created_at ?? '') - Date.parse(left.created_at ?? ''))
+      .slice(0, 100)
     if (leadRows.length === 0) return NextResponse.json({ items: [] }, { headers: mobileNoStoreHeaders() })
 
     const ids = leadRows.map((lead) => lead.id)
@@ -47,7 +57,7 @@ export async function GET(req: NextRequest) {
       items: buildConversationHubThreads(leadRows, (activityResult.data ?? []) as ConversationHubActivity[]),
     }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
-    const status = error instanceof MobileAuthError ? error.status : 500
+    const status = error instanceof MobileAuthError ? error.status : error instanceof MobileCommandAccessError ? error.status : 500
     const message = error instanceof Error ? error.message : 'Internal error'
     return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }

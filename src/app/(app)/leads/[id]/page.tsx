@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 import { toProperCase } from '@/lib/format'
 import { formatCallDuration } from '@/lib/activity-feed-simplify'
 import { applyCanonicalHousingToLead, leadHousingDetails } from '@/lib/lead-housing-details'
+import { ExcessProceedsDealPanel } from '@/components/leads/excess-proceeds-deal-panel'
 import { LeadWorkspace } from '@/components/leads/lead-workspace'
 import { AppointmentModal } from '@/components/leads/appointment-modal'
 import { NewTaskModal } from '@/components/modals/new-task-modal'
@@ -832,6 +833,9 @@ export default function LeadDetailPage() {
                   reenriching={reenriching}
                   reenrichError={reenrichError}
                 />
+              </div>
+              <div className="min-w-0 xl:col-span-2">
+                <ExcessProceedsDealPanel leadId={lead.id} />
               </div>
             </div>
           ),

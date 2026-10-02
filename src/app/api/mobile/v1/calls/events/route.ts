@@ -1,6 +1,7 @@
 import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,6 @@ function cleanPhone(phone: unknown): string | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireMobileUser(req)
     const body = readBody(await req.json().catch(() => null))
     const leadId = typeof body.leadId === 'string' && body.leadId ? body.leadId : null
     const phone = cleanPhone(body.phone)
@@ -44,6 +44,9 @@ export async function POST(req: NextRequest) {
         { status: 400, headers: mobileNoStoreHeaders() },
       )
     }
+    // Leadless manual dials are handled by call intents, not by this activity
+    // write. Never let a bearer token attach a call to someone else's lead.
+    const { actor, user } = await requireAuthorizedMobileLead(req, leadId)
 
     const duration = Math.max(0, Math.round(Number(body.durationSeconds || 0)))
     const outcome = body.outcome || (event === 'ended' ? 'unknown' : undefined)
@@ -58,7 +61,7 @@ export async function POST(req: NextRequest) {
         lead_id: leadId,
         activity_type: 'call',
         description,
-        agent: user.email || 'Mobile',
+        agent: actor.fullName,
         metadata: {
           source: 'savingkc_mobile',
           direction: 'outbound',
@@ -85,8 +88,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, activityId: data?.id ?? null }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
-    const status = error instanceof MobileAuthError ? error.status : 500
-    const message = error instanceof MobileAuthError ? error.message : 'Internal error'
+    const status = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.status : 500
+    const message = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.message : 'Internal error'
     return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }
 }

@@ -132,6 +132,7 @@ export interface SkipPhone {
   contactName: string
   relationship: SkipRelationship
   rank: number
+  line?: 'mobile' | 'landline' | null
 }
 
 export const SKIP_RELATIONSHIP_LABELS: Record<SkipRelationship, string> = {
@@ -170,18 +171,25 @@ export function buildRankedSkipPhones(input: {
 }): SkipPhone[] {
   if (!input.allow) return []
   const rows: Array<Omit<SkipPhone, 'rank'>> = []
-  const push = (phoneRaw: unknown, contactName: unknown, relationship: SkipRelationship) => {
+  const push = (phoneRaw: unknown, contactName: unknown, relationship: SkipRelationship, lineRaw?: unknown) => {
     const phone = normalizePhoneToE164(typeof phoneRaw === 'number' ? String(phoneRaw) : text(phoneRaw))
-    if (!phone || rows.some((row) => row.phone === phone)) return
-    rows.push({
-      phone,
-      contactName: text(contactName) || (relationship === 'subject' ? text(input.ownerName) : null) || 'Contact',
-      relationship,
-    })
+    if (!phone) return
+    const line = parsePhoneLine(lineRaw)
+    const contact = text(contactName) || (relationship === 'subject' ? text(input.ownerName) : null) || 'Contact'
+    const existing = rows.find((row) => row.phone === phone)
+    if (existing) {
+      if (existing.line == null && line) existing.line = line
+      if (existing.contactName === 'Contact' && contact !== 'Contact') existing.contactName = contact
+      if (existing.relationship === 'other' && relationship !== 'other') existing.relationship = relationship
+      return
+    }
+    rows.push({ phone, contactName: contact, relationship, line })
   }
-  if (input.phones[0]) push(input.phones[0], input.ownerName, 'subject')
-  for (const entry of skipEntries(input.raw)) push(entry.phone, entry.contactName, entry.relationship)
-  for (const phone of input.phones.slice(1)) push(phone, null, 'other')
+  if (input.phones[0]) push(input.phones[0], input.ownerName, 'subject', phoneLine(input.raw, 1))
+  for (const entry of skipEntries(input.raw)) push(entry.phone, entry.contactName, entry.relationship, entry.line)
+  for (let index = 1; index < input.phones.length; index += 1) {
+    push(input.phones[index], input.ownerName, 'subject', phoneLine(input.raw, index + 1))
+  }
   if (input.sandbox) {
     for (const extra of SANDBOX_SKIP_EXTRAS) push(extra.phone, extra.contactName, extra.relationship)
   }
@@ -190,7 +198,20 @@ export function buildRankedSkipPhones(input: {
     .map((row, index) => ({ ...row, rank: index + 1 }))
 }
 
-function skipEntries(raw: unknown): Array<{ phone: unknown; contactName: unknown; relationship: SkipRelationship }> {
+function phoneLine(raw: unknown, index: number): unknown {
+  if (!raw || typeof raw !== 'object') return null
+  const record = raw as Record<string, unknown>
+  return record[`phone_${index}_line`] ?? record[`phone${index}Line`] ?? record[`phone_line_${index}`]
+}
+
+function parsePhoneLine(raw: unknown): 'mobile' | 'landline' | null {
+  const value = text(raw)?.toLowerCase().replace(/[\s-]+/g, '_') ?? ''
+  if (value === 'mobile' || value === 'cell' || value === 'wireless') return 'mobile'
+  if (value === 'landline' || value === 'land' || value === 'home' || value === 'land_line') return 'landline'
+  return null
+}
+
+function skipEntries(raw: unknown): Array<{ phone: unknown; contactName: unknown; relationship: SkipRelationship; line: unknown }> {
   if (Array.isArray(raw)) return raw.map(skipEntry)
   if (typeof raw === 'string' && raw.trim().startsWith('[')) {
     try {
@@ -204,7 +225,7 @@ function skipEntries(raw: unknown): Array<{ phone: unknown; contactName: unknown
   const record = raw as Record<string, unknown>
   const nested = record.skipPhones ?? record.skip_phones
   if (nested != null && nested !== '') return skipEntries(nested)
-  const extras: Array<{ phone: unknown; contactName: unknown; relationship: SkipRelationship }> = []
+  const extras: Array<{ phone: unknown; contactName: unknown; relationship: SkipRelationship; line: unknown }> = []
   for (let index = 2; index <= 6; index += 1) {
     const phone = record[`skip_phone_${index}`]
     if (phone == null || phone === '') continue
@@ -212,18 +233,20 @@ function skipEntries(raw: unknown): Array<{ phone: unknown; contactName: unknown
       phone,
       contactName: record[`skip_contact_${index}`],
       relationship: parseSkipRelationship(record[`skip_relationship_${index}`]),
+      line: record[`skip_line_${index}`] ?? record[`skip_phone_${index}_line`],
     })
   }
   return extras
 }
 
-function skipEntry(item: unknown): { phone: unknown; contactName: unknown; relationship: SkipRelationship } {
-  if (!item || typeof item !== 'object') return { phone: null, contactName: null, relationship: 'other' }
+function skipEntry(item: unknown): { phone: unknown; contactName: unknown; relationship: SkipRelationship; line: unknown } {
+  if (!item || typeof item !== 'object') return { phone: null, contactName: null, relationship: 'other', line: null }
   const entry = item as Record<string, unknown>
   return {
     phone: entry.phone ?? entry.phoneNumber,
     contactName: entry.contactName ?? entry.contact_name ?? entry.name,
     relationship: parseSkipRelationship(entry.relationship),
+    line: entry.line ?? entry.phone_line ?? entry.phoneLine,
   }
 }
 

@@ -1,0 +1,3 @@
+# Historical test-only Idempotency-Key "appointment-reschedule-1", not a credential.
+# Exact commit/file/rule/line only; the current fixture uses "test-key-0001".
+ed9e55832baef765ded566922eab1876567001a6:src/app/api/mobile/v1/appointments/[id]/reschedule/route.test.ts:generic-api-key:22

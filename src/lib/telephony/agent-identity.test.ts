@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { MAIN_SAVINGKC_CALLER_ID, resolveAgentTelephonyProfile } from './agent-identity'
 
 describe('resolveAgentTelephonyProfile', () => {
+  it('does not grant a roster identity to a substring or another email domain', () => {
+    for (const email of ['noternest@savingkc.com', 'ernest@example.com', 'casey.other@savingkc.com']) {
+      const profile = resolveAgentTelephonyProfile(email)
+      expect(profile.hasDedicatedCallerId).toBe(false)
+      expect(['ernest', 'casey', 'gertha']).not.toContain(profile.identity)
+    }
+  })
   it('defaults Ernest and Casey to their recorded company numbers', () => {
     expect(resolveAgentTelephonyProfile('ernest@savingkc.com')).toMatchObject({
       identity: 'ernest',

@@ -57,7 +57,7 @@ const AGENT_PROFILES: Array<{ match: string; profile: AgentTelephonyProfile }> =
 
 export function resolveAgentTelephonyProfile(email: string | null | undefined): AgentTelephonyProfile {
   const normalized = email?.trim().toLowerCase() ?? ''
-  const configured = AGENT_PROFILES.find(({ match }) => normalized.includes(match))
+  const configured = AGENT_PROFILES.find(({ match }) => normalized === `${match}@savingkc.com`)
   if (configured) return configured.profile
 
   const localPart = normalized.split('@')[0]?.replace(/[._-]+/g, ' ').trim()

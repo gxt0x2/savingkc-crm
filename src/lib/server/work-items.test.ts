@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), laneLookup: vi.fn(), eq: vi.fn(), readRows: vi.fn() }))
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), laneLookup: vi.fn(), eq: vi.fn(), readRows: vi.fn(), replay: vi.fn() }))
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: () => {
@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       limit: vi.fn(() => query),
       eq: mocks.eq.mockImplementation(() => query),
       in: mocks.laneLookup,
+      maybeSingle: mocks.replay,
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(mocks.readRows()).then(resolve, reject),
     }
     return { rpc: mocks.rpc, from: vi.fn(() => query) }
@@ -97,6 +98,15 @@ describe('canonical work-item server service', () => {
       p_actor: 'Casey',
       p_idempotency_key: 'create-key-0001',
     }))
+  })
+
+  it('rejects a successful RPC replay when the same key belongs to different create content', async () => {
+    mocks.rpc.mockResolvedValue({ data: { created: false, workItem: row }, error: null })
+    mocks.replay.mockResolvedValue({ data: { action: 'create', actor: 'Casey', work_item_key: row.work_item_key, next_state: row }, error: null })
+    await expect(createWorkItem({
+      actor: 'Casey', idempotencyKey: 'create-key-reused', leadId: row.lead_id,
+      kind: 'follow_up', title: 'Different seller instruction', assignedTo: 'Casey', department: 'acquisitions',
+    })).rejects.toMatchObject({ code: 'conflict' })
   })
 
   it('defaults every standard read to the current operational lane', async () => {

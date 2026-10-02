@@ -1,6 +1,7 @@
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { prospectingJson } from '@/lib/api/prospecting-response'
-import { FORECLOSURE_STATUSES } from '@/lib/prospecting/foreclosure'
+import { FORECLOSURE_STATUSES, chicagoDate } from '@/lib/prospecting/foreclosure'
+import { mergeForeclosureSample } from '@/lib/prospecting/foreclosure-sample'
 import {
   ForeclosureError,
   createForeclosureProspect,
@@ -25,13 +26,14 @@ export async function GET(request: Request) {
     if (status && !(FORECLOSURE_STATUSES as readonly string[]).includes(status)) {
       return prospectingJson({ error: 'That foreclosure status is not recognized.', code: 'invalid_status' }, { status: 400 })
     }
-    const prospects = await listForeclosureProspects({
+    const filters = {
       county: params.get('county'),
       status,
       dialReady: params.get('dialReady') === '1',
       saleThisWeek: params.get('saleThisWeek') === '1',
-    })
-    return prospectingJson({ prospects })
+    }
+    const prospects = await listForeclosureProspects(filters)
+    return prospectingJson({ prospects: mergeForeclosureSample(prospects, filters, chicagoDate()) })
   } catch (error) {
     return foreclosureError(error)
   }

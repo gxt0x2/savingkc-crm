@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-export function ProspectingSectionNav({ current }: { current: 'campaigns' | 'reports' | 'foreclosure' }) {
+export function ProspectingSectionNav({ current }: { current: 'campaigns' | 'reports' | 'foreclosure' | 'excess-proceeds' }) {
   const linkClass = (active: boolean) => active
     ? 'font-black text-[var(--crm-ink)]'
     : 'font-bold text-[var(--crm-text-muted)] hover:text-[var(--crm-ink)]'
@@ -10,6 +10,8 @@ export function ProspectingSectionNav({ current }: { current: 'campaigns' | 'rep
       <Link href="/prospecting" aria-current={current === 'campaigns' ? 'page' : undefined} className={linkClass(current === 'campaigns')}>Campaigns</Link>
       <span aria-hidden="true" className="text-[var(--crm-text-dim)]">|</span>
       <Link href="/prospecting/foreclosure" aria-current={current === 'foreclosure' ? 'page' : undefined} className={linkClass(current === 'foreclosure')}>Foreclosure</Link>
+      <span aria-hidden="true" className="text-[var(--crm-text-dim)]">|</span>
+      <Link href="/prospecting/excess-proceeds" aria-current={current === 'excess-proceeds' ? 'page' : undefined} className={linkClass(current === 'excess-proceeds')}>Excess proceeds</Link>
       <span aria-hidden="true" className="text-[var(--crm-text-dim)]">|</span>
       <Link href="/prospecting/reports" aria-current={current === 'reports' ? 'page' : undefined} className={linkClass(current === 'reports')}>Call Reports</Link>
     </nav>
