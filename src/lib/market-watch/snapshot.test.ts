@@ -19,7 +19,7 @@ import {
 } from './snapshot'
 
 const snapshot = bundledWholesaleMarketSnapshots()[0]
-const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20261120120000_wholesale_market_snapshots.sql'), 'utf8')
+const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20261120120100_wholesale_market_snapshots.sql'), 'utf8')
 
 describe('August 2026 wholesale market snapshot', () => {
   it('keeps the Matrix summary and does not invent zip counts', () => {
