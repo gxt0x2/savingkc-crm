@@ -5,7 +5,7 @@ import { runForeclosureDailyIngest } from '@/lib/server/foreclosure-daily-ingest
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 const HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' }
 
@@ -62,7 +62,7 @@ export async function GET(request: Request) {
   return handle(request, false)
 }
 
-/** Same as GET, plus optional CSV body / file for operator or GH Action drops. */
+/** Same as GET. Optional CSV body is a replay only — daily runs do not upload a file. */
 export async function POST(request: Request) {
   return handle(request, true)
 }

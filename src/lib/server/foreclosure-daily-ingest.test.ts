@@ -31,10 +31,17 @@ describe('foreclosure daily ingest freshness', () => {
     expect(evaluateForeclosureStale({ newestCreatedAt: fresh, now: friday }).stale).toBe(false)
     expect(evaluateForeclosureStale({ newestCreatedAt: old, now: sunday }).stale).toBe(false)
   })
+
+  it('treats a fresh updated_at as a landing even when created_at is old', () => {
+    const friday = new Date('2026-10-02T15:00:00-05:00')
+    const old = new Date(friday.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    const fresh = new Date(friday.getTime() - 2 * 60 * 60 * 1000).toISOString()
+    expect(evaluateForeclosureStale({ newestCreatedAt: old, newestUpdatedAt: fresh, now: friday }).stale).toBe(false)
+  })
 })
 
 describe('foreclosure ingest provider gate', () => {
-  it('accepts an explicit CSV body without inventing PropStream', async () => {
+  it('accepts an explicit CSV body without calling county sources', async () => {
     const result = await resolveForeclosureIngestProvider({ csvBody: 'row_id,county\n1,jackson\n' })
     expect(result.status).toBe('ready')
     if (result.status === 'ready') {
@@ -44,29 +51,28 @@ describe('foreclosure ingest provider gate', () => {
     }
   })
 
-  it('returns not_configured for PropStream without inventing endpoints', async () => {
+  it('refuses PropStream as an ingest provider instead of inventing an API', async () => {
     vi.stubEnv('FORECLOSURE_INGEST_PROVIDER', 'propstream')
-    vi.stubEnv('PROPSTREAM_API_KEY', 'test-key')
     const result = await resolveForeclosureIngestProvider()
     expect(result.status).toBe('not_configured')
     if (result.status === 'not_configured') {
       expect(result.provider).toBe('propstream')
-      expect(result.reason.toLowerCase()).toContain('no first-hand propstream')
-      expect(result.documentedSecrets).toContain('PROPSTREAM_API_BASE_URL')
-      expect(result.missingSecrets.join(' ')).toMatch(/PROPSTREAM_API_BASE_URL/)
+      expect(result.reason.toLowerCase()).toContain('not a foreclosure ingest provider')
+      expect(result.reason.toLowerCase()).toContain('will not invent')
+      expect(result.missingSecrets).toEqual([])
     }
   })
 
-  it('documents csv_url secrets when nothing is configured', async () => {
+  it('defaults to county_public and records source errors without a CSV upload', async () => {
     vi.stubEnv('FORECLOSURE_INGEST_PROVIDER', '')
-    vi.stubEnv('FORECLOSURE_INGEST_CSV_URL', '')
-    vi.stubEnv('PROPSTREAM_API_KEY', '')
-    vi.stubEnv('PROPSTREAM_API_BASE_URL', '')
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('offline')
+    }))
     const result = await resolveForeclosureIngestProvider()
-    expect(result.status).toBe('not_configured')
-    if (result.status === 'not_configured') {
-      expect(result.missingSecrets).toContain('FORECLOSURE_INGEST_CSV_URL')
-      expect(result.documentedSecrets).toContain('CRON_SECRET')
-    }
+    expect(result.provider).toBe('county_public')
+    expect(result.status === 'error' || result.status === 'not_configured').toBe(true)
+    const notes = result.sourceNotes?.join(' ') || ''
+    expect(notes.toLowerCase()).toContain('mopublicnotices')
+    expect(notes.toLowerCase()).toContain('computeruse')
   })
 })

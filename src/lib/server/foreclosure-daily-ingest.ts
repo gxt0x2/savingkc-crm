@@ -13,6 +13,7 @@ import {
   setForeclosureIngestControl,
 } from '@/lib/server/foreclosure-ingest'
 import { ForeclosureError, importForeclosureCsv } from '@/lib/server/foreclosure-prospects'
+import { fetchCountyPublicCsv } from '@/lib/server/foreclosure-county-public'
 import { supabase } from '@/lib/supabase-lazy'
 
 const TABLE = 'mortgage_foreclosure_prospects'
@@ -33,9 +34,10 @@ export type ForeclosureFreshness = {
 export type ForeclosureProviderStatus =
   | {
       status: 'ready'
-      provider: 'csv_url'
+      provider: 'county_public' | 'csv_url'
       csv: string
       source: string
+      sourceNotes?: string[]
     }
   | {
       status: 'not_configured'
@@ -43,11 +45,13 @@ export type ForeclosureProviderStatus =
       reason: string
       missingSecrets: string[]
       documentedSecrets: string[]
+      sourceNotes?: string[]
     }
   | {
       status: 'error'
       provider: string
       reason: string
+      sourceNotes?: string[]
     }
 
 export type ForeclosureDailyIngestResult = {
@@ -90,6 +94,7 @@ export function isChicagoWeekday(now = new Date()): boolean {
 
 export function evaluateForeclosureStale(input: {
   newestCreatedAt: string | null
+  newestUpdatedAt?: string | null
   now?: Date
   thresholdMs?: number
 }): { ageMs: number | null; stale: boolean; chicagoWeekday: boolean } {
@@ -100,14 +105,25 @@ export function evaluateForeclosureStale(input: {
     // Empty table is stale on weekdays so the owner knows the portal never started ingesting.
     return { ageMs: null, stale: chicagoWeekday, chicagoWeekday }
   }
-  const created = Date.parse(input.newestCreatedAt)
+  const activity = laterIso(input.newestCreatedAt, input.newestUpdatedAt ?? null)
+  const created = activity ? Date.parse(activity) : NaN
   if (!Number.isFinite(created)) {
     return { ageMs: null, stale: chicagoWeekday, chicagoWeekday }
   }
   const ageMs = Math.max(0, now.getTime() - created)
-  // Weekend: log freshness but do not page — PropStream/CSV drops are weekday ops.
+  // Weekend: log freshness but do not page. Activity is the later of created_at and updated_at
+  // so a county_public upsert counts as a landing even when the row already existed.
   const stale = chicagoWeekday && ageMs >= thresholdMs
   return { ageMs, stale, chicagoWeekday }
+}
+
+function laterIso(left: string | null, right: string | null): string | null {
+  const leftMs = left ? Date.parse(left) : NaN
+  const rightMs = right ? Date.parse(right) : NaN
+  if (!Number.isFinite(leftMs) && !Number.isFinite(rightMs)) return null
+  if (!Number.isFinite(rightMs)) return left
+  if (!Number.isFinite(leftMs)) return right
+  return leftMs >= rightMs ? left : right
 }
 
 export async function getForeclosureFreshness(now = new Date()): Promise<ForeclosureFreshness> {
@@ -135,10 +151,21 @@ export async function getForeclosureFreshness(now = new Date()): Promise<Foreclo
     throw new ForeclosureError('foreclosure_unavailable', 503, 'Foreclosure freshness could not be read.')
   }
 
+  const updated = await supabase
+    .from(TABLE)
+    .select('updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+  if (updated.error) {
+    throw new ForeclosureError('foreclosure_unavailable', 503, 'Foreclosure freshness could not be read.')
+  }
   const row = (newest.data?.[0] ?? null) as { created_at?: string; updated_at?: string } | null
+  const updatedRow = (updated.data?.[0] ?? null) as { updated_at?: string } | null
   const newestCreatedAt = typeof row?.created_at === 'string' ? row.created_at : null
-  const newestUpdatedAt = typeof row?.updated_at === 'string' ? row.updated_at : null
-  const evaluated = evaluateForeclosureStale({ newestCreatedAt, now })
+  const newestUpdatedAt = typeof updatedRow?.updated_at === 'string'
+    ? updatedRow.updated_at
+    : (typeof row?.updated_at === 'string' ? row.updated_at : null)
+  const evaluated = evaluateForeclosureStale({ newestCreatedAt, newestUpdatedAt, now })
   return {
     newestCreatedAt,
     newestUpdatedAt,
@@ -176,27 +203,22 @@ export async function ensureForeclosureIngestControls(actor: AuthenticatedActor)
 }
 
 /**
- * Resolve an ingest payload without inventing PropStream API shapes.
- * Supported today:
- * - `csv_url` when FORECLOSURE_INGEST_CSV_URL is set (returns pilot CSV)
- * - explicit CSV body passed by the caller (manual / GH Action drop)
- * PropStream remains not_configured until operator supplies documented base URL + key.
+ * County public filing pull. No PropStream client and no owner CSV upload.
+ * Optional override: FORECLOSURE_INGEST_PROVIDER=csv_url plus FORECLOSURE_INGEST_CSV_URL,
+ * or a CSV body on POST, for a one-off replay. That is not the daily path.
  */
 export async function resolveForeclosureIngestProvider(input?: {
   csvBody?: string | null
+  now?: Date
 }): Promise<ForeclosureProviderStatus> {
   const documentedSecrets = [
-    'FORECLOSURE_INGEST_PROVIDER',
-    'FORECLOSURE_INGEST_CSV_URL',
-    'PROPSTREAM_API_KEY',
-    'PROPSTREAM_API_BASE_URL',
-    'PROPSTREAM_ACCOUNT_ID',
-    'FORECLOSURE_INGEST_ACTOR_EMAIL',
-    'FORECLOSURE_STALE_ALERT_TO',
-    'FORECLOSURE_STALE_ALERT_MIN_INTERVAL_HOURS',
+    'CRON_SECRET',
     'RESEND_API_KEY',
     'RESEND_FROM_EMAIL',
-    'CRON_SECRET',
+    'FORECLOSURE_STALE_ALERT_TO',
+    'FORECLOSURE_STALE_ALERT_MIN_INTERVAL_HOURS',
+    'FORECLOSURE_INGEST_ACTOR_EMAIL',
+    'FORECLOSURE_NR_PAGE_CAP',
   ]
 
   if (typeof input?.csvBody === 'string' && input.csvBody.trim()) {
@@ -208,18 +230,24 @@ export async function resolveForeclosureIngestProvider(input?: {
     }
   }
 
-  const provider = (process.env.FORECLOSURE_INGEST_PROVIDER || '').trim().toLowerCase() || 'unset'
-  const csvUrl = (process.env.FORECLOSURE_INGEST_CSV_URL || '').trim()
-  const propstreamKey = (process.env.PROPSTREAM_API_KEY || '').trim()
-  const propstreamBase = (process.env.PROPSTREAM_API_BASE_URL || '').trim()
-  const propstreamAccount = (process.env.PROPSTREAM_ACCOUNT_ID || '').trim()
+  const provider = (process.env.FORECLOSURE_INGEST_PROVIDER || '').trim().toLowerCase() || 'county_public'
+  if (provider === 'propstream') {
+    return {
+      status: 'not_configured',
+      provider: 'propstream',
+      reason: 'PropStream is not a foreclosure ingest provider. This repo has no PropStream API client and will not invent one. Daily ingest is county_public. PropStream may be used later for equity only. MLS/Matrix is value and comps only.',
+      missingSecrets: [],
+      documentedSecrets,
+    }
+  }
 
-  if (provider === 'csv_url' || (!provider || provider === 'unset') && csvUrl) {
+  if (provider === 'csv_url') {
+    const csvUrl = (process.env.FORECLOSURE_INGEST_CSV_URL || '').trim()
     if (!csvUrl) {
       return {
         status: 'not_configured',
         provider: 'csv_url',
-        reason: 'FORECLOSURE_INGEST_PROVIDER=csv_url but FORECLOSURE_INGEST_CSV_URL is empty.',
+        reason: 'FORECLOSURE_INGEST_PROVIDER=csv_url but FORECLOSURE_INGEST_CSV_URL is empty. Daily ingest should stay on county_public.',
         missingSecrets: ['FORECLOSURE_INGEST_CSV_URL'],
         documentedSecrets,
       }
@@ -231,54 +259,42 @@ export async function resolveForeclosureIngestProvider(input?: {
         cache: 'no-store',
       })
       if (!response.ok) {
-        return {
-          status: 'error',
-          provider: 'csv_url',
-          reason: `CSV drop URL returned HTTP ${response.status}.`,
-        }
+        return { status: 'error', provider: 'csv_url', reason: `CSV drop URL returned HTTP ${response.status}.` }
       }
       const csv = await response.text()
-      if (!csv.trim()) {
-        return {
-          status: 'error',
-          provider: 'csv_url',
-          reason: 'CSV drop URL returned an empty body.',
-        }
-      }
-      return {
-        status: 'ready',
-        provider: 'csv_url',
-        csv,
-        source: csvUrl,
-      }
+      if (!csv.trim()) return { status: 'error', provider: 'csv_url', reason: 'CSV drop URL returned an empty body.' }
+      return { status: 'ready', provider: 'csv_url', csv, source: csvUrl }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'csv_url_fetch_failed'
       return { status: 'error', provider: 'csv_url', reason: message.slice(0, 300) }
     }
   }
 
-  if (provider === 'propstream' || propstreamKey || propstreamBase || propstreamAccount) {
-    const missing: string[] = []
-    if (!propstreamKey) missing.push('PROPSTREAM_API_KEY')
-    if (!propstreamBase) missing.push('PROPSTREAM_API_BASE_URL')
-    // Account id is optional depending on PropStream's real docs — still listed.
+  const pulled = await fetchCountyPublicCsv({ now: input?.now })
+  if (!pulled.ok && pulled.stats.importable === 0 && pulled.errors.length >= 4) {
     return {
-      status: 'not_configured',
-      provider: 'propstream',
-      reason:
-        'PropStream pull is scaffolded only. This repo has no first-hand PropStream API docs or client. Set PROPSTREAM_API_BASE_URL from PropStream\'s own documentation (do not invent paths), then wire the client. Until then use FORECLOSURE_INGEST_PROVIDER=csv_url + FORECLOSURE_INGEST_CSV_URL or POST CSV to the cron.',
-      missingSecrets: missing.length ? missing : ['PROPSTREAM_API_BASE_URL (documented endpoint required)'],
-      documentedSecrets,
+      status: 'error',
+      provider: 'county_public',
+      reason: pulled.errors.slice(0, 4).join('; ') || 'county_public sources failed',
+      sourceNotes: pulled.notes,
     }
   }
-
+  if (pulled.stats.importable === 0) {
+    return {
+      status: 'not_configured',
+      provider: 'county_public',
+      reason: 'County public sources ran but produced no owner+situs rows to import. JoCo sales without a SouthLaw address and Legal Record MF lines without a case match are skipped. mopublicnotices still needs computerUse.',
+      missingSecrets: [],
+      documentedSecrets,
+      sourceNotes: pulled.notes,
+    }
+  }
   return {
-    status: 'not_configured',
-    provider,
-    reason:
-      'No foreclosure feed is configured. Export PropStream (or county) CSVs to FORECLOSURE_INGEST_CSV_URL, or POST the pilot CSV to /api/cron/foreclosure-ingest. Do not invent PropStream endpoints.',
-    missingSecrets: ['FORECLOSURE_INGEST_PROVIDER', 'FORECLOSURE_INGEST_CSV_URL'],
-    documentedSecrets,
+    status: 'ready',
+    provider: 'county_public',
+    csv: pulled.csv,
+    source: 'county_public',
+    sourceNotes: pulled.notes,
   }
 }
 
@@ -360,7 +376,7 @@ export async function sendForeclosureStaleAlert(input: {
     'Notes:',
     ...(input.notes.length ? input.notes.map((note) => `- ${note}`) : ['- (none)']),
     '',
-    'This alert fails soft and never sends SMS. Fix by dropping pilot CSV to FORECLOSURE_INGEST_CSV_URL or POSTing CSV to /api/cron/foreclosure-ingest.',
+    'This alert fails soft and never sends SMS. Daily ingest is county_public (JoCo sheriff, Legal Record, SouthLaw, NoticeRegistry). mopublicnotices still needs a computerUse browser. No manual CSV and no PropStream ingest.',
   ].join('\n')
 
   try {
@@ -413,9 +429,10 @@ export async function runForeclosureDailyIngest(input?: {
   let importResult: ForeclosureDailyIngestResult['import'] = null
   let watermarksAdvanced: ForeclosureDailyIngestResult['watermarksAdvanced'] = []
 
+  if (provider.sourceNotes?.length) notes.push(...provider.sourceNotes)
   if (provider.status === 'ready') {
     if (activeControls.length === 0) {
-      notes.push('All ingest controls are paused — CSV was not imported.')
+      notes.push('All ingest controls are paused — county rows were not imported.')
     } else {
       const imported = await importForeclosureCsv(actor, provider.csv)
       importResult = {
