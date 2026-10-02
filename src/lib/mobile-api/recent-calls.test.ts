@@ -23,6 +23,27 @@ describe('mobile recent call projection', () => {
     expect(items.find((item) => item.id === 'missed')).toMatchObject({ direction: 'inbound', phone: '+18165550125', outcome: 'no_answer' })
   })
 
+  it('retains cold-callback classification when a higher-ranked disposition wins the grouped call', () => {
+    const items = buildMobileRecentCalls([
+      row('callback', { callSid: 'callback-1', direction: 'inbound', calledNumber: '+18166404701', from: '+18165550125' }),
+      row('disposition', { source: 'savingkc_mobile', callSid: 'callback-1', direction: 'inbound', outcome: 'no_answer', from: '+18165550125' }, '2026-10-01T12:01:00Z'),
+      row('company', { direction: 'inbound', calledNumber: '+18166088588', from: '+18165550126', outcome: 'no_answer' }),
+    ])
+    expect(items.find((item) => item.id === 'disposition')).toMatchObject({ inboundRoute: 'cold_callback', direction: 'inbound' })
+    expect(items.find((item) => item.id === 'company')).toMatchObject({ inboundRoute: null, direction: 'inbound' })
+  })
+
+  it('classifies only explicit legacy cold-callback markers when the called DID is unavailable', () => {
+    const items = buildMobileRecentCalls([
+      row('press-one', { direction: 'inbound', source: 'cold_callback_press_1', from: '+18165550125' }),
+      row('no-input', { direction: 'inbound', tag: 'cold_callback_no_input', from: '+18165550126' }),
+      row('ordinary', { direction: 'inbound', source: 'inbound_ivr', from: '+18165550127' }),
+    ])
+    expect(items.find((item) => item.id === 'press-one')?.inboundRoute).toBe('cold_callback')
+    expect(items.find((item) => item.id === 'no-input')?.inboundRoute).toBe('cold_callback')
+    expect(items.find((item) => item.id === 'ordinary')?.inboundRoute).toBeNull()
+  })
+
   it('keeps a provider recording and real agent on a higher-ranked operator disposition', () => {
     const recordingActivityId = '11111111-1111-4111-8111-111111111111'
     const recordingSid = `RE${'a'.repeat(32)}`

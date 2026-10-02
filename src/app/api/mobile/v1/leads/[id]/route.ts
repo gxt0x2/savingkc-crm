@@ -8,6 +8,7 @@ import { listWorkItems } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { mobileRecordingUrl } from '@/lib/mobile-api/mojo-recording'
 import { twilioRecordingSid } from '@/lib/mobile-api/twilio-recording'
+import { mobileInboundRoute } from '@/lib/mobile-api/inbound-route'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -122,7 +123,8 @@ export async function GET(
       const recordingUrl = mobileRecordingUrl(activity.id, metadata, process.env.TWILIO_ACCOUNT_SID, twilioRecordingSid)
       const safeMetadata = { ...metadata }
       for (const key of ['recordingUrl', 'recording_url', 'RecordingUrl', 'recording']) delete safeMetadata[key]
-      return { ...activity, metadata: { ...safeMetadata, ...(recordingUrl ? { recordingUrl } : {}) } }
+      const inboundRoute = mobileInboundRoute(safeMetadata, activity.description)
+      return { ...activity, metadata: { ...safeMetadata, ...(recordingUrl ? { recordingUrl } : {}), ...(inboundRoute ? { inboundRoute } : {}) } }
     })
 
     return NextResponse.json(

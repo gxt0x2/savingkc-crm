@@ -1,5 +1,6 @@
 import { twilioRecordingSid } from '@/lib/mobile-api/twilio-recording'
 import { mobileRecordingUrl } from '@/lib/mobile-api/mojo-recording'
+import { mobileInboundRoute, type MobileInboundRoute } from '@/lib/mobile-api/inbound-route'
 
 export type RecentCallActivityRow = {
   id: string
@@ -21,6 +22,7 @@ export type MobileRecentCallItem = {
   outcome: 'answered' | 'no_answer' | 'voicemail' | 'bad_number' | 'dnc' | 'failed'
   note: string | null
   source: string | null
+  inboundRoute: MobileInboundRoute | null
   providerStatus: string | null
   recordingUrl: string | null
   agent: string | null
@@ -96,6 +98,9 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
   const direction = ['inbound', 'incoming', 'in', 'received', 'inbound-api'].includes(directionValue || '')
     || row.activity_type === 'missed_call' ? 'inbound' : 'outbound'
   const combined = Object.assign({}, ...groupedRows.slice().reverse().map((candidate) => identityMetadata(candidate.metadata ?? {}))) as Record<string, string>
+  const inboundRoute = direction === 'inbound'
+    ? groupedRows.map((candidate) => mobileInboundRoute(candidate.metadata ?? {}, candidate.description)).find(Boolean) ?? null
+    : null
   const actualAgent = row.agent?.trim() || groupedRows.map((candidate) => candidate.agent?.trim()).find(Boolean)
     || text(metadata, 'agent', 'userEmail') || null
   if (actualAgent && !combined.agent_identity) combined.agent_identity = actualAgent
@@ -112,6 +117,7 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
     outcome: outcomeFor(row, metadata),
     note: text(metadata, 'notes') || row.description?.trim() || null,
     source: text(metadata, 'source'),
+    inboundRoute,
     providerStatus: text(metadata, 'status'),
     recordingUrl: (() => {
       const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim()
