@@ -39,7 +39,8 @@ describe('workspace navigation', () => {
 
     const navigationRegion = screen.getByRole('navigation', { name: 'CRM navigation' })
     const labels = within(navigationRegion).getAllByRole('link').map((link) => link.getAttribute('aria-label'))
-    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Scorecard', 'Task', 'Dispositions', 'Reports', 'Settings'])
+    expect(labels).toEqual(['Dashboard', 'Issue Log', 'Pipeline', 'Prospecting', 'Market', 'Conversations', 'Calendar', 'Scorecard', 'Task', 'Dispositions', 'Reports', 'Settings'])
+    expect(within(navigationRegion).getByRole('link', { name: 'Market' })).toHaveAttribute('href', '/market-watch')
     expect(within(navigationRegion).getByRole('link', { name: 'Pipeline' })).toHaveAttribute('href', '/contacts?list=contacted')
     expect(within(navigationRegion).getByRole('link', { name: 'Issue Log' })).toHaveAttribute('href', '/reports/andon')
     expect(within(navigationRegion).getByRole('link', { name: 'Dispositions' })).toHaveAttribute('href', '/dispo/pipeline')
@@ -54,6 +55,8 @@ describe('workspace navigation', () => {
     render(<WorkspaceNav needsReply={0} userEmail="ernest@savingkc.com" />)
     const prospecting = screen.getByRole('link', { name: 'Prospecting' })
     expect(prospecting).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Market' })).toHaveAttribute('href', '/market-watch')
+    expect(screen.getByRole('link', { name: 'Market' })).not.toHaveAttribute('aria-current')
     fireEvent.pointerEnter(prospecting.parentElement!.parentElement!)
     const sections = screen.getByRole('navigation', { name: 'Prospecting sections' })
     expect(within(sections).getByRole('link', { name: 'Email' })).toHaveAttribute('href', '/marketing/email')
@@ -112,13 +115,13 @@ describe('workspace navigation', () => {
     const { rerender } = render(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" />)
     const caseyNavigation = screen.getByRole('navigation', { name: 'CRM navigation' })
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Market', 'Conversations', 'Calendar', 'Task', 'Settings',
     ])
     expect(screen.getByRole('link', { name: 'Saving KC CRM dashboard' })).toHaveAttribute('href', '/my-day')
 
     rerender(<WorkspaceNav needsReply={0} userEmail="casey@savingkc.com" canReviewCalls />)
     expect(within(caseyNavigation).getAllByRole('link').map((link) => link.getAttribute('aria-label'))).toEqual([
-      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Task', 'Settings',
+      'My Day', 'Daily Rhythm', 'Pipeline', 'Prospecting', 'Market', 'Conversations', 'Calendar', 'Task', 'Settings',
     ])
   })
 
@@ -151,6 +154,7 @@ describe('workspace navigation', () => {
 
     const more = screen.getByRole('dialog', { name: 'More navigation' })
     expect(within(more).getAllByRole('link', { name: /Dispositions/ }).map((link) => link.getAttribute('href'))).toContain('/dispo/pipeline')
+    expect(within(more).getByRole('link', { name: 'Market' })).toHaveAttribute('href', '/market-watch')
   })
 
   it('keeps the system Andon available from the shared CRM navigation', async () => {

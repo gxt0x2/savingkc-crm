@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Issue Log', icon: 'warning_amber', href: '/reports/andon', activeOn: ['/reports/andon', '/reports/bottlenecks'] },
   { label: 'Pipeline', icon: 'account_tree', href: '/contacts?list=contacted', activeOn: ['/contacts', '/leads', '/opportunities', '/in-closing'] },
   { label: 'Prospecting', icon: 'campaign', href: '/prospecting', activeOn: ['/prospecting', '/dialer', '/marketing/email'] },
+  { label: 'Market', icon: 'insights', href: '/market-watch', activeOn: ['/market-watch'] },
   { label: 'Conversations', icon: 'forum', href: '/conversations', activeOn: ['/conversations'] },
   { label: 'Calendar', icon: 'calendar_month', href: '/calendar?department=acquisitions', activeOn: ['/calendar'] },
   { label: 'Scorecard', icon: 'fact_check', href: '/scorecard', activeOn: ['/scorecard'] },
@@ -30,10 +31,10 @@ const NAV_ITEMS: NavItem[] = [
 const CASEY_NAV_ITEMS: NavItem[] = [
   { label: 'My Day', icon: 'today', href: '/my-day', activeOn: ['/my-day'] },
   { label: 'Daily Rhythm', icon: 'routine', href: '/checklist', activeOn: ['/checklist'] },
-  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Prospecting', 'Conversations', 'Calendar', 'Task', 'Settings'].includes(item.label)),
+  ...NAV_ITEMS.filter((item) => ['Pipeline', 'Prospecting', 'Market', 'Conversations', 'Calendar', 'Task', 'Settings'].includes(item.label)),
 ]
 
-const WARM_NAV_LABELS = new Set(['Dashboard', 'My Day', 'Pipeline', 'Prospecting', 'Conversations', 'Task', 'Dispositions'])
+const WARM_NAV_LABELS = new Set(['Dashboard', 'My Day', 'Pipeline', 'Prospecting', 'Market', 'Conversations', 'Task', 'Dispositions'])
 
 function workspaceItemsFor(userEmail?: string | null, canReviewCalls = false) {
   const isCasey = isCaseyCrmUser(userEmail)

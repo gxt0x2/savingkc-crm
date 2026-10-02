@@ -19,6 +19,7 @@ const ROUTE_SECTIONS: Array<[string, string]> = [
   ['/contacts', 'Contacts'],
   ['/leads', 'Lead details'],
   ['/conversations', 'Conversations'],
+  ['/market-watch', 'Market'],
   ['/prospecting', 'Prospecting'],
   ['/dialer', 'Prospecting'],
   ['/calendar', 'Calendar'],
