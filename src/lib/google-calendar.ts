@@ -23,6 +23,8 @@ export type AppointmentCalendarSyncResult =
   | { status: 'synced'; eventId: string }
   | { status: 'skipped'; reason: string }
 
+type SkippedAppointmentCalendarSyncResult = Extract<AppointmentCalendarSyncResult, { status: 'skipped' }>
+
 const TYPE_LABELS: Record<string, string> = {
   in_person: 'In-Person Visit',
   phone_call: 'Phone Call',
@@ -81,7 +83,7 @@ export function googleCalendarDeleteWarning(
   return googleCalendarSyncWarning(result) ?? 'Google Calendar event was not removed.'
 }
 
-function skipCalendarSync(appointmentId: string, reason: string): AppointmentCalendarSyncResult {
+function skipCalendarSync(appointmentId: string, reason: string): SkippedAppointmentCalendarSyncResult {
   const line = `[google-calendar] skip ${appointmentId}: ${reason}`
   if (EXPECTED_CALENDAR_SYNC_FAILURES.has(reason)) console.warn(line)
   else console.info(line)
@@ -154,9 +156,9 @@ type CalendarAccessInput = {
   getAccessToken?: typeof getValidAccessTokenResult
 }
 
-async function resolveAppointmentCalendarAccess(input: CalendarAccessInput): Promise<
+export async function resolveAppointmentCalendarAccess(input: CalendarAccessInput): Promise<
   | { ok: true; accessToken: string }
-  | { ok: false; result: AppointmentCalendarSyncResult }
+  | { ok: false; result: SkippedAppointmentCalendarSyncResult }
 > {
   const ownerEmail = selectAppointmentGoogleOwnerEmail({
     actorEmail: input.actorEmail,

@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mocks = vi.hoisted(() => ({ requireMobileUser: vi.fn(), admin: vi.fn(), listWorkItems: vi.fn() }))
+const mocks = vi.hoisted(() => ({ requireMobileUser: vi.fn(), authorizeLead: vi.fn(), admin: vi.fn(), listWorkItems: vi.fn() }))
 vi.mock('@/lib/mobile-api/auth', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/mobile-api/auth')>(), requireMobileUser: mocks.requireMobileUser,
 }))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: mocks.admin }))
+vi.mock('@/lib/mobile-api/authorized-lead', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/mobile-api/authorized-lead')>(),
+  requireAuthorizedMobileLead: mocks.authorizeLead,
+}))
 vi.mock('@/lib/server/work-items', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/server/work-items')>(), listWorkItems: mocks.listWorkItems,
 }))
@@ -14,7 +18,7 @@ import { GET } from './route'
 
 const context = { params: Promise.resolve({ id: 'lead-1' }) }
 
-function database() {
+function database(activities: Array<Record<string, unknown>> = []) {
   return {
     from(table: string) {
       if (table === 'leads') {
@@ -23,7 +27,7 @@ function database() {
         }) }) }) }
       }
       if (table === 'lead_activities') {
-        return { select: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }) }
+        return { select: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: activities, error: null }) }) }) }) }
       }
       return {
         select: () => ({
@@ -40,6 +44,7 @@ describe('mobile lead operations detail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.requireMobileUser.mockResolvedValue({ user: { email: 'casey@savingkc.com' } })
+    mocks.authorizeLead.mockResolvedValue({ actor: { email: 'casey@savingkc.com' }, lead: { id: 'lead-1' } })
     mocks.admin.mockReturnValue(database())
     mocks.listWorkItems.mockResolvedValue([{ key: 'activity:task-1', primaryNextAction: true }])
   })
@@ -71,5 +76,29 @@ describe('mobile lead operations detail', () => {
     await expect(response.json()).resolves.toMatchObject({
       operations: { primaryNextAction: null, tasksAvailable: false },
     })
+  })
+
+  it('returns property fact inputs only after actor authorization', async () => {
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/leads/lead-1', {
+      headers: { Authorization: 'Bearer token' },
+    }), context)
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({ propertyFacts: { lead: {}, property: null } })
+    expect(mocks.authorizeLead).toHaveBeenCalledOnce()
+  })
+
+  it('maps copied Mojo evidence to a scoped CRM playback URL and strips raw provider URLs', async () => {
+    const activityId = '11111111-1111-4111-8111-111111111111'
+    const eventId = '22222222-2222-4222-8222-222222222222'
+    mocks.admin.mockReturnValue(database([{ id: activityId, activity_type: 'call', created_at: '2026-10-01T12:00:00Z',
+      metadata: { provider: 'mojo', event_id: eventId, recording_storage_path: `events/${eventId}.mp3`,
+        recordingUrl: 'https://app71.mojosells.com/protected.mp3' } }]))
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/leads/lead-1', {
+      headers: { Authorization: 'Bearer token' },
+    }), context)
+    const payload = await response.json()
+    expect(response.status).toBe(200)
+    expect(payload.activities[0].metadata.recordingUrl).toBe(`/api/mobile/v1/calls/${activityId}/recording`)
+    expect(JSON.stringify(payload.activities)).not.toContain('app71.mojosells.com')
   })
 })

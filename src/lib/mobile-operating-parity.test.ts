@@ -33,12 +33,13 @@ describe('mobile operating parity contract', () => {
     expect(calendarScreen).not.toMatch(/supabase|\.from\(/i)
   })
 
-  it('initializes iOS PushKit early and binds the production VoIP credential into mobile tokens', () => {
+  it('initializes iOS PushKit early and binds configured VoIP credentials without blocking outbound tokens', () => {
     expect(app).toContain('void initializeTwilioVoice().catch(() => null)')
     expect(twilioVoice).toContain("Platform.OS !== 'ios'")
     expect(twilioVoice).toContain('voice.initializePushRegistry()')
     expect(twilioTokenRoute).toContain("cleanTwilioEnv('TWILIO_VOIP_PUSH_CREDENTIAL_SID')")
-    expect(twilioTokenRoute).toContain('pushCredentialSid,')
+    expect(twilioTokenRoute).toMatch(/\.\.\.\(pushCredentialSid\s*\?\s*\{\s*pushCredentialSid\s*\}\s*:\s*\{\}\)/)
+    expect(twilioTokenRoute).toContain('incomingPushConfigured: Boolean(pushCredentialSid)')
     expect(environmentExample).toContain('TWILIO_VOIP_PUSH_CREDENTIAL_SID=')
   })
 

@@ -3,6 +3,7 @@ import twilio from 'twilio'
 import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { cleanTwilioEnv, resolveTwimlAppSid } from '@/lib/telephony/twiml-app'
+import { resolveMobileScopedActor } from '@/lib/mobile-api/authorized-lead'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -18,6 +19,10 @@ const CALLING_UNAVAILABLE = 'Calling is temporarily unavailable'
 export async function GET(req: NextRequest) {
   try {
     const { user } = await requireMobileUser(req)
+    const email = user.email?.trim().toLowerCase()
+    if (!email || !await resolveMobileScopedActor(email)) {
+      return NextResponse.json({ error: 'CRM profile not authorized' }, { status: 403, headers: mobileNoStoreHeaders() })
+    }
     const accountSid = cleanTwilioEnv('TWILIO_ACCOUNT_SID')
     const apiKey = cleanTwilioEnv('TWILIO_API_KEY')
     const apiSecret = cleanTwilioEnv('TWILIO_API_SECRET')
@@ -27,7 +32,6 @@ export async function GET(req: NextRequest) {
       !accountSid && 'TWILIO_ACCOUNT_SID',
       !apiKey && 'TWILIO_API_KEY',
       !apiSecret && 'TWILIO_API_SECRET',
-      !pushCredentialSid && 'TWILIO_VOIP_PUSH_CREDENTIAL_SID',
     ].filter(Boolean)
 
     if (missing.length > 0) {
@@ -45,13 +49,13 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const profile = resolveAgentTelephonyProfile(user.email)
+    const profile = resolveAgentTelephonyProfile(email)
     const { identity } = profile
     const token = new AccessToken(accountSid, apiKey, apiSecret, { identity, ttl: 3600 })
     token.addGrant(new VoiceGrant({
       outgoingApplicationSid,
       incomingAllow: true,
-      pushCredentialSid,
+      ...(pushCredentialSid ? { pushCredentialSid } : {}),
     }))
 
     return NextResponse.json(
@@ -60,6 +64,7 @@ export async function GET(req: NextRequest) {
         identity,
         callerId: profile.defaultCallerId,
         displayName: profile.displayName,
+        incomingPushConfigured: Boolean(pushCredentialSid),
       },
       { headers: mobileNoStoreHeaders() },
     )

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
-import { requireMobileUser, mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
+import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { sendLeadSms } from '@/lib/send-lead-sms'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -16,7 +17,6 @@ export function OPTIONS() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireMobileUser(req)
     const input = await req.json().catch(() => null) as { leadId?: string; channel?: 'sms' | 'email'; body?: string; subject?: string } | null
     const leadId = input?.leadId?.trim()
     const body = input?.body?.trim()
@@ -24,13 +24,14 @@ export async function POST(req: NextRequest) {
     if (!leadId || !body || (channel !== 'sms' && channel !== 'email')) {
       return NextResponse.json({ error: 'leadId, channel, and body are required' }, { status: 400, headers: mobileNoStoreHeaders() })
     }
+    const { actor } = await requireAuthorizedMobileLead(req, leadId)
 
     const db = supabaseAdmin()
     const { data: lead, error: leadError } = await db.from('leads').select('id, phone, email').eq('id', leadId).maybeSingle()
     if (leadError) throw new Error(leadError.message)
     if (!lead) return NextResponse.json({ error: 'Contact not found' }, { status: 404, headers: mobileNoStoreHeaders() })
 
-    const profile = resolveAgentTelephonyProfile(user.email)
+    const profile = resolveAgentTelephonyProfile(actor.email)
     if (channel === 'sms') {
       if (!lead.phone) return NextResponse.json({ error: 'This contact has no phone number' }, { status: 400, headers: mobileNoStoreHeaders() })
       const result = await sendLeadSms({
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
         phone: lead.phone,
         body,
         fromPhone: profile.defaultCallerId,
-        agent: profile.displayName,
+        agent: actor.fullName,
         source: 'mobile_app',
       })
       if (result.status === 'failed') return NextResponse.json({ error: result.error }, { status: 502, headers: mobileNoStoreHeaders() })
@@ -73,14 +74,14 @@ export async function POST(req: NextRequest) {
       lead_id: leadId,
       activity_type: 'email',
       description: body,
-      agent: profile.displayName,
+      agent: actor.fullName,
       metadata: { direction: 'outbound', to: lead.email, subject, sent, source: 'mobile_app' },
     })
     if (activityError) throw new Error(activityError.message)
     checkAutoAdvance(leadId, 'outbound_contact').catch((error) => console.error('[mobile-message] auto advance failed', error))
     return NextResponse.json({ success: true, channel, sent }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
-    const status = error instanceof MobileAuthError ? error.status : 500
+    const status = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.status : 500
     const message = error instanceof Error ? error.message : 'Internal error'
     return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }
