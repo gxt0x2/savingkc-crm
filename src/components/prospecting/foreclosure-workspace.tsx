@@ -1,28 +1,17 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
-import { ForeclosureMap } from '@/components/prospecting/foreclosure-map'
-import { ForeclosureKpis, ForeclosureStatusPill } from '@/components/prospecting/foreclosure-mobile'
+import { ForeclosureListTable } from '@/components/prospecting/foreclosure-list-table'
 import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
-import { Icon } from '@/components/ui/icon'
-import { formatPhone } from '@/lib/format'
+import { foreclosureClearsDialFloor } from '@/lib/prospecting/foreclosure-list'
 import {
   FIRST_FORECLOSURE_COUNTIES,
   NOTICE_TYPE_LABELS,
   STATUS_LABELS,
-  auctionUrgency,
   chicagoDate,
-  daysUntilSale,
-  foreclosureMapPins,
-  formatEquity,
-  formatLtv,
-  formatNoticeOrdinal,
   formatUsDate,
-  listRowPhones,
-  loanToValuePercent,
   type EquityBand,
   type ForeclosureNoticeType,
   type ForeclosureStatus,
@@ -36,7 +25,7 @@ interface ForeclosureListItem {
   state: string
   county: string
   saleDate: string | null
-  noticeOrFilingDate: string | null
+  noticeOrFilingDate?: string | null
   noticesSent?: number
   outreachCount?: number
   caseNumber: string | null
@@ -48,6 +37,8 @@ interface ForeclosureListItem {
   priority: boolean
   phones: string[]
   dialReady: boolean
+  zip?: string | null
+  demo?: boolean
   latitude: number | null
   longitude: number | null
   noticeType?: ForeclosureNoticeType | null
@@ -67,23 +58,19 @@ async function readJson<T>(response: Response): Promise<T & { error?: string }> 
   return await response.json() as T & { error?: string }
 }
 
-function outreachOf(item: { outreachCount?: number; noticesSent?: number }) {
-  return item.outreachCount ?? item.noticesSent ?? 0
-}
-
 function countyLabel(county: string, state: string) {
   return FIRST_FORECLOSURE_COUNTIES.find((item) => item.county === county)?.label ?? `${county} ${state}`
 }
 
 export function ForeclosureWorkspace() {
   const router = useRouter()
-  const today = chicagoDate()
   const [prospects, setProspects] = useState<ForeclosureListItem[]>([])
   const [controls, setControls] = useState<IngestControl[]>([])
   const [county, setCounty] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState('new')
   const [dialReadyOnly, setDialReadyOnly] = useState(false)
   const [saleThisWeek, setSaleThisWeek] = useState(false)
+  const [newToday, setNewToday] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -190,20 +177,6 @@ export function ForeclosureWorkspace() {
     }
   }
 
-  async function startCall(id: string) {
-    setBusy(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/prospecting/foreclosure/${id}/call`, { method: 'POST' })
-      const body = await readJson<{ href: string }>(response)
-      if (!response.ok || !body.href) throw new Error(body.error || 'This prospect is not ready to call.')
-      router.push(body.href)
-    } catch (callError) {
-      setError(callError instanceof Error ? callError.message : 'This prospect is not ready to call.')
-      setBusy(false)
-    }
-  }
-
   async function toggleIngest(control: IngestControl) {
     setBusy(true)
     setError(null)
@@ -223,44 +196,46 @@ export function ForeclosureWorkspace() {
     }
   }
 
-  const pins = foreclosureMapPins(prospects)
+  const today = chicagoDate()
+  const visible = prospects.filter((row) => {
+    if (status === 'new' && !foreclosureClearsDialFloor(row.estEquity)) return false
+    if (newToday && row.noticeOrFilingDate !== today) return false
+    return true
+  })
 
   return <>
     <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
-    <main className="fc-mobile min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-        <div className="mx-auto max-w-[90rem] space-y-3">
+    <main className="fc-mobile min-h-0 flex-1 overflow-y-auto p-2 sm:p-3">
+        <div className="mx-auto max-w-[90rem] space-y-2">
         <ProspectingSectionNav current="foreclosure" />
-        <div className="flex flex-wrap items-center gap-1.5">
-          {FIRST_FORECLOSURE_COUNTIES.map((item) => <span key={item.county} className="fc-chip">{item.label}</span>)}
-          <span className="fc-chip">$75k floor</span>
-        </div>
+        <p className="fc-crumb">Prospecting <span aria-hidden="true">›</span> Foreclosure</p>
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
-        <div className="fc-stage">
-        <div className="min-w-0 space-y-3">
-        <section className="crm-panel flex flex-wrap items-end gap-2 p-2">
-          <label className="text-xs font-bold text-[var(--fc-text)]">County
-            <select aria-label="County" value={county} onChange={(event) => setCounty(event.target.value)} className="crm-field mt-1 block h-9 px-2 text-sm font-semibold">
-              <option value="">All counties</option>
-              {FIRST_FORECLOSURE_COUNTIES.map((item) => <option key={item.county} value={item.county}>{item.label}</option>)}
-            </select>
-          </label>
-          <label className="text-xs font-bold text-[var(--fc-text)]">Status
-            <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)} className="crm-field mt-1 block h-9 px-2 text-sm font-semibold">
-              <option value="">All statuses</option>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <label className="flex h-9 items-center gap-2 text-sm font-bold">
-            <input type="checkbox" checked={dialReadyOnly} onChange={(event) => setDialReadyOnly(event.target.checked)} />
-            Dial-ready only
-          </label>
-          <label className="flex h-9 items-center gap-2 text-sm font-bold">
-            <input type="checkbox" checked={saleThisWeek} onChange={(event) => setSaleThisWeek(event.target.checked)} />
-            Sale this week
-          </label>
+        <section className="fc-filters" aria-label="Foreclosure filters">
+          <div className="fc-filter-bar">
+            <div className="fc-quick" role="group" aria-label="Quick filters">
+              <button type="button" aria-pressed={dialReadyOnly} onClick={() => setDialReadyOnly((value) => !value)}>Dial-ready</button>
+              <button type="button" aria-pressed={saleThisWeek} onClick={() => setSaleThisWeek((value) => !value)}>Sale this week</button>
+              <button type="button" aria-pressed={newToday} onClick={() => setNewToday((value) => !value)}>Today</button>
+            </div>
+            <label className="fc-advanced-field">
+              <span>County</span>
+              <select aria-label="County" value={county} onChange={(event) => setCounty(event.target.value)}>
+                <option value="">All counties</option>
+                {FIRST_FORECLOSURE_COUNTIES.map((item) => <option key={item.county} value={item.county}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="fc-advanced-field">
+              <span>Status</span>
+              <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="">All statuses</option>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <button type="button" className="fc-clear" onClick={() => { setCounty(''); setStatus('new'); setDialReadyOnly(false); setSaleThisWeek(false); setNewToday(false) }}>Clear</button>
+          </div>
           <details className="fc-import">
-          <summary className="crm-secondary-button inline-flex h-9 cursor-pointer items-center px-3 text-xs font-black">Import or add a prospect</summary>
+          <summary className="fc-import-summary">Import or add a prospect</summary>
           <div className="mt-3 space-y-3">
             <form aria-label="Import foreclosure CSV" onSubmit={(event) => void importCsv(event)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <label className="min-w-0 flex-1 text-xs font-bold text-[var(--fc-text-secondary)]">Pilot CSV
@@ -351,52 +326,11 @@ export function ForeclosureWorkspace() {
           </div>
         </details>
         </section>
-        <section className="space-y-2" aria-label="Foreclosure prospects">
-          {loading ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospects…</p> : null}
-          {!loading && prospects.length === 0 ? <p className="crm-panel px-4 py-6 text-sm text-[var(--fc-text-secondary)]">No mortgage foreclosure prospects in this queue.</p> : null}
-          {prospects.map((prospect) => {
-            const phones = listRowPhones(prospect.dialReady, prospect.phones)
-            const days = daysUntilSale(prospect.saleDate, today)
-            const noticeType = prospect.noticeType ? NOTICE_TYPE_LABELS[prospect.noticeType] : null
-            return <article key={prospect.id} className="crm-panel p-3 sm:p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="fc-kicker">{countyLabel(prospect.county, prospect.state)}{noticeType ? ` · ${noticeType}` : ''}</p>
-                  <Link href={`/prospecting/foreclosure/${prospect.id}`} className="fc-card-link">{prospect.ownerName}</Link>
-                  <p className="text-sm text-[var(--fc-text-secondary)]">{prospect.situs}{prospect.city ? `, ${prospect.city}` : ''} {prospect.state}</p>
-                </div>
-                <ForeclosureStatusPill status={prospect.status} />
-              </div>
-              <div className="mt-3">
-                <ForeclosureKpis items={[
-                  { label: 'Equity', value: formatEquity(prospect.estEquity) },
-                  { label: 'Loan balance', value: formatEquity(prospect.estDebt ?? null) },
-                  { label: 'LTV', value: formatLtv(loanToValuePercent(prospect.estValue ?? null, prospect.estDebt ?? null)) },
-                  { label: 'Days to auction', value: days == null ? '—' : String(days), tone: auctionUrgency(days) },
-                ]} />
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-[var(--fc-text-secondary)]">
-                  {formatNoticeOrdinal(prospect.noticeNumber ?? null) ? <span className="fc-chip">{formatNoticeOrdinal(prospect.noticeNumber ?? null)}</span> : null}
-                  <span className="fc-chip">Sale <span>{formatUsDate(prospect.saleDate)}</span></span>
-                  <span className="fc-chip">Filed <span>{formatUsDate(prospect.noticeOrFilingDate)}</span></span>
-                  <span className="fc-chip"><span>Outreach</span> <span>{outreachOf(prospect)}</span></span>
-                  {prospect.caseNumber ? <span className="fc-chip">{prospect.caseNumber}</span> : null}
-                  {prospect.absentee || (prospect.ownerEntity && prospect.ownerEntity !== 'person') ? <span className="fc-chip">Phones held</span> : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold">{phones.length > 0 ? phones.map((phone) => formatPhone(phone)).join(', ') : '—'}</span>
-                  {prospect.dialReady ? <button type="button" disabled={busy} onClick={() => void startCall(prospect.id)} className="fc-call inline-flex h-9 items-center gap-1 px-4 text-xs font-black"><Icon name="call" />Call</button> : <span className="text-xs font-bold text-[var(--fc-text-secondary)]">Not dial-ready</span>}
-                </div>
-              </div>
-            </article>
-          })}
+        <section aria-label="Foreclosure queue">
+          {loading ? <p className="fc-queue-note">Loading foreclosure prospects…</p> : null}
+          {!loading && visible.length === 0 ? <p className="fc-queue-note">No mortgage foreclosure prospects in this queue.</p> : null}
+          {!loading && visible.length > 0 ? <ForeclosureListTable prospects={visible} /> : null}
         </section>
-        </div>
-        <div className="fc-stage-map">
-          <ForeclosureMap pins={pins} heightClass="fc-map-canvas" />
-        </div>
-        </div>
       </div>
     </main>
   </>

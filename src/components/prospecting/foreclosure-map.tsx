@@ -1,67 +1,166 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { loadMapsJs } from '@/components/leads/google-map-panel'
 import type { ForeclosureMapPin } from '@/lib/prospecting/foreclosure'
-import 'leaflet/dist/leaflet.css'
 import styles from './foreclosure-map.module.css'
 
-const TILES = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-const KANSAS_CITY: [number, number] = [39.084, -94.585]
+const KANSAS_CITY = { lat: 39.084, lng: -94.585 }
 
-export function ForeclosureMap({ pins, heightClass = 'h-72' }: { pins: ForeclosureMapPin[]; heightClass?: string }) {
+interface ClickableMarker {
+  addListener(name: string, handler: () => void): void
+  setMap(map: null): void
+}
+
+interface LatLngBoundsLike {
+  extend(position: { lat: number; lng: number }): void
+}
+
+interface SaleMap {
+  fitBounds(bounds: LatLngBoundsLike): void
+}
+
+interface SaleMaps {
+  maps: {
+    Map: new (element: HTMLElement, options: Record<string, unknown>) => SaleMap
+    Marker: new (options: Record<string, unknown>) => ClickableMarker
+    LatLngBounds: new () => LatLngBoundsLike
+  }
+}
+
+export function ForeclosureMap({ pins, heightClass = 'h-72', quiet = false }: { pins: ForeclosureMapPin[]; heightClass?: string; quiet?: boolean }) {
   const router = useRouter()
   const host = useRef<HTMLDivElement>(null)
-  const pinsRef = useRef(pins)
-  pinsRef.current = pins
+  const [message, setMessage] = useState<string | null>(null)
   const pinKey = pins.map((pin) => `${pin.id}:${pin.longitude}:${pin.latitude}`).join('|')
 
   useEffect(() => {
     const container = host.current
     if (!container) return
-    const currentPins = pinsRef.current
-    let map: { remove: () => void } | null = null
     let cancelled = false
-    void import('leaflet').then((leaflet) => {
-      if (cancelled || !host.current) return
-      const first = currentPins[0]
-      const next = leaflet.map(host.current, { zoomControl: true })
-      next.setView(first ? [first.latitude, first.longitude] : KANSAS_CITY, currentPins.length === 1 ? 12 : 10)
-      leaflet.tileLayer(TILES, {
-        subdomains: 'abcd',
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-      }).addTo(next)
-      for (const pin of currentPins) {
-        const icon = leaflet.divIcon({
-          className: styles.pin,
-          iconSize: [22, 22],
-          iconAnchor: [11, 11],
+    const markers: ClickableMarker[] = []
+    const current = pins
+    void loadMapsJs()
+      .then((google) => {
+        if (cancelled || !host.current) return
+        const maps = google as unknown as SaleMaps
+        const first = current[0]
+        const map = new maps.maps.Map(host.current, {
+          center: first ? { lat: first.latitude, lng: first.longitude } : KANSAS_CITY,
+          zoom: current.length === 1 ? 12 : 10,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
         })
-        leaflet.marker([pin.latitude, pin.longitude], { icon, keyboard: true, title: `Open ${pin.ownerName}` })
-          .on('click', () => { router.push(`/prospecting/foreclosure/${pin.id}`) })
-          .addTo(next)
-      }
-      if (currentPins.length > 1) {
-        next.fitBounds(leaflet.latLngBounds(currentPins.map((pin) => [pin.latitude, pin.longitude])), { padding: [48, 48], maxZoom: 13 })
-      }
-      window.setTimeout(() => next.invalidateSize(), 0)
-      map = next
-    }).catch(() => undefined)
+        const bounds = new maps.maps.LatLngBounds()
+        for (const pin of current) {
+          const position = { lat: pin.latitude, lng: pin.longitude }
+          const marker = new maps.maps.Marker({ position, map, title: `Open ${pin.ownerName}` })
+          marker.addListener('click', () => { router.push(`/prospecting/foreclosure/${pin.id}`) })
+          markers.push(marker)
+          bounds.extend(position)
+        }
+        if (current.length > 1) map.fitBounds(bounds)
+        setMessage(null)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : 'Google Maps could not be loaded.')
+      })
     return () => {
       cancelled = true
-      map?.remove()
+      for (const marker of markers) marker.setMap(null)
     }
-  }, [pinKey, router])
+  }, [pinKey, pins, router])
 
   const countLabel = pins.length === 0 ? 'No coordinates in this queue' : `${pins.length} pin${pins.length === 1 ? '' : 's'}`
   return (
-    <section aria-label="Foreclosure sale map" className="crm-panel overflow-hidden rounded-2xl">
-      <div className="flex items-center justify-between gap-3 px-4 py-2">
+    <section aria-label="Foreclosure sale map" className={quiet ? 'fc-map-quiet' : 'crm-panel overflow-hidden rounded-2xl'}>
+      {quiet ? null : <div className="flex items-center justify-between gap-3 px-4 py-2">
         <p className="text-xs font-black uppercase tracking-wide text-[var(--crm-text-muted)]">Sale map</p>
         <p className="text-xs font-bold text-[var(--crm-text-muted)]">{countLabel}</p>
-      </div>
+      </div>}
+      {message ? <p className="px-4 pb-3 text-sm font-bold text-[var(--crm-text-muted)]">{message}</p> : null}
       <div ref={host} className={`${styles.host} ${heightClass} w-full`} />
     </section>
+  )
+}
+
+export function ForeclosureStreetView(props: {
+  address: string
+  latitude: number | null
+  longitude: number | null
+}) {
+  return <StreetViewBody key={`${props.latitude ?? ''}:${props.longitude ?? ''}:${props.address}`} {...props} />
+}
+
+function StreetViewBody({
+  address,
+  latitude,
+  longitude,
+}: {
+  address: string
+  latitude: number | null
+  longitude: number | null
+}) {
+  const host = useRef<HTMLDivElement>(null)
+  const [pano, setPano] = useState<'pending' | 'ready' | 'none'>(latitude == null || longitude == null ? 'none' : 'pending')
+  const tryHref = latitude != null && longitude != null
+    ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latitude},${longitude}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+
+  useEffect(() => {
+    if (latitude == null || longitude == null) return
+    let cancelled = false
+    void loadMapsJs()
+      .then((google) => {
+        if (cancelled || !host.current) return
+        const maps = google as unknown as {
+          maps: {
+            StreetViewService?: new () => {
+              getPanorama: (
+                request: { location: { lat: number; lng: number }; radius: number },
+                callback: (data: { location?: { pano?: string } } | null, status: string) => void,
+              ) => void
+            }
+            StreetViewPanorama?: new (element: HTMLElement, options: Record<string, unknown>) => void
+          }
+        }
+        if (!maps.maps.StreetViewService || !maps.maps.StreetViewPanorama || !host.current) {
+          setPano('none')
+          return
+        }
+        const canvas = host.current
+        const service = new maps.maps.StreetViewService()
+        service.getPanorama({ location: { lat: latitude, lng: longitude }, radius: 80 }, (data, status) => {
+          if (cancelled) return
+          if (status !== 'OK' || !data?.location?.pano) {
+            setPano('none')
+            return
+          }
+          new maps.maps.StreetViewPanorama!(canvas, {
+            pano: data.location.pano,
+            visible: true,
+            addressControl: false,
+            fullscreenControl: true,
+          })
+          setPano('ready')
+        })
+      })
+      .catch(() => { if (!cancelled) setPano('none') })
+    return () => { cancelled = true }
+  }, [latitude, longitude])
+
+  return (
+    <div className="fc-street">
+      <div ref={host} className={`${styles.host} fc-map-canvas w-full`} hidden={pano !== 'ready'} />
+      {pano === 'ready' ? null : (
+        <div className="fc-street-empty">
+          <p>{pano === 'pending' ? 'Checking Street View…' : 'Street View is not available for this location'}</p>
+          <a href={tryHref} target="_blank" rel="noreferrer">Try on Google Maps</a>
+        </div>
+      )}
+    </div>
   )
 }

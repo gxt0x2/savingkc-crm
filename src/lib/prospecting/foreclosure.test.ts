@@ -170,6 +170,22 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
     expect(parsed.accepted[0].skipPhones.map((row) => row.contactName)).toEqual(['Ernest Dodson', 'Morgan Dodson', 'Riley Dodson'])
     expect(parsed.accepted[0].skipPhones.map((row) => row.rank)).toEqual([1, 2, 3])
     expect(parsed.accepted[0].phones).toEqual(['+19137179716'])
+    const lined = normalizeForeclosureInput({
+      county: 'jackson',
+      ownerName: 'Sample Homeowner',
+      situs: '418 Sample Lane',
+      estValue: 240000,
+      estDebt: 90000,
+      skiptraceVendor: 'smartskip',
+      phone1: '8165550101',
+      phone2: '8165550198',
+      phone_1_line: 'mobile',
+      phone_2_line: 'landline',
+    })
+    expect(lined.ok && lined.record.skipPhones.map((row) => ({ contactName: row.contactName, relationship: row.relationship, line: row.line }))).toEqual([
+      { contactName: 'Sample Homeowner', relationship: 'subject', line: 'mobile' },
+      { contactName: 'Sample Homeowner', relationship: 'subject', line: 'landline' },
+    ])
     expect(foreclosureCallingHref('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'))
       .toContain('prospect_ids=11111111-1111-4111-8111-111111111111')
   })
