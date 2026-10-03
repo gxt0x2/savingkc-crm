@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), listWorkItems: vi.fn(), from: vi.fn(), appointments: vi.fn(), leads: vi.fn() }))
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), listWorkItems: vi.fn(), from: vi.fn(), appointments: vi.fn(), leads: vi.fn(), excludedStatus: vi.fn() }))
 vi.mock('@/lib/mobile-api/mobile-command-access', async (original) => ({
   ...await original<typeof import('@/lib/mobile-api/mobile-command-access')>(), requireMobileCommandActor: mocks.actor,
 }))
@@ -39,8 +39,10 @@ describe('mobile Calendar', () => {
       { id: 'lead-1', full_name: 'Morgan Seller', property_address: '123 Main St', assigned_agent: 'Casey' },
       { id: 'lead-2', full_name: 'Other Seller', property_address: '999 Main St', assigned_agent: 'Ernest' },
     ], error: null })
+    const ordered = { order: () => ({ limit: mocks.appointments }) }
+    mocks.excludedStatus.mockReturnValue(ordered)
     mocks.from.mockImplementation((table: string) => table === 'appointments'
-      ? { select: () => ({ order: () => ({ limit: mocks.appointments }) }) }
+      ? { select: () => ({ ...ordered, neq: mocks.excludedStatus }) }
       : { select: () => ({ in: mocks.leads }) })
   })
 
@@ -58,5 +60,17 @@ describe('mobile Calendar', () => {
     mocks.actor.mockRejectedValue(new MobileAuthError('Invalid bearer token'))
     expect((await GET(request())).status).toBe(401)
     expect(mocks.listWorkItems).not.toHaveBeenCalled()
+  })
+
+  it('excludes cancelled appointments before the bounded feed and keeps historical completed appointments', async () => {
+    mocks.appointments.mockResolvedValue({ data: [
+      appointment,
+      { ...appointment, id: 'completed-appointment', status: 'completed' },
+    ], error: null })
+    const response = await GET(request())
+    expect(response.status).toBe(200)
+    expect(mocks.excludedStatus).toHaveBeenCalledWith('status', 'cancelled')
+    expect((await response.json()).appointments.map((item: { id: string }) => item.id))
+      .toEqual(['appointment-1', 'completed-appointment'])
   })
 })
