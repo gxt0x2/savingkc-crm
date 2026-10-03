@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "Scoped directory glob adapter for the verified Next ESLint rootDir consumer",
-  "main": "index.cjs",
-  "engines": { "node": "20 || >=22" },
+  "main": "index.mjs",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "dependencies": {
     "@nodelib/fs.walk": "1.2.8",
     "brace-expansion": "5.0.12",

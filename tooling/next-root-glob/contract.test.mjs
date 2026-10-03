@@ -1,14 +1,15 @@
-'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const test = require('node:test');
-const { getRootDirs } = require('@next/eslint-plugin-next/dist/utils/get-root-dirs');
-const { globSync } = require('./index.cjs');
-const cases = require('./contract-cases.json');
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import test from 'node:test';
+import nextHelper from '@next/eslint-plugin-next/dist/utils/get-root-dirs.js';
+const { getRootDirs } = nextHelper;
+import { globSync } from './index.mjs';
+const cases = JSON.parse(fs.readFileSync(new URL('./contract-cases.json',import.meta.url),'utf8'));
 
 test('actual Next helper preserves the 130 reviewed filesystem contracts', () => {
-  const fixture = fs.mkdtempSync(path.join(require('node:os').tmpdir(),'savingkc-next-roots-'));
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(),'savingkc-next-roots-'));
   const previous = process.cwd();
   try {
     for (const dir of ['packages/a/src/deep','packages/b/src','packages/long/src','packages/item1','packages/item2','packages/.hidden/sub','packages/x.y','packages/z9','links','literal{a}/src','packages/01','packages/02','1/a','2/b']) fs.mkdirSync(path.join(fixture,dir),{recursive:true});

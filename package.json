@@ -56,7 +56,7 @@
     "test:email:workflow": "node --conditions=react-server --import tsx --test tests/email-db/workflow.test.ts tests/email-db/callback-review.test.ts tests/email-db/crm-runtime-locks.test.ts tests/email-db/lead-sms-alerts.test.ts tests/email-db/controlled-callback-outcome.test.ts tests/email-db/automatic-callback.test.ts",
     "dev:email:local": "node tests/email-local/start.mjs",
     "test:email:local-ui": "playwright test --config tests/email-local/playwright.config.ts",
-    "gate:tooling": "node scripts/ci/check-tooling-adapters.mjs && node --test tooling/next-root-glob/contract.test.cjs"
+    "gate:tooling": "node scripts/ci/check-tooling-adapters.mjs && node --test tooling/next-root-glob/contract.test.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.35",

@@ -1,10 +1,9 @@
-'use strict';
-const fs = require('node:fs');
-const path = require('node:path');
-const { walkSync } = require('@nodelib/fs.walk');
-const { expand } = require('brace-expansion');
-const globParent = require('glob-parent');
-const picomatch = require('picomatch');
+import fs from 'node:fs';
+import path from 'node:path';
+import { walkSync } from '@nodelib/fs.walk';
+import { expand } from 'brace-expansion';
+import globParent from 'glob-parent';
+import picomatch from 'picomatch';
 
 // This is the single interface used by Next's get-root-dirs helper, not a
 // general fast-glob replacement. The consumer guard rejects a changed API.
@@ -100,4 +99,4 @@ function globSync(pattern, options) {
   return output;
 }
 
-module.exports = { globSync };
+export { globSync };

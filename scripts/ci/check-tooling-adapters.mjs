@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as rootAdapter from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -17,6 +18,7 @@ assert.deepEqual(imports,[consumer], 'Unexpected fast-glob consumer');
 const fromConsumer = createRequire(consumer);
 assert.equal(fromConsumer('fast-glob/package.json').name, '@savingkc/next-root-glob');
 assert.deepEqual(Object.keys(fromConsumer('fast-glob')), ['globSync']);
+assert.equal(fromConsumer('fast-glob').globSync, rootAdapter.globSync, 'Root guard and Next must resolve the same adapter');
 const lock = JSON.parse(readFileSync(new URL('../../package-lock.json',import.meta.url),'utf8'));
 assert.ok(!Object.keys(lock.packages).some(key => /(?:^|\/)node_modules\/(?:braces|micromatch)$/.test(key)), 'Vulnerable parser chain returned');
 console.log('Next tooling consumer, local resolution and parser graph verified');
