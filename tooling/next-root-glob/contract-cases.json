@@ -1,0 +1,1270 @@
+[
+  {
+    "rootDir": "(default)",
+    "expected": [
+      "$FIXTURE"
+    ]
+  },
+  {
+    "rootDir": "packages/a",
+    "expected": [
+      "packages/a"
+    ]
+  },
+  {
+    "rootDir": "packages/*",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9"
+    ]
+  },
+  {
+    "rootDir": "packages/{a,b}",
+    "expected": [
+      "packages/a",
+      "packages/b"
+    ]
+  },
+  {
+    "rootDir": "packages/item{1..2}",
+    "expected": [
+      "packages/item1",
+      "packages/item2"
+    ]
+  },
+  {
+    "rootDir": "packages/**",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "links/*",
+    "expected": [
+      "links/a",
+      "links/long"
+    ]
+  },
+  {
+    "rootDir": "packages/.hidden",
+    "expected": [
+      "packages/.hidden"
+    ]
+  },
+  {
+    "rootDir": "missing/*",
+    "expected": []
+  },
+  {
+    "rootDir": "packages/*/",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{a,b}",
+    "expected": [
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b"
+    ]
+  },
+  {
+    "rootDir": "packages\\a",
+    "expected": [
+      "packages/a"
+    ]
+  },
+  {
+    "rootDir": [
+      "packages/b",
+      "packages/a"
+    ],
+    "expected": [
+      "packages/b",
+      "packages/a"
+    ]
+  },
+  {
+    "rootDir": [
+      "packages/*",
+      "!packages/b"
+    ],
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9"
+    ]
+  },
+  {
+    "rootDir": "packages/*",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9"
+    ]
+  },
+  {
+    "rootDir": "packages/**",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/**/*",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/**/",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/**/src",
+    "expected": [
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "packages/*/src",
+    "expected": [
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "packages/{b,a}",
+    "expected": [
+      "packages/b",
+      "packages/a"
+    ]
+  },
+  {
+    "rootDir": "packages/{long,a,b}",
+    "expected": [
+      "packages/a",
+      "packages/b",
+      "packages/long"
+    ]
+  },
+  {
+    "rootDir": "packages/{b,a}/**",
+    "expected": [
+      "packages/b/src",
+      "packages/a/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/{b,a}/*",
+    "expected": [
+      "packages/b/src",
+      "packages/a/src"
+    ]
+  },
+  {
+    "rootDir": "packages/{b,**}",
+    "expected": [
+      "packages/b",
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/{,a/}**",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/.*",
+    "expected": [
+      "packages/.hidden"
+    ]
+  },
+  {
+    "rootDir": "packages/item{2..1}",
+    "expected": [
+      "packages/item2",
+      "packages/item1"
+    ]
+  },
+  {
+    "rootDir": "packages/@(b|a)",
+    "expected": [
+      "packages/a",
+      "packages/b"
+    ]
+  },
+  {
+    "rootDir": "packages/[ab]",
+    "expected": [
+      "packages/a",
+      "packages/b"
+    ]
+  },
+  {
+    "rootDir": "packages/{01..02}",
+    "expected": [
+      "packages/01",
+      "packages/02"
+    ]
+  },
+  {
+    "rootDir": "packages/a/src/",
+    "expected": [
+      "packages/a/src/"
+    ]
+  },
+  {
+    "rootDir": "./packages/*",
+    "expected": [
+      "./packages/01",
+      "./packages/02",
+      "./packages/a",
+      "./packages/b",
+      "./packages/item1",
+      "./packages/item2",
+      "./packages/long",
+      "./packages/x.y",
+      "./packages/z9"
+    ]
+  },
+  {
+    "rootDir": "./packages/**",
+    "expected": [
+      "./packages/01",
+      "./packages/02",
+      "./packages/a",
+      "./packages/b",
+      "./packages/item1",
+      "./packages/item2",
+      "./packages/long",
+      "./packages/x.y",
+      "./packages/z9",
+      "./packages/a/src",
+      "./packages/b/src",
+      "./packages/long/src",
+      "./packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "./packages/**/*",
+    "expected": [
+      "./packages/01",
+      "./packages/02",
+      "./packages/a",
+      "./packages/b",
+      "./packages/item1",
+      "./packages/item2",
+      "./packages/long",
+      "./packages/x.y",
+      "./packages/z9",
+      "./packages/a/src",
+      "./packages/b/src",
+      "./packages/long/src",
+      "./packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "./packages/**/",
+    "expected": [
+      "./packages/01",
+      "./packages/02",
+      "./packages/a",
+      "./packages/b",
+      "./packages/item1",
+      "./packages/item2",
+      "./packages/long",
+      "./packages/x.y",
+      "./packages/z9",
+      "./packages/a/src",
+      "./packages/b/src",
+      "./packages/long/src",
+      "./packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "./packages/**/src",
+    "expected": [
+      "./packages/a/src",
+      "./packages/b/src",
+      "./packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "./packages/*/src",
+    "expected": [
+      "./packages/a/src",
+      "./packages/b/src",
+      "./packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "./packages/{b,a}",
+    "expected": [
+      "./packages/b",
+      "./packages/a"
+    ]
+  },
+  {
+    "rootDir": "./packages/{long,a,b}",
+    "expected": [
+      "./packages/a",
+      "./packages/b",
+      "./packages/long"
+    ]
+  },
+  {
+    "rootDir": "./packages/{b,a}/**",
+    "expected": [
+      "./packages/b/src",
+      "./packages/a/src",
+      "./packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "./packages/{b,a}/*",
+    "expected": [
+      "./packages/b/src",
+      "./packages/a/src"
+    ]
+  },
+  {
+    "rootDir": "./packages/{b,**}",
+    "expected": [
+      "./packages/b",
+      "./packages/01",
+      "./packages/02",
+      "./packages/a",
+      "./packages/item1",
+      "./packages/item2",
+      "./packages/long",
+      "./packages/x.y",
+      "./packages/z9",
+      "./packages/a/src",
+      "./packages/b/src",
+      "./packages/long/src",
+      "./packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "./packages/{,a/}**",
+    "expected": [
+      "./packages/01",
+      "./packages/02",
+      "./packages/a",
+      "./packages/b",
+      "./packages/item1",
+      "./packages/item2",
+      "./packages/long",
+      "./packages/x.y",
+      "./packages/z9",
+      "./packages/a/src",
+      "./packages/b/src",
+      "./packages/long/src",
+      "./packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "./packages/.*",
+    "expected": [
+      "./packages/.hidden"
+    ]
+  },
+  {
+    "rootDir": "./packages/item{2..1}",
+    "expected": [
+      "./packages/item2",
+      "./packages/item1"
+    ]
+  },
+  {
+    "rootDir": "./packages/@(b|a)",
+    "expected": [
+      "./packages/a",
+      "./packages/b"
+    ]
+  },
+  {
+    "rootDir": "./packages/[ab]",
+    "expected": [
+      "./packages/a",
+      "./packages/b"
+    ]
+  },
+  {
+    "rootDir": "./packages/{01..02}",
+    "expected": [
+      "./packages/01",
+      "./packages/02"
+    ]
+  },
+  {
+    "rootDir": "./packages/a/src/",
+    "expected": [
+      "./packages/a/src/"
+    ]
+  },
+  {
+    "rootDir": "links/*",
+    "expected": [
+      "links/a",
+      "links/long"
+    ]
+  },
+  {
+    "rootDir": "links/**",
+    "expected": [
+      "links/a",
+      "links/long",
+      "links/a/src",
+      "links/long/src",
+      "links/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "links/**/*",
+    "expected": [
+      "links/a",
+      "links/long",
+      "links/a/src",
+      "links/long/src",
+      "links/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "links/**/",
+    "expected": [
+      "links/a",
+      "links/long",
+      "links/a/src",
+      "links/long/src",
+      "links/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "links/**/src",
+    "expected": [
+      "links/a/src",
+      "links/long/src"
+    ]
+  },
+  {
+    "rootDir": "links/*/src",
+    "expected": [
+      "links/a/src",
+      "links/long/src"
+    ]
+  },
+  {
+    "rootDir": "links/{b,a}",
+    "expected": [
+      "links/a"
+    ]
+  },
+  {
+    "rootDir": "links/{long,a,b}",
+    "expected": [
+      "links/a",
+      "links/long"
+    ]
+  },
+  {
+    "rootDir": "links/{b,a}/**",
+    "expected": [
+      "links/a/src",
+      "links/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "links/{b,a}/*",
+    "expected": [
+      "links/a/src"
+    ]
+  },
+  {
+    "rootDir": "links/{b,**}",
+    "expected": [
+      "links/a",
+      "links/long",
+      "links/a/src",
+      "links/long/src",
+      "links/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "links/{,a/}**",
+    "expected": [
+      "links/a",
+      "links/long",
+      "links/a/src",
+      "links/long/src",
+      "links/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "links/.*",
+    "expected": []
+  },
+  {
+    "rootDir": "links/item{2..1}",
+    "expected": []
+  },
+  {
+    "rootDir": "links/@(b|a)",
+    "expected": [
+      "links/a"
+    ]
+  },
+  {
+    "rootDir": "links/[ab]",
+    "expected": [
+      "links/a"
+    ]
+  },
+  {
+    "rootDir": "links/{01..02}",
+    "expected": []
+  },
+  {
+    "rootDir": "links/a/src/",
+    "expected": [
+      "links/a/src/"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/*",
+    "expected": [
+      "$FIXTURE/packages/01",
+      "$FIXTURE/packages/02",
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/item1",
+      "$FIXTURE/packages/item2",
+      "$FIXTURE/packages/long",
+      "$FIXTURE/packages/x.y",
+      "$FIXTURE/packages/z9"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/**",
+    "expected": [
+      "$FIXTURE/packages/01",
+      "$FIXTURE/packages/02",
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/item1",
+      "$FIXTURE/packages/item2",
+      "$FIXTURE/packages/long",
+      "$FIXTURE/packages/x.y",
+      "$FIXTURE/packages/z9",
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/long/src",
+      "$FIXTURE/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/**/*",
+    "expected": [
+      "$FIXTURE/packages/01",
+      "$FIXTURE/packages/02",
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/item1",
+      "$FIXTURE/packages/item2",
+      "$FIXTURE/packages/long",
+      "$FIXTURE/packages/x.y",
+      "$FIXTURE/packages/z9",
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/long/src",
+      "$FIXTURE/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/**/",
+    "expected": [
+      "$FIXTURE/packages/01",
+      "$FIXTURE/packages/02",
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/item1",
+      "$FIXTURE/packages/item2",
+      "$FIXTURE/packages/long",
+      "$FIXTURE/packages/x.y",
+      "$FIXTURE/packages/z9",
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/long/src",
+      "$FIXTURE/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/**/src",
+    "expected": [
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/*/src",
+    "expected": [
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{b,a}",
+    "expected": [
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/a"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{long,a,b}",
+    "expected": [
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/long"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{b,a}/**",
+    "expected": [
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{b,a}/*",
+    "expected": [
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/a/src"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{b,**}",
+    "expected": [
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/01",
+      "$FIXTURE/packages/02",
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/item1",
+      "$FIXTURE/packages/item2",
+      "$FIXTURE/packages/long",
+      "$FIXTURE/packages/x.y",
+      "$FIXTURE/packages/z9",
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/long/src",
+      "$FIXTURE/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{,a/}**",
+    "expected": [
+      "$FIXTURE/packages/01",
+      "$FIXTURE/packages/02",
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b",
+      "$FIXTURE/packages/item1",
+      "$FIXTURE/packages/item2",
+      "$FIXTURE/packages/long",
+      "$FIXTURE/packages/x.y",
+      "$FIXTURE/packages/z9",
+      "$FIXTURE/packages/a/src",
+      "$FIXTURE/packages/b/src",
+      "$FIXTURE/packages/long/src",
+      "$FIXTURE/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/.*",
+    "expected": [
+      "$FIXTURE/packages/.hidden"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/item{2..1}",
+    "expected": [
+      "$FIXTURE/packages/item2",
+      "$FIXTURE/packages/item1"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/@(b|a)",
+    "expected": [
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/[ab]",
+    "expected": [
+      "$FIXTURE/packages/a",
+      "$FIXTURE/packages/b"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/{01..02}",
+    "expected": [
+      "$FIXTURE/packages/01",
+      "$FIXTURE/packages/02"
+    ]
+  },
+  {
+    "rootDir": "$FIXTURE/packages/a/src/",
+    "expected": [
+      "$FIXTURE/packages/a/src/"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/*",
+    "expected": [
+      "$PARENT/packages/01",
+      "$PARENT/packages/02",
+      "$PARENT/packages/a",
+      "$PARENT/packages/b",
+      "$PARENT/packages/item1",
+      "$PARENT/packages/item2",
+      "$PARENT/packages/long",
+      "$PARENT/packages/x.y",
+      "$PARENT/packages/z9"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/**",
+    "expected": [
+      "$PARENT/packages/01",
+      "$PARENT/packages/02",
+      "$PARENT/packages/a",
+      "$PARENT/packages/b",
+      "$PARENT/packages/item1",
+      "$PARENT/packages/item2",
+      "$PARENT/packages/long",
+      "$PARENT/packages/x.y",
+      "$PARENT/packages/z9",
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/long/src",
+      "$PARENT/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/**/*",
+    "expected": [
+      "$PARENT/packages/01",
+      "$PARENT/packages/02",
+      "$PARENT/packages/a",
+      "$PARENT/packages/b",
+      "$PARENT/packages/item1",
+      "$PARENT/packages/item2",
+      "$PARENT/packages/long",
+      "$PARENT/packages/x.y",
+      "$PARENT/packages/z9",
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/long/src",
+      "$PARENT/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/**/",
+    "expected": [
+      "$PARENT/packages/01",
+      "$PARENT/packages/02",
+      "$PARENT/packages/a",
+      "$PARENT/packages/b",
+      "$PARENT/packages/item1",
+      "$PARENT/packages/item2",
+      "$PARENT/packages/long",
+      "$PARENT/packages/x.y",
+      "$PARENT/packages/z9",
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/long/src",
+      "$PARENT/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/**/src",
+    "expected": [
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/*/src",
+    "expected": [
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/{b,a}",
+    "expected": [
+      "$PARENT/packages/b",
+      "$PARENT/packages/a"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/{long,a,b}",
+    "expected": [
+      "$PARENT/packages/a",
+      "$PARENT/packages/b",
+      "$PARENT/packages/long"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/{b,a}/**",
+    "expected": [
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/{b,a}/*",
+    "expected": [
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/a/src"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/{b,**}",
+    "expected": [
+      "$PARENT/packages/b",
+      "$PARENT/packages/01",
+      "$PARENT/packages/02",
+      "$PARENT/packages/a",
+      "$PARENT/packages/item1",
+      "$PARENT/packages/item2",
+      "$PARENT/packages/long",
+      "$PARENT/packages/x.y",
+      "$PARENT/packages/z9",
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/long/src",
+      "$PARENT/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/{,a/}**",
+    "expected": [
+      "$PARENT/packages/01",
+      "$PARENT/packages/02",
+      "$PARENT/packages/a",
+      "$PARENT/packages/b",
+      "$PARENT/packages/item1",
+      "$PARENT/packages/item2",
+      "$PARENT/packages/long",
+      "$PARENT/packages/x.y",
+      "$PARENT/packages/z9",
+      "$PARENT/packages/a/src",
+      "$PARENT/packages/b/src",
+      "$PARENT/packages/long/src",
+      "$PARENT/packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/.*",
+    "expected": [
+      "$PARENT/packages/.hidden"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/item{2..1}",
+    "expected": [
+      "$PARENT/packages/item2",
+      "$PARENT/packages/item1"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/@(b|a)",
+    "expected": [
+      "$PARENT/packages/a",
+      "$PARENT/packages/b"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/[ab]",
+    "expected": [
+      "$PARENT/packages/a",
+      "$PARENT/packages/b"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/{01..02}",
+    "expected": [
+      "$PARENT/packages/01",
+      "$PARENT/packages/02"
+    ]
+  },
+  {
+    "rootDir": "$PARENT/packages/a/src/",
+    "expected": [
+      "$PARENT/packages/a/src/"
+    ]
+  },
+  {
+    "rootDir": "{packages/**,!packages/b/}",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "{2/*,1/*}",
+    "expected": [
+      "1/a",
+      "2/b"
+    ]
+  },
+  {
+    "rootDir": "{2/b,1/a}",
+    "expected": [
+      "1/a",
+      "2/b"
+    ]
+  },
+  {
+    "rootDir": "{packages/b,!packages/b}",
+    "expected": []
+  },
+  {
+    "rootDir": "{packages/*,!packages/b}",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9"
+    ]
+  },
+  {
+    "rootDir": "{packages/**,!packages/b}",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "{packages/**,!packages/b*}",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "{links/**,!links/a}",
+    "expected": [
+      "links/long",
+      "links/long/src"
+    ]
+  },
+  {
+    "rootDir": ".",
+    "expected": [
+      "."
+    ]
+  },
+  {
+    "rootDir": "./",
+    "expected": [
+      "./"
+    ]
+  },
+  {
+    "rootDir": "literal{a}",
+    "expected": [
+      "literal{a}"
+    ]
+  },
+  {
+    "rootDir": "literal{a}/**",
+    "expected": [
+      "literal{a}",
+      "literal{a}/src"
+    ]
+  },
+  {
+    "rootDir": "packages//**",
+    "expected": [
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "!packages/b",
+    "expected": []
+  },
+  {
+    "rootDir": "{packages/**,links/**}",
+    "expected": [
+      "links/a",
+      "links/long",
+      "links/a/src",
+      "links/long/src",
+      "links/a/src/deep",
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9",
+      "packages/a/src",
+      "packages/b/src",
+      "packages/long/src",
+      "packages/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/{a,{b,long}}/**",
+    "expected": [
+      "packages/a/src",
+      "packages/a/src/deep",
+      "packages/b/src",
+      "packages/long/src"
+    ]
+  },
+  {
+    "rootDir": "packages/{*,a}",
+    "expected": [
+      "packages/a",
+      "packages/01",
+      "packages/02",
+      "packages/b",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9"
+    ]
+  },
+  {
+    "rootDir": "packages/!(b)",
+    "expected": [
+      "packages/.hidden",
+      "packages/01",
+      "packages/02",
+      "packages/a",
+      "packages/item1",
+      "packages/item2",
+      "packages/long",
+      "packages/x.y",
+      "packages/z9"
+    ]
+  },
+  {
+    "rootDir": "packages/?",
+    "expected": [
+      "packages/a",
+      "packages/b"
+    ]
+  },
+  {
+    "rootDir": "packages/a/",
+    "expected": [
+      "packages/a/"
+    ]
+  },
+  {
+    "rootDir": "./packages/a",
+    "expected": [
+      "./packages/a"
+    ]
+  },
+  {
+    "rootDir": "packages",
+    "expected": [
+      "packages"
+    ]
+  },
+  {
+    "rootDir": "packages/notes.txt",
+    "expected": []
+  },
+  {
+    "rootDir": "packages/{b,missing,a}",
+    "expected": [
+      "packages/b",
+      "packages/a"
+    ]
+  },
+  {
+    "rootDir": [
+      "packages/{b,a}",
+      "links/**"
+    ],
+    "expected": [
+      "packages/b",
+      "packages/a",
+      "links/a",
+      "links/long",
+      "links/a/src",
+      "links/long/src",
+      "links/a/src/deep"
+    ]
+  },
+  {
+    "rootDir": "packages/{a,b}/src/**",
+    "expected": [
+      "packages/a/src/deep"
+    ]
+  }
+]
