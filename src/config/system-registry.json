@@ -695,8 +695,8 @@
         "/api/mobile/v1/twilio/hangup",
         "/api/mobile/v1/devices/push-token"
       ],
-      "tables": ["mobile_command_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents"],
-      "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES"]
+      "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents"],
+      "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES", "SAVINGKC_MOBILE_SOURCE"]
     },
     {
       "id": "mobile_device_testing",

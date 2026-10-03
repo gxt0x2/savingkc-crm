@@ -1,0 +1,43 @@
+{
+  "items": [
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "threadKey": "lead:00000000-0000-4000-8000-000000000010",
+      "kind": "lead",
+      "full_name": "Jordan Seller",
+      "assigned_agent": "Casey",
+      "phone": "+19135550110",
+      "lastChannel": "sms",
+      "lastDirection": "inbound",
+      "lastActivityId": "00000000-0000-4000-8000-000000000110",
+      "lastActivityAt": "2026-10-01T12:00:00.000Z",
+      "lastMessage": "Can you call me?"
+    },
+    {
+      "id": "unmatched:+19135550120",
+      "threadKey": "phone:+19135550120",
+      "kind": "unmatched",
+      "full_name": "+19135550120",
+      "assigned_agent": null,
+      "phone": "+19135550120",
+      "lastChannel": "email",
+      "lastDirection": "inbound",
+      "lastActivityId": "00000000-0000-4000-8000-000000000120",
+      "lastActivityAt": "2026-10-01T11:00:00.000Z",
+      "lastMessage": "Question about the property"
+    },
+    {
+      "id": "unmatched:+19135550130",
+      "threadKey": "phone:+19135550130",
+      "kind": "unmatched",
+      "full_name": "+19135550130",
+      "assigned_agent": null,
+      "phone": "+19135550130",
+      "lastChannel": "sms",
+      "lastDirection": "outbound",
+      "lastActivityId": "00000000-0000-4000-8000-000000000130",
+      "lastActivityAt": "2026-10-01T10:00:00.000Z",
+      "lastMessage": "We will follow up tomorrow"
+    }
+  ]
+}

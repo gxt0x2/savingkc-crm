@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import conversationInboxContract from './fixtures/conversation-inbox-contract.json'
 
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: vi.fn() }))
 
@@ -87,6 +88,57 @@ describe('conversation read model inputs', () => {
 })
 
 describe('conversation thread pages', () => {
+  it('matches the shared mobile contract fixture from the real projection mapper', async () => {
+    const rows = [
+      projectionRow({
+        thread_key: 'lead:00000000-0000-4000-8000-000000000010', lead_id: '00000000-0000-4000-8000-000000000010',
+        phone: '+19135550110', owner: 'Casey', last_channel: 'sms', last_direction: 'inbound',
+        last_communication_id: '00000000-0000-4000-8000-000000000110', last_communication_type: 'sms',
+        last_communication_description: 'Can you call me?', last_communication_metadata: { direction: 'received', from: '+19135550110' },
+        last_communication_at: '2026-10-01T12:00:00.000Z', last_activity_at: '2026-10-01T12:00:00.000Z',
+      }),
+      projectionRow({
+        thread_key: 'phone:+19135550120', phone: '+19135550120', last_channel: 'email', last_direction: 'inbound',
+        last_communication_id: '00000000-0000-4000-8000-000000000120', last_communication_type: 'email_received',
+        last_communication_description: 'Question about the property', last_communication_metadata: { direction: 'inbound', subject: 'Property question' },
+        last_communication_at: '2026-10-01T11:00:00.000Z', last_activity_at: '2026-10-01T11:00:00.000Z',
+      }),
+      projectionRow({
+        thread_key: 'phone:+19135550130', phone: '+19135550130', last_channel: 'sms', last_direction: 'outbound',
+        last_communication_id: '00000000-0000-4000-8000-000000000130', last_communication_type: 'sms',
+        last_communication_description: 'We will follow up tomorrow', last_communication_metadata: { direction: 'outbound', to: '+19135550130' },
+        last_communication_at: '2026-10-01T10:00:00.000Z', last_activity_at: '2026-10-01T10:00:00.000Z',
+      }),
+    ]
+    const leadLimit = vi.fn().mockResolvedValue({ data: [{
+      id: '00000000-0000-4000-8000-000000000010', full_name: 'Jordan Seller', phone: '+19135550110',
+      assigned_agent: 'Casey', classification: 'lead', source: 'website',
+    }], error: null })
+    const rpc = vi.fn().mockResolvedValue({ data: rows, error: null })
+    const db = { rpc, from: vi.fn(() => ({ select: () => ({ in: () => ({ limit: leadLimit }) }) })) }
+    const page = await readConversationThreads({ limit: 10, queue: 'all', timeframe: 'all', messageOnly: true }, db as never)
+    const contractItems = page.items.map(({ id, threadKey, kind, full_name, assigned_agent, phone, lastChannel, lastDirection, lastActivityId, lastActivityAt, lastMessage }) => ({
+      id, threadKey, kind, full_name, assigned_agent: assigned_agent ?? null, phone, lastChannel,
+      lastDirection, lastActivityId, lastActivityAt, lastMessage,
+    }))
+    expect(rpc).toHaveBeenCalledWith('conversation_message_thread_page_v1', expect.objectContaining({ page_queue: 'all' }))
+    expect(contractItems).toEqual(conversationInboxContract.items)
+  })
+
+  it('requests the message-specific projection so a newer call cannot hide older SMS', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [projectionRow({
+      thread_key: 'lead:00000000-0000-4000-8000-000000000010', lead_id: '00000000-0000-4000-8000-000000000010',
+      last_channel: 'sms', last_direction: 'inbound', last_communication_id: '00000000-0000-4000-8000-000000000110',
+      last_communication_type: 'sms', last_communication_description: 'Older message',
+      last_communication_metadata: { direction: 'received' },
+    })], error: null })
+    const leadLimit = vi.fn().mockResolvedValue({ data: [{ id: '00000000-0000-4000-8000-000000000010', full_name: 'Jordan', assigned_agent: 'Casey' }], error: null })
+    const db = { rpc, from: vi.fn(() => ({ select: () => ({ in: () => ({ limit: leadLimit }) }) })) }
+    const page = await readConversationThreads({ messageOnly: true, queue: 'all', timeframe: 'all' }, db as never)
+    expect(page.items[0]).toMatchObject({ lastChannel: 'sms', lastActivityId: '00000000-0000-4000-8000-000000000110', lastDirection: 'inbound' })
+    expect(rpc).toHaveBeenCalledWith('conversation_message_thread_page_v1', expect.any(Object))
+  })
+
   it('requests limit plus one, maps unmatched callers, and emits an opaque cursor', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [projectionRow(), projectionRow({

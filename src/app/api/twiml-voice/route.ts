@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
-import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
+import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS } from '@/lib/twilio-numbers'
 import { parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
@@ -54,17 +54,8 @@ const DIRECT_RING_NUMBERS: Record<string, string> = {
   '+18163754666': CASEY_PHONE,
 }
 
-// Cold call outbound dialing numbers — callbacks get a different IVR
-const COLD_CALL_NUMBERS = new Set([
-  '+18163100845',
-  '+18162538313',
-  '+18164761344',
-  '+18164761589',
-  '+18166404701',
-  '+18165788107',
-  '+18166408032',
-  '+18166536616',
-])
+// Cold call outbound dialing numbers — callbacks get a different IVR.
+const COLD_CALL_NUMBERS = new Set<string>(COLD_CALL_CALLBACK_NUMBERS.map((number) => number.value))
 
 function getFormString(body: FormData, keys: string[]): string | null {
   for (const key of keys) {

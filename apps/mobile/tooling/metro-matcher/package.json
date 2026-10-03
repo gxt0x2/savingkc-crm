@@ -1,0 +1,13 @@
+{
+  "name": "@savingkc/metro-matcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Scoped Picomatch adapter for the verified Metro watcher consumer",
+  "main": "index.cjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "picomatch": "4.0.7"
+  }
+}

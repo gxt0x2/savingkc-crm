@@ -49,15 +49,50 @@ type SmsSuppressionReason = 'SPAM' | 'BLOCKED' | 'DNC' | 'WRONG_NUMBER' | string
 
 async function findLeadByPhone(phone: string) {
   for (const variant of phoneLookupVariants(phone)) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('leads')
       .select('id, full_name, phone, station, priority')
       .eq('phone', variant)
       .limit(1)
       .maybeSingle()
+    if (error) throw new Error(`Lead lookup failed: ${error.message}`)
     if (data) return data
   }
   return null
+}
+
+async function findLeadById(leadId: string) {
+  const { data, error } = await supabase.from('leads')
+    .select('id, full_name, phone, station, priority')
+    .eq('id', leadId)
+    .maybeSingle()
+  if (error) throw new Error(`Linked lead lookup failed: ${error.message}`)
+  if (!data) throw new Error('Previously linked inbound SMS lead is unavailable')
+  return data
+}
+
+async function linkInboundActivity(activityId: string, leadId: string, claimId: string): Promise<void> {
+  const { data, error } = await supabase.from('lead_activities')
+    .update({ lead_id: leadId })
+    .eq('id', activityId)
+    .eq('metadata->>inbound_processing_claim_id', claimId)
+    .eq('metadata->>inbound_processing_state', 'processing')
+    .is('lead_id', null)
+    .select('id,lead_id')
+    .maybeSingle()
+  if (error) throw new Error(`Inbound SMS lead link failed: ${error.message}`)
+  if (data?.lead_id === leadId) return
+
+  // Another handler may have completed the same null-to-lead link. Verify the
+  // persisted relation before treating the inbound activity as linked.
+  const verified = await supabase.from('lead_activities')
+    .select('id,lead_id')
+    .eq('id', activityId)
+    .eq('metadata->>inbound_processing_claim_id', claimId)
+    .eq('metadata->>inbound_processing_state', 'processing')
+    .maybeSingle()
+  if (verified.error) throw new Error(`Inbound SMS lead link verification failed: ${verified.error.message}`)
+  if (verified.data?.lead_id !== leadId) throw new Error('Inbound SMS activity was not linked to its lead')
 }
 
 async function smsSuppressionReason(phone: string): Promise<SmsSuppressionReason | null> {
@@ -107,9 +142,45 @@ export async function POST(req: Request) {
       alertRecipients.map((recipient) => safeSendSMS({ body, from: TWILIO_PHONE, to: recipient.phone })),
     )
 
-    if (!from || !messageBody) {
+    if (!from || messageBody === null || !messageSid) {
       return new NextResponse('Missing required fields', { status: 400 })
     }
+
+    // Twilio retries webhook deliveries. Only a completed MessageSid is
+    // terminal; persisted pending work must receive a retryable response or
+    // resume processing below.
+    const priorMessage = await supabase.from('lead_activities')
+      .select('id,lead_id,metadata')
+      .eq('activity_type', 'sms')
+      .eq('metadata->>message_sid', messageSid)
+      .in('metadata->>direction', ['received', 'inbound', 'in'])
+      .limit(1)
+      .maybeSingle()
+    if (priorMessage.error) {
+      console.error('[twilio-sms-webhook] duplicate check failed:', priorMessage.error)
+      return emptyTwimlResponse(503)
+    }
+    const priorMetadata = priorMessage.data?.metadata && typeof priorMessage.data.metadata === 'object'
+      ? priorMessage.data.metadata as Record<string, unknown>
+      : null
+    const priorState = priorMetadata?.inbound_processing_state
+    if (priorMessage.data && priorState !== 'pending' && priorState !== 'processing') {
+      // Historic rows and explicitly completed deliveries are terminal.
+      return emptyTwimlResponse()
+    }
+    if (priorMessage.data && typeof priorMessage.data.id !== 'string') {
+      console.error('[twilio-sms-webhook] persisted inbound SMS is missing its activity id')
+      return emptyTwimlResponse(503)
+    }
+    if (priorState === 'processing') {
+      const leaseStartedAt = typeof priorMetadata?.inbound_processing_started_at === 'string'
+        ? Date.parse(priorMetadata.inbound_processing_started_at)
+        : Number.NaN
+      if (Number.isFinite(leaseStartedAt) && Date.now() - leaseStartedAt < 60_000) {
+        return emptyTwimlResponse(503)
+      }
+    }
+    let inboundMetadata: Record<string, unknown> | null = priorMetadata
 
     try {
       const consentTwiml = await processInboundSmsConsent({ from, to: to || null, keyword: messageBody, messageSid: messageSid || null, source: 'twilio_sms_webhook', allowYesOptIn: true })
@@ -121,7 +192,9 @@ export async function POST(req: Request) {
 
     // Match sender phone number to a lead in the database. Twilio sends E.164,
     // but older imports can store national/formatted variants.
-    const lead = await findLeadByPhone(from)
+    const lead = priorMessage.data?.lead_id
+      ? await findLeadById(priorMessage.data.lead_id)
+      : await findLeadByPhone(from)
     const leadId = lead?.id || null
     const leadName = lead?.full_name || 'Unknown'
     const suppressionReason = await smsSuppressionReason(from)
@@ -135,29 +208,105 @@ export async function POST(req: Request) {
     }
 
     // Log the inbound SMS to lead_activities
-    await supabase.from('lead_activities').insert({
-      lead_id: leadId,
-      activity_type: 'sms',
-      description: messageBody,
-      agent: 'system',
-      metadata: {
-        ...(prospectMatch ? {
-          source: 'tax_delinquent_inbound_sms',
-          prospect_id: prospectMatch.prospect_id,
-          heir_name: prospectMatch.contact_name,
-          heir_relation: prospectMatch.relationship,
-          prospect_owner_name: prospectMatch.owner_1,
-        } : {}),
-        direction: 'received',
-        from,
-        to,
-        message_sid: messageSid,
-        lead_name: leadName,
-        ...(isTeamMessage ? { is_team: true } : {}),
-      },
-    })
+    const primaryMetadata: Record<string, unknown> = {
+      ...(prospectMatch ? {
+        source: 'tax_delinquent_inbound_sms',
+        prospect_id: prospectMatch.prospect_id,
+        heir_name: prospectMatch.contact_name,
+        heir_relation: prospectMatch.relationship,
+        prospect_owner_name: prospectMatch.owner_1,
+      } : { source: 'twilio_sms_webhook' }),
+      direction: 'received',
+      from,
+      to,
+      message_sid: messageSid,
+      inbound_webhook_source: 'twilio_sms_webhook',
+      inbound_webhook_version: '2',
+      inbound_processing_state: 'pending',
+      lead_name: leadName,
+      ...(isTeamMessage ? { is_team: true } : {}),
+    }
+    const claimId = crypto.randomUUID()
+    let primaryActivityId = priorMessage.data?.id as string | undefined
+    let primaryActivityLeadId = (priorMessage.data?.lead_id as string | null | undefined) ?? null
+    const completeInboundProcessing = async () => {
+      const completedMetadata = { ...(inboundMetadata ?? primaryMetadata), inbound_processing_state: 'completed' }
+      const { data, error } = await supabase.from('lead_activities').update({ metadata: completedMetadata })
+        .eq('id', primaryActivityId)
+        .eq('activity_type', 'sms')
+        .eq('metadata->>message_sid', messageSid)
+        .eq('metadata->>inbound_processing_claim_id', claimId)
+        .select('id')
+        .maybeSingle()
+      if (error || !data) throw error ?? new Error('Inbound SMS processing claim was lost before completion')
+      inboundMetadata = completedMetadata
+    }
+
+    if (priorMessage.data) {
+      inboundMetadata = priorMetadata
+    } else {
+      const { data: insertedActivity, error: activityInsertError } = await supabase.from('lead_activities').insert({
+        lead_id: leadId,
+        activity_type: 'sms',
+        description: messageBody,
+        agent: 'system',
+        metadata: primaryMetadata,
+      }).select('id,lead_id').single()
+      inboundMetadata = primaryMetadata
+      primaryActivityId = insertedActivity?.id
+      primaryActivityLeadId = insertedActivity?.lead_id ?? null
+      if (activityInsertError) {
+      // The partial unique index is the concurrent-delivery arbiter. A retry
+      // that lost that race has already been recorded by the winning request.
+      if (activityInsertError.code === '23505'
+        && `${activityInsertError.message} ${activityInsertError.details || ''}`.includes('lead_activities_twilio_inbound_message_sid_v2')) {
+        // The winning delivery has only claimed persistence so far. Ask Twilio
+        // to retry and let the next preflight distinguish pending/completed.
+        return emptyTwimlResponse(503)
+      }
+      console.error('[twilio-sms-webhook] inbound activity persistence failed:', activityInsertError)
+      return emptyTwimlResponse(503)
+    }
+    }
+    if (!primaryActivityId) {
+      console.error('[twilio-sms-webhook] inbound activity insert returned no id')
+      return emptyTwimlResponse(503)
+    }
+
+    // Persist a per-SID lease before side effects. Concurrent Twilio retries
+    // cannot process together; a failed/stalled claim becomes retryable after
+    // one minute. The database update compares the prior state atomically.
+    const claimedMetadata = {
+      ...(inboundMetadata ?? primaryMetadata),
+      inbound_processing_state: 'processing',
+      inbound_processing_started_at: new Date().toISOString(),
+      inbound_processing_claim_id: claimId,
+    }
+    let claim = supabase.from('lead_activities').update({ metadata: claimedMetadata })
+      .eq('id', primaryActivityId)
+      .eq('activity_type', 'sms')
+      .eq('metadata->>message_sid', messageSid)
+      .eq('metadata->>inbound_processing_state', priorMessage.data ? priorState : 'pending')
+    if (priorState === 'processing') {
+      claim = claim.eq('metadata->>inbound_processing_claim_id', priorMetadata?.inbound_processing_claim_id ?? '')
+    }
+    const { data: claimedRow, error: claimError } = await claim.select('id').maybeSingle()
+    if (claimError || !claimedRow) {
+      if (claimError) console.error('[twilio-sms-webhook] inbound processing claim failed:', claimError)
+      return emptyTwimlResponse(503)
+    }
+    inboundMetadata = claimedMetadata
+    if (!primaryActivityId) return emptyTwimlResponse(503)
+
+    // A prior attempt may have created the lead and stopped before linking its
+    // original activity. Repair that link for every resumed known-lead path.
+    if (leadId && primaryActivityId && primaryActivityLeadId !== leadId) {
+      await linkInboundActivity(primaryActivityId, leadId, claimId)
+      primaryActivityLeadId = leadId
+    }
 
     if (isHardBlockedReason(suppressionReason)) {
+      await completeInboundProcessing()
       return emptyTwimlResponse()
     }
 
@@ -196,6 +345,7 @@ export async function POST(req: Request) {
         })
       } catch {}
 
+      await completeInboundProcessing()
       return emptyTwimlResponse()
     }
 
@@ -211,12 +361,12 @@ export async function POST(req: Request) {
         googleAdsLeadName = googleAdsLead.leadName || googleAdsLeadName
       }
 
-      if (googleAdsLeadId) {
-        await supabase.from('lead_activities')
-          .update({ lead_id: googleAdsLeadId })
-          .eq('metadata->>message_sid', messageSid)
-          .is('lead_id', null)
+      if (!googleAdsLeadId) throw new Error('Google Ads inbound SMS lead resolution returned no id')
 
+      if (googleAdsLeadId) {
+        if (!primaryActivityId) throw new Error('Google Ads SMS has no persisted inbound activity')
+        await linkInboundActivity(primaryActivityId, googleAdsLeadId, claimId)
+        primaryActivityLeadId = googleAdsLeadId
       }
 
       await notifyGoogleAdsTeam(
@@ -235,6 +385,7 @@ export async function POST(req: Request) {
         },
       )
 
+      await completeInboundProcessing()
       return emptyTwimlResponse()
     }
 
@@ -256,6 +407,7 @@ export async function POST(req: Request) {
             leadId,
             appointmentResponse.response === 'confirm' ? 'appointment_confirmed' : appointmentResponse.response === 'reschedule' ? 'appointment_rescheduled' : 'appointment_reply_review',
           ).catch(() => {})
+          await completeInboundProcessing()
           return emptyTwimlResponse()
         }
       } catch (error) {
@@ -274,16 +426,21 @@ export async function POST(req: Request) {
         if (prospectMatch) {
           // Tax delinquent prospect — create enriched lead
           yesLeadId = await createEnrichedLeadFromProspect(prospectMatch, from, 'tax_delinquent_inbound_sms', 'hot') || undefined
+          if (!yesLeadId) throw new Error('YES reply prospect lead creation failed')
         } else {
-          const { data: newLead } = await supabase.from('leads').insert({
+          const { data: newLead, error: leadCreateError } = await supabase.from('leads').insert({
             full_name: 'Inbound Seller (YES reply)',
             phone: from,
             source: 'sms_yes_reply',
             station: 'new',
             priority: 'hot',
           }).select('id').single()
+          if (leadCreateError || !newLead?.id) throw new Error(leadCreateError?.message || 'YES reply lead creation returned no id')
           yesLeadId = newLead?.id
         }
+        if (!primaryActivityId) throw new Error('YES reply has no persisted inbound activity')
+        await linkInboundActivity(primaryActivityId, yesLeadId, claimId)
+        primaryActivityLeadId = yesLeadId
       } else {
         const { error: priorityError } = await supabase.from('leads')
           .update({ priority: 'hot' })
@@ -332,6 +489,7 @@ export async function POST(req: Request) {
         regenerateBriefing(yesLeadId, 'yes_reply').catch(() => {})
       }
 
+      await completeInboundProcessing()
       return emptyTwimlResponse()
     }
 
@@ -349,6 +507,7 @@ export async function POST(req: Request) {
         })
       }
       // Don't reply — Twilio sends its own STOP confirmation
+      await completeInboundProcessing()
       return emptyTwimlResponse()
     }
 
@@ -396,25 +555,27 @@ export async function POST(req: Request) {
       if (prospectMatch) {
         // Tax delinquent prospect — create enriched lead
         newLeadId = await createEnrichedLeadFromProspect(prospectMatch, from, 'tax_delinquent_inbound_sms', 'warm')
+        if (!newLeadId) throw new Error('Inbound prospect lead creation failed')
       } else {
         // Generic unknown SMS — create basic lead
-        const { data: newLead } = await supabase.from('leads').insert({
+        const { data: newLead, error: leadCreateError } = await supabase.from('leads').insert({
           full_name: `SMS Lead ${formatPhone(from) || from}`,
           phone: from,
           source: 'inbound_sms',
           station: 'new',
           priority: 'warm',
         }).select('id').single()
+        if (leadCreateError || !newLead?.id) throw new Error(leadCreateError?.message || 'Inbound lead creation returned no id')
         newLeadId = newLead?.id || null
 
       }
 
       if (newLeadId) {
-        // Re-link the already-logged SMS to the new lead
-        await supabase.from('lead_activities')
-          .update({ lead_id: newLeadId })
-          .eq('metadata->>message_sid', messageSid)
-          .is('lead_id', null)
+        // Link the original inbound activity before sending alerts or completing
+        // the lease; retry after any error can find the created lead by phone.
+        if (!primaryActivityId) throw new Error('Inbound SMS has no persisted activity to link')
+        await linkInboundActivity(primaryActivityId, newLeadId, claimId)
+        primaryActivityLeadId = newLeadId
 
         // Alert only eligible recipients for the receiving company number.
         const unknownProspectCtx = prospectMatch ? `\n🏠 ${formatProspectAlert(prospectMatch)}` : ''
@@ -470,10 +631,11 @@ export async function POST(req: Request) {
     }
 
     // No auto-reply for general messages from known leads — keep it human
+    await completeInboundProcessing()
     return emptyTwimlResponse()
 
   } catch (err) {
     console.error('Twilio SMS webhook error:', err)
-    return emptyTwimlResponse()
+    return emptyTwimlResponse(503)
   }
 }
