@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeMobileCallActivities } from './activity-calls'
+import type { RecentCallActivityRow } from './recent-calls'
 
 const callbackId = 'e09b21e0-6b04-58f1-a6a3-86869d22ca12'
 const callId = '6c5e17a2-127a-5c5f-8ef2-8240ec3afe01'
@@ -23,7 +24,7 @@ describe('shared mobile call activity projection', () => {
   })
 
   it('keeps no-recording missed calls honest and preserves actual voicemail provenance', () => {
-    const result = normalizeMobileCallActivities([
+    const result = normalizeMobileCallActivities<RecentCallActivityRow>([
       { id: 'missed', activity_type: 'missed_call', created_at: '2026-10-02T17:00:00Z', metadata: { from: '+19135550123' } },
       { id: 'voicemail', activity_type: 'voicemail', created_at: '2026-10-02T18:00:00Z', metadata: { from: '+19135550123' } },
     ])
