@@ -217,7 +217,8 @@ describe('mobile outbound message command receipts', () => {
     await handlers.repairHistory()
     expect(state.body).toBe('')
     expect(state.key).toBe('next-command-key')
-    expect(state.status).toMatchObject({ tone: 'success' })
+    // Finished sends live on the message; the composer retains only actionable feedback.
+    expect(state.status).toBeNull()
     expect(recovery.snapshot.command).toBeNull()
     expect(values.size).toBe(0)
     expect(mocks.activities.size).toBe(1)
