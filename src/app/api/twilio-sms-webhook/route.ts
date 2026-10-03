@@ -203,6 +203,14 @@ export async function POST(req: Request) {
       prospectMatch = matches.length > 0 ? matches[0] : null
     }
 
+    const identityMetadata: Record<string, unknown> = identity ? {
+      inbound_lead_resolution: identity.kind,
+      inbound_lead_candidate_count: identity.candidateCount,
+      ...(identity.matchedOutboundActivityId ? { inbound_matched_outbound_activity_id: identity.matchedOutboundActivityId } : {}),
+      ...(identityNeedsReview ? { needs_identity_review: true } : {}),
+      ...(identity.kind === 'unsupported' ? { inbound_identity_review_reason: 'unsupported_phone_identity' } : {}),
+    } : {}
+
     // Log the inbound SMS to lead_activities
     const primaryMetadata: Record<string, unknown> = {
       ...(prospectMatch ? {
@@ -221,13 +229,7 @@ export async function POST(req: Request) {
       inbound_processing_state: 'pending',
       inbound_received_at: receivedAt,
       lead_name: leadName,
-      ...(identity ? {
-        inbound_lead_resolution: identity.kind,
-        inbound_lead_candidate_count: identity.candidateCount,
-        ...(identity.matchedOutboundActivityId ? { inbound_matched_outbound_activity_id: identity.matchedOutboundActivityId } : {}),
-        ...(identityNeedsReview ? { needs_identity_review: true } : {}),
-        ...(identity.kind === 'unsupported' ? { inbound_identity_review_reason: 'unsupported_phone_identity' } : {}),
-      } : {}),
+      ...identityMetadata,
       ...(isTeamMessage ? { is_team: true } : {}),
     }
     const claimId = crypto.randomUUID()
@@ -247,7 +249,10 @@ export async function POST(req: Request) {
     }
 
     if (priorMessage.data) {
-      inboundMetadata = priorMetadata
+      // Keep the persisted receipt and lease evidence, while recording an
+      // identity first resolved during recovery before claiming this attempt.
+      // If completion fails, these markers pin the next retry to review.
+      inboundMetadata = { ...priorMetadata, inbound_received_at: receivedAt, ...identityMetadata }
     } else {
       const { data: insertedActivity, error: activityInsertError } = await supabase.from('lead_activities').insert({
         lead_id: leadId,

@@ -150,6 +150,7 @@ function supabaseChain(table: string) {
       }
       const metadata = payload.metadata as Record<string, unknown> | undefined
       if (!metadata || !existingSmsRow) return { data: null, error: null }
+      if (completionFailure && metadata.inbound_processing_state === 'completed') return { data: null, error: { message: 'completion interrupted' } }
       if (claimConflict && metadata.inbound_processing_state === 'processing') return { data: null, error: null }
       for (const [column, expected] of filters) {
         if (column === 'metadata->>message_sid' && existingSmsRow.metadata?.message_sid !== expected) return { data: null, error: null }
@@ -198,6 +199,7 @@ let inserts: Array<{ table: string; payload: unknown }>
 let updates: Array<{ table: string; payload: unknown }>
 let existingSmsRow: { id: string; lead_id?: string | null; metadata?: Record<string, unknown>; created_at?: string } | null
 let claimConflict: boolean
+let completionFailure: boolean
 let pendingUpdate: Record<string, unknown> | null
 let pendingInsert: Record<string, unknown> | null
 let reviewUnknown = false
@@ -221,6 +223,7 @@ describe('twilio SMS webhook seller responses', () => {
     updates = []
     existingSmsRow = null
     claimConflict = false
+    completionFailure = false
     pendingUpdate = null
     pendingInsert = null
     reviewUnknown = false
@@ -391,6 +394,45 @@ describe('twilio SMS webhook seller responses', () => {
       needs_identity_review: true, inbound_processing_state: 'completed',
     } })
     expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.recordAppointmentSmsResponse).not.toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(inserts).toHaveLength(0)
+  })
+
+  it.each(['ambiguous', 'unsupported'] as const)('pins a first %s resolution on an unmarked pending receipt across interruption and expired-lease retry', async (resolution) => {
+    const from = resolution === 'unsupported' ? '+442079460123' : PROSPECT_PHONE
+    const receivedAt = '2026-06-03T14:57:00.000Z'
+    existingSmsRow = { id: 'activity-pending', lead_id: null, created_at: receivedAt, metadata: {
+      direction: 'received', message_sid: 'SM-CONFIRM', from, to: '+18166088588', source: 'original-receipt-source',
+      inbound_processing_state: 'pending', original_receipt_marker: 'preserve',
+    } }
+    mocks.rpc.mockResolvedValue({ data: [{ resolution, candidate_count: resolution === 'ambiguous' ? 2 : 0,
+      lead_id: null, matched_outbound_activity_id: null }], error: null })
+    completionFailure = true
+    expect((await POST(makeSmsRequest('CONFIRM', from, '+18166088588'))).status).toBe(503)
+    expect(existingSmsRow).toMatchObject({ lead_id: null, metadata: {
+      direction: 'received', message_sid: 'SM-CONFIRM', from, to: '+18166088588', source: 'original-receipt-source',
+      original_receipt_marker: 'preserve', inbound_received_at: receivedAt,
+      inbound_lead_resolution: resolution, inbound_lead_candidate_count: resolution === 'ambiguous' ? 2 : 0,
+      needs_identity_review: true, inbound_processing_state: 'processing',
+      ...(resolution === 'unsupported' ? { inbound_identity_review_reason: 'unsupported_phone_identity' } : {}),
+    } })
+    const interruptedClaim = existingSmsRow?.metadata?.inbound_processing_claim_id
+    expect(interruptedClaim).toEqual(expect.any(String))
+    completionFailure = false
+    vi.advanceTimersByTime(61_000)
+    // New outbound evidence must not reinterpret an already-reviewed receipt.
+    mocks.rpc.mockResolvedValue({ data: [{ resolution: 'normalized_phone', candidate_count: 1,
+      lead_id: lead.id, full_name: lead.full_name, phone: from, matched_outbound_activity_id: null }], error: null })
+    expect((await POST(makeSmsRequest('CONFIRM', from, '+18166088588'))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledOnce()
+    expect(existingSmsRow).toMatchObject({ lead_id: null, metadata: {
+      source: 'original-receipt-source', original_receipt_marker: 'preserve', inbound_received_at: receivedAt,
+      inbound_lead_resolution: resolution, needs_identity_review: true, inbound_processing_state: 'completed',
+    } })
+    expect(existingSmsRow?.metadata?.inbound_processing_claim_id).not.toBe(interruptedClaim)
+    expect(mocks.lookupProspectByPhone).not.toHaveBeenCalled()
+    expect(mocks.resolveGoogleAdsLeadContext).not.toHaveBeenCalled()
     expect(mocks.recordAppointmentSmsResponse).not.toHaveBeenCalled()
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(inserts).toHaveLength(0)
