@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "path": "/api/mobile/v1/messages",
+  "idempotencyKey": "cross-repo-sms-command",
+  "payload": {
+    "leadId": "lead-1",
+    "channel": "sms",
+    "body": "Synthetic SMS",
+    "template_id": "sms.conversation.1to1.v1"
+  }
+}

@@ -51,6 +51,10 @@ export type ConversationReadSource = 'projection' | 'compatibility'
 export interface ConversationThreadItem extends ConversationHubThread {
   threadKey: string
   kind: 'lead' | 'unmatched'
+  /** Canonical activity backing the thread preview. */
+  lastActivityId: string
+  /** Direction of the canonical latest communication, when known. */
+  lastDirection: 'inbound' | 'outbound' | null
 }
 
 export interface ConversationTimelineItem extends ConversationHubActivity {
@@ -107,6 +111,10 @@ export interface ReadConversationThreadsInput {
   query?: string | null
   /** When set, the inbox is loaded for this lead only. Omitted for every other agent. */
   restrictedLeadId?: string | null
+  /** Return the latest SMS/email per thread, independent of newer calls. */
+  messageOnly?: boolean
+  messageActorAliases?: string[] | null
+  messageCompanyWide?: boolean
 }
 
 export interface ReadConversationTimelineInput {
@@ -260,6 +268,8 @@ function projectionThread(
     owner: text(row.owner) ?? text(base.assigned_agent),
     lastMessage: communicationActivitySummary(communication),
     lastActivityAt: row.last_activity_at,
+    lastActivityId: row.last_communication_id,
+    lastDirection: getConversationDirection(communication),
     lastChannel,
     lastCallOutcome: lastChannel === 'call' || lastChannel === 'voicemail'
       ? getCallOutcomePresentation(communication)
@@ -359,7 +369,7 @@ export async function readConversationThreads(
     return readRestrictedConversationThreads(input, db, input.restrictedLeadId)
   }
 
-  const { data, error } = await db.rpc('conversation_thread_page_v3', {
+  const rpcArgs = {
     page_limit: limit + 1,
     page_queue: queue,
     page_actor: queue === 'mine' ? text(input.actorName) : null,
@@ -370,7 +380,12 @@ export async function readConversationThreads(
     after_attention_rank: cursor?.rank ?? null,
     after_activity_at: cursor?.at ?? null,
     after_thread_key: cursor?.key ?? null,
-  })
+    ...(input.messageOnly ? {
+      page_actor_aliases: input.messageActorAliases ?? [],
+      page_company_wide: input.messageCompanyWide ?? false,
+    } : {}),
+  }
+  const { data, error } = await db.rpc(input.messageOnly ? 'conversation_message_thread_page_v1' : 'conversation_thread_page_v3', rpcArgs)
 
   if (error) {
     if (isConversationReadModelMissing(error)) throw new ConversationReadModelUnavailableError()

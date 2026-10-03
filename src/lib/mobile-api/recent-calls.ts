@@ -1,5 +1,6 @@
 import { twilioRecordingSid } from '@/lib/mobile-api/twilio-recording'
 import { mobileRecordingUrl } from '@/lib/mobile-api/mojo-recording'
+import { mobileInboundRoute, type MobileInboundRoute } from '@/lib/mobile-api/inbound-route'
 
 export type RecentCallActivityRow = {
   id: string
@@ -21,10 +22,29 @@ export type MobileRecentCallItem = {
   outcome: 'answered' | 'no_answer' | 'voicemail' | 'bad_number' | 'dnc' | 'failed'
   note: string | null
   source: string | null
+  inboundRoute: MobileInboundRoute | null
   providerStatus: string | null
   recordingUrl: string | null
   agent: string | null
   metadata: Record<string, string>
+}
+
+export type RecentCallLeadClassification = {
+  id?: unknown
+  classification?: unknown
+}
+
+/** Hide prospect-number callbacks until their linked contact qualifies as a lead/opportunity. */
+export function visibleMobileRecentCalls<T extends Pick<MobileRecentCallItem, 'leadId' | 'inboundRoute'>>(
+  items: T[],
+  leads: RecentCallLeadClassification[],
+): T[] {
+  const eligibleLeadIds = new Set(leads
+    .filter((lead) => typeof lead.id === 'string'
+      && (lead.classification === 'lead' || lead.classification === 'opportunity'))
+    .map((lead) => lead.id as string))
+  return items.filter((item) => item.inboundRoute !== 'cold_callback'
+    || (item.leadId !== null && eligibleLeadIds.has(item.leadId)))
 }
 
 const IDENTITY_KEYS = [
@@ -67,9 +87,48 @@ function outcomeFor(row: RecentCallActivityRow, metadata: Record<string, unknown
   return 'no_answer'
 }
 
-function attemptKey(row: RecentCallActivityRow, metadata: Record<string, unknown>): string {
-  return text(metadata, 'clientCallId', 'clientAttemptId', 'client_attempt_id', 'callSid', 'call_sid', 'parentCallSid')
-    || `activity:${row.id}`
+export const RECENT_CALL_PROVIDER_ID_FIELDS = ['callSid', 'CallSid', 'call_sid', 'parentCallSid', 'parent_call_sid', 'providerCallSid'] as const
+
+export function recentCallProviderIds(row: RecentCallActivityRow): string[] {
+  const metadata = row.metadata ?? {}
+  const ids = RECENT_CALL_PROVIDER_ID_FIELDS.flatMap((field) => {
+    const value = text(metadata, field)
+    return value && /^[A-Za-z0-9_-]{3,128}$/.test(value) ? [value] : []
+  })
+  const clientCallId = text(metadata, 'clientCallId')
+  if (clientCallId && /^CA[0-9a-f]{32}$/i.test(clientCallId)) ids.push(clientCallId)
+  return [...new Set(ids)]
+}
+
+/** Only durable provider/client identities join attempts; phone and lead IDs never do. */
+export function groupRecentCallRows(rows: RecentCallActivityRow[]): RecentCallActivityRow[][] {
+  const parents = rows.map((_, index) => index)
+  const find = (index: number): number => {
+    if (parents[index] !== index) parents[index] = find(parents[index])
+    return parents[index]
+  }
+  const identityOwner = new Map<string, number>()
+  rows.forEach((row, index) => {
+    const metadata = row.metadata ?? {}
+    const identities = recentCallProviderIds(row).map((id) => `provider:${id}`)
+    for (const field of ['clientCallId', 'clientAttemptId', 'client_attempt_id'] as const) {
+      const value = text(metadata, field)
+      if (value) identities.push(`client:${value}`)
+    }
+    for (const identity of identities) {
+      const prior = identityOwner.get(identity)
+      if (prior !== undefined) parents[find(index)] = find(prior)
+      else identityOwner.set(identity, index)
+    }
+  })
+  const groups = new Map<number, RecentCallActivityRow[]>()
+  rows.forEach((row, index) => {
+    const key = find(index)
+    const group = groups.get(key) ?? []
+    group.push(row)
+    groups.set(key, group)
+  })
+  return [...groups.values()]
 }
 
 function evidenceRank(metadata: Record<string, unknown>): number {
@@ -77,6 +136,7 @@ function evidenceRank(metadata: Record<string, unknown>): number {
   if (source === 'savingkc_mobile') return 3
   if (source === 'outbound_call_policy') return 2
   if (source === 'twilio_status_callback') return 1
+  if (source === 'twilio_recording_callback') return -1
   return 0
 }
 
@@ -96,6 +156,9 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
   const direction = ['inbound', 'incoming', 'in', 'received', 'inbound-api'].includes(directionValue || '')
     || row.activity_type === 'missed_call' ? 'inbound' : 'outbound'
   const combined = Object.assign({}, ...groupedRows.slice().reverse().map((candidate) => identityMetadata(candidate.metadata ?? {}))) as Record<string, string>
+  const inboundRoute = direction === 'inbound'
+    ? groupedRows.map((candidate) => mobileInboundRoute(candidate.metadata ?? {}, candidate.description)).find(Boolean) ?? null
+    : null
   const actualAgent = row.agent?.trim() || groupedRows.map((candidate) => candidate.agent?.trim()).find(Boolean)
     || text(metadata, 'agent', 'userEmail') || null
   if (actualAgent && !combined.agent_identity) combined.agent_identity = actualAgent
@@ -108,10 +171,12 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
     phone,
     direction,
     startedAt: text(metadata, 'startedAt', 'started_at') || row.created_at,
-    durationSeconds: number(metadata, 'duration', 'durationSeconds', 'duration_seconds'),
+    durationSeconds: number(metadata, 'duration', 'durationSeconds', 'duration_seconds')
+      || groupedRows.map((candidate) => number(candidate.metadata ?? {}, 'duration', 'durationSeconds', 'duration_seconds')).find((duration) => duration > 0) || 0,
     outcome: outcomeFor(row, metadata),
     note: text(metadata, 'notes') || row.description?.trim() || null,
     source: text(metadata, 'source'),
+    inboundRoute,
     providerStatus: text(metadata, 'status'),
     recordingUrl: (() => {
       const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim()
@@ -125,22 +190,18 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
 }
 
 /** Collapse provider callbacks and operator dispositions by the durable call attempt. */
-export function buildMobileRecentCalls(rows: RecentCallActivityRow[], limit = 100): MobileRecentCallItem[] {
-  const selected = new Map<string, { row: RecentCallActivityRow; rank: number; rows: RecentCallActivityRow[] }>()
+export function buildMobileRecentCalls(
+  rows: RecentCallActivityRow[],
+  limit = 100,
+  options: { include?: (item: MobileRecentCallItem) => boolean } = {},
+): MobileRecentCallItem[] {
   const sorted = [...rows].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
-  for (const row of sorted) {
-    const metadata = row.metadata ?? {}
-    const key = attemptKey(row, metadata)
-    const rank = evidenceRank(metadata)
-    const current = selected.get(key)
-    if (!current) selected.set(key, { row, rank, rows: [row] })
-    else {
-      current.rows.push(row)
-      if (rank > current.rank) selected.set(key, { ...current, row, rank })
-    }
-  }
-  return [...selected.values()]
-    .map(({ row, rows }) => mapRecentCall(row, rows))
+  return groupRecentCallRows(sorted)
+    .map((group) => {
+      const selected = group.reduce((best, row) => evidenceRank(row.metadata ?? {}) > evidenceRank(best.metadata ?? {}) ? row : best)
+      return mapRecentCall(selected, group)
+    })
+    .filter((item) => !options.include || options.include(item))
     .sort((a, b) => +new Date(b.startedAt) - +new Date(a.startedAt))
     .slice(0, Math.max(1, Math.min(100, limit)))
 }

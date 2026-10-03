@@ -6,13 +6,49 @@ vi.mock('@/lib/mobile-api/authorized-lead', async (original) => ({ ...await orig
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: mocks.admin }))
 import { GET } from './route'
 
-describe('mobile conversation detail scope', () => {
-  beforeEach(() => vi.clearAllMocks())
-  it('rejects an out-of-scope lead before reading activities', async () => {
+const id = '11111111-1111-4111-8111-111111111111'
+const request = () => new NextRequest(`https://crm.savingkc.com/api/mobile/v1/conversations/${id}`)
+const row = (rowId: string, metadata: Record<string, unknown> = {}, kind = 'sms') => ({ id: rowId, activity_type: kind, description: rowId, agent: 'System', metadata, created_at: '2026-10-02T12:00:00.123900+00:00' })
+let rows: ReturnType<typeof row>[]
+let activityOffset: number
+let cursorFilters: string[]
+
+describe('mobile customer conversation history', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    rows = []
+    activityOffset = 0
+    cursorFilters = []
+    mocks.authorize.mockResolvedValue({ actor: { email: 'ernest@savingkc.com' } })
+    mocks.admin.mockReturnValue({ from: (table: string) => {
+      if (table === 'leads') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id, full_name: 'Seller' }, error: null }) }) }) }
+      const query = { select: () => query, eq: () => query, in: () => query, order: () => query,
+        or: (filter: string) => { cursorFilters.push(filter); return query },
+        limit: async (limit: number) => { const data = rows.slice(activityOffset, activityOffset + limit); activityOffset += data.length; return { data, error: null } },
+      }
+      return query
+    } })
+  })
+
+  it('returns real inbound/outbound messages and notes while excluding operational alerts', async () => {
+    rows = [row('internal', { direction: 'outbound_alert', to_agents: ['Ernest'] }), row('seller-reply', { direction: 'received' }), row('seller-send', { direction: 'outbound' }), row('private-note', {}, 'note'), row('agent-claim', { outcome: 'agent_claimed' }, 'call')]
+    const response = await GET(request(), { params: Promise.resolve({ id }) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.activities.map((activity: { id: string }) => activity.id)).toEqual(['seller-reply', 'seller-send', 'private-note'])
+  })
+
+  it('pages beyond 100 newer internal alerts to retain the real seller reply', async () => {
+    rows = [...Array.from({ length: 100 }, (_, index) => row(`alert-${index}`, { direction: 'outbound_alert' })), row('older-seller-reply', { direction: 'inbound' })]
+    const body = await (await GET(request(), { params: Promise.resolve({ id }) })).json()
+    expect(body.activities.map((activity: { id: string }) => activity.id)).toEqual(['older-seller-reply'])
+    expect(cursorFilters).toEqual(['created_at.lt."2026-10-02T12:00:00.123900+00:00",and(created_at.eq."2026-10-02T12:00:00.123900+00:00",id.lt."alert-99")'])
+  })
+
+  it('does not read activities when canonical lead authorization fails', async () => {
     const { MobileLeadAccessError } = await import('@/lib/mobile-api/authorized-lead')
-    mocks.authorize.mockRejectedValue(new MobileLeadAccessError('outside scope', 403))
-    const response = await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/conversations/lead-1'), { params: Promise.resolve({ id: 'lead-1' }) })
-    expect(response.status).toBe(403)
+    mocks.authorize.mockRejectedValue(new MobileLeadAccessError('Forbidden', 403))
+    expect((await GET(request(), { params: Promise.resolve({ id }) })).status).toBe(403)
     expect(mocks.admin).not.toHaveBeenCalled()
   })
 })
