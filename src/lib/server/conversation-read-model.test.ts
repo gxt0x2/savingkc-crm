@@ -88,6 +88,37 @@ describe('conversation read model inputs', () => {
 })
 
 describe('conversation thread pages', () => {
+  it('carries the canonical message actor and only presentation metadata into previews', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [projectionRow({
+      last_channel: 'sms', last_direction: 'outbound', last_communication_type: 'sms',
+      last_communication_agent: 'Ernest A. Dodson III', owner: null,
+      last_communication_metadata: {
+        sent: true, direction: 'outbound', from: '+18166088588', to: '+19137179716',
+        message_sid: 'SMeb8bb73937507a28e6eeea55b775981e', delivery_status: 'delivered',
+        provider_status: 'delivered', message_status: 'sent', status: 'sent', agent_identity: 'agent-ernest',
+        inbound_processing_claim_id: 'private-claim', mobile_message_command_id: 'private-receipt',
+        internal_payload: { secret: 'omit' }, to_agents: ['omit'],
+      },
+    })], error: null })
+    const page = await readConversationThreads({ messageOnly: true, queue: 'all', timeframe: 'all' }, { rpc } as never)
+    expect(page.items[0]).toMatchObject({ lastAgent: 'Ernest A. Dodson III', lastMessageMetadata: {
+      sent: true, direction: 'outbound', from: '+18166088588', to: '+19137179716',
+      message_sid: 'SMeb8bb73937507a28e6eeea55b775981e', delivery_status: 'delivered',
+      provider_status: 'delivered', message_status: 'sent', status: 'sent', agent_identity: 'agent-ernest',
+    } })
+    expect(Object.keys(page.items[0]!.lastMessageMetadata)).toHaveLength(10)
+    expect(JSON.parse(JSON.stringify(page.items[0])).lastAgent).toBe('Ernest A. Dodson III')
+  })
+
+  it('does not expose object-valued delivery internals or substitute an owner for a missing sender', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [projectionRow({
+      owner: 'Casey', last_communication_agent: null,
+      last_communication_metadata: { sent: 'true', delivery_status: [{ sid: 'internal' }], from: '', status: null },
+    })], error: null })
+    const page = await readConversationThreads({ queue: 'all' }, { rpc } as never)
+    expect(page.items[0]).toMatchObject({ owner: 'Casey', lastAgent: null, lastMessageMetadata: {} })
+  })
+
   it('matches the shared mobile contract fixture from the real projection mapper', async () => {
     const rows = [
       projectionRow({

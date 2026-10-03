@@ -15,11 +15,11 @@ import { processInboundSmsConsent } from '@/lib/sms-consent-audit'
 import { supabase } from '@/lib/supabase-lazy'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { recordAppointmentSmsResponse } from '@/lib/server/appointment-sms-response'
+import { resolveInboundSmsLead } from '@/lib/server/inbound-sms-lead'
 import {
   googleAdsNewTextTeamMessage,
   markLeadAsGoogleAdsPhoneLead,
   notifyGoogleAdsTeam,
-  phoneLookupVariants,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 
@@ -46,20 +46,6 @@ const TEAM_NUMBERS = new Set([
 ])
 
 type SmsSuppressionReason = 'SPAM' | 'BLOCKED' | 'DNC' | 'WRONG_NUMBER' | string
-
-async function findLeadByPhone(phone: string) {
-  for (const variant of phoneLookupVariants(phone)) {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('id, full_name, phone, station, priority')
-      .eq('phone', variant)
-      .limit(1)
-      .maybeSingle()
-    if (error) throw new Error(`Lead lookup failed: ${error.message}`)
-    if (data) return data
-  }
-  return null
-}
 
 async function findLeadById(leadId: string) {
   const { data, error } = await supabase.from('leads')
@@ -142,7 +128,7 @@ export async function POST(req: Request) {
       alertRecipients.map((recipient) => safeSendSMS({ body, from: TWILIO_PHONE, to: recipient.phone })),
     )
 
-    if (!from || messageBody === null || !messageSid) {
+    if (!from || !to || messageBody === null || !messageSid) {
       return new NextResponse('Missing required fields', { status: 400 })
     }
 
@@ -150,7 +136,7 @@ export async function POST(req: Request) {
     // terminal; persisted pending work must receive a retryable response or
     // resume processing below.
     const priorMessage = await supabase.from('lead_activities')
-      .select('id,lead_id,metadata')
+      .select('id,lead_id,metadata,created_at')
       .eq('activity_type', 'sms')
       .eq('metadata->>message_sid', messageSid)
       .in('metadata->>direction', ['received', 'inbound', 'in'])
@@ -190,11 +176,21 @@ export async function POST(req: Request) {
       return emptyTwimlResponse(503)
     }
 
-    // Match sender phone number to a lead in the database. Twilio sends E.164,
-    // but older imports can store national/formatted variants.
+    // Pin continuity to the first persisted receipt. A later outbound message
+    // must not decide where an older, interrupted inbound reply is routed.
+    const priorReceivedAt = typeof priorMetadata?.inbound_received_at === 'string'
+      ? priorMetadata.inbound_received_at : priorMessage.data?.created_at
+    const receivedAt = typeof priorReceivedAt === 'string' && Number.isFinite(Date.parse(priorReceivedAt))
+      ? priorReceivedAt : new Date().toISOString()
+    const priorNeedsIdentityReview = !priorMessage.data?.lead_id && priorMetadata?.needs_identity_review === true
+    // Twilio sends E.164, but older imports can contain formatting and Unicode
+    // controls. Explicit ambiguity stays in human review even during recovery.
+    const identity = priorMessage.data?.lead_id || priorNeedsIdentityReview ? null
+      : await resolveInboundSmsLead(supabase, from, to, receivedAt)
     const lead = priorMessage.data?.lead_id
       ? await findLeadById(priorMessage.data.lead_id)
-      : await findLeadByPhone(from)
+      : identity?.lead ?? null
+    const identityNeedsReview = priorNeedsIdentityReview || identity?.kind === 'ambiguous' || identity?.kind === 'unsupported'
     const leadId = lead?.id || null
     const leadName = lead?.full_name || 'Unknown'
     const suppressionReason = await smsSuppressionReason(from)
@@ -202,10 +198,18 @@ export async function POST(req: Request) {
 
     // Prospect lookup for unknown senders
     let prospectMatch: ProspectMatch | null = null
-    if (!lead && !isHardBlockedReason(suppressionReason)) {
+    if (!lead && !identityNeedsReview && !isHardBlockedReason(suppressionReason)) {
       const matches = await lookupProspectByPhone(from)
       prospectMatch = matches.length > 0 ? matches[0] : null
     }
+
+    const identityMetadata: Record<string, unknown> = identity ? {
+      inbound_lead_resolution: identity.kind,
+      inbound_lead_candidate_count: identity.candidateCount,
+      ...(identity.matchedOutboundActivityId ? { inbound_matched_outbound_activity_id: identity.matchedOutboundActivityId } : {}),
+      ...(identityNeedsReview ? { needs_identity_review: true } : {}),
+      ...(identity.kind === 'unsupported' ? { inbound_identity_review_reason: 'unsupported_phone_identity' } : {}),
+    } : {}
 
     // Log the inbound SMS to lead_activities
     const primaryMetadata: Record<string, unknown> = {
@@ -223,7 +227,9 @@ export async function POST(req: Request) {
       inbound_webhook_source: 'twilio_sms_webhook',
       inbound_webhook_version: '2',
       inbound_processing_state: 'pending',
+      inbound_received_at: receivedAt,
       lead_name: leadName,
+      ...identityMetadata,
       ...(isTeamMessage ? { is_team: true } : {}),
     }
     const claimId = crypto.randomUUID()
@@ -243,13 +249,17 @@ export async function POST(req: Request) {
     }
 
     if (priorMessage.data) {
-      inboundMetadata = priorMetadata
+      // Keep the persisted receipt and lease evidence, while recording an
+      // identity first resolved during recovery before claiming this attempt.
+      // If completion fails, these markers pin the next retry to review.
+      inboundMetadata = { ...priorMetadata, inbound_received_at: receivedAt, ...identityMetadata }
     } else {
       const { data: insertedActivity, error: activityInsertError } = await supabase.from('lead_activities').insert({
         lead_id: leadId,
         activity_type: 'sms',
         description: messageBody,
         agent: 'system',
+        created_at: receivedAt,
         metadata: primaryMetadata,
       }).select('id,lead_id').single()
       inboundMetadata = primaryMetadata
@@ -306,6 +316,14 @@ export async function POST(req: Request) {
     }
 
     if (isHardBlockedReason(suppressionReason)) {
+      await completeInboundProcessing()
+      return emptyTwimlResponse()
+    }
+
+    // Retain uncertain identities in the unmatched inbox for human review.
+    // Duplicate or unsupported phones cannot authorize lead creation,
+    // appointment/YES automation, or outgoing messages on a candidate's behalf.
+    if (identityNeedsReview) {
       await completeInboundProcessing()
       return emptyTwimlResponse()
     }

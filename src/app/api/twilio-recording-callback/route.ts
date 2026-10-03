@@ -18,7 +18,7 @@ import {
   phoneLookupVariants,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
-import { resolveLeadIdFromCallActivity } from '@/lib/telephony/recording-lead-resolution'
+import { resolveLeadIdFromCallActivity, resolveRecordingCallDirection } from '@/lib/telephony/recording-lead-resolution'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import {
   claimPlayableRecordingActivity,
@@ -238,7 +238,7 @@ export async function POST(req: Request) {
       recordingStatus,
       from,
       to,
-      context: recordingContext,
+      context: { ...recordingContext, direction: await resolveRecordingCallDirection(callSid || '', leadId) },
     })
 
     if (!processingClaim.shouldProcess) {

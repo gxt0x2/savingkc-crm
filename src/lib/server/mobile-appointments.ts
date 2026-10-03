@@ -123,6 +123,9 @@ function commandError(error: { message?: string } | null): AppointmentCommandErr
   if (message.includes('appointment_terminal')) {
     return new AppointmentCommandError('A completed or cancelled appointment cannot be edited.', 'conflict')
   }
+  if (message.includes('appointment_invalid_outcome')) {
+    return new AppointmentCommandError('This appointment outcome could not be applied. Refresh the calendar to check its current status.', 'conflict')
+  }
   if (message.includes('appointments_mobile_duration_check')) {
     return new AppointmentCommandError('Appointment duration must be between 15 minutes and 24 hours.', 'invalid')
   }

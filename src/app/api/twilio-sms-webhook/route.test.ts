@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
   validateTwilioWebhook: vi.fn(),
   rateLimit: vi.fn(),
   getClientIp: vi.fn(),
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
-  supabase: { from: mocks.from },
+  supabase: { from: mocks.from, rpc: mocks.rpc },
 }))
 
 vi.mock('@/lib/twilio-validate', () => ({
@@ -149,6 +150,7 @@ function supabaseChain(table: string) {
       }
       const metadata = payload.metadata as Record<string, unknown> | undefined
       if (!metadata || !existingSmsRow) return { data: null, error: null }
+      if (completionFailure && metadata.inbound_processing_state === 'completed') return { data: null, error: { message: 'completion interrupted' } }
       if (claimConflict && metadata.inbound_processing_state === 'processing') return { data: null, error: null }
       for (const [column, expected] of filters) {
         if (column === 'metadata->>message_sid' && existingSmsRow.metadata?.message_sid !== expected) return { data: null, error: null }
@@ -195,8 +197,9 @@ function supabaseChain(table: string) {
 
 let inserts: Array<{ table: string; payload: unknown }>
 let updates: Array<{ table: string; payload: unknown }>
-let existingSmsRow: { id: string; lead_id?: string | null; metadata?: Record<string, unknown> } | null
+let existingSmsRow: { id: string; lead_id?: string | null; metadata?: Record<string, unknown>; created_at?: string } | null
 let claimConflict: boolean
+let completionFailure: boolean
 let pendingUpdate: Record<string, unknown> | null
 let pendingInsert: Record<string, unknown> | null
 let reviewUnknown = false
@@ -220,6 +223,7 @@ describe('twilio SMS webhook seller responses', () => {
     updates = []
     existingSmsRow = null
     claimConflict = false
+    completionFailure = false
     pendingUpdate = null
     pendingInsert = null
     reviewUnknown = false
@@ -263,6 +267,16 @@ describe('twilio SMS webhook seller responses', () => {
         : { handled: false }
     ))
     mocks.from.mockImplementation((table: string) => supabaseChain(table))
+    mocks.rpc.mockImplementation(async () => {
+      if (phoneLookupError) return { data: null, error: phoneLookupError }
+      const matchedLead = createdLeadRow ?? (reviewUnknown ? null : lead)
+      return { data: [{
+        resolution: matchedLead ? 'normalized_phone' : 'unknown', candidate_count: matchedLead ? 1 : 0,
+        lead_id: matchedLead?.id ?? null, full_name: matchedLead?.full_name ?? null,
+        phone: matchedLead?.phone ?? null, station: matchedLead?.station ?? null, priority: matchedLead?.priority ?? null,
+        matched_outbound_activity_id: null,
+      }], error: null }
+    })
   })
 
   afterEach(() => vi.useRealTimers())

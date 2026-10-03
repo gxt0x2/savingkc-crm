@@ -4,6 +4,7 @@ import { isUniqueViolation, stableWebhookActivityId } from '@/lib/telephony/webh
 type JsonObject = Record<string, unknown>
 
 type RecordingContext = {
+  direction?: 'inbound' | 'outbound'
   source?: string
   traffic_source?: string
   campaign?: string
@@ -78,7 +79,7 @@ export async function claimPlayableRecordingActivity({
   const processingStartedAt = new Date().toISOString()
   const metadata: RecordingCallbackMeta = {
     callSid,
-    direction: from?.startsWith('client:') ? 'outbound' : 'inbound',
+    ...(context?.direction ? { direction: context.direction } : from?.startsWith('client:') ? { direction: 'outbound' as const } : {}),
     duration,
     from,
     recordingSid,

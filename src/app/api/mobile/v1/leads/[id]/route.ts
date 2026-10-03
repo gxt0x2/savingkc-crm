@@ -6,9 +6,7 @@ import { operatingDepartmentForStage } from '@/lib/operating-model/department-re
 import { applyCrmEntityAuthority, safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
 import { listWorkItems } from '@/lib/server/work-items'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { mobileRecordingUrl } from '@/lib/mobile-api/mojo-recording'
-import { twilioRecordingSid } from '@/lib/mobile-api/twilio-recording'
-import { mobileInboundRoute } from '@/lib/mobile-api/inbound-route'
+import { normalizeMobileCallActivities } from '@/lib/mobile-api/activity-calls'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -116,16 +114,7 @@ export async function GET(
     const primaryNextAction = workItemsState.data.find((item) => item.primaryNextAction)
       ?? workItemsState.data[0]
       ?? null
-    const mobileActivities = (activityRes.data ?? []).map((activity) => {
-      if (!['call', 'missed_call', 'voicemail'].includes(activity.activity_type)) return activity
-      const metadata = activity.metadata && typeof activity.metadata === 'object' && !Array.isArray(activity.metadata)
-        ? activity.metadata as Record<string, unknown> : {}
-      const recordingUrl = mobileRecordingUrl(activity.id, metadata, process.env.TWILIO_ACCOUNT_SID, twilioRecordingSid)
-      const safeMetadata = { ...metadata }
-      for (const key of ['recordingUrl', 'recording_url', 'RecordingUrl', 'recording']) delete safeMetadata[key]
-      const inboundRoute = mobileInboundRoute(safeMetadata, activity.description)
-      return { ...activity, metadata: { ...safeMetadata, ...(recordingUrl ? { recordingUrl } : {}), ...(inboundRoute ? { inboundRoute } : {}) } }
-    })
+    const mobileActivities = normalizeMobileCallActivities(activityRes.data ?? [])
 
     return NextResponse.json(
       {

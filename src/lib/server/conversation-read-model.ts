@@ -55,6 +55,10 @@ export interface ConversationThreadItem extends ConversationHubThread {
   lastActivityId: string
   /** Direction of the canonical latest communication, when known. */
   lastDirection: 'inbound' | 'outbound' | null
+  /** Sender recorded on the canonical communication, independent of contact owner. */
+  lastAgent: string | null
+  /** Public message presentation fields; excludes operational receipt/claim data. */
+  lastMessageMetadata: Record<string, string | boolean>
 }
 
 export interface ConversationTimelineItem extends ConversationHubActivity {
@@ -187,6 +191,16 @@ function channel(value: unknown): ConversationThreadItem['lastChannel'] {
   return null
 }
 
+function messagePresentationMetadata(metadata: Record<string, unknown> | null): Record<string, string | boolean> {
+  const result: Record<string, string | boolean> = {}
+  if (!metadata) return result
+  if (typeof metadata.sent === 'boolean') result.sent = metadata.sent
+  for (const key of ['direction', 'from', 'to', 'status', 'delivery_status', 'provider_status', 'message_status', 'message_sid', 'agent_identity']) {
+    if (typeof metadata[key] === 'string' && metadata[key].trim()) result[key] = metadata[key]
+  }
+  return result
+}
+
 async function fetchLeadContext(
   db: ConversationDatabase,
   leadIds: string[],
@@ -270,6 +284,8 @@ function projectionThread(
     lastActivityAt: row.last_activity_at,
     lastActivityId: row.last_communication_id,
     lastDirection: getConversationDirection(communication),
+    lastAgent: text(row.last_communication_agent),
+    lastMessageMetadata: messagePresentationMetadata(row.last_communication_metadata),
     lastChannel,
     lastCallOutcome: lastChannel === 'call' || lastChannel === 'voicemail'
       ? getCallOutcomePresentation(communication)

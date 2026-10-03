@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   transcribeAudio: vi.fn(),
   analyzeCallTranscript: vi.fn(),
   resolveLeadIdFromCallActivity: vi.fn(),
+  resolveRecordingCallDirection: vi.fn(),
   resolveGoogleAdsLeadContext: vi.fn(),
   markLeadAsGoogleAdsPhoneLead: vi.fn(),
   upsertAppointmentFromCall: vi.fn(),
@@ -81,6 +82,7 @@ vi.mock('@/lib/google-ads-phone', () => ({
 
 vi.mock('@/lib/telephony/recording-lead-resolution', () => ({
   resolveLeadIdFromCallActivity: mocks.resolveLeadIdFromCallActivity,
+  resolveRecordingCallDirection: mocks.resolveRecordingCallDirection,
 }))
 
 vi.mock('twilio', () => ({
@@ -119,6 +121,7 @@ describe('Twilio recording callback containment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.validateTwilioWebhook.mockResolvedValue(true)
+    mocks.resolveRecordingCallDirection.mockResolvedValue('inbound')
     mocks.resolveGoogleAdsLeadContext.mockResolvedValue({ leadId: null })
     mocks.completeDialerPostCallReview.mockResolvedValue(false)
     mocks.markDialerPostCallProcessing.mockResolvedValue(false)

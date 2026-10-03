@@ -27,11 +27,16 @@ function callOwnerEvidence(row: RecentCallActivityRow, identity: string, email: 
   if ((actorEmail && actorEmail !== email) || (userEmail && userEmail !== email) || (ownerUserId && ownerUserId !== userId)) return 'conflict'
   const agentIdentity = typeof metadata.agent_identity === 'string' ? metadata.agent_identity.trim().toLowerCase().replace(/^client:/, '') : ''
   if (agentIdentity && agentIdentity !== identity.toLowerCase()) return 'conflict'
+  const voicemailRecipient = row.activity_type === 'voicemail' && typeof metadata.for_agent === 'string'
+    ? metadata.for_agent.trim().toLowerCase().replace(/^client:/, '') : ''
+  const allowedRecipients = new Set([identity, email, ...names].map((name) => name.trim().toLowerCase()).filter(Boolean))
+  if (voicemailRecipient && !allowedRecipients.has(voicemailRecipient)) return 'conflict'
   if (actorEmail === email || userEmail === email || ownerUserId === userId || agentIdentity === identity.toLowerCase()) return 'owned'
   const agent = typeof row.agent === 'string' ? row.agent.trim().toLowerCase() : ''
   const allowedNames = new Set(names.map((name) => name.trim().toLowerCase()).filter(Boolean))
   if (allowedNames.has(agent)) return 'owned'
   if (agent && agent !== 'system') return 'conflict'
+  if (voicemailRecipient && allowedRecipients.has(voicemailRecipient)) return 'owned'
   if (!directLine || !['inbound', 'incoming', 'in', 'received'].includes(String(metadata.direction || '').trim().toLowerCase())) return 'unattributed'
   return normalizePhoneToE164(String(metadata.calledNumber ?? metadata.called_number ?? '')) === directLine ? 'owned' : 'unattributed'
 }
@@ -54,6 +59,7 @@ export async function GET(req: NextRequest) {
       `metadata->>userId.eq.${userId}`,
       `metadata->>agent_identity.eq.${profile.identity}`,
       ...names.map((name) => `agent.ilike.${postgrestLiteral(name)}`),
+      ...[...new Set([profile.identity, email, ...names])].map((recipient) => `and(activity_type.eq.voicemail,metadata->>for_agent.ilike.${postgrestLiteral(recipient)})`),
       ...(directLine ? [
         `metadata->>calledNumber.eq.${directLine}`,
         `metadata->>called_number.eq.${directLine}`,

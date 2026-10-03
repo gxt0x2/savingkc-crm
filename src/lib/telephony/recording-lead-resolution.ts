@@ -32,3 +32,28 @@ export async function resolveLeadIdFromCallActivity(callSid: string): Promise<st
 
   return typeof data?.lead_id === 'string' ? data.lead_id : null
 }
+
+/** A recording callback often has neither From nor To. Its durable call rows
+ * establish direction; previous recording callbacks are not call evidence.
+ */
+export function recordingDirectionFromActivities(rows: Array<{ metadata?: unknown }>): 'inbound' | 'outbound' | undefined {
+  const directions = new Set<'inbound' | 'outbound'>()
+  for (const row of rows) {
+    const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {}
+    if (metadata.source === 'twilio_recording_callback') continue
+    const value = typeof metadata.direction === 'string' ? metadata.direction.trim().toLowerCase() : ''
+    if (['inbound', 'incoming', 'in', 'received', 'inbound-api'].includes(value)) directions.add('inbound')
+    if (['outbound', 'outgoing', 'out', 'sent', 'outbound-api'].includes(value)) directions.add('outbound')
+  }
+  return directions.size === 1 ? [...directions][0] : undefined
+}
+
+export async function resolveRecordingCallDirection(callSid: string, leadId: string): Promise<'inbound' | 'outbound' | undefined> {
+  const filter = callSidActivityOrFilter(callSid)
+  if (!filter || !leadId) return undefined
+  const { data, error } = await supabase.from('lead_activities').select('metadata')
+    .eq('lead_id', leadId).in('activity_type', ['call', 'missed_call'])
+    .or(filter).order('created_at', { ascending: false }).limit(25)
+  if (error) throw new Error('Recorded call direction could not be loaded.')
+  return recordingDirectionFromActivities(data ?? [])
+}
