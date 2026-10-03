@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
   validateTwilioWebhook: vi.fn(),
   rateLimit: vi.fn(),
   getClientIp: vi.fn(),
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
-  supabase: { from: mocks.from },
+  supabase: { from: mocks.from, rpc: mocks.rpc },
 }))
 
 vi.mock('@/lib/twilio-validate', () => ({
@@ -195,7 +196,7 @@ function supabaseChain(table: string) {
 
 let inserts: Array<{ table: string; payload: unknown }>
 let updates: Array<{ table: string; payload: unknown }>
-let existingSmsRow: { id: string; lead_id?: string | null; metadata?: Record<string, unknown> } | null
+let existingSmsRow: { id: string; lead_id?: string | null; metadata?: Record<string, unknown>; created_at?: string } | null
 let claimConflict: boolean
 let pendingUpdate: Record<string, unknown> | null
 let pendingInsert: Record<string, unknown> | null
@@ -263,9 +264,137 @@ describe('twilio SMS webhook seller responses', () => {
         : { handled: false }
     ))
     mocks.from.mockImplementation((table: string) => supabaseChain(table))
+    mocks.rpc.mockImplementation(async () => {
+      if (phoneLookupError) return { data: null, error: phoneLookupError }
+      const matchedLead = createdLeadRow ?? (reviewUnknown ? null : lead)
+      return { data: [{
+        resolution: matchedLead ? 'normalized_phone' : 'unknown', candidate_count: matchedLead ? 1 : 0,
+        lead_id: matchedLead?.id ?? null, full_name: matchedLead?.full_name ?? null,
+        phone: matchedLead?.phone ?? null, station: matchedLead?.station ?? null, priority: matchedLead?.priority ?? null,
+        matched_outbound_activity_id: null,
+      }], error: null }
+    })
   })
 
   afterEach(() => vi.useRealTimers())
+
+  it('links a reply to the accepted outbound thread when a dead placeholder shares the normalized number', async () => {
+    lead = { id: '68997f70-04be-4119-bb24-c5e959f4d6b1', full_name: 'Ernest Dodson', phone: '\u202a(913) 717-9716\u202c', station: 'contacted', priority: 'normal' }
+    mocks.rpc.mockResolvedValue({ data: [{ resolution: 'outbound_thread', candidate_count: 2,
+      lead_id: lead.id, full_name: lead.full_name, phone: lead.phone, station: lead.station, priority: lead.priority,
+      matched_outbound_activity_id: '88d0ab17-7f3c-49e4-95cb-8031961b0711' }], error: null })
+    const response = await POST(makeSmsRequest('Reply to Hello', '+19137179716', '+18166088588'))
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith('resolve_inbound_sms_lead_v1', {
+      p_customer_phone: '+19137179716', p_company_phone: '+18166088588', p_received_at: '2026-06-03T15:00:00.000Z',
+    })
+    expect(existingSmsRow).toMatchObject({ lead_id: lead.id, metadata: {
+      inbound_lead_resolution: 'outbound_thread', inbound_lead_candidate_count: 2,
+      inbound_matched_outbound_activity_id: '88d0ab17-7f3c-49e4-95cb-8031961b0711', inbound_processing_state: 'completed',
+    } })
+    expect(mocks.lookupProspectByPhone).not.toHaveBeenCalled()
+    expect(inserts.filter(({ table }) => table === 'leads')).toHaveLength(0)
+  })
+
+  it.each(['YES', 'CONFIRM', 'Please call me'])('retains an ambiguous %s as unmatched without automatic side effects, including on retry', async (body) => {
+    mocks.rpc.mockResolvedValue({ data: [{ resolution: 'ambiguous', candidate_count: 2,
+      lead_id: null, matched_outbound_activity_id: null }], error: null })
+    mocks.isGoogleAdsPhoneNumber.mockReturnValue(true)
+    const response = await POST(makeSmsRequest(body))
+    expect(response.status).toBe(200)
+    expect(existingSmsRow).toMatchObject({ lead_id: null, metadata: {
+      needs_identity_review: true, inbound_lead_resolution: 'ambiguous', inbound_processing_state: 'completed',
+    } })
+    expect(mocks.lookupProspectByPhone).not.toHaveBeenCalled()
+    expect(mocks.createEnrichedLeadFromProspect).not.toHaveBeenCalled()
+    expect(mocks.resolveGoogleAdsLeadContext).not.toHaveBeenCalled()
+    expect(mocks.recordAppointmentSmsResponse).not.toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(mocks.sendPushToAgents).not.toHaveBeenCalled()
+    expect(inserts.filter(({ table }) => table === 'leads')).toHaveLength(0)
+    const count = inserts.length
+    expect((await POST(makeSmsRequest(body))).status).toBe(200)
+    expect(inserts).toHaveLength(count)
+    expect(mocks.rpc).toHaveBeenCalledOnce()
+  })
+
+  it.each(['+442079460123', '54321', 'SenderName'])('retains unsupported sender %s as unmatched review without automatic actions or retry storms', async (from) => {
+    mocks.rpc.mockResolvedValue({ data: [{ resolution: 'unsupported', candidate_count: 0,
+      lead_id: null, matched_outbound_activity_id: null }], error: null })
+    mocks.isGoogleAdsPhoneNumber.mockReturnValue(true)
+    expect((await POST(makeSmsRequest('CONFIRM', from))).status).toBe(200)
+    expect(existingSmsRow).toMatchObject({ lead_id: null, metadata: {
+      from, inbound_lead_resolution: 'unsupported', inbound_identity_review_reason: 'unsupported_phone_identity',
+      needs_identity_review: true, inbound_processing_state: 'completed',
+    } })
+    expect(mocks.lookupProspectByPhone).not.toHaveBeenCalled()
+    expect(mocks.resolveGoogleAdsLeadContext).not.toHaveBeenCalled()
+    expect(mocks.recordAppointmentSmsResponse).not.toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(inserts.filter(({ table }) => table === 'leads')).toHaveLength(0)
+    expect((await POST(makeSmsRequest('CONFIRM', from))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledOnce()
+    expect(inserts).toHaveLength(1)
+  })
+
+  it('keeps an unsupported identity retryable only when receipt persistence fails', async () => {
+    mocks.rpc.mockResolvedValue({ data: [{ resolution: 'unsupported', candidate_count: 0,
+      lead_id: null, matched_outbound_activity_id: null }], error: null })
+    smsInsertError = { message: 'DB unavailable' }
+    expect((await POST(makeSmsRequest('Hello', '+442079460123'))).status).toBe(503)
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(existingSmsRow).toBeNull()
+  })
+
+  it.each([
+    { code: 'PGRST202', message: 'Could not find resolve_inbound_sms_lead_v1' },
+    { code: '08006', message: 'database unavailable' },
+  ])('fails retryably without raw phone fallback when identity resolution fails: $code', async (error) => {
+    mocks.rpc.mockResolvedValue({ data: null, error })
+    const response = await POST(makeSmsRequest('Reply'))
+    expect(response.status).toBe(503)
+    expect(mocks.from).not.toHaveBeenCalledWith('leads')
+    expect(inserts).toEqual([])
+    expect(mocks.lookupProspectByPhone).not.toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+  })
+
+  it('preserves the already linked identity while resuming a pending SID', async () => {
+    existingSmsRow = { id: 'activity-pending', lead_id: lead.id, metadata: {
+      direction: 'received', message_sid: 'SM-Please call me', inbound_processing_state: 'pending',
+    } }
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'must not reroute a linked receipt' } })
+    expect((await POST(makeSmsRequest('Please call me'))).status).toBe(200)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(existingSmsRow?.lead_id).toBe(lead.id)
+  })
+
+  it('resolves an interrupted unlinked receipt at its original timestamp, rather than retry time', async () => {
+    existingSmsRow = { id: 'activity-pending', lead_id: null, created_at: '2026-06-03T14:57:00.000Z', metadata: {
+      direction: 'received', message_sid: 'SM-Please call me', inbound_processing_state: 'pending',
+    } }
+    expect((await POST(makeSmsRequest('Please call me'))).status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith('resolve_inbound_sms_lead_v1', expect.objectContaining({
+      p_received_at: '2026-06-03T14:57:00.000Z',
+    }))
+    expect(existingSmsRow?.lead_id).toBe(lead.id)
+  })
+
+  it('keeps a pending ambiguous receipt in human review even if later outbound activity could resolve it', async () => {
+    existingSmsRow = { id: 'activity-pending', lead_id: null, metadata: {
+      direction: 'received', message_sid: 'SM-CONFIRM', inbound_processing_state: 'pending',
+      inbound_lead_resolution: 'ambiguous', inbound_lead_candidate_count: 2, needs_identity_review: true,
+    } }
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'must not reinterpret an ambiguous receipt' } })
+    expect((await POST(makeSmsRequest('CONFIRM'))).status).toBe(200)
+    expect(existingSmsRow).toMatchObject({ lead_id: null, metadata: {
+      needs_identity_review: true, inbound_processing_state: 'completed',
+    } })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.recordAppointmentSmsResponse).not.toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(inserts).toHaveLength(0)
+  })
 
   it('does not send a canned TwiML reply back to a prospect who texts YES', async () => {
     const response = await POST(makeSmsRequest('YES'))
