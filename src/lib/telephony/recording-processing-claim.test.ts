@@ -131,4 +131,18 @@ describe('recording processing claims', () => {
       }),
     })
   })
+  it('stores the durable call direction instead of defaulting blank callback legs to inbound', async () => {
+    const db = activityChain()
+    mocks.from.mockReturnValue(db.chain)
+    const claim = await claimPlayableRecordingActivity({ ...claimInput(), from: '', to: '', context: { direction: 'outbound' } })
+    expect(claim.metadata.direction).toBe('outbound')
+    expect(db.inserts).toContainEqual(expect.objectContaining({ metadata: expect.objectContaining({ direction: 'outbound' }) }))
+  })
+  it('leaves unknown direction unknown when callback legs and call evidence are absent', async () => {
+    const db = activityChain()
+    mocks.from.mockReturnValue(db.chain)
+    const claim = await claimPlayableRecordingActivity({ ...claimInput(), from: '', to: '' })
+    expect(claim.metadata.direction).toBeUndefined()
+  })
+
 })

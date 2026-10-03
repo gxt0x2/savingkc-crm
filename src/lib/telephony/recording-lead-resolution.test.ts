@@ -18,7 +18,7 @@ vi.mock('@/lib/supabase-lazy', () => ({
   supabase: { from },
 }))
 
-import { callSidActivityOrFilter, resolveLeadIdFromCallActivity } from './recording-lead-resolution'
+import { callSidActivityOrFilter, resolveLeadIdFromCallActivity, recordingDirectionFromActivities } from './recording-lead-resolution'
 
 describe('recording lead resolution', () => {
   beforeEach(() => {
@@ -50,5 +50,20 @@ describe('recording lead resolution', () => {
   it('fails closed when no activity mapping is available', async () => {
     maybeSingle.mockResolvedValue({ data: null, error: { message: 'lookup failed' } })
     await expect(resolveLeadIdFromCallActivity('CA123')).resolves.toBeNull()
+  })
+})
+
+
+describe('recording call direction evidence', () => {
+  it('inherits linked outbound direction despite a legacy inbound recording callback', () => {
+    expect(recordingDirectionFromActivities([
+      { metadata: { source: 'twilio_recording_callback', direction: 'inbound' } },
+      { metadata: { source: 'twilio_status_callback', direction: 'outbound', status: 'completed' } },
+      { metadata: { source: 'telephony_bar', direction: 'outbound' } },
+    ])).toBe('outbound')
+  })
+  it('does not invent direction when canonical evidence is absent or conflicts', () => {
+    expect(recordingDirectionFromActivities([{ metadata: { source: 'twilio_recording_callback', direction: 'inbound' } }])).toBeUndefined()
+    expect(recordingDirectionFromActivities([{ metadata: { direction: 'outbound' } }, { metadata: { direction: 'inbound' } }])).toBeUndefined()
   })
 })

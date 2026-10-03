@@ -25,6 +25,7 @@ export type MobileRecentCallItem = {
   inboundRoute: MobileInboundRoute | null
   providerStatus: string | null
   recordingUrl: string | null
+  voicemailReceived: boolean
   agent: string | null
   metadata: Record<string, string>
 }
@@ -154,7 +155,7 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
   const directionValue = (text(metadata, 'direction')
     || groupedRows.map((candidate) => text(candidate.metadata ?? {}, 'direction')).find(Boolean))?.toLowerCase()
   const direction = ['inbound', 'incoming', 'in', 'received', 'inbound-api'].includes(directionValue || '')
-    || row.activity_type === 'missed_call' ? 'inbound' : 'outbound'
+    || row.activity_type === 'missed_call' || row.activity_type === 'voicemail' ? 'inbound' : 'outbound'
   const combined = Object.assign({}, ...groupedRows.slice().reverse().map((candidate) => identityMetadata(candidate.metadata ?? {}))) as Record<string, string>
   const inboundRoute = direction === 'inbound'
     ? groupedRows.map((candidate) => mobileInboundRoute(candidate.metadata ?? {}, candidate.description)).find(Boolean) ?? null
@@ -174,6 +175,7 @@ function mapRecentCall(row: RecentCallActivityRow, groupedRows: RecentCallActivi
     durationSeconds: number(metadata, 'duration', 'durationSeconds', 'duration_seconds')
       || groupedRows.map((candidate) => number(candidate.metadata ?? {}, 'duration', 'durationSeconds', 'duration_seconds')).find((duration) => duration > 0) || 0,
     outcome: outcomeFor(row, metadata),
+    voicemailReceived: direction === 'inbound' && groupedRows.some((candidate) => candidate.activity_type === 'voicemail'),
     note: text(metadata, 'notes') || row.description?.trim() || null,
     source: text(metadata, 'source'),
     inboundRoute,

@@ -205,4 +205,17 @@ describe('mobile recent calls route', () => {
     expect(body.items).toMatchObject([{ id: 'owned-call', recordingUrl: null }])
     expect(body.leads).toEqual([])
   })
+  it('includes legacy System voicemail addressed to this profile without treating another recipient as owned', async () => {
+    activities = [
+      { id: '00000000-0000-4000-8000-000000000111', lead_id: 'lead-1', activity_type: 'voicemail', agent: 'System', created_at: '2026-10-02T12:00:00Z', metadata: { direction: 'inbound', for_agent: 'Ernest', recordingSid: `RE${'a'.repeat(32)}`, from: '+19135550101' } },
+      { id: 'foreign-voicemail', lead_id: 'lead-1', activity_type: 'voicemail', agent: 'System', created_at: '2026-10-02T12:01:00Z', metadata: { direction: 'inbound', for_agent: 'Casey', actor_email: 'ernest@savingkc.com' } },
+      { id: 'conflicting-voicemail', lead_id: 'lead-1', activity_type: 'voicemail', agent: 'System', created_at: '2026-10-02T12:02:00Z', metadata: { direction: 'inbound', for_agent: 'Ernest', actor_email: 'casey@savingkc.com' } },
+    ]
+    leadRows = [{ id: 'lead-1', classification: 'lead', assigned_agent: 'Ernest' }]
+    const body = await (await GET(request())).json()
+    expect(body.items).toMatchObject([{ id: '00000000-0000-4000-8000-000000000111', voicemailReceived: true, outcome: 'voicemail', recordingUrl: '/api/mobile/v1/calls/00000000-0000-4000-8000-000000000111/recording' }])
+    expect(body.items).toHaveLength(1)
+    expect(activityFilters).toContain('and(activity_type.eq.voicemail,metadata->>for_agent.ilike."ernest")')
+  })
+
 })

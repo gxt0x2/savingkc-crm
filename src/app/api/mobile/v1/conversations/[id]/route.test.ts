@@ -51,4 +51,18 @@ describe('mobile customer conversation history', () => {
     expect((await GET(request(), { params: Promise.resolve({ id }) })).status).toBe(403)
     expect(mocks.admin).not.toHaveBeenCalled()
   })
+  it('returns secure recording hydration and canonical direction instead of a separate missed callback', async () => {
+    const recordingId = 'e09b21e0-6b04-58f1-a6a3-86869d22ca12'
+    const sid = `RE${'a'.repeat(32)}`
+    rows = [
+      row(recordingId, { source: 'twilio_recording_callback', direction: 'inbound', parentCallSid: 'CA-owned', recordingUrl: `/api/recordings/${sid}`, recordingSourceUrl: 'https://provider.invalid/file.mp3', recordingSid: sid }, 'call'),
+      row('completed', { source: 'twilio_status_callback', direction: 'outbound', status: 'completed', callSid: 'CA-owned', to: '+19135550123' }, 'call'),
+    ]
+    const body = await (await GET(request(), { params: Promise.resolve({ id }) })).json()
+    expect(body.activities).toHaveLength(1)
+    expect(body.activities[0]).toMatchObject({ id: 'completed', metadata: { direction: 'outbound', outcome: 'answered', recordingUrl: `/api/mobile/v1/calls/${recordingId}/recording` } })
+    expect(JSON.stringify(body.activities)).not.toContain('provider.invalid')
+    expect(JSON.stringify(body.activities)).not.toContain('/api/recordings/')
+  })
+
 })
