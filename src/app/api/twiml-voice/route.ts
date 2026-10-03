@@ -66,6 +66,14 @@ const COLD_CALL_NUMBERS = new Set([
   '+18166536616',
 ])
 
+// Locked cold-callback prompt. No company name. Spoken with Twilio Polly
+// because the checked-in clips are the wrong prompt (ivr-press1.mp3) or the
+// branded standard greeting (ivr-greeting.mp3), and a new ElevenLabs asset
+// cannot be generated without that API key. Gather timeout is the silence
+// window after this Say finishes, long enough to hear both options and press.
+const COLD_CALLBACK_PROMPT = "Hey, thanks for calling. We buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press one. For anything else, press two."
+const COLD_CALLBACK_GATHER_TIMEOUT = 15
+
 function getFormString(body: FormData, keys: string[]): string | null {
   for (const key of keys) {
     const value = body.get(key)
@@ -373,8 +381,8 @@ export async function POST(req: Request) {
     if (COLD_CALL_NUMBERS.has(to)) {
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="4">
-    <Play>${BASE_URL}/api/audio/ivr-press1.mp3</Play>
+  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="${COLD_CALLBACK_GATHER_TIMEOUT}">
+    <Say voice="Polly.Matthew">${COLD_CALLBACK_PROMPT}</Say>
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`
