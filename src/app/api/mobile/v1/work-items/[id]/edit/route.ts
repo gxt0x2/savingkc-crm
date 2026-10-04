@@ -8,7 +8,8 @@ import {
 import { MobileLeadAccessError } from '@/lib/mobile-api/authorized-lead'
 import { MobileCommandAccessError, requireAuthorizedMobileWorkItem } from '@/lib/mobile-api/mobile-command-access'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
-import { transitionWorkItem, WorkItemError, type WorkItemPatch } from '@/lib/server/work-items'
+import { requireMobileWorkItemEditTime, transitionWorkItem, WorkItemError, type WorkItemPatch } from '@/lib/server/work-items'
+import { parseAppointmentInstant } from '@/lib/server/appointment-instant'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -39,11 +40,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : typeof body?.notes === 'string'
         ? body.notes.trim().slice(0, 5_000) || null
         : undefined
-    const dueAt = body?.dueAt === null
-      ? null
-      : typeof body?.dueAt === 'string' && !Number.isNaN(Date.parse(body.dueAt))
-        ? new Date(body.dueAt).toISOString()
-        : undefined
+    const parsedDueAt = typeof body?.dueAt === 'string' ? parseAppointmentInstant(body.dueAt) : null
+    const dueAt = body?.dueAt === null ? null : parsedDueAt || undefined
     const assignedTo = body?.assignedTo === null
       ? null
       : typeof body?.assignedTo === 'string' && body.assignedTo.trim()
@@ -53,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!expectedVersion || !title || dueAt === undefined || assignedTo === undefined) {
       return NextResponse.json({ error: 'expectedVersion, title, dueAt, and assignedTo are required.' }, { status: 400, headers: mobileNoStoreHeaders() })
     }
-    const { actor } = await requireAuthorizedMobileWorkItem(req, id)
+    const { actor, dueAt: currentDueAt } = await requireAuthorizedMobileWorkItem(req, id)
     const assignment = resolveTaskAssignee(assignedTo, actor.name, {
       defaultToActor: false,
       allowUnassigned: true,
@@ -64,6 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const patch: WorkItemPatch = { title, dueAt, assignedTo: assignment.assignedTo ?? null }
     if (notes !== undefined) patch.notes = notes
+    await requireMobileWorkItemEditTime({ key: id, actor: actor.name, idempotencyKey, expectedVersion, currentDueAt, patch })
     const result = await transitionWorkItem({
       key: id,
       actor: actor.name,

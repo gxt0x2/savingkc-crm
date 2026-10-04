@@ -48,7 +48,7 @@ export async function requireAuthorizedMobileWorkItem(req: Request, inputKey: st
   const key = normalizeWorkItemKey(inputKey)
   if (!key) throw new MobileCommandAccessError('Work item id is required', 400)
   const { data, error } = await supabaseAdmin().from('work_items')
-    .select('work_item_key,lead_id,assigned_to').eq('work_item_key', key).maybeSingle()
+    .select('work_item_key,lead_id,assigned_to,due_at').eq('work_item_key', key).maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) throw new MobileCommandAccessError('Work item not found', 404)
   if (data.lead_id) await requireAuthorizedMobileLead(req, data.lead_id)
@@ -56,5 +56,5 @@ export async function requireAuthorizedMobileWorkItem(req: Request, inputKey: st
     && !mobileActorCanReadAssignedLead(identity.scopedActor, data.assigned_to)) {
     throw new MobileCommandAccessError('This work item is outside your authorized scope', 403)
   }
-  return { ...identity, key }
+  return { ...identity, key, dueAt: data.due_at as string | null }
 }

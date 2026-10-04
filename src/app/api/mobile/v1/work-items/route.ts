@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MobileAuthError, mobileNoStoreHeaders, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
 import { MobileCommandAccessError, requireMobileCommandActor } from '@/lib/mobile-api/mobile-command-access'
-import { createWorkItem, normalizeWorkItemKind, WorkItemError } from '@/lib/server/work-items'
+import { createWorkItem, normalizeWorkItemKind, requireMobileWorkItemCreateTime, WorkItemError } from '@/lib/server/work-items'
+import { parseAppointmentInstant } from '@/lib/server/appointment-instant'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -23,18 +24,23 @@ export async function POST(req: NextRequest) {
     const taskType = normalizeWorkItemKind(body?.taskType)
     const assignedTo = typeof body?.assignedTo === 'string' && body.assignedTo.trim() ? body.assignedTo.trim() : actor.name
     const department = typeof body?.department === 'string' ? body.department.trim() : 'acquisitions'
-    const dueAt = typeof body?.dueDate === 'string' && !Number.isNaN(Date.parse(body.dueDate)) ? new Date(body.dueDate).toISOString() : null
+    const dueAt = typeof body?.dueDate === 'string' ? parseAppointmentInstant(body.dueDate) : null
+    if (body?.dueDate !== undefined && body.dueDate !== null && !dueAt) {
+      return NextResponse.json({ error: 'Choose a valid task due time.' }, { status: 400, headers: mobileNoStoreHeaders() })
+    }
     if (!title || !ALLOWED_KINDS.has(taskType) || !ALLOWED_ASSIGNEES.has(assignedTo) || department !== 'acquisitions') {
       return NextResponse.json({ error: 'Unsupported task title, type, assignee, or department' }, { status: 400, headers: mobileNoStoreHeaders() })
     }
     if (leadId) await requireAuthorizedMobileLead(req, leadId)
-    const result = await createWorkItem({
+    const input = {
       actor: actor.name, idempotencyKey: key, leadId, kind: taskType, title,
       notes: typeof body?.notes === 'string' ? body.notes.trim().slice(0, 5_000) || null : null,
       dueAt, assignedTo, department, role: typeof body?.role === 'string' ? body.role.trim() || null : null,
       primaryNextAction: body?.primaryNextAction === true,
       provenance: { source: 'mobile_app', actor_email: actor.email },
-    })
+    }
+    await requireMobileWorkItemCreateTime(input)
+    const result = await createWorkItem(input)
     return NextResponse.json({ success: true, created: result.created, item: result.workItem }, { status: result.created ? 201 : 200, headers: mobileNoStoreHeaders() })
   } catch (error) {
     if (error instanceof MobileAuthError) return NextResponse.json({ error: error.message }, { status: error.status, headers: mobileNoStoreHeaders() })
