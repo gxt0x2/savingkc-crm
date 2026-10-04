@@ -249,6 +249,26 @@ describe('Casey My Day model', () => {
     expect(report.commitments.map((item) => item.id)).toContain('task:task-1')
   })
 
+  it('labels a no-lead calendar event with its own title', () => {
+    const report = buildMyDay(input({
+      appointments: [{
+        id: 'standalone-1',
+        lead_id: null,
+        type: 'in_person',
+        status: 'scheduled',
+        scheduled_at: '2026-08-06T20:00:00.000Z',
+        assigned_to: 'casey',
+        title: 'Office block',
+        address: null,
+        notes: null,
+        created_at: '2026-08-05T17:00:00.000Z',
+      }],
+    }))
+    const event = report.commitments.find((item) => item.id === 'appointment:standalone-1')
+    expect(event).toMatchObject({ title: 'Office block', detail: 'Office block' })
+    expect(JSON.stringify(event)).not.toContain('Seller')
+  })
+
   it('surfaces only Casey recorded calls that still need review', () => {
     const report = buildMyDay(input({
       activities: [

@@ -444,9 +444,21 @@ describe('verified inbound TwiML routing', () => {
 
     expect(text).toContain('<Dial')
     expect(text).toContain('callerId="+18166088858"')
+    expect(text).toContain('<Client>ernest</Client>')
+    expect(text).toContain('<Number')
     expect(text).toContain('+18162262552')
     expect(text).toContain('type=direct')
     expect(text).not.toContain('<Gather')
+  })
+
+  it('rings the Voice client together with the cell on Ernest company line', async () => {
+    const { text } = await responseText(inboundRequest('+18166088588'))
+
+    expect(text).toContain('<Client>ernest</Client>')
+    expect(text).toContain('<Number')
+    expect(text).toContain('+18162262552')
+    expect(text).toContain('callerId="+18166088588"')
+    expect(text.match(/<Dial\b/g)).toHaveLength(1)
   })
 
   it('routes Casey Legacy directly to Casey without the seller IVR', async () => {

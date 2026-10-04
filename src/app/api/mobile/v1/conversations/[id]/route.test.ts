@@ -65,4 +65,23 @@ describe('mobile customer conversation history', () => {
     expect(JSON.stringify(body.activities)).not.toContain('/api/recordings/')
   })
 
+  it('reports an explicit email clear on the conversation contact', async () => {
+    mocks.admin.mockReturnValue({ from: (table: string) => {
+      if (table === 'leads') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({
+        data: { id, full_name: 'Ernest Dodson', email: 'savingkc@gmail.com' }, error: null,
+      }) }) }) }
+      if (table.startsWith('em_')) return { select: () => ({ in: async () => ({ data: [], error: null }) }) }
+      const query = { select: () => query, eq: () => query, in: () => query, order: () => query, or: () => query,
+        limit: async () => ({ data: [], error: null }) }
+      return query
+    } })
+    const body = await (await GET(request(), { params: Promise.resolve({ id }) })).json()
+    expect(body.contact).toMatchObject({
+      email: 'savingkc@gmail.com',
+      email_opt_out: false,
+      email_suppressed: false,
+      email_consent: 'clear',
+    })
+  })
+
 })

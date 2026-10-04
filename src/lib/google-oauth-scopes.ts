@@ -70,6 +70,7 @@ export const GMAIL_SEND_ERROR_MESSAGES: Record<string, string> = {
   token_refresh_failed: 'Google rejected the saved token. Reconnect Gmail in Settings.',
   reauthorization_required: 'Google authorization expired. Reconnect Gmail in Settings.',
   gmail_send_failed: 'Gmail could not send the email.',
+  gmail_result_ambiguous: 'Gmail did not confirm whether this message was sent. Do not send it again.',
   invalid_recipient: 'Enter a valid email recipient.',
 }
 

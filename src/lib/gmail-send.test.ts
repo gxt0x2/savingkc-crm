@@ -208,4 +208,30 @@ describe('Gmail send helper', () => {
     expect(result).toMatchObject({ ok: true, id: 'msg-9' })
     expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: 'Bearer live-token' })
   })
+
+  it('does not resubmit when Gmail returns no confirmed message id', async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new Error('socket hang up'))
+    const ambiguous = await sendGmailMessage({
+      accessToken: 'token',
+      from: 'ernest@savingkc.com',
+      to: 'savingkc@gmail.com',
+      subject: 'Hi',
+      text: 'Hello',
+      fetchImpl,
+    })
+    expect(ambiguous).toMatchObject({ ok: false, code: 'gmail_result_ambiguous' })
+    expect(fetchImpl).toHaveBeenCalledOnce()
+
+    const missingId = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
+    expect(await sendGmailMessage({
+      accessToken: 'token',
+      from: 'ernest@savingkc.com',
+      to: 'savingkc@gmail.com',
+      subject: 'Hi',
+      text: 'Hello',
+      fetchImpl: missingId,
+    })).toMatchObject({ ok: false, code: 'gmail_result_ambiguous' })
+    expect(missingId).toHaveBeenCalledOnce()
+  })
 })

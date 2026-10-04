@@ -76,6 +76,7 @@ export interface MyDayAppointment {
   status: string | null
   scheduled_at: string | null
   assigned_to: string | null
+  title?: string | null
   address: string | null
   notes: string | null
   created_at: string
@@ -626,10 +627,14 @@ export function buildMyDay(input: BuildMyDayInput): MyDayData {
     const dueTime = new Date(appointment.scheduled_at).getTime()
     if (!Number.isFinite(dueTime) || dueTime < nowTime || dueTime > nowTime + 14 * 86_400_000) return []
     const lead = appointment.lead_id ? leadsById.get(appointment.lead_id) : null
+    const eventTitle = appointment.title?.trim() || null
+    const typeLabel = appointment.type
+      ?.replaceAll('_', ' ')
+      .replace(/\b\w/g, (character) => character.toUpperCase()) || null
     return [{
       id: `appointment:${appointment.id}`,
-      title: appointment.type?.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase()) || 'Seller Appointment',
-      detail: lead?.full_name || appointment.address || 'Seller appointment',
+      title: eventTitle || typeLabel || (lead ? 'Seller Appointment' : 'Calendar event'),
+      detail: lead?.full_name || appointment.address || eventTitle || (lead ? 'Seller appointment' : 'Calendar event'),
       dueAt: appointment.scheduled_at,
       icon: 'event',
       href: appointment.lead_id ? `/leads/${appointment.lead_id}` : '/calendar?department=acquisitions',

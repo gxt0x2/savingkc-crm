@@ -25,9 +25,23 @@ describe('carrier fallbacks', () => {
     })
 
     expect(xml).toContain('<Number>+18167564943</Number>')
+    expect(xml).not.toContain('<Client>')
     expect(xml).toContain('callerId="+18167277667"')
     expect(xml).toContain('type=direct')
     expect(xml).toContain('source=carrier_fallback')
+  })
+
+  it('rings Ernest in the app and on the cell when the company webhook is down', () => {
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+19137179716',
+      calledNumber: '+18166088588',
+      agentPhone: '+18162262552',
+    })
+
+    expect(xml).toContain('<Client>ernest</Client>')
+    expect(xml).toContain('<Number>+18162262552</Number>')
+    expect(xml).toContain('callerId="+18166088588"')
   })
 
   it('creates an unqualified New record rather than assuming a seller lead', () => {

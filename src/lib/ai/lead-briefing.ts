@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { AssistantSource } from '@/lib/ai/generation-store'
 
 export const LEAD_BRIEFING_MODEL = 'openai/gpt-5.6-luna'
-export const LEAD_BRIEFING_PROMPT_VERSION = 'canonical-lead-briefing-v2'
+export const LEAD_BRIEFING_PROMPT_VERSION = 'canonical-lead-briefing-v3'
 
 export const leadBriefingSchema = z.object({
   situation: z.string().trim().min(20).max(1_200),
@@ -272,12 +272,38 @@ export function leadBriefingSourceSnapshotAt(evidence: LeadBriefingEvidence[]): 
   return latest > 0 ? new Date(latest).toISOString() : null
 }
 
+const NARRATIVE_CITATION = /\b(?:work|appointment|disposition|buyer-offer):[A-Za-z0-9_:-]+/g
+
+function workItemTitle(item: LeadBriefingEvidence): string | null {
+  const match = item.summary.match(/(?:^| · )title: (.*?)(?: · |$)/)
+  const title = match?.[1]?.trim() ?? ''
+  return title && title !== item.id ? title : null
+}
+
+/** Reject unknown narrative citations. A task title replaces work:{id} only on an exact match. */
+export function scrubBriefingNarrative(text: string, evidence: LeadBriefingEvidence[]): string {
+  const known = new Map(evidence.map((item) => [item.id, item]))
+  const scrubbed = text.replace(NARRATIVE_CITATION, (token) => {
+    const item = known.get(token)
+    if (!item) throw new Error('AI briefing cited an unknown CRM record in the narrative.')
+    if (!token.startsWith('work:')) return token
+    return workItemTitle(item) ?? token
+  })
+  return scrubbed.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,;:])/g, '$1').trim()
+}
+
 export function normalizeLeadBriefing(value: unknown, evidence: LeadBriefingEvidence[]): LeadBriefing {
   const parsed = leadBriefingSchema.parse(value)
+  const narrative = {
+    situation: scrubBriefingNarrative(parsed.situation, evidence),
+    motivation: scrubBriefingNarrative(parsed.motivation, evidence),
+    strategy: scrubBriefingNarrative(parsed.strategy, evidence),
+  }
+  const checked = leadBriefingSchema.parse({ ...parsed, ...narrative })
   const known = new Set(evidence.map((item) => item.id))
-  const evidenceIds = [...new Set(parsed.evidenceIds)].filter((id) => known.has(id))
+  const evidenceIds = [...new Set(checked.evidenceIds)].filter((id) => known.has(id))
   if (evidenceIds.length === 0) throw new Error('AI briefing did not cite a verified CRM record.')
-  return { ...parsed, evidenceIds }
+  return { ...checked, evidenceIds }
 }
 
 export function buildExtractiveLeadBriefing(evidence: LeadBriefingEvidence[]): LeadBriefing {
@@ -320,4 +346,4 @@ export const LEAD_BRIEFING_SYSTEM_PROMPT = `You produce grounded seller briefing
 - Motivation explains urgency and drivers, including price versus speed when recorded. Separate explicit speaker-attributed seller statements from agent opinions or AI inference. Say what is unknown when evidence is thin.
 - Outbound SMS/email is representative outreach, never seller responsiveness or seller intent. Inbound greetings or small talk alone establish neither motivation, selling readiness, urgency, nor commitment. Do not classify a greeting as a test just because of its wording. Explicit test, QA, internal, and team-alert records are not seller evidence. Unknown direction or participant remains unknown; do not assume it is the seller. Delivery or answered-call status alone does not establish what the seller said or agreed to. Call direction identifies the initiator, not the speaker of every transcript line.
 - Strategy gives the human agent one concrete conversation objective and 2-4 evidence-backed questions or considerations. Never claim a call, message, task, assignment, or stage change occurred.
-- Evidence IDs must be copied verbatim from the supplied evidence.`
+- Evidence IDs must be copied verbatim into evidenceIds. Do not place work:, appointment:, disposition:, or buyer-offer: tokens inside Situation, Motivation, or Strategy. Name a task by its loaded title only when that exact work id is in the evidence.`

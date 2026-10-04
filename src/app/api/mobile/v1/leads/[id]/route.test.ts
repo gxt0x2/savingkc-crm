@@ -18,13 +18,18 @@ import { GET } from './route'
 
 const context = { params: Promise.resolve({ id: 'lead-1' }) }
 
-function database(activities: Array<Record<string, unknown>> = []) {
+function database(activities: Array<Record<string, unknown>> = [], lead: Record<string, unknown> = {
+  id: 'lead-1', station: 'under_contract', assigned_agent: 'Casey',
+}) {
   return {
     from(table: string) {
       if (table === 'leads') {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({
-          data: { id: 'lead-1', station: 'under_contract', assigned_agent: 'Casey' }, error: null,
+          data: lead, error: null,
         }) }) }) }
+      }
+      if (table.startsWith('em_')) {
+        return { select: () => ({ in: async () => ({ data: [], error: null }) }) }
       }
       if (table === 'lead_activities') {
         return { select: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: activities, error: null }) }) }) }) }
@@ -85,6 +90,36 @@ describe('mobile lead operations detail', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ propertyFacts: { lead: {}, property: null } })
     expect(mocks.authorizeLead).toHaveBeenCalledOnce()
+  })
+
+  it('reports an explicit email clear only after suppression and person rules are empty', async () => {
+    mocks.admin.mockReturnValue(database([], {
+      id: 'lead-1', station: 'qualified', assigned_agent: 'Ernest', email: 'savingkc@gmail.com',
+    }))
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/leads/lead-1', {
+      headers: { Authorization: 'Bearer token' },
+    }), context)
+    await expect(response.json()).resolves.toMatchObject({
+      lead: { email_opt_out: false, email_suppressed: false, email_consent: 'clear' },
+    })
+  })
+
+  it('omits a false clear when the consent tables cannot be read', async () => {
+    const base = database([], {
+      id: 'lead-1', station: 'qualified', assigned_agent: 'Ernest', email: 'savingkc@gmail.com',
+    })
+    mocks.admin.mockReturnValue({
+      from(table: string) {
+        if (table.startsWith('em_')) throw new Error('consent unavailable')
+        return base.from(table)
+      },
+    })
+    const payload = await (await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/leads/lead-1', {
+      headers: { Authorization: 'Bearer token' },
+    }), context)).json()
+    expect(payload.lead.email_consent).toBe('unknown')
+    expect(payload.lead.email_opt_out).toBeUndefined()
+    expect(payload.lead.email_suppressed).toBeUndefined()
   })
 
   it('maps copied Mojo evidence to a scoped CRM playback URL and strips raw provider URLs', async () => {

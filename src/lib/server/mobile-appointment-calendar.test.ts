@@ -131,7 +131,7 @@ describe('mobile appointment calendar ownership and receipt', () => {
     expect(mocks.rpc).toHaveBeenCalledOnce()
   })
 
-  it('finishes no-token as not_configured and keeps CRM command independent', async () => {
+  it('records a missing calendar grant as not_configured on the sync ledger', async () => {
     mocks.rpc.mockResolvedValueOnce({ data: { status: 'claimed', ownerEmail, eventId, version: 2, appointment }, error: null })
       .mockResolvedValueOnce({ data: { status: 'not_configured' }, error: null })
     mocks.access.mockResolvedValue({ ok: false, result: { status: 'skipped', reason: 'no_token' } })

@@ -4,6 +4,7 @@ import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
 import { normalizeMobileCallActivities } from '@/lib/mobile-api/activity-calls'
 import { isMobileCustomerActivity } from '@/lib/mobile-api/customer-communication'
+import { attachManualEmailConsent } from '@/lib/server/manual-email-consent'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -43,7 +44,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     } while (true)
 
     const activities = normalizeMobileCallActivities(customerActivities.slice(0, 100))
-    return NextResponse.json({ contact: leadResult.data, activities }, { headers: mobileNoStoreHeaders() })
+    const [contact] = await attachManualEmailConsent([leadResult.data])
+    return NextResponse.json({ contact, activities }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
     const status = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.status : 500
     const message = error instanceof Error ? error.message : 'Internal error'

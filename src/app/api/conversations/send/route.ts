@@ -9,12 +9,10 @@ import {
   assertDialerMutationControl,
   dialerMutationControlErrorResponse,
 } from '@/lib/api/dialer-mutation-control'
-import {
-  dialerProviderDeadlineExceeded,
-  dialerProviderSignal,
-} from '@/lib/server/dialer-provider-boundary'
+import { dialerProviderSignal } from '@/lib/server/dialer-provider-boundary'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
-import { recordOutboundGmail, sendConnectedGmail } from '@/lib/gmail-send'
+import { manualGmailFailureStatus, recordOutboundGmail, sendConnectedGmail } from '@/lib/gmail-send'
+import { assertManualLeadEmailSend } from '@/lib/server/manual-email-consent'
 
 const DIALER_OPERATION_UNCERTAIN_HEADERS = {
   'X-Dialer-Operation-Uncertain': 'true',
@@ -190,9 +188,22 @@ export async function POST(req: Request) {
         )
       }
 
+      const decision = await assertManualLeadEmailSend({
+        leadId: typeof leadId === 'string' ? leadId : null,
+        to: typeof to === 'string' ? to : '',
+      })
+      if (!decision.ok) {
+        return NextResponse.json({
+          success: false,
+          sent: false,
+          error: decision.error,
+          code: decision.code,
+        }, { status: decision.status })
+      }
+
       const gmail = await sendConnectedGmail({
         userEmail: authenticatedActor.email,
-        to,
+        to: decision.to,
         subject: emailSubject,
         text: body.trim(),
       })
@@ -225,7 +236,7 @@ export async function POST(req: Request) {
               ...(activitySource ? { source: activitySource } : {}),
               ...prospectMetadata,
               direction: 'outbound',
-              to,
+              to: decision.to,
               subject: emailSubject,
               sent: true,
               provider: 'gmail',
@@ -241,7 +252,7 @@ export async function POST(req: Request) {
           await recordOutboundGmail({
             leadId,
             from: gmail.from,
-            to,
+            to: decision.to,
             subject: emailSubject,
             text: body.trim(),
             gmailMessageId: gmail.id,
@@ -280,160 +291,16 @@ export async function POST(req: Request) {
         })
       }
 
-      if (gmail.code !== 'no_token' && gmail.code !== 'google_oauth_not_configured') {
-        return NextResponse.json(
-          { success: false, sent: false, error: gmail.error, code: gmail.code },
-          { status: gmail.code === 'missing_gmail_send' || gmail.code === 'reauthorization_required' ? 403 : 502 },
-        )
-      }
-
-      if (!process.env.RESEND_API_KEY) {
-        return NextResponse.json(
-          { success: false, sent: false, error: 'Email delivery is not configured' },
-          { status: 503 },
-        )
-      }
-
-      const { Resend } = await import('resend')
-      const resend = new Resend(process.env.RESEND_API_KEY)
-      const fromEmail = process.env.RESEND_FROM_EMAIL || 'ernest@savingkc.com'
-      type ResendRequestOptionsWithSignal = NonNullable<Parameters<typeof resend.emails.send>[1]> & {
-        signal: AbortSignal
-      }
-      const resendRequestOptions: ResendRequestOptionsWithSignal | undefined = providerSignal
-        ? {
-            signal: providerSignal,
-            ...(req.headers.get('x-dialer-operation')?.trim()
-              ? { idempotencyKey: req.headers.get('x-dialer-operation')!.trim() }
-              : {}),
-          }
-        : undefined
-      let delivery: Awaited<ReturnType<typeof resend.emails.send>>
-      try {
-        delivery = await resend.emails.send({
-          from: `Saving KC <${fromEmail}>`,
-          to: [to],
-          subject: emailSubject,
-          text: body.trim(),
-        }, resendRequestOptions)
-      } catch (error) {
-        if (providerSignal) {
-          const detail = dialerProviderDeadlineExceeded(providerSignal)
-            ? 'Email provider timed out after submission; delivery could not be confirmed. Do not resend this email.'
-            : 'Email provider connection ended after submission; delivery could not be confirmed. Do not resend this email.'
-          console.error('[CONVERSATIONS] Protected email delivery is unknown:', error)
-          return NextResponse.json({
-            success: false,
-            sent: null,
-            persisted: false,
-            code: 'delivery_unknown',
-            deliveryState: 'delivery_unknown',
-            error: detail,
-          }, {
-            status: 504,
-            headers: DIALER_OPERATION_UNCERTAIN_HEADERS,
-          })
-        }
-        throw error
-      }
-
-      const resendError = delivery.error as (typeof delivery.error & {
-        name?: unknown
-        statusCode?: unknown
-      }) | null
-      const resendTransportOutcomeUnknown = Boolean(providerSignal && (
-        providerSignal.aborted
-        || (resendError?.name === 'application_error' && resendError.statusCode == null)
-      ))
-      if (resendTransportOutcomeUnknown) {
-        const detail = dialerProviderDeadlineExceeded(providerSignal)
-          ? 'Email provider timed out after submission; delivery could not be confirmed. Do not resend this email.'
-          : 'Email provider connection ended after submission; delivery could not be confirmed. Do not resend this email.'
-        return NextResponse.json({
-          success: false,
-          sent: null,
-          persisted: false,
-          code: 'delivery_unknown',
-          deliveryState: 'delivery_unknown',
-          error: detail,
-        }, {
-          status: 504,
-          headers: DIALER_OPERATION_UNCERTAIN_HEADERS,
-        })
-      }
-
-      if (delivery.error || !delivery.data?.id) {
-        return NextResponse.json(
-          { success: false, sent: false, error: delivery.error?.message || 'Email provider did not accept the message' },
-          { status: 502 },
-        )
-      }
-
-      if (reassertPersistenceControl) {
-        try {
-          await reassertPersistenceControl()
-        } catch (error) {
-          console.error('[CONVERSATIONS] Email delivered but dialing control could not be revalidated:', error)
-          return NextResponse.json({
-            success: true,
-            sent: true,
-            persisted: false,
-            deliveryState: 'delivered_not_persisted',
-            warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.',
-            id: delivery.data.id,
-          })
-        }
-      }
-
-      let activityPersistenceError: unknown = null
-      try {
-        const { error } = await supabase.from('lead_activities').insert({
-          lead_id: leadId || null,
-          activity_type: 'email',
-          description: body.trim(),
-          agent: actor,
-          metadata: {
-            ...(activitySource ? { source: activitySource } : {}),
-            ...prospectMetadata,
-            direction: 'outbound',
-            to,
-            subject: emailSubject,
-            sent: true,
-          },
-        })
-        activityPersistenceError = error
-      } catch (error) {
-        activityPersistenceError = error
-      }
-
-      if (leadId) {
-        if (reassertPersistenceControl) {
-          await checkAutoAdvance(leadId, 'outbound_contact', {
-            beforeMutation: reassertPersistenceControl,
-          }).catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
-        } else {
-          checkAutoAdvance(leadId, 'outbound_contact').catch(err => console.error('[AUTO-ADVANCE] Failed:', err))
-        }
-      }
-
-      if (activityPersistenceError) {
-        console.error('[CONVERSATIONS] Email delivered but activity persistence failed:', activityPersistenceError)
-        return NextResponse.json({
-          success: true,
-          sent: true,
-          persisted: false,
-          deliveryState: 'delivered_not_persisted',
-          warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.',
-          id: delivery.data.id,
-        })
-      }
-
       return NextResponse.json({
-        success: true,
-        sent: true,
-        persisted: true,
-        deliveryState: 'delivered_and_persisted',
-        id: delivery.data.id,
+        success: false,
+        sent: gmail.code === 'gmail_result_ambiguous' ? null : false,
+        error: gmail.error,
+        code: gmail.code,
+      }, {
+        status: manualGmailFailureStatus(gmail.code),
+        headers: gmail.code === 'gmail_result_ambiguous' && providerSignal
+          ? DIALER_OPERATION_UNCERTAIN_HEADERS
+          : undefined,
       })
     }
 

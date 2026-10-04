@@ -4,6 +4,7 @@ import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS 
 import { parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { directInboundClientNoun } from '@/lib/telephony/direct-inbound-ring'
 import { verifyDialerCallIntent } from '@/lib/telephony/dialer-call-intent'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import {
@@ -348,13 +349,15 @@ export async function POST(req: Request) {
       return xmlResponse(twiml)
     }
 
-    // ── DIRECT RING: Company numbers ring agent cell (no IVR) ──
+    // Company lines ring the Voice client and the cell together. The cell stays
+    // until a device proves VoIP push registration. A CallKit screen is not proof.
     if (DIRECT_RING_NUMBERS[to]) {
       const agentPhone = DIRECT_RING_NUMBERS[to]
+      const clientNoun = directInboundClientNoun(to)
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}">${agentPhone}</Number>
+    ${clientNoun}<Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}">${agentPhone}</Number>
   </Dial>
 </Response>`
       return xmlResponse(twiml)

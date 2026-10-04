@@ -108,7 +108,7 @@ describe('canonical lead briefing service', () => {
       p_lead_id: leadId,
       p_generation_id: 'generation-1',
       p_source_revision: 3,
-      p_prompt_version: 'canonical-lead-briefing-v2',
+      p_prompt_version: 'canonical-lead-briefing-v3',
     }))
     expect(mocks.from).not.toHaveBeenCalledWith('manifests')
   })
