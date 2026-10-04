@@ -9,6 +9,7 @@ import {
   parseNoticeRegistryHtml,
   parseSouthlawReport,
   toIsoDate,
+  type CountyPublicStats,
   type JocoSale,
   type LegalRecordFiling,
   type NoticeRegistryHit,
@@ -26,6 +27,7 @@ export {
   toIsoDate,
 } from '@/lib/server/foreclosure-county-public-parse'
 export type {
+  CountyPublicStats,
   JocoSale,
   LegalRecordFiling,
   NoticeRegistryHit,
@@ -81,8 +83,6 @@ const CSV_HEADERS = [
   'notes',
   'tax_or_dlt_flag',
 ] as const
-
-}
 
 type ImportRow = Record<(typeof CSV_HEADERS)[number], string>
 

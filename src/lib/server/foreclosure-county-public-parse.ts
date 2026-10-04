@@ -69,6 +69,7 @@ export type CountyPublicStats = {
   skippedNoSitus: number
   skippedNoOwner: number
   skippedTax: number
+}
 
 export function pdfItemsToLines(items: Array<{ str?: string; transform?: number[] }>): string[] {
   const buckets: Array<{ y: number; parts: Array<{ x: number; str: string }> }> = []
