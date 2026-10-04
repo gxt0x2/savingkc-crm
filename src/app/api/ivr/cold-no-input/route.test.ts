@@ -71,15 +71,17 @@ describe('cold_callback_auto_text suppression', () => {
     mocks.automatedSmsBlockReason.mockResolvedValue(null)
 
     const response = await post()
-    expect(await response.text()).toContain("We'll send you a quick text")
+    const twiml = await response.text()
+    expect(twiml).toContain("We'll send you a quick text")
+    expect(twiml).not.toMatch(/saving\s*kc|savingkc|homebuyers/i)
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
 
     await vi.runAllTimersAsync()
     expect(mocks.automatedSmsBlockReason).toHaveBeenCalledWith({ phone: '+18164334092', leadId: 'lead-1' })
-    expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
-      to: '+18164334092',
-      body: expect.stringContaining('cash offer'),
-    }))
+    const sms = mocks.safeSendSMS.mock.calls[0]?.[0] as { to?: string; body?: string }
+    expect(sms.to).toBe('+18164334092')
+    expect(sms.body).toContain('cash offer')
+    expect(sms.body).not.toMatch(/saving\s*kc|savingkc|homebuyers/i)
   })
 
   it('does not send cold_callback_auto_text when the gate blocks the phone', async () => {
@@ -89,6 +91,7 @@ describe('cold_callback_auto_text suppression', () => {
     const twiml = await response.text()
     expect(twiml).not.toContain("We'll send you a quick text")
     expect(twiml).toContain('Have a great day')
+    expect(twiml).not.toMatch(/saving\s*kc|savingkc|homebuyers/i)
 
     await vi.runAllTimersAsync()
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()

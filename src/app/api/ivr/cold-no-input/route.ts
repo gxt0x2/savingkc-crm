@@ -64,6 +64,7 @@ export async function POST(req: Request) {
   let autoTextScheduled = false
   const { allowed: phoneOk } = phoneRateLimit(from)
   if (phoneOk) {
+    // Caller-facing. Do not add a company name to this cold-callback text.
     const autoText = `Hey! We recently tried reaching you about a property in your area. If you've thought about selling, we'd love to make you a cash offer — no repairs, no fees. Just reply YES if you're interested.`
     const isDupe = await isDuplicateSms(from, autoText)
     if (!isDupe) {
