@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FORECLOSURE_EQUITY_FLOOR } from '@/lib/prospecting/foreclosure'
-import { COURT_COUNTIES, COURT_FILING_COVERAGE, COURT_LEAD_TYPES } from '@/lib/prospecting/court-filing-coverage'
+import { COURT_COUNTIES, COURT_FILING_COVERAGE, COURT_LEAD_TYPES, coverageCell, gapsForLane } from '@/lib/prospecting/court-filing-coverage'
 import {
   classifyPublicFilingResponse,
   foreclosureCsvAccepted,
@@ -27,11 +27,12 @@ const sample = {
 describe('public filing probes', () => {
   it('records Case.net, Kansas Case Search, and the Jackson recorder as blocked and stores no rows', () => {
     expect(classifyPublicFilingResponse('casenet', 403, CASENET_BLOCK).rows).toEqual([])
-    expect(classifyPublicFilingResponse('casenet', 403, CASENET_BLOCK).reason).toMatch(/prohibits automated scraping/i)
+    expect(classifyPublicFilingResponse('casenet', 403, CASENET_BLOCK).reason).toMatch(/expressly prohibited/i)
     expect(classifyPublicFilingResponse('kansasCaseSearch', 403, KANSAS_BLOCK).rows).toEqual([])
     expect(classifyPublicFilingResponse('kansasCaseSearch', 403, KANSAS_BLOCK).reason).toMatch(/blocked/i)
     expect(classifyPublicFilingResponse('jacksonRecorder', 200, JACKSON_LOGIN).rows).toEqual([])
-    expect(classifyPublicFilingResponse('jacksonRecorder', 200, JACKSON_LOGIN).reason).toMatch(/login form/i)
+    expect(classifyPublicFilingResponse('jacksonRecorder', 200, JACKSON_LOGIN).reason).toMatch(/Browser Test/)
+    expect(classifyPublicFilingResponse('jacksonRecorder', 200, '<title>Search Real Estate Index: Selection Criteria - Jackson County Public Access Search</title><input id="LoginForm1_txtPassword" />').reason).not.toMatch(/Browser Test/)
     expect(classifyPublicFilingResponse('casenet', 200, '<html><title>Search</title></html>').rows).toEqual([])
   })
 
@@ -107,5 +108,10 @@ describe('filing lanes stay out of the foreclosure dial queue', () => {
     for (const county of ['clay', 'wyandotte', 'platte', 'cass'] as const) {
       expect(COURT_FILING_COVERAGE.filter((cell) => cell.county === county).every((cell) => cell.status === 'cannot')).toBe(true)
     }
+    expect(coverageCell('jackson', 'federal_tax_lien').status).toBe('built')
+    expect(coverageCell('jackson', 'hoa_lien').status).toBe('built')
+    expect(coverageCell('jackson', 'divorce').status).toBe('cannot')
+    expect(coverageCell('jackson', 'lis_pendens').reason).toMatch(/expressly prohibited/i)
+    expect(gapsForLane('lien').map((cell) => cell.county)).toEqual(['johnson', 'johnson'])
   })
 })

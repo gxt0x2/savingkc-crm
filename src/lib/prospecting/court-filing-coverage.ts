@@ -24,13 +24,16 @@ export type CoverageCell = {
 const OUT_OF_PASS = 'Owner limited this pass to Jackson County MO and Johnson County KS, so no fetcher was added.'
 const CASS = 'No public Cass County source was already obvious in this repo, and paid vendors were not hunted.'
 
+/** Recorded 2026-10-04 from GET https://www.courts.mo.gov/casenet/welcome.do. Not bypassed. */
+export const CASENET_SCRAPER_BLOCK = 'Case.net returned HTTP 403 with title Error 403. The body says access to any Missouri judicial website, including Case.net, by a site data scraper or any similar software intended to discover and extract data through automated, repetitive querying is expressly prohibited. No rows were stored.'
+
 const SCOPED: CoverageCell[] = [
-  { county: 'jackson', leadType: 'divorce', status: 'cannot', reason: 'Case.net returned HTTP 403 and says automated scraping of Missouri judicial sites is expressly prohibited, so no divorce rows are stored.' },
+  { county: 'jackson', leadType: 'divorce', status: 'cannot', reason: CASENET_SCRAPER_BLOCK },
   { county: 'jackson', leadType: 'probate', status: 'already_existed', reason: 'Probate stays on the existing deceased inheritance audience (prospects.is_deceased); Case.net is not a second probate pipeline.' },
   { county: 'jackson', leadType: 'foreclosure_notice', status: 'already_existed', reason: 'Weekday county_public already pulls Jackson trustee notices from NoticeRegistry and SouthLaw, and Case.net does not replace that pull.' },
-  { county: 'jackson', leadType: 'lis_pendens', status: 'cannot', reason: 'A Jackson lis pendens court case would come from Case.net, which blocks automated access, and no other stable public feed was added.' },
-  { county: 'jackson', leadType: 'federal_tax_lien', status: 'cannot', reason: 'The Jackson recorder public search responds with an ASP.NET browser-test login form, so there is no stable unauthenticated lien fetch.' },
-  { county: 'jackson', leadType: 'hoa_lien', status: 'cannot', reason: 'HOA liens sit on that same Jackson recorder search, which requires a login session this client will not use.' },
+  { county: 'jackson', leadType: 'lis_pendens', status: 'cannot', reason: CASENET_SCRAPER_BLOCK },
+  { county: 'jackson', leadType: 'federal_tax_lien', status: 'built', reason: 'Jackson County public recorder search returns FEDERAL TAX LIEN rows for the recent filing window. Those rows stay on the Liens tab and out of the foreclosure dial queue.' },
+  { county: 'jackson', leadType: 'hoa_lien', status: 'built', reason: 'HOA liens are LIEN documents on that same public recorder search whose other party is a homeowners or homes association. They stay out of the foreclosure dial queue.' },
   { county: 'jackson', leadType: 'sheriff_sale', status: 'already_existed', reason: 'Jackson sale dates already come from the SouthLaw Missouri sales PDF inside county_public when an owner and situs match.' },
   { county: 'johnson', leadType: 'divorce', status: 'cannot', reason: 'Kansas Case Search blocked this client with Cloudflare and requires an in-browser terms step, so no divorce rows are fetched.' },
   { county: 'johnson', leadType: 'probate', status: 'already_existed', reason: 'Johnson probate stays on the existing deceased inheritance audience; Kansas Case Search is blocked and is not a second pipeline.' },
@@ -61,11 +64,13 @@ export function coverageCell(county: CourtCounty, leadType: CourtLeadType): Cove
 }
 
 export function gapsForLane(lane: 'divorce' | 'lien'): CoverageCell[] {
-  if (lane === 'divorce') return [coverageCell('jackson', 'divorce'), coverageCell('johnson', 'divorce')]
-  return [
-    coverageCell('jackson', 'federal_tax_lien'),
-    coverageCell('jackson', 'hoa_lien'),
-    coverageCell('johnson', 'federal_tax_lien'),
-    coverageCell('johnson', 'hoa_lien'),
-  ]
+  const cells = lane === 'divorce'
+    ? [coverageCell('jackson', 'divorce'), coverageCell('johnson', 'divorce')]
+    : [
+        coverageCell('jackson', 'federal_tax_lien'),
+        coverageCell('jackson', 'hoa_lien'),
+        coverageCell('johnson', 'federal_tax_lien'),
+        coverageCell('johnson', 'hoa_lien'),
+      ]
+  return cells.filter((cell) => cell.status === 'cannot')
 }

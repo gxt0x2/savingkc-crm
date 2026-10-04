@@ -6,6 +6,7 @@ import type { FilingLane, FilingLaneRow } from '@/lib/prospecting/court-filing-s
 
 export function FilingsLane({ lane }: { lane: FilingLane }) {
   const [rows, setRows] = useState<FilingLaneRow[]>([])
+  const [sourceNote, setSourceNote] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const gaps = gapsForLane(lane)
   const label = lane === 'divorce' ? 'Divorce filings' : 'Lien filings'
@@ -14,8 +15,9 @@ export function FilingsLane({ lane }: { lane: FilingLane }) {
     let cancelled = false
     fetch(`/api/prospecting/foreclosure/filings?lane=${lane}`, { cache: 'no-store' })
       .then(async (response) => {
-        const body = await response.json() as { rows?: FilingLaneRow[] }
+        const body = await response.json() as { rows?: FilingLaneRow[]; sourceNote?: string | null }
         if (!cancelled && response.ok && Array.isArray(body.rows)) setRows(body.rows.filter((row) => row.dialerEnrolled === false))
+        if (!cancelled && response.ok && typeof body.sourceNote === 'string') setSourceNote(body.sourceNote)
       })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -25,6 +27,7 @@ export function FilingsLane({ lane }: { lane: FilingLane }) {
   return (
     <section aria-label={label} className="space-y-3">
       <p className="fc-queue-note">These rows stay out of the foreclosure dial queue.</p>
+      {sourceNote ? <p className="fc-queue-note">{sourceNote}</p> : null}
       <ul className="space-y-2">
         {gaps.map((gap) => (
           <li key={`${gap.county}:${gap.leadType}`} className="rounded-[14px] bg-[var(--fc-screen)] px-3 py-2 text-sm">

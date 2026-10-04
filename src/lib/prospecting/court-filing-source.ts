@@ -31,6 +31,7 @@ export type FilingLaneView = {
   gaps: CoverageCell[]
   dialerEnrolled: false
   outOfScope: string
+  sourceNote: string | null
 }
 
 const OUT_OF_SCOPE = 'Clay, Wyandotte, Platte, and Cass are not in this pass.'
@@ -38,15 +39,15 @@ const OUT_OF_SCOPE = 'Clay, Wyandotte, Platte, and Cass are not in this pass.'
 export function classifyPublicFilingResponse(source: PublicFilingSource, status: number, body: string): { rows: []; blocked: true; reason: string } {
   const text = body.toLowerCase()
   if (source === 'casenet' && (status === 403 || (text.includes('expressly prohibited') && text.includes('scraper')))) {
-    return { rows: [], blocked: true, reason: 'Case.net prohibits automated scraping and did not return case rows.' }
+    return { rows: [], blocked: true, reason: 'Case.net returned HTTP 403. Automated scraping of Missouri judicial sites is expressly prohibited, so no case rows were stored.' }
   }
   if (source === 'kansasCaseSearch') {
     if (status === 403 || text.includes('you have been blocked') || (text.includes('cloudflare') && text.includes('attention required'))) {
       return { rows: [], blocked: true, reason: 'Kansas Case Search blocked this client and did not return case rows.' }
     }
   }
-  if (source === 'jacksonRecorder' && (text.includes('loginform1_txtpassword') || (text.includes('browser test') && text.includes('password')))) {
-    return { rows: [], blocked: true, reason: 'Jackson recorder public search returned a login form and did not return lien rows.' }
+  if (source === 'jacksonRecorder' && text.includes('browser test') && text.includes('jackson county public access search')) {
+    return { rows: [], blocked: true, reason: 'Jackson recorder returned Browser Test - Jackson County Public Access Search and did not open the public real estate index.' }
   }
   return { rows: [], blocked: true, reason: 'The response was not a stable unauthenticated result document, so no rows were stored.' }
 }
@@ -117,6 +118,7 @@ export function presentFilingLane(lane: FilingLane, rawRows: RawFilingRow[] | nu
     gaps: gapsForLane(lane),
     dialerEnrolled: false,
     outOfScope: OUT_OF_SCOPE,
+    sourceNote: null,
   }
 }
 
