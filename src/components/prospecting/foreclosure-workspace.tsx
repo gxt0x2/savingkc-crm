@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
+import { FilingsLane } from '@/components/prospecting/filings-lane'
 import { ForeclosureListTable } from '@/components/prospecting/foreclosure-list-table'
 import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
 import { foreclosureClearsDialFloor } from '@/lib/prospecting/foreclosure-list'
@@ -75,6 +76,7 @@ export function ForeclosureWorkspace() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [lane, setLane] = useState<'foreclosures' | 'divorce' | 'lien'>('foreclosures')
 
   const load = useCallback(async () => {
     const params = new URLSearchParams()
@@ -204,13 +206,19 @@ export function ForeclosureWorkspace() {
   })
 
   return <>
-    <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
+    <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Filings</h1>} />
     <main className="fc-mobile min-h-0 flex-1 overflow-y-auto p-2 sm:p-3">
         <div className="mx-auto max-w-[90rem] space-y-2">
         <ProspectingSectionNav current="foreclosure" />
-        <p className="fc-crumb">Prospecting <span aria-hidden="true">›</span> Foreclosure</p>
+        <p className="fc-crumb">Prospecting <span aria-hidden="true">›</span> Filings</p>
+        <div role="tablist" aria-label="Filing types" className="fc-quick">
+          <button type="button" role="tab" aria-selected={lane === 'foreclosures'} onClick={() => setLane('foreclosures')}>Foreclosures</button>
+          <button type="button" role="tab" aria-selected={lane === 'divorce'} onClick={() => setLane('divorce')}>Divorces</button>
+          <button type="button" role="tab" aria-selected={lane === 'lien'} onClick={() => setLane('lien')}>Liens</button>
+        </div>
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
+        {lane === 'foreclosures' ? <>
         <section className="fc-filters" aria-label="Foreclosure filters">
           <div className="fc-filter-bar">
             <div className="fc-quick" role="group" aria-label="Quick filters">
@@ -331,6 +339,7 @@ export function ForeclosureWorkspace() {
           {!loading && visible.length === 0 ? <p className="fc-queue-note">No mortgage foreclosure prospects in this queue.</p> : null}
           {!loading && visible.length > 0 ? <ForeclosureListTable prospects={visible} /> : null}
         </section>
+        </> : <FilingsLane key={lane} lane={lane} />}
       </div>
     </main>
   </>

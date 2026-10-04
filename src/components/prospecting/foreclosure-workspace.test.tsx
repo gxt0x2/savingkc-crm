@@ -132,7 +132,8 @@ describe('foreclosure prospecting workspace', () => {
     expect(screen.queryByText(/Owner is a person/)).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Foreclosure sale map' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View' })).toHaveAttribute('href', `/prospecting/foreclosure/${prospect.id}`)
-    expect(screen.getByRole('link', { name: 'Foreclosure' })).toHaveAttribute('href', '/prospecting/foreclosure')
+    expect(screen.getByRole('heading', { name: 'Filings' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Filings' })).toHaveAttribute('href', '/prospecting/foreclosure')
     fireEvent.click(within(table).getByText('100 Sandbox Court'))
     expect(navigation.push).toHaveBeenCalledWith(`/prospecting/foreclosure/${prospect.id}`)
     expect(within(table).queryByRole('button', { name: 'Call' })).not.toBeInTheDocument()
@@ -294,6 +295,19 @@ describe('foreclosure prospecting workspace', () => {
     expect(within(table).getByText('418 Sample Lane')).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Foreclosure sale map' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Owner 1/)).not.toBeInTheDocument()
+  })
+
+  it('keeps divorces off the foreclosure dial queue', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ prospects: [prospect], rows: [] }), { status: 200 }))
+    render(<ForeclosureWorkspace />)
+    expect(await screen.findByRole('table', { name: 'Foreclosure prospects' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Divorces' }))
+    expect(screen.queryByRole('table', { name: 'Foreclosure prospects' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Divorce filings' })).toBeInTheDocument()
+    expect(screen.getByText(/stay out of the foreclosure dial queue/i)).toBeInTheDocument()
+    expect(screen.getByText(/expressly prohibited/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Call' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View' })).not.toBeInTheDocument()
   })
 
   it('shows the sample homeowner mobile and landline on Homeowner contacts', async () => {
