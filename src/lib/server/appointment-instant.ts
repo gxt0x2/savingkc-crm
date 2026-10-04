@@ -4,6 +4,13 @@
 export function parseAppointmentInstant(value: string): string | null {
   const text = value.trim()
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(text)) {
+    // Date.parse rolls impossible calendar dates forward; verify the local
+    // components before trusting an otherwise well-formed explicit offset.
+    const local = text.replace(/(?:Z|[+-]\d{2}:\d{2})$/i, '')
+    const localTimestamp = Date.parse(`${local}Z`)
+    const normalizedLocal = local.length === 16 ? `${local}:00` : local.split('.')[0]
+    if (!Number.isFinite(localTimestamp)
+      || new Date(localTimestamp).toISOString().slice(0, 19) !== normalizedLocal) return null
     const timestamp = Date.parse(text)
     return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
   }

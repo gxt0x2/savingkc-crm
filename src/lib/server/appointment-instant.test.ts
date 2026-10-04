@@ -18,6 +18,9 @@ describe('standalone calendar save times', () => {
     expect(parseAppointmentInstant('2026-11-01T01:30')).toBeNull()
     expect(parseAppointmentInstant('2026-11-01T01:30:00-06:00')).toBe('2026-11-01T07:30:00.000Z')
     expect(parseAppointmentInstant('2026-02-30T10:00')).toBeNull()
+    expect(parseAppointmentInstant('2026-02-30T10:00:00-06:00')).toBeNull()
+    expect(parseAppointmentInstant('2026-10-04T24:00:00Z')).toBeNull()
+    expect(parseAppointmentInstant('2026-10-04T10:00:00.123-05:00')).toBe('2026-10-04T15:00:00.123Z')
   })
   it('checks the actual save instant while preserving historical notes and cancel', () => {
     const now = Date.parse('2026-10-04T15:00Z')
