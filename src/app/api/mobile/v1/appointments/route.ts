@@ -20,7 +20,10 @@ export async function POST(req: NextRequest) {
     }
     const parsed = buildMobileAppointmentCreate(await req.json().catch(() => null), actor.name)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status, headers: mobileNoStoreHeaders() })
-    await requireAuthorizedMobileLead(req, parsed.value.leadId)
+    if (parsed.value.calendarOwnerEmail && parsed.value.calendarOwnerEmail !== actor.email.toLowerCase()) {
+      return NextResponse.json({ error: 'Choose your connected calendar.', }, { status: 403, headers: mobileNoStoreHeaders() })
+    }
+    if (parsed.value.leadId) await requireAuthorizedMobileLead(req, parsed.value.leadId)
     const result = await executeMobileAppointmentCommand({
       actor,
       idempotencyKey,

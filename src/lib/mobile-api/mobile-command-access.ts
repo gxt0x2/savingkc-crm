@@ -29,11 +29,18 @@ export async function requireMobileCommandActor(req: Request) {
 export async function requireAuthorizedMobileAppointment(req: Request, appointmentId: string) {
   const identity = await requireMobileCommandActor(req)
   const { data, error } = await supabaseAdmin().from('appointments')
-    .select('id,lead_id').eq('id', appointmentId).maybeSingle()
+    .select('id,lead_id,assigned_to,mobile_appointment_calendar_sync(owner_email)').eq('id', appointmentId).maybeSingle()
   if (error) throw new Error(error.message)
-  if (!data?.lead_id) throw new MobileCommandAccessError('Appointment not found', 404)
-  await requireAuthorizedMobileLead(req, data.lead_id)
-  return { ...identity, leadId: data.lead_id as string }
+  if (!data) throw new MobileCommandAccessError('Appointment not found', 404)
+  if (data.lead_id) await requireAuthorizedMobileLead(req, data.lead_id)
+  else {
+    const owners = data.mobile_appointment_calendar_sync
+    const owner = Array.isArray(owners) ? owners[0]?.owner_email : (owners as { owner_email?: string } | null)?.owner_email
+    if (owner !== identity.actor.email) {
+      throw new MobileCommandAccessError('This appointment is outside your authorized scope', 403)
+    }
+  }
+  return { ...identity, leadId: data.lead_id as string | null }
 }
 
 export async function requireAuthorizedMobileWorkItem(req: Request, inputKey: string) {
@@ -41,7 +48,7 @@ export async function requireAuthorizedMobileWorkItem(req: Request, inputKey: st
   const key = normalizeWorkItemKey(inputKey)
   if (!key) throw new MobileCommandAccessError('Work item id is required', 400)
   const { data, error } = await supabaseAdmin().from('work_items')
-    .select('work_item_key,lead_id,assigned_to').eq('work_item_key', key).maybeSingle()
+    .select('work_item_key,lead_id,assigned_to,due_at').eq('work_item_key', key).maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) throw new MobileCommandAccessError('Work item not found', 404)
   if (data.lead_id) await requireAuthorizedMobileLead(req, data.lead_id)
@@ -49,5 +56,5 @@ export async function requireAuthorizedMobileWorkItem(req: Request, inputKey: st
     && !mobileActorCanReadAssignedLead(identity.scopedActor, data.assigned_to)) {
     throw new MobileCommandAccessError('This work item is outside your authorized scope', 403)
   }
-  return { ...identity, key }
+  return { ...identity, key, dueAt: data.due_at as string | null }
 }

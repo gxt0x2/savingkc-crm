@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   LEAD_BRIEFING_SYSTEM_PROMPT,
+  LEAD_BRIEFING_PROMPT_VERSION,
   buildExtractiveLeadBriefing,
   buildLeadBriefingEvidence,
   leadBriefingInputFingerprint,
@@ -74,11 +75,79 @@ describe('canonical lead briefing evidence', () => {
   it('builds a conservative evidence-cited briefing when the free provider is unavailable', () => {
     const evidence = evidenceFixture()
     expect(buildExtractiveLeadBriefing(evidence)).toEqual(expect.objectContaining({
-      situation: expect.stringContaining('Canonical CRM identity'),
+      situation: expect.stringContaining('current story and reason for considering a sale remain unverified'),
       motivation: expect.stringContaining('does not establish a verified seller motivation'),
       strategy: expect.stringContaining('next human conversation'),
       confidence: 'low',
       evidenceIds: [`canonical:${leadId}`],
     }))
+  })
+
+  it.each([
+    ['outbound', 'Hello', 'agent', 'outbound'],
+    ['received', "What's up", 'customer', 'inbound'],
+    ['inbound', 'I inherited this house and want to sell before November.', 'customer', 'inbound'],
+    [undefined, 'I need to sell quickly.', 'unknown', 'unknown'],
+  ])('preserves %s message attribution without turning text into seller intent', (direction, body, participant, normalizedDirection) => {
+    const evidence = buildLeadBriefingEvidence({
+      leadId, entityContext: {}, workItems: [], coOwners: [],
+      leadSnapshot: { record: { lead: {}, activities: [{
+        id: 'message', activity_type: 'sms', agent: 'Casey', description: body,
+        metadata: { direction, sender: 'Recorded sender', from: '+18165550101', to: '+18165550102', source: 'mobile_app', sent: true, status: 'delivered' },
+      }] } },
+    })
+    expect(evidence).toHaveLength(1)
+    expect(evidence[0]).toMatchObject({
+      summary: expect.stringContaining(body),
+      provenance: { direction: normalizedDirection, participant, sender: 'Recorded sender', from: '+18165550101', to: '+18165550102', agent: 'Casey', source: 'mobile_app', delivery: 'sent: yes · status: delivered' },
+    })
+    const prompt = leadBriefingPrompt(evidence)
+    expect(prompt).toContain(JSON.stringify(body).slice(1, -1))
+    expect(prompt).toContain(`"participant":"${participant}"`)
+  })
+
+  it.each([
+    { is_test: true }, { test_message: 'true' }, { is_qa: true }, { is_internal: true },
+    { direction: 'outbound-alert' }, { to_agents: [] },
+  ])('excludes explicitly marked QA or internal activity: %j', (metadata) => {
+    const evidence = buildLeadBriefingEvidence({
+      leadId, entityContext: {}, workItems: [], coOwners: [],
+      leadSnapshot: { record: { lead: {}, activities: [
+        { id: 'excluded', activity_type: 'sms', description: 'I am ready to sell now.', metadata },
+        { id: 'real', activity_type: 'sms', description: 'Hello', metadata: { direction: 'received', is_test: false } },
+      ] } },
+    })
+    expect(evidence.map((item) => item.id)).toEqual(['activity:real'])
+    expect(leadBriefingPrompt(evidence)).not.toContain('I am ready to sell now.')
+  })
+
+  it('retains full transcript and note provenance ahead of generated summaries and property data', () => {
+    const evidence = buildLeadBriefingEvidence({
+      leadId, entityContext: {}, workItems: [], coOwners: [],
+      leadSnapshot: { record: { lead: { full_name: 'Pat', property_address: '123 Main St' }, activities: [
+        { id: 'analysis', activity_type: 'note', agent: 'AI', description: 'AI thinks seller is motivated.', metadata: { source: 'call_analysis', analysis: { summary: 'Motivated' } } },
+        { id: 'note', activity_type: 'agent_note', agent: 'Casey', description: 'Seller said another owner must agree.', metadata: {} },
+        { id: 'transcript', activity_type: 'note', agent: 'AI', description: 'Call transcript: short preview', metadata: { source: 'whisper_transcription', direction: 'outbound', fullTranscript: 'Agent: Are you selling? Seller: I have not decided; my sister also owns the house.' } },
+      ] } },
+    })
+    expect(evidence.find((item) => item.id === 'activity:transcript')).toMatchObject({
+      transcript: 'Agent: Are you selling? Seller: I have not decided; my sister also owns the house.',
+      provenance: { kind: 'transcript', source: 'whisper_transcription', participant: 'unknown', direction: 'outbound' },
+    })
+    expect(evidence.find((item) => item.id === 'activity:note')?.provenance?.kind).toBe('agent_note')
+    expect(evidence.find((item) => item.id === 'activity:analysis')?.provenance?.kind).toBe('ai_summary')
+    const fallback = buildExtractiveLeadBriefing(evidence)
+    expect(fallback.evidenceIds).toEqual(['activity:transcript'])
+    expect(fallback.situation).toContain('speaker attribution must be checked')
+    expect(fallback.motivation).toContain('does not establish a verified seller motivation')
+    expect(leadBriefingPrompt(evidence)).toContain('Prioritize speaker-attributed transcripts, agent notes, AI summaries, deal math, then property enrichment')
+  })
+
+  it('versions the repaired prompt and explicitly limits communication inferences', () => {
+    expect(LEAD_BRIEFING_PROMPT_VERSION).toBe('canonical-lead-briefing-v2')
+    expect(LEAD_BRIEFING_SYSTEM_PROMPT).toContain('never seller responsiveness or seller intent')
+    expect(LEAD_BRIEFING_SYSTEM_PROMPT).toContain('greetings or small talk alone establish neither motivation')
+    expect(LEAD_BRIEFING_SYSTEM_PROMPT).toContain('Do not classify a greeting as a test just because of its wording')
+    expect(LEAD_BRIEFING_SYSTEM_PROMPT).toContain('Routine property statistics must not replace the seller narrative')
   })
 })

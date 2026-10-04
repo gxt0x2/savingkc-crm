@@ -30,6 +30,15 @@ describe('mobile appointment outcome', () => {
     }))
   })
 
+  it('accepts null contact for a standalone cancellation', async () => {
+    mocks.actor.mockResolvedValue({ actor: { email: 'ernest@savingkc.com', name: 'Ernest' }, leadId: null })
+    const response = await POST(new NextRequest(`https://crm.savingkc.com/api/mobile/v1/appointments/${appointmentId}/outcome`, {
+      method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json', 'Idempotency-Key': 'standalone-cancel-1' },
+      body: JSON.stringify({ leadId: null, outcome: 'cancelled', expectedVersion: 5 }),
+    }), { params: Promise.resolve({ id: appointmentId }) })
+    expect(response.status).toBe(200)
+    expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({ command: 'outcome', appointmentId, leadId: null, expectedVersion: 5 }))
+  })
   it('does not accept rescheduled as an outcome label', async () => {
     const response = await POST(new NextRequest(`https://crm.savingkc.com/api/mobile/v1/appointments/${appointmentId}/outcome`, {
       method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json', 'Idempotency-Key': 'appointment-outcome-1' },

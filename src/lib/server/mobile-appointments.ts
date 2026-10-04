@@ -15,7 +15,7 @@ type AppointmentCommand = 'create' | 'edit' | 'reschedule' | 'outcome'
 
 type AppointmentDbRow = {
   id: string
-  lead_id: string
+  lead_id: string | null
   type: string
   status: string
   scheduled_at: string
@@ -171,7 +171,7 @@ export async function executeMobileAppointmentCommand(input: {
   let conversion: MobileAppointmentCommandResult['sideEffects']['conversion'] = 'not_applicable'
   const warnings: string[] = []
 
-  if (!result.replayed && (input.command === 'create' || (input.command === 'outcome' && input.payload.outcome === 'completed'))) {
+  if (appointment.leadId && !result.replayed && (input.command === 'create' || (input.command === 'outcome' && input.payload.outcome === 'completed'))) {
     try {
       const lifecycleResult = await checkAutoAdvance(
         appointment.leadId,
@@ -185,7 +185,7 @@ export async function executeMobileAppointmentCommand(input: {
     }
   }
 
-  if (!result.replayed && input.command === 'create') {
+  if (appointment.leadId && !result.replayed && input.command === 'create') {
     try {
       const queued = await queuePpcAppointmentBookedConversion({
         leadId: appointment.leadId,

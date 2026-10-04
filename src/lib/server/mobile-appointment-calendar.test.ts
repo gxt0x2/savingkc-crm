@@ -161,3 +161,32 @@ describe('mobile appointment calendar ownership and receipt', () => {
     expect(mocks.rpc).toHaveBeenCalledOnce()
   })
 })
+
+// Standalone events use the same provider identity markers; there is no contact/guest.
+describe('standalone Google lifecycle fixture', () => {
+  it('creates, reads back, cancels, and reads back absence in the actor primary calendar', async () => {
+    let stored: Record<string, unknown> | null = null
+    const methods: string[] = []
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      methods.push(method)
+      if (method === 'GET') return response(stored ? 200 : 404, stored ?? {})
+      if (method === 'POST') {
+        stored = { ...JSON.parse(String(init?.body)), etag: '"fixture"' }
+        return response(200, stored)
+      }
+      if (method === 'DELETE') { stored = null; return new Response(null, { status: 204 }) }
+      throw new Error('Unexpected provider write')
+    }) as unknown as typeof fetch
+    const args = { appointment, ownerEmail, eventId, accessToken: 'fixture-only', fetchImpl }
+    expect(await syncMobileAppointmentGoogleEvent(args)).toEqual({ ok: true })
+    expect(stored).toMatchObject({ summary: appointment.title })
+    expect(stored).not.toHaveProperty('attendees')
+    expect(await syncMobileAppointmentGoogleEvent(args)).toEqual({ ok: true })
+    const cancelled = { ...appointment, status: 'cancelled', version: 3 }
+    expect(await syncMobileAppointmentGoogleEvent({ ...args, appointment: cancelled })).toEqual({ ok: true })
+    expect(await syncMobileAppointmentGoogleEvent({ ...args, appointment: cancelled })).toEqual({ ok: true })
+    expect(stored).toBeNull()
+    expect(methods).toEqual(['GET', 'POST', 'GET', 'GET', 'DELETE', 'GET'])
+  })
+})

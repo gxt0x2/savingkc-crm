@@ -9,7 +9,7 @@ export type MobileAppointmentProviderSyncStatus = 'not_configured' | 'pending' |
 
 export type MobileAppointment = {
   id: string
-  leadId: string
+  leadId: string | null
   type: MobileAppointmentType
   status: MobileAppointmentStatus
   scheduledAt: string
@@ -35,7 +35,7 @@ export type MobileAppointment = {
 }
 
 export type CreateMobileAppointmentInput = {
-  leadId: string
+  leadId?: string | null
   type: MobileAppointmentType
   scheduledAt: string
   endsAt: string
@@ -45,6 +45,7 @@ export type CreateMobileAppointmentInput = {
   assignedTo: string
   notes: string | null
   sendReminder: boolean
+  calendarOwnerEmail?: string
 }
 
 export type EditMobileAppointmentPatch = Partial<Pick<
