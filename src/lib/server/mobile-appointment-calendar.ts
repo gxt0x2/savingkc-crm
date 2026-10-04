@@ -26,6 +26,32 @@ type GoogleEvent = {
 export type MobileCalendarSyncOutcome = {
   status: 'synced' | 'pending' | 'failed' | 'not_configured'
   warning?: string
+  reason?: string | null
+}
+
+const MISSING_CALENDAR_GRANT = new Set(['no_token', 'missing_calendar', 'google_oauth_not_configured'])
+
+export class MissingCalendarGrantError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MissingCalendarGrantError'
+  }
+}
+
+export function missingCalendarGrant(reason: string | null | undefined): boolean {
+  return MISSING_CALENDAR_GRANT.has(reason ?? '')
+}
+
+/** A missing Google calendar grant fails the command. It is not a saved not_configured sync. */
+export async function assertActorCalendarGrant(actorEmail: string, action: 'save' | 'cancel'): Promise<void> {
+  const access = await resolveAppointmentCalendarAccess({
+    actorEmail,
+    appointmentId: 'mobile-calendar-grant',
+  })
+  if (access.ok || !missingCalendarGrant(access.result.reason)) return
+  throw new MissingCalendarGrantError(action === 'cancel'
+    ? 'Google Calendar is not connected, so this cancel cannot reach Google. The appointment was not cancelled.'
+    : 'Google Calendar is not connected for this account. Connect Google before saving. This item was not saved.')
 }
 
 export class MobileCalendarRetryError extends Error {
@@ -244,7 +270,7 @@ export async function syncMobileAppointmentCalendar(input: {
   }
   if (status === 'synced') return { status }
   if (status === 'not_configured') {
-    return { status, warning: 'Google Calendar is not connected for the original appointment owner.' }
+    return { status, reason, warning: 'Google Calendar is not connected for the original appointment owner.' }
   }
   return { status: 'failed', warning: 'The appointment was saved, but Google Calendar was not updated.' }
 }

@@ -9,6 +9,7 @@ export type GmailSendFailureCode =
   | 'token_refresh_failed'
   | 'reauthorization_required'
   | 'gmail_send_failed'
+  | 'gmail_result_ambiguous'
   | 'invalid_recipient'
 
 export type GmailSendResult =
@@ -57,21 +58,39 @@ export async function sendGmailMessage(input: {
   }
 
   const fetchImpl = input.fetchImpl || fetch
-  const res = await fetchImpl('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${input.accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      raw: encodeRfc822Message({
-        from: input.from,
-        to: input.to.trim(),
-        subject: input.subject,
-        text: input.text,
+  let res: Response
+  try {
+    res = await fetchImpl('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        raw: encodeRfc822Message({
+          from: input.from,
+          to: input.to.trim(),
+          subject: input.subject,
+          text: input.text,
+        }),
       }),
-    }),
-  })
+    })
+  } catch (error) {
+    console.warn('[gmail-send] users.messages.send did not return a result', error)
+    return {
+      ok: false,
+      code: 'gmail_result_ambiguous',
+      error: formatGmailSendError('gmail_result_ambiguous'),
+    }
+  }
+
+  if (res.status >= 500) {
+    return {
+      ok: false,
+      code: 'gmail_result_ambiguous',
+      error: formatGmailSendError('gmail_result_ambiguous'),
+    }
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: { message?: string; status?: string } }
@@ -82,9 +101,25 @@ export async function sendGmailMessage(input: {
 
   const data = await res.json() as { id?: string; threadId?: string }
   if (!data.id) {
-    return { ok: false, code: 'gmail_send_failed', error: formatGmailSendError('gmail_send_failed') }
+    return {
+      ok: false,
+      code: 'gmail_result_ambiguous',
+      error: formatGmailSendError('gmail_result_ambiguous'),
+    }
   }
   return { ok: true, id: data.id, threadId: data.threadId || null, from: input.from }
+}
+
+export function manualGmailFailureStatus(code: GmailSendFailureCode): 400 | 403 | 502 | 504 {
+  if (code === 'gmail_result_ambiguous') return 504
+  if (code === 'invalid_recipient') return 400
+  if (
+    code === 'no_token'
+    || code === 'missing_gmail_send'
+    || code === 'reauthorization_required'
+    || code === 'google_oauth_not_configured'
+  ) return 403
+  return 502
 }
 
 const GOOGLE_TOKEN_COLUMNS = 'id, user_email, access_token, refresh_token, expires_at, last_sync_at, scope'

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   assertDialerControl: vi.fn(),
   sendConnectedGmail: vi.fn(),
   recordOutboundGmail: vi.fn(),
+  assertManualLeadEmailSend: vi.fn(),
 }))
 
 vi.mock('@/lib/api/dialer-mutation-control', () => ({
@@ -51,9 +52,14 @@ vi.mock('resend', () => ({
   },
 }))
 
-vi.mock('@/lib/gmail-send', () => ({
+vi.mock('@/lib/gmail-send', async (original) => ({
+  ...await original<typeof import('@/lib/gmail-send')>(),
   sendConnectedGmail: mocks.sendConnectedGmail,
   recordOutboundGmail: mocks.recordOutboundGmail,
+}))
+
+vi.mock('@/lib/server/manual-email-consent', () => ({
+  assertManualLeadEmailSend: mocks.assertManualLeadEmailSend,
 }))
 
 import { POST } from './route'
@@ -103,6 +109,7 @@ describe('conversation sends', () => {
       deliveryState: 'delivered_and_persisted',
     })
     mocks.assertDialerControl.mockResolvedValue(null)
+    mocks.assertManualLeadEmailSend.mockImplementation(async ({ to }: { to: string }) => ({ ok: true, to }))
     mocks.sendConnectedGmail.mockResolvedValue({
       ok: false,
       code: 'no_token',
@@ -316,55 +323,67 @@ describe('conversation sends', () => {
     expect(mocks.insert).not.toHaveBeenCalled()
   })
 
-  it('returns a non-success response when email delivery is not configured', async () => {
-    vi.stubEnv('RESEND_API_KEY', '')
+  it('returns an explicit Google auth error instead of a Resend fallback', async () => {
+    vi.stubEnv('RESEND_API_KEY', 'test-key')
 
     const response = await POST(request({ mode: 'email', leadId: 'lead-1', to: 'seller@example.com', body: 'Hello' }))
     const payload = await response.json()
 
-    expect(response.status).toBe(503)
-    expect(payload).toMatchObject({ success: false, sent: false, error: 'Email delivery is not configured' })
+    expect(response.status).toBe(403)
+    expect(payload).toMatchObject({ success: false, sent: false, code: 'no_token' })
+    expect(mocks.resendSend).not.toHaveBeenCalled()
     expect(mocks.insert).not.toHaveBeenCalled()
   })
 
   it('does not report or log a provider-rejected email as sent', async () => {
-    vi.stubEnv('RESEND_API_KEY', 'test-key')
-    mocks.resendSend.mockResolvedValue({ data: null, error: { message: 'Recipient rejected' } })
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: false,
+      code: 'gmail_send_failed',
+      error: 'Recipient rejected',
+    })
 
     const response = await POST(request({ mode: 'email', leadId: 'lead-1', to: 'seller@example.com', body: 'Hello' }))
     const payload = await response.json()
 
     expect(response.status).toBe(502)
-    expect(payload).toEqual({ success: false, sent: false, error: 'Recipient rejected' })
+    expect(payload).toMatchObject({ success: false, sent: false, error: 'Recipient rejected', code: 'gmail_send_failed' })
+    expect(mocks.resendSend).not.toHaveBeenCalled()
     expect(mocks.insert).not.toHaveBeenCalled()
   })
 
-  it('logs and reports email success only after provider acceptance', async () => {
-    vi.stubEnv('RESEND_API_KEY', 'test-key')
-    mocks.resendSend.mockResolvedValue({ data: { id: 'email-1' }, error: null })
+  it('logs and reports email success only after Gmail acceptance', async () => {
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: true,
+      id: 'email-1',
+      threadId: 'thread-1',
+      from: 'ernest@savingkc.com',
+    })
 
     const response = await POST(request({ mode: 'email', leadId: 'lead-1', to: 'seller@example.com', body: 'Hello' }))
     const payload = await response.json()
 
     expect(response.status).toBe(200)
-    expect(payload).toEqual({
+    expect(payload).toMatchObject({
       success: true,
       sent: true,
       persisted: true,
       deliveryState: 'delivered_and_persisted',
+      provider: 'gmail',
       id: 'email-1',
     })
+    expect(mocks.resendSend).not.toHaveBeenCalled()
     expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({
       activity_type: 'email',
       agent: 'Ernest Dodson',
-      metadata: expect.objectContaining({ sent: true }),
+      metadata: expect.objectContaining({ sent: true, provider: 'gmail' }),
     }))
   })
 
-  it('bounds a protected Resend call and reasserts before email CRM mutations', async () => {
-    vi.stubEnv('RESEND_API_KEY', 'test-key')
+  it('reasserts dialer control before persisting a confirmed Gmail send', async () => {
     mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
-    mocks.resendSend.mockResolvedValue({ data: { id: 'email-1' }, error: null })
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: true, id: 'email-1', threadId: 'thread-1', from: 'ernest@savingkc.com',
+    })
     mocks.checkAutoAdvance.mockImplementation(async (
       _leadId: string,
       _trigger: string,
@@ -383,19 +402,20 @@ describe('conversation sends', () => {
     }, { 'X-Dialer-Operation': 'operation-1' }))
 
     expect(response.status).toBe(200)
-    expect(mocks.resendSend).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
-      signal: expect.any(AbortSignal),
-      idempotencyKey: 'operation-1',
-    }))
+    expect(mocks.resendSend).not.toHaveBeenCalled()
+    expect(mocks.sendConnectedGmail).toHaveBeenCalledOnce()
     expect(mocks.assertDialerControl).toHaveBeenCalledTimes(3)
     expect(mocks.assertDialerControl.mock.invocationCallOrder[1]).toBeLessThan(mocks.insert.mock.invocationCallOrder[0])
     expect(mocks.assertDialerControl.mock.invocationCallOrder[2]).toBeGreaterThan(mocks.checkAutoAdvance.mock.invocationCallOrder[0])
   })
 
-  it('marks a protected Resend transport timeout as delivery-unknown', async () => {
-    vi.stubEnv('RESEND_API_KEY', 'test-key')
+  it('does not resubmit or persist an ambiguous Gmail result', async () => {
     mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
-    mocks.resendSend.mockRejectedValue(new DOMException('The operation timed out', 'TimeoutError'))
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: false,
+      code: 'gmail_result_ambiguous',
+      error: 'Gmail did not confirm whether this message was sent. Do not send it again.',
+    })
 
     const response = await POST(request({
       mode: 'email',
@@ -410,49 +430,19 @@ describe('conversation sends', () => {
     await expect(response.json()).resolves.toMatchObject({
       success: false,
       sent: null,
-      code: 'delivery_unknown',
-      deliveryState: 'delivery_unknown',
-      error: expect.stringContaining('Do not resend'),
+      code: 'gmail_result_ambiguous',
     })
-    expect(mocks.insert).not.toHaveBeenCalled()
-    expect(mocks.checkAutoAdvance).not.toHaveBeenCalled()
-  })
-
-  it('recognizes the Resend SDK transport-error result as delivery-unknown', async () => {
-    vi.stubEnv('RESEND_API_KEY', 'test-key')
-    mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
-    mocks.resendSend.mockResolvedValue({
-      data: null,
-      error: {
-        name: 'application_error',
-        statusCode: null,
-        message: 'Unable to fetch data. The request could not be resolved.',
-      },
-    })
-
-    const response = await POST(request({
-      mode: 'email',
-      leadId: 'lead-1',
-      to: 'seller@example.com',
-      body: 'Hello',
-      dialerSessionId: '11111111-1111-4111-8111-111111111111',
-    }, { 'X-Dialer-Operation': 'operation-1' }))
-
-    expect(response.status).toBe(504)
-    expect(response.headers.get('x-dialer-operation-uncertain')).toBe('true')
-    await expect(response.json()).resolves.toMatchObject({
-      code: 'delivery_unknown',
-      deliveryState: 'delivery_unknown',
-      error: expect.stringContaining('Do not resend'),
-    })
+    expect(mocks.sendConnectedGmail).toHaveBeenCalledOnce()
+    expect(mocks.resendSend).not.toHaveBeenCalled()
     expect(mocks.insert).not.toHaveBeenCalled()
     expect(mocks.checkAutoAdvance).not.toHaveBeenCalled()
   })
 
   it('awaits protected email auto-advance work before returning', async () => {
-    vi.stubEnv('RESEND_API_KEY', 'test-key')
     mocks.assertDialerControl.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' })
-    mocks.resendSend.mockResolvedValue({ data: { id: 'email-1' }, error: null })
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: true, id: 'email-1', threadId: 'thread-1', from: 'ernest@savingkc.com',
+    })
     let releaseAutoAdvance!: () => void
     mocks.checkAutoAdvance.mockImplementation(() => new Promise((resolve) => {
       releaseAutoAdvance = () => resolve({ advanced: false })
@@ -532,8 +522,9 @@ describe('conversation sends', () => {
   })
 
   it('reports delivered-but-not-persisted without turning delivery into a retryable failure', async () => {
-    vi.stubEnv('RESEND_API_KEY', 'test-key')
-    mocks.resendSend.mockResolvedValue({ data: { id: 'email-1' }, error: null })
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: true, id: 'email-1', threadId: 'thread-1', from: 'ernest@savingkc.com',
+    })
     mocks.insert.mockResolvedValue({ error: { message: 'Database unavailable' } })
 
     const response = await POST(request({

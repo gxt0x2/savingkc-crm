@@ -5,6 +5,7 @@ import { oauthReviewForeignLeadResponse } from '@/lib/auth/oauth-review-sandbox-
 import { operatingDepartmentForStage } from '@/lib/operating-model/department-responsibility'
 import { applyCrmEntityAuthority, safeReadLeadEntityContext } from '@/lib/server/crm-entity-foundation'
 import { listWorkItems } from '@/lib/server/work-items'
+import { attachManualEmailConsent } from '@/lib/server/manual-email-consent'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { normalizeMobileCallActivities } from '@/lib/mobile-api/activity-calls'
 
@@ -106,7 +107,12 @@ export async function GET(
     }
 
     const compatibilityLead = leadRes.data as unknown as MobileLeadRow
-    const lead = applyCrmEntityAuthority(compatibilityLead, entityContext)
+    const authorizedLead = applyCrmEntityAuthority(compatibilityLead, entityContext)
+    const [lead] = await attachManualEmailConsent([{
+      ...authorizedLead,
+      id: String(authorizedLead.id ?? id),
+      email: typeof compatibilityLead.email === 'string' ? compatibilityLead.email : null,
+    }])
     const canonicalProperty = entityContext.available && entityContext.linked && !entityContext.degraded
       ? entityContext.property : null
     if (workItemsState.error) console.error('[mobile/leads/:id] work-item read failed', workItemsState.error)

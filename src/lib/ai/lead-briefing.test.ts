@@ -59,6 +59,30 @@ describe('canonical lead briefing evidence', () => {
     expect(evidence).toHaveLength(5)
   })
 
+  it('rejects unknown narrative citations and replaces a task token only when the id matches', () => {
+    const evidence = evidenceFixture()
+    const narrative = {
+      situation: 'The seller owns the recorded property and requested a Friday call about work:activity:task-1.',
+      motivation: 'The preferred timing is explicit, while price motivation is still unknown.',
+      strategy: 'Use the Friday call to confirm timing, decision makers, and price expectations.',
+      confidence: 'medium' as const,
+      evidenceIds: ['activity:activity-1'],
+    }
+    expect(normalizeLeadBriefing(narrative, evidence).situation).toContain('Call Friday')
+    expect(normalizeLeadBriefing(narrative, evidence).situation).not.toContain('work:activity:task-1')
+    const unknownTask = '22222222-2222-4222-8222-222222222222'
+    expect(() => normalizeLeadBriefing({
+      ...narrative,
+      situation: `The seller owns the recorded property and mentioned work:tc_task:${unknownTask} today.`,
+    }, evidence)).toThrow('unknown CRM record')
+    for (const token of ['appointment:missing-id', 'disposition:missing-id', 'buyer-offer:missing-id']) {
+      expect(() => normalizeLeadBriefing({
+        ...narrative,
+        strategy: `Use the Friday call to confirm timing and review ${token} before making a commitment.`,
+      }, evidence)).toThrow('unknown CRM record')
+    }
+  })
+
   it('rejects invented citations and treats CRM content as evidence, never instructions', () => {
     const evidence = evidenceFixture()
     expect(() => normalizeLeadBriefing({
@@ -144,7 +168,7 @@ describe('canonical lead briefing evidence', () => {
   })
 
   it('versions the repaired prompt and explicitly limits communication inferences', () => {
-    expect(LEAD_BRIEFING_PROMPT_VERSION).toBe('canonical-lead-briefing-v2')
+    expect(LEAD_BRIEFING_PROMPT_VERSION).toBe('canonical-lead-briefing-v3')
     expect(LEAD_BRIEFING_SYSTEM_PROMPT).toContain('never seller responsiveness or seller intent')
     expect(LEAD_BRIEFING_SYSTEM_PROMPT).toContain('greetings or small talk alone establish neither motivation')
     expect(LEAD_BRIEFING_SYSTEM_PROMPT).toContain('Do not classify a greeting as a test just because of its wording')

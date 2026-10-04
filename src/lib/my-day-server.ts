@@ -186,7 +186,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .limit(1000),
     db
       .from('appointments')
-      .select('id, lead_id, type, status, scheduled_at, assigned_to, address, notes, created_at')
+      .select('id, lead_id, type, status, scheduled_at, assigned_to, title, address, notes, created_at')
       .ilike('assigned_to', '%casey%')
       .gte('scheduled_at', now.toISOString())
       .lte('scheduled_at', commitmentEnd)

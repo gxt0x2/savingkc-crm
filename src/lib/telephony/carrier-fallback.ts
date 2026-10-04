@@ -1,4 +1,5 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { directInboundClientNoun } from '@/lib/telephony/direct-inbound-ring'
 
 export const VOICE_FALLBACK_PATH = '/api/twilio/fallback/voice'
 export const SMS_FALLBACK_PATH = '/api/twilio/fallback/sms'
@@ -49,11 +50,12 @@ export function buildCarrierVoiceFallbackTwiml(input: {
   const agentPhone = normalizePhoneToE164(input.agentPhone) || input.agentPhone
   const action = `${baseUrl}/api/ivr/dial-result?from=${encodeURIComponent(from)}&leadId=&calledNumber=${encodeURIComponent(calledNumber)}&type=direct`
   const recordingCallback = `${baseUrl}/api/twilio-recording-callback?source=carrier_fallback&from=${encodeURIComponent(from)}&calledNumber=${encodeURIComponent(calledNumber)}`
+  const clientNoun = directInboundClientNoun(calledNumber)
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial action="${xmlEscape(action)}" method="POST" timeout="15" callerId="${xmlEscape(calledNumber)}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
-    <Number>${xmlEscape(agentPhone)}</Number>
+    ${clientNoun}<Number>${xmlEscape(agentPhone)}</Number>
   </Dial>
 </Response>`
 }

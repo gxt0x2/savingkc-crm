@@ -3,21 +3,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getCurrentUserEmail: vi.fn(),
-  isCurrentUserAdmin: vi.fn(),
   sendConnectedGmail: vi.fn(),
   recordOutboundGmail: vi.fn(),
   insert: vi.fn(),
   checkAutoAdvance: vi.fn(),
+  assertManualLeadEmailSend: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/admin', () => ({
   getCurrentUserEmail: mocks.getCurrentUserEmail,
-  isCurrentUserAdmin: mocks.isCurrentUserAdmin,
 }))
 
-vi.mock('@/lib/gmail-send', () => ({
+vi.mock('@/lib/gmail-send', async (original) => ({
+  ...await original<typeof import('@/lib/gmail-send')>(),
   sendConnectedGmail: mocks.sendConnectedGmail,
   recordOutboundGmail: mocks.recordOutboundGmail,
+}))
+
+vi.mock('@/lib/server/manual-email-consent', () => ({
+  assertManualLeadEmailSend: mocks.assertManualLeadEmailSend,
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -42,7 +46,7 @@ describe('POST /api/auth/google/send', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getCurrentUserEmail.mockResolvedValue('ernest@savingkc.com')
-    mocks.isCurrentUserAdmin.mockResolvedValue(true)
+    mocks.assertManualLeadEmailSend.mockResolvedValue({ ok: true, to: 'savingkc@gmail.com' })
     mocks.recordOutboundGmail.mockResolvedValue({ persisted: true })
     mocks.insert.mockResolvedValue({ error: null })
     mocks.checkAutoAdvance.mockResolvedValue(undefined)
@@ -75,17 +79,69 @@ describe('POST /api/auth/google/send', () => {
       from: 'ernest@savingkc.com',
     })
     const response = await POST(request({
-      to: 'seller@example.com',
+      to: 'savingkc@gmail.com',
       subject: 'Demo',
       body: 'Sent from Settings',
       leadId: 'lead-1',
+      user_email: 'ernest@savingkc.com',
     }))
     const payload = await response.json()
     expect(response.status).toBe(200)
     expect(payload).toMatchObject({ success: true, sent: true, provider: 'gmail', id: 'msg-1' })
+    expect(mocks.sendConnectedGmail).toHaveBeenCalledWith(expect.objectContaining({
+      userEmail: 'ernest@savingkc.com',
+      to: 'savingkc@gmail.com',
+    }))
     expect(mocks.recordOutboundGmail).toHaveBeenCalledWith(expect.objectContaining({
       leadId: 'lead-1',
       gmailMessageId: 'msg-1',
     }))
+  })
+
+  it('rejects an admin mailbox override before Gmail is called', async () => {
+    const response = await POST(request({
+      to: 'savingkc@gmail.com',
+      body: 'Hello',
+      leadId: 'lead-1',
+      user_email: 'someone-else@savingkc.com',
+    }))
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toMatchObject({ code: 'user_email_override', sent: false })
+    expect(mocks.sendConnectedGmail).not.toHaveBeenCalled()
+  })
+
+  it('does not send when the lead email gate refuses', async () => {
+    mocks.assertManualLeadEmailSend.mockResolvedValue({
+      ok: false,
+      status: 409,
+      code: 'email_consent_unknown',
+      error: 'Email suppression status is unknown, so this send was not attempted.',
+    })
+    const response = await POST(request({
+      to: 'savingkc@gmail.com',
+      body: 'Hello',
+      leadId: 'lead-1',
+    }))
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ sent: false, code: 'email_consent_unknown' })
+    expect(mocks.sendConnectedGmail).not.toHaveBeenCalled()
+  })
+
+  it('does not record or resubmit an ambiguous Gmail result', async () => {
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: false,
+      code: 'gmail_result_ambiguous',
+      error: 'Gmail did not confirm whether this message was sent. Do not send it again.',
+    })
+    const response = await POST(request({
+      to: 'savingkc@gmail.com',
+      body: 'Hello',
+      leadId: 'lead-1',
+    }))
+    expect(response.status).toBe(504)
+    await expect(response.json()).resolves.toMatchObject({ sent: null, code: 'gmail_result_ambiguous' })
+    expect(mocks.sendConnectedGmail).toHaveBeenCalledOnce()
+    expect(mocks.recordOutboundGmail).not.toHaveBeenCalled()
+    expect(mocks.insert).not.toHaveBeenCalled()
   })
 })

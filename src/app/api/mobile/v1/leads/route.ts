@@ -10,6 +10,7 @@ import { MobileLeadAccessError, mobileActorCanReadAssignedLead, requireAuthorize
 import { MobileCommandAccessError, requireMobileCommandActor } from '@/lib/mobile-api/mobile-command-access'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
+import { attachManualEmailConsent } from '@/lib/server/manual-email-consent'
 import { readOauthReviewContactDirectoryPage } from '@/lib/server/oauth-review-contact-directory'
 
 export const dynamic = 'force-dynamic'
@@ -121,7 +122,7 @@ export async function GET(req: NextRequest) {
     }))
 
     return NextResponse.json({
-      leads,
+      leads: await attachManualEmailConsent(leads),
       counts: Object.fromEntries(PIPELINE_LISTS.map((key) => [key, scopedCounts[key] ?? 0])),
       pageInfo: {
         total: page.totalCount,
