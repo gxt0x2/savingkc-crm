@@ -96,7 +96,7 @@ export function buildMobileAppointmentCreate(
   const timeError = validateWindow(scheduledAt, endsAt, now)
   if (timeError) return { ok: false, error: timeError, status: 400 }
   const location = cleanText(input.location, 500) ?? null
-  if (input.type === 'in_person' && !location) {
+  if (leadId && input.type === 'in_person' && !location) {
     return { ok: false, error: 'In-person appointments require a location.', status: 400 }
   }
   const assignment = resolveTaskAssignee(input.assignedTo, actorName, { defaultToActor: true })

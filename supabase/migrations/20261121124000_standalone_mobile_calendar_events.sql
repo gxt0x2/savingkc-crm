@@ -102,7 +102,7 @@ BEGIN
        OR assigned_value IS NULL OR length(assigned_value) > 160
        OR length(coalesce(location_value, '')) > 500
        OR length(coalesce(notes_value, '')) > 5000
-       OR (type_value = 'in_person' AND location_value IS NULL)
+       OR (p_lead_id IS NOT NULL AND type_value = 'in_person' AND location_value IS NULL)
        OR (p_lead_id IS NULL AND reminder_value) THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'appointment_invalid_payload';
     END IF;
@@ -165,7 +165,7 @@ BEGIN
          OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name = time_zone_value)
          OR length(coalesce(location_value, '')) > 500
          OR length(coalesce(notes_value, '')) > 5000
-         OR (type_value = 'in_person' AND location_value IS NULL) THEN
+         OR (current_appointment.lead_id IS NOT NULL AND type_value = 'in_person' AND location_value IS NULL) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'appointment_invalid_payload';
       END IF;
 

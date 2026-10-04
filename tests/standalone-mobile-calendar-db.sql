@@ -7,7 +7,7 @@ DECLARE
   start_at timestamptz := clock_timestamp() + interval '1 day';
   payload jsonb;
 BEGIN
-  payload := jsonb_build_object('title','Standalone fixture','type','phone_call',
+  payload := jsonb_build_object('title','Standalone fixture','type','in_person',
     'scheduledAt',start_at,'endsAt',start_at + interval '1 hour',
     'timeZone','America/Chicago','assignedTo','Ernest','sendReminder',false);
   result := public.apply_mobile_appointment_command_v1(actor,'Ernest','standalone-create-fixture',

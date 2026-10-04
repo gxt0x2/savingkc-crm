@@ -11,6 +11,12 @@ describe('standalone calendar save times', () => {
     expect(buildMobileAppointmentCreate(input, 'Ernest', Date.parse('2026-10-03T22:00Z')))
       .toMatchObject({ ok: true, value: { leadId: null, scheduledAt: '2026-10-04T15:00:00.000Z', endsAt: '2026-10-04T16:00:00.000Z' } })
   })
+  it('allows a standalone in-person event without location but retains the linked seller requirement', () => {
+    const event = { ...input, leadId: null, type: 'in_person' }
+    const now = Date.parse('2026-10-03T22:00Z')
+    expect(buildMobileAppointmentCreate(event, 'Ernest', now)).toMatchObject({ ok: true, value: { leadId: null, location: null, type: 'in_person' } })
+    expect(buildMobileAppointmentCreate({ ...event, leadId: '11111111-1111-4111-8111-111111111111' }, 'Ernest', now)).toMatchObject({ ok: false, error: 'In-person appointments require a location.' })
+  })
   it('uses DST transitions and rejects nonexistent or ambiguous wall times', () => {
     expect(parseAppointmentInstant('2026-03-08T01:30')).toBe('2026-03-08T07:30:00.000Z')
     expect(parseAppointmentInstant('2026-03-08T03:30')).toBe('2026-03-08T08:30:00.000Z')
