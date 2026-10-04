@@ -37,6 +37,18 @@ describe('mobile command actor scope', () => {
     expect(mocks.lead).toHaveBeenCalledWith(request, 'lead-1')
   })
 
+  it('authorizes a standalone event through immutable actor ownership without lead access', async () => {
+    mocks.row.mockResolvedValue({ data: { id: 'event-1', lead_id: null, assigned_to: 'Ernest', mobile_appointment_calendar_sync: [{ owner_email: actor.email }] }, error: null })
+    await expect(requireAuthorizedMobileAppointment(request, 'event-1')).resolves.toMatchObject({ leadId: null })
+    expect(mocks.lead).not.toHaveBeenCalled()
+  })
+
+  it('rejects another owner even for company-wide readers or the event assignee', async () => {
+    mocks.companyWide.mockReturnValue(true)
+    mocks.row.mockResolvedValue({ data: { id: 'event-1', lead_id: null, assigned_to: 'Casey', mobile_appointment_calendar_sync: [{ owner_email: 'ernest@savingkc.com' }] }, error: null })
+    await expect(requireAuthorizedMobileAppointment(request, 'event-1')).rejects.toMatchObject({ status: 403 })
+  })
+
   it('rejects unlinked work assigned to someone else', async () => {
     mocks.row.mockResolvedValue({ data: { work_item_key: 'activity:task-1', lead_id: null, assigned_to: 'Ernest' }, error: null })
     await expect(requireAuthorizedMobileWorkItem(request, 'activity:task-1')).rejects.toMatchObject({ status: 403 })

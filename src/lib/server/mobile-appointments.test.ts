@@ -155,3 +155,19 @@ it('maps the durable calendar owner from the one-to-one ledger without inventing
   }).sync.ownerEmail).toBe('casey@savingkc.com')
   expect(mapMobileAppointment(appointment).sync.ownerEmail).toBeNull()
 })
+
+describe('standalone appointment effects', () => {
+  it('persists without a synthetic lead or seller lifecycle/conversion', async () => {
+    vi.clearAllMocks()
+    const standalone = { ...appointment, lead_id: null, provider_sync_status: 'synced' }
+    mocks.rpc.mockResolvedValue({ data: { created: true, changed: true, replayed: false, appointment: standalone }, error: null })
+    mocks.calendar.mockResolvedValue({ status: 'synced' })
+    mocks.from.mockReturnValue({ select: () => ({ eq: () => ({ single: async () => ({ data: standalone, error: null }) }) }) })
+    const result = await executeMobileAppointmentCommand({ ...command, leadId: null, payload: { ...command.payload, leadId: null } })
+    expect(result.appointment.leadId).toBeNull()
+    expect(result.sideEffects).toMatchObject({ lifecycle: 'not_applicable', conversion: 'not_applicable', provider: 'synced' })
+    expect(mocks.lifecycle).not.toHaveBeenCalled()
+    expect(mocks.conversion).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls[0][1].p_lead_id).toBeNull()
+  })
+})
