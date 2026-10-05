@@ -492,7 +492,9 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('<Number')
     expect(text).toContain('+18162262552')
     expect(text).toContain('type=direct')
-    expect(text).toContain('timeout="15"')
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
+    expect(text).not.toContain('timeout="45"')
     expect(text).not.toContain('<Gather')
   })
 
@@ -507,7 +509,8 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('+18162262552')
     expect(text).toContain('callerId="+18165550199"')
     expect(text).not.toContain('callerId="+18166088588"')
-    expect(text).toContain('timeout="15"')
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
     expect(text).not.toContain('timeout="45"')
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(mocks.lookupInboundCallerName).toHaveBeenCalledWith('+18165550199')
@@ -520,7 +523,7 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('<Parameter name="callerName" value="Jane Seller" />')
     expect(text).toContain('callerId="+18165550199"')
     expect(text).toContain('+18162262552')
-    expect(text).toContain('timeout="15"')
+    expect(text).toContain('timeout="60"')
   })
 
   it('still dials the client and the cell when the contact lookup fails', async () => {
@@ -545,6 +548,8 @@ describe('verified inbound TwiML routing', () => {
     expect(text).not.toContain('<Client')
     expect(text).not.toContain('twilio-inbound-client-status')
     expect(text).not.toContain('<Gather')
+    expect(text).toContain('timeout="15"')
+    expect(text).not.toContain('timeout="60"')
     expect(mocks.lookupInboundCallerName).not.toHaveBeenCalled()
   })
 
@@ -559,7 +564,7 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('<Parameter name="callerNumber" value="" />')
     expect(text).toContain('<Identity>ernest</Identity>')
     expect(text).toContain('+18162262552')
-    expect(text).toContain('timeout="15"')
+    expect(text).toContain('timeout="60"')
   })
 
   it('keeps standard acquisition numbers on the seller IVR', async () => {
