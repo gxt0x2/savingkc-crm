@@ -57,10 +57,15 @@ export async function GET(req: NextRequest) {
       incomingAllow: true,
       ...(pushCredentialSid ? { pushCredentialSid } : {}),
     }))
+    const jwt = token.toJwt()
+    console.info('[mobile-twilio-token] minted voice token', {
+      identity,
+      pushCredentialPresent: Boolean(pushCredentialSid),
+    })
 
     return NextResponse.json(
       {
-        token: token.toJwt(),
+        token: jwt,
         identity,
         callerId: profile.defaultCallerId,
         displayName: profile.displayName,

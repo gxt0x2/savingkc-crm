@@ -7,9 +7,24 @@
 // a ring count behave exactly as before.
 
 export const DEFAULT_DIAL_TIMEOUT = 15
+export const WEB_CLICK_TO_CALL_DIAL_TIMEOUT = 60
+export const MOBILE_DIAL_TIMEOUT = 45
 const SECONDS_PER_RING = 6
 const MIN_TIMEOUT = 10
 const MAX_TIMEOUT = 60
+
+/**
+ * Fallback <Dial> timeout when the request has no usable ring count.
+ * Web click-to-call stays at 60s. Every mobile source (mobile_manual,
+ * mobile_lead, and any other mobile_* source) gets 45s. Every other
+ * outbound source keeps the historical 15s default. Inbound IVR and
+ * cold-callback TwiML do not use this helper.
+ */
+export function dialTimeoutFallbackForSource(source: string | null | undefined): number | undefined {
+  if (source === 'web_click_to_call') return WEB_CLICK_TO_CALL_DIAL_TIMEOUT
+  if (source?.startsWith('mobile_')) return MOBILE_DIAL_TIMEOUT
+  return undefined
+}
 
 export function parseDialTimeout(raw: string | number | null | undefined, fallback = DEFAULT_DIAL_TIMEOUT): number {
   const rings = typeof raw === 'number' ? raw : Number(raw)

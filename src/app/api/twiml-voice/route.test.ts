@@ -272,6 +272,38 @@ describe('TwiML request containment', () => {
     expect(text).toContain('timeout="42"')
   })
 
+  it.each(['mobile_manual', 'mobile_lead', 'mobile_callback'] as const)(
+    'gives a signed %s call 45 seconds when no ring count is set',
+    async (source) => {
+      mocks.verifyDialerCallIntent.mockReturnValue({
+        valid: true,
+        claims: { ...validLeadClaims, source },
+      })
+      const { text } = await responseText(outboundRequest({ DialIntentToken: 'signed-intent' }))
+      expect(text).toContain('timeout="45"')
+      expect(text).not.toContain('timeout="15"')
+      expect(text).not.toContain('timeout="60"')
+    },
+  )
+
+  it('keeps an explicit mobile ring count instead of replacing it with 45 seconds', async () => {
+    mocks.verifyDialerCallIntent.mockReturnValue({
+      valid: true,
+      claims: { ...validLeadClaims, source: 'mobile_manual' },
+    })
+    const { text } = await responseText(outboundRequest({ DialIntentToken: 'signed-intent', RingCount: '7' }))
+    expect(text).toContain('timeout="42"')
+  })
+
+  it('keeps a signed web manual call on the 15 second default', async () => {
+    mocks.verifyDialerCallIntent.mockReturnValue({
+      valid: true,
+      claims: { ...validLeadClaims, source: 'web_manual' },
+    })
+    const { text } = await responseText(outboundRequest({ DialIntentToken: 'signed-intent' }))
+    expect(text).toContain('timeout="15"')
+  })
+
   it('does not let unsigned source metadata extend the legacy timeout', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-19T18:00:00.000Z'))
@@ -444,20 +476,25 @@ describe('verified inbound TwiML routing', () => {
 
     expect(text).toContain('<Dial')
     expect(text).toContain('callerId="+18166088858"')
-    expect(text).toContain('<Client>ernest</Client>')
+    expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-inbound-client-status"')
+    expect(text).toContain('statusCallbackEvent="initiated ringing answered completed"')
+    expect(text).toContain('>ernest</Client>')
     expect(text).toContain('<Number')
     expect(text).toContain('+18162262552')
     expect(text).toContain('type=direct')
+    expect(text).toContain('timeout="15"')
     expect(text).not.toContain('<Gather')
   })
 
   it('rings the Voice client together with the cell on Ernest company line', async () => {
     const { text } = await responseText(inboundRequest('+18166088588'))
 
-    expect(text).toContain('<Client>ernest</Client>')
-    expect(text).toContain('<Number')
+    expect(text).toMatch(/<Client statusCallback="https:\/\/crm\.savingkc\.com\/api\/twilio-inbound-client-status" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">ernest<\/Client>/)
+    expect(text).toContain('<Number url="https://crm.savingkc.com/api/ivr/whisper?type=direct')
+    expect(text).not.toMatch(/<Number[^>]*twilio-inbound-client-status/)
     expect(text).toContain('+18162262552')
     expect(text).toContain('callerId="+18166088588"')
+    expect(text).toContain('timeout="15"')
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
   })
 
@@ -468,6 +505,8 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('callerId="+18163754666"')
     expect(text).toContain('+18167564943')
     expect(text).toContain('type=direct')
+    expect(text).not.toContain('<Client')
+    expect(text).not.toContain('twilio-inbound-client-status')
     expect(text).not.toContain('<Gather')
   })
 
@@ -476,6 +515,18 @@ describe('verified inbound TwiML routing', () => {
 
     expect(text).toContain('<Gather')
     expect(text).toContain('/api/ivr/handle-input')
+    expect(text).not.toContain('<Client')
+    expect(text).not.toContain('twilio-inbound-client-status')
+  })
+
+  it('keeps cold-callback IVR off the Voice client and the mobile outbound timeout', async () => {
+    const { text } = await responseText(inboundRequest('+18166404701'))
+
+    expect(text).toContain('coldcall=1')
+    expect(text).toContain('<Gather')
+    expect(text).not.toContain('<Client')
+    expect(text).not.toContain('twilio-inbound-client-status')
+    expect(text).not.toContain('timeout="45"')
   })
 
   it('preserves emergency dialing only after a verified request is classified inbound', async () => {

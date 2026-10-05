@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS } from '@/lib/twilio-numbers'
-import { parseDialTimeout } from '@/lib/ring-timeout'
+import { dialTimeoutFallbackForSource, parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { directInboundClientNoun } from '@/lib/telephony/direct-inbound-ring'
@@ -80,6 +80,10 @@ function outboundRecordingCallback(input: {
   if (input.clientAttemptId) callback.searchParams.set('clientAttemptId', input.clientAttemptId)
   callback.searchParams.set('source', input.source)
   return callback.toString().replaceAll('&', '&amp;')
+}
+
+function inboundClientStatusCallback(): string {
+  return new URL('/api/twilio-inbound-client-status', BASE_URL).toString()
 }
 
 function outboundStatusCallback(identity: string, clientAttemptId: string | null): string {
@@ -327,7 +331,7 @@ export async function POST(req: Request) {
       // Keep explicit campaign ring counts and the legacy fallback intact.
       const dialTimeout = parseDialTimeout(
         getFormString(body, ['RingCount', 'ringCount', 'ring_count']),
-        source === 'web_click_to_call' ? 60 : undefined,
+        dialTimeoutFallbackForSource(source),
       )
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -353,7 +357,9 @@ export async function POST(req: Request) {
     // until a device proves VoIP push registration. A CallKit screen is not proof.
     if (DIRECT_RING_NUMBERS[to]) {
       const agentPhone = DIRECT_RING_NUMBERS[to]
-      const clientNoun = directInboundClientNoun(to)
+      const clientNoun = directInboundClientNoun(to, {
+        statusCallback: inboundClientStatusCallback(),
+      })
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
