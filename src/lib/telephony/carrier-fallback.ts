@@ -1,5 +1,9 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
-import { directInboundClientNoun } from '@/lib/telephony/direct-inbound-ring'
+import {
+  directInboundClientIdentity,
+  directInboundClientNoun,
+  inboundClientDialCallerId,
+} from '@/lib/telephony/direct-inbound-ring'
 
 export const VOICE_FALLBACK_PATH = '/api/twilio/fallback/voice'
 export const SMS_FALLBACK_PATH = '/api/twilio/fallback/sms'
@@ -43,6 +47,7 @@ export function buildCarrierVoiceFallbackTwiml(input: {
   from: string
   calledNumber: string
   agentPhone: string
+  callerName?: string | null
 }): string {
   const baseUrl = (input.baseUrl || crmBaseUrl()).replace(/\/$/, '')
   const from = normalizePhoneToE164(input.from) || input.from
@@ -50,11 +55,17 @@ export function buildCarrierVoiceFallbackTwiml(input: {
   const agentPhone = normalizePhoneToE164(input.agentPhone) || input.agentPhone
   const action = `${baseUrl}/api/ivr/dial-result?from=${encodeURIComponent(from)}&leadId=&calledNumber=${encodeURIComponent(calledNumber)}&type=direct`
   const recordingCallback = `${baseUrl}/api/twilio-recording-callback?source=carrier_fallback&from=${encodeURIComponent(from)}&calledNumber=${encodeURIComponent(calledNumber)}`
-  const clientNoun = directInboundClientNoun(calledNumber)
+  const ringsClient = Boolean(directInboundClientIdentity(calledNumber))
+  const clientNoun = directInboundClientNoun(calledNumber, ringsClient ? {
+    callerNumber: from,
+    callerName: input.callerName ?? '',
+    calledNumber,
+  } : undefined)
+  const callerId = inboundClientDialCallerId({ from, calledNumber, ringsClient })
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${xmlEscape(action)}" method="POST" timeout="15" callerId="${xmlEscape(calledNumber)}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
+  <Dial action="${xmlEscape(action)}" method="POST" timeout="15" callerId="${xmlEscape(callerId)}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
     ${clientNoun}<Number>${xmlEscape(agentPhone)}</Number>
   </Dial>
 </Response>`

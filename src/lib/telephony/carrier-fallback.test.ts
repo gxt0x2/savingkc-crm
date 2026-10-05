@@ -39,9 +39,28 @@ describe('carrier fallbacks', () => {
       agentPhone: '+18162262552',
     })
 
-    expect(xml).toContain('<Client>ernest</Client>')
+    expect(xml).toContain('<Identity>ernest</Identity>')
+    expect(xml).toContain('<Parameter name="callerNumber" value="+19137179716" />')
+    expect(xml).toContain('<Parameter name="callerName" value="" />')
+    expect(xml).toContain('<Parameter name="calledNumber" value="+18166088588" />')
     expect(xml).toContain('<Number>+18162262552</Number>')
-    expect(xml).toContain('callerId="+18166088588"')
+    expect(xml).toContain('callerId="+19137179716"')
+    expect(xml).not.toContain('callerId="+18166088588"')
+    expect(xml).toContain('timeout="15"')
+  })
+
+  it('puts a CRM name on the Voice client without dropping the cell', () => {
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+19137179716',
+      calledNumber: '+18166088588',
+      agentPhone: '+18162262552',
+      callerName: 'Jane Seller',
+    })
+
+    expect(xml).toContain('<Parameter name="callerName" value="Jane Seller" />')
+    expect(xml).toContain('<Number>+18162262552</Number>')
+    expect(xml).toContain('callerId="+19137179716"')
   })
 
   it('creates an unqualified New record rather than assuming a seller lead', () => {

@@ -4,7 +4,12 @@ import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS 
 import { dialTimeoutFallbackForSource, parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { directInboundClientNoun } from '@/lib/telephony/direct-inbound-ring'
+import {
+  directInboundClientIdentity,
+  directInboundClientNoun,
+  inboundClientDialCallerId,
+} from '@/lib/telephony/direct-inbound-ring'
+import { lookupInboundCallerName } from '@/lib/telephony/inbound-caller-name'
 import { verifyDialerCallIntent } from '@/lib/telephony/dialer-call-intent'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import {
@@ -357,12 +362,26 @@ export async function POST(req: Request) {
     // until a device proves VoIP push registration. A CallKit screen is not proof.
     if (DIRECT_RING_NUMBERS[to]) {
       const agentPhone = DIRECT_RING_NUMBERS[to]
+      const ringsClient = Boolean(directInboundClientIdentity(to))
+      let callerName = ''
+      if (ringsClient) {
+        try {
+          callerName = await lookupInboundCallerName(from)
+        } catch {
+          // The client still rings. CallKit falls through to the PSTN number.
+          console.error('[IVR] Inbound caller name lookup failed')
+        }
+      }
       const clientNoun = directInboundClientNoun(to, {
         statusCallback: inboundClientStatusCallback(),
+        callerNumber: from,
+        callerName,
+        calledNumber: to,
       })
+      const dialCallerId = inboundClientDialCallerId({ from, calledNumber: to, ringsClient })
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${to}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(to)}&amp;type=direct" method="POST" timeout="15" callerId="${dialCallerId}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
     ${clientNoun}<Number url="${BASE_URL}/api/ivr/whisper?type=direct&amp;from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}">${agentPhone}</Number>
   </Dial>
 </Response>`
