@@ -97,6 +97,24 @@ describe('mobile Twilio Voice token application integrity', () => {
     })
   })
 
+  it('logs whether a push credential was present without the credential or token', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    const response = await GET(request() as never)
+
+    expect(response.status).toBe(200)
+    expect(info).toHaveBeenCalledWith('[mobile-twilio-token] minted voice token', {
+      identity: 'casey',
+      pushCredentialPresent: true,
+    })
+    const logged = JSON.stringify(info.mock.calls)
+    expect(logged).not.toContain(mocks.env.TWILIO_VOIP_PUSH_CREDENTIAL_SID)
+    expect(logged).not.toContain(mocks.env.TWILIO_API_SECRET)
+    expect(logged).not.toContain(mocks.env.TWILIO_API_KEY)
+    expect(logged).not.toContain('header.payload.signature')
+    info.mockRestore()
+  })
+
   it('fails closed without exposing configuration when validation is unavailable', async () => {
     mocks.resolveTwimlAppSid.mockResolvedValue(undefined)
 
@@ -123,5 +141,19 @@ describe('mobile Twilio Voice token application integrity', () => {
       outgoingApplicationSid: `AP${'c'.repeat(32)}`,
       incomingAllow: true,
     })
+  })
+
+  it('logs a minted token when the push credential is absent', async () => {
+    delete mocks.env.TWILIO_VOIP_PUSH_CREDENTIAL_SID
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    const response = await GET(request() as never)
+
+    expect(response.status).toBe(200)
+    expect(info).toHaveBeenCalledWith('[mobile-twilio-token] minted voice token', {
+      identity: 'casey',
+      pushCredentialPresent: false,
+    })
+    info.mockRestore()
   })
 })

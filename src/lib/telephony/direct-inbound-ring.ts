@@ -15,8 +15,26 @@ export function directInboundClientIdentity(calledNumber: string | null | undefi
   return resolveAgentTelephonyProfile('ernest@savingkc.com').identity
 }
 
-export function directInboundClientNoun(calledNumber: string | null | undefined): string {
+export type DirectInboundClientNounOptions = {
+  statusCallback?: string | null
+}
+
+function xmlAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;')
+}
+
+export function directInboundClientNoun(
+  calledNumber: string | null | undefined,
+  options?: DirectInboundClientNounOptions,
+): string {
   const identity = directInboundClientIdentity(calledNumber)
   if (!identity || /[^a-z0-9_-]/i.test(identity)) return ''
-  return `<Client>${identity}</Client>`
+  const statusCallback = options?.statusCallback?.trim()
+  if (!statusCallback) return `<Client>${identity}</Client>`
+  return `<Client statusCallback="${xmlAttribute(statusCallback)}" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">${identity}</Client>`
 }
