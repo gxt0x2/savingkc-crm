@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   evaluateOutboundDialerCall: vi.fn(),
   isGoogleAdsPhoneNumber: vi.fn(),
+  lookupInboundCallerName: vi.fn(async () => ''),
   recordBlockedDialerCall: vi.fn(),
   validateTwilioWebhook: vi.fn(),
   verifyDialerCallIntent: vi.fn(),
@@ -18,6 +19,10 @@ vi.mock('@/lib/twilio-validate', () => ({
 
 vi.mock('@/lib/telephony/dialer-call-intent', () => ({
   verifyDialerCallIntent: mocks.verifyDialerCallIntent,
+}))
+
+vi.mock('@/lib/telephony/inbound-caller-name', () => ({
+  lookupInboundCallerName: mocks.lookupInboundCallerName,
 }))
 
 vi.mock('@/lib/server/dialer-call-eligibility', () => ({
@@ -469,33 +474,67 @@ describe('verified inbound TwiML routing', () => {
     mocks.validateTwilioWebhook.mockResolvedValue(true)
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
     mocks.isGoogleAdsPhoneNumber.mockReturnValue(false)
+    mocks.lookupInboundCallerName.mockResolvedValue('')
   })
 
   it('routes the dispositions number directly to Ernest without the seller IVR', async () => {
     const { text } = await responseText(inboundRequest('+18166088858'))
 
     expect(text).toContain('<Dial')
-    expect(text).toContain('callerId="+18166088858"')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('callerId="+18166088858"')
     expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-inbound-client-status"')
     expect(text).toContain('statusCallbackEvent="initiated ringing answered completed"')
-    expect(text).toContain('>ernest</Client>')
+    expect(text).toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('<Parameter name="callerNumber" value="+18165550199" />')
+    expect(text).toContain('<Parameter name="callerName" value="" />')
+    expect(text).toContain('<Parameter name="calledNumber" value="+18166088858" />')
     expect(text).toContain('<Number')
     expect(text).toContain('+18162262552')
     expect(text).toContain('type=direct')
-    expect(text).toContain('timeout="15"')
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
+    expect(text).not.toContain('timeout="45"')
     expect(text).not.toContain('<Gather')
   })
 
   it('rings the Voice client together with the cell on Ernest company line', async () => {
     const { text } = await responseText(inboundRequest('+18166088588'))
 
-    expect(text).toMatch(/<Client statusCallback="https:\/\/crm\.savingkc\.com\/api\/twilio-inbound-client-status" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST">ernest<\/Client>/)
+    expect(text).toMatch(/<Client statusCallback="https:\/\/crm\.savingkc\.com\/api\/twilio-inbound-client-status" statusCallbackEvent="initiated ringing answered completed" statusCallbackMethod="POST"><Identity>ernest<\/Identity>/)
+    expect(text).toContain('<Parameter name="callerNumber" value="+18165550199" />')
+    expect(text).toContain('<Parameter name="calledNumber" value="+18166088588" />')
     expect(text).toContain('<Number url="https://crm.savingkc.com/api/ivr/whisper?type=direct')
     expect(text).not.toMatch(/<Number[^>]*twilio-inbound-client-status/)
     expect(text).toContain('+18162262552')
-    expect(text).toContain('callerId="+18166088588"')
-    expect(text).toContain('timeout="15"')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('callerId="+18166088588"')
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
+    expect(text).not.toContain('timeout="45"')
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
+    expect(mocks.lookupInboundCallerName).toHaveBeenCalledWith('+18165550199')
+  })
+
+  it('puts the CRM contact name on the Voice client and still rings the cell', async () => {
+    mocks.lookupInboundCallerName.mockResolvedValue('Jane Seller')
+    const { text } = await responseText(inboundRequest('+18166088588'))
+
+    expect(text).toContain('<Parameter name="callerName" value="Jane Seller" />')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).toContain('+18162262552')
+    expect(text).toContain('timeout="60"')
+  })
+
+  it('still dials the client and the cell when the contact lookup fails', async () => {
+    mocks.lookupInboundCallerName.mockRejectedValue(new Error('database unavailable'))
+    const { text } = await responseText(inboundRequest('+18166088588'))
+
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).toContain('<Parameter name="callerName" value="" />')
+    expect(text).toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('+18162262552')
+    expect(text).not.toContain('<Hangup/>')
   })
 
   it('routes Casey Legacy directly to Casey without the seller IVR', async () => {
@@ -503,11 +542,29 @@ describe('verified inbound TwiML routing', () => {
 
     expect(text).toContain('<Dial')
     expect(text).toContain('callerId="+18163754666"')
+    expect(text).not.toContain('callerId="+18165550199"')
     expect(text).toContain('+18167564943')
     expect(text).toContain('type=direct')
     expect(text).not.toContain('<Client')
     expect(text).not.toContain('twilio-inbound-client-status')
     expect(text).not.toContain('<Gather')
+    expect(text).toContain('timeout="15"')
+    expect(text).not.toContain('timeout="60"')
+    expect(mocks.lookupInboundCallerName).not.toHaveBeenCalled()
+  })
+
+  it('keeps the company DID when an inbound client call has no E.164 From', async () => {
+    const { text } = await responseText(twilioRequest({
+      CallSid: 'CA_test_inbound_anonymous',
+      From: 'Anonymous',
+      To: '+18166088588',
+    }))
+
+    expect(text).toContain('callerId="+18166088588"')
+    expect(text).toContain('<Parameter name="callerNumber" value="" />')
+    expect(text).toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('+18162262552')
+    expect(text).toContain('timeout="60"')
   })
 
   it('keeps standard acquisition numbers on the seller IVR', async () => {
