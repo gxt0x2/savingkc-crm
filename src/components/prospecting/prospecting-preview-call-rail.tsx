@@ -109,7 +109,7 @@ export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProp
           aria-pressed={selectedOutcome === id}
           disabled={callState !== 'live' && callState !== 'paused'}
           onClick={() => recordOutcome(id)}
-          className={`flex min-h-10 w-full items-center gap-2 rounded-lg border px-3 text-left text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-75 ${selectedOutcome === id ? 'border-[var(--crm-brand-active)] bg-[var(--crm-brand-active)] ring-2 ring-[var(--crm-brand-border)]' : 'border-[var(--crm-brand)] bg-[var(--crm-brand)] enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)]'}`}
+          className={`flex min-h-10 w-full items-center gap-2 rounded-lg border px-3 text-left text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-85 ${selectedOutcome === id ? 'border-[var(--prospecting-primary-strong)] bg-[var(--prospecting-primary-strong)] ring-2 ring-[var(--prospecting-primary)]/35' : 'border-[var(--prospecting-primary)] bg-[var(--prospecting-primary)] enabled:hover:border-[var(--prospecting-primary-strong)] enabled:hover:bg-[var(--prospecting-primary-strong)]'}`}
         >
           <Icon name={icon} size="text-sm" className="shrink-0 text-white" />
           <span className="min-w-0 flex-1">{label}</span>

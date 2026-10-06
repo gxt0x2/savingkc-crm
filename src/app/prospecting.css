@@ -118,8 +118,8 @@
   --prospecting-text: #f7f8fa;
   --prospecting-muted: #c8ced5;
   --prospecting-dim: #98a2ad;
-  --prospecting-primary: #2f788e;
-  --prospecting-primary-strong: #27677a;
+  --prospecting-primary: #c8242d;
+  --prospecting-primary-strong: #aa1e26;
   --prospecting-on-primary: #ffffff;
   --ck-text: var(--prospecting-text);
   --ck-text-muted: var(--prospecting-muted);
@@ -139,10 +139,10 @@
   --prospecting-text: var(--crm-ink);
   --prospecting-muted: var(--crm-text-muted);
   --prospecting-dim: var(--crm-text-dim);
-  --prospecting-primary: var(--crm-brand);
-  --prospecting-primary-strong: var(--crm-brand-hover);
-  --prospecting-primary-soft: var(--crm-brand-soft);
-  --prospecting-on-primary: var(--crm-on-brand);
+  --prospecting-primary: #c8242d;
+  --prospecting-primary-strong: #aa1e26;
+  --prospecting-primary-soft: #fbeaec;
+  --prospecting-on-primary: #ffffff;
   --ck-text: var(--crm-ink);
   --ck-text-muted: var(--crm-text-muted);
   --ck-text-dim: var(--crm-text-dim);
