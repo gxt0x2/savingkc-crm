@@ -233,7 +233,7 @@ export function isProspectingPilotCampaign(campaign: Pick<ProspectingDialerPicke
 }
 
 export function isProspectingDialerPickerCampaign(campaign: ProspectingDialerPickerCampaign): boolean {
-  return campaign.status !== 'draft' && !isProspectingPilotCampaign(campaign)
+  return campaign.status !== 'draft' && campaign.status !== 'archived' && !isProspectingPilotCampaign(campaign)
 }
 
 export function prospectingDialerPickerCampaigns<T extends ProspectingDialerPickerCampaign>(campaigns: T[]): T[] {
@@ -249,7 +249,7 @@ export function preferredProspectingDialerPickerCampaignId(
   currentId?: string | null,
   requestedId?: string | null,
 ): string | null {
-  if (currentId && campaigns.some((campaign) => campaign.id === currentId)) return currentId
+  if (currentId && campaigns.some((campaign) => campaign.id === currentId && isProspectingDialerPickerCampaign(campaign))) return currentId
   if (requestedId && campaigns.some((campaign) => campaign.id === requestedId)) return requestedId
   return campaigns.find(isProspectingDialerPickerCampaign)?.id ?? campaigns[0]?.id ?? null
 }
