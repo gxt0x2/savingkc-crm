@@ -674,7 +674,7 @@ export async function rerunProspectingDialerCampaign(actor: AuthenticatedActor, 
   if (!/^[0-9a-f-]{36}$/i.test(campaignId)) {
     throw new ProspectingCampaignError('invalid_campaign_id', 400, 'Campaign id is invalid')
   }
-  const { data, error } = await supabase.rpc('rerun_prospecting_dialer_campaign_v1', {
+  const { data, error } = await supabase.rpc('rerun_prospecting_dialer_campaign_v2', {
     p_campaign_id: campaignId,
     p_actor_email: actor.email,
     p_actor_name: actor.name,

@@ -292,7 +292,8 @@ export function ProspectingWorkspace({
   }
 
   async function rerunCampaign() {
-    if (!detail || detail.kind !== 'dialer' || detail.status !== 'completed' || actionPending) return
+    if (!detail || detail.kind !== 'dialer' || !['active', 'completed'].includes(detail.status) || actionPending) return
+    if (detail.status === 'active' && !window.confirm('Restart every currently callable seller from the beginning? Prior call results and suppressed numbers will be preserved.')) return
     setActionPending(true)
     setError(null)
     setNotice(null)
@@ -301,10 +302,10 @@ export function ProspectingWorkspace({
         method: 'POST',
       })
       setFreshRerunCampaignId(detail.id)
-      setNotice(`Run ${result.campaign.runNumber} is ready. ${result.campaign.resetMembers} callable seller${result.campaign.resetMembers === 1 ? '' : 's'} reopened; prior call results were preserved.`)
+      setNotice(`Run ${result.campaign.runNumber} is ready. ${result.campaign.resetMembers} callable seller${result.campaign.resetMembers === 1 ? '' : 's'} queued from the beginning; prior call results were preserved.`)
       await Promise.all([loadCampaigns(), loadDetail(detail.id)])
     } catch (rerunError) {
-      setError(rerunError instanceof Error ? rerunError.message : 'The completed list could not be started again')
+      setError(rerunError instanceof Error ? rerunError.message : 'The callable list could not be restarted')
     } finally {
       setActionPending(false)
     }

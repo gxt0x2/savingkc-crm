@@ -23,7 +23,7 @@ describe('rerunProspectingDialerCampaign', () => {
       runNumber: 2,
       resetMembers: 61,
     })
-    expect(mocks.rpc).toHaveBeenCalledWith('rerun_prospecting_dialer_campaign_v1', {
+    expect(mocks.rpc).toHaveBeenCalledWith('rerun_prospecting_dialer_campaign_v2', {
       p_campaign_id: campaignId,
       p_actor_email: actor.email,
       p_actor_name: actor.name,

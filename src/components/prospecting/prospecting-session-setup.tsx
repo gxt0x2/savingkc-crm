@@ -159,7 +159,7 @@ export function ProspectingSessionSetup({
         {showLaunchAction ? <button type="button" onClick={() => onLaunch(applied)} disabled={actionPending || activeCount === 0} className="crm-primary-button inline-flex min-h-12 min-w-48 items-center justify-center gap-2 rounded-xl px-6 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50"><Icon name={writesEnabled ? applied.startBehavior === 'resume' ? 'resume' : 'first_page' : 'preview'} className="text-xl" />{writesEnabled ? applied.startBehavior === 'resume' ? 'Resume calling' : 'Start calling' : 'Preview call session'}</button> : null}
       </div>
 
-      {!writesEnabled ? <p className="text-xs font-bold leading-5 text-white/60">Preview mode: setup changes stay in this browser. The calling floor and 15-second start sequence are interactive, but no call or CRM write can occur.</p> : null}
+      {!writesEnabled ? <p className="text-xs font-bold leading-5 text-white/60">Preview mode cannot place calls or save CRM progress. <a href={`https://crm.savingkc.com/prospecting?campaign=${encodeURIComponent(campaignId)}`} className="text-white underline decoration-white/45 underline-offset-4 hover:decoration-white">Open this campaign in production to call and advance the list.</a></p> : null}
       {presetState !== 'idle' ? <p role="status" className={`text-xs font-bold ${presetState === 'error' ? 'text-amber-200' : 'text-white/60'}`}>{presetState === 'saving' ? 'Saving campaign preset…' : presetState === 'saved' ? 'Campaign preset saved.' : 'Preset is saved in this browser, but account sync failed. Try Save preset again.'}</p> : null}
 
       {open ? <section aria-label="Calling session setup" className="crm-panel-raised rounded-2xl p-4 text-[var(--crm-text)] sm:p-5">

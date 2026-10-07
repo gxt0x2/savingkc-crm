@@ -195,6 +195,23 @@ describe('CampaignDashboard', () => {
     expect(screen.getByText(/Your progress is preserved if you stop/i)).toBeVisible()
   })
 
+  it('offers an explicit callable-list restart for an active dialer campaign', () => {
+    const rerun = vi.fn()
+    const dialerDetail: ProspectingCampaignDetail = {
+      ...detail,
+      kind: 'dialer',
+      callerId: '+18165550199',
+      fromPhone: null,
+      steps: [],
+      stats: { ...detail.stats, completed: 100, active: 8, total: 108 },
+    }
+    render(<CampaignDashboard campaigns={[dialerDetail]} selectedId={dialerDetail.id} detail={dialerDetail} loading={false} detailLoading={false} actionPending={false} onSelect={vi.fn()} onCreate={vi.fn()} onDuplicate={vi.fn()} onTransition={vi.fn()} onLaunchDialer={vi.fn()} onRerun={rerun} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Campaign details/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restart callable list' }))
+    expect(rerun).toHaveBeenCalledOnce()
+  })
+
   it('shows session setup and immediately prepares a completed list to run again', () => {
     const rerun = vi.fn()
     const dialerDetail: ProspectingCampaignDetail = {
@@ -285,7 +302,7 @@ describe('CampaignDashboard', () => {
 
     const preview = screen.getByRole('button', { name: 'Preview call session' })
     expect(preview).toBeVisible()
-    expect(screen.getByText(/15-second start sequence/i)).toBeVisible()
+    expect(screen.getByRole('link', { name: /Open this campaign in production/i })).toHaveAttribute('href', `https://crm.savingkc.com/prospecting?campaign=${dialerDetail.id}`)
     expect(screen.queryByRole('button', { name: 'Resume calling' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
     const setup = screen.getByRole('region', { name: 'Calling session setup' })

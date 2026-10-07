@@ -186,6 +186,7 @@ export function CampaignDashboard({
                 {detail.status === 'draft' && onEdit ? <button type="button" onClick={() => onEdit(detail)} disabled={actionPending} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="edit" />Edit setup</button> : null}
                 <button type="button" onClick={() => onDuplicate(detail)} disabled={actionPending} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="content_copy" />Duplicate setup</button>
                 {detail.status === 'active' ? <button type="button" onClick={() => onTransition('paused')} disabled={actionPending} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="pause" />Pause campaign</button> : null}
+                {detail.kind === 'dialer' && detail.status === 'active' && writesEnabled && onRerun ? <button type="button" onClick={onRerun} disabled={actionPending} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="restart_alt" />Restart callable list</button> : null}
                 <button type="button" onClick={onCreate} className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black"><Icon name="add" />Build another campaign</button>
               </div>
 
