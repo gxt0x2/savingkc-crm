@@ -1,13 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mocks = vi.hoisted(() => ({ authorize: vi.fn(), admin: vi.fn() }))
-vi.mock('@/lib/mobile-api/authorized-lead', async (original) => ({ ...await original<typeof import('@/lib/mobile-api/authorized-lead')>(), requireAuthorizedMobileLead: mocks.authorize }))
+const mocks = vi.hoisted(() => ({ authorize: vi.fn(), admin: vi.fn(), user: vi.fn(), actor: vi.fn() }))
+vi.mock('@/lib/mobile-api/auth', async (original) => ({ ...await original<typeof import('@/lib/mobile-api/auth')>(), requireMobileUser: mocks.user }))
+vi.mock('@/lib/mobile-api/authorized-lead', async (original) => ({
+  ...await original<typeof import('@/lib/mobile-api/authorized-lead')>(),
+  requireAuthorizedMobileLead: mocks.authorize,
+  resolveMobileScopedActor: mocks.actor,
+}))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: mocks.admin }))
+import { MobileAuthError } from '@/lib/mobile-api/auth'
 import { POST } from './route'
 
+const adHocEnded = () => new NextRequest('https://crm.savingkc.com/api/mobile/v1/calls/events', {
+  method: 'POST', body: JSON.stringify({ phone: '(816) 553-7559', event: 'ended' }),
+})
+
 describe('mobile call-event scope', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.user.mockResolvedValue({ user: { id: 'user-ernest', email: 'Ernest@SavingKC.com' } })
+    mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com' })
+  })
   it('rejects an out-of-scope lead before inserting or touching a timestamp', async () => {
     const { MobileLeadAccessError } = await import('@/lib/mobile-api/authorized-lead')
     mocks.authorize.mockRejectedValue(new MobileLeadAccessError('outside scope', 403))
@@ -29,7 +43,18 @@ describe('mobile call-event scope', () => {
         skipped: true,
       })
     }
+    expect(mocks.actor).toHaveBeenCalledWith('ernest@savingkc.com')
     expect(mocks.authorize).not.toHaveBeenCalled()
+    expect(mocks.admin).not.toHaveBeenCalled()
+  })
+
+  it('does not answer an ad-hoc call event without a CRM session', async () => {
+    mocks.user.mockRejectedValueOnce(new MobileAuthError('Missing bearer token'))
+    expect((await POST(adHocEnded())).status).toBe(401)
+    mocks.actor.mockResolvedValueOnce(null)
+    const outsideCrm = await POST(adHocEnded())
+    expect(outsideCrm.status).toBe(403)
+    expect(await outsideCrm.json()).toMatchObject({ error: 'CRM profile not authorized' })
     expect(mocks.admin).not.toHaveBeenCalled()
   })
 

@@ -1,7 +1,11 @@
 import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
-import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
-import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
+import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse, requireMobileUser } from '@/lib/mobile-api/auth'
+import {
+  MobileLeadAccessError,
+  requireAuthorizedMobileLead,
+  resolveMobileScopedActor,
+} from '@/lib/mobile-api/authorized-lead'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -47,6 +51,10 @@ export async function POST(req: NextRequest) {
     // An ad-hoc dial has no lead. Do not invent one and do not attach the
     // call to whoever happens to share the number.
     if (!leadId) {
+      const { user } = await requireMobileUser(req)
+      const email = user.email?.trim().toLowerCase()
+      if (!email) throw new MobileAuthError('Authenticated user has no email')
+      if (!await resolveMobileScopedActor(email)) throw new MobileLeadAccessError('CRM profile not authorized', 403)
       return NextResponse.json({
         ok: true,
         activityId: null,
