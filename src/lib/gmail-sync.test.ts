@@ -189,9 +189,9 @@ describe('lead reply projection', () => {
       }
       return messageResponse({
         From: 'Webull <statements@doc.webull.com>',
-          To: 'savingkc@gmail.com',
-          Subject: 'Statement',
-        }, 'Your statement is ready.')
+        To: 'savingkc@gmail.com',
+        Subject: 'Statement',
+      }, 'Your statement is ready.')
     })
     const first = await ingestGmailMessageStubs({
       db: db as never,
@@ -275,9 +275,9 @@ describe('lead selection for a mailbox', () => {
       }
       return messageResponse({
         From: 'Pat Seller <seller@example.com>',
-          To: 'Ernest Dodson <ernest@savingkc.com>',
-          Subject: 'Re: 44 Oak Ave',
-        }, 'Call me after 5.')
+        To: 'Ernest Dodson <ernest@savingkc.com>',
+        Subject: 'Re: 44 Oak Ave',
+      }, 'Call me after 5.')
     })
     await ingestGmailMessageStubs({
       db: db as never,
