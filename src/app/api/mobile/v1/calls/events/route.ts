@@ -38,14 +38,23 @@ export async function POST(req: NextRequest) {
     const phone = cleanPhone(body.phone)
     const event = body.event === 'ended' ? 'ended' : body.event === 'started' ? 'started' : null
 
-    if (!leadId || !phone || !event) {
+    if (!phone || !event) {
       return NextResponse.json(
-        { error: 'leadId, phone, and event are required' },
+        { error: 'phone and event are required' },
         { status: 400, headers: mobileNoStoreHeaders() },
       )
     }
-    // Leadless manual dials are handled by call intents, not by this activity
-    // write. Never let a bearer token attach a call to someone else's lead.
+    // An ad-hoc dial has no lead. Do not invent one and do not attach the
+    // call to whoever happens to share the number.
+    if (!leadId) {
+      return NextResponse.json({
+        ok: true,
+        activityId: null,
+        skipped: true,
+        message: 'No lead is attached to this number, so this call was not written to a seller record.',
+      }, { headers: mobileNoStoreHeaders() })
+    }
+    // Never let a bearer token attach a call to someone else's lead.
     const { actor, user } = await requireAuthorizedMobileLead(req, leadId)
 
     const duration = Math.max(0, Math.round(Number(body.durationSeconds || 0)))
