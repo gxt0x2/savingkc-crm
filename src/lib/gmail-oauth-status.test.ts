@@ -230,14 +230,14 @@ describe('Gmail Andon health mapping', () => {
     expect(snapshot.accounts[0]?.status).not.toBe('connected')
   })
 
-  it('flags a connected grant whose last sync is older than 36 hours', () => {
+  it('flags a connected grant whose last sync is older than 30 minutes', () => {
     const snapshot = mapGmailHealthSnapshot({
       oauthConfigured: true,
       now: new Date(now),
       accounts: [{
         userEmail: 'ernest@savingkc.com',
         hasRefreshToken: true,
-        lastSyncAt: '2026-09-18T12:00:00.000Z',
+        lastSyncAt: '2026-09-20T13:20:00.000Z',
         health: health('connected'),
       }],
     })
@@ -291,8 +291,8 @@ describe('Gmail sync staleness helpers', () => {
     expect(hasNonEmptyRefreshToken('refresh-token')).toBe(true)
   })
 
-  it('uses a 36 hour fail-closed window', () => {
-    expect(isGmailSyncStale('2026-09-19T01:59:59.000Z', new Date(now))).toBe(true)
-    expect(isGmailSyncStale('2026-09-19T02:00:01.000Z', new Date(now))).toBe(false)
+  it('flags a 5-minute poll that has missed about six runs', () => {
+    expect(isGmailSyncStale('2026-09-20T13:29:59.000Z', new Date(now))).toBe(true)
+    expect(isGmailSyncStale('2026-09-20T13:30:01.000Z', new Date(now))).toBe(false)
   })
 })
