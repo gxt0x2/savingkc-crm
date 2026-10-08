@@ -17,11 +17,28 @@ describe('mobile call-event scope', () => {
     expect(response.status).toBe(403)
     expect(mocks.admin).not.toHaveBeenCalled()
   })
-  it('requires a lead identity for this activity write', async () => {
+  it('skips a lead write for an ad-hoc dial instead of inventing a lead', async () => {
+    for (const leadId of [undefined, '']) {
+      const response = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/calls/events', {
+        method: 'POST', body: JSON.stringify({ leadId, phone: '(816) 553-7559', event: 'ended' }),
+      }))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        ok: true,
+        activityId: null,
+        skipped: true,
+      })
+    }
+    expect(mocks.authorize).not.toHaveBeenCalled()
+    expect(mocks.admin).not.toHaveBeenCalled()
+  })
+
+  it('still requires phone and event', async () => {
     const response = await POST(new NextRequest('https://crm.savingkc.com/api/mobile/v1/calls/events', {
-      method: 'POST', body: JSON.stringify({ phone: '+18165550123', event: 'started' }),
+      method: 'POST', body: JSON.stringify({ leadId: 'lead-1' }),
     }))
     expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: 'phone and event are required' })
     expect(mocks.authorize).not.toHaveBeenCalled()
   })
 
