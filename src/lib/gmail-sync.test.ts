@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ingestGmailMessageStubs, leadReplyActivity, type LeadMatchRow } from '@/lib/gmail-sync'
+import { ingestGmailMessageStubs, leadThreadActivity, type LeadMatchRow } from '@/lib/gmail-sync'
 
 const lead: LeadMatchRow = {
   id: 'lead-1',
@@ -60,8 +60,8 @@ function memoryDb() {
 }
 
 describe('lead reply projection', () => {
-  it('keeps a reply from the lead and drops newsletters and the agent copy', () => {
-    const reply = leadReplyActivity({
+  it('keeps a lead reply and a Gmail send to that lead, and drops newsletters', () => {
+    const reply = leadThreadActivity({
       leadId: 'lead-1',
       leadEmail: 'savingkc@gmail.com',
       mailbox: 'ernest@savingkc.com',
@@ -77,6 +77,7 @@ describe('lead reply projection', () => {
       lead_id: 'lead-1',
       activity_type: 'email_received',
       description: 'Noon works.',
+      agent: null,
       created_at: '2026-10-08T14:00:00.000Z',
       metadata: {
         source: 'gmail_sync',
@@ -85,7 +86,30 @@ describe('lead reply projection', () => {
         gmail_message_id: 'reply-1',
       },
     })
-    expect(leadReplyActivity({
+    expect(leadThreadActivity({
+      leadId: 'lead-1',
+      leadEmail: 'savingkc@gmail.com',
+      mailbox: 'ernest@savingkc.com',
+      fromAddr: 'ernest@savingkc.com',
+      toAddrs: ['savingkc@gmail.com'],
+      subject: 'Hello Motto',
+      snippet: 'This is only a test',
+      sentAt: '2026-10-08T13:11:39.000Z',
+      gmailMessageId: 'sent-gmail',
+      gmailThreadId: 'thread-sent',
+    })).toMatchObject({
+      activity_type: 'email',
+      description: 'This is only a test',
+      agent: 'ernest@savingkc.com',
+      created_at: '2026-10-08T13:11:39.000Z',
+      metadata: {
+        source: 'gmail_sync',
+        direction: 'outbound',
+        sent: true,
+        gmail_message_id: 'sent-gmail',
+      },
+    })
+    expect(leadThreadActivity({
       leadId: 'lead-1',
       leadEmail: 'savingkc@gmail.com',
       mailbox: 'ernest@savingkc.com',
@@ -97,17 +121,18 @@ describe('lead reply projection', () => {
       gmailMessageId: 'news-1',
       gmailThreadId: 'thread-2',
     })).toBeNull()
-    expect(leadReplyActivity({
+    // The recipient mailbox sees the same send. That copy is not a second activity.
+    expect(leadThreadActivity({
       leadId: 'lead-1',
       leadEmail: 'savingkc@gmail.com',
-      mailbox: 'ernest@savingkc.com',
+      mailbox: 'savingkc@gmail.com',
       fromAddr: 'ernest@savingkc.com',
       toAddrs: ['savingkc@gmail.com'],
-      subject: 'Re: 1212 Main St',
-      snippet: 'What time are we heading out?',
-      sentAt: '2026-10-08T12:47:17.000Z',
-      gmailMessageId: 'sent-1',
-      gmailThreadId: 'thread-1',
+      subject: 'Hello Motto',
+      snippet: 'This is only a test',
+      sentAt: '2026-10-08T13:11:39.000Z',
+      gmailMessageId: 'recipient-copy',
+      gmailThreadId: 'thread-sent',
     })).toBeNull()
   })
 
@@ -155,5 +180,39 @@ describe('lead reply projection', () => {
       metadata: { gmail_message_id: 'msg-reply', direction: 'inbound' },
     })
     expect(db.emails.map((row) => row.gmail_message_id).sort()).toEqual(['msg-news', 'msg-reply', 'msg-reply'])
+  })
+
+  it('writes one outbound activity when the mailbox sends to the lead from Gmail', async () => {
+    const db = memoryDb()
+    const fetchImpl = vi.fn(async () => messageResponse({
+      From: 'Ernest Dodson <ernest@savingkc.com>',
+      To: 'Michael Douglas <savingkc@gmail.com>',
+      Subject: 'Hello Motto',
+    }, 'This is only a test'))
+    const first = await ingestGmailMessageStubs({
+      db: db as never,
+      accessToken: 'token',
+      userEmail: 'ernest@savingkc.com',
+      leads: [lead],
+      stubs: [{ id: 'msg-sent', threadId: 'thread-sent' }],
+      fetchImpl: fetchImpl as never,
+    })
+    const second = await ingestGmailMessageStubs({
+      db: db as never,
+      accessToken: 'token',
+      userEmail: 'ernest@savingkc.com',
+      leads: [lead],
+      stubs: [{ id: 'msg-sent', threadId: 'thread-sent' }],
+      fetchImpl: fetchImpl as never,
+    })
+    expect(first).toMatchObject({ scanned: 1, matched: 1, inserted: 1 })
+    expect(second.matched).toBe(1)
+    expect(db.activities).toHaveLength(1)
+    expect(db.activities[0]).toMatchObject({
+      activity_type: 'email',
+      description: 'This is only a test',
+      agent: 'ernest@savingkc.com',
+      metadata: { direction: 'outbound', gmail_message_id: 'msg-sent', sent: true },
+    })
   })
 })
