@@ -119,7 +119,6 @@ export async function ingestGmailHistory(input: {
     const params = new URLSearchParams({
       startHistoryId: input.startHistoryId,
       historyTypes: 'messageAdded',
-      labelId: 'INBOX',
       maxResults: '100',
     })
     if (pageToken) params.set('pageToken', pageToken)
