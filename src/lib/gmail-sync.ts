@@ -179,14 +179,18 @@ function parseAddrList(s: string): string[] {
 
 export type GmailMessageStub = { id: string; threadId: string }
 
-// A reply is mail the lead wrote into this mailbox. Newsletters addressed to
-// the lead, and the agent's own outbound copy, do not become Inbox rows.
-export function leadReplyActivity(input: {
+// Two directions land on the lead. A reply is mail the lead wrote into this
+// mailbox. A send is mail this mailbox wrote to the lead's address, including
+// a message composed in Gmail rather than the app. Newsletters addressed to
+// the lead stay in lead_emails. The lead's own mailbox is not treated as the
+// company sending that mail.
+export function leadThreadActivity(input: {
   leadId: string
   leadEmail: string | null | undefined
   mailbox: string
   fromAddr: string
   toAddrs: string[]
+  ccAddrs?: string[]
   subject: string
   snippet: string
   sentAt: string
@@ -194,34 +198,39 @@ export function leadReplyActivity(input: {
   gmailThreadId: string
 }): {
   lead_id: string
-  activity_type: 'email_received'
+  activity_type: 'email' | 'email_received'
   description: string
-  agent: null
+  agent: string | null
   created_at: string
   metadata: Record<string, unknown>
 } | null {
   const leadEmail = input.leadEmail?.trim().toLowerCase() || ''
   const fromAddr = input.fromAddr.trim().toLowerCase()
   const mailbox = input.mailbox.trim().toLowerCase()
-  if (!leadEmail || fromAddr !== leadEmail || fromAddr === mailbox) return null
+  const recipients = [...input.toAddrs, ...(input.ccAddrs ?? [])].map((addr) => addr.trim().toLowerCase()).filter(Boolean)
+  if (!leadEmail || !fromAddr) return null
+  const inbound = fromAddr === leadEmail && fromAddr !== mailbox
+  const outbound = fromAddr === mailbox && leadEmail !== mailbox && recipients.includes(leadEmail)
+  if (!inbound && !outbound) return null
   const parsed = Date.parse(input.sentAt)
   const createdAt = Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString()
-  const description = (input.snippet.trim() || input.subject.trim() || 'Email reply').slice(0, 500)
+  const description = (input.snippet.trim() || input.subject.trim() || (outbound ? 'Email' : 'Email reply')).slice(0, 500)
   return {
     lead_id: input.leadId,
-    activity_type: 'email_received',
+    activity_type: outbound ? 'email' : 'email_received',
     description,
-    agent: null,
+    agent: outbound ? mailbox : null,
     created_at: createdAt,
     metadata: {
       source: 'gmail_sync',
-      direction: 'inbound',
+      direction: outbound ? 'outbound' : 'inbound',
       from: fromAddr,
       to: input.toAddrs,
       subject: input.subject,
       provider: 'gmail',
       gmail_message_id: input.gmailMessageId,
       gmail_thread_id: input.gmailThreadId,
+      ...(outbound ? { sent: true } : {}),
     },
   }
 }
@@ -299,19 +308,20 @@ export async function ingestGmailMessageStubs(input: {
 
     if (!insertError) inserted++
 
-    const reply = leadReplyActivity({
+    const threadActivity = leadThreadActivity({
       leadId,
       leadEmail: input.leads.find((lead) => lead.id === leadId)?.email,
       mailbox: input.userEmail,
       fromAddr,
       toAddrs,
+      ccAddrs,
       subject,
       snippet,
       sentAt,
       gmailMessageId: stub.id,
       gmailThreadId: msg.threadId || stub.threadId,
     })
-    if (reply) {
+    if (threadActivity) {
       const { data: existing, error: lookupError } = await input.db
         .from('lead_activities')
         .select('id')
@@ -319,10 +329,10 @@ export async function ingestGmailMessageStubs(input: {
         .contains('metadata', { gmail_message_id: stub.id })
         .limit(1)
       if (lookupError) {
-        console.error('[gmail-sync] reply lookup failed:', lookupError)
+        console.error('[gmail-sync] activity lookup failed:', lookupError)
       } else if (!existing?.length) {
-        const { error: activityError } = await input.db.from('lead_activities').insert(reply)
-        if (activityError) console.error('[gmail-sync] reply activity failed:', activityError)
+        const { error: activityError } = await input.db.from('lead_activities').insert(threadActivity)
+        if (activityError) console.error('[gmail-sync] activity insert failed:', activityError)
       }
     }
   }
