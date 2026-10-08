@@ -4,6 +4,12 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   validateTwilioWebhook: vi.fn(),
   enqueuePpcConversion: vi.fn(),
+  trackMobileLeg: vi.fn(),
+}))
+
+vi.mock('@/lib/telephony/mobile-voice-hangup', async (original) => ({
+  ...await original<typeof import('@/lib/telephony/mobile-voice-hangup')>(),
+  trackMobileVoiceAttemptLeg: mocks.trackMobileLeg,
 }))
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -83,7 +89,7 @@ function database(state: DbState = {}) {
   }
 }
 
-function statusRequest(status = 'failed', clientAttemptId?: string) {
+function statusRequest(status = 'failed', clientAttemptId?: string, source?: string) {
   const form = new FormData()
   form.set('CallSid', 'CA11111111111111111111111111111111')
   form.set('ParentCallSid', 'CA22222222222222222222222222222222')
@@ -93,6 +99,7 @@ function statusRequest(status = 'failed', clientAttemptId?: string) {
   form.set('CallDuration', '0')
   const url = new URL('https://crm.savingkc.com/api/twilio-call-status?identity=ernest')
   if (clientAttemptId) url.searchParams.set('clientAttemptId', clientAttemptId)
+  if (source) url.searchParams.set('source', source)
   return new Request(url, {
     method: 'POST',
     body: form,
@@ -103,6 +110,7 @@ describe('Twilio call status callback containment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.validateTwilioWebhook.mockResolvedValue(true)
+    mocks.trackMobileLeg.mockResolvedValue('recorded')
   })
 
   it('rejects an invalid signature before touching the database', async () => {
@@ -198,6 +206,67 @@ describe('Twilio call status callback containment', () => {
 
     expect(response.status).toBe(500)
     expect(db.inserts).toHaveLength(0)
+  })
+
+  it('tracks a mobile leg for a stored End before the dialer-session ledger', async () => {
+    const db = database({ providerResult: { recorded: false } })
+    mocks.createClient.mockReturnValue(db.client)
+    mocks.trackMobileLeg.mockResolvedValue('end_enforced')
+
+    const response = await POST(statusRequest('initiated', 'mobile-attempt', 'mobile_lead'))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      skipped: 'non_terminal',
+      providerRecorded: false,
+      mobileAttempt: 'end_enforced',
+    })
+    expect(mocks.trackMobileLeg).toHaveBeenCalledWith(db.client, {
+      identity: 'ernest',
+      clientAttemptId: 'mobile-attempt',
+      source: 'mobile_lead',
+      parentCallSid: 'CA22222222222222222222222222222222',
+      callSid: 'CA11111111111111111111111111111111',
+      callStatus: 'initiated',
+    })
+    expect(mocks.trackMobileLeg.mock.invocationCallOrder[0])
+      .toBeLessThan(db.client.rpc.mock.invocationCallOrder[0])
+    expect(db.inserts).toHaveLength(0)
+  })
+
+  it('still tracks the mobile leg when the dialer-session ledger fails', async () => {
+    const db = database({ providerError: { message: 'database unavailable' } })
+    mocks.createClient.mockReturnValue(db.client)
+
+    const response = await POST(statusRequest('ringing', 'mobile-attempt', 'mobile_manual'))
+
+    expect(response.status).toBe(500)
+    expect(mocks.trackMobileLeg).toHaveBeenCalledTimes(1)
+  })
+
+  it('records the terminal mobile leg and keeps the diagnostic activity', async () => {
+    const db = database({ providerResult: { recorded: false } })
+    mocks.createClient.mockReturnValue(db.client)
+
+    const response = await POST(statusRequest('completed', 'mobile-attempt', 'mobile_manual'))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, callStatus: 'completed', mobileAttempt: 'recorded' })
+    expect(mocks.trackMobileLeg).toHaveBeenCalledWith(db.client, expect.objectContaining({ callStatus: 'completed' }))
+    expect(db.inserts).toHaveLength(1)
+  })
+
+  it('never tracks a web dialer leg that shares the client identity', async () => {
+    const db = database()
+    mocks.createClient.mockReturnValue(db.client)
+
+    for (const source of ['web_power_dialer', 'web_manual', undefined]) {
+      const response = await POST(statusRequest('ringing', 'web-attempt', source))
+      expect(response.status).toBe(200)
+      expect(await response.json()).not.toHaveProperty('mobileAttempt')
+    }
+    expect(mocks.trackMobileLeg).not.toHaveBeenCalled()
   })
 
   it('does not insert a second activity for an already persisted callback', async () => {
