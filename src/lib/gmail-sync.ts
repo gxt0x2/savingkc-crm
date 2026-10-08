@@ -112,7 +112,7 @@ export async function getValidAccessToken(token: StoredToken): Promise<string | 
 // Match an email address to a lead by email, name, or property address.
 // Returns the lead_id if found.
 // ---------------------------------------------------------------------------
-interface LeadMatchRow {
+export interface LeadMatchRow {
   id: string
   email: string | null
   full_name: string | null
@@ -178,6 +178,53 @@ function parseAddrList(s: string): string[] {
 }
 
 export type GmailMessageStub = { id: string; threadId: string }
+
+// A reply is mail the lead wrote into this mailbox. Newsletters addressed to
+// the lead, and the agent's own outbound copy, do not become Inbox rows.
+export function leadReplyActivity(input: {
+  leadId: string
+  leadEmail: string | null | undefined
+  mailbox: string
+  fromAddr: string
+  toAddrs: string[]
+  subject: string
+  snippet: string
+  sentAt: string
+  gmailMessageId: string
+  gmailThreadId: string
+}): {
+  lead_id: string
+  activity_type: 'email_received'
+  description: string
+  agent: null
+  created_at: string
+  metadata: Record<string, unknown>
+} | null {
+  const leadEmail = input.leadEmail?.trim().toLowerCase() || ''
+  const fromAddr = input.fromAddr.trim().toLowerCase()
+  const mailbox = input.mailbox.trim().toLowerCase()
+  if (!leadEmail || fromAddr !== leadEmail || fromAddr === mailbox) return null
+  const parsed = Date.parse(input.sentAt)
+  const createdAt = Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString()
+  const description = (input.snippet.trim() || input.subject.trim() || 'Email reply').slice(0, 500)
+  return {
+    lead_id: input.leadId,
+    activity_type: 'email_received',
+    description,
+    agent: null,
+    created_at: createdAt,
+    metadata: {
+      source: 'gmail_sync',
+      direction: 'inbound',
+      from: fromAddr,
+      to: input.toAddrs,
+      subject: input.subject,
+      provider: 'gmail',
+      gmail_message_id: input.gmailMessageId,
+      gmail_thread_id: input.gmailThreadId,
+    },
+  }
+}
 
 export async function loadLeadsForGmailMatch(db: SupabaseClient): Promise<LeadMatchRow[]> {
   const { data: leads } = await db
@@ -251,6 +298,33 @@ export async function ingestGmailMessageStubs(input: {
       }, { onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
 
     if (!insertError) inserted++
+
+    const reply = leadReplyActivity({
+      leadId,
+      leadEmail: input.leads.find((lead) => lead.id === leadId)?.email,
+      mailbox: input.userEmail,
+      fromAddr,
+      toAddrs,
+      subject,
+      snippet,
+      sentAt,
+      gmailMessageId: stub.id,
+      gmailThreadId: msg.threadId || stub.threadId,
+    })
+    if (reply) {
+      const { data: existing, error: lookupError } = await input.db
+        .from('lead_activities')
+        .select('id')
+        .eq('lead_id', leadId)
+        .contains('metadata', { gmail_message_id: stub.id })
+        .limit(1)
+      if (lookupError) {
+        console.error('[gmail-sync] reply lookup failed:', lookupError)
+      } else if (!existing?.length) {
+        const { error: activityError } = await input.db.from('lead_activities').insert(reply)
+        if (activityError) console.error('[gmail-sync] reply activity failed:', activityError)
+      }
+    }
   }
 
   return { scanned: stubs.length, matched, inserted }
@@ -295,7 +369,7 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
   }
 
   // Search Gmail for recent messages. Pull sync stays available when Pub/Sub
-  // push is not configured.
+  // push is not configured. newer_than includes All Mail, not only Inbox.
   const query = `newer_than:${daysBack}d`
   const listRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=100`,
