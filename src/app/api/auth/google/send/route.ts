@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
     syncedFromUser: currentEmail,
   }).catch((error) => console.error('[google/send] lead_emails persist failed:', error))
 
-  await supabase.from('lead_activities').insert({
+  const { error: activityError } = await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'email',
     description: body,
@@ -91,17 +91,18 @@ export async function POST(req: NextRequest) {
       provider: 'gmail',
       gmail_message_id: sent.id,
     },
-  }).then(({ error }) => {
-    if (error) console.error('[google/send] activity persist failed:', error)
   })
+  if (activityError) console.error('[google/send] activity persist failed:', activityError)
   checkAutoAdvance(leadId!, 'outbound_contact').catch((error) => console.error('[AUTO-ADVANCE] Failed:', error))
 
   return NextResponse.json({
     success: true,
     sent: true,
+    persisted: !activityError,
     provider: 'gmail',
     id: sent.id,
     threadId: sent.threadId,
     from: sent.from,
+    ...(activityError ? { warning: 'Email delivered, but CRM history could not be saved. Do not resend this email.' } : {}),
   })
 }
