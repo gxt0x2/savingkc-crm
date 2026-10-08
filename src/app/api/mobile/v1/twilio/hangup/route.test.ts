@@ -31,7 +31,7 @@ describe('mobile hangup route', () => {
       body: JSON.stringify({ clientAttemptId: 'attempt-1' }),
     }) as never
     expect((await POST(pending)).status).toBe(200)
-    expect(mocks.sweep).toHaveBeenCalledWith('ernest')
+    expect(mocks.sweep).toHaveBeenCalledWith('ernest', 'attempt-1')
     expect(mocks.hangup).not.toHaveBeenCalled()
   })
   it('fails closed for unauthenticated, unregistered, and other-agent calls', async () => {

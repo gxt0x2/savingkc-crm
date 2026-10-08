@@ -1,21 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ fetch: vi.fn(), update: vi.fn(), list: vi.fn(), env: {} as Record<string, string> }))
+const mocks = vi.hoisted(() => ({
+  fetch: vi.fn(),
+  update: vi.fn(),
+  list: vi.fn(),
+  updatedSids: [] as string[],
+  env: {} as Record<string, string>,
+}))
 vi.mock('@/lib/telephony/twiml-app', () => ({ cleanTwilioEnv: (name: string) => mocks.env[name] || '' }))
 vi.mock('twilio', () => ({
   default: () => {
-    const calls = () => ({ fetch: mocks.fetch, update: mocks.update })
+    const calls = (sid: string) => ({
+      fetch: () => mocks.fetch(sid),
+      update: (body: unknown) => {
+        mocks.updatedSids.push(sid)
+        return mocks.update(body)
+      },
+    })
     calls.list = mocks.list
     return { calls }
   },
 }))
-import { hangupActiveClientOutboundCalls, hangupMobileVoiceCall } from './mobile-voice-hangup'
+import { hangupActiveClientOutboundCalls, hangupMobileVoiceCall, parentMatchesMobileAttempt } from './mobile-voice-hangup'
 
 const SID = `CA${'a'.repeat(32)}`
 describe('mobile hangup authorization and retry safety', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mocks.env = { TWILIO_ACCOUNT_SID: `AC${'b'.repeat(32)}`, TWILIO_AUTH_TOKEN: 'test' }
+    mocks.updatedSids = []
     mocks.fetch.mockResolvedValue({ from: 'client:ernest', to: '+18165550000', status: 'in-progress' })
     mocks.list.mockResolvedValue([])
   })
@@ -54,25 +67,105 @@ describe('mobile hangup authorization and retry safety', () => {
     expect(mocks.update).toHaveBeenNthCalledWith(1, { status: 'canceled' })
     expect(mocks.update).toHaveBeenNthCalledWith(2, { status: 'canceled' })
   })
-  it('ends live outbound client legs when the phone has no call SID yet', async () => {
-    const parentSid = `CA${'e'.repeat(32)}`
-    const childSid = `CA${'f'.repeat(32)}`
-    mocks.list
-      .mockResolvedValueOnce([
-        { sid: parentSid, from: 'client:ernest', to: '+18165537559', status: 'in-progress' },
+  it('ends only the mobile attempt and leaves a concurrent web dialer leg up', async () => {
+    const mobileParent = `CA${'e'.repeat(32)}`
+    const mobileChild = `CA${'f'.repeat(32)}`
+    const webParent = `CA${'9'.repeat(32)}`
+    const webChild = `CA${'8'.repeat(32)}`
+    mocks.list.mockImplementation(async (query: { from?: string; parentCallSid?: string }) => {
+      if (query.parentCallSid === mobileParent) {
+        return [{
+          sid: mobileChild,
+          from: '+18166088588',
+          to: '+18165537559',
+          status: 'ringing',
+          parentCallSid: mobileParent,
+          statusCallback: 'https://crm.savingkc.com/api/twilio-call-status?identity=ernest&clientAttemptId=mobile-attempt&source=mobile_manual',
+        }]
+      }
+      if (query.parentCallSid === webParent) {
+        return [{
+          sid: webChild,
+          from: '+18166088588',
+          to: '+19135550100',
+          status: 'in-progress',
+          parentCallSid: webParent,
+          statusCallback: 'https://crm.savingkc.com/api/twilio-call-status?identity=ernest&clientAttemptId=web-attempt&source=web_power_dialer',
+        }]
+      }
+      return [
+        { sid: webParent, from: 'client:ernest', to: '+19135550100', status: 'in-progress' },
+        { sid: mobileParent, from: 'client:ernest', to: '+18165537559', status: 'ringing' },
         { sid: `CA${'1'.repeat(32)}`, from: 'client:casey', to: '+18165550000', status: 'in-progress' },
-        { sid: `CA${'2'.repeat(32)}`, from: 'client:ernest', to: '+18165550000', status: 'completed' },
-      ])
-      .mockResolvedValueOnce([{ sid: childSid, from: '+18166088588', to: '+18165537559', status: 'ringing', parentCallSid: parentSid }])
-    expect(await hangupActiveClientOutboundCalls('ernest')).toBe('disconnected')
-    expect(mocks.update).toHaveBeenNthCalledWith(1, { status: 'completed' })
-    expect(mocks.update).toHaveBeenNthCalledWith(2, { status: 'canceled' })
-    expect(mocks.update).toHaveBeenCalledTimes(2)
+      ]
+    })
+    expect(await hangupActiveClientOutboundCalls('ernest', 'mobile-attempt', { attempts: 1 })).toBe('disconnected')
+    expect(mocks.updatedSids.sort()).toEqual([mobileChild, mobileParent].sort())
+    expect(mocks.updatedSids).not.toContain(webParent)
+    expect(mocks.updatedSids).not.toContain(webChild)
+    expect(mocks.update).toHaveBeenCalledWith({ status: 'canceled' })
   })
-  it('reports already ended when this identity has no live outbound leg', async () => {
-    mocks.list.mockResolvedValue([{ sid: SID, from: 'client:ernest', status: 'completed' }])
-    expect(await hangupActiveClientOutboundCalls('ernest')).toBe('already_ended')
+  it('retries a missing mobile leg and does not end the web dialer call', async () => {
+    const webParent = `CA${'9'.repeat(32)}`
+    const webChild = `CA${'8'.repeat(32)}`
+    mocks.list.mockImplementation(async (query: { parentCallSid?: string }) => {
+      if (query.parentCallSid === webParent) {
+        return [{
+          sid: webChild,
+          from: '+18166088588',
+          status: 'in-progress',
+          statusCallback: 'https://crm.savingkc.com/api/twilio-call-status?identity=ernest&clientAttemptId=web-attempt&source=web_manual',
+        }]
+      }
+      return [{ sid: webParent, from: 'client:ernest', status: 'in-progress' }]
+    })
+    const waits: number[] = []
+    await expect(hangupActiveClientOutboundCalls('ernest', 'mobile-attempt', {
+      attempts: 3,
+      wait: async (ms) => { waits.push(ms) },
+    })).rejects.toMatchObject({
+      status: 404,
+      message: 'That mobile call is not on Twilio yet. Retry End. Other calls were left connected.',
+    })
+    expect(waits).toEqual([350, 350])
     expect(mocks.update).not.toHaveBeenCalled()
+  })
+  it('reports an already ended mobile attempt without touching another live leg', async () => {
+    const mobileParent = `CA${'e'.repeat(32)}`
+    const webParent = `CA${'9'.repeat(32)}`
+    mocks.list.mockImplementation(async (query: { parentCallSid?: string }) => {
+      if (query.parentCallSid === mobileParent) {
+        return [{
+          sid: `CA${'f'.repeat(32)}`,
+          status: 'completed',
+          statusCallback: 'https://crm.savingkc.com/api/twilio-call-status?identity=ernest&clientAttemptId=mobile-attempt&source=mobile_lead',
+        }]
+      }
+      if (query.parentCallSid === webParent) {
+        return [{
+          sid: `CA${'8'.repeat(32)}`,
+          status: 'in-progress',
+          statusCallback: 'https://crm.savingkc.com/api/twilio-call-status?identity=ernest&clientAttemptId=web-attempt&source=web_power_dialer',
+        }]
+      }
+      return [
+        { sid: mobileParent, from: 'client:ernest', status: 'completed' },
+        { sid: webParent, from: 'client:ernest', status: 'in-progress' },
+      ]
+    })
+    expect(await hangupActiveClientOutboundCalls('ernest', 'mobile-attempt', { attempts: 1 })).toBe('already_ended')
+    expect(mocks.update).not.toHaveBeenCalled()
+  })
+  it('does not treat a web status callback as the mobile attempt', () => {
+    const webChild = {
+      statusCallback: 'https://crm.savingkc.com/api/twilio-call-status?identity=ernest&clientAttemptId=web-attempt&source=web_power_dialer',
+    }
+    const mobileChild = {
+      statusCallback: 'https://crm.savingkc.com/api/twilio-call-status?identity=ernest&clientAttemptId=mobile-attempt&source=mobile_manual',
+    }
+    expect(parentMatchesMobileAttempt({ sid: 'parent' }, [webChild], 'web-attempt')).toBe(false)
+    expect(parentMatchesMobileAttempt({ sid: 'parent' }, [mobileChild], 'mobile-attempt')).toBe(true)
+    expect(parentMatchesMobileAttempt({ sid: 'parent' }, [mobileChild], 'someone-else')).toBe(false)
   })
   it('rejects malformed SIDs and missing credentials without a provider request', async () => {
     await expect(hangupMobileVoiceCall('bad', 'ernest')).rejects.toMatchObject({ status: 400 })
