@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MobileAuthError, mobileNoStoreHeaders, mobileOptionsResponse, requireMobileUser } from '@/lib/mobile-api/auth'
 import { resolveMobileScopedActor } from '@/lib/mobile-api/authorized-lead'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { hangupActiveClientOutboundCalls, hangupMobileVoiceCall, MobileHangupError } from '@/lib/telephony/mobile-voice-hangup'
+import { hangupMobileVoiceAttempt, hangupMobileVoiceCall, MobileHangupError } from '@/lib/telephony/mobile-voice-hangup'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       const result = await hangupMobileVoiceCall(callSid, identity)
       return json({ ok: true, result })
     }
-    const result = await hangupActiveClientOutboundCalls(identity, clientAttemptId)
+    const result = await hangupMobileVoiceAttempt(identity, clientAttemptId)
     return json({ ok: true, result })
   } catch (error) {
     const known = error instanceof MobileAuthError || error instanceof MobileHangupError
