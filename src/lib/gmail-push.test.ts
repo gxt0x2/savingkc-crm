@@ -234,12 +234,21 @@ describe('Gmail Pub/Sub idempotent ingest', () => {
 
   it('upserts Gmail messages so a repeated message id does not insert another row', async () => {
     const upsert = vi.fn().mockResolvedValue({ error: null })
+    const insert = vi.fn().mockResolvedValue({ error: null })
+    const lookup = {
+      select: () => lookup,
+      in: () => lookup,
+      eq: () => lookup,
+      contains: () => lookup,
+      limit: async () => ({ data: [], error: null }),
+    }
     const fetched: string[] = []
     const result = await ingestGmailMessageStubs({
-      db: { from: () => ({ upsert }) } as never,
+      db: { from: () => ({ ...lookup, upsert, insert }) } as never,
       accessToken: 'token',
       userEmail: 'ernest@savingkc.com',
       leads: [{ id: 'lead-1', email: 'seller@example.com', full_name: null, property_address: null }],
+      internalAddresses: [],
       stubs: [
         { id: 'msg-1', threadId: 'thread-1' },
         { id: 'msg-1', threadId: 'thread-1' },
@@ -263,6 +272,8 @@ describe('Gmail Pub/Sub idempotent ingest', () => {
     expect(upsert).toHaveBeenCalledTimes(1)
     expect(upsert.mock.calls[0][1]).toEqual({ onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
     expect(upsert.mock.calls[0][0]).toMatchObject({ gmail_message_id: 'msg-1', lead_id: 'lead-1' })
+    expect(insert).toHaveBeenCalledTimes(1)
+    expect(insert.mock.calls[0][0]).toMatchObject({ lead_id: 'lead-1', activity_type: 'email_received' })
   })
 
   it('rejects a push body that is not a Gmail notification', () => {
