@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { markOAuthConnected, persistOAuthHealth, readOAuthHealth } from '@/lib/oauth-health'
+import { isUniqueViolation, stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 
 export interface StoredToken {
   id: string
@@ -179,11 +180,79 @@ function parseAddrList(s: string): string[] {
 
 export type GmailMessageStub = { id: string; threadId: string }
 
+const COMPANY_MAIL_DOMAIN = '@savingkc.com'
+const STORED_BACKFILL_LIMIT = 500
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function normalizedAddress(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase()
+}
+
+function internalAddressSet(mailbox: string, internalAddresses: readonly string[] | undefined): Set<string> {
+  return new Set([mailbox, ...(internalAddresses ?? [])].map(normalizedAddress).filter(Boolean))
+}
+
+function isInternalAddress(address: string, internal: ReadonlySet<string>): boolean {
+  return internal.has(address) || address.endsWith(COMPANY_MAIL_DOMAIN)
+}
+
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+
+function entityCodePoint(codePoint: number, entity: string): string {
+  const valid = Number.isInteger(codePoint) && codePoint > 0 && codePoint <= 0x10ffff && (codePoint < 0xd800 || codePoint > 0xdfff)
+  return valid ? String.fromCodePoint(codePoint) : entity
+}
+
+// Gmail returns message snippets HTML-escaped ("I&#39;m in"). One pass, so
+// "&amp;lt;" stays the literal text "&lt;".
+export function decodeGmailSnippet(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, code: string) => {
+    const lower = code.toLowerCase()
+    if (lower.startsWith('#x')) return entityCodePoint(Number.parseInt(lower.slice(2), 16), entity)
+    if (lower.startsWith('#')) return entityCodePoint(Number.parseInt(lower.slice(1), 10), entity)
+    return NAMED_ENTITIES[lower] ?? entity
+  })
+}
+
+// CRM users who connected Google. A lead row that carries one of these
+// addresses (a self-test lead) would otherwise match every message in that
+// user's own mailbox.
+export async function loadGmailInternalAddresses(db: SupabaseClient): Promise<string[]> {
+  const { data, error } = await db
+    .from('user_oauth_tokens')
+    .select('user_email, crm_user_email')
+    .eq('provider', 'google')
+  if (error) throw new Error(`gmail_internal_addresses_unavailable: ${error.message}`)
+  const rows = (data || []) as Array<{ user_email: string | null; crm_user_email: string | null }>
+  return [...new Set(rows.map((row) => normalizedAddress(row.crm_user_email || row.user_email)).filter(Boolean))]
+}
+
+// The leads on the other side of the conversation: the sender of mail into
+// this mailbox, or the recipients of mail this mailbox sent. The mailbox and
+// CRM users never count, so newsletters and internal mail have no lead here.
+export function counterpartyLeadIds(input: {
+  mailbox: string
+  fromAddr: string
+  toAddrs: string[]
+  ccAddrs?: string[]
+  leads: LeadMatchRow[]
+  internalAddresses: readonly string[]
+}): string[] {
+  const mailbox = normalizedAddress(input.mailbox)
+  const fromAddr = normalizedAddress(input.fromAddr)
+  const internal = internalAddressSet(mailbox, input.internalAddresses)
+  const sides = fromAddr === mailbox ? [...input.toAddrs, ...(input.ccAddrs ?? [])] : [fromAddr]
+  const counterparties = new Set(sides.map(normalizedAddress).filter((addr) => addr && !isInternalAddress(addr, internal)))
+  if (!counterparties.size) return []
+  return input.leads.filter((lead) => counterparties.has(normalizedAddress(lead.email))).map((lead) => lead.id)
+}
+
 // Two directions land on the lead. A reply is mail the lead wrote into this
 // mailbox. A send is mail this mailbox wrote to the lead's address, including
 // a message composed in Gmail rather than the app. Newsletters addressed to
 // the lead stay in lead_emails. The lead's own mailbox is not treated as the
-// company sending that mail.
+// company sending that mail, and a lead carrying a CRM user's address is
+// never projected.
 export function leadThreadActivity(input: {
   leadId: string
   leadEmail: string | null | undefined
@@ -196,6 +265,7 @@ export function leadThreadActivity(input: {
   sentAt: string
   gmailMessageId: string
   gmailThreadId: string
+  internalAddresses?: readonly string[]
 }): {
   lead_id: string
   activity_type: 'email' | 'email_received'
@@ -209,12 +279,13 @@ export function leadThreadActivity(input: {
   const mailbox = input.mailbox.trim().toLowerCase()
   const recipients = [...input.toAddrs, ...(input.ccAddrs ?? [])].map((addr) => addr.trim().toLowerCase()).filter(Boolean)
   if (!leadEmail || !fromAddr) return null
+  if (isInternalAddress(leadEmail, internalAddressSet(mailbox, input.internalAddresses))) return null
   const inbound = fromAddr === leadEmail && fromAddr !== mailbox
   const outbound = fromAddr === mailbox && leadEmail !== mailbox && recipients.includes(leadEmail)
   if (!inbound && !outbound) return null
   const parsed = Date.parse(input.sentAt)
   const createdAt = Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString()
-  const description = (input.snippet.trim() || input.subject.trim() || (outbound ? 'Email' : 'Email reply')).slice(0, 500)
+  const description = (decodeGmailSnippet(input.snippet).trim() || input.subject.trim() || (outbound ? 'Email' : 'Email reply')).slice(0, 500)
   return {
     lead_id: input.leadId,
     activity_type: outbound ? 'email' : 'email_received',
@@ -244,6 +315,109 @@ export async function loadLeadsForGmailMatch(db: SupabaseClient): Promise<LeadMa
   return (leads || []) as LeadMatchRow[]
 }
 
+type ThreadMessage = {
+  id: string
+  threadId: string
+  fromAddr: string
+  toAddrs: string[]
+  ccAddrs: string[]
+  subject: string
+  snippet: string
+  sentAt: string
+}
+
+type ThreadContext = {
+  db: SupabaseClient
+  mailbox: string
+  leads: LeadMatchRow[]
+  internalAddresses: readonly string[]
+}
+
+function threadCandidates(context: ThreadContext, message: ThreadMessage): string[] {
+  return counterpartyLeadIds({
+    mailbox: context.mailbox,
+    fromAddr: message.fromAddr,
+    toAddrs: message.toAddrs,
+    ccAddrs: message.ccAddrs,
+    leads: context.leads,
+    internalAddresses: context.internalAddresses,
+  })
+}
+
+// Keep a message with the lead it was first filed under, such as the lead an
+// app send was addressed to, so duplicate lead rows do not each get a copy.
+async function filedCandidateLeadId(context: ThreadContext, messageId: string, candidates: string[]): Promise<string | null> {
+  const { data, error } = await context.db
+    .from('lead_emails')
+    .select('lead_id')
+    .in('lead_id', candidates)
+    .eq('gmail_message_id', messageId)
+    .limit(1)
+  if (error) {
+    console.error('[gmail-sync] filed lead lookup failed:', error)
+    return null
+  }
+  return (data as Array<{ lead_id: string }> | null)?.[0]?.lead_id ?? null
+}
+
+function leadEmailRow(context: ThreadContext, message: ThreadMessage, leadId: string) {
+  return {
+    lead_id: leadId,
+    gmail_thread_id: message.threadId,
+    gmail_message_id: message.id,
+    subject: message.subject,
+    from_address: message.fromAddr,
+    to_addresses: message.toAddrs,
+    cc_addresses: message.ccAddrs,
+    body_snippet: message.snippet,
+    sent_at: message.sentAt,
+    direction: message.fromAddr === context.mailbox.toLowerCase() ? 'outbound' : 'inbound',
+    synced_from_user: context.mailbox,
+  }
+}
+
+// One timeline row per Gmail message in this mailbox. The id comes from the
+// message, so two sync runs racing on the same message insert it once.
+async function recordThreadActivity(
+  context: ThreadContext,
+  message: ThreadMessage,
+  leadId: string,
+  candidates: string[],
+): Promise<boolean> {
+  const activity = leadThreadActivity({
+    leadId,
+    leadEmail: context.leads.find((lead) => lead.id === leadId)?.email,
+    mailbox: context.mailbox,
+    fromAddr: message.fromAddr,
+    toAddrs: message.toAddrs,
+    ccAddrs: message.ccAddrs,
+    subject: message.subject,
+    snippet: message.snippet,
+    sentAt: message.sentAt,
+    gmailMessageId: message.id,
+    gmailThreadId: message.threadId,
+    internalAddresses: context.internalAddresses,
+  })
+  if (!activity) return false
+  const { data: existing, error: lookupError } = await context.db
+    .from('lead_activities')
+    .select('id')
+    .in('lead_id', candidates)
+    .contains('metadata', { gmail_message_id: message.id })
+    .limit(1)
+  if (lookupError) {
+    console.error('[gmail-sync] activity lookup failed:', lookupError)
+    return false
+  }
+  if (existing?.length) return false
+  const { error } = await context.db.from('lead_activities').insert({
+    id: stableWebhookActivityId('gmail-sync', `${context.mailbox.toLowerCase()}:${message.id}`),
+    ...activity,
+  })
+  if (error && !isUniqueViolation(error)) console.error('[gmail-sync] activity insert failed:', error)
+  return !error
+}
+
 // Shared by manual Sync now and Pub/Sub history ingest. Upsert ignores a
 // lead_id + gmail_message_id that is already stored, so a repeated push
 // cannot insert a second CRM row for the same Gmail message.
@@ -253,9 +427,16 @@ export async function ingestGmailMessageStubs(input: {
   userEmail: string
   stubs: GmailMessageStub[]
   leads: LeadMatchRow[]
+  internalAddresses: readonly string[]
   fetchImpl?: typeof fetch
 }): Promise<{ scanned: number; matched: number; inserted: number }> {
   const fetchImpl = input.fetchImpl || fetch
+  const context: ThreadContext = {
+    db: input.db,
+    mailbox: input.userEmail,
+    leads: input.leads,
+    internalAddresses: input.internalAddresses,
+  }
   const seen = new Set<string>()
   const stubs = input.stubs.filter((stub) => {
     if (!stub.id || seen.has(stub.id)) return false
@@ -284,60 +465,113 @@ export async function ingestGmailMessageStubs(input: {
       ? new Date(Number(msg.internalDate)).toISOString()
       : new Date(header(msg, 'Date')).toISOString()
 
-    const leadId = matchLeadToMessage(fromAddr, [...toAddrs, ...ccAddrs], subject, snippet, input.leads)
-    if (!leadId) continue
-    matched++
-
-    const direction = fromAddr === input.userEmail.toLowerCase() ? 'outbound' : 'inbound'
-
-    const { error: insertError } = await input.db
-      .from('lead_emails')
-      .upsert({
-        lead_id: leadId,
-        gmail_thread_id: msg.threadId || stub.threadId,
-        gmail_message_id: stub.id,
-        subject,
-        from_address: fromAddr,
-        to_addresses: toAddrs,
-        cc_addresses: ccAddrs,
-        body_snippet: snippet,
-        sent_at: sentAt,
-        direction,
-        synced_from_user: input.userEmail,
-      }, { onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
-
-    if (!insertError) inserted++
-
-    const threadActivity = leadThreadActivity({
-      leadId,
-      leadEmail: input.leads.find((lead) => lead.id === leadId)?.email,
-      mailbox: input.userEmail,
+    const message: ThreadMessage = {
+      id: stub.id,
+      threadId: msg.threadId || stub.threadId,
       fromAddr,
       toAddrs,
       ccAddrs,
       subject,
       snippet,
       sentAt,
-      gmailMessageId: stub.id,
-      gmailThreadId: msg.threadId || stub.threadId,
-    })
-    if (threadActivity) {
-      const { data: existing, error: lookupError } = await input.db
-        .from('lead_activities')
-        .select('id')
-        .eq('lead_id', leadId)
-        .contains('metadata', { gmail_message_id: stub.id })
-        .limit(1)
-      if (lookupError) {
-        console.error('[gmail-sync] activity lookup failed:', lookupError)
-      } else if (!existing?.length) {
-        const { error: activityError } = await input.db.from('lead_activities').insert(threadActivity)
-        if (activityError) console.error('[gmail-sync] activity insert failed:', activityError)
-      }
     }
+    // The legacy scan returns whichever lead row the database lists first,
+    // so an exact counterparty address outranks it.
+    const fallbackLeadId = matchLeadToMessage(fromAddr, [...toAddrs, ...ccAddrs], subject, snippet, input.leads)
+    const candidates = threadCandidates(context, message)
+    const leadId = candidates.length
+      ? (await filedCandidateLeadId(context, stub.id, candidates))
+        ?? (fallbackLeadId && candidates.includes(fallbackLeadId) ? fallbackLeadId : candidates[0])
+      : fallbackLeadId
+    if (!leadId) continue
+    matched++
+
+    const { error: insertError } = await input.db
+      .from('lead_emails')
+      .upsert(leadEmailRow(context, message, leadId), { onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
+
+    if (!insertError) inserted++
+
+    if (candidates.includes(leadId)) await recordThreadActivity(context, message, leadId, candidates)
   }
 
   return { scanned: stubs.length, matched, inserted }
+}
+
+type StoredLeadEmail = {
+  lead_id: string
+  gmail_message_id: string | null
+  gmail_thread_id: string | null
+  from_address: string | null
+  to_addresses: string[] | null
+  cc_addresses: string[] | null
+  subject: string | null
+  body_snippet: string | null
+  sent_at: string | null
+}
+
+// Mail stored before projection existed, or filed under a self-test lead, can
+// fall out of the newest-100 Gmail list before the next run. Projects it from
+// the stored headers without calling Gmail.
+export async function backfillStoredThreadActivity(input: {
+  db: SupabaseClient
+  userEmail: string
+  leads: LeadMatchRow[]
+  internalAddresses: readonly string[]
+  since: string
+  skipMessageIds?: ReadonlySet<string>
+}): Promise<number> {
+  const context: ThreadContext = {
+    db: input.db,
+    mailbox: input.userEmail,
+    leads: input.leads,
+    internalAddresses: input.internalAddresses,
+  }
+  const { data, error } = await input.db
+    .from('lead_emails')
+    .select('lead_id, gmail_message_id, gmail_thread_id, from_address, to_addresses, cc_addresses, subject, body_snippet, sent_at')
+    .eq('synced_from_user', input.userEmail)
+    .gte('sent_at', input.since)
+    .order('sent_at', { ascending: false })
+    .limit(STORED_BACKFILL_LIMIT)
+  if (error) {
+    console.error('[gmail-sync] stored email lookup failed:', error)
+    return 0
+  }
+
+  const byMessage = new Map<string, { row: StoredLeadEmail; leadIds: Set<string> }>()
+  for (const row of (data || []) as StoredLeadEmail[]) {
+    if (!row.gmail_message_id || input.skipMessageIds?.has(row.gmail_message_id)) continue
+    const entry = byMessage.get(row.gmail_message_id) ?? { row, leadIds: new Set<string>() }
+    entry.leadIds.add(row.lead_id)
+    byMessage.set(row.gmail_message_id, entry)
+  }
+
+  let projected = 0
+  for (const [messageId, { row, leadIds }] of byMessage) {
+    const message: ThreadMessage = {
+      id: messageId,
+      threadId: row.gmail_thread_id || messageId,
+      fromAddr: normalizedAddress(row.from_address),
+      toAddrs: row.to_addresses || [],
+      ccAddrs: row.cc_addresses || [],
+      subject: row.subject || '',
+      snippet: row.body_snippet || '',
+      sentAt: row.sent_at || '',
+    }
+    const candidates = threadCandidates(context, message)
+    if (!candidates.length) continue
+    let leadId = candidates.find((id) => leadIds.has(id)) ?? (await filedCandidateLeadId(context, messageId, candidates))
+    if (!leadId) {
+      leadId = candidates[0]
+      const { error: fileError } = await input.db
+        .from('lead_emails')
+        .upsert(leadEmailRow(context, message, leadId), { onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
+      if (fileError) console.error('[gmail-sync] stored email refile failed:', fileError)
+    }
+    if (await recordThreadActivity(context, message, leadId, candidates)) projected++
+  }
+  return projected
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +582,7 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
   scanned: number
   matched: number
   inserted: number
+  backfilled?: number
   error?: string
 }> {
   const db = supabaseAdmin()
@@ -377,6 +612,13 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
   if (leads.length === 0) {
     return { scanned: 0, matched: 0, inserted: 0 }
   }
+  let internalAddresses: string[]
+  try {
+    internalAddresses = await loadGmailInternalAddresses(db)
+  } catch (error) {
+    console.error('[gmail-sync] internal address lookup failed:', error)
+    return { scanned: 0, matched: 0, inserted: 0, error: 'internal_addresses_unavailable' }
+  }
 
   // Search Gmail for recent messages. Pull sync stays available when Pub/Sub
   // push is not configured. newer_than includes All Mail, not only Inbox.
@@ -396,11 +638,20 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
     userEmail,
     stubs: messageStubs,
     leads,
+    internalAddresses,
+  })
+  const backfilled = await backfillStoredThreadActivity({
+    db,
+    userEmail,
+    leads,
+    internalAddresses,
+    since: new Date(Date.now() - daysBack * DAY_MS).toISOString(),
+    skipMessageIds: new Set(messageStubs.map((stub) => stub.id)),
   })
 
   await db.from('user_oauth_tokens').update({
     last_sync_at: new Date().toISOString(),
   }).eq('id', tokenRow.id)
 
-  return ingested
+  return { ...ingested, backfilled }
 }
