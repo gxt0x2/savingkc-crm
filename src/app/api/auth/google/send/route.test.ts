@@ -87,7 +87,7 @@ describe('POST /api/auth/google/send', () => {
     }))
     const payload = await response.json()
     expect(response.status).toBe(200)
-    expect(payload).toMatchObject({ success: true, sent: true, provider: 'gmail', id: 'msg-1' })
+    expect(payload).toMatchObject({ success: true, sent: true, persisted: true, provider: 'gmail', id: 'msg-1' })
     expect(mocks.sendConnectedGmail).toHaveBeenCalledWith(expect.objectContaining({
       userEmail: 'ernest@savingkc.com',
       to: 'savingkc@gmail.com',
@@ -143,5 +143,28 @@ describe('POST /api/auth/google/send', () => {
     expect(mocks.sendConnectedGmail).toHaveBeenCalledOnce()
     expect(mocks.recordOutboundGmail).not.toHaveBeenCalled()
     expect(mocks.insert).not.toHaveBeenCalled()
+  })
+
+  it('reports Gmail accepted the message when CRM history did not save', async () => {
+    mocks.sendConnectedGmail.mockResolvedValue({
+      ok: true,
+      id: 'msg-1',
+      threadId: 'thread-1',
+      from: 'ernest@savingkc.com',
+    })
+    mocks.insert.mockResolvedValue({ error: { message: 'insert failed' } })
+    const response = await POST(request({
+      to: 'savingkc@gmail.com',
+      body: 'Hello',
+      leadId: 'lead-1',
+    }))
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      sent: true,
+      persisted: false,
+      provider: 'gmail',
+      id: 'msg-1',
+    })
   })
 })
