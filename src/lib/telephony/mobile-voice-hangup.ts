@@ -1,12 +1,11 @@
 import twilio from 'twilio'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { cleanTwilioEnv } from '@/lib/telephony/twiml-app'
 
 const CALL_SID = /^CA[0-9a-f]{32}$/i
 const TERMINAL = new Set(['completed', 'busy', 'failed', 'no-answer', 'canceled'])
-const ACTIVE_WINDOW_MS = 5 * 60_000
 const MOBILE_SOURCES = new Set(['mobile_manual', 'mobile_lead'])
-const SWEEP_ATTEMPTS = 4
-const SWEEP_WAIT_MS = 350
+const MAX_ATTEMPT_ID_LENGTH = 200
 
 type ProviderCall = {
   sid?: string
@@ -14,8 +13,6 @@ type ProviderCall = {
   to?: string
   status?: string
   parentCallSid?: string | null
-  statusCallback?: string | null
-  status_callback?: string | null
 }
 
 type CallHandle = {
@@ -25,6 +22,10 @@ type CallHandle = {
 
 type CallResource = ((sid: string) => CallHandle) & {
   list?: (query: Record<string, unknown>) => Promise<ProviderCall[]>
+}
+
+type LedgerDb = {
+  rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>
 }
 
 export class MobileHangupError extends Error {
@@ -93,115 +94,100 @@ export async function hangupMobileVoiceCall(callSid: string, identity: string): 
   }
 }
 
-function statusCallbackUrl(call: ProviderCall): string | null {
-  const value = call.statusCallback ?? call.status_callback ?? ''
-  const trimmed = typeof value === 'string' ? value.trim() : ''
-  return trimmed || null
+export function isMobileVoiceSource(source: string | null | undefined): boolean {
+  return MOBILE_SOURCES.has(source?.trim() ?? '')
 }
 
-/** The voice webhook stamps the mobile attempt on the PSTN child's status callback. */
-export function mobileAttemptMarker(url: string | null | undefined): { clientAttemptId: string; source: string } | null {
-  if (!url) return null
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return null
-  }
-  const clientAttemptId = parsed.searchParams.get('clientAttemptId')?.trim() ?? ''
-  const source = parsed.searchParams.get('source')?.trim() ?? ''
-  if (!clientAttemptId || !MOBILE_SOURCES.has(source)) return null
-  return { clientAttemptId, source }
-}
-
-export function parentMatchesMobileAttempt(
-  parent: ProviderCall,
-  children: ProviderCall[],
-  clientAttemptId: string,
-): boolean {
-  return [parent, ...children].some((leg) => (
-    mobileAttemptMarker(statusCallbackUrl(leg))?.clientAttemptId === clientAttemptId
-  ))
-}
-
-async function childLegs(calls: CallResource, parentSid: string): Promise<ProviderCall[]> {
-  if (typeof calls.list !== 'function') return []
-  const children = await calls.list({ parentCallSid: parentSid, limit: 10 })
-  const detailed: ProviderCall[] = []
-  for (const child of children) {
-    if (statusCallbackUrl(child)) {
-      detailed.push(child)
-      continue
-    }
-    const sid = child.sid?.trim() ?? ''
-    if (!CALL_SID.test(sid)) {
-      detailed.push(child)
-      continue
-    }
-    detailed.push(await calls(sid).fetch())
-  }
-  return detailed
+function ledgerState(data: unknown): { parentCallSid: string | null; endRequested: boolean } {
+  const row = data && typeof data === 'object' ? data as Record<string, unknown> : {}
+  const parent = typeof row.parent_call_sid === 'string' ? row.parent_call_sid.trim() : ''
+  return { parentCallSid: CALL_SID.test(parent) ? parent : null, endRequested: row.end_requested === true }
 }
 
 /**
- * End the one outbound client leg this phone started.
- * The web prospecting dialer uses the same client identity, so a leg is ended
- * only when its status callback carries this clientAttemptId and a mobile source.
- * A miss retries briefly, then reports that the leg was not found. It does not
- * widen to other live calls.
+ * End the call one phone attempt started before the phone learned its call SID.
+ * Twilio does not return a call's status callback URL, so the attempt is found
+ * through mobile_voice_attempts, keyed by SDK identity and attempt id. A web
+ * dialer call on the same identity never has a row there, and another agent is
+ * another key. When Twilio has not reported a leg yet, the stored request is
+ * enforced by the next signed status callback for this attempt.
  */
-export async function hangupActiveClientOutboundCalls(
+export async function hangupMobileVoiceAttempt(
   identity: string,
   clientAttemptId: string,
-  options: { attempts?: number; wait?: (ms: number) => Promise<void> } = {},
-): Promise<'disconnected' | 'already_ended'> {
+  db?: LedgerDb,
+): Promise<'disconnected' | 'already_ended' | 'end_requested'> {
   const attemptId = clientAttemptId.trim()
   if (!identity) throw new MobileHangupError('CRM calling identity unavailable', 403)
-  if (!attemptId || attemptId.length > 200) {
+  if (!attemptId || attemptId.length > MAX_ATTEMPT_ID_LENGTH) {
     throw new MobileHangupError('A mobile call attempt is required', 400)
   }
-  const client = voiceClient()
-  if (typeof client.calls.list !== 'function') {
+  const { data, error } = await (db ?? supabaseAdmin()).rpc('request_mobile_voice_attempt_end_v1', {
+    p_identity: identity,
+    p_client_attempt_id: attemptId,
+  })
+  if (error) {
+    console.error('[mobile-voice-hangup] End request was not stored:', error)
     throw new MobileHangupError('Could not confirm that the call ended. Retry End.', 503)
   }
-  const expected = `client:${identity}`
-  const attempts = Math.max(1, options.attempts ?? SWEEP_ATTEMPTS)
-  const wait = options.wait ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms) }))
+  const { parentCallSid } = ledgerState(data)
+  if (!parentCallSid) return 'end_requested'
+  return hangupMobileVoiceCall(parentCallSid, identity)
+}
+
+export type MobileAttemptLegResult = 'recorded' | 'end_enforced' | 'end_failed' | 'unrecorded'
+
+/**
+ * Record the Twilio parent call for a mobile attempt from its signed status
+ * callback, and end that call when End arrived before Twilio reported it.
+ * Never throws: an unavailable ledger must not drop the status callback.
+ */
+export async function trackMobileVoiceAttemptLeg(
+  db: LedgerDb,
+  input: {
+    identity: string
+    clientAttemptId: string
+    source: string
+    parentCallSid: string
+    callSid: string
+    callStatus: string
+  },
+): Promise<MobileAttemptLegResult | null> {
+  const identity = input.identity.trim()
+  const attemptId = input.clientAttemptId.trim()
+  const callSid = input.callSid.trim()
+  const parentSid = input.parentCallSid.trim()
+  if (
+    !isMobileVoiceSource(input.source)
+    || !identity
+    || !attemptId
+    || attemptId.length > MAX_ATTEMPT_ID_LENGTH
+    || !CALL_SID.test(callSid)
+  ) return null
+
+  let state: ReturnType<typeof ledgerState>
   try {
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const recent = await client.calls.list({
-        from: expected,
-        startTimeAfter: new Date(Date.now() - ACTIVE_WINDOW_MS),
-        limit: 20,
-      })
-      const parents = recent.filter((call) => call.from === expected)
-      for (const parent of parents) {
-        const parentSid = parent.sid?.trim() ?? ''
-        if (!CALL_SID.test(parentSid)) continue
-        const children = await childLegs(client.calls, parentSid)
-        if (!parentMatchesMobileAttempt(parent, children, attemptId)) continue
-        const legs = [parent, ...children]
-        if (legs.every((leg) => TERMINAL.has(leg.status ?? ''))) return 'already_ended'
-        let ended = false
-        if (await endProviderCall(client.calls, parent)) ended = true
-        for (const child of children) {
-          if (child.sid?.trim() === parentSid) continue
-          if (await endProviderCall(client.calls, child)) ended = true
-        }
-        return ended ? 'disconnected' : 'already_ended'
-      }
-      if (attempt < attempts - 1) await wait(SWEEP_WAIT_MS)
-    }
-    throw new MobileHangupError(
-      'That mobile call is not on Twilio yet. Retry End. Other calls were left connected.',
-      404,
-    )
+    const { data, error } = await db.rpc('record_mobile_voice_attempt_leg_v1', {
+      p_identity: identity,
+      p_client_attempt_id: attemptId,
+      p_source: input.source.trim(),
+      p_parent_call_sid: CALL_SID.test(parentSid) ? parentSid : null,
+      p_call_sid: callSid,
+      p_status: input.callStatus.trim() || null,
+    })
+    if (error) throw error
+    state = ledgerState(data)
   } catch (error) {
-    if (error instanceof MobileHangupError) throw error
-    const provider = error as { code?: number; status?: number }
-    if (provider?.code === 20404 || provider?.status === 404) {
-      throw new MobileHangupError('Call not found for this user', 404)
-    }
-    throw new MobileHangupError('Could not confirm that the call ended. Retry End.', 503)
+    console.error('[mobile-voice-hangup] Mobile attempt leg was not recorded:', error)
+    return 'unrecorded'
+  }
+
+  if (!state.endRequested || !state.parentCallSid || TERMINAL.has(input.callStatus.trim())) return 'recorded'
+  try {
+    await hangupMobileVoiceCall(state.parentCallSid, identity)
+    return 'end_enforced'
+  } catch (error) {
+    console.error('[mobile-voice-hangup] Stored End could not end the mobile call:', error)
+    return 'end_failed'
   }
 }
