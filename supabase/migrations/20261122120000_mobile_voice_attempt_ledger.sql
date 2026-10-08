@@ -58,7 +58,7 @@ $$;
 
 -- Called from the authenticated mobile hangup route. Returns the parent SID
 -- when Twilio already reported a leg; otherwise the stored request is enforced
--- by the next signed status callback for this attempt.
+-- by the next status callback for this attempt.
 CREATE OR REPLACE FUNCTION public.request_mobile_voice_attempt_end_v1(
   p_identity text, p_client_attempt_id text
 )
