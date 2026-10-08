@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       const result = await hangupMobileVoiceCall(callSid, identity)
       return json({ ok: true, result })
     }
-    const result = await hangupActiveClientOutboundCalls(identity)
+    const result = await hangupActiveClientOutboundCalls(identity, clientAttemptId)
     return json({ ok: true, result })
   } catch (error) {
     const known = error instanceof MobileAuthError || error instanceof MobileHangupError
