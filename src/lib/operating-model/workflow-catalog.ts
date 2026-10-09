@@ -383,9 +383,9 @@ export const WORKFLOW_CATALOG: readonly WorkflowDefinition[] = [
     name: 'Gmail Communication Sync',
     description: 'Imports authorized email activity and attaches it to the correct CRM identity.',
     category: 'data_sync', status: 'active', health: 'healthy', owner: SYSTEM_OWNER,
-    trigger: { type: 'scheduled', schedule: 'Daily at 8:15 AM Central' },
+    trigger: { type: 'scheduled', schedule: 'Every 5 minutes' },
     actions: [{ type: 'execute', label: 'Read connected Gmail changes' }, { type: 'normalize_identity' }, { type: 'execute', label: 'Persist matching email activity' }],
-    implementation: implementation(['/api/cron/sync-gmail'], { execution: 'worker', schedule: '15 13 * * *', approvalPolicy: 'admin_only' }),
+    implementation: implementation(['/api/cron/sync-gmail'], { execution: 'worker', schedule: '*/5 * * * *', approvalPolicy: 'admin_only' }),
     version: 1, lastRunAt: null,
   },
   {

@@ -2,7 +2,7 @@
 
 Sync now stays a pull: `POST /api/cron/sync-gmail/trigger` lists recent messages with the saved Google OAuth token.
 
-Push is optional. When the env below is set, Connect and the daily Gmail cron call `users.watch`. Google publishes mailbox changes to Pub/Sub, Pub/Sub POSTs them to the CRM, and the CRM runs `users.history.list` through the same lead-email upsert as Sync now. Duplicate notifications hit `gmail_push_receipts` and `lead_emails (lead_id, gmail_message_id)` and do not insert a second row.
+Push is optional. When the env below is set, Connect and the 5-minute Gmail cron call `users.watch`. Google publishes mailbox changes to Pub/Sub, Pub/Sub POSTs them to the CRM, and the CRM runs `users.history.list` through the same lead-email upsert as Sync now. Duplicate notifications hit `gmail_push_receipts` and `lead_emails (lead_id, gmail_message_id)` and do not insert a second row.
 
 If topic, subscription, or push auth env is missing, watch is skipped and the webhook returns 503. Sync now still works.
 
@@ -45,6 +45,6 @@ GMAIL_WATCH_MAILBOX_ALLOWLIST=
 
 `GMAIL_WATCH_MAILBOX_ALLOWLIST` is optional comma-separated extra Google addresses. Staff `@savingkc.com` logins and `savingkc@gmail.com` are already eligible.
 
-Watch expiration is about 7 days. Connect starts a watch. The existing daily `/api/cron/sync-gmail` cron renews it when expiration is within 6 days. Disconnect calls `users.stop` and then deletes the token row.
+Watch expiration is about 7 days. Connect starts a watch. The 5-minute `/api/cron/sync-gmail` cron renews it when expiration is within 6 days. Disconnect calls `users.stop` and then deletes the token row.
 
 Apply the `gmail_push_receipts` migration before enabling the push subscription.

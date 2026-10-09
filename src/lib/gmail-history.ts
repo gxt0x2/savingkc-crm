@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import {
   ingestGmailMessageStubs,
+  loadGmailInternalAddresses,
   loadLeadsForGmailMatch,
   syncUserGmail,
   type GmailMessageStub,
@@ -56,7 +57,8 @@ async function defaultIngestStubs(
   if (leads.length === 0 || stubs.length === 0) {
     return { scanned: stubs.length, matched: 0, inserted: 0 }
   }
-  return ingestGmailMessageStubs({ db, accessToken, userEmail, stubs, leads })
+  const internalAddresses = await loadGmailInternalAddresses(db)
+  return ingestGmailMessageStubs({ db, accessToken, userEmail, stubs, leads, internalAddresses })
 }
 
 export async function ingestGmailHistory(input: {
@@ -119,7 +121,6 @@ export async function ingestGmailHistory(input: {
     const params = new URLSearchParams({
       startHistoryId: input.startHistoryId,
       historyTypes: 'messageAdded',
-      labelId: 'INBOX',
       maxResults: '100',
     })
     if (pageToken) params.set('pageToken', pageToken)

@@ -12,7 +12,7 @@
     },
     {
       "path": "/api/cron/sync-gmail",
-      "schedule": "15 13 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/workers/ppc-conversion-export",

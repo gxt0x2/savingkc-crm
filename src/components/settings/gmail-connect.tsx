@@ -198,7 +198,7 @@ export function GmailConnect({ userEmail }: GmailConnectProps) {
                 )}
                 {staleSync && (
                   <p className="mt-1.5 text-[12px] leading-snug text-[var(--crm-warning)]">
-                    Last sync is more than 36 hours old. Daily Gmail poll may be stalled — do not treat this as a live sync.
+                    Last sync is more than 30 minutes old. The 5-minute Gmail poll may be stalled — do not treat this as a live sync.
                   </p>
                 )}
                 {account.connection_status === 'connected' && (account.missing_scopes?.length || 0) > 0 && (
