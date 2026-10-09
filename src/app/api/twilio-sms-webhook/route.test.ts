@@ -25,6 +25,9 @@ const mocks = vi.hoisted(() => ({
   resolveGoogleAdsLeadContext: vi.fn(),
   processInboundSmsConsent: vi.fn(),
   recordAppointmentSmsResponse: vi.fn(),
+  afterRequest: vi.fn((work: () => unknown) => {
+    void work()
+  }),
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
@@ -93,6 +96,10 @@ vi.mock('@/lib/google-ads-phone', () => ({
 
 vi.mock('@/lib/server/appointment-sms-response', () => ({
   recordAppointmentSmsResponse: mocks.recordAppointmentSmsResponse,
+}))
+
+vi.mock('@/lib/after-request', () => ({
+  afterRequest: (work: () => unknown) => mocks.afterRequest(work),
 }))
 
 import { POST } from './route'
@@ -272,6 +279,9 @@ describe('twilio SMS webhook seller responses', () => {
         ? { handled: true, appointmentId: 'appointment-1', response: 'confirm' }
         : { handled: false }
     ))
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      void work()
+    })
     mocks.from.mockImplementation((table: string) => supabaseChain(table))
     mocks.rpc.mockImplementation(async () => {
       if (phoneLookupError) return { data: null, error: phoneLookupError }

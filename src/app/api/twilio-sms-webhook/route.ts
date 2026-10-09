@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
+import { afterRequest } from '@/lib/after-request'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
+
+export const maxDuration = 60
 import { rateLimit, rateLimitConfigs, getClientIp } from '@/middleware/rate-limit'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { sendMobilePushToAgentNames } from '@/lib/mobile-push'
@@ -102,22 +105,24 @@ function sendInboundSmsPush(
   payload: Parameters<typeof sendPushToAgents>[0],
   context: { leadId?: string | null; messageSid: string },
 ) {
-  const names = getLeadAlertRecipients(new Date(), to).map((recipient) => recipient.name)
-  const web = to !== CASEY_COMPANY_NUMBER
-    ? sendPushToAgents(payload)
-    : sendPushToAgentNames(names, payload)
-  const leadId = context.leadId || ''
-  const mobile = sendMobilePushToAgentNames(names, {
-    title: payload.title,
-    body: payload.body,
-    data: {
-      href: leadId ? `/conversation/${leadId}` : '/conversations',
-      kind: 'inbound_sms',
-      leadId,
-      eventId: `sms_${context.messageSid}`,
-    },
+  afterRequest(() => {
+    const names = getLeadAlertRecipients(new Date(), to).map((recipient) => recipient.name)
+    const web = to !== CASEY_COMPANY_NUMBER
+      ? sendPushToAgents(payload)
+      : sendPushToAgentNames(names, payload)
+    const leadId = context.leadId || ''
+    const mobile = sendMobilePushToAgentNames(names, {
+      title: payload.title,
+      body: payload.body,
+      data: {
+        href: leadId ? `/conversation/${leadId}` : '/conversations',
+        kind: 'inbound_sms',
+        leadId,
+        eventId: `sms_${context.messageSid}`,
+      },
+    })
+    return Promise.all([web, mobile])
   })
-  return Promise.all([web, mobile])
 }
 
 export async function POST(req: Request) {
@@ -361,7 +366,7 @@ export async function POST(req: Request) {
         body: messageBody.slice(0, 80),
         url: '/conversations',
         tag: 'team-sms',
-      }, { messageSid }).catch(() => {})
+      }, { messageSid })
 
       // Log to activities so it shows in Conversations
       try {
@@ -497,7 +502,7 @@ export async function POST(req: Request) {
         body: `${leadName !== 'Unknown' ? leadName : from} replied YES to sell. Call NOW.`,
         url: yesLeadId ? `/leads/${yesLeadId}` : '/',
         tag: 'yes-reply',
-      }, { leadId: yesLeadId, messageSid }).catch(() => {})
+      }, { leadId: yesLeadId, messageSid })
 
       // Log the alert SMS
       if (yesLeadId) {
@@ -562,7 +567,7 @@ export async function POST(req: Request) {
         body: `${leadName}: "${messageBody.slice(0, 80)}"`,
         url: `/leads/${leadId}`,
         tag: 'lead-sms',
-      }, { leadId, messageSid }).catch(() => {})
+      }, { leadId, messageSid })
 
       // Log the alert intent and delivery status
       await supabase.from('lead_activities').insert({
@@ -637,7 +642,7 @@ export async function POST(req: Request) {
             : `${formatPhone(from)}: "${messageBody.slice(0, 60)}"`,
           url: `/leads/${newLeadId}`,
           tag: prospectMatch ? 'prospect-sms' : 'unknown-sms',
-        }, { leadId: newLeadId, messageSid }).catch(() => {})
+        }, { leadId: newLeadId, messageSid })
 
         // Ari briefing event — include prospect metadata
         try {

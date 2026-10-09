@@ -1,3 +1,4 @@
+import { afterRequest } from '@/lib/after-request'
 import { getDisplayLeadName, shouldUsePhoneAsName } from '@/lib/contact-display'
 import { sendMobilePushToUsers } from '@/lib/mobile-push'
 import { sendPushToUser } from '@/lib/push-notifications'
@@ -119,10 +120,10 @@ export async function notifyInboundEmail(input: InboundEmailAlert): Promise<void
       eventId,
     }
 
-    await Promise.allSettled([
+    afterRequest(() => Promise.allSettled([
       sendMobilePushToUsers(userIds, { title, body, data }),
       ...userIds.map((userId) => sendPushToUser(userId, { title, body, url: href, tag: eventId })),
-    ])
+    ]))
   } catch (error) {
     console.error('[inbound-email-alert] notify failed:', error)
   }
