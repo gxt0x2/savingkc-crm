@@ -296,6 +296,7 @@ export async function POST(req: Request) {
         sent: gmail.code === 'gmail_result_ambiguous' ? null : false,
         error: gmail.error,
         code: gmail.code,
+        ...(gmail.code === 'gmail_result_ambiguous' ? { deliveryState: 'delivery_unknown' as const } : {}),
       }, {
         status: manualGmailFailureStatus(gmail.code),
         headers: gmail.code === 'gmail_result_ambiguous' && providerSignal

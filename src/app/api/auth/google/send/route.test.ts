@@ -139,7 +139,11 @@ describe('POST /api/auth/google/send', () => {
       leadId: 'lead-1',
     }))
     expect(response.status).toBe(504)
-    await expect(response.json()).resolves.toMatchObject({ sent: null, code: 'gmail_result_ambiguous' })
+    await expect(response.json()).resolves.toMatchObject({
+      sent: null,
+      code: 'gmail_result_ambiguous',
+      deliveryState: 'delivery_unknown',
+    })
     expect(mocks.sendConnectedGmail).toHaveBeenCalledOnce()
     expect(mocks.recordOutboundGmail).not.toHaveBeenCalled()
     expect(mocks.insert).not.toHaveBeenCalled()

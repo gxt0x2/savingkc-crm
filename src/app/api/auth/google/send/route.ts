@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
       sent: sent.code === 'gmail_result_ambiguous' ? null : false,
       error: sent.error,
       code: sent.code,
+      ...(sent.code === 'gmail_result_ambiguous' ? { deliveryState: 'delivery_unknown' as const } : {}),
     }, { status: manualGmailFailureStatus(sent.code) })
   }
 

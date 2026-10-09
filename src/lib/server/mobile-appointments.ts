@@ -9,12 +9,7 @@ import {
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import {
-  assertActorCalendarGrant,
-  missingCalendarGrant,
-  MissingCalendarGrantError,
-  syncMobileAppointmentCalendar,
-} from '@/lib/server/mobile-appointment-calendar'
+import { syncMobileAppointmentCalendar } from '@/lib/server/mobile-appointment-calendar'
 
 type AppointmentCommand = 'create' | 'edit' | 'reschedule' | 'outcome'
 
@@ -54,7 +49,7 @@ type AppointmentRpcResult = {
 export class AppointmentCommandError extends Error {
   constructor(
     message: string,
-    public readonly code: 'invalid' | 'not_found' | 'conflict' | 'unavailable' | 'calendar_grant',
+    public readonly code: 'invalid' | 'not_found' | 'conflict' | 'unavailable',
   ) {
     super(message)
   }
@@ -111,43 +106,6 @@ export function mapMobileAppointment(row: AppointmentDbRow): MobileAppointment {
   }
 }
 
-function appointmentReachesGoogle(row: {
-  provider_event_id?: string | null
-  google_event_id?: string | null
-  provider_sync_status?: string | null
-} | null): boolean {
-  if (!row) return false
-  if (row.provider_event_id || row.google_event_id) return true
-  return row.provider_sync_status === 'synced' || row.provider_sync_status === 'pending'
-}
-
-async function requireCalendarGrant(input: {
-  actor: { email: string }
-  command: AppointmentCommand
-  appointmentId?: string | null
-  payload: Record<string, unknown>
-}): Promise<void> {
-  try {
-    if (input.command === 'create' || input.command === 'edit' || input.command === 'reschedule') {
-      await assertActorCalendarGrant(input.actor.email, 'save')
-      return
-    }
-    if (input.command !== 'outcome' || input.payload.outcome !== 'cancelled' || !input.appointmentId) return
-    const { data, error } = await supabaseAdmin()
-      .from('appointments')
-      .select('provider_event_id, google_event_id, provider_sync_status')
-      .eq('id', input.appointmentId)
-      .maybeSingle()
-    if (error) throw new AppointmentCommandError('Appointment service is temporarily unavailable.', 'unavailable')
-    if (appointmentReachesGoogle(data)) await assertActorCalendarGrant(input.actor.email, 'cancel')
-  } catch (error) {
-    if (error instanceof MissingCalendarGrantError) {
-      throw new AppointmentCommandError(error.message, 'calendar_grant')
-    }
-    throw error
-  }
-}
-
 function commandError(error: { message?: string } | null): AppointmentCommandError {
   const message = error?.message || ''
   if (message.includes('appointment_idempotency_conflict')) {
@@ -186,7 +144,6 @@ export async function executeMobileAppointmentCommand(input: {
   expectedVersion?: number | null
   payload: Record<string, unknown>
 }): Promise<MobileAppointmentCommandResult> {
-  await requireCalendarGrant(input)
   const hashInput = {
     command: input.command,
     appointmentId: input.appointmentId ?? null,
@@ -259,12 +216,6 @@ export async function executeMobileAppointmentCommand(input: {
         appointmentId: appointment.id,
         actorEmail: input.actor.email,
       })
-      if (calendar.status === 'not_configured' && missingCalendarGrant(calendar.reason)) {
-        throw new AppointmentCommandError(
-          calendar.warning || 'Google Calendar is not connected for this account. Connect Google before saving. This item was not saved.',
-          'calendar_grant',
-        )
-      }
       if (calendar.warning) warnings.push(calendar.warning)
       const { data: current, error: readError } = await supabaseAdmin()
         .from('appointments')
@@ -277,7 +228,6 @@ export async function executeMobileAppointmentCommand(input: {
         warnings.push('The latest calendar sync state could not be refreshed.')
       }
     } catch (calendarError) {
-      if (calendarError instanceof AppointmentCommandError) throw calendarError
       console.error('[mobile/appointments] calendar sync orchestration failed', calendarError)
       appointment.sync.provider = 'pending'
       warnings.push('Google Calendar sync is pending.')
