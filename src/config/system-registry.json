@@ -625,7 +625,7 @@
       "routes": [],
       "apiRoutes": ["/api/cron/sync-gmail", "/api/auth/google/status", "/api/auth/google/send", "/api/webhooks/google/gmail"],
       "tables": ["user_oauth_tokens", "lead_emails", "gmail_push_receipts", "system_config"],
-      "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_PUBSUB_TOPIC", "GOOGLE_PUBSUB_SUBSCRIPTION", "GOOGLE_PUBSUB_PUSH_AUDIENCE", "GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT", "GOOGLE_PUBSUB_PUSH_SECRET", "GMAIL_WATCH_MAILBOX_ALLOWLIST"],
+      "environment": ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_PUBSUB_TOPIC", "GOOGLE_PUBSUB_SUBSCRIPTION", "GOOGLE_PUBSUB_PUSH_AUDIENCE", "GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT", "GOOGLE_PUBSUB_PUSH_SECRET", "GMAIL_WATCH_MAILBOX_ALLOWLIST", "OWNER_EMAIL"],
       "crons": [
         { "path": "/api/cron/sync-gmail", "schedule": "*/5 * * * *", "highFrequencyReason": "Without Pub/Sub push, polling is the only path that files lead replies and Gmail-composed mail onto the lead timeline and mobile Inbox; a daily pass left them invisible for up to a day." }
       ]
@@ -696,7 +696,7 @@
         "/api/mobile/v1/devices/push-token"
       ],
       "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents", "mobile_voice_attempts"],
-      "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES", "SAVINGKC_MOBILE_SOURCE"]
+      "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES", "SAVINGKC_MOBILE_SOURCE", "EXPO_ACCESS_TOKEN", "MOBILE_PUSH_ENABLED"]
     },
     {
       "id": "mobile_device_testing",

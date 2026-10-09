@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   regenerateBriefing: vi.fn(),
   sendPushToAgents: vi.fn(),
   sendPushToAgentNames: vi.fn(),
+  sendMobilePushToAgentNames: vi.fn(),
   lookupProspectByPhone: vi.fn(),
   createEnrichedLeadFromProspect: vi.fn(),
   formatProspectAlert: vi.fn(),
@@ -59,6 +60,10 @@ vi.mock('@/lib/briefing-regen', () => ({
 vi.mock('@/lib/push-notifications', () => ({
   sendPushToAgents: mocks.sendPushToAgents,
   sendPushToAgentNames: mocks.sendPushToAgentNames,
+}))
+
+vi.mock('@/lib/mobile-push', () => ({
+  sendMobilePushToAgentNames: mocks.sendMobilePushToAgentNames,
 }))
 
 vi.mock('@/lib/prospect-lookup', () => ({
@@ -253,6 +258,7 @@ describe('twilio SMS webhook identity continuity', () => {
     mocks.regenerateBriefing.mockResolvedValue(undefined)
     mocks.sendPushToAgents.mockResolvedValue(1)
     mocks.sendPushToAgentNames.mockResolvedValue(1)
+    mocks.sendMobilePushToAgentNames.mockResolvedValue(1)
     mocks.lookupProspectByPhone.mockResolvedValue([])
     mocks.createEnrichedLeadFromProspect.mockResolvedValue('lead-created')
     mocks.formatProspectAlert.mockReturnValue('prospect context')

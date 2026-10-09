@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ user: vi.fn(), actor: vi.fn(), upsert: vi.fn() }))
 vi.mock('@/lib/mobile-api/auth', async (original) => ({ ...await original<typeof import('@/lib/mobile-api/auth')>(), requireMobileUser: mocks.user }))
@@ -14,9 +14,15 @@ function request(body: Record<string, unknown> = { token: TOKEN, platform: 'ios'
 describe('mobile device registration', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.unstubAllEnvs()
+    vi.stubEnv('MOBILE_PUSH_ENABLED', '')
+    vi.stubEnv('EXPO_ACCESS_TOKEN', '')
     mocks.user.mockResolvedValue({ user: { id: 'verified-user', email: 'ernest@savingkc.com' } })
     mocks.actor.mockResolvedValue({ email: 'ernest@savingkc.com' })
     mocks.upsert.mockResolvedValue({ error: null })
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
   it('uses verified subject, unique-token upsert, and distinguishes registration from delivery', async () => {
     const response = await POST(request({ token: TOKEN, platform: 'ios', userId: 'someone-else' }))
@@ -24,6 +30,12 @@ describe('mobile device registration', () => {
     expect(await response.json()).toEqual({ ok: true, registered: true, deliveryConfigured: false })
     expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'verified-user', token: TOKEN }), { onConflict: 'project_id,token' })
     expect(response.headers.get('Cache-Control')).toContain('no-store')
+  })
+  it('reports deliveryConfigured when the Expo send path is enabled', async () => {
+    vi.stubEnv('MOBILE_PUSH_ENABLED', 'true')
+    const response = await POST(request({ token: TOKEN, platform: 'ios' }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, registered: true, deliveryConfigured: true })
   })
   it('denies unauthenticated and unregistered subjects before writes', async () => {
     mocks.user.mockRejectedValueOnce(new MobileAuthError('Missing bearer token'))

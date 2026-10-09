@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { notifyInboundEmail } from '@/lib/inbound-email-alert'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { markOAuthConnected, persistOAuthHealth, readOAuthHealth } from '@/lib/oauth-health'
 import { isUniqueViolation, stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
@@ -376,6 +377,8 @@ function leadEmailRow(context: ThreadContext, message: ThreadMessage, leadId: st
   }
 }
 
+type RecordedThreadActivity = { id: string; direction: 'inbound' | 'outbound' }
+
 // One timeline row per Gmail message in this mailbox. The id comes from the
 // message, so two sync runs racing on the same message insert it once.
 async function recordThreadActivity(
@@ -383,7 +386,7 @@ async function recordThreadActivity(
   message: ThreadMessage,
   leadId: string,
   candidates: string[],
-): Promise<boolean> {
+): Promise<RecordedThreadActivity | null> {
   const activity = leadThreadActivity({
     leadId,
     leadEmail: context.leads.find((lead) => lead.id === leadId)?.email,
@@ -398,7 +401,7 @@ async function recordThreadActivity(
     gmailThreadId: message.threadId,
     internalAddresses: context.internalAddresses,
   })
-  if (!activity) return false
+  if (!activity) return null
   const { data: existing, error: lookupError } = await context.db
     .from('lead_activities')
     .select('id')
@@ -407,15 +410,19 @@ async function recordThreadActivity(
     .limit(1)
   if (lookupError) {
     console.error('[gmail-sync] activity lookup failed:', lookupError)
-    return false
+    return null
   }
-  if (existing?.length) return false
+  if (existing?.length) return null
+  const id = stableWebhookActivityId('gmail-sync', `${context.mailbox.toLowerCase()}:${message.id}`)
   const { error } = await context.db.from('lead_activities').insert({
-    id: stableWebhookActivityId('gmail-sync', `${context.mailbox.toLowerCase()}:${message.id}`),
+    id,
     ...activity,
   })
-  if (error && !isUniqueViolation(error)) console.error('[gmail-sync] activity insert failed:', error)
-  return !error
+  if (error) {
+    if (!isUniqueViolation(error)) console.error('[gmail-sync] activity insert failed:', error)
+    return null
+  }
+  return { id, direction: activity.metadata.direction === 'outbound' ? 'outbound' : 'inbound' }
 }
 
 // Shared by manual Sync now and Pub/Sub history ingest. Upsert ignores a
@@ -446,6 +453,7 @@ export async function ingestGmailMessageStubs(input: {
 
   let matched = 0
   let inserted = 0
+  const inboundAlerts: Array<{ leadId: string; activityId: string; subject: string; snippet: string }> = []
 
   for (const stub of stubs) {
     const msgRes = await fetchImpl(
@@ -492,7 +500,21 @@ export async function ingestGmailMessageStubs(input: {
 
     if (!insertError) inserted++
 
-    if (candidates.includes(leadId)) await recordThreadActivity(context, message, leadId, candidates)
+    const recorded = candidates.includes(leadId)
+      ? await recordThreadActivity(context, message, leadId, candidates)
+      : null
+    if (recorded?.direction === 'inbound') {
+      inboundAlerts.push({
+        leadId,
+        activityId: recorded.id,
+        subject,
+        snippet,
+      })
+    }
+  }
+
+  if (inboundAlerts.length) {
+    await Promise.allSettled(inboundAlerts.map((alert) => notifyInboundEmail(alert)))
   }
 
   return { scanned: stubs.length, matched, inserted }

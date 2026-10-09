@@ -1,6 +1,9 @@
 import { createSign, generateKeyPairSync } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+
+vi.mock('@/lib/inbound-email-alert', () => ({ notifyInboundEmail: vi.fn(async () => undefined) }))
+
 import { POST } from '@/app/api/webhooks/google/gmail/route'
 import { ingestGmailMessageStubs } from '@/lib/gmail-sync'
 import { handleGmailPubSubPush } from '@/lib/gmail-push'

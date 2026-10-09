@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   regenerateBriefing: vi.fn(),
   sendPushToAgents: vi.fn(),
   sendPushToAgentNames: vi.fn(),
+  sendMobilePushToAgentNames: vi.fn(),
   lookupProspectByPhone: vi.fn(),
   createEnrichedLeadFromProspect: vi.fn(),
   formatProspectAlert: vi.fn(),
@@ -59,6 +60,10 @@ vi.mock('@/lib/briefing-regen', () => ({
 vi.mock('@/lib/push-notifications', () => ({
   sendPushToAgents: mocks.sendPushToAgents,
   sendPushToAgentNames: mocks.sendPushToAgentNames,
+}))
+
+vi.mock('@/lib/mobile-push', () => ({
+  sendMobilePushToAgentNames: mocks.sendMobilePushToAgentNames,
 }))
 
 vi.mock('@/lib/prospect-lookup', () => ({
@@ -255,6 +260,7 @@ describe('twilio SMS webhook seller responses', () => {
     mocks.regenerateBriefing.mockResolvedValue(undefined)
     mocks.sendPushToAgents.mockResolvedValue(1)
     mocks.sendPushToAgentNames.mockResolvedValue(1)
+    mocks.sendMobilePushToAgentNames.mockResolvedValue(1)
     mocks.lookupProspectByPhone.mockResolvedValue([])
     mocks.createEnrichedLeadFromProspect.mockResolvedValue('lead-created')
     mocks.formatProspectAlert.mockReturnValue('prospect context')
@@ -306,6 +312,14 @@ describe('twilio SMS webhook seller responses', () => {
     expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({ to: '+18167564943' }))
     expect(mocks.safeSendSMS).not.toHaveBeenCalledWith(expect.objectContaining({ to: '+18162262552' }))
     expect(mocks.sendPushToAgentNames).toHaveBeenCalledWith(['Casey'], expect.any(Object))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Casey'], expect.objectContaining({
+      data: expect.objectContaining({
+        kind: 'inbound_sms',
+        href: '/conversation/lead-123',
+        leadId: 'lead-123',
+        eventId: 'sms_SM-YES',
+      }),
+    }))
     vi.useRealTimers()
   })
 
@@ -318,7 +332,30 @@ describe('twilio SMS webhook seller responses', () => {
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(mocks.sendPushToAgentNames).toHaveBeenCalledWith([], expect.any(Object))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith([], expect.objectContaining({
+      data: expect.objectContaining({ kind: 'inbound_sms', eventId: 'sms_SM-YES' }),
+    }))
     vi.useRealTimers()
+  })
+
+  it('sends Expo push to Ernest and Casey for a known lead text while keeping Web Push', async () => {
+    const response = await POST(makeSmsRequest('Please call me', '+19137179716', '+18166088588'))
+
+    await expect(response.text()).resolves.toBe(EMPTY_TWIML)
+    expect(mocks.sendPushToAgents).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Lead Texted',
+      url: '/leads/lead-123',
+    }))
+    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Ernest', 'Casey'], {
+      title: 'Lead Texted',
+      body: 'Jessica Watkins: "Please call me"',
+      data: {
+        href: '/conversation/lead-123',
+        kind: 'inbound_sms',
+        leadId: 'lead-123',
+        eventId: 'sms_SM-Please call me',
+      },
+    })
   })
 
   it('does not send a canned TwiML reply back to a prospect who texts CONFIRM', async () => {

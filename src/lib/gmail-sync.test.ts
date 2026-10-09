@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  notifyInboundEmail: vi.fn(async () => undefined),
+}))
+vi.mock('@/lib/inbound-email-alert', () => ({ notifyInboundEmail: mocks.notifyInboundEmail }))
+
 import {
   backfillStoredThreadActivity,
   counterpartyLeadIds,
@@ -394,6 +400,111 @@ describe('lead selection for a mailbox', () => {
     ])
     eq.mockResolvedValueOnce({ data: null, error: { message: 'timeout' } })
     await expect(loadGmailInternalAddresses(db as never)).rejects.toThrow('gmail_internal_addresses_unavailable')
+  })
+})
+
+describe('inbound email push from live ingest', () => {
+  beforeEach(() => {
+    mocks.notifyInboundEmail.mockClear()
+  })
+
+  it('notifies once for a newly inserted inbound activity and not again on replay', async () => {
+    const db = memoryDb()
+    const fetchImpl = vi.fn(async () => messageResponse({
+      From: 'Pat Seller <seller@example.com>',
+      To: 'ernest@savingkc.com',
+      Subject: 'Re: 44 Oak Ave',
+    }, 'Call me after 5.'))
+    const ingest = () => ingestGmailMessageStubs({
+      db: db as never,
+      accessToken: 'token',
+      userEmail: 'ernest@savingkc.com',
+      leads: [seller],
+      internalAddresses: crmUsers,
+      stubs: [{ id: 'seller-reply', threadId: 'thread-seller' }],
+      fetchImpl: fetchImpl as never,
+    })
+
+    await ingest()
+    await ingest()
+
+    expect(mocks.notifyInboundEmail).toHaveBeenCalledTimes(1)
+    expect(mocks.notifyInboundEmail).toHaveBeenCalledWith({
+      leadId: 'seller-lead',
+      activityId: db.activities[0].id,
+      subject: 'Re: 44 Oak Ave',
+      snippet: 'Call me after 5.',
+    })
+  })
+
+  it('does not notify for outbound Gmail sends', async () => {
+    const db = memoryDb()
+    const fetchImpl = vi.fn(async () => messageResponse({
+      From: 'Ernest Dodson <ernest@savingkc.com>',
+      To: 'Michael Douglas <savingkc@gmail.com>',
+      Subject: 'Hello Motto',
+    }, 'This is only a test'))
+    await ingestGmailMessageStubs({
+      db: db as never,
+      accessToken: 'token',
+      userEmail: 'ernest@savingkc.com',
+      leads: [lead],
+      internalAddresses: [],
+      stubs: [{ id: 'msg-sent', threadId: 'thread-sent' }],
+      fetchImpl: fetchImpl as never,
+    })
+    expect(db.activities[0]).toMatchObject({ metadata: { direction: 'outbound' } })
+    expect(mocks.notifyInboundEmail).not.toHaveBeenCalled()
+  })
+
+  it('notifies once when two ingest runs race on the same inbound message', async () => {
+    const db = memoryDb()
+    const fetchImpl = vi.fn(async () => messageResponse({
+      From: 'Pat Seller <seller@example.com>',
+      To: 'ernest@savingkc.com',
+      Subject: 'Re: 44 Oak Ave',
+    }, 'Call me after 5.'))
+    const ingest = () => ingestGmailMessageStubs({
+      db: db as never,
+      accessToken: 'token',
+      userEmail: 'ernest@savingkc.com',
+      leads: [seller],
+      internalAddresses: crmUsers,
+      stubs: [{ id: 'race', threadId: 'thread-race' }],
+      fetchImpl: fetchImpl as never,
+    })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    await Promise.all([ingest(), ingest()])
+    expect(db.activities).toHaveLength(1)
+    expect(mocks.notifyInboundEmail).toHaveBeenCalledTimes(1)
+    errors.mockRestore()
+  })
+
+  it('does not notify when stored-mail backfill projects an inbound reply', async () => {
+    const db = memoryDb({
+      emails: [{
+        synced_from_user: 'ernest@savingkc.com',
+        gmail_thread_id: 'thread',
+        cc_addresses: [],
+        lead_id: 'seller-lead',
+        gmail_message_id: 'swallowed-reply',
+        from_address: 'seller@example.com',
+        to_addresses: ['ernest@savingkc.com'],
+        subject: 'Re: 44 Oak Ave',
+        body_snippet: 'Call me after 5.',
+        sent_at: '2026-10-07T15:00:00+00:00',
+      }],
+    })
+    await backfillStoredThreadActivity({
+      db: db as never,
+      userEmail: 'ernest@savingkc.com',
+      leads: [seller],
+      internalAddresses: crmUsers,
+      since: '2026-10-01T13:15:00.000Z',
+    })
+    expect(db.activities).toHaveLength(1)
+    expect(db.activities[0]).toMatchObject({ activity_type: 'email_received' })
+    expect(mocks.notifyInboundEmail).not.toHaveBeenCalled()
   })
 })
 
