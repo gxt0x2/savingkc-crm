@@ -614,7 +614,7 @@
       "environment": [],
       "retirement": {
         "reason": "The CRM paid-media workspace is Google Ads only. Historical rows remain available during the retention review.",
-        "targetDate": "2026-10-08"
+        "targetDate": "2026-11-08"
       }
     },
     {
@@ -695,7 +695,7 @@
         "/api/mobile/v1/twilio/hangup",
         "/api/mobile/v1/devices/push-token"
       ],
-      "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents"],
+      "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents", "mobile_voice_attempts"],
       "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES", "SAVINGKC_MOBILE_SOURCE"]
     },
     {

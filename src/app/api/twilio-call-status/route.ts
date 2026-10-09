@@ -13,6 +13,11 @@ import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import {
+  isMobileVoiceSource,
+  trackMobileVoiceAttemptLeg,
+  type MobileAttemptLegResult,
+} from '@/lib/telephony/mobile-voice-hangup'
 import { isUniqueViolation, stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 
 /**
@@ -159,6 +164,7 @@ export async function POST(req: Request) {
     const url = new URL(req.url)
     const identity = url.searchParams.get('identity') || ''
     const clientAttemptId = url.searchParams.get('clientAttemptId')?.trim() || null
+    const source = url.searchParams.get('source')?.trim() || ''
 
     const isTerminal = callStatus === 'completed' || callStatus === 'failed' || callStatus === 'canceled' || callStatus === 'busy' || callStatus === 'no-answer'
     const callbackSid = callSid || parentCallSid
@@ -171,11 +177,24 @@ export async function POST(req: Request) {
 
     let supabase: SupabaseClient | null = null
     let providerRecorded = false
+    let mobileAttempt: MobileAttemptLegResult | null = null
     if (clientAttemptId) {
       supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
       )
+      // A mobile End can be stored before Twilio reports any leg. Track the
+      // leg first so a dialer-session error below cannot skip enforcing it.
+      if (isMobileVoiceSource(source)) {
+        mobileAttempt = await trackMobileVoiceAttemptLeg(supabase, {
+          identity,
+          clientAttemptId,
+          source,
+          parentCallSid,
+          callSid: callbackSid,
+          callStatus,
+        })
+      }
       const { data: providerResult, error: providerError } = await supabase.rpc(
         'record_dialer_attempt_provider_status_v1',
         {
@@ -192,7 +211,13 @@ export async function POST(req: Request) {
     // Only Activity Feed rows and call-quality milestones are terminal. The
     // correlated durable attempt above records every provider state first.
     if (!isTerminal) {
-      return NextResponse.json({ ok: true, skipped: 'non_terminal', callStatus, providerRecorded })
+      return NextResponse.json({
+        ok: true,
+        skipped: 'non_terminal',
+        callStatus,
+        providerRecorded,
+        ...(mobileAttempt ? { mobileAttempt } : {}),
+      })
     }
 
     supabase ||= createClient(
@@ -279,7 +304,14 @@ export async function POST(req: Request) {
       })
     }
 
-    return NextResponse.json({ ok: true, callStatus, errorCode, duplicate, providerRecorded })
+    return NextResponse.json({
+      ok: true,
+      callStatus,
+      errorCode,
+      duplicate,
+      providerRecorded,
+      ...(mobileAttempt ? { mobileAttempt } : {}),
+    })
   } catch (err) {
     console.error('[twilio-call-status] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
