@@ -4,11 +4,17 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   sendMobilePushToUsers: vi.fn(),
   sendPushToUser: vi.fn(),
+  afterRequest: vi.fn((work: () => unknown) => {
+    void work()
+  }),
 }))
 
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ from: mocks.from }) }))
 vi.mock('@/lib/mobile-push', () => ({ sendMobilePushToUsers: mocks.sendMobilePushToUsers }))
 vi.mock('@/lib/push-notifications', () => ({ sendPushToUser: mocks.sendPushToUser }))
+vi.mock('@/lib/after-request', () => ({
+  afterRequest: (work: () => unknown) => mocks.afterRequest(work),
+}))
 
 import { inboundEmailRecipientEmails, notifyInboundEmail } from '@/lib/inbound-email-alert'
 
@@ -71,6 +77,9 @@ describe('notifyInboundEmail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.unstubAllEnvs()
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      void work()
+    })
     mocks.sendMobilePushToUsers.mockResolvedValue(1)
     mocks.sendPushToUser.mockResolvedValue(1)
     mocks.from.mockImplementation((table: string) => {
@@ -119,6 +128,29 @@ describe('notifyInboundEmail', () => {
       url: `/conversation/${LEAD_ID}`,
       tag: `email_${ACTIVITY_ID}`,
     })
+  })
+
+  it('schedules Web and Expo push with after() so the caller can return first', async () => {
+    const queued: Array<() => unknown> = []
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      queued.push(work)
+    })
+
+    await notifyInboundEmail({
+      leadId: LEAD_ID,
+      activityId: ACTIVITY_ID,
+      subject: 'Re: 44 Oak Ave',
+      snippet: 'Call me after 5.',
+    })
+
+    expect(mocks.sendMobilePushToUsers).not.toHaveBeenCalled()
+    expect(mocks.sendPushToUser).not.toHaveBeenCalled()
+    expect(queued).toHaveLength(1)
+    await queued[0]()
+    expect(mocks.sendMobilePushToUsers).toHaveBeenCalledWith(['user-casey', 'user-ernest'], expect.objectContaining({
+      data: expect.objectContaining({ kind: 'inbound_email' }),
+    }))
+    expect(mocks.sendPushToUser).toHaveBeenCalledTimes(2)
   })
 
   it('de-dupes push recipients when the assigned agent is the owner', async () => {

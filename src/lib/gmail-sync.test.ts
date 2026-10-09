@@ -2,8 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   notifyInboundEmail: vi.fn(async () => undefined),
+  afterRequest: vi.fn((work: () => unknown) => {
+    void work()
+  }),
 }))
 vi.mock('@/lib/inbound-email-alert', () => ({ notifyInboundEmail: mocks.notifyInboundEmail }))
+vi.mock('@/lib/after-request', () => ({
+  afterRequest: (work: () => unknown) => mocks.afterRequest(work),
+}))
 
 import {
   backfillStoredThreadActivity,
@@ -406,6 +412,10 @@ describe('lead selection for a mailbox', () => {
 describe('inbound email push from live ingest', () => {
   beforeEach(() => {
     mocks.notifyInboundEmail.mockClear()
+    mocks.afterRequest.mockClear()
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      void work()
+    })
   })
 
   it('notifies once for a newly inserted inbound activity and not again on replay', async () => {
@@ -428,6 +438,41 @@ describe('inbound email push from live ingest', () => {
     await ingest()
     await ingest()
 
+    expect(mocks.notifyInboundEmail).toHaveBeenCalledTimes(1)
+    expect(mocks.notifyInboundEmail).toHaveBeenCalledWith({
+      leadId: 'seller-lead',
+      activityId: db.activities[0].id,
+      subject: 'Re: 44 Oak Ave',
+      snippet: 'Call me after 5.',
+    })
+    expect(mocks.afterRequest).toHaveBeenCalled()
+  })
+
+  it('schedules inbound email Web and Expo push with after() so ingest can return first', async () => {
+    const queued: Array<() => unknown> = []
+    mocks.afterRequest.mockImplementation((work: () => unknown) => {
+      queued.push(work)
+    })
+    const db = memoryDb()
+    const fetchImpl = vi.fn(async () => messageResponse({
+      From: 'Pat Seller <seller@example.com>',
+      To: 'ernest@savingkc.com',
+      Subject: 'Re: 44 Oak Ave',
+    }, 'Call me after 5.'))
+
+    await ingestGmailMessageStubs({
+      db: db as never,
+      accessToken: 'token',
+      userEmail: 'ernest@savingkc.com',
+      leads: [seller],
+      internalAddresses: crmUsers,
+      stubs: [{ id: 'seller-reply', threadId: 'thread-seller' }],
+      fetchImpl: fetchImpl as never,
+    })
+
+    expect(mocks.notifyInboundEmail).not.toHaveBeenCalled()
+    expect(queued).toHaveLength(1)
+    await queued[0]()
     expect(mocks.notifyInboundEmail).toHaveBeenCalledTimes(1)
     expect(mocks.notifyInboundEmail).toHaveBeenCalledWith({
       leadId: 'seller-lead',

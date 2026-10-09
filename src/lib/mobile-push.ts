@@ -1,7 +1,10 @@
+import { afterRequest } from '@/lib/after-request'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
+const EXPO_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts'
 const EXPO_BATCH_SIZE = 100
+export const EXPO_RECEIPT_DELAY_MS = 8_000
 
 export type MobilePushData = Record<string, string>
 
@@ -17,9 +20,21 @@ type MobilePushDevice = {
 }
 
 type ExpoPushTicket = {
+  id?: string
   status?: string
   message?: string
   details?: { error?: string }
+}
+
+type ExpoPushReceipt = {
+  status?: string
+  message?: string
+  details?: { error?: string }
+}
+
+type PendingExpoReceipt = {
+  id: string
+  token: string
 }
 
 function expoAccessToken(): string | undefined {
@@ -31,6 +46,13 @@ function expoAccessToken(): string | undefined {
 export function isMobilePushConfigured(): boolean {
   const enabled = (process.env.MOBILE_PUSH_ENABLED || '').trim().toLowerCase() === 'true'
   return enabled || Boolean(expoAccessToken())
+}
+
+export function maskExpoPushToken(token: string): string {
+  const match = /^(ExponentPushToken|ExpoPushToken)\[(.{0,4}).*([A-Za-z0-9_-]{4})\]$/.exec(token)
+  if (match) return `${match[1]}[${match[2]}…${match[3]}]`
+  if (token.length <= 8) return '••••'
+  return `${token.slice(0, 4)}…${token.slice(-4)}`
 }
 
 function uniqueUserIds(userIds: readonly string[]): string[] {
@@ -53,9 +75,29 @@ function chunks<T>(items: T[], size: number): T[][] {
   return batches
 }
 
-function ticketError(ticket: ExpoPushTicket | undefined): string | undefined {
+function expoHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  }
+  const accessToken = expoAccessToken()
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+  return headers
+}
+
+function ticketError(ticket: ExpoPushTicket | ExpoPushReceipt | undefined): string | undefined {
   if (!ticket || ticket.status !== 'error') return undefined
   return ticket.details?.error
+}
+
+function logExpoTicket(ticket: ExpoPushTicket | undefined, token: string): void {
+  console.log('[mobile-push] ticket', {
+    id: ticket?.id ?? null,
+    status: ticket?.status ?? null,
+    error: ticket?.details?.error ?? null,
+    message: ticket?.message ?? null,
+    token: maskExpoPushToken(token),
+  })
 }
 
 async function removeUnregisteredTokens(tokens: string[]): Promise<void> {
@@ -67,19 +109,59 @@ async function removeUnregisteredTokens(tokens: string[]): Promise<void> {
   if (error) console.error('[mobile-push] failed to remove DeviceNotRegistered tokens:', error.message)
 }
 
+async function fetchExpoReceipts(ids: string[]): Promise<Record<string, ExpoPushReceipt>> {
+  const response = await fetch(EXPO_RECEIPTS_URL, {
+    method: 'POST',
+    headers: expoHeaders(),
+    body: JSON.stringify({ ids }),
+  })
+  if (!response.ok) {
+    console.error('[mobile-push] Expo receipts HTTP', response.status)
+    return {}
+  }
+  const payload = await response.json().catch(() => null) as { data?: Record<string, ExpoPushReceipt> } | null
+  return payload?.data && typeof payload.data === 'object' ? payload.data : {}
+}
+
+export async function checkExpoReceipts(pending: PendingExpoReceipt[]): Promise<void> {
+  const ids = [...new Set(pending.map((item) => item.id).filter(Boolean))]
+  if (ids.length === 0) return
+  try {
+    const receipts = await fetchExpoReceipts(ids)
+    const unregistered: string[] = []
+    for (const item of pending) {
+      const receipt = receipts[item.id]
+      console.log('[mobile-push] receipt', {
+        id: item.id,
+        status: receipt?.status ?? null,
+        error: receipt?.details?.error ?? null,
+        message: receipt?.message ?? null,
+        token: maskExpoPushToken(item.token),
+      })
+      if (ticketError(receipt) === 'DeviceNotRegistered') unregistered.push(item.token)
+    }
+    await removeUnregisteredTokens([...new Set(unregistered)])
+  } catch (error) {
+    console.error('[mobile-push] receipt check failed:', error)
+  }
+}
+
+function scheduleExpoReceiptCheck(pending: PendingExpoReceipt[]): void {
+  if (pending.length === 0) return
+  afterRequest(async () => {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, EXPO_RECEIPT_DELAY_MS)
+    })
+    await checkExpoReceipts(pending)
+  })
+}
+
 async function postExpoBatch(
   messages: Array<{ to: string; title: string; body: string; data: MobilePushData }>,
 ): Promise<{ sent: number; unregistered: string[] }> {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  }
-  const accessToken = expoAccessToken()
-  if (accessToken) headers.Authorization = `Bearer ${accessToken}`
-
   const response = await fetch(EXPO_PUSH_URL, {
     method: 'POST',
-    headers,
+    headers: expoHeaders(),
     body: JSON.stringify(messages),
   })
   if (!response.ok) {
@@ -90,15 +172,19 @@ async function postExpoBatch(
   const payload = await response.json().catch(() => null) as { data?: ExpoPushTicket | ExpoPushTicket[] } | null
   const tickets = Array.isArray(payload?.data) ? payload.data : payload?.data ? [payload.data] : []
   const unregistered: string[] = []
+  const pendingReceipts: PendingExpoReceipt[] = []
   let sent = 0
   messages.forEach((message, index) => {
     const ticket = tickets[index]
+    logExpoTicket(ticket, message.to)
     if (ticket?.status === 'ok') {
       sent += 1
+      if (ticket.id) pendingReceipts.push({ id: ticket.id, token: message.to })
       return
     }
     if (ticketError(ticket) === 'DeviceNotRegistered') unregistered.push(message.to)
   })
+  scheduleExpoReceiptCheck(pendingReceipts)
   return { sent, unregistered }
 }
 
