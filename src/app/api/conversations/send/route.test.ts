@@ -431,6 +431,7 @@ describe('conversation sends', () => {
       success: false,
       sent: null,
       code: 'gmail_result_ambiguous',
+      deliveryState: 'delivery_unknown',
     })
     expect(mocks.sendConnectedGmail).toHaveBeenCalledOnce()
     expect(mocks.resendSend).not.toHaveBeenCalled()

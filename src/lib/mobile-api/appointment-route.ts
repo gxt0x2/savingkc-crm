@@ -20,7 +20,7 @@ export function mobileAppointmentErrorResponse(error: unknown) {
   if (error instanceof AppointmentCommandError) {
     const status = error.code === 'invalid' ? 400
       : error.code === 'not_found' ? 404
-        : error.code === 'conflict' || error.code === 'calendar_grant' ? 409
+        : error.code === 'conflict' ? 409
           : 503
     return NextResponse.json({ error: error.message }, { status, headers: mobileNoStoreHeaders() })
   }
