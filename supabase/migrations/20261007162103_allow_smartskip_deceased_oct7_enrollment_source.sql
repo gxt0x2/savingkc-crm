@@ -1,0 +1,2 @@
+ALTER TABLE public.prospecting_campaign_members DROP CONSTRAINT prospecting_campaign_members_enrollment_source_check;
+ALTER TABLE public.prospecting_campaign_members ADD CONSTRAINT prospecting_campaign_members_enrollment_source_check CHECK (enrollment_source = ANY (ARRAY['crm_lead'::text, 'county_saved_view'::text, 'smartskip_124_2026-08-30'::text, 'smartskip_12_coowners_2026-08-30'::text, 'smartskip_deceased_oct7'::text]));
