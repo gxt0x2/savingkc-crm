@@ -21,7 +21,7 @@ describe('mobile device registration', () => {
   it('uses verified subject, unique-token upsert, and distinguishes registration from delivery', async () => {
     const response = await POST(request({ token: TOKEN, platform: 'ios', userId: 'someone-else' }))
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true, registered: true, deliveryConfigured: false })
+    expect(await response.json()).toEqual({ ok: true, registered: true, deliveryConfigured: true })
     expect(mocks.upsert).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'verified-user', token: TOKEN }), { onConflict: 'project_id,token' })
     expect(response.headers.get('Cache-Control')).toContain('no-store')
   })

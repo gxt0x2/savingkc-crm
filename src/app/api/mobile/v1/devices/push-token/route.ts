@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'project_id,token' })
     if (error) return json({ error: 'Device registration could not be saved. Retry when available.' }, 503)
-    // Registration is not remote delivery or Twilio VoIP credential readiness.
-    return json({ ok: true, registered: true, deliveryConfigured: false })
+    // Expo remote delivery is configured; this is not Twilio VoIP credential readiness.
+    return json({ ok: true, registered: true, deliveryConfigured: true })
   } catch (error) {
     return json({ error: error instanceof MobileAuthError ? error.message : 'Device registration is temporarily unavailable' }, error instanceof MobileAuthError ? error.status : 503)
   }
