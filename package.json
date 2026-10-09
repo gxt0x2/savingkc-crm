@@ -119,6 +119,7 @@
     "brace-expansion@>=4": "5.0.12",
     "postcss": "8.5.24",
     "sharp": "0.35.5",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@next/eslint-plugin-next": {
       "fast-glob": "$fast-glob"
     }
