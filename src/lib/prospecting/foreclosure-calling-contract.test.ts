@@ -14,6 +14,6 @@ describe('foreclosure calling reuse', () => {
     expect(floor).toContain("params.get('prospect_ids')")
     expect(floor).toContain("kind: 'prospect'")
     expect(shell).toContain("searchParams.get('prospect_ids')")
-    expect(sections).toContain("label: 'Foreclosure', href: '/prospecting/foreclosure'")
+    expect(sections).toContain("label: 'Filings', href: '/prospecting/foreclosure'")
   })
 })

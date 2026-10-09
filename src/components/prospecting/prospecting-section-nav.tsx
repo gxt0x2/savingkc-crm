@@ -9,7 +9,7 @@ export function ProspectingSectionNav({ current }: { current: 'campaigns' | 'rep
     <nav aria-label="Prospecting sections" className="flex flex-wrap items-center gap-2 text-sm">
       <Link href="/prospecting" aria-current={current === 'campaigns' ? 'page' : undefined} className={linkClass(current === 'campaigns')}>Campaigns</Link>
       <span aria-hidden="true" className="text-[var(--crm-text-dim)]">|</span>
-      <Link href="/prospecting/foreclosure" aria-current={current === 'foreclosure' ? 'page' : undefined} className={linkClass(current === 'foreclosure')}>Foreclosure</Link>
+      <Link href="/prospecting/foreclosure" aria-current={current === 'foreclosure' ? 'page' : undefined} className={linkClass(current === 'foreclosure')}>Filings</Link>
       <span aria-hidden="true" className="text-[var(--crm-text-dim)]">|</span>
       <Link href="/prospecting/excess-proceeds" aria-current={current === 'excess-proceeds' ? 'page' : undefined} className={linkClass(current === 'excess-proceeds')}>Excess proceeds</Link>
       <span aria-hidden="true" className="text-[var(--crm-text-dim)]">|</span>

@@ -312,14 +312,14 @@ export function ForeclosureDetail({ id }: { id: string }) {
   const mapsHref = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`
 
   return <>
-    <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Foreclosure</h1>} />
+    <WorkspaceChrome commandBar={<h1 className="truncate text-xl font-black text-[var(--crm-ink)]">Filings</h1>} />
     <main className="fc-mobile min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
       <div className="mx-auto max-w-[90rem] space-y-3">
         <ProspectingSectionNav current="foreclosure" />
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-4 py-3 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
         {!prospect ? <p className="text-sm text-[var(--fc-text-secondary)]">Loading foreclosure prospect…</p> : <article className="space-y-3">
-          <p className="fc-crumb"><Link href="/prospecting/foreclosure">Foreclosure</Link> <span aria-hidden="true">›</span> Details</p>
+          <p className="fc-crumb"><Link href="/prospecting/foreclosure">Filings</Link> <span aria-hidden="true">›</span> Details</p>
           <header className="fc-hero">
             <div>
               <h2>{heroTitle}</h2>
