@@ -4,6 +4,17 @@ import { sendMobilePushToAgentNames } from '@/lib/mobile-push'
 import { sendPushToAgentNames } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
+
+const afterMocks = vi.hoisted(() => ({
+  afterRequest: vi.fn((work: () => unknown) => {
+    void work()
+  }),
+}))
+
+vi.mock('@/lib/after-request', () => ({
+  afterRequest: (work: () => unknown) => afterMocks.afterRequest(work),
+}))
+
 import { sendTeamLeadAlert } from './lead-team-alerts'
 
 vi.mock('@/lib/lead-alert-routing', () => ({
@@ -31,6 +42,9 @@ vi.mock('@/lib/supabase-lazy', () => ({
 describe('sendTeamLeadAlert', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    afterMocks.afterRequest.mockImplementation((work: () => unknown) => {
+      void work()
+    })
     process.env.TWILIO_PHONE_NUMBER = '+18163077835'
   })
 
@@ -178,5 +192,41 @@ describe('sendTeamLeadAlert', () => {
         eventId: 'vm_RE999',
       },
     })
+  })
+
+  it('schedules Web and Expo push with after() so the caller can return first', async () => {
+    const queued: Array<() => unknown> = []
+    afterMocks.afterRequest.mockImplementation((work: () => unknown) => {
+      queued.push(work)
+    })
+    vi.mocked(getLeadAlertRecipients).mockReturnValue([
+      { name: 'Ernest', phone: '+18160000001', schedule: '24_7' },
+    ])
+    vi.mocked(sendMobilePushToAgentNames).mockResolvedValue(1)
+    vi.mocked(safeSendSMS).mockResolvedValue({ success: true, sid: 'sid-0001', body: 'Missed', from: '+18163077835', to: '+18160000001' })
+    vi.mocked(supabase.from).mockReturnValue({ insert: vi.fn(async () => ({ error: null })) } as never)
+
+    await sendTeamLeadAlert({
+      leadId: 'lead-123',
+      smsBody: 'Missed call',
+      trigger: 'known_missed_call_alert',
+      source: 'inbound_call',
+      push: {
+        title: 'Missed Call - Hot Lead',
+        body: 'Pat called and got no answer.',
+        url: '/leads/lead-123',
+        tag: 'missed-call',
+      },
+      metadata: { callSid: 'CA123', from: '+19137179716' },
+    })
+
+    expect(sendPushToAgentNames).not.toHaveBeenCalled()
+    expect(sendMobilePushToAgentNames).not.toHaveBeenCalled()
+    expect(queued).toHaveLength(1)
+    await queued[0]()
+    expect(sendPushToAgentNames).toHaveBeenCalledWith(['Ernest'], expect.objectContaining({ tag: 'missed-call' }))
+    expect(sendMobilePushToAgentNames).toHaveBeenCalledWith(['Ernest'], expect.objectContaining({
+      data: expect.objectContaining({ kind: 'missed_call', eventId: 'call_CA123' }),
+    }))
   })
 })
