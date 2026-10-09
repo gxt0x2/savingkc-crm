@@ -1,3 +1,4 @@
+import { afterRequest } from '@/lib/after-request'
 import { startLeadFormAgentCallback } from '@/lib/lead-form-callback'
 import { getLeadAlertRecipients, type LeadAlertRecipient } from '@/lib/lead-alert-routing'
 import { sendMobilePushToAgentNames } from '@/lib/mobile-push'
@@ -136,15 +137,18 @@ export async function sendTeamLeadAlert(input: TeamLeadAlertInput): Promise<Team
 
   if (input.push && recipients.length > 0) {
     const names = recipients.map((recipient) => recipient.name)
-    sendPushToAgentNames(names, input.push).catch((error) => {
-      console.error('[lead-team-alerts] push notification failed:', error)
-    })
+    const webPush = input.push
     const mobile = teamAlertMobilePush(input, names)
-    if (mobile) {
-      sendMobilePushToAgentNames(names, mobile).catch((error) => {
-        console.error('[lead-team-alerts] mobile push notification failed:', error)
-      })
-    }
+    afterRequest(() => Promise.all([
+      sendPushToAgentNames(names, webPush).catch((error) => {
+        console.error('[lead-team-alerts] push notification failed:', error)
+      }),
+      mobile
+        ? sendMobilePushToAgentNames(names, mobile).catch((error) => {
+          console.error('[lead-team-alerts] mobile push notification failed:', error)
+        })
+        : Promise.resolve(),
+    ]))
   }
 
   const callback = input.callback && input.leadId && input.callback.leadPhone && input.callback.callerId

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { afterRequest } from '@/lib/after-request'
 import { notifyInboundEmail } from '@/lib/inbound-email-alert'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { markOAuthConnected, persistOAuthHealth, readOAuthHealth } from '@/lib/oauth-health'
@@ -514,7 +515,7 @@ export async function ingestGmailMessageStubs(input: {
   }
 
   if (inboundAlerts.length) {
-    await Promise.allSettled(inboundAlerts.map((alert) => notifyInboundEmail(alert)))
+    afterRequest(() => Promise.allSettled(inboundAlerts.map((alert) => notifyInboundEmail(alert))))
   }
 
   return { scanned: stubs.length, matched, inserted }
