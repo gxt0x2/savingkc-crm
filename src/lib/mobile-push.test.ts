@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ from: mocks.from }) }))
 
-import { sendMobilePushToAgentNames, sendMobilePushToUsers } from '@/lib/mobile-push'
+import { isMobilePushConfigured, sendMobilePushToAgentNames, sendMobilePushToUsers } from '@/lib/mobile-push'
 
 const TOKEN_A = 'ExponentPushToken[deviceA123456]'
 const TOKEN_B = 'ExponentPushToken[deviceB123456]'
@@ -39,6 +39,7 @@ describe('sendMobilePushToUsers', () => {
     vi.clearAllMocks()
     deleted.length = 0
     vi.unstubAllEnvs()
+    vi.stubEnv('MOBILE_PUSH_ENABLED', 'true')
     vi.stubGlobal('fetch', fetchImpl)
     fetchImpl.mockResolvedValue({
       ok: true,
@@ -218,5 +219,34 @@ describe('sendMobilePushToUsers', () => {
   it('returns 0 without contacting Expo when no agent names are given', async () => {
     await expect(sendMobilePushToAgentNames([], { title: 'Title', body: 'Body' })).resolves.toBe(0)
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('does not contact Expo when dispatch is not configured', async () => {
+    vi.stubEnv('MOBILE_PUSH_ENABLED', '')
+    vi.stubEnv('EXPO_ACCESS_TOKEN', '')
+    await expect(sendMobilePushToUsers(['user-ernest'], { title: 'Title', body: 'Body' })).resolves.toBe(0)
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(mocks.from).not.toHaveBeenCalled()
+  })
+})
+
+describe('isMobilePushConfigured', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('is false until MOBILE_PUSH_ENABLED or EXPO_ACCESS_TOKEN is set', () => {
+    vi.stubEnv('MOBILE_PUSH_ENABLED', '')
+    vi.stubEnv('EXPO_ACCESS_TOKEN', '')
+    expect(isMobilePushConfigured()).toBe(false)
+  })
+
+  it('is true when MOBILE_PUSH_ENABLED=true or EXPO_ACCESS_TOKEN is present', () => {
+    vi.stubEnv('MOBILE_PUSH_ENABLED', 'true')
+    vi.stubEnv('EXPO_ACCESS_TOKEN', '')
+    expect(isMobilePushConfigured()).toBe(true)
+    vi.stubEnv('MOBILE_PUSH_ENABLED', '')
+    vi.stubEnv('EXPO_ACCESS_TOKEN', 'expo-secret')
+    expect(isMobilePushConfigured()).toBe(true)
   })
 })

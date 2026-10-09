@@ -27,6 +27,12 @@ function expoAccessToken(): string | undefined {
   return token || undefined
 }
 
+/** True only when the Expo send path is explicitly enabled. Fail-closed by default. */
+export function isMobilePushConfigured(): boolean {
+  const enabled = (process.env.MOBILE_PUSH_ENABLED || '').trim().toLowerCase() === 'true'
+  return enabled || Boolean(expoAccessToken())
+}
+
 function uniqueUserIds(userIds: readonly string[]): string[] {
   const seen = new Set<string>()
   const ids: string[] = []
@@ -156,6 +162,7 @@ export async function sendMobilePushToUsers(
   payload: MobilePushPayload,
 ): Promise<number> {
   try {
+    if (!isMobilePushConfigured()) return 0
     const ids = uniqueUserIds(userIds)
     if (ids.length === 0) return 0
 
