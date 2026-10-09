@@ -46,6 +46,16 @@ This exception:
 - Route integrity passed after the build.
 - Production dependency audit returned zero findings.
 
+## 2026-10-09 restoration
+
+`gate:security` is `npm audit --audit-level=high` again. The Oct 8 temporary allowlist (`check-root-audit.mjs` plus dated GHSA exceptions) is removed after landing:
+
+- `sharp` `0.35.5` (GHSA-wq5f-xc86-pv6w)
+- `@modelcontextprotocol/sdk` `1.32.1` (GHSA-6qxp-vccf-f47h; Dependabot #748 only reached 1.31.0)
+- `shell-quote` `1.12.0` in `apps/mobile` (GHSA-pqg4-j6r4-53mv)
+
+Critical mobile advisories cannot be exempted. The remaining mobile exception is the dated high-severity `node-forge` Expo 56 issue only.
+
 ## Known baseline gates
 
 - Full-repository lint currently fails on pre-existing legacy errors across application code and scripts. The dependency upgrade did not attempt to rewrite those unrelated files.
