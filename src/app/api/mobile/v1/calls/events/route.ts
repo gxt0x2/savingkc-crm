@@ -1,7 +1,11 @@
 import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
-import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
-import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
+import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse, requireMobileUser } from '@/lib/mobile-api/auth'
+import {
+  MobileLeadAccessError,
+  requireAuthorizedMobileLead,
+  resolveMobileScopedActor,
+} from '@/lib/mobile-api/authorized-lead'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -38,14 +42,27 @@ export async function POST(req: NextRequest) {
     const phone = cleanPhone(body.phone)
     const event = body.event === 'ended' ? 'ended' : body.event === 'started' ? 'started' : null
 
-    if (!leadId || !phone || !event) {
+    if (!phone || !event) {
       return NextResponse.json(
-        { error: 'leadId, phone, and event are required' },
+        { error: 'phone and event are required' },
         { status: 400, headers: mobileNoStoreHeaders() },
       )
     }
-    // Leadless manual dials are handled by call intents, not by this activity
-    // write. Never let a bearer token attach a call to someone else's lead.
+    // An ad-hoc dial has no lead. Do not invent one and do not attach the
+    // call to whoever happens to share the number.
+    if (!leadId) {
+      const { user } = await requireMobileUser(req)
+      const email = user.email?.trim().toLowerCase()
+      if (!email) throw new MobileAuthError('Authenticated user has no email')
+      if (!await resolveMobileScopedActor(email)) throw new MobileLeadAccessError('CRM profile not authorized', 403)
+      return NextResponse.json({
+        ok: true,
+        activityId: null,
+        skipped: true,
+        message: 'No lead is attached to this number, so this call was not written to a seller record.',
+      }, { headers: mobileNoStoreHeaders() })
+    }
+    // Never let a bearer token attach a call to someone else's lead.
     const { actor, user } = await requireAuthorizedMobileLead(req, leadId)
 
     const duration = Math.max(0, Math.round(Number(body.durationSeconds || 0)))

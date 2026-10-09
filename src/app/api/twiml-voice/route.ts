@@ -91,10 +91,17 @@ function inboundClientStatusCallback(): string {
   return new URL('/api/twilio-inbound-client-status', BASE_URL).toString()
 }
 
-function outboundStatusCallback(identity: string, clientAttemptId: string | null): string {
+function outboundStatusCallback(
+  identity: string,
+  clientAttemptId: string | null,
+  source: string | null,
+): string {
   const callback = new URL('/api/twilio-call-status', BASE_URL)
   callback.searchParams.set('identity', identity)
   if (clientAttemptId) callback.searchParams.set('clientAttemptId', clientAttemptId)
+  // source lets a later hangup tell a mobile leg from a web dialer leg that
+  // shares the same Twilio client identity.
+  if (source) callback.searchParams.set('source', source)
   return callback.toString().replaceAll('&', '&amp;')
 }
 
@@ -295,6 +302,21 @@ export async function POST(req: Request) {
             prospectPhoneId,
           }), outboundContext)
         }
+
+        // The phone sends its own attempt id. It has to be the one inside the
+        // signed intent. A different id must not be written onto this call.
+        const suppliedAttemptId = getFormString(body, ['ClientAttemptId', 'clientAttemptId', 'client_attempt_id'])
+        if (suppliedAttemptId && suppliedAttemptId !== clientAttemptId) {
+          return blockOutboundCall(blockedDecision({
+            reason: 'destination_mismatch',
+            reasonSource: 'intent.attempt_mismatch',
+            message: 'The approved call does not match this dial attempt.',
+            normalizedPhone: sanitizedTo,
+            leadId,
+            prospectId,
+            prospectPhoneId,
+          }), outboundContext)
+        }
       }
 
       const policyInput: OutboundDialerCallInput = {
@@ -330,7 +352,7 @@ export async function POST(req: Request) {
         return blockOutboundCall(decision, policyInput)
       }
 
-      const statusCallback = outboundStatusCallback(identity, clientAttemptId)
+      const statusCallback = outboundStatusCallback(identity, clientAttemptId, source)
       const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
       // Manual calls need time for a person (or their voicemail) to answer.
       // Keep explicit campaign ring counts and the legacy fallback intact.

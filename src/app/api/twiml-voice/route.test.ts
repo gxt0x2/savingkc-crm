@@ -268,7 +268,7 @@ describe('TwiML request containment', () => {
     expect(text).toContain('answerOnBridge="true" ringTone="us"')
     expect(text).toContain('timeout="60"')
     expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
-    expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1"')
+    expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
   })
 
   it('preserves an explicit ring count on a signed manual call', async () => {
@@ -374,6 +374,33 @@ describe('TwiML request containment', () => {
     expectBlockedTwiml(text)
     expect(mocks.verifyDialerCallIntent).toHaveBeenCalledWith(null)
     expect(mocks.evaluateOutboundDialerCall).not.toHaveBeenCalled()
+  })
+
+  it('blocks a ClientAttemptId that is not the signed attempt', async () => {
+    mocks.verifyDialerCallIntent.mockReturnValue({ valid: true, claims: validLeadClaims })
+    const { text } = await responseText(outboundRequest({
+      DialIntentToken: 'signed-intent',
+      ClientAttemptId: 'some-other-attempt',
+    }))
+    expectBlockedTwiml(text)
+    expect(mocks.evaluateOutboundDialerCall).not.toHaveBeenCalled()
+    expect(mocks.recordBlockedDialerCall).toHaveBeenCalledWith(
+      expect.objectContaining({ clientAttemptId: 'attempt-1' }),
+      expect.objectContaining({ reasonSource: 'intent.attempt_mismatch' }),
+    )
+  })
+
+  it('keeps a matching ClientAttemptId on the mobile status callback', async () => {
+    mocks.verifyDialerCallIntent.mockReturnValue({
+      valid: true,
+      claims: { ...validLeadClaims, source: 'mobile_lead', surface: 'crm' },
+    })
+    const { text } = await responseText(outboundRequest({
+      DialIntentToken: 'signed-intent',
+      ClientAttemptId: 'attempt-1',
+    }))
+    expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1&amp;source=mobile_lead"')
+    expect(mocks.evaluateOutboundDialerCall).toHaveBeenCalled()
   })
 
   it.each([
