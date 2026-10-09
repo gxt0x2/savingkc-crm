@@ -603,6 +603,8 @@ export function ProspectingCallingFloor({ readOnlyPreview = false, previewCampai
           onEndSession={() => { void stopSession() }}
           onMarkDead={() => { setMarkDeadReason(''); setMarkDeadNotes(''); setMarkDeadError(null); setShowMarkDead(true) }}
           onSkip={() => { void skipCurrentLead() }}
+          onPreviousProspect={readOnlyPreview ? back : undefined}
+          onNextProspect={readOnlyPreview ? () => advance(false) : undefined}
         />
 
         <div className="p-3 lg:min-h-0 lg:flex-1">
