@@ -73,6 +73,10 @@ const vulnerabilities = report.vulnerabilities ?? {}
 const observed = new Set()
 
 for (const [name, vulnerability] of Object.entries(vulnerabilities)) {
+  if (vulnerability.severity === 'critical') {
+    fail(`Critical mobile vulnerability is never exempted: ${name}`)
+    continue
+  }
   if (!['high', 'critical'].includes(vulnerability.severity)) continue
   const advisories = collectAdvisories(name, vulnerabilities)
   if (advisories.size === 0) fail(`High mobile vulnerability has no traceable advisory: ${name}`)

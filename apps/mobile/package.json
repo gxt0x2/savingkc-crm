@@ -47,7 +47,8 @@
     },
     "metro-file-map": {
       "micromatch": "$micromatch"
-    }
+    },
+    "shell-quote": "1.12.0"
   },
   "private": true
 }
