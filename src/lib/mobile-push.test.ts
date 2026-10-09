@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ from: mocks.from }) }))
 
-import { sendMobilePushToUsers } from '@/lib/mobile-push'
+import { sendMobilePushToAgentNames, sendMobilePushToUsers } from '@/lib/mobile-push'
 
 const TOKEN_A = 'ExponentPushToken[deviceA123456]'
 const TOKEN_B = 'ExponentPushToken[deviceB123456]'
@@ -165,5 +165,58 @@ describe('sendMobilePushToUsers', () => {
     await expect(sendMobilePushToUsers(['user-ernest'], { title: 'Title', body: 'Body' })).resolves.toBe(0)
     expect(errors).toHaveBeenCalled()
     errors.mockRestore()
+  })
+
+  it('resolves agent names to user ids before sending', async () => {
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'agent_profiles') {
+        return {
+          select: vi.fn().mockReturnValue({
+            in: vi.fn().mockResolvedValue({
+              data: [
+                { user_id: 'user-ernest', email: 'ernest@savingkc.com' },
+                { user_id: 'user-casey', email: 'casey@savingkc.com' },
+              ],
+              error: null,
+            }),
+          }),
+        }
+      }
+      if (table !== 'mobile_push_devices') throw new Error(`unexpected table:${table}`)
+      return {
+        ...devicesQuery({
+          data: [{ token: TOKEN_A, user_id: 'user-ernest' }],
+          error: null,
+        }),
+        ...deleteQuery((tokens) => deleted.push(...tokens)),
+      }
+    })
+
+    await sendMobilePushToAgentNames(['Ernest', 'Casey'], {
+      title: 'Lead Texted',
+      body: 'Please call me',
+      data: {
+        href: '/conversation/lead-123',
+        kind: 'inbound_sms',
+        leadId: 'lead-123',
+        eventId: 'sms_SM123',
+      },
+    })
+
+    expect(JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body))).toEqual([
+      expect.objectContaining({
+        to: TOKEN_A,
+        data: expect.objectContaining({
+          kind: 'inbound_sms',
+          eventId: 'sms_SM123',
+          recipientUserId: 'user-ernest',
+        }),
+      }),
+    ])
+  })
+
+  it('returns 0 without contacting Expo when no agent names are given', async () => {
+    await expect(sendMobilePushToAgentNames([], { title: 'Title', body: 'Body' })).resolves.toBe(0)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })

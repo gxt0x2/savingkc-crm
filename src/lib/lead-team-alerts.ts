@@ -1,5 +1,6 @@
 import { startLeadFormAgentCallback } from '@/lib/lead-form-callback'
 import { getLeadAlertRecipients, type LeadAlertRecipient } from '@/lib/lead-alert-routing'
+import { sendMobilePushToAgentNames } from '@/lib/mobile-push'
 import { sendPushToAgentNames } from '@/lib/push-notifications'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
@@ -47,8 +48,49 @@ export type TeamLeadAlertResult = {
   callback: Awaited<ReturnType<typeof startLeadFormAgentCallback>> | null
 }
 
+type MobileAlertKind = 'inbound_sms' | 'missed_call' | 'voicemail'
+
 function smsFrom(): string {
   return process.env.TWILIO_PHONE_NUMBER || DEFAULT_SMS_FROM
+}
+
+function metaSid(metadata: Record<string, unknown> | undefined, keys: string[]): string {
+  for (const key of keys) {
+    const value = metadata?.[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+function teamAlertMobileKind(trigger: string): MobileAlertKind | null {
+  const value = trigger.toLowerCase()
+  if (value.includes('voicemail')) return 'voicemail'
+  if (value.includes('missed_call')) return 'missed_call'
+  if (value.includes('sms')) return 'inbound_sms'
+  return null
+}
+
+function teamAlertEventId(kind: MobileAlertKind, metadata: Record<string, unknown> | undefined, fallback: string): string {
+  if (kind === 'inbound_sms') return `sms_${metaSid(metadata, ['messageSid', 'message_sid']) || fallback}`
+  if (kind === 'voicemail') return `vm_${metaSid(metadata, ['recordingSid', 'callSid']) || fallback}`
+  return `call_${metaSid(metadata, ['callSid']) || fallback}`
+}
+
+function teamAlertMobilePush(input: TeamLeadAlertInput, names: Array<LeadAlertRecipient['name']>) {
+  if (!input.push || names.length === 0) return null
+  const kind = teamAlertMobileKind(input.trigger)
+  if (!kind) return null
+  const leadId = input.leadId || ''
+  return {
+    title: input.push.title,
+    body: input.push.body,
+    data: {
+      href: leadId ? `/conversation/${leadId}` : '/conversations',
+      kind,
+      leadId,
+      eventId: teamAlertEventId(kind, input.metadata, input.push.tag),
+    },
+  }
 }
 
 function deliveryStatus(
@@ -93,9 +135,16 @@ export async function sendTeamLeadAlert(input: TeamLeadAlertInput): Promise<Team
     : []
 
   if (input.push && recipients.length > 0) {
-    sendPushToAgentNames(recipients.map((recipient) => recipient.name), input.push).catch((error) => {
+    const names = recipients.map((recipient) => recipient.name)
+    sendPushToAgentNames(names, input.push).catch((error) => {
       console.error('[lead-team-alerts] push notification failed:', error)
     })
+    const mobile = teamAlertMobilePush(input, names)
+    if (mobile) {
+      sendMobilePushToAgentNames(names, mobile).catch((error) => {
+        console.error('[lead-team-alerts] mobile push notification failed:', error)
+      })
+    }
   }
 
   const callback = input.callback && input.leadId && input.callback.leadPhone && input.callback.callerId

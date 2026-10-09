@@ -96,6 +96,57 @@ async function postExpoBatch(
   return { sent, unregistered }
 }
 
+async function userIdsForAgentEmails(emails: readonly string[]): Promise<string[]> {
+  if (emails.length === 0) return []
+  const { data, error } = await supabaseAdmin()
+    .from('agent_profiles')
+    .select('user_id, email')
+    .in('email', emails)
+  if (error) {
+    console.error('[mobile-push] failed to resolve agent profiles:', error.message)
+    return []
+  }
+  const byEmail = new Map<string, string>()
+  for (const profile of (data || []) as Array<{ user_id: string | null; email: string | null }>) {
+    const userId = typeof profile.user_id === 'string' ? profile.user_id.trim() : ''
+    const email = typeof profile.email === 'string' ? profile.email.trim().toLowerCase() : ''
+    if (!userId || !email || byEmail.has(email)) continue
+    byEmail.set(email, userId)
+  }
+  const seen = new Set<string>()
+  const userIds: string[] = []
+  for (const email of emails) {
+    const userId = byEmail.get(email)
+    if (!userId || seen.has(userId)) continue
+    seen.add(userId)
+    userIds.push(userId)
+  }
+  return userIds
+}
+
+/**
+ * Resolve Ernest/Casey-style agent names to user ids and send Expo push.
+ * Fail-closed: callers never see thrown errors.
+ */
+export async function sendMobilePushToAgentNames(
+  agentNames: readonly string[],
+  payload: MobilePushPayload,
+): Promise<number> {
+  try {
+    const emails = [...new Set(
+      agentNames
+        .map((name) => name.trim().split(/\s+/)[0]?.toLowerCase())
+        .filter((name): name is string => Boolean(name))
+        .map((name) => `${name}@savingkc.com`),
+    )]
+    if (emails.length === 0) return 0
+    return sendMobilePushToUsers(await userIdsForAgentEmails(emails), payload)
+  } catch (error) {
+    console.error('[mobile-push] agent name send failed:', error)
+    return 0
+  }
+}
+
 /**
  * Send an Expo push to every registered device for the given users.
  * Fail-closed: callers never see thrown errors.
