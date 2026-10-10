@@ -459,7 +459,7 @@ export async function ingestGmailMessageStubs(input: {
 
   let matched = 0
   let inserted = 0
-  const inboundAlerts: Array<{ leadId: string; activityId: string; subject: string; snippet: string }> = []
+  const inboundAlerts: Array<{ leadId: string; activityId: string; subject: string; snippet: string; bodyText?: string }> = []
 
   for (const stub of stubs) {
     const msgRes = await fetchImpl(
@@ -520,6 +520,7 @@ export async function ingestGmailMessageStubs(input: {
         activityId: recorded.id,
         subject,
         snippet,
+        ...(message.bodyText ? { bodyText: message.bodyText } : {}),
       })
     }
   }
