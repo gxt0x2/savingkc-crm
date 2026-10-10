@@ -670,6 +670,7 @@
       "status": "active",
       "routes": [],
       "apiRoutes": [
+        "/api/mobile/v1/calls/events",
         "/api/mobile/v1/calls/recent",
         "/api/mobile/v1/calls/[activityId]/recording",
         "/api/mobile/v1/leads/[id]/briefing",

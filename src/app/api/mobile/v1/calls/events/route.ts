@@ -1,11 +1,21 @@
 import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizeDisposition } from '@/lib/dialer-dispositions'
 import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse, requireMobileUser } from '@/lib/mobile-api/auth'
 import {
   MobileLeadAccessError,
   requireAuthorizedMobileLead,
   resolveMobileScopedActor,
 } from '@/lib/mobile-api/authorized-lead'
+import {
+  boundedCallNote,
+  boundedCallToken,
+  boundedClientCallId,
+  persistUnassignedMobileCall,
+  PhoneCallRecordError,
+  requireE164Phone,
+  suppressPhoneForVoiceDnc,
+} from '@/lib/mobile-api/phone-call-record'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -22,6 +32,7 @@ type CallEventBody = {
   durationSeconds?: number
   outcome?: 'connected' | 'missed' | 'voicemail' | 'bad_number' | 'busy' | 'unknown'
   disposition?: string
+  note?: string
   clientCallId?: string
 }
 
@@ -33,6 +44,10 @@ function cleanPhone(phone: unknown): string | null {
   return typeof phone === 'string' && phone.trim()
     ? phone.replace(/[^\d+]/g, '')
     : null
+}
+
+function isVoiceDnc(disposition: string | null): boolean {
+  return normalizeDisposition(disposition) === 'dnc'
 }
 
 export async function POST(req: NextRequest) {
@@ -48,25 +63,54 @@ export async function POST(req: NextRequest) {
         { status: 400, headers: mobileNoStoreHeaders() },
       )
     }
-    // An ad-hoc dial has no lead. Do not invent one and do not attach the
-    // call to whoever happens to share the number.
+
+    const outcome = boundedCallToken(body.outcome) || (event === 'ended' ? 'unknown' : null)
+    const disposition = boundedCallToken(body.disposition)
+    const note = boundedCallNote(body.note)
+    const clientCallId = boundedClientCallId(body.clientCallId)
+    const parsedDuration = Number(body.durationSeconds)
+    const duration = Number.isFinite(parsedDuration)
+      ? Math.min(86_400, Math.max(0, Math.round(parsedDuration)))
+      : 0
+    const dnc = isVoiceDnc(disposition)
+
+    // An ad-hoc dial has no lead. Save it for this agent only. Do not invent
+    // a lead, prospect, or seller, and do not attach the call to whoever
+    // happens to share the number.
     if (!leadId) {
       const { user } = await requireMobileUser(req)
       const email = user.email?.trim().toLowerCase()
       if (!email) throw new MobileAuthError('Authenticated user has no email')
-      if (!await resolveMobileScopedActor(email)) throw new MobileLeadAccessError('CRM profile not authorized', 403)
+      const actor = await resolveMobileScopedActor(email)
+      const agentName = actor?.fullName?.trim()
+      if (!actor || !agentName) throw new MobileLeadAccessError('CRM profile not authorized', 403)
+      const userId = typeof user.id === 'string' ? user.id.trim() : ''
+      if (!userId) throw new MobileAuthError('Authenticated user identity unavailable')
+      const e164 = requireE164Phone(phone)
+      if (dnc) await suppressPhoneForVoiceDnc(e164)
+      const saved = await persistUnassignedMobileCall(supabaseAdmin(), {
+        phone: e164,
+        event,
+        durationSeconds: duration,
+        outcome,
+        disposition,
+        note,
+        clientCallId,
+        userId,
+        userEmail: email,
+        agentName,
+      })
       return NextResponse.json({
         ok: true,
-        activityId: null,
-        skipped: true,
-        message: 'No lead is attached to this number, so this call was not written to a seller record.',
+        activityId: saved.id,
+        skipped: false,
       }, { headers: mobileNoStoreHeaders() })
     }
+
     // Never let a bearer token attach a call to someone else's lead.
     const { actor, user } = await requireAuthorizedMobileLead(req, leadId)
+    if (dnc) await suppressPhoneForVoiceDnc(requireE164Phone(phone))
 
-    const duration = Math.max(0, Math.round(Number(body.durationSeconds || 0)))
-    const outcome = body.outcome || (event === 'ended' ? 'unknown' : undefined)
     const description = event === 'started'
       ? `Mobile outbound call to ${formatPhone(phone)}`
       : `Mobile outbound call ended: ${outcome || 'unknown'}`
@@ -87,11 +131,12 @@ export async function POST(req: NextRequest) {
           event,
           status: event === 'started' ? 'initiated' : 'completed',
           outcome: outcome || null,
-          disposition: body.disposition || null,
+          disposition: disposition || null,
           duration,
-          clientCallId: body.clientCallId || null,
+          clientCallId: clientCallId || null,
           userId: user.id,
           userEmail: user.email || null,
+          ...(note ? { notes: note } : {}),
         },
       })
       .select('id')
@@ -105,8 +150,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, activityId: data?.id ?? null }, { headers: mobileNoStoreHeaders() })
   } catch (error) {
-    const status = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.status : 500
-    const message = error instanceof MobileAuthError || error instanceof MobileLeadAccessError ? error.message : 'Internal error'
+    const known = error instanceof MobileAuthError || error instanceof MobileLeadAccessError || error instanceof PhoneCallRecordError
+    const status = known ? error.status : 500
+    const message = known ? error.message : 'Internal error'
     return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }
 }

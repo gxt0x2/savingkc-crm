@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   dialerCallBlock,
   evaluateDialerCallPolicy,
+  isInternalVoiceDncReason,
   phoneLookupVariants,
   type DialerActivityPolicyFact,
   type DialerCallBlockReason,
@@ -293,18 +294,19 @@ async function evaluateOutboundDialerCallUnchecked(
       exactProspectPhonePromise,
       matchingRows<LeadRow>(db, 'leads', 'id, phone, station, classification, dead_reason', variants),
       matchingRows<ProspectPhoneRow>(db, 'prospect_phones', 'id, phone, prospect_id, phone_connected, last_disposition, prospects(lead_id)', variants),
-      input.surface === 'crm'
-        ? Promise.resolve([] as SuppressionRow[])
-        : (async () => {
-            const { data, error } = await db
-              .from('sms_opt_outs')
-              .select('phone, reason')
-              .in('phone', variants)
-              .eq('is_opted_out', true)
-              .limit(1000)
-            if (error) throw new Error('dialer policy suppression lookup failed')
-            return (data ?? []) as unknown as SuppressionRow[]
-          })(),
+      (async () => {
+        const { data, error } = await db
+          .from('sms_opt_outs')
+          .select('phone, reason')
+          .in('phone', variants)
+          .eq('is_opted_out', true)
+          .limit(1000)
+        if (error) throw new Error('dialer policy suppression lookup failed')
+        const rows = (data ?? []) as unknown as SuppressionRow[]
+        return input.surface === 'crm'
+          ? rows.filter((row) => isInternalVoiceDncReason(row.reason))
+          : rows
+      })(),
     ])
 
     if (exactLeadResult.error || exactProspectPhoneResult.error) throw new Error('dialer policy context lookup failed')
