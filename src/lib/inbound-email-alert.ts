@@ -12,6 +12,22 @@ export type InboundEmailAlert = {
   activityId: string
   subject: string
   snippet: string
+  bodyText?: string | null
+}
+
+const EMAIL_PUSH_BODY_CAP = 150
+
+function collapsed(value: string | null | undefined): string {
+  return (value || '').replace(/\s+/g, ' ').trim()
+}
+
+/** Preview line for an email push: the stored snippet, otherwise the start of the plain body. */
+export function inboundEmailPushBody(snippet: string | null | undefined, bodyText?: string | null): string {
+  const preview = collapsed(snippet)
+  if (preview) return preview.slice(0, EMAIL_PUSH_BODY_CAP)
+  const text = collapsed(bodyText)
+  if (text) return text.slice(0, EMAIL_PUSH_BODY_CAP)
+  return 'New email'
 }
 
 type LeadAlertRow = {
@@ -53,11 +69,8 @@ function alertTitle(lead: LeadAlertRow): string {
   return getDisplayLeadName(name, lead.phone)
 }
 
-function alertBody(subject: string, snippet: string): string {
-  const subjectText = subject.replace(/\s+/g, ' ').trim()
-  const snippetText = snippet.replace(/\s+/g, ' ').trim().slice(0, 120)
-  if (subjectText && snippetText) return `${subjectText} · ${snippetText}`.slice(0, 180)
-  return (subjectText || snippetText || 'New email').slice(0, 180)
+function alertSubtitle(subject: string): string {
+  return collapsed(subject)
 }
 
 async function loadLead(leadId: string): Promise<LeadAlertRow | null> {
@@ -110,7 +123,8 @@ export async function notifyInboundEmail(input: InboundEmailAlert): Promise<void
     if (userIds.length === 0) return
 
     const title = alertTitle(lead)
-    const body = alertBody(input.subject, input.snippet)
+    const subtitle = alertSubtitle(input.subject)
+    const body = inboundEmailPushBody(input.snippet, input.bodyText)
     const href = `/conversation/${input.leadId}`
     const eventId = `email_${input.activityId}`
     const data = {
@@ -121,7 +135,7 @@ export async function notifyInboundEmail(input: InboundEmailAlert): Promise<void
     }
 
     afterRequest(() => Promise.allSettled([
-      sendMobilePushToUsers(userIds, { title, body, data }),
+      sendMobilePushToUsers(userIds, { title, ...(subtitle ? { subtitle } : {}), body, data }),
       ...userIds.map((userId) => sendPushToUser(userId, { title, body, url: href, tag: eventId })),
     ]))
   } catch (error) {

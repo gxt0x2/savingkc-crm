@@ -130,6 +130,32 @@ describe('sendMobilePushToUsers', () => {
     ])
   })
 
+  it('forwards an email subtitle and leaves it off SMS payloads', async () => {
+    await sendMobilePushToUsers(['user-ernest'], {
+      title: 'Pat Seller',
+      subtitle: 'Request: Buyer Signing',
+      body: 'Hi The closing is Thursday.',
+      data: { href: '/conversation/lead-1', kind: 'inbound_email', leadId: 'lead-1', eventId: 'email_act-1' },
+    })
+    const emailMessage = JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body))[0]
+    expect(emailMessage).toMatchObject({
+      title: 'Pat Seller',
+      subtitle: 'Request: Buyer Signing',
+      body: 'Hi The closing is Thursday.',
+      data: { leadId: 'lead-1', eventId: 'email_act-1', kind: 'inbound_email' },
+    })
+
+    fetchImpl.mockClear()
+    await sendMobilePushToUsers(['user-ernest'], {
+      title: 'Lead Texted',
+      body: 'Please call me',
+      data: { href: '/conversation/lead-1', kind: 'inbound_sms', leadId: 'lead-1', eventId: 'sms_SM123' },
+    })
+    const smsMessage = JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body))[0]
+    expect(smsMessage).toMatchObject({ title: 'Lead Texted', body: 'Please call me', data: { kind: 'inbound_sms', leadId: 'lead-1', eventId: 'sms_SM123' } })
+    expect(smsMessage).not.toHaveProperty('subtitle')
+  })
+
   it('sends the Expo access token when EXPO_ACCESS_TOKEN is set', async () => {
     vi.stubEnv('EXPO_ACCESS_TOKEN', 'expo-secret')
     await sendMobilePushToUsers(['user-ernest'], { title: 'Title', body: 'Body' })
