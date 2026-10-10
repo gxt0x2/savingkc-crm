@@ -67,6 +67,7 @@ function memoryDb(seed: { emails?: Row[]; activities?: Row[] } = {}) {
   const counts = { activityInserts: 0 }
   function from(table: string) {
     const filters: Array<(row: Row) => boolean> = []
+    let patch: Row | null = null
     const api = {
       select() { return api },
       order() { return api },
@@ -85,6 +86,24 @@ function memoryDb(seed: { emails?: Row[]; activities?: Row[] } = {}) {
       contains(column: string, value: Row) {
         filters.push((row) => Object.entries(value).every(([key, expected]) => (row[column] as Row | undefined)?.[key] === expected))
         return api
+      },
+      is(column: string, value: unknown) {
+        filters.push((row) => (row[column] ?? null) === value)
+        return api
+      },
+      update(value: Row) {
+        patch = value
+        return api
+      },
+      then(onFulfilled: (value: { error: null }) => unknown, onRejected?: (reason: unknown) => unknown) {
+        if (patch) {
+          const next = patch
+          patch = null
+          for (const row of tables[table]) {
+            if (filters.every((filter) => filter(row))) Object.assign(row, next)
+          }
+        }
+        return Promise.resolve({ error: null }).then(onFulfilled, onRejected)
       },
       limit: async (count: number) => ({
         data: tables[table].filter((row) => filters.every((filter) => filter(row))).slice(0, count),

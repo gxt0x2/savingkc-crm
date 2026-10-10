@@ -243,6 +243,8 @@ describe('Gmail Pub/Sub idempotent ingest', () => {
       in: () => lookup,
       eq: () => lookup,
       contains: () => lookup,
+      is: () => lookup,
+      update: () => lookup,
       limit: async () => ({ data: [], error: null }),
     }
     const fetched: string[] = []
@@ -270,7 +272,8 @@ describe('Gmail Pub/Sub idempotent ingest', () => {
         }
       }) as never,
     })
-    expect(fetched).toHaveLength(1)
+    expect(fetched.filter((url) => url.includes('format=metadata'))).toHaveLength(1)
+    expect(fetched.filter((url) => url.includes('format=full'))).toHaveLength(1)
     expect(result).toEqual({ scanned: 1, matched: 1, inserted: 1 })
     expect(upsert).toHaveBeenCalledTimes(1)
     expect(upsert.mock.calls[0][1]).toEqual({ onConflict: 'lead_id,gmail_message_id', ignoreDuplicates: true })
