@@ -4,14 +4,17 @@ import {
   MobileAuthError,
   mobileNoStoreHeaders,
   mobileOptionsResponse,
+  requireMobileUser,
 } from '@/lib/mobile-api/auth'
 import { assistantActorCanReadCompanyWide } from '@/lib/assistant/auth'
-import { MobileLeadAccessError, mobileActorCanReadAssignedLead, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
+import { CreateMobileLeadError, createMobileManualLead, type MobileLeadWriter } from '@/lib/mobile-api/create-mobile-lead'
+import { MobileLeadAccessError, mobileActorCanReadAssignedLead, requireAuthorizedMobileLead, resolveMobileScopedActor } from '@/lib/mobile-api/authorized-lead'
 import { MobileCommandAccessError, requireMobileCommandActor } from '@/lib/mobile-api/mobile-command-access'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { decodeContactDirectoryCursor, readContactDirectoryPage } from '@/lib/server/contact-directory-read-model'
 import { attachManualEmailConsent } from '@/lib/server/manual-email-consent'
 import { readOauthReviewContactDirectoryPage } from '@/lib/server/oauth-review-contact-directory'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -144,5 +147,31 @@ export async function GET(req: NextRequest) {
       { error: 'Mobile Pipeline is temporarily unavailable.' },
       { status: 503, headers: mobileNoStoreHeaders() },
     )
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { user } = await requireMobileUser(req)
+    const email = user.email?.trim().toLowerCase()
+    if (!email) throw new MobileAuthError('Authenticated user has no email')
+    const actor = await resolveMobileScopedActor(email)
+    const agentName = actor?.fullName?.trim()
+    if (!actor || !agentName) throw new MobileLeadAccessError('CRM profile not authorized', 403)
+    const userId = typeof user.id === 'string' ? user.id.trim() : ''
+    if (!userId) throw new MobileAuthError('Authenticated user identity unavailable')
+    const result = await createMobileManualLead(supabaseAdmin() as unknown as MobileLeadWriter, {
+      userId,
+      agentName,
+      body: await req.json().catch(() => null),
+    })
+    return NextResponse.json(result, { headers: mobileNoStoreHeaders() })
+  } catch (error) {
+    const known = error instanceof MobileAuthError
+      || error instanceof MobileLeadAccessError
+      || error instanceof CreateMobileLeadError
+    const status = known ? error.status : 500
+    const message = known ? error.message : 'Contact could not be saved'
+    return NextResponse.json({ error: message }, { status, headers: mobileNoStoreHeaders() })
   }
 }

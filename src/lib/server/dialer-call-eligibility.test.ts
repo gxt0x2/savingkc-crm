@@ -205,11 +205,11 @@ describe('server dialer call eligibility', () => {
     expect(result).toMatchObject({ allowed: false, reason: 'do_not_call', reasonSource: 'leads.dead_reason' })
   })
 
-  it('does not query or enforce SMS-only opt-outs for a CRM voice call', async () => {
+  it('does not enforce SMS-only opt-outs for a CRM voice call', async () => {
     const db = database({
       leads: [goodLead()],
       sms_opt_outs: [{ phone: '+19135550123', reason: 'STOP', is_opted_out: true }],
-    }, ['sms_opt_outs'])
+    })
 
     const result = await evaluateOutboundDialerCall({
       ...baseInput,
@@ -218,7 +218,40 @@ describe('server dialer call eligibility', () => {
     }, { db: db.client })
 
     expect(result).toMatchObject({ allowed: true, normalizedPhone: '+19135550123' })
-    expect(db.client.from).not.toHaveBeenCalledWith('sms_opt_outs')
+    expect(db.client.from).toHaveBeenCalledWith('sms_opt_outs')
+  })
+
+  it('blocks a CRM manual dial when the phone is on the internal DNC list', async () => {
+    const db = database({
+      sms_opt_outs: [{ phone: '+19135550123', reason: 'DNC', is_opted_out: true }],
+    })
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'mobile_manual',
+      leadId: null,
+    }, { db: db.client })
+
+    expect(result).toMatchObject({
+      allowed: false,
+      reason: 'do_not_call',
+      reasonSource: 'sms_opt_outs.reason',
+      leadId: null,
+    })
+  })
+
+  it('fails closed when CRM voice DNC status cannot be verified', async () => {
+    const db = database({}, ['sms_opt_outs'])
+
+    const result = await evaluateOutboundDialerCall({
+      ...baseInput,
+      surface: 'crm',
+      source: 'mobile_manual',
+      leadId: null,
+    }, { db: db.client })
+
+    expect(result).toMatchObject({ allowed: false, reason: 'policy_unavailable' })
   })
 
   it('ignores stale disconnected evidence from a duplicate CRM record', async () => {

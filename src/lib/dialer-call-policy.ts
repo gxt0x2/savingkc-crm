@@ -144,6 +144,16 @@ function suppressionReason(raw: string | null | undefined): DialerCallBlockReaso
   return 'do_not_call'
 }
 
+/** Voice DNC written onto sms_opt_outs. SMS keywords such as STOP are not this. */
+export function isInternalVoiceDncReason(raw: string | null | undefined): boolean {
+  const value = String(raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return value === 'dnc'
+    || value === 'do_not_call'
+    || value === 'dnc_refused'
+    || value === 'dnc_number'
+    || value === 'dnc_contact'
+}
+
 function deadReasonBlock(raw: string | null | undefined): DialerCallBlockReason | null {
   const reason = canonicalDeadReason(raw)
   if (reason === 'dnc_refused') return 'do_not_call'
@@ -169,11 +179,11 @@ export function evaluateDialerCallPolicy(input: DialerCallPolicyInput): DialerCa
     return dialerCallBlock('internal_destination', normalizedPhone, message)
   }
 
-  if (input.surface !== 'crm') {
-    for (const reason of input.suppressionReasons) {
-      const blocked = suppressionReason(reason)
-      if (blocked) return dialerCallBlock(blocked, normalizedPhone)
-    }
+  // Manual CRM voice still ignores SMS-only opt-outs. An internal DNC mark blocks it.
+  for (const reason of input.suppressionReasons) {
+    if (input.surface === 'crm' && !isInternalVoiceDncReason(reason)) continue
+    const blocked = suppressionReason(reason)
+    if (blocked) return dialerCallBlock(blocked, normalizedPhone)
   }
 
   for (const lead of input.leads) {
