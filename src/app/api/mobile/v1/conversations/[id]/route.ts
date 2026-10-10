@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
 import { normalizeMobileCallActivities } from '@/lib/mobile-api/activity-calls'
+import { attachLeadEmailBodies, type LeadEmailBodyReader } from '@/lib/mobile-api/email-activity-bodies'
 import { isMobileCustomerActivity } from '@/lib/mobile-api/customer-communication'
 import { attachManualEmailConsent } from '@/lib/server/manual-email-consent'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       after = last
     } while (true)
 
-    const activities = normalizeMobileCallActivities(customerActivities.slice(0, 100))
+    const activities = await attachLeadEmailBodies(db as unknown as LeadEmailBodyReader, id, normalizeMobileCallActivities(customerActivities.slice(0, 100)))
     const [contact] = await attachManualEmailConsent([leadResult.data])
     return NextResponse.json({ contact, activities }, { headers: mobileNoStoreHeaders() })
   } catch (error) {

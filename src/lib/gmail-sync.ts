@@ -4,6 +4,7 @@ import { notifyInboundEmail } from '@/lib/inbound-email-alert'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { markOAuthConnected, persistOAuthHealth, readOAuthHealth } from '@/lib/oauth-health'
 import { isUniqueViolation, stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
+import { createGmailBodyQuota, rememberMatchedGmailBody, type GmailBodyQuota, type LeadEmailBodyDb } from '@/lib/gmail-message-body'
 
 export interface StoredToken {
   id: string
@@ -326,6 +327,7 @@ type ThreadMessage = {
   subject: string
   snippet: string
   sentAt: string
+  bodyText?: string
 }
 
 type ThreadContext = {
@@ -372,6 +374,7 @@ function leadEmailRow(context: ThreadContext, message: ThreadMessage, leadId: st
     to_addresses: message.toAddrs,
     cc_addresses: message.ccAddrs,
     body_snippet: message.snippet,
+    ...(typeof message.bodyText === 'string' ? { body_text: message.bodyText } : {}),
     sent_at: message.sentAt,
     direction: message.fromAddr === context.mailbox.toLowerCase() ? 'outbound' : 'inbound',
     synced_from_user: context.mailbox,
@@ -437,8 +440,10 @@ export async function ingestGmailMessageStubs(input: {
   leads: LeadMatchRow[]
   internalAddresses: readonly string[]
   fetchImpl?: typeof fetch
+  bodyQuota?: GmailBodyQuota
 }): Promise<{ scanned: number; matched: number; inserted: number }> {
   const fetchImpl = input.fetchImpl || fetch
+  const bodyQuota = input.bodyQuota ?? createGmailBodyQuota()
   const context: ThreadContext = {
     db: input.db,
     mailbox: input.userEmail,
@@ -494,6 +499,11 @@ export async function ingestGmailMessageStubs(input: {
       : fallbackLeadId
     if (!leadId) continue
     matched++
+    if (candidates.length) {
+      message.bodyText = await rememberMatchedGmailBody({
+        db: input.db as unknown as LeadEmailBodyDb, accessToken: input.accessToken, messageId: stub.id, leadId, quota: bodyQuota, fetchImpl, paced: !input.fetchImpl,
+      })
+    }
 
     const { error: insertError } = await input.db
       .from('lead_emails')
@@ -606,6 +616,7 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
   matched: number
   inserted: number
   backfilled?: number
+  bodies?: number
   error?: string
 }> {
   const db = supabaseAdmin()
@@ -655,6 +666,7 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
   }
   const listData = await listRes.json() as { messages?: GmailMessageStub[] }
   const messageStubs = listData.messages || []
+  const bodyQuota = createGmailBodyQuota()
   const ingested = await ingestGmailMessageStubs({
     db,
     accessToken,
@@ -662,6 +674,7 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
     stubs: messageStubs,
     leads,
     internalAddresses,
+    bodyQuota,
   })
   const backfilled = await backfillStoredThreadActivity({
     db,
@@ -671,10 +684,12 @@ export async function syncUserGmail(userEmail: string, daysBack = 7): Promise<{
     since: new Date(Date.now() - daysBack * DAY_MS).toISOString(),
     skipMessageIds: new Set(messageStubs.map((stub) => stub.id)),
   })
+  const { backfillRecentMatchedGmailBodies } = await import('@/lib/gmail-body-backfill')
+  const bodies = await backfillRecentMatchedGmailBodies({ db, accessToken, userEmail, leads, internalAddresses, daysBack, quota: bodyQuota })
 
   await db.from('user_oauth_tokens').update({
     last_sync_at: new Date().toISOString(),
   }).eq('id', tokenRow.id)
 
-  return { ...ingested, backfilled }
+  return { ...ingested, backfilled, bodies }
 }
