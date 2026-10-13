@@ -10,6 +10,7 @@ import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
+import { mergeLeadAttribution, websiteFormAttribution } from '@/lib/attribution/lead-attribution'
 import { retiredLegacyLeadsPatchResponse } from '@/lib/server/legacy-leads-patch-retirement'
 
 const corsHeaders = {
@@ -308,6 +309,21 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders })
 }
 
+async function writeLeadAttribution(leadId: string, next: ReturnType<typeof websiteFormAttribution>): Promise<void> {
+  try {
+    const { data, error } = await supabase.from('leads').select('attribution').eq('id', leadId).maybeSingle()
+    if (error) {
+      if (!isMissingColumnError(error)) console.error('[website-lead] attribution read failed:', error)
+      return
+    }
+    const merged = mergeLeadAttribution((data as { attribution?: unknown } | null)?.attribution, next)
+    const { error: updateError } = await supabase.from('leads').update({ attribution: merged }).eq('id', leadId)
+    if (updateError && !isMissingColumnError(updateError)) console.error('[website-lead] attribution write failed:', updateError)
+  } catch (err) {
+    console.error('[website-lead] attribution write threw:', err)
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -410,6 +426,13 @@ export async function POST(req: NextRequest) {
 
     const resolvedLeadId = leadId as string
     await removeMergedPartialLead(sessionLead, resolvedLeadId)
+
+    // Standard attribution audit trail (best-effort; never blocks intake).
+    await writeLeadAttribution(resolvedLeadId, websiteFormAttribution({
+      touch: body.touch,
+      legacy: { referrer, landingUrl, sessionId, formSource, attribution },
+      userAgent: req.headers.get('user-agent'),
+    }))
 
     const activityId = await upsertWebsiteLeadActivity({
       leadId: resolvedLeadId,
