@@ -7,6 +7,7 @@ import { fireConversion, fireFormError, firePpcTrackingEvent } from '@/lib/ppc/c
 import { getPpcSessionContext } from '@/lib/ppc/tracking-client'
 import { buildGoogleAdsLeadsUserData } from '@/lib/ppc/browser-enhanced-conversions'
 import { AddressAutocomplete } from './AddressAutocomplete'
+import { NewsletterSignup } from '@/components/email/newsletter-signup'
 
 type LandingVariant = 'general' | 'tax' | 'redemption' | 'excess-proceeds'
 
@@ -1561,6 +1562,7 @@ export function SellLanding({ phoneDisplay, phoneTel, showBookingCta = false, va
         </div>
       </section>
 
+      <NewsletterSignup source="funnel" />
       <footer className="site-footer">
         <div className="container footer-inner">
           <div>

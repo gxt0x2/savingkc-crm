@@ -9,6 +9,7 @@ const PUBLIC_PAGE_PREFIXES = ['/login', '/auth/callback', '/terms', '/privacy', 
 const PUBLIC_PAGE_EXACT = new Set([
   '/.well-known/oauth-protected-resource',
   '/.well-known/oauth-authorization-server',
+  '/newsletters',
 ])
 
 // API routes that must remain reachable without a CRM session.
@@ -25,6 +26,7 @@ const PUBLIC_API_EXACT = new Set([
   '/api/book',
   '/api/buyers/intake',
   '/api/leads/ppc',
+  '/api/email/newsletters/signup',
   '/api/leads/ppc/book',
   '/api/leads/ppc/track',
   '/api/ppc/track',
