@@ -395,24 +395,29 @@ export async function POST(req: Request) {
   }
 
   // ── Nobody answered ──
+  // Push and team SMS are the real missed-call alerts, and they fire only when
+  // the dialed party was no-answer or busy. Canceled and failed dials still log.
+  const shouldSendMissedCallAlert = dialStatus === 'no-answer' || dialStatus === 'busy'
 
   // For direct calls, alert the agent who owns that number only (no tasks/SMS to caller)
   if (isDirect && from) {
-    const missedMsg = `MISSED: Direct call from ${formatPhone(from)} to your company line. Going to voicemail.`
-    await sendTeamLeadAlert({
-      leadId: resolvedLeadId,
-      smsBody: missedMsg,
-      trigger: 'direct_missed_call_alert',
-      source: 'direct_inbound_call',
-      calledNumber,
-      push: {
-        title: 'Missed Direct Call',
-        body: `${formatPhone(from)} called your company line.`,
-        url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/conversations',
-        tag: 'direct-missed-call',
-      },
-      metadata: { from, calledNumber, callSid: parentCallSid, dialStatus },
-    })
+    if (shouldSendMissedCallAlert) {
+      const missedMsg = `MISSED: Direct call from ${formatPhone(from)} to your company line. Going to voicemail.`
+      await sendTeamLeadAlert({
+        leadId: resolvedLeadId,
+        smsBody: missedMsg,
+        trigger: 'direct_missed_call_alert',
+        source: 'direct_inbound_call',
+        calledNumber,
+        push: {
+          title: 'Missed Direct Call',
+          body: `${formatPhone(from)} called your company line.`,
+          url: resolvedLeadId ? `/leads/${resolvedLeadId}` : '/conversations',
+          tag: 'direct-missed-call',
+        },
+        metadata: { from, calledNumber, callSid: parentCallSid, dialStatus },
+      })
+    }
 
     await supabase.from('lead_activities').insert({
       lead_id: resolvedLeadId,
@@ -451,32 +456,34 @@ export async function POST(req: Request) {
       })
 
     } else {
-    // Alert both agents for IVR calls
-    const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${formatPhone(from)} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
-    await sendTeamLeadAlert({
-      leadId: resolvedLeadId,
-      smsBody: missedMsg,
-      trigger: 'ivr_missed_call_alert',
-      source: 'inbound_ivr',
-      calledNumber,
-      push: {
-        title: 'Missed Inbound Call',
-        body: `${type === 'seller' ? 'Seller' : 'Caller'} ${formatPhone(from)} reached voicemail.`,
-        url: `/leads/${resolvedLeadId}`,
-        tag: 'ivr-missed-call',
-      },
-      metadata: {
-        outcome: 'missed',
-        direction: 'inbound',
-        from,
+    // Alert both agents for IVR calls that actually rang out or were busy.
+    if (shouldSendMissedCallAlert) {
+      const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${formatPhone(from)} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
+      await sendTeamLeadAlert({
+        leadId: resolvedLeadId,
+        smsBody: missedMsg,
+        trigger: 'ivr_missed_call_alert',
+        source: 'inbound_ivr',
         calledNumber,
-        callSid: parentCallSid,
-        dialStatus,
-        dialCallSid,
-        dialCallDuration,
-        type,
-      },
-    })
+        push: {
+          title: 'Missed Inbound Call',
+          body: `${type === 'seller' ? 'Seller' : 'Caller'} ${formatPhone(from)} reached voicemail.`,
+          url: `/leads/${resolvedLeadId}`,
+          tag: 'ivr-missed-call',
+        },
+        metadata: {
+          outcome: 'missed',
+          direction: 'inbound',
+          from,
+          calledNumber,
+          callSid: parentCallSid,
+          dialStatus,
+          dialCallSid,
+          dialCallDuration,
+          type,
+        },
+      })
+    }
 
     // Log missed call
     await supabase.from('lead_activities').insert({
