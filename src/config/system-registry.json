@@ -523,7 +523,7 @@
       "crons": [{"path":"/api/workers/email","schedule":"* * * * *","highFrequencyReason":"Process one reply and one bounded send per minute; receiving and suppression precede outbound work."}],
       "owner": "Marketing",
       "status": "active",
-      "routes": ["/marketing/email", "/email/unsubscribe/[token]"],
+      "routes": ["/marketing/email", "/email/unsubscribe/[token]", "/newsletters"],
       "apiRoutes": [
         "/api/email/workspace",
         "/api/email/contact-rules",
@@ -533,6 +533,7 @@
         "/api/email/domains",
         "/api/email/receiving",
         "/api/email/unsubscribe/[token]",
+        "/api/email/newsletters/signup",
         "/api/webhooks/email/resend",
         "/api/workers/email"
       ],
@@ -574,7 +575,9 @@
         "em_senders",
         "em_webhook_endpoints",
         "em_reply_aliases",
-        "em_preference_tokens"
+        "em_preference_tokens",
+        "em_newsletter_contacts",
+        "em_newsletter_schedules"
       ],
       "environment": [
         "EMAIL_CREDENTIALS_KEY_V1",
@@ -600,7 +603,8 @@
         "EMAIL_UI_BASE_URL",
         "EMAIL_UI_AUTH_BYPASS_SECRET",
         "EMAIL_UI_TEST_ACTOR",
-        "NODE_ENV"
+        "NODE_ENV",
+        "NEWSLETTER_OWNER_APPROVED"
       ]
     },
     {
