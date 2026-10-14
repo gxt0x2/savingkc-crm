@@ -22,8 +22,8 @@ describe('NewsletterSignup', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send me the Tuesday note' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/email/newsletters/signup')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/email/newsletters/signup')
     expect(JSON.parse(String(init.body))).toEqual({
       email: SANDBOX,
       role: 'seller',

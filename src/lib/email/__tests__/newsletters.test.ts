@@ -117,8 +117,8 @@ describe('Tuesday newsletter schedule', () => {
         enrolled: false,
       })
     }
-    expect(ownerApprovalGranted({})).toBe(false)
-    expect(ownerApprovalGranted({ NEWSLETTER_OWNER_APPROVED: 'approved' })).toBe(true)
+    expect(ownerApprovalGranted({} as unknown as NodeJS.ProcessEnv)).toBe(false)
+    expect(ownerApprovalGranted({ NEWSLETTER_OWNER_APPROVED: 'approved' } as unknown as NodeJS.ProcessEnv)).toBe(true)
   })
 
   it('does not send when approval is missing, and does not send when the flag is present', () => {
