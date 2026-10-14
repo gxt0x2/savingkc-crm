@@ -27,10 +27,24 @@ const TEAM_NUMBERS = new Set([
   '+18162262552', // Ernest forwarding
 ])
 
-const DIRECT_RING_NUMBERS = new Set([
+// Parent callback skips these. The <Dial> action owns the outcome, because the
+// parent often ends as "completed" after voicemail.
+const PARENT_CALLBACK_SKIP_NUMBERS = new Set([
   '+18167277667', // Casey company
   '+18166088588', // Ernest company
 ])
+
+// A 0-second parent no-answer or busy on these lines is a direct ring, not an abandon.
+const DIRECT_RING_NUMBERS = new Set([
+  '+18166088588',
+  '+18166088858',
+])
+
+function isAbandonedBeforeAnswer(callStatus: string, durationSeconds: number, calledNumber: string | null): boolean {
+  return (callStatus === 'no-answer' || callStatus === 'busy')
+    && durationSeconds === 0
+    && !(calledNumber && DIRECT_RING_NUMBERS.has(calledNumber))
+}
 
 /**
  * StatusCallback handler — fires for ALL call status events
@@ -74,9 +88,16 @@ export async function POST(req: Request) {
     // where Twilio gives us the agent leg result. The parent call often ends as
     // "completed" even when the agent leg was no-answer because the caller
     // reached voicemail, so logging it here would misstate the outcome.
-    if (to && DIRECT_RING_NUMBERS.has(to)) {
+    if (to && PARENT_CALLBACK_SKIP_NUMBERS.has(to)) {
       return new NextResponse('OK', { status: 200 })
     }
+
+    const durationSeconds = Number.parseInt(duration, 10)
+    // Caller hung up before anyone could answer. Keep the lead and the caller
+    // auto-text, but do not page the team. Real missed-call alerts come from
+    // /api/ivr/dial-result when DialCallStatus is no-answer or busy.
+    const abandonedBeforeAnswer = isAbandonedBeforeAnswer(callStatus, durationSeconds, to)
+    const loggedStatus = abandonedBeforeAnswer ? 'abandoned_before_answer' : callStatus
 
     // Match caller to existing lead
     const { data: leads } = await supabase
@@ -92,17 +113,18 @@ export async function POST(req: Request) {
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'call',
-      description: `Inbound call from ${leadName || from} — ${callStatus} (${duration}s)`,
+      description: `Inbound call from ${leadName || from} — ${loggedStatus} (${duration}s)`,
       agent: 'System',
       metadata: {
         direction: 'inbound',
         from,
         to,
         callSid,
-        callStatus,
+        callStatus: loggedStatus,
         duration: parseInt(duration),
         matched_lead: leadId ? true : false,
         lead_name: leadName,
+        ...(abandonedBeforeAnswer ? { outcome: 'abandoned_before_answer' } : {}),
       }
     })
 
@@ -110,9 +132,9 @@ export async function POST(req: Request) {
     if (leadId) {
       await supabase.from('ari_briefing_events').insert({
         event_type: 'inbound_call',
-        priority: callStatus === 'completed' ? 'medium' : 'high',
-        title: `Inbound call from ${leadName || from} — ${callStatus}`,
-        description: `Duration: ${duration}s. Status: ${callStatus}.`,
+        priority: callStatus === 'completed' || abandonedBeforeAnswer ? 'medium' : 'high',
+        title: `Inbound call from ${leadName || from} — ${loggedStatus}`,
+        description: `Duration: ${duration}s. Status: ${loggedStatus}.`,
         lead_id: leadId,
         action_url: `/leads/${leadId}`
       })
@@ -192,26 +214,29 @@ export async function POST(req: Request) {
         }
 
         // Alert eligible agents about known lead missed call.
-        const missedAlert = `🔥 Missed call from ${leadName} (hot lead)${missedCallAutoQueued ? '. Auto-text sent' : ''}. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
-        await sendTeamLeadAlert({
-          leadId,
-          smsBody: missedAlert,
-          trigger: 'known_missed_call_alert',
-          source: 'inbound_call',
-          calledNumber: to || TWILIO_PHONE,
-          push: {
-            title: 'Missed Call - Hot Lead',
-            body: `${leadName} called and got no answer.`,
-            url: `/leads/${leadId}`,
-            tag: 'missed-call',
-          },
-          metadata: {
-            from,
+        // Abandoned calls stay in the CRM and still text the caller.
+        if (!abandonedBeforeAnswer) {
+          const missedAlert = `🔥 Missed call from ${leadName} (hot lead)${missedCallAutoQueued ? '. Auto-text sent' : ''}. Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
+          await sendTeamLeadAlert({
+            leadId,
+            smsBody: missedAlert,
+            trigger: 'known_missed_call_alert',
+            source: 'inbound_call',
             calledNumber: to || TWILIO_PHONE,
-            callSid,
-            auto_text_sent: missedCallAutoQueued,
-          },
-        })
+            push: {
+              title: 'Missed Call - Hot Lead',
+              body: `${leadName} called and got no answer.`,
+              url: `/leads/${leadId}`,
+              tag: 'missed-call',
+            },
+            metadata: {
+              from,
+              calledNumber: to || TWILIO_PHONE,
+              callSid,
+              auto_text_sent: missedCallAutoQueued,
+            },
+          })
+        }
 
       } else if (!leadId) {
         // ── UNKNOWN CALLER MISSED CALL ──
@@ -313,34 +338,41 @@ export async function POST(req: Request) {
         }
 
         // Alert eligible agents about unknown caller.
-        const agentAlert = `📞 Missed call from unknown number ${formatPhone(from)}${unknownAutoQueued ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
-        await sendTeamLeadAlert({
-          leadId: newLeadId,
-          smsBody: agentAlert,
-          trigger: 'unknown_missed_call_alert',
-          source: 'inbound_call',
-          calledNumber: to || TWILIO_PHONE,
-          push: {
-            title: 'Missed Call - Unknown',
-            body: `Unknown number ${formatPhone(from)} called.`,
-            url: newLeadId ? `/leads/${newLeadId}` : '/',
-            tag: 'missed-call-unknown',
-          },
-          metadata: {
-            from,
+        // Abandoned calls still create the lead and text the caller.
+        if (!abandonedBeforeAnswer) {
+          const agentAlert = `📞 Missed call from unknown number ${formatPhone(from)}${unknownAutoQueued ? '. Auto-text sent' : ''}. Watch for YES reply.${newLeadId ? ' ' + (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
+          await sendTeamLeadAlert({
+            leadId: newLeadId,
+            smsBody: agentAlert,
+            trigger: 'unknown_missed_call_alert',
+            source: 'inbound_call',
             calledNumber: to || TWILIO_PHONE,
-            callSid,
-            auto_text_sent: unknownAutoQueued,
-          },
-        })
+            push: {
+              title: 'Missed Call - Unknown',
+              body: `Unknown number ${formatPhone(from)} called.`,
+              url: newLeadId ? `/leads/${newLeadId}` : '/',
+              tag: 'missed-call-unknown',
+            },
+            metadata: {
+              from,
+              calledNumber: to || TWILIO_PHONE,
+              callSid,
+              auto_text_sent: unknownAutoQueued,
+            },
+          })
+        }
 
         // Briefing event for unknown missed call
         try {
           await supabase.from('ari_briefing_events').insert({
-            event_type: 'missed_call',
-            priority: 'high',
-            title: `Missed call from unknown: ${formatPhone(from)}`,
-            description: `Unknown caller${unknownAutoQueued ? ', auto-text sent' : ''}. Watch for YES reply.`,
+            event_type: abandonedBeforeAnswer ? 'abandoned_before_answer' : 'missed_call',
+            priority: abandonedBeforeAnswer ? 'medium' : 'high',
+            title: abandonedBeforeAnswer
+              ? `Caller abandoned before answer: ${formatPhone(from)}`
+              : `Missed call from unknown: ${formatPhone(from)}`,
+            description: abandonedBeforeAnswer
+              ? `Caller hung up before answer${unknownAutoQueued ? '. Auto-text sent' : ''}.`
+              : `Unknown caller${unknownAutoQueued ? ', auto-text sent' : ''}. Watch for YES reply.`,
             lead_id: newLeadId,
             action_url: newLeadId ? `/leads/${newLeadId}` : undefined,
           })
