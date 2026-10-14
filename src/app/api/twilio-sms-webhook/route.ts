@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { recordAppointmentSmsResponse } from '@/lib/server/appointment-sms-response'
 import { resolveInboundSmsLead } from '@/lib/server/inbound-sms-lead'
+import { inboundAnswersAutomatedYesPrompt, type ReplyYesPromptDb } from '@/lib/server/reply-yes-prompt'
 import {
   googleAdsNewTextTeamMessage,
   markLeadAsGoogleAdsPhoneLead,
@@ -458,8 +459,18 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── YES reply (from IVR no-input or missed call text-back) ──
-    if (msg === 'YES' || msg === 'YES!' || msg === 'YES PLEASE' || msg === 'Y') {
+    // ── YES reply to an automated Reply YES prompt (missed-call text-back,
+    // IVR text, or company-line auto-text). A YES to a human 1:1, or a YES
+    // we cannot tie to one of those prompts, stays on the normal reply alert.
+    const yesKeyword = msg === 'YES' || msg === 'YES!' || msg === 'YES PLEASE' || msg === 'Y'
+    const matchedOutboundActivityId = typeof inboundMetadata?.inbound_matched_outbound_activity_id === 'string'
+      ? inboundMetadata.inbound_matched_outbound_activity_id
+      : null
+    if (yesKeyword && await inboundAnswersAutomatedYesPrompt(supabase as unknown as ReplyYesPromptDb, {
+      matchedOutboundActivityId,
+      leadId,
+      customerPhone: from,
+    })) {
       let yesLeadId = leadId
 
       // Create lead if unknown caller
