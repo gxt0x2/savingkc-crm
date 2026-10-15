@@ -1,10 +1,28 @@
 /** Shared newsletter copy. Safe to import from client components. */
 
-export const NEWSLETTER_EDITIONS = ['tuesday_note', 'tuesday_deal_desk'] as const
+export const NEWSLETTER_SEGMENTS = ['general', 'tax', 'inherited', 'investor'] as const
+export type NewsletterSegment = (typeof NEWSLETTER_SEGMENTS)[number]
+
+export const NEWSLETTER_EDITIONS = [
+  'tuesday_note_general',
+  'tuesday_note_tax',
+  'tuesday_note_inherited',
+  'tuesday_deal_desk',
+] as const
 export type NewsletterEditionKey = (typeof NEWSLETTER_EDITIONS)[number]
 
 export const NEWSLETTER_ROLES = ['seller', 'buyer'] as const
 export type NewsletterRole = (typeof NEWSLETTER_ROLES)[number]
+
+export const NEWSLETTER_SEGMENT_CHOICES: ReadonlyArray<{
+  value: NewsletterSegment
+  label: string
+}> = [
+  { value: 'general', label: 'Homeowner thinking about a sale' },
+  { value: 'tax', label: 'Behind on property taxes' },
+  { value: 'inherited', label: 'Inherited a house' },
+  { value: 'investor', label: 'Investor looking for deals' },
+]
 
 export const NEWSLETTER_COUNTIES = [
   'Jackson',
@@ -31,24 +49,54 @@ export const NEWSLETTER_CONSENT_TEXT =
 export const NEWSLETTER_SIGNUP_SUCCESS =
   'Got it. If this address can receive the newsletter, you are on the list.'
 
-export const SELLER_STORY_PLACEHOLDER =
+export const GENERAL_STORY_PLACEHOLDER =
+  '[ERNEST STORY: 2 or 3 true sentences. A real moment with a homeowner (no names) who was weighing whether to sell, and what made the decision feel heavy.]'
+
+export const TAX_STORY_PLACEHOLDER =
   '[ERNEST STORY: 2 or 3 true sentences. A real moment with a homeowner (no names) who was stressed about a tax bill, or your own first tax bill.]'
 
-export const BUYER_STORY_PLACEHOLDER =
+export const INHERITED_STORY_PLACEHOLDER =
+  '[ERNEST STORY: 2 or 3 true sentences. A real moment with an heir (no names) who was handed a house they did not ask for, and the part that felt heaviest.]'
+
+export const INVESTOR_STORY_PLACEHOLDER =
   '[ERNEST STORY: 2 or 3 true sentences. A real time the numbers on a house did not work and you walked away, or the best buying lesson you have learned.]'
 
 /** Exact env value required before any future enablement. Unset means hold. */
 export const NEWSLETTER_OWNER_APPROVAL_VALUE = 'approved'
 
-export function newsletterEditionForRole(role: NewsletterRole): NewsletterEditionKey {
-  return role === 'seller' ? 'tuesday_note' : 'tuesday_deal_desk'
+export function newsletterRoleForSegment(segment: NewsletterSegment): NewsletterRole {
+  return segment === 'investor' ? 'buyer' : 'seller'
 }
 
-export function newsletterTags(role: NewsletterRole, county: NewsletterCounty): string[] {
+export function newsletterEditionForSegment(segment: NewsletterSegment): NewsletterEditionKey {
+  switch (segment) {
+    case 'general':
+      return 'tuesday_note_general'
+    case 'tax':
+      return 'tuesday_note_tax'
+    case 'inherited':
+      return 'tuesday_note_inherited'
+    case 'investor':
+      return 'tuesday_deal_desk'
+  }
+}
+
+export function newsletterProgramForSegment(
+  segment: NewsletterSegment,
+): 'seller_nurture' | 'buyer_marketing' {
+  return segment === 'investor' ? 'buyer_marketing' : 'seller_nurture'
+}
+
+export function newsletterTags(
+  role: NewsletterRole,
+  county: NewsletterCounty,
+  segment: NewsletterSegment,
+): string[] {
   const countyTag = county.toLowerCase().replace(/\s+/g, '-')
-  const edition = newsletterEditionForRole(role).replaceAll('_', '-')
+  const edition = newsletterEditionForSegment(segment).replaceAll('_', '-')
   return [
     `role:${role}`,
+    `segment:${segment}`,
     `edition:${edition}`,
     `county:${countyTag}`,
     'source:newsletter-signup',

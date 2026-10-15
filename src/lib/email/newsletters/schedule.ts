@@ -1,11 +1,16 @@
 import {
   NEWSLETTER_FROM_MAILBOX,
   NEWSLETTER_OWNER_APPROVAL_VALUE,
+  NEWSLETTER_SEGMENTS,
+  newsletterEditionForSegment,
+  newsletterProgramForSegment,
   type NewsletterEditionKey,
+  type NewsletterSegment,
 } from './constants'
 
 export type NewsletterSchedule = {
   edition: NewsletterEditionKey
+  segment: NewsletterSegment
   name: string
   program: 'seller_nurture' | 'buyer_marketing'
   fromMailbox: typeof NEWSLETTER_FROM_MAILBOX
@@ -17,37 +22,32 @@ export type NewsletterSchedule = {
   ownerApproved: false
 }
 
+const SCHEDULE_NAMES: Record<NewsletterSegment, string> = {
+  general: 'The Tuesday Note',
+  tax: 'The Tuesday Note for taxes',
+  inherited: 'The Tuesday Note for inherited houses',
+  investor: 'The Tuesday Deal Desk',
+}
+
 /**
- * Both editions are created disabled and draft-only.
+ * One disabled draft schedule per segment.
  * There is no enroll path and no provider send in this module.
+ * NEWSLETTER_OWNER_APPROVED does not unlock a send.
  */
 export function newsletterSchedules(): NewsletterSchedule[] {
-  return [
-    {
-      edition: 'tuesday_note',
-      name: 'The Tuesday Note',
-      program: 'seller_nurture',
-      fromMailbox: NEWSLETTER_FROM_MAILBOX,
-      weekday: 'tuesday',
-      localTime: '07:00',
-      timezone: 'America/Chicago',
-      state: 'disabled',
-      mode: 'draft_only',
-      ownerApproved: false,
-    },
-    {
-      edition: 'tuesday_deal_desk',
-      name: 'The Tuesday Deal Desk',
-      program: 'buyer_marketing',
-      fromMailbox: NEWSLETTER_FROM_MAILBOX,
-      weekday: 'tuesday',
-      localTime: '07:00',
-      timezone: 'America/Chicago',
-      state: 'disabled',
-      mode: 'draft_only',
-      ownerApproved: false,
-    },
-  ]
+  return NEWSLETTER_SEGMENTS.map((segment) => ({
+    edition: newsletterEditionForSegment(segment),
+    segment,
+    name: SCHEDULE_NAMES[segment],
+    program: newsletterProgramForSegment(segment),
+    fromMailbox: NEWSLETTER_FROM_MAILBOX,
+    weekday: 'tuesday',
+    localTime: '07:00',
+    timezone: 'America/Chicago',
+    state: 'disabled',
+    mode: 'draft_only',
+    ownerApproved: false,
+  }))
 }
 
 export function ownerApprovalGranted(env: NodeJS.ProcessEnv = process.env) {
