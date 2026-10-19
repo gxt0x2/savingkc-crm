@@ -17,6 +17,7 @@
     "test:smoke:theme": "playwright test tests/smoke/theme-and-nav.spec.ts",
     "test:performance": "playwright test tests/e2e/navigation-performance.spec.ts",
     "mojo:sync": "node scripts/mojo-cron-runner.mjs sync",
+    "mojo:calls:backfill": "tsx scripts/mojo-call-backfill.mts",
     "mojo:eod": "node scripts/mojo-cron-runner.mjs eod",
     "mojo:session": "node scripts/mojo-extract-session.mjs",
     "mojo:session:manual": "node scripts/mojo-extract-session.mjs --manual",
