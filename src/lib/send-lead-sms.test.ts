@@ -109,6 +109,22 @@ describe('conversation SMS sender resolution and persistence', () => {
     }))
   })
 
+  it('forwards a human 1:1 template to the shared sender', async () => {
+    await sendLeadSms({
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Hello from the composer',
+      fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+    })
+
+    expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+19135550123',
+      templateId: 'sms.conversation.1to1.v1',
+      senderUse: 'conversation',
+    }))
+  })
+
   it('does not send when the automated SMS gate blocks the number', async () => {
     mocks.automatedSmsBlockReason.mockResolvedValue('opted_out')
 

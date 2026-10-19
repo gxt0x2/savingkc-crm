@@ -9,7 +9,7 @@ describe('canonical appointment cutover contract', () => {
   it('keeps public booking atomic, durable, and independent of Manifest', () => {
     const route = source('src/app/api/book/route.ts')
     expect(route).toContain('createCanonicalBooking')
-    expect(route).toContain('buildQueuedSmsMetadata')
+    expect(route).not.toContain('buildQueuedSmsMetadata')
     expect(route).not.toContain('ensureManifestExists')
     expect(route).not.toContain('updateManifestAndCascade')
     expect(route).not.toContain('safeSendSMS')

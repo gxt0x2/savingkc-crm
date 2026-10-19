@@ -5,7 +5,6 @@ import { phoneLookupVariants } from '@/lib/google-ads-phone'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
-import { buildQueuedSmsMetadata } from '@/lib/queued-sms'
 import {
   CanonicalBookingError,
   createCanonicalBooking,
@@ -197,21 +196,6 @@ export async function POST(req: NextRequest) {
       }).select('id').maybeSingle()
       activityId = activity?.id ?? null
       if (activityError) warnings.push('The appointment timeline entry is pending.')
-
-      const confirmationBody = `Hi ${firstName}! Your call with Saving KC Homebuyers is confirmed for ${formattedDate} at ${displayTime} CT. We'll call you at ${formatPhone(phone)}. Questions? Call (816) 429-2900.`
-      const { error: queueError } = await supabase.from('lead_activities').insert({
-        lead_id: leadId,
-        activity_type: 'sms',
-        description: 'SMS appointment confirmation queued',
-        agent: 'System',
-        metadata: buildQueuedSmsMetadata({
-          to: phone, from: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
-          body: confirmationBody, source: 'public_booking_confirmation',
-          template: 'public_booking_confirmation',
-          extra: { appointment_id: booking.appointmentId, booking_id: booking.bookingId },
-        }),
-      })
-      if (queueError) warnings.push('The confirmation text is pending; do not book again.')
 
       if (isPpcBooking) {
         ppcConversion = await queuePpcAppointmentBookedConversion({

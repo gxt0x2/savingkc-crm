@@ -2,17 +2,6 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { safeSendSMS } from '@/lib/safe-communications'
-import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
-import { BROADCAST_TWILIO_NUMBERS as TWILIO_NUMBERS } from '@/lib/twilio-numbers'
-
-// Round-robin counter for Twilio numbers (resets on restart, fine for this)
-let twilioRRIndex = 0
-function nextTwilioNumber(): string {
-  const num = TWILIO_NUMBERS[twilioRRIndex % TWILIO_NUMBERS.length]
-  twilioRRIndex++
-  return num.value
-}
 
 function trackedDealPageUrl(
   baseUrl: string,
@@ -46,7 +35,7 @@ function trackedDealPageUrl(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { broadcast_id, sms_body, email_subject, email_body } = body
+    const { broadcast_id, email_subject, email_body } = body
 
     if (!broadcast_id) {
       return NextResponse.json({ error: 'broadcast_id is required' }, { status: 400 })
@@ -105,7 +94,7 @@ export async function POST(req: NextRequest) {
     const buyerFacingPrice = dealPage?.asking_price ?? snapshot.asking_price
     const price = buyerFacingPrice ? `$${Number(buyerFacingPrice).toLocaleString()}` : 'N/A'
 
-    let smsSent = 0
+    const smsSent = 0
     let emailsSent = 0
     const errors: string[] = []
 
@@ -115,12 +104,6 @@ export async function POST(req: NextRequest) {
       if (!buyer) continue
 
       const buyerFirst = buyer.first_name || (buyer.name ? buyer.name.split(' ')[0] : 'Investor')
-      const smsDealPageUrl = trackedDealPageUrl(dealPageUrl, {
-        buyerId: buyer.id,
-        broadcastId: broadcast_id,
-        recipientId: recipient.id,
-        medium: 'sms',
-      })
       const emailDealPageUrl = trackedDealPageUrl(dealPageUrl, {
         buyerId: buyer.id,
         broadcastId: broadcast_id,
@@ -128,60 +111,13 @@ export async function POST(req: NextRequest) {
         medium: 'email',
       })
 
-      // --- SMS ---
+      // Broadcast SMS is not a human 1:1 send.
       if (buyer.sms_opted_in && buyer.phone) {
-        try {
-          const blockReason = await automatedSmsBlockReason({ phone: buyer.phone })
-          if (blockReason) {
-            await db
-              .from('broadcast_recipients')
-              .update({ sms_status: 'skipped' })
-              .eq('id', recipient.id)
-          } else {
-            const defaultSmsBody = [
-              `${buyerFirst}, new deal from Saving KC:`,
-              `${address} - ${pType}`,
-              `ARV: ${arv} | Price: ${price}`,
-              `${beds}bd/${baths}ba | ${sqft}sf`,
-              smsDealPageUrl ? `Details: ${smsDealPageUrl}` : '',
-              'Reply STOP to opt out',
-            ].filter(Boolean).join('\n')
-
-            const messageBody = sms_body
-              ? sms_body
-                  .replace('{buyerFirst}', buyerFirst)
-                  .replace('{address}', address)
-                  .replace('{type}', pType)
-                  .replace('{arv}', arv)
-                  .replace('{price}', price)
-                  .replace('{beds}', String(beds))
-                  .replace('{baths}', String(baths))
-                  .replace('{sqft}', sqft)
-                  .replace('{dealPageUrl}', smsDealPageUrl)
-              : defaultSmsBody
-
-            await safeSendSMS({
-              to: buyer.phone,
-              from: nextTwilioNumber(),
-              body: messageBody,
-              senderUse: 'broadcast',
-            })
-
-            await db
-              .from('broadcast_recipients')
-              .update({ sms_status: 'sent', sms_sent_at: new Date().toISOString() })
-              .eq('id', recipient.id)
-
-            smsSent++
-          }
-        } catch (smsErr) {
-          console.error(`[broadcast send] SMS failed for buyer ${buyer.id}:`, smsErr)
-          await db
-            .from('broadcast_recipients')
-            .update({ sms_status: 'failed' })
-            .eq('id', recipient.id)
-          errors.push(`SMS to ${buyer.phone} failed`)
-        }
+        console.error('[broadcast send] refused SMS', { recipientId: recipient.id, reason: 'automated_sms_disabled' })
+        await db
+          .from('broadcast_recipients')
+          .update({ sms_status: 'skipped' })
+          .eq('id', recipient.id)
       }
 
       // --- Email ---

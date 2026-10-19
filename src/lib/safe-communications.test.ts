@@ -47,6 +47,60 @@ afterEach(() => {
 })
 
 describe('safeSendSMS', () => {
+  it('refuses an automated send before Twilio and does not record a delivery attempt', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const result = await safeSendSMS({
+      to: '+18155550199',
+      from: '+18164761344',
+      body: 'Hey! We recently tried reaching you about a property in your area.',
+      senderUse: 'reply',
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('sms.conversation.1to1.v1'),
+    })
+    expect(mocks.twilio).not.toHaveBeenCalled()
+    expect(mocks.createMessage).not.toHaveBeenCalled()
+    expect(mocks.from).not.toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('[SMS-SENDER-POLICY] refused SMS send'))
+    expect(errorSpy.mock.calls.flat().join(' ')).not.toContain('+18155550199')
+    expect(errorSpy.mock.calls.flat().join(' ')).toContain('toLast4=0199')
+    errorSpy.mockRestore()
+  })
+
+  it('still delivers a human-initiated 1:1 send', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.createMessage.mockResolvedValue({ sid: 'SM-1to1', status: 'queued', from: '+18166088588' })
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const result = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Following up on our call.',
+      senderUse: 'conversation',
+      templateId: 'sms.conversation.1to1.v1',
+    })
+
+    expect(result).toMatchObject({ success: true, sid: 'SM-1to1' })
+    expect(mocks.createMessage).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Following up on our call.',
+    }))
+  })
+
   it('returns a deployment config error when Twilio credentials are missing', async () => {
     clearTwilioEnv()
     const { safeSendSMS } = await importSafeCommunications()
@@ -55,6 +109,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
     })
 
     expect(result).toMatchObject({
@@ -79,6 +134,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
     })
 
     expect(result).toMatchObject({
@@ -108,6 +164,7 @@ describe('safeSendSMS', () => {
 
     await safeSendSMS({
       to: '+19135550123', from: '+18166088588', body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       statusCallback: 'https://crm.savingkc.com/api/twilio-message-status?action_id=campaign-action',
     })
 
@@ -130,6 +187,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       signal: controller.signal,
     })
 
@@ -154,6 +212,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       beforePostProviderWrite,
     })
 
@@ -176,6 +235,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       beforePostProviderWrite: vi.fn().mockRejectedValue(new Error('Dialing control moved')),
     })
 
@@ -200,6 +260,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       signal: new AbortController().signal,
       beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
     })
@@ -224,6 +285,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       signal: new AbortController().signal,
       beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
     })
@@ -251,6 +313,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088588',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       signal: new AbortController().signal,
       beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
     })
@@ -275,6 +338,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18167277667',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       senderUse: 'conversation',
     })
 
@@ -295,6 +359,7 @@ describe('safeSendSMS', () => {
       to: '+19135550123',
       from: '+18166088808',
       body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
       senderUse: 'conversation',
     })
 

@@ -72,35 +72,13 @@ async function testSmsAlert() {
   console.log(`   → Alert to Casey: ${CASEY_PHONE}`)
   console.log(`   → Alert to Ernest: ${ERNEST_PHONE}`)
 
-  // 3. Actually send a test SMS alert to verify it works
-  console.log('\n--- Sending TEST Alert (to Ernest only for safety) ---\n')
-
-  const testAlertBody = `🧪 TEST ALERT: ${leadName} just texted: "${messageBody.slice(0, 100)}" — ${BASE_URL}/leads/${leadId}`
-
-  try {
-    const response = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        From: TWILIO_PHONE,
-        To: ERNEST_PHONE,
-        Body: testAlertBody,
-      }),
-    })
-
-    if (response.ok) {
-      console.log('✅ Test alert sent to Ernest successfully!')
-      console.log(`   Check your phone: ${ERNEST_PHONE}`)
-    } else {
-      const error = await response.text()
-      console.error('❌ Failed to send test alert:', error)
-    }
-  } catch (err) {
-    console.error('❌ Error sending test alert:', err.message)
-  }
+  console.error('[test-sms-alert] refused: automated SMS is disabled. This script does not send.')
+  console.log('\nNo SMS was sent. Automated texts are disabled; only a human 1:1 send is allowed.')
+  void TWILIO_PHONE
+  void BASE_URL
+  void leadId
+  void leadName
+  void messageBody
 
   console.log('\n✅ Test complete!\n')
 }
