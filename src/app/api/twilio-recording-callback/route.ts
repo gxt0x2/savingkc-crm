@@ -380,24 +380,17 @@ async function processRecording(
       metadata: { source: 'call_analysis', ...evidenceContext, analysis },
     })
     if (analysisError) throw new Error(`call_analysis_evidence_write_failed:${analysisError.message}`)
-
-    // 6. Persist factual call evidence. AI-extracted lead fields are written
-    // only through the explicit ai_change_proposals approval boundary.
-    const { error: leadEvidenceError } = await supabase.from('leads').update({
-      transcript,
-      call_duration_seconds: duration,
-      updated_at: new Date().toISOString(),
-    }).eq('id', leadId)
-    if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
-  } else {
-    // No analysis available but still refresh the transcript + duration
-    const { error: leadEvidenceError } = await supabase.from('leads').update({
-      transcript,
-      call_duration_seconds: duration,
-      updated_at: new Date().toISOString(),
-    }).eq('id', leadId)
-    if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
   }
+
+  // Persist factual call evidence only. Transcript and duration are not a lead
+  // edit, so this write must not refresh leads.updated_at. That column is not
+  // maintained by a trigger or an UPDATE default; it changes only when a writer
+  // sets it. AI-extracted lead fields stay behind ai_change_proposals.
+  const { error: leadEvidenceError } = await supabase.from('leads').update({
+    transcript,
+    call_duration_seconds: duration,
+  }).eq('id', leadId)
+  if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
 
   console.log(`[recording-callback] Recording processed for lead ${leadId}: transcript=${transcript.length} chars, analysis=${!!analysis}`)
   return analysis
