@@ -356,9 +356,12 @@
       "owner": "Operations",
       "status": "active",
       "routes": ["/calendar", "/tasks"],
-      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/leads/create-appointment", "/api/leads/delete-appointment", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete", "/api/mobile/v1/work-items/[id]/cancel"],
+      "apiRoutes": ["/api/tasks/worklist", "/api/calendar/tasks", "/api/calendar/tasks/[id]", "/api/calendar/tasks/bulk", "/api/leads/create-appointment", "/api/leads/delete-appointment", "/api/leads/appointment-outcome", "/api/cron/appointment-outcomes", "/api/mobile/v1/work", "/api/mobile/v1/work-items/[id]/complete", "/api/mobile/v1/work-items/[id]/cancel"],
       "tables": ["appointments", "leads", "lead_activities", "lead_tasks", "tc_tasks", "work_items", "work_item_events"],
-      "environment": []
+      "environment": ["CRON_SECRET"],
+      "crons": [
+        { "path": "/api/cron/appointment-outcomes", "schedule": "20 12 * * *" }
+      ]
     },
     {
       "id": "acquisitions",

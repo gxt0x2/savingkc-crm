@@ -1,11 +1,11 @@
 import { parseAppointmentInstant } from '@/lib/server/appointment-instant'
+import { readAppointmentOutcomeDetails, type AppointmentOutcomeRequest } from '@/lib/server/appointment-outcome-plan'
 import { resolveTaskAssignee } from '@/lib/api/task-assignee'
 import {
   MOBILE_APPOINTMENT_OUTCOMES,
   MOBILE_APPOINTMENT_TYPES,
   type CreateMobileAppointmentInput,
   type EditMobileAppointmentPatch,
-  type MobileAppointmentOutcome,
   type RescheduleMobileAppointmentInput,
 } from '@/lib/mobile-api/appointment-contract'
 
@@ -18,7 +18,10 @@ const CREATE_KEYS = new Set(['leadId', 'type', 'scheduledAt', 'endsAt', 'title',
 const EDIT_KEYS = new Set(['expectedVersion', 'patch'])
 const EDIT_PATCH_KEYS = new Set(['title', 'type', 'location', 'scheduledAt', 'endsAt', 'timeZone', 'notes'])
 const RESCHEDULE_KEYS = new Set(['scheduledAt', 'endsAt', 'timeZone', 'expectedVersion', 'notes'])
-const OUTCOME_KEYS = new Set(['leadId', 'outcome', 'notes', 'expectedVersion'])
+const OUTCOME_KEYS = new Set([
+  'leadId', 'outcome', 'notes', 'expectedVersion', 'completedNextStep', 'followUp',
+  'notInterested', 'deadReason', 'deadReasonNotes', 'replacementAppointment',
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -195,24 +198,25 @@ export function buildMobileAppointmentReschedule(input: unknown, now = Date.now(
 export function buildMobileAppointmentOutcome(input: unknown): ParseResult<{
   leadId: string | null
   expectedVersion: number
-  payload: { outcome: MobileAppointmentOutcome; notes: string | null }
+  payload: AppointmentOutcomeRequest
 }> {
   if (!isRecord(input) || !onlyKeys(input, OUTCOME_KEYS) || !validVersion(input.expectedVersion)) {
     return { ok: false, error: 'A contact, outcome, and version are required.', status: 400 }
   }
-  const leadId = typeof input.leadId === 'string' ? input.leadId.trim() || null : null
-  if ((leadId !== null && !UUID.test(leadId)) || !MOBILE_APPOINTMENT_OUTCOMES.includes(input.outcome as never)) {
+  const details = readAppointmentOutcomeDetails(input)
+  if (!details.ok) return { ok: false, error: details.error, status: details.status }
+  if (details.value.outcome === 'completed' && !details.value.completedNextStep) {
+    return { ok: false, error: 'Say what happened after the appointment.', status: 400 }
+  }
+  if (!MOBILE_APPOINTMENT_OUTCOMES.includes(details.value.outcome)) {
     return { ok: false, error: 'A valid contact and appointment outcome are required.', status: 400 }
   }
   return {
     ok: true,
     value: {
-      leadId,
+      leadId: details.value.leadId,
       expectedVersion: input.expectedVersion,
-      payload: {
-        outcome: input.outcome as MobileAppointmentOutcome,
-        notes: cleanText(input.notes, 5_000) ?? null,
-      },
+      payload: { ...details.value, expectedVersion: input.expectedVersion },
     },
   }
 }

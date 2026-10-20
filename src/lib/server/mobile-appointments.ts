@@ -1,4 +1,6 @@
 import { mobileCommandPayloadHash } from '@/lib/mobile-api/command-receipts'
+import { AppointmentOutcomeError, recordAppointmentOutcome } from '@/lib/server/appointment-outcome'
+import { readAppointmentOutcomeDetails } from '@/lib/server/appointment-outcome-plan'
 import {
   type MobileAppointment,
   type MobileAppointmentCommandResult,
@@ -135,6 +137,91 @@ function commandError(error: { message?: string } | null): AppointmentCommandErr
   return new AppointmentCommandError('Appointment service is temporarily unavailable.', 'unavailable')
 }
 
+function outcomeCommandError(error: AppointmentOutcomeError): AppointmentCommandError {
+  const code = error.code === 'not_found' ? 'not_found'
+    : error.code === 'invalid' ? 'invalid'
+      : error.code === 'conflict' ? 'conflict'
+        : 'unavailable'
+  return new AppointmentCommandError(error.message, code)
+}
+
+async function executeSharedAppointmentOutcome(input: {
+  actor: { email: string; name: string }
+  leadId?: string | null
+  appointmentId?: string | null
+  expectedVersion?: number | null
+  payload: Record<string, unknown>
+}): Promise<MobileAppointmentCommandResult> {
+  if (!input.appointmentId) {
+    throw new AppointmentCommandError('The appointment command contains invalid or unsupported values.', 'invalid')
+  }
+  const details = readAppointmentOutcomeDetails({
+    ...input.payload,
+    leadId: input.leadId ?? null,
+    appointmentId: input.appointmentId,
+    expectedVersion: input.expectedVersion ?? null,
+  })
+  if (!details.ok) throw new AppointmentCommandError(details.error, 'invalid')
+
+  let recorded
+  try {
+    recorded = await recordAppointmentOutcome({
+      actor: input.actor,
+      source: 'mobile_app',
+      request: details.value,
+    })
+  } catch (error) {
+    if (error instanceof AppointmentOutcomeError) throw outcomeCommandError(error)
+    throw error
+  }
+
+  let appointment = mapMobileAppointment(recorded.appointment as AppointmentDbRow)
+  const warnings: string[] = []
+  if (recorded.outcome === 'cancelled') {
+    try {
+      const calendar = await syncMobileAppointmentCalendar({
+        appointmentId: appointment.id,
+        actorEmail: input.actor.email,
+      })
+      if (calendar.warning) warnings.push(calendar.warning)
+      const { data: current, error: readError } = await supabaseAdmin()
+        .from('appointments')
+        .select('id,lead_id,type,status,scheduled_at,ends_at,title,location,address,time_zone,assigned_to,notes,sequence_enabled,version,source,created_at,updated_at,provider_event_id,provider_sync_status,provider_synced_at,provider_sync_error,mobile_appointment_calendar_sync(owner_email)')
+        .eq('id', appointment.id)
+        .single()
+      if (!readError && current) appointment = mapMobileAppointment(current as AppointmentDbRow)
+      else {
+        appointment.sync.provider = calendar.status
+        warnings.push('The latest calendar sync state could not be refreshed.')
+      }
+    } catch (calendarError) {
+      console.error('[mobile/appointments] calendar sync orchestration failed', calendarError)
+      appointment.sync.provider = 'pending'
+      warnings.push('Google Calendar sync is pending.')
+    }
+  }
+
+  if ((input.leadId ?? null) === null && appointment.leadId) {
+    throw new AppointmentCommandError('A standalone event cannot be attached to a seller.', 'unavailable')
+  }
+
+  return {
+    success: true,
+    created: false,
+    changed: recorded.replayed !== true,
+    replayed: recorded.replayed === true,
+    appointment,
+    activityId: null,
+    sideEffects: {
+      lifecycle: appointment.leadId ? (recorded.stage.changed ? 'advanced' : 'unchanged') : 'not_applicable',
+      conversion: 'not_applicable',
+      reminders: appointment.sync.reminders,
+      provider: appointment.sync.provider,
+    },
+    ...(warnings.length ? { warning: `Appointment saved. ${warnings.join(' ')}` } : {}),
+  }
+}
+
 export async function executeMobileAppointmentCommand(input: {
   actor: { email: string; name: string }
   idempotencyKey: string
@@ -144,6 +231,7 @@ export async function executeMobileAppointmentCommand(input: {
   expectedVersion?: number | null
   payload: Record<string, unknown>
 }): Promise<MobileAppointmentCommandResult> {
+  if (input.command === 'outcome') return executeSharedAppointmentOutcome(input)
   const hashInput = {
     command: input.command,
     appointmentId: input.appointmentId ?? null,
@@ -171,7 +259,7 @@ export async function executeMobileAppointmentCommand(input: {
   let conversion: MobileAppointmentCommandResult['sideEffects']['conversion'] = 'not_applicable'
   const warnings: string[] = []
 
-  if (appointment.leadId && !result.replayed && (input.command === 'create' || (input.command === 'outcome' && input.payload.outcome === 'completed'))) {
+  if (appointment.leadId && !result.replayed && input.command === 'create') {
     try {
       const lifecycleResult = await checkAutoAdvance(
         appointment.leadId,

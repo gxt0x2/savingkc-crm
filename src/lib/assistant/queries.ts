@@ -6,6 +6,7 @@ import { readGmailConnectionHealth } from '@/lib/gmail-oauth-health'
 import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
 import type { GmailHealthSnapshot } from '@/lib/gmail-oauth-status'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { listOverdueScheduledAppointments } from '@/lib/server/overdue-appointment-outcomes'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
 import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
 
@@ -258,13 +259,18 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
 
   const activityBase = db.from('lead_activities').select('id, lead_id, activity_type, description, agent, metadata, created_at').in('activity_type', TASK_ACTIVITY_TYPES).order('created_at', { ascending: false }).limit(1000)
   const leadBase = db.from('leads').select('id, full_name, property_address, city, state, station, priority, assigned_agent, updated_at').in('station', ASSISTANT_ACTIVE_STAGES).lt('updated_at', staleCutoff).order('updated_at', { ascending: true }).limit(limit)
-  const [activitiesResult, appointmentsResult, staleLeadsResult, tcTasksResult, tcFilesResult, dealsResult] = await Promise.all([
+  const [activitiesResult, appointmentsResult, staleLeadsResult, tcTasksResult, tcFilesResult, dealsResult, overdueAppointments] = await Promise.all([
     activityBase,
     db.from('appointments').select('id, lead_id, scheduled_at, type, status, assigned_to, address, notes').in('status', ['scheduled', 'confirmed']).gte('scheduled_at', generatedAt).lte('scheduled_at', nextWeek).order('scheduled_at', { ascending: true }).limit(limit),
     actorLeadQuery(leadBase, actor),
     db.from('tc_tasks').select('id, tc_file_id, task_type, label, status, due_at, assigned_to, notes, created_at').in('status', ['open', 'blocked']).order('due_at', { ascending: true, nullsFirst: false }).limit(100),
     db.from('tc_files').select('id, lead_id, file_number, status, risk_level, next_action, closing_scheduled_at, emd_due_at').neq('status', 'cancelled').limit(300),
     db.from('dispo_deals').select('id, lead_id, stage, closeout_status, close_date, debrief_due_at, assignment_fee, updated_at').neq('stage', 'dead').order('updated_at', { ascending: false }).limit(300),
+    listOverdueScheduledAppointments(db, { now, limit }).catch((error: unknown) => ({
+      rows: [],
+      error: error instanceof Error ? error.message : 'Overdue appointments could not be read',
+      cutoff: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+    })),
   ])
 
   if (activitiesResult.error || staleLeadsResult.error) throw new Error(`CRM attention lookup failed: ${(activitiesResult.error || staleLeadsResult.error)?.message}`)
@@ -290,6 +296,7 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
   const ids = [
     ...tasks.map((task) => String(task.lead_id || '')),
     ...appointments.map((appointment) => String(appointment.lead_id || '')),
+    ...overdueAppointments.rows.map((appointment) => String(appointment.leadId || '')),
     ...tcTasks.map((task) => String(tcFileMap.get(String(task.tc_file_id))?.lead_id || '')),
     ...deals.map((deal) => String(deal.lead_id || '')),
   ]
@@ -315,6 +322,9 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
     generatedAt,
     tasks: tasks.map((task) => ({ ...task, dueAt: activityDueAt(task), status: activityStatus(task), metadata: sanitizeAssistantMetadata(task.metadata), lead: attachLead(task.lead_id), crmUrl: task.lead_id ? crmLeadUrl(String(task.lead_id)) : null })),
     appointments: visibleAppointments.map((appointment) => ({ ...appointment, lead: attachLead(appointment.lead_id), crmUrl: appointment.lead_id ? crmLeadUrl(String(appointment.lead_id)) : null })),
+    overdueAppointmentOutcomes: overdueAppointments.rows
+      .filter((appointment) => actorCanReadCompanyWide || leadIsVisible(appointment.leadId))
+      .map((appointment) => ({ ...appointment, lead: attachLead(appointment.leadId), crmUrl: appointment.leadId ? crmLeadUrl(appointment.leadId) : null })),
     staleLeads: ((staleLeadsResult.data || []) as JsonRecord[]).map(mapLeadLink),
     transactionCoordination: tcTasks.map((task) => {
       const file = tcFileMap.get(String(task.tc_file_id))
@@ -323,6 +333,7 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
     dispositionDeadlines: visibleDeals.filter((deal) => deal.close_date || deal.debrief_due_at || deal.closeout_status === 'awaiting_debrief').slice(0, limit).map((deal) => ({ ...deal, lead: attachLead(deal.lead_id), crmUrl: deal.lead_id ? crmLeadUrl(String(deal.lead_id)) : `${CRM_ORIGIN}/dispo` })),
     availability: {
       appointments: appointmentsResult.error ? appointmentsResult.error.message : 'available',
+      overdueAppointmentOutcomes: overdueAppointments.error ?? 'available',
       tcTasks: tcTasksResult.error || tcFilesResult.error ? (tcTasksResult.error || tcFilesResult.error)?.message : 'available',
       dispositions: dealsResult.error ? dealsResult.error.message : 'available',
     },

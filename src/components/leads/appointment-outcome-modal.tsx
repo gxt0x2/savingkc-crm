@@ -10,8 +10,10 @@
 import { useId, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
+import { DEAD_REASONS } from '@/lib/lead-outcomes'
 
 type OutcomeType = 'completed' | 'no_show' | 'cancelled' | 'rescheduled'
+type CompletedNextStep = 'offer_presented' | 'qualified' | 'stay_with_follow_up'
 
 interface AppointmentOutcomeModalProps {
   lead: { id: string; full_name: string | null }
@@ -64,15 +66,29 @@ export function AppointmentOutcomeModal({
   onSuccess,
 }: AppointmentOutcomeModalProps) {
   const [selectedOutcome, setSelectedOutcome] = useState<OutcomeType | null>(null)
+  const [completedNextStep, setCompletedNextStep] = useState<CompletedNextStep | null>(null)
+  const [notInterested, setNotInterested] = useState(false)
+  const [deadReason, setDeadReason] = useState('')
+  const [deadReasonNotes, setDeadReasonNotes] = useState('')
+  const [followUpTitle, setFollowUpTitle] = useState('')
+  const [followUpDue, setFollowUpDue] = useState('')
+  const [newAppointmentAt, setNewAppointmentAt] = useState('')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const titleId = useId()
   const notesId = useId()
   const dialogRef = useDialogAccessibility<HTMLDivElement>(true, onClose)
+  const stayHere = selectedOutcome === 'completed' && completedNextStep === 'stay_with_follow_up'
+  const needsDeadReason = selectedOutcome === 'cancelled' && notInterested
+  const canSubmit = Boolean(selectedOutcome)
+    && (selectedOutcome !== 'completed' || completedNextStep)
+    && (!stayHere || (followUpTitle.trim() && followUpDue))
+    && (!needsDeadReason || deadReason)
+    && (!(needsDeadReason && deadReason === 'other') || deadReasonNotes.trim() || notes.trim())
 
   async function handleSubmit() {
-    if (!selectedOutcome) return
+    if (!selectedOutcome || !canSubmit) return
 
     setSubmitting(true)
     setError(null)
@@ -86,6 +102,18 @@ export function AppointmentOutcomeModal({
           appointmentId: appointment.appointmentId,
           outcome: selectedOutcome,
           notes,
+          completedNextStep: selectedOutcome === 'completed' ? completedNextStep : null,
+          notInterested: needsDeadReason,
+          deadReason: needsDeadReason ? deadReason : null,
+          deadReasonNotes: needsDeadReason ? deadReasonNotes : null,
+          followUp: stayHere ? {
+            title: followUpTitle.trim(),
+            notes: null,
+            dueAt: new Date(followUpDue).toISOString(),
+          } : null,
+          replacementAppointment: selectedOutcome === 'rescheduled' && newAppointmentAt
+            ? { scheduledAt: new Date(newAppointmentAt).toISOString() }
+            : null,
         }),
       })
 
@@ -193,6 +221,74 @@ export function AppointmentOutcomeModal({
             </div>
           </div>
 
+          {selectedOutcome === 'completed' && (
+            <fieldset className="space-y-2">
+              <legend className="mb-2 block text-xs font-bold uppercase tracking-wider text-[#344054]">What happened next?</legend>
+              {([
+                ['offer_presented', 'Offer presented — move to Offer'],
+                ['qualified', 'No offer — move to Qualified'],
+                ['stay_with_follow_up', 'Stay here and schedule a follow-up'],
+              ] as const).map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 text-sm text-[#172033]">
+                  <input type="radio" name="completed-next-step" value={value} checked={completedNextStep === value} onChange={() => setCompletedNextStep(value)} />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          )}
+
+          {stayHere && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-[#344054]">
+                Follow-up
+                <input value={followUpTitle} onChange={(event) => setFollowUpTitle(event.target.value)} placeholder="What needs to happen" className="mt-2 w-full rounded-lg border border-[#cfd6de] px-3 py-2 text-sm font-medium normal-case tracking-normal text-[#1f2937]" />
+              </label>
+              <label className="text-xs font-bold uppercase tracking-wider text-[#344054]">
+                Due
+                <input type="datetime-local" value={followUpDue} onChange={(event) => setFollowUpDue(event.target.value)} className="mt-2 w-full rounded-lg border border-[#cfd6de] px-3 py-2 text-sm font-medium normal-case tracking-normal text-[#1f2937]" />
+              </label>
+            </div>
+          )}
+
+          {selectedOutcome === 'no_show' && (
+            <p className="text-sm text-[#475467]">The lead moves to Qualified, or Contacted if they were never qualified, and a follow-up task is created.</p>
+          )}
+
+          {selectedOutcome === 'cancelled' && (
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm text-[#172033]">
+                <input type="checkbox" checked={notInterested} onChange={(event) => setNotInterested(event.target.checked)} />
+                Seller is not interested
+              </label>
+              {needsDeadReason && (
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#344054]">
+                  Dead reason
+                  <select value={deadReason} onChange={(event) => setDeadReason(event.target.value)} className="mt-2 w-full rounded-lg border border-[#cfd6de] px-3 py-2 text-sm font-medium normal-case tracking-normal text-[#1f2937]">
+                    <option value="">Choose a reason</option>
+                    {DEAD_REASONS.map((reason) => <option key={reason.id} value={reason.id}>{reason.label}</option>)}
+                  </select>
+                </label>
+              )}
+              {needsDeadReason && deadReason === 'other' && (
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#344054]">
+                  Reason notes
+                  <input value={deadReasonNotes} onChange={(event) => setDeadReasonNotes(event.target.value)} className="mt-2 w-full rounded-lg border border-[#cfd6de] px-3 py-2 text-sm font-medium normal-case tracking-normal text-[#1f2937]" />
+                </label>
+              )}
+              {!notInterested && <p className="text-sm text-[#475467]">The lead moves to Qualified and a follow-up task is created.</p>}
+            </div>
+          )}
+
+          {selectedOutcome === 'rescheduled' && (
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#344054]">
+                New appointment time
+                <input type="datetime-local" value={newAppointmentAt} onChange={(event) => setNewAppointmentAt(event.target.value)} className="mt-2 w-full rounded-lg border border-[#cfd6de] px-3 py-2 text-sm font-medium normal-case tracking-normal text-[#1f2937]" />
+              </label>
+              <p className="text-sm text-[#475467]">Leave this blank to move the lead to Qualified and create a reschedule task. A future time keeps the lead at Appointment set.</p>
+            </div>
+          )}
+
           {/* Notes (Optional) */}
           <div>
             <label htmlFor={notesId} className="mb-2 block text-xs font-bold uppercase tracking-wider text-[#344054]">
@@ -222,7 +318,7 @@ export function AppointmentOutcomeModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!selectedOutcome || submitting}
+            disabled={!canSubmit || submitting}
             className="rounded-lg bg-[#df3038] px-6 py-2.5 font-bold text-white transition-all hover:bg-[#c9232d] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting ? 'Saving...' : 'Log Outcome'}
