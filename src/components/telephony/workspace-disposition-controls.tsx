@@ -63,7 +63,7 @@ export function WorkspaceDispositionControls({
             setCounts((current) => ({ ...current, [item.key]: current[item.key] + 1 }))
             onDisposition?.(item.disposition)
           }}
-          className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-[var(--crm-brand)] bg-[var(--crm-brand)] px-3 py-1.5 text-left text-xs font-semibold leading-tight text-white transition-colors enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)] disabled:cursor-not-allowed disabled:opacity-75"
+          className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-[var(--prospecting-primary)] bg-[var(--prospecting-primary)] px-3 py-1.5 text-left text-xs font-semibold leading-tight text-white transition-colors enabled:hover:border-[var(--prospecting-primary-strong)] enabled:hover:bg-[var(--prospecting-primary-strong)] disabled:cursor-not-allowed disabled:opacity-85"
         >
           <Icon name={saving ? 'progress_activity' : item.icon} size="text-sm" className={`shrink-0 text-white ${saving ? 'animate-spin' : ''}`} />
           <span className="min-w-0 flex-1 whitespace-normal break-words">{item.label}</span>
