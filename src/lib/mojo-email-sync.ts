@@ -249,6 +249,13 @@ function extractContactFromBody(body: string, subject: string): MojoEmailContact
 }
 
 function buildCallRecord(msg: GmailMessage, subject: string, from: string, body: string): MojoEmailCallRecord | null {
+  // Calendar reminders repeat historical groups and calls. They are evidence of
+  // an existing scheduled task, not a new call at the email delivery time.
+  if (/\bpending\s+events\s+from\s+mojo\s+calendar\b/i.test(subject)
+    || /^\s*mojo\s+pending\s+events\b/i.test(body)) {
+    return null
+  }
+
   const contact = extractContactFromBody(body, subject)
   const disposition = dispositionFromText(subject, body)
   const phone = contact.phone ? normalizePhone(contact.phone) : ''
