@@ -60,7 +60,11 @@ function input(overrides: Partial<BuildMyDayInput> = {}): BuildMyDayInput {
     activities: [
       activity(),
       activity({ id: 'appointment-stage', metadata: { new_station: 'appointment_set' }, created_at: '2026-08-04T16:00:00.000Z' }),
-      activity({ id: 'offer', activity_type: 'offer', metadata: {}, created_at: '2026-08-05T16:00:00.000Z' }),
+      activity({
+        id: 'offer',
+        metadata: { old_station: 'appointment_set', new_station: 'offer_made' },
+        created_at: '2026-08-05T16:00:00.000Z',
+      }),
     ],
     tasks: [activity({
       id: 'task-1',
@@ -92,6 +96,135 @@ describe('Casey My Day model', () => {
     ])
     expect(report.funnel[1].conversion).toBe(30)
     expect(report.funnel[4].conversion).toBe(100)
+  })
+
+  it('does not count a lead already at appointment_set when a later call only refreshes the record', () => {
+    const monday = { preset: 'today' as const, from: '2026-10-19', to: '2026-10-19', label: 'Today' }
+    const report = buildMyDay(input({
+      month: '2026-10',
+      range: monday,
+      now: new Date('2026-10-19T18:00:00.000Z'),
+      leads: [lead({
+        id: 'f6ee3b04',
+        station: 'appointment_set',
+        created_at: '2026-09-01T15:00:00.000Z',
+        updated_at: '2026-10-19T15:10:12.000Z',
+      })],
+      activities: [activity({
+        id: 'no-answer-call',
+        lead_id: 'f6ee3b04',
+        activity_type: 'call',
+        description: 'No answer',
+        metadata: { disposition: 'no_answer', source: 'twilio_recording_callback', duration_seconds: 12 },
+        created_at: '2026-10-19T15:10:12.000Z',
+      })],
+      appointments: [],
+      lifecycleEvents: [],
+    }))
+
+    expect(report.funnel.find((metric) => metric.key === 'opportunities')?.value).toBe(0)
+    expect(report.funnel.find((metric) => metric.key === 'appointments')?.value).toBe(0)
+    expect(report.funnel.find((metric) => metric.key === 'offers')?.value).toBe(0)
+    expect(report.funnel.find((metric) => metric.key === 'contracts')?.value).toBe(0)
+    expect(report.week.rows.find((row) => row.key === 'appointments')?.days).toEqual([0, 0, 0, 0, 0])
+  })
+
+  it('counts one real upward stage move once when the activity and lifecycle event both record it', () => {
+    const movedAt = '2026-08-04T16:00:00.000Z'
+    const report = buildMyDay(input({
+      leads: [lead({
+        id: 'moved-lead',
+        station: 'appointment_set',
+        created_at: '2026-07-01T15:00:00.000Z',
+        updated_at: movedAt,
+      })],
+      activities: [
+        activity({
+          id: 'stage-activity',
+          lead_id: 'moved-lead',
+          metadata: { old_station: 'qualified', new_station: 'appointment_set' },
+          created_at: movedAt,
+        }),
+        activity({
+          id: 'same-stage',
+          lead_id: 'moved-lead',
+          metadata: { old_station: 'appointment_set', new_station: 'appointment_set' },
+          created_at: '2026-08-05T16:00:00.000Z',
+        }),
+      ],
+      lifecycleEvents: [{
+        id: 'life-1',
+        lead_id: 'moved-lead',
+        from_stage: 'qualified',
+        to_stage: 'appointment_set',
+        occurred_at: movedAt,
+      }],
+      appointments: [],
+    }))
+
+    expect(report.funnel.find((metric) => metric.key === 'appointments')?.value).toBe(1)
+    expect(report.funnel.find((metric) => metric.key === 'opportunities')?.value).toBe(0)
+    expect(report.week.rows.find((row) => row.key === 'appointments')?.days).toEqual([0, 1, 0, 0, 0])
+  })
+
+  it('counts a new appointment row once, including when that lead also moved into the stage', () => {
+    const report = buildMyDay(input({
+      leads: [
+        lead({
+          id: 'row-only',
+          station: 'appointment_set',
+          created_at: '2026-07-01T15:00:00.000Z',
+          updated_at: '2026-08-04T17:00:00.000Z',
+        }),
+        lead({
+          id: 'both-signals',
+          station: 'appointment_set',
+          created_at: '2026-07-01T15:00:00.000Z',
+          updated_at: '2026-08-04T16:00:00.000Z',
+        }),
+      ],
+      activities: [activity({
+        id: 'both-stage',
+        lead_id: 'both-signals',
+        metadata: { old_station: 'qualified', new_station: 'appointment_set' },
+        created_at: '2026-08-04T16:00:00.000Z',
+      })],
+      appointments: [
+        { id: 'row-1', lead_id: 'row-only', type: 'in_person', status: 'scheduled', scheduled_at: '2026-08-06T20:00:00.000Z', assigned_to: 'casey', address: '1 Main St', notes: null, created_at: '2026-08-04T17:00:00.000Z' },
+        { id: 'row-2', lead_id: 'both-signals', type: 'in_person', status: 'scheduled', scheduled_at: '2026-08-06T20:00:00.000Z', assigned_to: 'casey', address: '2 Main St', notes: null, created_at: '2026-08-04T16:05:00.000Z' },
+      ],
+    }))
+
+    expect(report.funnel.find((metric) => metric.key === 'appointments')?.value).toBe(2)
+    expect(report.funnel.find((metric) => metric.key === 'opportunities')?.value).toBe(0)
+    expect(report.week.rows.find((row) => row.key === 'appointments')?.days).toEqual([0, 2, 0, 0, 0])
+  })
+
+  it('uses created_at only when a lead has no stage history, and never uses updated_at', () => {
+    const report = buildMyDay(input({
+      leads: [
+        lead({
+          id: 'legacy-qualified',
+          station: 'qualified',
+          created_at: '2026-08-04T16:00:00.000Z',
+          updated_at: '2026-08-05T16:00:00.000Z',
+        }),
+        lead({
+          id: 'has-history',
+          station: 'offer_made',
+          created_at: '2026-08-04T16:00:00.000Z',
+          updated_at: '2026-08-05T16:00:00.000Z',
+        }),
+      ],
+      activities: [],
+      appointments: [],
+      leadsWithStageHistory: ['has-history'],
+    }))
+
+    expect(report.funnel.find((metric) => metric.key === 'opportunities')?.value).toBe(1)
+    expect(report.funnel.find((metric) => metric.key === 'appointments')?.value).toBe(0)
+    expect(report.funnel.find((metric) => metric.key === 'offers')?.value).toBe(0)
+    expect(report.week.rows.find((row) => row.key === 'opportunities')?.days).toEqual([0, 1, 0, 0, 0])
   })
 
   it('uses the authoritative Mojo lead total even when no new CRM lead row was created', () => {

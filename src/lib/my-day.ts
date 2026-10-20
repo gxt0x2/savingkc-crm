@@ -9,6 +9,7 @@ import {
   startOfMyDayWeek,
   type MyDayDateRange,
 } from '@/lib/my-day-range'
+import { stageEntries, type MyDayLifecycleEvent } from '@/lib/my-day-stage-metrics'
 
 export {
   MY_DAY_TIME_ZONE,
@@ -203,26 +204,16 @@ export interface BuildMyDayInput {
   activities: MyDayActivity[]
   tasks: MyDayActivity[]
   appointments: MyDayAppointment[]
+  lifecycleEvents?: MyDayLifecycleEvent[]
+  /** Leads with a stage event outside the loaded window. created_at is not a fallback for these. */
+  leadsWithStageHistory?: string[]
   attentionItems: MyDayAttentionItem[]
   attentionAvailable: boolean
   goals: MyDayGoalSet
   availability: MyDayData['availability']
 }
 
-const STAGE_RANK: Record<string, number> = {
-  new: 0,
-  contacted: 1,
-  qualifying: 1,
-  qualified: 2,
-  appointment_set: 3,
-  appt_set: 3,
-  offer_made: 4,
-  negotiations: 4,
-  under_contract: 5,
-  contract_signed: 5,
-  closed_won: 6,
-  closed: 6,
-}
+export type { MyDayLifecycleEvent }
 
 const WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: MY_DAY_TIME_ZONE, weekday: 'short' })
 const DATE_KEY = new Intl.DateTimeFormat('en-CA', {
@@ -266,46 +257,10 @@ function percentage(numerator: number | null, denominator: number | null): numbe
   return Math.round((numerator / denominator) * 1000) / 10
 }
 
-function stageFromActivity(activity: MyDayActivity): string {
-  const metadata = activity.metadata ?? {}
-  return text(metadata.new_station) || text(metadata.to_stage) || text(metadata.station) || text(metadata.stage)
-}
-
 function activityAssignedToCasey(activity: MyDayActivity): boolean {
   const metadata = activity.metadata ?? {}
   const owner = text(metadata.assigned_to) || text(metadata.assignedTo) || activity.agent || ''
   return owner.toLowerCase().includes('casey')
-}
-
-function stageEntries(
-  input: BuildMyDayInput,
-  threshold: number,
-  range: Pick<MyDayDateRange, 'from' | 'to'> = input.range,
-): Map<string, string> {
-  const entries = new Map<string, string>()
-  for (const activity of input.activities) {
-    if (!activity.lead_id || !isWithinRange(activity.created_at, range)) continue
-    const activityType = activity.activity_type.toLowerCase()
-    const stage = stageFromActivity(activity)
-    const rank = STAGE_RANK[stage] ?? -1
-    const directMatch = threshold === 3 && activityType === 'appointment'
-      || threshold === 4 && activityType === 'offer'
-    if ((rank >= threshold || directMatch) && !entries.has(activity.lead_id)) {
-      entries.set(activity.lead_id, activity.created_at)
-    }
-  }
-
-  // Some historical rows predate stage-change events. The lead update is an
-  // explicit recorded fallback; it preserves the month without inventing a
-  // date and is replaced automatically whenever a stage event exists.
-  for (const lead of input.leads) {
-    const rank = STAGE_RANK[(lead.station || '').toLowerCase()] ?? -1
-    const recordedAt = lead.updated_at || lead.created_at
-    if (rank >= threshold && isWithinRange(recordedAt, range) && !entries.has(lead.id)) {
-      entries.set(lead.id, recordedAt)
-    }
-  }
-  return entries
 }
 
 function weekDateKeys(input: BuildMyDayInput): string[] {

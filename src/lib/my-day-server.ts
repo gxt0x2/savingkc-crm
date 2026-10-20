@@ -10,11 +10,14 @@ import {
   type MyDayData,
   type MyDayGoalSet,
   type MyDayLead,
+  type MyDayLifecycleEvent,
   type MyDayNativeDialerPerformanceRow,
   type MyDayPerformanceRow,
   type MyDayRangeRequest,
   type MyDaySourceFreshness,
 } from '@/lib/my-day'
+import { centralDateKey } from '@/lib/my-day-range'
+import { stageHistoryLeadIds } from '@/lib/my-day-stage-metrics'
 import { getMojoHealth } from '@/lib/marketing/mojo-health'
 import {
   buildMojoAttentionItems,
@@ -29,6 +32,8 @@ import { loadDialerDailyPerformance } from '@/lib/server/dialer-daily-performanc
 
 const TASK_ACTIVITY_TYPES = ['task', 'appointment', 'follow_up', 'callback', 'send_offer'] as const
 const FUNNEL_ACTIVITY_TYPES = ['status_change', 'outcome', 'appointment', 'offer'] as const
+const APPOINTMENT_COLUMNS = 'id, lead_id, type, status, scheduled_at, assigned_to, title, address, notes, created_at'
+const LIFECYCLE_COLUMNS = 'id, lead_id, from_stage, to_stage, occurred_at'
 
 /**
  * Casey is the only agent who receives My Day in navigation. SavingKC admins
@@ -47,6 +52,10 @@ function configuredNumber(value: unknown): number | null {
 }
 
 function dedupeActivities(rows: MyDayActivity[]) {
+  return [...new Map(rows.map((row) => [row.id, row])).values()]
+}
+
+function dedupeById<T extends { id: string }>(rows: T[]): T[] {
   return [...new Map(rows.map((row) => [row.id, row])).values()]
 }
 
@@ -118,6 +127,12 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
   if (leadsResult.error) throw new Error(`Casey's pipeline could not load: ${leadsResult.error.message}`)
   const leads = (leadsResult.data ?? []) as MyDayLead[]
   const leadIds = leads.map((lead) => lead.id)
+  const stageHistoryCandidateIds = leads.flatMap((lead) => {
+    const created = new Date(lead.created_at)
+    if (!Number.isFinite(created.getTime())) return []
+    const key = centralDateKey(created)
+    return key >= queryStart && key <= queryEnd ? [lead.id] : []
+  })
   const mojoEvents = mojoEventsResult.error ? [] : (mojoEventsResult.data ?? []) as MyDayMojoEvent[]
   const attentionLeadIds = [...new Set(mojoEvents.map((event) => event.lead_id).filter((id): id is string => Boolean(id)))]
   const mojoRecordIds = [...new Set(mojoEvents.map((event) => event.record_id))]
@@ -159,7 +174,8 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .limit(1000)
     : Promise.resolve({ data: [], error: null })
 
-  const [activityResult, caseyFunnelActivityResult, agentTasksResult, assignedTasksResult, appointmentsResult, attentionLeadsResult, terminalEventsResult, reviewedMojoEventsResult] = await Promise.all([
+  const noRows = Promise.resolve({ data: [], error: null })
+  const [activityResult, caseyFunnelActivityResult, agentTasksResult, assignedTasksResult, appointmentsResult, appointmentsCreatedResult, appointmentsForLeadsResult, lifecycleForLeadsResult, lifecycleByCaseyResult, stageHistoryActivityResult, stageHistoryLifecycleResult, attentionLeadsResult, terminalEventsResult, reviewedMojoEventsResult] = await Promise.all([
     activityQuery,
     db
       .from('lead_activities')
@@ -186,12 +202,65 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       .limit(1000),
     db
       .from('appointments')
-      .select('id, lead_id, type, status, scheduled_at, assigned_to, title, address, notes, created_at')
+      .select(APPOINTMENT_COLUMNS)
       .ilike('assigned_to', '%casey%')
       .gte('scheduled_at', now.toISOString())
       .lte('scheduled_at', commitmentEnd)
       .order('scheduled_at', { ascending: true })
       .limit(1000),
+    db
+      .from('appointments')
+      .select(APPOINTMENT_COLUMNS)
+      .ilike('assigned_to', '%casey%')
+      .gte('created_at', activityStart.toISOString())
+      .lte('created_at', activityEnd.toISOString())
+      .order('created_at', { ascending: true })
+      .limit(2000),
+    leadIds.length > 0
+      ? db
+        .from('appointments')
+        .select(APPOINTMENT_COLUMNS)
+        .in('lead_id', leadIds)
+        .gte('created_at', activityStart.toISOString())
+        .lte('created_at', activityEnd.toISOString())
+        .order('created_at', { ascending: true })
+        .limit(2000)
+      : noRows,
+    leadIds.length > 0
+      ? db
+        .from('crm_lifecycle_events')
+        .select(LIFECYCLE_COLUMNS)
+        .in('lead_id', leadIds)
+        .gte('occurred_at', activityStart.toISOString())
+        .lte('occurred_at', activityEnd.toISOString())
+        .order('occurred_at', { ascending: true })
+        .limit(10000)
+      : noRows,
+    db
+      .from('crm_lifecycle_events')
+      .select(LIFECYCLE_COLUMNS)
+      .or('actor_name.ilike.%casey%,actor_email.ilike.%casey%')
+      .gte('occurred_at', activityStart.toISOString())
+      .lte('occurred_at', activityEnd.toISOString())
+      .order('occurred_at', { ascending: true })
+      .limit(10000),
+    stageHistoryCandidateIds.length > 0
+      ? db
+        .from('lead_activities')
+        .select('lead_id, metadata')
+        .in('lead_id', stageHistoryCandidateIds)
+        .eq('activity_type', 'status_change')
+        .or('metadata->>new_station.not.is.null,metadata->>to_stage.not.is.null')
+        .limit(5000)
+      : noRows,
+    stageHistoryCandidateIds.length > 0
+      ? db
+        .from('crm_lifecycle_events')
+        .select('lead_id, to_stage')
+        .in('lead_id', stageHistoryCandidateIds)
+        .not('to_stage', 'is', null)
+        .limit(5000)
+      : noRows,
     attentionLeadsQuery,
     terminalEventsQuery,
     reviewedMojoEventsQuery,
@@ -199,6 +268,28 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
 
   if (activityResult.error) throw new Error(`Casey's activity history could not load: ${activityResult.error.message}`)
   if (caseyFunnelActivityResult.error) throw new Error(`Casey's funnel history could not load: ${caseyFunnelActivityResult.error.message}`)
+  const stageEvidenceError = [
+    appointmentsCreatedResult.error,
+    appointmentsForLeadsResult.error,
+    lifecycleForLeadsResult.error,
+    lifecycleByCaseyResult.error,
+    stageHistoryActivityResult.error,
+    stageHistoryLifecycleResult.error,
+  ].find((error) => Boolean(error))
+  if (stageEvidenceError) throw new Error(`Casey's stage history could not load: ${stageEvidenceError.message}`)
+  const appointments = dedupeById([
+    ...((appointmentsResult.error ? [] : appointmentsResult.data ?? []) as MyDayAppointment[]),
+    ...((appointmentsCreatedResult.data ?? []) as MyDayAppointment[]),
+    ...((appointmentsForLeadsResult.data ?? []) as MyDayAppointment[]),
+  ])
+  const lifecycleEvents = dedupeById([
+    ...((lifecycleForLeadsResult.data ?? []) as MyDayLifecycleEvent[]),
+    ...((lifecycleByCaseyResult.data ?? []) as MyDayLifecycleEvent[]),
+  ])
+  const leadsWithStageHistory = stageHistoryLeadIds(
+    (stageHistoryActivityResult.data ?? []) as Array<{ lead_id: string | null; metadata: unknown }>,
+    (stageHistoryLifecycleResult.data ?? []) as Array<{ lead_id: string | null; to_stage: string | null }>,
+  )
   const taskErrors = [agentTasksResult.error, assignedTasksResult.error].filter(Boolean)
   if (taskErrors.length === 2) throw new Error(`Casey's task queue could not load: ${taskErrors[0]?.message}`)
 
@@ -260,7 +351,9 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       ...((agentTasksResult.data ?? []) as MyDayActivity[]),
       ...((assignedTasksResult.data ?? []) as MyDayActivity[]),
     ]),
-    appointments: appointmentsResult.error ? [] : (appointmentsResult.data ?? []) as MyDayAppointment[],
+    appointments,
+    lifecycleEvents,
+    leadsWithStageHistory,
     attentionItems,
     attentionAvailable,
     goals,
@@ -268,7 +361,7 @@ export async function loadCaseyMyDay(rangeRequest: MyDayRangeRequest = {}, now =
       mojoPerformance: !performanceResult.error,
       dialerPerformance: !dialerPerformanceResult.error,
       agentStats: !statsResult.error,
-      appointments: !appointmentsResult.error,
+      appointments: !appointmentsResult.error && !appointmentsCreatedResult.error && !appointmentsForLeadsResult.error,
       habits: false,
     },
   })
