@@ -26,7 +26,7 @@ describe('mobile appointment outcome', () => {
     expect(response.status).toBe(200)
     expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({
       command: 'outcome', appointmentId, leadId, expectedVersion: 5,
-      payload: { outcome: 'cancelled', notes: 'Seller cancelled' },
+      payload: expect.objectContaining({ outcome: 'cancelled', notes: 'Seller cancelled' }),
     }))
   })
 
@@ -39,12 +39,15 @@ describe('mobile appointment outcome', () => {
     expect(response.status).toBe(200)
     expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({ command: 'outcome', appointmentId, leadId: null, expectedVersion: 5 }))
   })
-  it('does not accept rescheduled as an outcome label', async () => {
+  it('accepts rescheduled and passes it to the shared outcome command', async () => {
     const response = await POST(new NextRequest(`https://crm.savingkc.com/api/mobile/v1/appointments/${appointmentId}/outcome`, {
       method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json', 'Idempotency-Key': 'appointment-outcome-1' },
       body: JSON.stringify({ leadId, outcome: 'rescheduled', expectedVersion: 5 }),
     }), { params: Promise.resolve({ id: appointmentId }) })
-    expect(response.status).toBe(400)
-    expect(mocks.execute).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'outcome',
+      payload: expect.objectContaining({ outcome: 'rescheduled', leadId }),
+    }))
   })
 })

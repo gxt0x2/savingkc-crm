@@ -84,10 +84,23 @@ describe('mobile appointment command parsing', () => {
     }, now)).toMatchObject({ ok: true, value: { expectedVersion: 4 } })
     expect(buildMobileAppointmentOutcome({
       leadId, expectedVersion: 4, outcome: 'cancelled', notes: 'Seller cancelled',
-    })).toEqual({
+    })).toMatchObject({
       ok: true,
-      value: { leadId, expectedVersion: 4, payload: { outcome: 'cancelled', notes: 'Seller cancelled' } },
+      value: {
+        leadId,
+        expectedVersion: 4,
+        payload: { outcome: 'cancelled', notes: 'Seller cancelled', expectedVersion: 4 },
+      },
     })
-    expect(buildMobileAppointmentOutcome({ leadId, expectedVersion: 4, outcome: 'rescheduled' })).toMatchObject({ ok: false })
+    expect(buildMobileAppointmentOutcome({
+      leadId,
+      expectedVersion: 4,
+      outcome: 'rescheduled',
+      replacementAppointment: { scheduledAt: '2026-09-30T18:00:00.000Z' },
+    })).toMatchObject({
+      ok: true,
+      value: { payload: { outcome: 'rescheduled', replacementAppointment: { scheduledAt: '2026-09-30T18:00:00.000Z' } } },
+    })
+    expect(buildMobileAppointmentOutcome({ leadId, expectedVersion: 4, outcome: 'completed' })).toMatchObject({ ok: false })
   })
 })

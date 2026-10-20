@@ -11,6 +11,7 @@ BEGIN
   RETURN '{}';
 END $$;
 \ir ../supabase/migrations/20261106120000_appointment_show_rate_sequence.sql
+\ir ../supabase/migrations/20261127120000_appointment_reschedule_reply_status.sql
 
 DO $$
 DECLARE lead uuid:=gen_random_uuid(); appt uuid; n int; sid uuid; reply uuid:=gen_random_uuid(); target timestamptz;
@@ -48,7 +49,7 @@ BEGIN
   ASSERT (SELECT confirmation_status='confirmed' FROM appointments WHERE id=appt),'reply confirmation';
   ASSERT (SELECT count(*)=1 FROM lead_activities WHERE id=reply),'idempotent reply';
   PERFORM appointment_sequence_reply_v1(lead,'reschedule',gen_random_uuid(),'SMchange');
-  ASSERT (SELECT reschedule_requested_at IS NOT NULL AND status='confirmed' FROM appointments WHERE id=appt),'request separate from outcome';
+  ASSERT (SELECT reschedule_requested_at IS NOT NULL AND status='rescheduled' FROM appointments WHERE id=appt),'reschedule reply sets status and stops reminders';
   ASSERT NOT EXISTS(SELECT 1 FROM appointment_sequence_steps WHERE appointment_id=appt AND status='queued'),'old reminders removed';
   UPDATE appointments SET scheduled_at=target+interval '1 day',status='scheduled' WHERE id=appt;
   ASSERT (SELECT sequence_version=2 AND reschedule_requested_at IS NULL AND confirmation_status='pending' FROM appointments WHERE id=appt),'reschedule resets confirmation';
