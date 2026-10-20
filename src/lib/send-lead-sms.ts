@@ -7,7 +7,7 @@
 
 import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
-import { safeSendSMS } from '@/lib/safe-communications'
+import { HUMAN_1TO1_SMS_TEMPLATE_ID, safeSendSMS } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { supabase } from '@/lib/supabase-lazy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -44,6 +44,11 @@ export interface SendLeadSmsInput {
   source?: string
   metadata?: Record<string, unknown>
   statusCallback?: string
+  /**
+   * Set only by a human 1:1 composer. Must be `sms.conversation.1to1.v1`
+   * or the shared sender refuses the message.
+   */
+  templateId?: string
   /** Protected provider request cancellation, checked before Twilio submission. */
   signal?: AbortSignal
   /** Revalidates the dialer operation after provider acceptance and before CRM persistence. */
@@ -129,8 +134,10 @@ export async function resolveSmsFromNumber(
   return DEFAULT_TWILIO_PHONE
 }
 
+export { HUMAN_1TO1_SMS_TEMPLATE_ID }
+
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
-  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, signal, beforePersistence } = input
+  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, templateId, signal, beforePersistence } = input
   const body = input.body.trim()
 
   if (await automatedSmsBlockReason({ phone, leadId: leadId ?? null })) return { status: 'skipped', reason: 'opted_out' }
@@ -143,6 +150,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     to: phone,
     senderUse: 'conversation',
     statusCallback,
+    templateId,
     signal,
     beforePostProviderWrite: beforePersistence,
   })

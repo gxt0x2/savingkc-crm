@@ -31,6 +31,7 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 vi.mock('@/lib/send-lead-sms', () => ({
+  HUMAN_1TO1_SMS_TEMPLATE_ID: 'sms.conversation.1to1.v1',
   sendLeadSms: mocks.sendLeadSms,
 }))
 
@@ -139,6 +140,7 @@ describe('conversation sends', () => {
       phone: '+19135550123',
       fromPhone: undefined,
       agent: 'Ernest Dodson',
+      templateId: 'sms.conversation.1to1.v1',
     }))
   })
 

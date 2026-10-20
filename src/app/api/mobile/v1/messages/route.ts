@@ -274,6 +274,7 @@ export async function POST(req: NextRequest) {
         fromPhone: profile.defaultCallerId,
         agent: actor.fullName,
         source: 'mobile_app',
+        templateId: SMS_CONVERSATION_TEMPLATE_ID,
         metadata: receiptMeta,
       })
     } catch (error) {

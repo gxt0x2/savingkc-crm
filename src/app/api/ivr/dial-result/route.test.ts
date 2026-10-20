@@ -114,6 +114,7 @@ describe('ivr dial-result missed-call alerts', () => {
 
     expect(response.status).toBe(200)
     expect(twiml).toContain('/api/ivr/voicemail')
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(mocks.sendTeamLeadAlert).toHaveBeenCalledTimes(1)
     expect(mocks.sendTeamLeadAlert).toHaveBeenCalledWith(expect.objectContaining({
       leadId: 'lead-1',

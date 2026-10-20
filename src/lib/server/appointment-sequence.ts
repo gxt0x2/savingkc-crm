@@ -2,7 +2,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
-import { sendLeadSms } from '@/lib/send-lead-sms'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import { appointmentCopy, type AppointmentTouch } from './appointment-sequence-templates'
 
@@ -34,6 +33,8 @@ export async function processAppointmentSequence(limit = 10, db: SupabaseClient 
         status = 'skipped'; reason = 'not_in_person'
       } else if (['confirm_sms', 'morning_sms', 'arrival_sms'].includes(step.touch) && Date.now() - new Date(step.due_at).getTime() > 15 * 60_000) {
         status = 'skipped'; reason = 'reminder_window_missed'
+      } else if (step.touch === 'booking_sms' || step.touch === 'confirm_sms' || step.touch === 'morning_sms' || step.touch === 'arrival_sms') {
+        status = 'skipped'; reason = 'automated_sms_disabled'
       } else {
         const { data: lead, error: leadError } = await db.from('leads').select('full_name,phone,email').eq('id', a.lead_id).single()
         if (leadError) throw leadError
@@ -53,13 +54,8 @@ export async function processAppointmentSequence(limit = 10, db: SupabaseClient 
             if (result.error || !result.data?.id) { status = 'failed'; reason = result.error?.message || 'Provider did not accept email' }
             else { status = 'sent'; providerId = result.data.id }
           }
-        } else if (!lead.phone) { status = 'skipped'; reason = 'missing_phone' }
-        else {
-          status = 'uncertain'
-          const result = await sendLeadSms({ leadId: a.lead_id, phone: lead.phone, fromPhone: rep.defaultCallerId, body: copy.body, agent: a.assigned_to, source: 'appointment-ghost-protocol', metadata: { appointment_id: a.id, step_id: step.id, touch: step.touch, sequence_version: step.version } })
-          if (result.status === 'sent') { status = 'sent'; providerId = result.sid || null }
-          else if (result.status === 'skipped') { status = 'skipped'; reason = result.reason }
-          else { status = result.deliveryState === 'delivery_unknown' ? 'uncertain' : 'failed'; reason = result.error }
+        } else {
+          status = 'skipped'; reason = 'automated_sms_disabled'
         }
         if (status === 'sent' && step.touch === 'booking_email') {
           const audit = await db.from('lead_activities').insert({ lead_id: a.lead_id, activity_type: 'email', description: copy.body, agent: a.assigned_to, metadata: { direction: 'outbound', appointment_id: a.id, step_id: step.id, subject: copy.subject, provider_id: providerId, status: 'provider_accepted', source: 'appointment-ghost-protocol' } })

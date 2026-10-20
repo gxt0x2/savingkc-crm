@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
-import { sendLeadSms } from '@/lib/send-lead-sms'
+import { HUMAN_1TO1_SMS_TEMPLATE_ID, sendLeadSms } from '@/lib/send-lead-sms'
 import { supabase } from '@/lib/supabase-lazy'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
@@ -141,6 +141,7 @@ export async function POST(req: Request) {
         fromPhone: resolveSenderFromConversation === true ? undefined : fromPhone,
         agent: actor,
         source: activitySource,
+        templateId: HUMAN_1TO1_SMS_TEMPLATE_ID,
         metadata: Object.keys(prospectMetadata).length > 0 ? prospectMetadata : undefined,
         signal: providerSignal,
         beforePersistence: reassertPersistenceControl,

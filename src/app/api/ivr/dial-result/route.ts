@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
-import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
-import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
-import { phoneRateLimit } from '@/middleware/rate-limit'
-import { safeSendSMS } from '@/lib/safe-communications'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 import { formatPhone } from '@/lib/format'
@@ -23,17 +19,10 @@ import {
   parseCallDurationSeconds,
 } from '@/lib/call-quality-events'
 import {
-  googleAdsMissedCallerMessage,
   resolveGoogleAdsLeadContext,
 } from '@/lib/google-ads-phone'
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
-
-function sendDelayed(fn: () => Promise<void>, minSec: number, maxSec: number) {
-  const delay = (Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec) * 1000
-  setTimeout(() => fn().catch(e => console.error('Delayed send failed:', e)), delay)
-}
 
 function phoneLookupVariants(raw: string): string[] {
   const digits = raw.replace(/\D/g, '')
@@ -497,64 +486,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // Auto-text ONLY when both agents miss IVR calls (not direct calls)
-  if (from && resolvedLeadId && !isDirect && !isInternalTestCaller) {
-    const { allowed: phoneOk } = phoneRateLimit(from)
-    if (phoneOk) {
-      const isColdCallback = calledNumber && ['+18163100845','+18162538313','+18164761344','+18164761589','+18166404701','+18165788107','+18166408032','+18166536616'].includes(calledNumber)
-      const autoText = isGoogleAdsCall
-        ? googleAdsMissedCallerMessage(calledNumber)
-        : isColdCallback
-        ? `Hey, sorry we missed you! We recently reached out about a property in your area. If you're thinking about selling, reply YES and we'll give you a call back.`
-        : type === 'seller'
-          ? `Hi, this is Saving KC Homebuyers. Sorry we missed your call! Are you still looking to sell your property? We'd love to chat — reply YES or call us back anytime.`
-          : `Hi, this is Saving KC Homebuyers. Sorry we missed your call! How can we help? Feel free to call back or reply to this text.`
-      const followupTrigger = isGoogleAdsCall ? 'google_ads_missed_call_followup' : 'missed_call_followup'
-      const isDupe = await isDuplicateSms(from, autoText)
-      if (!isDupe) {
-        try {
-          const blockReason = await automatedSmsBlockReason({ phone: from, leadId: resolvedLeadId })
-          if (blockReason) {
-            console.info(`[IVR/dial-result] ${followupTrigger} blocked`, { reason: blockReason })
-          } else {
-            sendDelayed(async () => {
-              const stillBlocked = await automatedSmsBlockReason({ phone: from, leadId: resolvedLeadId })
-              if (stillBlocked) {
-                console.info(`[IVR/dial-result] ${followupTrigger} blocked`, { reason: stillBlocked })
-                return
-              }
-              await safeSendSMS({ body: autoText, from: calledNumber || TWILIO_PHONE, to: from, senderUse: 'reply' })
-              await logSmsSend(from, autoText, calledNumber || TWILIO_PHONE, resolvedLeadId)
-              await supabase.from('lead_activities').insert({
-                lead_id: resolvedLeadId,
-                activity_type: 'sms',
-                description: autoText,
-                agent: 'System',
-                metadata: {
-                  direction: 'outbound',
-                  to: from,
-                  trigger: followupTrigger,
-                  ...(isGoogleAdsCall && {
-                    source: googleAdsProfile.source,
-                    traffic_source: 'google_ads',
-                    campaign: googleAdsProfile.campaign,
-                    tracking_number: googleAdsProfile.trackingDigits,
-                    landing_page: googleAdsProfile.landingPage,
-                    phone_profile: googleAdsProfile.key,
-                    calledNumber,
-                  }),
-                }
-              })
-            }, isGoogleAdsCall ? 60 : 180, isGoogleAdsCall ? 90 : 300)
-          }
-        } catch (error) {
-          console.error(`[IVR/dial-result] ${followupTrigger} suppression check failed closed:`, error)
-        }
-      }
-    }
-  }
-
-  // Route caller to voicemail
+  // Route caller to voicemail. Do not text the caller.
   const vmAgent = isGoogleAdsCall ? 'SavingKC' : routing.primary.name
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

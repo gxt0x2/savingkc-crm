@@ -117,7 +117,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       workflowId: 'cold-call-callback-flow',
       inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
       answeredPath: 'A seller who presses 1 is routed to the acquisition team and the call is recorded after answer.',
-      noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input, ends the call, and queues a same-number SMS follow-up.',
+      noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input and ends the call. No SMS is sent.',
       smsPath: 'Replies enter /api/twilio-sms-webhook and remain associated with the callback number.',
       smsSenderPolicy: config.broadcastEligible
         ? 'Approved for conversation, callback reply, and broadcast use; the API validates the selected sender.'

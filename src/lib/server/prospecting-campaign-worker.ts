@@ -1,17 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { isWithinProspectingWindow, nextProspectingWindow, renderProspectingTemplate } from '@/lib/prospecting/campaign-contract'
-import { sendLeadSms } from '@/lib/send-lead-sms'
-import { resolveSmsCaps } from '@/lib/twilio-a2p'
 import { supabase } from '@/lib/supabase-lazy'
-import { normalizePhoneToE164 } from '@/lib/phone-normalize'
-
-function deliveryStatusCallback(actionId: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
-  const url = new URL('/api/twilio-message-status', base)
-  url.searchParams.set('action_id', actionId)
-  url.hash = 'rc=3&rp=5xx,ct,rt&ct=2000&rt=5000'
-  return url.toString()
-}
 
 type ClaimedCampaignAction = {
   id: string
@@ -82,136 +70,12 @@ async function finishAction(
 }
 
 async function processAction(action: ClaimedCampaignAction, workerToken: string): Promise<keyof Omit<WorkerSummary, 'processed'>> {
-  const window = {
-    timezone: action.timezone,
-    sendWindowStart: action.sendWindowStart,
-    sendWindowEnd: action.sendWindowEnd,
-    sendDays: action.sendDays,
-  }
-  const now = new Date()
-  if (!isWithinProspectingWindow(now, window)) {
-    await finishAction(action, workerToken, 'deferred', {
-      errorCode: 'outside_contact_window',
-      retryAt: nextProspectingWindow(now, window).toISOString(),
-    })
-    return 'deferred'
-  }
-
-  let fullName = ''
-  let propertyAddress = ''
-  if (action.subjectKind === 'lead' && action.leadId) {
-    const { data: lead, error: leadError } = await supabase
-      .from('leads')
-      .select('id,full_name,property_address')
-      .eq('id', action.leadId)
-      .maybeSingle()
-    if (leadError) throw leadError
-    if (!lead) {
-      await finishAction(action, workerToken, 'blocked', { errorCode: 'lead_not_found' })
-      return 'blocked'
-    }
-    fullName = String(lead.full_name || '')
-    propertyAddress = String(lead.property_address || '')
-  } else if (action.subjectKind === 'prospect' && action.prospectId) {
-    const { data: prospect, error: prospectError } = await supabase
-      .from('prospects')
-      .select('id,owner_1,situs_street,situs_city,situs_state,situs_zip')
-      .eq('id', action.prospectId)
-      .maybeSingle()
-    if (prospectError) throw prospectError
-    if (!prospect) {
-      await finishAction(action, workerToken, 'blocked', { errorCode: 'prospect_not_found' })
-      return 'blocked'
-    }
-    fullName = String(prospect.owner_1 || '')
-    propertyAddress = [prospect.situs_street, prospect.situs_city, prospect.situs_state, prospect.situs_zip]
-      .map((part) => String(part || '').trim())
-      .filter(Boolean)
-      .join(', ')
-  }
-
-  const body = renderProspectingTemplate(action.bodyTemplate, {
-    fullName,
-    propertyAddress,
-    agentName: action.ownerName,
+  console.error('[prospecting-worker] refused automated SMS send', {
+    actionId: action.id,
+    reason: 'automated_sms_disabled',
   })
-  if (!body) {
-    await finishAction(action, workerToken, 'blocked', { errorCode: 'invalid_rendered_message' })
-    return 'blocked'
-  }
-
-  // Reserve immediately before the provider call. The RPC rechecks campaign,
-  // member, and claim state under a row lock, so a pause, reply, or STOP that
-  // landed during hydration prevents the send.
-  const caps = await resolveSmsCaps()
-  const perHour = Math.max(1, Math.min(action.perHour, caps.perHour))
-  const perDay = Math.max(1, Math.min(action.perDay, caps.perDay))
-  const reservation = await supabase.rpc('reserve_prospecting_sms_send_v1', {
-    p_action_id: action.id,
-    p_worker_token: workerToken,
-    p_per_hour: perHour,
-    p_per_day: perDay,
-  })
-  if (reservation.error) throw reservation.error
-  if (!(reservation.data as { reserved?: unknown } | null)?.reserved) {
-    await finishAction(action, workerToken, 'deferred', {
-      errorCode: 'send_budget_exhausted',
-      retryAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
-    })
-    return 'deferred'
-  }
-
-  const normalizedPhone = normalizePhoneToE164(action.phone)
-  const send = await sendLeadSms({
-    leadId: action.leadId,
-    phone: action.phone,
-    body,
-    fromPhone: action.fromPhone,
-    agent: action.ownerName,
-    source: 'prospecting_campaign',
-    metadata: {
-      prospecting_campaign_id: action.campaignId,
-      prospecting_campaign_member_id: action.memberId,
-      prospecting_campaign_action_id: action.id,
-      prospecting_campaign_step_id: action.stepId,
-      subject_kind: action.subjectKind,
-      prospect_id: action.prospectId,
-      prospect_phone_id: action.prospectPhoneId,
-      ...(action.leadId
-        ? { thread_key: `lead:${action.leadId}` }
-        : normalizedPhone
-          ? { thread_key: `phone:${normalizedPhone}` }
-          : {}),
-    },
-    statusCallback: deliveryStatusCallback(action.id),
-  })
-
-  if (send.status === 'skipped' && send.reason === 'opted_out') {
-    await finishAction(action, workerToken, 'blocked', { renderedBody: body, errorCode: 'do_not_contact' })
-    return 'blocked'
-  }
-  if (send.status === 'skipped') {
-    // The canonical sender found the same body inside its 24-hour safety
-    // window. Treat the campaign step as satisfied instead of retrying it and
-    // risking a duplicate after the window expires. The original delivery is
-    // already present in lead_activities/sms_delivery_log.
-    await finishAction(action, workerToken, 'sent', {
-      renderedBody: body,
-      errorCode: 'deduplicated_existing_send',
-    })
-    return 'sent'
-  }
-  if (send.status === 'failed') {
-    await finishAction(action, workerToken, 'failed', { renderedBody: body, errorCode: 'provider_send_failed' })
-    return 'failed'
-  }
-
-  await finishAction(action, workerToken, 'sent', {
-    renderedBody: body,
-    providerSid: send.sid,
-    errorCode: send.persisted ? undefined : 'delivered_not_persisted',
-  })
-  return 'sent'
+  await finishAction(action, workerToken, 'blocked', { errorCode: 'automated_sms_disabled' })
+  return 'blocked'
 }
 
 export async function processProspectingCampaignActions(requestedLimit = 10): Promise<WorkerSummary> {

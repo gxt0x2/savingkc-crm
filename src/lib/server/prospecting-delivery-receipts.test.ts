@@ -7,10 +7,12 @@ const proxy = readFileSync(join(process.cwd(), 'src/proxy.ts'), 'utf8')
 const worker = readFileSync(join(process.cwd(), 'src/lib/server/prospecting-campaign-worker.ts'), 'utf8')
 
 describe('prospecting carrier delivery receipts', () => {
-  it('keeps the signed provider callback public and attaches it only to campaign sends', () => {
+  it('keeps the signed provider callback public and does not send campaign SMS', () => {
     expect(proxy).toContain("'/api/twilio-message-status'")
-    expect(worker).toContain("new URL('/api/twilio-message-status', base)")
-    expect(worker).toContain('statusCallback: deliveryStatusCallback(action.id)')
+    expect(worker).toContain('automated_sms_disabled')
+    expect(worker).not.toContain('statusCallback')
+    expect(worker).not.toContain('safeSendSMS')
+    expect(worker).not.toContain('sendLeadSms')
   })
 
   it('moves accepted actions to delivered or failed idempotently and stops later cadence on failure', () => {

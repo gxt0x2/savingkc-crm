@@ -34,11 +34,10 @@ describe('appointment delivery worker', () => {
     const f = fixture(); await processAppointmentSequence(10, f.db)
     expect(f.rpc).not.toHaveBeenCalled(); expect(mocks.sms).not.toHaveBeenCalled()
   })
-  it('automatically sends the 52-minute in-person text once', async () => {
+  it('does not send the 52-minute in-person text', async () => {
     const f = fixture(); await processAppointmentSequence(10, f.db)
-    expect(mocks.sms).toHaveBeenCalledTimes(1)
-    expect(mocks.sms.mock.calls[0][0].body).toMatch(/^On my way/)
-    expect(f.updates[0]).toMatchObject({ status: 'sent', provider_id: 'SM1' })
+    expect(mocks.sms).not.toHaveBeenCalled()
+    expect(f.updates[0]).toMatchObject({ status: 'skipped', reason: 'automated_sms_disabled' })
   })
   it.each([{ status: 'cancelled' }, { status: 'completed' }, { reschedule_requested_at: new Date().toISOString() }, { sequence_version: 2 }])('rechecks the appointment after claiming: %j', async change => {
     const f = fixture('arrival_sms', change); await processAppointmentSequence(10, f.db)
@@ -48,10 +47,10 @@ describe('appointment delivery worker', () => {
     const f = fixture('arrival_sms', { type: 'google_meet' }); await processAppointmentSequence(10, f.db)
     expect(mocks.sms).not.toHaveBeenCalled()
   })
-  it('preserves uncertain provider outcomes without retrying', async () => {
-    mocks.sms.mockResolvedValue({ status: 'failed', deliveryState: 'delivery_unknown', error: 'timeout' })
+  it('does not submit an SMS provider call for an arrival reminder', async () => {
     const f = fixture(); await processAppointmentSequence(10, f.db)
-    expect(f.updates[0].status).toBe('uncertain'); expect(mocks.sms).toHaveBeenCalledTimes(1)
+    expect(f.updates[0].status).toBe('skipped')
+    expect(mocks.sms).not.toHaveBeenCalled()
   })
   it('sends booking email through Resend with a stable idempotency key', async () => {
     mocks.email.mockResolvedValue({ data: { id: 'email-1' } })

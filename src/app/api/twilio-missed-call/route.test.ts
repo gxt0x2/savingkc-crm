@@ -156,7 +156,7 @@ describe('twilio missed-call parent callback', () => {
     return writes.filter((write) => write.table === 'leads' && write.action === 'insert')
   }
 
-  it.each(['no-answer', 'busy'])('logs a 0s %s on a non-direct line as abandoned and keeps the lead and auto-text', async (callStatus) => {
+  it.each(['no-answer', 'busy'])('logs a 0s %s on a non-direct line as abandoned and does not text the caller', async (callStatus) => {
     const response = await post({ CallStatus: callStatus })
 
     expect(response.status).toBe(200)
@@ -179,12 +179,8 @@ describe('twilio missed-call parent callback', () => {
       priority: 'hot',
     })
     expect(mocks.lookupProspectByPhone).toHaveBeenCalledWith(CALLER)
-    expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
-      body: AUTO_TEXT,
-      to: CALLER,
-      from: MAIN_LINE,
-      senderUse: 'reply',
-    }))
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(mocks.getMissedCallResponse).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -220,10 +216,7 @@ describe('twilio missed-call parent callback', () => {
     })
     expect(JSON.stringify(payloadOf(callLogs()[0]))).not.toContain('abandoned_before_answer')
     expect(leadInserts()).toHaveLength(1)
-    expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
-      body: AUTO_TEXT,
-      to: CALLER,
-      from: '+18166088858',
-    }))
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(mocks.getMissedCallResponse).not.toHaveBeenCalled()
   })
 })

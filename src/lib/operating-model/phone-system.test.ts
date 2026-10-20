@@ -48,7 +48,7 @@ describe('master phone system', () => {
         workflowId: 'cold-call-callback-flow',
         outboundUse: 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
         inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
-        noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input, ends the call, and queues a same-number SMS follow-up.',
+        noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input and ends the call. No SMS is sent.',
       })
     }
     for (const number of ['+18166404701', '+18165788107', '+18166536616', '+18164761344']) {

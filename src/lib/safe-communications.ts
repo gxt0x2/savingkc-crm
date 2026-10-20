@@ -70,12 +70,20 @@ function getTwilioErrorField(error: unknown, field: 'message' | 'code' | 'status
 
 // Supabase client for logging
 
+/** The only SMS send this CRM may deliver: a person pressed send on one recipient. */
+export const HUMAN_1TO1_SMS_TEMPLATE_ID = 'sms.conversation.1to1.v1'
+
 interface SMSParams {
   to: string
   from: string
   body: string
   senderUse?: SmsSenderUse
   statusCallback?: string
+  /**
+   * Required. Only `sms.conversation.1to1.v1` may be delivered.
+   * Automated, broadcast, drip, and staff-alert sends omit this and are refused.
+   */
+  templateId?: string
   /** Cancels before provider submission when the protected request has already ended. */
   signal?: AbortSignal
   /** Revalidates protected dialing control before recording a provider outcome. */
@@ -132,6 +140,21 @@ async function protectedProviderOutcomeMayPersist(params: SMSParams): Promise<bo
  * - NEVER throws errors - always returns result object
  */
 export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
+  if (params.templateId !== HUMAN_1TO1_SMS_TEMPLATE_ID) {
+    const digits = (params.to || '').replace(/\D/g, '')
+    const toLast4 = digits.slice(-4)
+    console.error(
+      `[SMS-SENDER-POLICY] refused SMS send: not a human-initiated 1:1 send (${HUMAN_1TO1_SMS_TEMPLATE_ID}); templateId=${params.templateId ?? 'none'}; toLast4=${toLast4 || 'none'}`,
+    )
+    return {
+      success: false,
+      error: `Automated SMS is disabled. Only a human-initiated 1:1 send (${HUMAN_1TO1_SMS_TEMPLATE_ID}) is allowed.`,
+      to: params.to,
+      from: params.from,
+      body: params.body,
+    }
+  }
+
   const startTime = Date.now()
   const requestedFrom = normalizeTwilioNumber(params.from)
   const senderUse = params.senderUse || 'system'
