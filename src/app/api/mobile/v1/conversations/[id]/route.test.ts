@@ -84,4 +84,51 @@ describe('mobile customer conversation history', () => {
     })
   })
 
+  it('adds stored email body fields to email activities and leaves the description unchanged', async () => {
+    const email = row('email-1', { gmail_message_id: 'gmail-1', direction: 'inbound', subject: 'Re: Oak' }, 'email_received')
+    email.description = 'Call me after 5.'
+    rows = [email, row('sms-1', { direction: 'received', gmail_message_id: 'not-email' })]
+    mocks.admin.mockReturnValue({ from: (table: string) => {
+      if (table === 'leads') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id, full_name: 'Seller' }, error: null }) }) }) }
+      if (table === 'lead_emails') {
+        const query = { select: () => query, eq: () => query, in: () => query, limit: async () => ({ data: [{ gmail_message_id: 'gmail-1', body_text: 'Call me after 5.\n\nThursday works.', body_snippet: 'Call me after 5.' }], error: null }) }
+        return query
+      }
+      const query = { select: () => query, eq: () => query, in: () => query, order: () => query, or: () => query, limit: async () => ({ data: rows, error: null }) }
+      return query
+    } })
+    const body = await (await GET(request(), { params: Promise.resolve({ id }) })).json()
+    const emailActivity = body.activities.find((activity: { id: string }) => activity.id === 'email-1')
+    const sms = body.activities.find((activity: { id: string }) => activity.id === 'sms-1')
+    expect(emailActivity.description).toBe('Call me after 5.')
+    expect(emailActivity.metadata).toMatchObject({
+      gmail_message_id: 'gmail-1',
+      direction: 'inbound',
+      body_text: 'Call me after 5.\n\nThursday works.',
+      body_snippet: 'Call me after 5.',
+    })
+    expect(sms.metadata.body_text).toBeUndefined()
+    expect(sms.metadata.body_snippet).toBeUndefined()
+  })
+
+  it('returns the conversation when the email body column is not available yet', async () => {
+    rows = [row('email-1', { gmail_message_id: 'gmail-1', direction: 'inbound' }, 'email_received')]
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    mocks.admin.mockReturnValue({ from: (table: string) => {
+      if (table === 'leads') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id, full_name: 'Seller' }, error: null }) }) }) }
+      if (table === 'lead_emails') {
+        const query = { select: () => query, eq: () => query, in: () => query, limit: async () => ({ data: null, error: { message: 'column body_text does not exist' } }) }
+        return query
+      }
+      const query = { select: () => query, eq: () => query, in: () => query, order: () => query, or: () => query, limit: async () => ({ data: rows, error: null }) }
+      return query
+    } })
+    const response = await GET(request(), { params: Promise.resolve({ id }) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.activities[0]).toMatchObject({ id: 'email-1', description: 'email-1', metadata: { gmail_message_id: 'gmail-1' } })
+    expect(body.activities[0].metadata.body_text).toBeUndefined()
+    errors.mockRestore()
+  })
+
 })
