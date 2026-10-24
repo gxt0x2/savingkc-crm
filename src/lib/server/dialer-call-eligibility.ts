@@ -11,6 +11,7 @@ import {
 import { normalizeDisposition } from '@/lib/dialer-dispositions'
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { supabase } from '@/lib/supabase-lazy'
 import { stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 import { isDialerCallerIdNumber, TWILIO_NUMBERS } from '@/lib/twilio-numbers'
@@ -451,8 +452,8 @@ async function evaluateOutboundDialerCallUnchecked(
       activities: policyActivities,
       companyOwnedNumbers: TWILIO_NUMBERS.map((number) => number.value),
       teamNumbers: [
-        process.env.ERNEST_PHONE || '+18162262552',
-        process.env.CASEY_PHONE || '+18167564943',
+        readPhoneEnv('ERNEST_PHONE', '+18162262552'),
+        readPhoneEnv('CASEY_PHONE', '+18167564943'),
       ],
       callingHoursExempt: input.source === 'form_lead_callback' || input.source === 'google_ads_callback',
     })

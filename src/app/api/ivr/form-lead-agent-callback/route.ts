@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { buildFormLeadCallbackIntro } from '@/lib/lead-form-callback'
+import { readConfiguredPhone, trimPhoneConfig } from '@/lib/phone-config'
 import { supabase } from '@/lib/supabase-lazy'
 import { evaluateOutboundDialerCall, recordBlockedDialerCall } from '@/lib/server/dialer-call-eligibility'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
@@ -115,8 +116,8 @@ export async function POST(req: Request) {
   }
   const url = new URL(req.url)
   const leadId = url.searchParams.get('leadId') || ''
-  const leadPhone = url.searchParams.get('leadPhone') || ''
-  const callerId = url.searchParams.get('callerId') || process.env.TWILIO_PHONE_NUMBER || ''
+  const leadPhone = trimPhoneConfig(url.searchParams.get('leadPhone'))
+  const callerId = readConfiguredPhone(url.searchParams.get('callerId'), process.env.TWILIO_PHONE_NUMBER)
   const fullName = url.searchParams.get('fullName') || ''
   const address = url.searchParams.get('address') || ''
   const city = url.searchParams.get('city') || ''
@@ -124,7 +125,7 @@ export async function POST(req: Request) {
   const callbackSource = trigger.startsWith('ppc_') ? 'ppc_form_agent_callback' : 'lead_form_agent_callback'
   const batchId = url.searchParams.get('batchId') || ''
   const agentName = url.searchParams.get('agentName') || 'Agent'
-  const agentPhone = url.searchParams.get('agentPhone') || ''
+  const agentPhone = trimPhoneConfig(url.searchParams.get('agentPhone'))
   const form = await req.formData().catch(() => null)
   const agentCallSid = form?.get('CallSid')?.toString() || ''
 

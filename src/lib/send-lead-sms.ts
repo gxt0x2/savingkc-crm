@@ -11,9 +11,12 @@ import { HUMAN_1TO1_SMS_TEMPLATE_ID, safeSendSMS } from '@/lib/safe-communicatio
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { supabase } from '@/lib/supabase-lazy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { isAllowedSmsSender, normalizeTwilioNumber } from '@/lib/twilio-numbers'
 
-const DEFAULT_TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+function defaultTwilioPhone(): string {
+  return readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
+}
 const SMS_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
 
 type SmsActivityRow = {
@@ -131,7 +134,7 @@ export async function resolveSmsFromNumber(
     }
   }
 
-  return DEFAULT_TWILIO_PHONE
+  return defaultTwilioPhone()
 }
 
 export { HUMAN_1TO1_SMS_TEMPLATE_ID }

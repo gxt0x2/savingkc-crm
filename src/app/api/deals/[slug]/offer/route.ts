@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { validateInput, buyerOfferSchema } from '@/lib/validation-schemas'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { sendPushToAgents } from '@/lib/push-notifications'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { safeSendSMS } from '@/lib/safe-communications'
 
 const corsHeaders = {
@@ -214,7 +215,7 @@ export async function POST(
 
     // 3) SMS to Ernest
     const NOTIFY_PHONE = '+18166088588'
-    const smsFrom = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+    const smsFrom = readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
     safeSendSMS({
       to: NOTIFY_PHONE,
       from: smsFrom,

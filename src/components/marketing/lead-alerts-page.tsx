@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { leadAlertDeliveryPhrase } from '@/lib/marketing/lead-alerts'
 
 type LeadAlertSummary = {
   total: number
@@ -42,6 +43,7 @@ type LeadAlertItem = {
   description: string | null
   recipients: string[]
   delivery: Array<{
+    channel: string | null
     target: string | null
     to: string | null
     toDisplay: string | null
@@ -239,7 +241,7 @@ export function LeadAlertsPage() {
               <div className="alert-empty">No alerts match this view.</div>
             ) : (
               alerts.map((row) => (
-                <article className={`alert-row ${row.smsFailed > 0 || row.recipients.length === 0 ? 'has-failure' : ''}`} key={row.id}>
+                <article className={`alert-row ${row.delivery.some((item) => item.status !== 'skipped' && !item.success) || row.recipients.length === 0 ? 'has-failure' : ''}`} key={row.id}>
                   <div className="row-main">
                     <div className="row-title">
                       <div>
@@ -264,13 +266,20 @@ export function LeadAlertsPage() {
                     <div className="recipient-grid" aria-label={`Recipients for ${row.leadName}`}>
                       {row.recipients.length === 0 ? (
                         <span className="recipient-pill failed">No recipients recorded</span>
-                      ) : row.recipients.map((recipient) => {
-                        const match = row.delivery.find((item) => item.target === recipient)
-                        return (
-                          <span className={`recipient-pill ${match?.success ? 'sent' : 'failed'}`} key={`${row.id}-${recipient}`}>
-                            {recipient}: {match?.success ? 'SMS ok' : match?.error || 'No delivery'}
+                      ) : row.recipients.flatMap((recipient) => {
+                        const matches = row.delivery.filter((item) => item.target === recipient)
+                        if (matches.length === 0) {
+                          return [(
+                            <span className="recipient-pill failed" key={`${row.id}-${recipient}-none`}>
+                              {recipient}: No delivery
+                            </span>
+                          )]
+                        }
+                        return matches.map((match, index) => (
+                          <span className={`recipient-pill ${match.status === 'skipped' ? '' : match.success ? 'sent' : 'failed'}`} key={`${row.id}-${recipient}-${match.channel || 'sms'}-${index}`}>
+                            {recipient}: {leadAlertDeliveryPhrase(match)}
                           </span>
-                        )
+                        ))
                       })}
                     </div>
 

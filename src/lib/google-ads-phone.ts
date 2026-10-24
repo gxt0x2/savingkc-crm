@@ -8,10 +8,13 @@ import { isInternalTestPhone } from '@/lib/internal-test-phones'
 import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+function twilioPhone(): string {
+  return readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
+}
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
 type ActivityMetadata = Record<string, unknown>
@@ -208,7 +211,7 @@ export async function notifyGoogleAdsTeam(
   const recipients = getLeadAlertRecipients(options.now)
   const teamPhones = recipients.map((recipient) => recipient.phone)
   const results = await Promise.allSettled(
-    teamPhones.map((to) => safeSendSMS({ body, from: TWILIO_PHONE, to })),
+    teamPhones.map((to) => safeSendSMS({ body, from: twilioPhone(), to })),
   )
 
   if (options.leadId) {

@@ -75,6 +75,7 @@ type LeadAlertItem = {
   description: string | null
   recipients: string[]
   delivery: Array<{
+    channel: string | null
     target: string | null
     to: string | null
     toDisplay: string | null
@@ -184,8 +185,8 @@ function rowToItem(
     description: row.description,
     recipients: readLeadAlertRecipients(meta),
     delivery,
-    smsSucceeded: delivery.filter((item) => item.success).length,
-    smsFailed: delivery.filter((item) => !item.success).length,
+    smsSucceeded: delivery.filter((item) => (item.channel || 'sms') === 'sms' && item.status !== 'skipped' && item.success).length,
+    smsFailed: delivery.filter((item) => (item.channel || 'sms') === 'sms' && item.status !== 'skipped' && !item.success).length,
     callback,
   }
 }
