@@ -68,6 +68,10 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {view === 'marketing' ? (
+            <Link href="/marketing/website-conversion" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+              <Icon name="query_stats" className="text-[18px]" />
+              Website conversion
+            </Link>
             <Link href="/marketing/google-ads" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
               <Icon name="ads_click" className="text-[18px]" />
               Google Ads
@@ -134,7 +138,10 @@ function MarketingView({ report }: { report: OperatingReport }) {
       <LifecycleReconciliationPanel />
       <section className="crm-panel flex flex-col gap-3 rounded-2xl px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div><p className="crm-eyebrow">Measurement boundary</p><h2 className="mt-1 text-sm font-black">CRM outcomes here; ad-platform economics stay in the Marketing command center.</h2><p className="mt-1 text-xs text-[var(--crm-text-muted)]">Spend, CPL, campaign delivery, and conversion-export health are never backfilled with sample values on this report.</p></div>
-        <Link href="/marketing/google-ads" className="crm-secondary-button inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black">Open Google Ads metrics <Icon name="arrow_forward" /></Link>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link href="/marketing/website-conversion" className="crm-secondary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black">Website conversion <Icon name="arrow_forward" /></Link>
+          <Link href="/marketing/google-ads" className="crm-secondary-button inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black">Open Google Ads metrics <Icon name="arrow_forward" /></Link>
+        </div>
       </section>
     </>
   )

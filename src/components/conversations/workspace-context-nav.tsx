@@ -69,6 +69,7 @@ const GROUPS: ContextGroup[] = [
     items: [
       { label: 'Overview', href: '/reports/marketing', icon: 'space_dashboard', matchPath: '/reports/marketing' },
       { label: 'Google Ads', href: '/marketing/google-ads', icon: 'ads_click', matchPath: '/marketing/google-ads' },
+      { label: 'Website conversion', href: '/marketing/website-conversion', icon: 'query_stats', matchPath: '/marketing/website-conversion' },
       { label: 'Call recordings', href: '/marketing/calls', icon: 'record_voice_over', matchPath: '/marketing/calls' },
       { label: 'Lead alerts', href: '/marketing/alerts', icon: 'notification_important', matchPath: '/marketing/alerts' },
       { label: 'Landing pages', href: '/marketing/heatmaps', icon: 'ads_click', matchPath: '/marketing/heatmaps' },

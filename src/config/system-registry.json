@@ -521,6 +521,16 @@
       ]
     },
     {
+      "id": "website_conversion",
+      "name": "Website conversion board",
+      "owner": "Marketing",
+      "status": "active",
+      "routes": ["/marketing/website-conversion"],
+      "apiRoutes": ["/api/marketing/website-conversion"],
+      "tables": ["ga4_landing_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events"],
+      "environment": []
+    },
+    {
       "id": "email_marketing",
       "name": "Email marketing workspace and Resend intake",
       "crons": [{"path":"/api/workers/email","schedule":"* * * * *","highFrequencyReason":"Process one reply and one bounded send per minute; receiving and suppression precede outbound work."}],
