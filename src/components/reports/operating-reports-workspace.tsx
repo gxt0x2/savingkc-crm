@@ -68,14 +68,16 @@ export function OperatingReportsWorkspace({ view }: { view: OperatingReportView 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {view === 'marketing' ? (
-            <Link href="/marketing/website-conversion" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
-              <Icon name="query_stats" className="text-[18px]" />
-              Website conversion
-            </Link>
-            <Link href="/marketing/google-ads" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
-              <Icon name="ads_click" className="text-[18px]" />
-              Google Ads
-            </Link>
+            <>
+              <Link href="/marketing/website-conversion" className="crm-secondary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+                <Icon name="query_stats" className="text-[18px]" />
+                Website conversion
+              </Link>
+              <Link href="/marketing/google-ads" className="crm-primary-button inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black">
+                <Icon name="ads_click" className="text-[18px]" />
+                Google Ads
+              </Link>
+            </>
           ) : null}
           {view === 'dispositions' ? (
             <>
