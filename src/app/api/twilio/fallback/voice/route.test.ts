@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   lookupInboundCallerName: vi.fn(async () => ''),
@@ -26,6 +26,10 @@ function request(to: string) {
     }),
   })
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('carrier voice fallback', () => {
   beforeEach(() => {
@@ -59,6 +63,19 @@ describe('carrier voice fallback', () => {
     expect(text).toContain('callerId="+18165550199"')
     expect(text).toContain('<Parameter name="callerName" value="" />')
     expect(text).toContain('<Number>+18162262552</Number>')
+  })
+
+  it('omits Ernest\'s cell for the business line when personal forward is off', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const response = await POST(request('+18164292900'))
+    const text = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(text).toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('+18162262552')
+    expect(text).not.toContain('<Number')
   })
 
   it('keeps a cell-only company line on the company DID', async () => {

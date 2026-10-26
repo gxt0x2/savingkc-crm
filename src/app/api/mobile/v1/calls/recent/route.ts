@@ -4,6 +4,7 @@ import { MobileAuthError, mobileNoStoreHeaders, mobileOptionsResponse, requireMo
 import { buildMobileRecentCalls, groupRecentCallRows, recentCallProviderIds, RECENT_CALL_PROVIDER_ID_FIELDS, type RecentCallActivityRow, visibleMobileRecentCalls } from '@/lib/mobile-api/recent-calls'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
+import { ownedInboundCompanyNumbers } from '@/lib/telephony/direct-inbound-ring'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { mobileRecordingUrl } from '@/lib/mobile-api/mojo-recording'
 import { twilioRecordingSid } from '@/lib/mobile-api/twilio-recording'
@@ -19,7 +20,7 @@ function postgrestLiteral(value: string): string {
 
 type CallOwnerEvidence = 'owned' | 'conflict' | 'unattributed'
 
-function callOwnerEvidence(row: RecentCallActivityRow, identity: string, email: string, userId: string, names: string[], directLine: string | null): CallOwnerEvidence {
+function callOwnerEvidence(row: RecentCallActivityRow, identity: string, email: string, userId: string, names: string[], inboundLines: readonly string[]): CallOwnerEvidence {
   const metadata = row.metadata ?? {}
   const actorEmail = typeof metadata.actor_email === 'string' ? metadata.actor_email.trim().toLowerCase() : ''
   const userEmail = typeof metadata.userEmail === 'string' ? metadata.userEmail.trim().toLowerCase() : ''
@@ -37,8 +38,9 @@ function callOwnerEvidence(row: RecentCallActivityRow, identity: string, email: 
   if (allowedNames.has(agent)) return 'owned'
   if (agent && agent !== 'system') return 'conflict'
   if (voicemailRecipient && allowedRecipients.has(voicemailRecipient)) return 'owned'
-  if (!directLine || !['inbound', 'incoming', 'in', 'received'].includes(String(metadata.direction || '').trim().toLowerCase())) return 'unattributed'
-  return normalizePhoneToE164(String(metadata.calledNumber ?? metadata.called_number ?? '')) === directLine ? 'owned' : 'unattributed'
+  if (!['inbound', 'incoming', 'in', 'received'].includes(String(metadata.direction || '').trim().toLowerCase())) return 'unattributed'
+  const calledNumber = normalizePhoneToE164(String(metadata.calledNumber ?? metadata.called_number ?? ''))
+  return calledNumber && inboundLines.includes(calledNumber) ? 'owned' : 'unattributed'
 }
 
 export async function GET(req: NextRequest) {
@@ -52,7 +54,7 @@ export async function GET(req: NextRequest) {
     if (!userId) throw new MobileAuthError('Authenticated user identity unavailable')
     const profile = resolveAgentTelephonyProfile(email)
     const names = [...new Set([actor.fullName, profile.displayName, ...actor.assignmentAliases].filter(Boolean))]
-    const directLine = profile.hasDedicatedCallerId ? profile.defaultCallerId : null
+    const inboundLines = ownedInboundCompanyNumbers(profile.identity)
     const ownershipFilters = [
       `metadata->>actor_email.eq.${email}`,
       `metadata->>userEmail.eq.${email}`,
@@ -60,14 +62,14 @@ export async function GET(req: NextRequest) {
       `metadata->>agent_identity.eq.${profile.identity}`,
       ...names.map((name) => `agent.ilike.${postgrestLiteral(name)}`),
       ...[...new Set([profile.identity, email, ...names])].map((recipient) => `and(activity_type.eq.voicemail,metadata->>for_agent.ilike.${postgrestLiteral(recipient)})`),
-      ...(directLine ? [
-        `metadata->>calledNumber.eq.${directLine}`,
-        `metadata->>called_number.eq.${directLine}`,
-      ] : []),
+      ...inboundLines.flatMap((line) => [
+        `metadata->>calledNumber.eq.${line}`,
+        `metadata->>called_number.eq.${line}`,
+      ]),
     ]
     const db = supabaseAdmin()
     const activityColumns = 'id, lead_id, activity_type, description, agent, metadata, created_at'
-    const ownership = (row: RecentCallActivityRow) => callOwnerEvidence(row, profile.identity, email, userId, names, directLine)
+    const ownership = (row: RecentCallActivityRow) => callOwnerEvidence(row, profile.identity, email, userId, names, inboundLines)
     const readLeads = async (ids: string[]): Promise<Array<Record<string, unknown>>> => {
       if (!ids.length) return []
       const leadResult = await db.from('leads')

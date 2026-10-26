@@ -9,6 +9,7 @@ import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
 import {
   buildDirectInboundLeadSeed,
 } from '@/lib/operating-model/direct-inbound-intake'
+import { directInboundClientIdentity } from '@/lib/telephony/direct-inbound-ring'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import {
@@ -23,6 +24,11 @@ import {
 } from '@/lib/google-ads-phone'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
+
+function inboundClientMetadata(calledNumber: string): { agent_identity?: string } {
+  const agentIdentity = directInboundClientIdentity(calledNumber)
+  return agentIdentity ? { agent_identity: agentIdentity } : {}
+}
 
 function phoneLookupVariants(raw: string): string[] {
   const digits = raw.replace(/\D/g, '')
@@ -337,6 +343,7 @@ export async function POST(req: Request) {
           dialCallDuration,
           type,
           is_test: isInternalTestCaller,
+          ...inboundClientMetadata(calledNumber),
           ...(isGoogleAdsCall && {
             source: googleAdsProfile.source,
             traffic_source: 'google_ads',
@@ -413,7 +420,7 @@ export async function POST(req: Request) {
       activity_type: 'call',
       description: `Missed direct call from ${callerLabel} to ${routing.primary.name}`,
       agent: 'System',
-      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type }
+      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type, ...inboundClientMetadata(calledNumber) }
     })
   }
 
@@ -435,6 +442,7 @@ export async function POST(req: Request) {
           dialCallDuration,
           type,
           is_test: isInternalTestCaller,
+          ...inboundClientMetadata(calledNumber),
           source: googleAdsProfile.source,
           traffic_source: 'google_ads',
           campaign: googleAdsProfile.campaign,
@@ -480,7 +488,7 @@ export async function POST(req: Request) {
       activity_type: 'call',
       description: `Both agents missed inbound ${type} call from ${formatPhone(from)}`,
       agent: 'System',
-      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type }
+      metadata: { outcome: 'missed', direction: 'inbound', from, calledNumber, callSid: parentCallSid, dialStatus, dialCallSid, dialCallDuration, type, ...inboundClientMetadata(calledNumber) }
     })
 
     }

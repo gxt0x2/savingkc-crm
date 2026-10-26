@@ -47,7 +47,7 @@ const DIRECT_LINE = '+18166088588'
 
 type QueryResult = { data: unknown; error: null }
 
-function query(table: string) {
+function query(table: string, sink?: unknown[]) {
   const builder = {
     select: () => builder,
     eq: () => builder,
@@ -55,7 +55,10 @@ function query(table: string) {
     gte: () => builder,
     order: () => builder,
     limit: () => builder,
-    insert: () => builder,
+    insert: (payload: unknown) => {
+      if (table === 'lead_activities') sink?.push(payload)
+      return builder
+    },
     update: () => builder,
     single: async (): Promise<QueryResult> => ({ data: { id: 'lead-1', full_name: 'Jane Seller' }, error: null }),
     maybeSingle: async (): Promise<QueryResult> => (
@@ -94,6 +97,7 @@ function dialResultRequest(input: {
 
 describe('ivr dial-result missed-call alerts', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs()
     vi.clearAllMocks()
     mocks.from.mockImplementation((table: string) => query(table))
     mocks.validateTwilioWebhook.mockResolvedValue(true)
@@ -131,6 +135,32 @@ describe('ivr dial-result missed-call alerts', () => {
     expect(response.status).toBe(200)
     expect(twiml).toContain('/api/ivr/voicemail')
     expect(mocks.sendTeamLeadAlert).not.toHaveBeenCalled()
+  })
+
+  it('records the real caller and Ernest client identity for the business line', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const inserts: unknown[] = []
+    mocks.from.mockImplementation((table: string) => query(table, inserts))
+
+    const response = await POST(dialResultRequest({
+      dialStatus: 'completed',
+      type: 'direct',
+      calledNumber: '+18164292900',
+      duration: '12',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(inserts[0]).toMatchObject({
+      activity_type: 'call',
+      metadata: {
+        direction: 'inbound',
+        from: CALLER,
+        calledNumber: '+18164292900',
+        agent_identity: 'ernest',
+      },
+    })
+    expect(JSON.stringify(inserts[0])).not.toContain('+18166088588')
   })
 
   it.each(['seller', 'direct'])('does not alert when DialCallStatus is completed for a %s call', async (type) => {

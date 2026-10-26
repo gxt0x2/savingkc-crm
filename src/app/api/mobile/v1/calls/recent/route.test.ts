@@ -97,6 +97,30 @@ describe('mobile recent calls route', () => {
     expect(ownedPageFilters[1]).toContain('id.lt."cold-499"')
   })
 
+  it('shows a business-line inbound on Ernest recents as the real caller', async () => {
+    activities = [{
+      id: 'business-inbound', lead_id: null, activity_type: 'call', agent: 'System', created_at: '2026-10-26T19:08:00Z',
+      metadata: { direction: 'inbound', calledNumber: '+18164292900', from: '+18162608357', outcome: 'missed', callSid: 'CA-business' },
+    }]
+    const body = await (await GET(request())).json()
+    expect(activityFilters).toContain('metadata->>calledNumber.eq.+18164292900')
+    expect(body.items).toMatchObject([{ id: 'business-inbound', direction: 'inbound', phone: '+18162608357' }])
+    expect(JSON.stringify(body.items)).not.toContain('+18166088588')
+  })
+
+  it('does not give Casey a business-line call that belongs to Ernest', async () => {
+    mocks.user.mockResolvedValue({ user: { id: 'auth-user-casey', email: 'casey@savingkc.com' } })
+    mocks.actor.mockResolvedValue({ email: 'casey@savingkc.com', fullName: 'Casey', access: 'agent', assignmentAliases: ['Casey'] })
+    activities = [{
+      id: 'business-inbound', lead_id: null, activity_type: 'call', agent: 'System', created_at: '2026-10-26T19:08:00Z',
+      metadata: { direction: 'inbound', calledNumber: '+18164292900', from: '+18162608357', callSid: 'CA-business' },
+    }]
+    const body = await (await GET(request())).json()
+    expect(body.items).toEqual([])
+    expect(activityFilters).not.toContain('+18164292900')
+    expect(activityFilters).toContain('metadata->>calledNumber.eq.+18167277667')
+  })
+
   it('does not use lead assignment or generic company-line traffic as call ownership', async () => {
     activities = [{
       id: 'casey-call-on-ernest-lead', lead_id: 'lead-casey', activity_type: 'call', agent: 'System',
