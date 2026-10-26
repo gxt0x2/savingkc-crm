@@ -223,6 +223,30 @@ function unauthorized() {
   )
 }
 
+// These pages publish index,follow in their own metadata for Google OAuth
+// branding. A noindex response header would override that meta tag.
+const SEARCH_INDEXABLE_PATHS = new Set(['/product', '/privacy', '/terms'])
+
+const ROBOTS_TXT = 'User-agent: *\nDisallow: /\n'
+
+function withCrawlDirective(response: NextResponse, pathname: string): NextResponse {
+  if (!SEARCH_INDEXABLE_PATHS.has(pathname)) {
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  }
+  return response
+}
+
+function robotsTxtResponse(): NextResponse {
+  return new NextResponse(ROBOTS_TXT, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+      'X-Robots-Tag': 'noindex, nofollow',
+    },
+  })
+}
+
 const PAID_LANDING_PATHS = new Set([
   '/ppc',
   '/ppc/',
@@ -452,6 +476,13 @@ function withPaidLandingCookies(response: NextResponse, cookies: PaidLandingCook
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl
+
+  // Crawlers must read robots.txt without a session. A login redirect makes
+  // Google treat the host as crawl-everything and then report 401s on APIs.
+  if ((request.method === 'GET' || request.method === 'HEAD') && pathname === '/robots.txt') {
+    return robotsTxtResponse()
+  }
+
   let paidLandingCookies: PaidLandingCookie[] = []
 
   if (isPaidLandingPageRequest(request)) {
@@ -459,39 +490,41 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   if (previewWriteBlocked(request.method, pathname)) {
-    return NextResponse.json(
+    return withCrawlDirective(NextResponse.json(
       {
         error: 'Preview is read-only until a staging database is connected.',
         previewReadOnly: true,
       },
       { status: 403 },
-    )
+    ), pathname)
   }
 
   if (hasTestBypass(request)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
-  if (['GET', 'HEAD'].includes(request.method) && /^\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) return NextResponse.next()
+  if (['GET', 'HEAD'].includes(request.method) && /^\/email\/unsubscribe\/[1-9][0-9]{0,3}\.[A-Za-z0-9_-]{43}$/.test(pathname)) {
+    return withCrawlDirective(NextResponse.next(), pathname)
+  }
 
   // Skip auth for public routes
   if (PUBLIC_PAGE_EXACT.has(pathname) || PUBLIC_PAGE_PREFIXES.some(route => pathname.startsWith(route))) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
   // Skip auth for explicitly public API routes and external webhooks
   if (isPublicApiRoute(request)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
   // Let server-to-server checks through only when they carry a trusted bearer.
   if (isTrustedBearerRoute(request)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
   // Skip auth for static files and Next.js internals
   if (isStaticAsset(pathname)) {
-    return withPaidLandingCookies(NextResponse.next(), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
   // Create Supabase client and refresh session
   let supabaseResponse = NextResponse.next({ request })
@@ -526,13 +559,13 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // If the signed token has no verified subject, keep the existing deny path.
   if (!hasVerifiedSubject(claimsResult)) {
     if (pathname.startsWith('/api/')) {
-      return withPaidLandingCookies(unauthorized(), paidLandingCookies)
+      return withCrawlDirective(withPaidLandingCookies(unauthorized(), paidLandingCookies), pathname)
     }
 
-    return withPaidLandingCookies(loginRedirect(request), paidLandingCookies)
+    return withCrawlDirective(withPaidLandingCookies(loginRedirect(request), paidLandingCookies), pathname)
   }
 
-  return withPaidLandingCookies(supabaseResponse, paidLandingCookies)
+  return withCrawlDirective(withPaidLandingCookies(supabaseResponse, paidLandingCookies), pathname)
 }
 
 export const config = {

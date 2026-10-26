@@ -36,6 +36,7 @@ describe('/api/leads proxy containment', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow')
     expect(mocks.createServerClient).not.toHaveBeenCalled()
   })
 
@@ -44,6 +45,7 @@ describe('/api/leads proxy containment', () => {
 
     expect(response.status).toBe(401)
     expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0')
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow')
     await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
     expect(mocks.getClaims).toHaveBeenCalledOnce()
   })
@@ -55,6 +57,7 @@ describe('/api/leads proxy containment', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow')
   })
 
   it.each(['/product', '/privacy', '/terms'])('keeps Google OAuth branding page %s public', async (pathname) => {
@@ -76,6 +79,36 @@ describe('/api/leads proxy containment', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
+  it('serves a disallow-all robots.txt without a session or login redirect', async () => {
+    const response = await proxy(new NextRequest('https://crm.savingkc.com/robots.txt'), event)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/plain')
+    expect(response.headers.get('location')).toBeNull()
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow')
+    await expect(response.text()).resolves.toBe('User-agent: *\nDisallow: /\n')
+    expect(mocks.createServerClient).not.toHaveBeenCalled()
+  })
+
+  it('marks the login wall and anonymous app redirects noindex without opening them', async () => {
+    const login = await proxy(new NextRequest('https://crm.savingkc.com/login'), event)
+    expect(login.status).toBe(200)
+    expect(login.headers.get('x-robots-tag')).toBe('noindex, nofollow')
+
+    const dashboard = await proxy(new NextRequest('https://crm.savingkc.com/dashboard'), event)
+    expect(dashboard.status).toBe(307)
+    expect(dashboard.headers.get('location')).toContain('/login?redirect=%2Fdashboard')
+    expect(dashboard.headers.get('x-robots-tag')).toBe('noindex, nofollow')
+  })
+
+  it.each(['/product', '/privacy', '/terms'])('leaves Google OAuth branding page %s indexable', async (pathname) => {
+    const response = await proxy(new NextRequest(`https://crm.savingkc.com${pathname}`), event)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-robots-tag')).toBeNull()
     expect(mocks.createServerClient).not.toHaveBeenCalled()
   })
 })
