@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 import {
@@ -158,30 +158,31 @@ export function WebsiteConversionPage() {
   const range: ConversionRange = isConversionRange(requested) ? requested : 'day'
   const [report, setReport] = useState<WebsiteConversionReport | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/marketing/website-conversion?range=${range}`, { signal, cache: 'no-store' })
-      const body = await response.json() as WebsiteConversionReport & { error?: string }
-      if (!response.ok) throw new Error(body.error || 'Website conversion data could not be read.')
-      setReport(body)
-    } catch (cause) {
-      if (signal?.aborted) return
-      setReport(null)
-      setError(cause instanceof Error ? cause.message : 'Website conversion data could not be read.')
-    } finally {
-      if (!signal?.aborted) setLoading(false)
-    }
-  }, [range])
+  const [attempt, setAttempt] = useState(0)
+  const [settled, setSettled] = useState<{ range: ConversionRange; attempt: number } | null>(null)
+  const current = settled?.range === range && settled.attempt === attempt
+  const loading = !current
 
   useEffect(() => {
     const controller = new AbortController()
-    void load(controller.signal)
+    const signal = controller.signal
+    fetch(`/api/marketing/website-conversion?range=${range}`, { signal, cache: 'no-store' })
+      .then(async (response) => {
+        const body = await response.json() as WebsiteConversionReport & { error?: string }
+        if (signal.aborted) return
+        if (!response.ok) throw new Error(body.error || 'Website conversion data could not be read.')
+        setReport(body)
+        setError(null)
+        setSettled({ range, attempt })
+      })
+      .catch((cause: unknown) => {
+        if (signal.aborted) return
+        setReport(null)
+        setError(cause instanceof Error ? cause.message : 'Website conversion data could not be read.')
+        setSettled({ range, attempt })
+      })
     return () => controller.abort()
-  }, [load])
+  }, [attempt, range])
 
   function selectRange(next: ConversionRange) {
     const params = new URLSearchParams(searchParams.toString())
@@ -224,9 +225,9 @@ export function WebsiteConversionPage() {
         </div>
       </header>
 
-      {error ? (
+      {current && error ? (
         <div role="alert" className="crm-panel rounded-2xl px-4 py-3 text-sm text-[var(--crm-danger)]">
-          {error} <button type="button" onClick={() => void load()} className="font-black underline">Try again</button>
+          {error} <button type="button" onClick={() => setAttempt((value) => value + 1)} className="font-black underline">Try again</button>
         </div>
       ) : null}
 
