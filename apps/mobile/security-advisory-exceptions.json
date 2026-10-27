@@ -2,6 +2,13 @@
   "schemaVersion": 1,
   "exceptions": [
     {
+      "advisoryId": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
+      "owner": "Mobile Platform",
+      "reason": "GHSA-mrhx-c7xc-m3w5 is the Zod $ZodArray issue-accumulation DoS, patched in zod 4.6.6. Expo SDK 56 and @expo/cli still depend on zod ^3.25.76, whose main export is the Zod 3 API. Forcing zod 4 changes that export and breaks the CLI. The root CRM pins zod 4.6.7. Remove this when Expo depends on zod >= 4.6.6.",
+      "expiresOn": "2026-12-15"
+    },
+    {
       "advisoryId": "GHSA-86w9-cpqp-85rv",
       "package": "node-forge",
       "owner": "Mobile Platform",

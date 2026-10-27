@@ -4,7 +4,7 @@ These private local packages replace two verified tooling interfaces, without ch
 
 ## Next ESLint roots
 
-`tooling/next-root-glob` supports only `globSync(string, {onlyDirectories:true})`, the sole interface used by `@next/eslint-plugin-next` 16.3.8. It uses published brace-expansion 5.0.12, Picomatch 4.0.7, glob-parent 6.0.2 and the same @nodelib/fs.walk 1.2.8 breadth-first directory walker as the previous implementation. Static alternatives precede dynamic tasks; alternatives retain stable length ordering, directory symlinks are followed, and task roots are excluded from recursive results. Errors other than missing paths propagate.
+`tooling/next-root-glob` supports only `globSync(string, {onlyDirectories:true})`, the sole interface used by `@next/eslint-plugin-next` 16.4.3. It uses published brace-expansion 5.0.12, Picomatch 4.0.7, glob-parent 6.0.2 and the same @nodelib/fs.walk 1.2.8 breadth-first directory walker as the previous implementation. Static alternatives precede dynamic tasks; alternatives retain stable length ordering, directory symlinks are followed, and task roots are excluded from recursive results. Errors other than missing paths propagate.
 
 A direct Node fs.globSync substitution changed recursive bases/order and failed recursive symlink traversal. A direct Tinyglobby substitution also changed symlink results. Neither substitution was shipped. The scoped adapter is covered by 130 baseline-derived contracts through the real Next helper, including literal/hidden roots, absolute and parent paths, arrays, brace sets/ranges, extglobs, recursive symlinks, broken symlinks and ordering. No vulnerable oracle is installed in the candidate graph.
 
