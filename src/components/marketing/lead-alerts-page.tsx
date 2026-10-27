@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { leadAlertDeliveryPhrase } from '@/lib/marketing/lead-alerts'
 
 type LeadAlertSummary = {
@@ -160,32 +160,30 @@ export function LeadAlertsPage() {
   const [days, setDays] = useState(14)
   const [filter, setFilter] = useState<AlertFilter>('all')
   const [data, setData] = useState<LeadAlertsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  const loadAlerts = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/marketing/lead-alerts?days=${days}`, {
-        cache: 'no-store',
-        signal,
-      })
-      if (!response.ok) throw new Error(`Unable to load lead alerts (${response.status})`)
-      const payload = await response.json() as LeadAlertsResponse
-      setData(payload)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') setError((err as Error).message)
-    } finally {
-      if (!signal?.aborted) setLoading(false)
-    }
-  }, [days])
+  const [attempt, setAttempt] = useState(0)
+  const [settled, setSettled] = useState<{ days: number; attempt: number } | null>(null)
+  const loading = !(settled?.days === days && settled.attempt === attempt)
 
   useEffect(() => {
     const controller = new AbortController()
-    void loadAlerts(controller.signal)
+    const signal = controller.signal
+    fetch(`/api/marketing/lead-alerts?days=${days}`, { cache: 'no-store', signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Unable to load lead alerts (${response.status})`)
+        const payload = await response.json() as LeadAlertsResponse
+        if (signal.aborted) return
+        setData(payload)
+        setError(null)
+        setSettled({ days, attempt })
+      })
+      .catch((err: unknown) => {
+        if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
+        setError(err instanceof Error ? err.message : 'Unable to load lead alerts')
+        setSettled({ days, attempt })
+      })
     return () => controller.abort()
-  }, [loadAlerts])
+  }, [attempt, days])
 
   const alerts = useMemo(() => (data?.alerts || []).filter((row) => filterAlert(row, filter)), [data, filter])
   const summary = data?.summary
@@ -201,7 +199,7 @@ export function LeadAlertsPage() {
               <h1>Lead Alert Audit</h1>
               <p>Every team notification path for form and call leads from the last {days} day{days === 1 ? '' : 's'}.</p>
             </div>
-            <button className="refresh-button" type="button" onClick={() => loadAlerts()} disabled={loading}>
+            <button className="refresh-button" type="button" onClick={() => setAttempt((value) => value + 1)} disabled={loading}>
               {loading ? 'Refreshing' : 'Refresh'}
             </button>
           </header>
