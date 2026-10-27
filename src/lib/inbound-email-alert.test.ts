@@ -16,7 +16,7 @@ vi.mock('@/lib/after-request', () => ({
   afterRequest: (work: () => unknown) => mocks.afterRequest(work),
 }))
 
-import { inboundEmailRecipientEmails, notifyInboundEmail } from '@/lib/inbound-email-alert'
+import { inboundEmailPushBody, inboundEmailRecipientEmails, notifyInboundEmail } from '@/lib/inbound-email-alert'
 
 const LEAD_ID = 'lead-seller'
 const ACTIVITY_ID = 'act-inbound-1'
@@ -73,6 +73,15 @@ describe('inboundEmailRecipientEmails', () => {
   })
 })
 
+describe('inboundEmailPushBody', () => {
+  it('uses the snippet, otherwise the start of the plain body, with whitespace collapsed', () => {
+    expect(inboundEmailPushBody('Hi   The\nclosing...', 'ignored longer body')).toBe('Hi The closing...')
+    expect(inboundEmailPushBody('  ', 'Hi\n\nThe closing is Thursday at the title company.')).toBe('Hi The closing is Thursday at the title company.')
+    expect(inboundEmailPushBody('', 'x'.repeat(180))).toHaveLength(150)
+    expect(inboundEmailPushBody('   ', '  \n')).toBe('New email')
+  })
+})
+
 describe('notifyInboundEmail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -112,7 +121,8 @@ describe('notifyInboundEmail', () => {
 
     const payload = {
       title: 'Pat Seller',
-      body: 'Re: 44 Oak Ave · Call me after 5.',
+      subtitle: 'Re: 44 Oak Ave',
+      body: 'Call me after 5.',
       data: {
         href: `/conversation/${LEAD_ID}`,
         kind: 'inbound_email',
@@ -124,9 +134,31 @@ describe('notifyInboundEmail', () => {
     expect(mocks.sendPushToUser).toHaveBeenCalledTimes(2)
     expect(mocks.sendPushToUser).toHaveBeenCalledWith('user-casey', {
       title: 'Pat Seller',
-      body: 'Re: 44 Oak Ave · Call me after 5.',
+      body: 'Call me after 5.',
       url: `/conversation/${LEAD_ID}`,
       tag: `email_${ACTIVITY_ID}`,
+    })
+  })
+
+  it('puts the subject on the Expo subtitle and the plain-body preview in the body', async () => {
+    await notifyInboundEmail({
+      leadId: LEAD_ID,
+      activityId: ACTIVITY_ID,
+      subject: '  Request: Buyer Signing  ',
+      snippet: '',
+      bodyText: 'Hi\n\nThe closing is Thursday.',
+    })
+
+    expect(mocks.sendMobilePushToUsers).toHaveBeenCalledWith(['user-casey', 'user-ernest'], {
+      title: 'Pat Seller',
+      subtitle: 'Request: Buyer Signing',
+      body: 'Hi The closing is Thursday.',
+      data: {
+        href: `/conversation/${LEAD_ID}`,
+        kind: 'inbound_email',
+        leadId: LEAD_ID,
+        eventId: `email_${ACTIVITY_ID}`,
+      },
     })
   })
 

@@ -11,6 +11,7 @@ export type MobilePushData = Record<string, string>
 export type MobilePushPayload = {
   title: string
   body: string
+  subtitle?: string
   data?: MobilePushData
 }
 
@@ -157,7 +158,7 @@ function scheduleExpoReceiptCheck(pending: PendingExpoReceipt[]): void {
 }
 
 async function postExpoBatch(
-  messages: Array<{ to: string; title: string; body: string; data: MobilePushData }>,
+  messages: Array<{ to: string; title: string; subtitle?: string; body: string; data: MobilePushData }>,
 ): Promise<{ sent: number; unregistered: string[] }> {
   const response = await fetch(EXPO_PUSH_URL, {
     method: 'POST',
@@ -265,9 +266,11 @@ export async function sendMobilePushToUsers(
     const devices = ((data || []) as MobilePushDevice[]).filter(
       (device) => typeof device.token === 'string' && device.token.length > 0 && typeof device.user_id === 'string' && device.user_id.length > 0,
     )
+    const subtitle = payload.subtitle?.trim()
     const messages = devices.map((device) => ({
       to: device.token,
       title: payload.title,
+      ...(subtitle ? { subtitle } : {}),
       body: payload.body,
       data: {
         ...(payload.data || {}),
