@@ -3,6 +3,7 @@ import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS } from '@/lib/twilio-numbers'
 import { dialTimeoutFallbackForSource, parseDialTimeout } from '@/lib/ring-timeout'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
 import {
   directInboundClientNoun,
@@ -23,7 +24,7 @@ import {
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+const TWILIO_PHONE = readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const ERNEST_PHONE = normalizePhoneToE164(process.env.ERNEST_PHONE) || '+18162262552'
 

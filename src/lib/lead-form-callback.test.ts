@@ -77,10 +77,44 @@ describe('lead-form-callback', () => {
     }))
 
     const ernestUrl = new URL(create.mock.calls[0][0].url)
+    expect(ernestUrl.searchParams.get('callerId')).toBe('+18166088808')
     const caseyUrl = new URL(create.mock.calls[1][0].url)
     expect(ernestUrl.searchParams.get('batchId')).toBeTruthy()
     expect(caseyUrl.searchParams.get('batchId')).toBe(ernestUrl.searchParams.get('batchId'))
     expect(ernestUrl.searchParams.get('agentName')).toBe('Ernest')
     expect(caseyUrl.searchParams.get('agentName')).toBe('Casey')
+  })
+
+  it('trims a trailing newline from the configured caller ID without changing the number', async () => {
+    vi.mocked(getLeadAlertRecipients).mockReturnValue([
+      { name: 'Ernest', phone: '+18162262552\n', schedule: '24_7' },
+    ])
+    const create = vi.fn(async ({ to, url }: { to: string; from: string; url: string }) => ({
+      sid: `CA-${to.slice(-4)}`,
+      echoed: url.length > 0,
+    }))
+    vi.mocked(getTwilioClient).mockReturnValue({
+      calls: { create },
+    } as unknown as ReturnType<typeof getTwilioClient>)
+
+    const result = await startPpcFormLeadAgentCallback({
+      leadId: 'lead-123',
+      leadPhone: '+18165551212\n',
+      callerId: '+18163077835\n',
+      fullName: 'Pat Seller',
+      trigger: 'website_form_submit',
+    })
+
+    expect(result.started).toBe(true)
+    expect(result.to).toBe('+18162262552')
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+18162262552',
+      from: '+18163077835',
+    }))
+    const url = new URL(create.mock.calls[0][0].url)
+    expect(url.searchParams.get('callerId')).toBe('+18163077835')
+    expect(url.searchParams.get('leadPhone')).toBe('+18165551212')
+    expect(url.searchParams.get('agentPhone')).toBe('+18162262552')
+    expect(url.searchParams.get('callerId')).not.toMatch(/\s/)
   })
 })

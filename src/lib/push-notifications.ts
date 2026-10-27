@@ -22,6 +22,10 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
 
 
 
+export function isWebPushConfigured(): boolean {
+  return pushConfigured
+}
+
 export interface PushPayload {
   title: string
   body: string

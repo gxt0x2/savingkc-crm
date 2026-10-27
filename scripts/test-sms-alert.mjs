@@ -13,9 +13,13 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
-const ERNEST_PHONE = process.env.ERNEST_PHONE || '+18162262552'
-const CASEY_PHONE = process.env.CASEY_PHONE || '+18167564943'
+function trimPhone(value) {
+  return String(value ?? '').replace(/\\[rnt]/g, '').trim()
+}
+
+const TWILIO_PHONE = trimPhone(process.env.TWILIO_PHONE_NUMBER) || '+18163077835'
+const ERNEST_PHONE = trimPhone(process.env.ERNEST_PHONE) || '+18162262552'
+const CASEY_PHONE = trimPhone(process.env.CASEY_PHONE) || '+18167564943'
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002'
 
 async function testSmsAlert() {

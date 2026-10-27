@@ -1,4 +1,5 @@
 import { getLeadAlertRecipients } from '@/lib/lead-alert-routing'
+import { trimPhoneConfig } from '@/lib/phone-config'
 import { getTwilioClient } from '@/lib/safe-communications'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -63,6 +64,12 @@ export async function startLeadFormAgentCallback(input: FormLeadCallbackInput): 
     return { started: false, error: 'Twilio client not initialized' }
   }
 
+  const callerId = trimPhoneConfig(input.callerId)
+  const leadPhone = trimPhoneConfig(input.leadPhone)
+  if (!callerId || !leadPhone) {
+    return { started: false, error: 'Lead phone or caller ID is missing' }
+  }
+
   const recipients = getLeadAlertRecipients()
   if (recipients.length === 0) {
     return { started: false, error: 'No lead alert recipient available' }
@@ -72,22 +79,23 @@ export async function startLeadFormAgentCallback(input: FormLeadCallbackInput): 
 
   const callResults = await Promise.all(
     recipients.map(async (recipient): Promise<AgentCallbackCall> => {
+      const agentPhone = trimPhoneConfig(recipient.phone)
       const callbackUrl = new URL('/api/ivr/form-lead-agent-callback', BASE_URL)
       callbackUrl.searchParams.set('leadId', input.leadId)
-      callbackUrl.searchParams.set('leadPhone', input.leadPhone)
-      callbackUrl.searchParams.set('callerId', input.callerId)
+      callbackUrl.searchParams.set('leadPhone', leadPhone)
+      callbackUrl.searchParams.set('callerId', callerId)
       callbackUrl.searchParams.set('fullName', input.fullName)
       callbackUrl.searchParams.set('batchId', batchId)
       callbackUrl.searchParams.set('agentName', recipient.name)
-      callbackUrl.searchParams.set('agentPhone', recipient.phone)
+      callbackUrl.searchParams.set('agentPhone', agentPhone)
       if (input.address) callbackUrl.searchParams.set('address', input.address)
       if (input.city) callbackUrl.searchParams.set('city', input.city)
       if (input.trigger) callbackUrl.searchParams.set('trigger', input.trigger)
 
       try {
         const call = await client.calls.create({
-          to: recipient.phone,
-          from: input.callerId,
+          to: agentPhone,
+          from: callerId,
           url: callbackUrl.toString(),
           method: 'POST',
           timeout: 20,
@@ -95,7 +103,7 @@ export async function startLeadFormAgentCallback(input: FormLeadCallbackInput): 
 
         return {
           agentName: recipient.name,
-          to: recipient.phone,
+          to: agentPhone,
           started: true,
           sid: call.sid,
         }
@@ -103,7 +111,7 @@ export async function startLeadFormAgentCallback(input: FormLeadCallbackInput): 
         console.error(`[lead-form-callback] Agent callback failed for ${recipient.name}:`, error)
         return {
           agentName: recipient.name,
-          to: recipient.phone,
+          to: agentPhone,
           started: false,
           error: error instanceof Error ? error.message : 'Unknown Twilio error',
         }

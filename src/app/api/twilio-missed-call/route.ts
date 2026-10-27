@@ -3,9 +3,10 @@ import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { rateLimit, rateLimitConfigs, getClientIp } from '@/middleware/rate-limit'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { formatPhone } from '@/lib/format'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { supabase } from '@/lib/supabase-lazy'
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+const TWILIO_PHONE = readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
 
 // Internal team numbers — never trigger lead flows for these
 const TEAM_NUMBERS = new Set([

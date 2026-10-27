@@ -4,6 +4,7 @@ import { regenerateBriefing } from '@/lib/briefing-regen'
 import { notifyNewLead } from '@/lib/ari-briefing'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { isMissingColumnError } from '@/lib/schema-compat'
@@ -294,7 +295,7 @@ async function triggerWebsiteLeadSideEffects(input: {
     },
     callback: input.phone ? {
       leadPhone: input.phone,
-      callerId: process.env.TWILIO_PHONE_NUMBER || '+18163077835',
+      callerId: readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835'),
       fullName: input.fullName,
       address: input.address,
       trigger: 'website_form_submit',

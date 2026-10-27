@@ -4,9 +4,10 @@ import { formatPhone } from '@/lib/format'
 import { supabase } from '@/lib/supabase-lazy'
 import { lookupProspectByPhone } from '@/lib/prospect-lookup'
 import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
+import { readPhoneEnv } from '@/lib/phone-config'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+18163077835'
+const TWILIO_PHONE = readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const INVALID_TWILIO_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
 
