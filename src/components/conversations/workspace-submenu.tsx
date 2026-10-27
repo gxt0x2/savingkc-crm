@@ -38,6 +38,7 @@ export const WORKSPACE_SECTIONS: Record<string, Section[]> = {
     { label: 'Dispositions', href: '/reports/dispositions' },
     { label: 'Marketing', href: '/reports/marketing' },
     { label: 'Google Ads', href: '/marketing/google-ads' },
+    { label: 'Website conversion', href: '/marketing/website-conversion' },
     { label: 'Finance', href: '/reports/finance' },
     { label: 'Calls & SMS', href: '/reports/call-sms' },
   ],
