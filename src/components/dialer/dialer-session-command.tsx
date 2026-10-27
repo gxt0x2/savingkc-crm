@@ -35,6 +35,8 @@ interface DialerSessionCommandProps {
   onEndSession: () => void
   onMarkDead: () => void
   onSkip: () => void
+  onPreviousProspect?: () => void
+  onNextProspect?: () => void
 }
 
 export function DialerSessionCommand(props: DialerSessionCommandProps) {
@@ -110,7 +112,11 @@ export function DialerSessionCommand(props: DialerSessionCommandProps) {
         ['Progress', `${props.currentIndex + 1} / ${props.queueSize}`, 'bg-[var(--prospecting-header)] text-[var(--ck-text)]'],
       ].map(([label, value, tone]) => <div key={label} className={`min-w-0 border-b border-r border-[var(--prospecting-border)] px-3 py-2.5 last:border-r-0 sm:border-b-0 ${tone}`}>
         <span className="block text-[10px] font-medium uppercase tracking-[0.12em] opacity-70">{label}</span>
-        <strong className="mt-0.5 block truncate text-sm font-semibold" title={value}>{value}</strong>
+        {label === 'Progress' && props.readOnlyPreview ? <div className="mt-0.5 flex items-center gap-2">
+          <button type="button" onClick={props.onPreviousProspect} disabled={props.currentIndex <= 0 || !props.onPreviousProspect} className="rounded-md border border-[var(--prospecting-border-strong)] px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+          <strong className="shrink-0 text-sm font-semibold" aria-live="polite">{value}</strong>
+          <button type="button" onClick={props.onNextProspect} disabled={props.currentIndex >= props.queueSize - 1 || !props.onNextProspect} className="rounded-md border border-[var(--prospecting-border-strong)] px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+        </div> : <strong className="mt-0.5 block truncate text-sm font-semibold" title={value}>{value}</strong>}
       </div>)}
     </section>
 

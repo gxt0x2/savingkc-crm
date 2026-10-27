@@ -45,6 +45,7 @@ describe('DialerSessionCommand', () => {
     expect(within(summary).getByText('Mojo Training List')).toBeVisible()
     expect(within(summary).getByText('Mojo Contact')).toBeVisible()
     expect(within(summary).getByText('1 / 31')).toBeVisible()
+    expect(within(summary).queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument()
     expect(screen.queryByText('Dialer time')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Back to campaigns' })).not.toBeInTheDocument()
   })
@@ -117,5 +118,37 @@ describe('DialerSessionCommand', () => {
     expect(screen.getByText('Paused')).toBeVisible()
     act(() => window.dispatchEvent(new CustomEvent('prospecting-preview-status', { detail: { status: 'Outcome required' } })))
     expect(screen.getByText('Outcome required')).toBeVisible()
+  })
+
+  it('lets a preview move forward from the first prospect', () => {
+    const onPreviousProspect = vi.fn()
+    const onNextProspect = vi.fn()
+    renderCommand({ readOnlyPreview: true, currentIndex: 0, queueSize: 3, onPreviousProspect, onNextProspect })
+
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(onNextProspect).toHaveBeenCalledOnce()
+    expect(onPreviousProspect).not.toHaveBeenCalled()
+  })
+
+  it('shows the middle preview position with both navigation controls enabled', () => {
+    const onPreviousProspect = vi.fn()
+    const onNextProspect = vi.fn()
+    renderCommand({ readOnlyPreview: true, currentIndex: 1, queueSize: 3, onPreviousProspect, onNextProspect })
+
+    expect(screen.getByText('2 / 3')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+    expect(onPreviousProspect).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(onNextProspect).toHaveBeenCalledOnce()
+  })
+
+  it('stops preview navigation at the final prospect', () => {
+    const onNextProspect = vi.fn()
+    renderCommand({ readOnlyPreview: true, currentIndex: 2, queueSize: 3, onPreviousProspect: vi.fn(), onNextProspect })
+
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+    expect(screen.getByText('3 / 3')).toBeVisible()
+    expect(onNextProspect).not.toHaveBeenCalled()
   })
 })
