@@ -27,7 +27,7 @@ import {
   mojoMcpCredentialState,
   pageFromListCalls,
 } from './mojo-call-source'
-const migration = fs.readFileSync('supabase/migrations/20261127120000_crm_mojo_calls.sql', 'utf8')
+const migration = fs.readFileSync('supabase/migrations/20261129120000_crm_mojo_calls.sql', 'utf8')
 const ledgerSource = fs.readFileSync('src/lib/server/mojo-call-ledger.ts', 'utf8')
 const sourceAdapter = fs.readFileSync('src/lib/server/mojo-call-source.ts', 'utf8')
 const meaningfulSync = fs.readFileSync('scripts/mojo-sync.mjs', 'utf8')
