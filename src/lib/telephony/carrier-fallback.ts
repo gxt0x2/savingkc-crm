@@ -1,8 +1,8 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import {
-  directInboundClientIdentity,
   directInboundClientNoun,
   inboundClientDialCallerId,
+  inboundRingPlan,
 } from '@/lib/telephony/direct-inbound-ring'
 
 export const VOICE_FALLBACK_PATH = '/api/twilio/fallback/voice'
@@ -55,18 +55,29 @@ export function buildCarrierVoiceFallbackTwiml(input: {
   const agentPhone = normalizePhoneToE164(input.agentPhone) || input.agentPhone
   const action = `${baseUrl}/api/ivr/dial-result?from=${encodeURIComponent(from)}&leadId=&calledNumber=${encodeURIComponent(calledNumber)}&type=direct`
   const recordingCallback = `${baseUrl}/api/twilio-recording-callback?source=carrier_fallback&from=${encodeURIComponent(from)}&calledNumber=${encodeURIComponent(calledNumber)}`
-  const ringsClient = Boolean(directInboundClientIdentity(calledNumber))
+  const plan = inboundRingPlan(calledNumber)
+  const ringsClient = Boolean(plan.identity)
   const clientNoun = directInboundClientNoun(calledNumber, ringsClient ? {
     callerNumber: from,
     callerName: input.callerName ?? '',
     calledNumber,
   } : undefined)
+  // Direct company DIDs obey the personal-forward flag. A suppressed cell is
+  // not put back on this fallback. Every other line keeps the owning agent.
+  const cell = plan.kind === 'direct' && plan.personalForwardSuppressed ? null : agentPhone
   const callerId = inboundClientDialCallerId({ from, calledNumber, ringsClient })
+  if (!clientNoun && !cell) {
+    const voicemail = `${baseUrl}/api/ivr/voicemail?agent=Ernest&from=${encodeURIComponent(from)}&leadId=&calledNumber=${encodeURIComponent(calledNumber)}`
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${xmlEscape(voicemail)}</Redirect>
+</Response>`
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial action="${xmlEscape(action)}" method="POST" timeout="15" callerId="${xmlEscape(callerId)}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
-    ${clientNoun}<Number>${xmlEscape(agentPhone)}</Number>
+    ${clientNoun}${cell ? `<Number>${xmlEscape(cell)}</Number>` : ''}
   </Dial>
 </Response>`
 }

@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildCarrierFallbackSmsLeadSeed,
   buildCarrierVoiceFallbackTwiml,
   carrierFallbackUrls,
   matchesCarrierRoute,
 } from './carrier-fallback'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('carrier fallbacks', () => {
   it('builds stable production fallback URLs', () => {
@@ -47,6 +51,23 @@ describe('carrier fallbacks', () => {
     expect(xml).toContain('callerId="+19137179716"')
     expect(xml).not.toContain('callerId="+18166088588"')
     expect(xml).toContain('timeout="15"')
+  })
+
+  it('does not put the personal cell back when personal forward is off', () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+18162608357',
+      calledNumber: '+18164292900',
+      agentPhone: '+18162262552',
+    })
+
+    expect(xml).toContain('<Identity>ernest</Identity>')
+    expect(xml).toContain('callerId="+18162608357"')
+    expect(xml).not.toContain('callerId="+18166088588"')
+    expect(xml).not.toContain('<Number>')
+    expect(xml).not.toContain('+18162262552')
   })
 
   it('puts a CRM name on the Voice client without dropping the cell', () => {

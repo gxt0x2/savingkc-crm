@@ -53,7 +53,7 @@ const BodySchema = z.object({
   smsConsent: z.boolean().optional(),
   isTest: z.boolean().optional(),
   attribution: AttributionSchema,
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
 })
 
 const corsHeaders = {

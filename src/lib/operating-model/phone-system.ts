@@ -130,25 +130,36 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
     }
   }
 
+  const businessLine = config.value === '+18164292900'
   return {
     number: config.value,
     label: config.label,
     purpose: config.purpose,
-    owner: 'Acquisitions team',
+    owner: businessLine ? 'Ernest' : 'Acquisitions team',
     team: 'Acquisitions',
     routeType: 'acquisitions_ivr',
     health: 'healthy',
-    healthNote: 'Standard seller intake and acquisition routing.',
+    healthNote: businessLine
+      ? 'Public business line. MOBILE_IN_APP_VOICE=true rings Ernest in the SavingKC app. MOBILE_PERSONAL_FORWARD=false does not dial his personal cell. (816) 608-8588 remains his outbound caller ID.'
+      : 'Standard seller intake and acquisition routing.',
     workflowId: 'acquisitions-seller-call-flow',
-    inboundPath: ['Twilio number', '/api/twiml-voice', 'Seller IVR', '/api/ivr/handle-input', 'Acquisitions team'],
-    answeredPath: 'Seller inquiries ring the acquisition team and record the call after answer.',
-    noAnswerPath: 'No input is logged and routed through the general no-input follow-up and voicemail path.',
+    inboundPath: businessLine
+      ? ['Twilio number', '/api/twiml-voice', 'Ernest Voice client', '/api/ivr/dial-result']
+      : ['Twilio number', '/api/twiml-voice', 'Seller IVR', '/api/ivr/handle-input', 'Acquisitions team'],
+    answeredPath: businessLine
+      ? 'With in-app voice on, rings Ernest in the SavingKC app using the real caller as caller ID.'
+      : 'Seller inquiries ring the acquisition team and record the call after answer.',
+    noAnswerPath: businessLine
+      ? 'An unanswered Voice client goes to voicemail. The personal cell is not dialed while MOBILE_PERSONAL_FORWARD=false.'
+      : 'No input is logged and routed through the general no-input follow-up and voicemail path.',
     smsPath: 'Inbound SMS enters /api/twilio-sms-webhook, resolves identity, records the message, and updates attention.',
     smsSenderPolicy: 'Approved for conversation sends; the API validates the selected identity and records Twilio\'s actual sender.',
     outboundUse: config.dialerEligible
       ? 'Available for dialer, conversations, and approved broadcasts.'
       : 'Not available to the generic dialer rotation.',
-    carrierFallback: 'Voice falls back to the route owner and SMS is durably captured as New work when the primary Twilio webhook fails. Live carrier configuration is verified from this registry.',
+    carrierFallback: businessLine
+      ? 'When MOBILE_PERSONAL_FORWARD=false the carrier fallback dials the Voice client only and does not dial the personal cell. SMS is still durably captured.'
+      : 'Voice falls back to the route owner and SMS is durably captured as New work when the primary Twilio webhook fails. Live carrier configuration is verified from this registry.',
     sourceFiles,
   }
 }

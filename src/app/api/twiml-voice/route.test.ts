@@ -497,6 +497,7 @@ describe('TwiML request containment', () => {
 
 describe('verified inbound TwiML routing', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs()
     vi.clearAllMocks()
     mocks.validateTwilioWebhook.mockResolvedValue(true)
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
@@ -611,6 +612,67 @@ describe('verified inbound TwiML routing', () => {
     expect(text).not.toContain('<Client')
     expect(text).not.toContain('twilio-inbound-client-status')
     expect(text).not.toContain('timeout="45"')
+  })
+
+  it('rings client:ernest for the business line with the real caller and no personal cell', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const { text } = await responseText(twilioRequest({
+      CallSid: 'CA_business',
+      From: '+18162608357',
+      To: '+18164292900',
+    }))
+
+    expect(text).toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18162608357"')
+    expect(text).not.toContain('callerId="+18166088588"')
+    expect(text).toContain('<Parameter name="callerNumber" value="+18162608357" />')
+    expect(text).toContain('<Parameter name="calledNumber" value="+18164292900" />')
+    expect(text).toContain('/api/ivr/dial-result')
+    expect(text).not.toContain('+18162262552')
+    expect(text).not.toContain('+18167564943')
+    expect(text).not.toContain('<Number')
+    expect(text).not.toContain('<Gather')
+  })
+
+  it('dials the documented cell when personal forward is on', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'true')
+    const { text } = await responseText(inboundRequest('+18166088588'))
+
+    expect(text).toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('<Number url="https://crm.savingkc.com/api/ivr/whisper?type=direct')
+    expect(text).toContain('+18162262552')
+  })
+
+  it('keeps Casey company routing on his cell and off client:ernest', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const { text } = await responseText(inboundRequest('+18167277667'))
+
+    expect(text).toContain('callerId="+18167277667"')
+    expect(text).toContain('+18167564943')
+    expect(text).not.toContain('<Client')
+    expect(text).not.toContain('+18162262552')
+    expect(text).toContain('timeout="15"')
+  })
+
+  it('does not restore the personal cell when routing throws and personal forward is off', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    mocks.isGoogleAdsPhoneNumber.mockImplementationOnce(() => {
+      throw new Error('inbound routing unavailable')
+    })
+    const { text } = await responseText(twilioRequest({
+      CallSid: 'CA_business_emergency',
+      From: '+18162608357',
+      To: '+18164292900',
+    }))
+
+    expect(text).toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18162608357"')
+    expect(text).not.toContain('+18162262552')
+    expect(text).not.toContain('<Number')
   })
 
   it('preserves emergency dialing only after a verified request is classified inbound', async () => {

@@ -379,7 +379,7 @@ export const emailCommandErrorSchema = z.object({
   ok: z.literal(false),
   requestId: uuid,
   error: z.object({
-    code: nonEmpty.max(100), message: nonEmpty.max(1_000), fieldErrors: z.record(z.string().max(500)).optional(),
+    code: nonEmpty.max(100), message: nonEmpty.max(1_000), fieldErrors: z.record(z.string(), z.string().max(500)).optional(),
     retryable: z.boolean(), currentRevision: revision.optional(), blockedBy: z.array(nonEmpty.max(200)).max(100).optional(),
   }).strict(),
 }).strict()

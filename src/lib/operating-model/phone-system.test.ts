@@ -27,6 +27,15 @@ describe('master phone system', () => {
     }
   })
 
+  it('documents the business line as Ernest in-app voice without taking his caller ID', () => {
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18164292900')).toMatchObject({
+      owner: 'Ernest',
+      routeType: 'acquisitions_ivr',
+      health: 'healthy',
+    })
+    expect(PHONE_SYSTEM.find((record) => record.number === '+18166088588')?.routeType).toBe('direct_agent')
+  })
+
   it('routes the dispositions and Casey legacy identities directly to their owners', () => {
     expect(PHONE_SYSTEM_ATTENTION).toEqual([])
     expect(PHONE_SYSTEM.find((record) => record.number === '+18166088858')).toMatchObject({

@@ -4,10 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createRequire } = require('node:module');
 const { createHash } = require('node:crypto');
-const signatures = {"@expo/metro-file-map@56.0.4": "d84d9441db0dceb5207d320ba2a2265bed436a91ae14b9d45eb135cf0f6faba2", "metro-file-map@0.84.5": "fd54d0713d2066eb474652dcdf3f88ff67f66d84600d1d8013ecbf6c7fdc3c47", "metro-file-map@0.84.4": "fd54d0713d2066eb474652dcdf3f88ff67f66d84600d1d8013ecbf6c7fdc3c47"};
+const signatures = {"@expo/metro-file-map@56.0.5": "047dd314cb10d105ee88f8129dc001bee65a4c89c00f603b67891875d8939224", "metro-file-map@0.84.5": "fd54d0713d2066eb474652dcdf3f88ff67f66d84600d1d8013ecbf6c7fdc3c47", "metro-file-map@0.84.4": "fd54d0713d2066eb474652dcdf3f88ff67f66d84600d1d8013ecbf6c7fdc3c47"};
 const root = path.resolve(__dirname, '..');
 const lock = require(path.join(root, 'package-lock.json'));
-const allowed = {"@expo/metro-file-map": ["56.0.4"], "metro-file-map": ["0.84.4", "0.84.5"]};
+const allowed = {"@expo/metro-file-map": ["56.0.5"], "metro-file-map": ["0.84.4", "0.84.5"]};
 const consumers = Object.entries(lock.packages).filter(([key]) => /(?:^|\/)node_modules\/(?:@expo\/metro-file-map|metro-file-map)$/.test(key));
 assert.ok(consumers.length > 0, 'No Metro consumers found');
 function scripts(dir) {
@@ -22,12 +22,27 @@ for (const [key, metadata] of consumers) {
   const source = manifest.name.startsWith('@expo/') ? 'build' : 'src';
   const common = path.join(pkg,source,'watchers/common.js');
   const imports = scripts(path.join(pkg,source)).filter(file => /require\(["']micromatch["']\)/.test(fs.readFileSync(file,'utf8')));
-  assert.deepEqual(imports, [common], 'Unexpected Metro matcher consumer');
   const text = fs.readFileSync(common,'utf8');
   assert.equal(createHash('sha256').update(text).digest('hex'), signatures[manifest.name+'@'+manifest.version], 'Metro watcher consumer changed: review adapter contract');
+  const requireHere = createRequire(common);
+  if (manifest.name === '@expo/metro-file-map') {
+    assert.deepEqual(imports, [], 'Expo 56.0.5 watcher must not load micromatch');
+    const { isIncluded } = requireHere(common);
+    const included = { extensions: new Set(['tsx','ts','env','d.ts']), basenames: new Set(['Gemfile']), basenamePrefixes: ['Dockerfile'] };
+    assert.equal(isIncluded('f', null, 'src/.hidden'), true);
+    assert.equal(isIncluded('d', included, 'src/folder'), true);
+    assert.equal(isIncluded('l', included, '.hidden'), true);
+    assert.equal(isIncluded('f', included, 'src/app.tsx'), true);
+    assert.equal(isIncluded('f', included, 'foo.d.ts'), true);
+    assert.equal(isIncluded('f', included, '.env'), true);
+    assert.equal(isIncluded('f', included, 'Gemfile'), true);
+    assert.equal(isIncluded('f', included, 'Dockerfile.prod'), true);
+    assert.equal(isIncluded('f', included, 'src/app.txt'), false);
+    continue;
+  }
+  assert.deepEqual(imports, [common], 'Unexpected Metro matcher consumer');
   const access = [...text.matchAll(/(?:micromatch(?:_1)?(?:\.default)?)[.]([a-zA-Z]+)\s*\(/g)].map(match => match[1]);
   assert.deepEqual(access,['some','some'],'Metro matcher API changed');
-  const requireHere = createRequire(common);
   assert.equal(requireHere('micromatch/package.json').name, '@savingkc/metro-matcher');
   assert.deepEqual(Object.keys(requireHere('micromatch')), ['some']);
   const { includedByGlob } = requireHere(common);

@@ -13,7 +13,7 @@ export const receivedContentSchema = z.object({
   message_id: z.string().min(1).max(1000),
   text: z.string().max(1000000).nullable().optional(),
   html: z.string().max(1000000).nullable().optional(),
-  headers: z.record(z.string().max(16000)).default({}),
+  headers: z.record(z.string(), z.string().max(16000)).default({}),
   attachments: z
     .array(
       z.object({
