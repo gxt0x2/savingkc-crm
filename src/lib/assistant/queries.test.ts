@@ -1,5 +1,45 @@
 import { describe, expect, it } from 'vitest'
-import { assistantResultCount, buildAssistantSourceCatalog, gmailSourceCatalogEntry, sanitizeAssistantMetadata } from '@/lib/assistant/queries'
+import { assistantResultCount, buildAssistantSourceCatalog, gmailSourceCatalogEntry, readAssistantMarketingSummary, readAssistantWebsiteFunnel, sanitizeAssistantMetadata } from '@/lib/assistant/queries'
+import { CALLER_ID_VERIFICATION_ACTOR } from '@/lib/telephony/caller-id-verification'
+
+function funnelDb(leads: Array<Record<string, unknown>>) {
+  return {
+    from(table: string) {
+      const data = table === 'leads' ? leads : []
+      const builder = {
+        select: () => builder,
+        gte: () => builder,
+        eq: () => builder,
+        order: () => builder,
+        limit: () => Promise.resolve({ data, error: null }),
+      }
+      return builder
+    },
+  }
+}
+
+describe('assistant lead funnel counts', () => {
+  const leads = [
+    { id: 'seller-call', full_name: 'Maria Seller', source: 'inbound_call', form_status: null, station: 'new', classification: null, dead_by: null, opportunity_score: null, created_at: '2026-10-27T14:00:00.000Z', updated_at: '2026-10-27T14:00:00.000Z' },
+    { id: 'form', full_name: 'Website Seller', source: 'website_form', form_status: 'submitted', station: 'new', classification: null, dead_by: null, opportunity_score: null, created_at: '2026-10-27T14:05:00.000Z', updated_at: '2026-10-27T14:05:00.000Z' },
+    { id: 'robocall', full_name: 'New caller · (603) 792-8544', source: 'inbound_call', form_status: null, station: 'dead', classification: 'dead', dead_by: CALLER_ID_VERIFICATION_ACTOR, opportunity_score: 0, created_at: '2026-10-27T13:25:00.000Z', updated_at: '2026-10-27T13:26:00.000Z' },
+  ]
+
+  it('counts a seller inbound call and leaves out a caller ID verification lead', async () => {
+    const db = funnelDb(leads)
+    const funnel = await readAssistantWebsiteFunnel(db as never, 7)
+    const marketing = await readAssistantMarketingSummary(db as never, 7)
+
+    expect(funnel.leads.total).toBe(2)
+    expect(funnel.leads.bySource).toEqual(expect.arrayContaining([
+      { label: 'inbound_call', count: 1 },
+      { label: 'website_form', count: 1 },
+    ]))
+    expect(funnel.leads.recent.map((lead) => lead.id)).toEqual(['seller-call', 'form'])
+    expect(marketing.leads.total).toBe(2)
+    expect(marketing.leads.bySource).toEqual(funnel.leads.bySource)
+  })
+})
 
 describe('assistant query safety helpers', () => {
   it('removes credential-shaped metadata while preserving operational evidence', () => {
