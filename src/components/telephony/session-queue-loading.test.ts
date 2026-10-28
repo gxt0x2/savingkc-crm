@@ -42,8 +42,11 @@ describe('session queue loading', () => {
 
   it('wires the live dialer to those clear conditions', () => {
     const bar = readFileSync('src/components/telephony/telephony-bar.tsx', 'utf8')
-    expect(bar).toContain('showSessionQueueLoading({')
-    expect(bar).toContain('setSessionQueueRestoreFailedId(pendingSessionId)')
+    const hook = readFileSync('src/components/telephony/use-session-queue-restore.ts', 'utf8')
+    expect(bar).toContain('useSessionQueueRestoreLoading({')
+    expect(bar).toContain('failSessionQueueRestore(pendingSessionId)')
+    expect(bar).toContain('loadingSessionQueue={sessionQueueLoading}')
     expect(bar).not.toContain('loadingSessionQueue={Boolean(pendingSessionId && !pendingQueue && !queue?.length)}')
+    expect(hook).toContain('showSessionQueueLoading({')
   })
 })
