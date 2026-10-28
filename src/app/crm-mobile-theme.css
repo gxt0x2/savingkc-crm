@@ -1,5 +1,5 @@
 /* SavingKC mobile lavender/purple, applied to the whole CRM.
-   Brand red stays on shell controls that hardcode it (dialer, logo).
+   Dialer disposition rows stay on --crm-red (#c8242d), not this lavender brand.
    Danger reds stay on --crm-danger / --crm-red and are not aliased to brand. */
 
 .crm-workspace-shell {
