@@ -129,9 +129,9 @@
       },
       {
         "path": "src/components/telephony/telephony-bar.tsx",
-        "maximumLines": 1741,
+        "maximumLines": 1746,
         "owner": "Acquisitions",
-        "reason": "The shared softphone now bridges provider events to the durable server-owned attempt lifecycle; freeze growth while call state and device controls are extracted.",
+        "reason": "The shared softphone bridges provider events to the durable attempt lifecycle and releases its Twilio device on unmount. Freeze further growth while call state and device controls are extracted.",
         "targetDate": "2026-10-31"
       },
       {
