@@ -28,9 +28,11 @@ describe('carrier fallbacks', () => {
       agentPhone: '+18167564943',
     })
 
+    expect(xml).toContain('<Client><Identity>casey</Identity>')
+    expect(xml).not.toContain('ernest')
     expect(xml).toContain('<Number>+18167564943</Number>')
-    expect(xml).not.toContain('<Client>')
-    expect(xml).toContain('callerId="+18167277667"')
+    expect(xml).toContain('callerId="+19135550199"')
+    expect(xml).not.toContain('callerId="+18167277667"')
     expect(xml).toContain('type=direct')
     expect(xml).toContain('source=carrier_fallback')
   })
