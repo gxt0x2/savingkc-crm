@@ -44,6 +44,7 @@ import { useDialerSessionCallContext } from './use-dialer-session-call-context'
 import { prepareCallMicrophone, releaseCallMicrophone, monitorCallMicrophone } from '@/lib/telephony/selected-microphone'
 import { DialerMicrophoneControls } from './dialer-microphone-controls'
 import { initializeTwilioDevice } from './initialize-twilio-device'
+import { SESSION_QUEUE_RESTORE_TIMEOUT_MS, sessionQueueRestorePending, showSessionQueueLoading } from './session-queue-loading'
 import { useDialerRingback } from './use-dialer-ringback'
 import { bindCallRingback } from '@/lib/telephony/call-ringback'
 import {
@@ -161,6 +162,9 @@ export function SoftphoneCore({
   const pausedSessionIdRef = useRef<string | null>(null)
   const pauseLeaveAfterOutcomeRef = useRef(false)
   const [workspaceSessionStatus, setWorkspaceSessionStatus] = useState<'active' | 'paused' | 'completed' | 'stopped' | null>(null)
+  const [sessionQueueRestoreFailedId, setSessionQueueRestoreFailedId] = useState<string | null>(null)
+  const [queueRestoreTimedOutSessionId, setQueueRestoreTimedOutSessionId] = useState<string | null>(null)
+  const queueRestoreWaitStartedRef = useRef<{ sessionId: string; at: number } | null>(null)
   const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
   const cancelQueuedAutoDial = useCallback(() => {
@@ -334,10 +338,37 @@ export function SoftphoneCore({
         requireDisposition()
       })
       .catch((restoreError) => {
-        if (!cancelled) setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.')
+        if (!cancelled) {
+          setSessionQueueRestoreFailedId(pendingSessionId)
+          setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.')
+        }
       })
     return () => { cancelled = true }
   }, [cancelQueuedAutoDial, open, pendingQueue, pendingSessionId, requireDisposition, sessionCall])
+
+  const sessionQueueRestoreIsPending = sessionQueueRestorePending({
+    pendingSessionId,
+    pendingQueue,
+    queueLength: queue?.length ?? 0,
+  })
+  const sessionQueueRestoreFailed = sessionQueueRestoreFailedId === pendingSessionId && Boolean(pendingSessionId)
+  const sessionQueueIsTerminal = workspaceSessionStatus === 'completed' || workspaceSessionStatus === 'stopped'
+  const sessionQueueReadyTimedOut = queueRestoreTimedOutSessionId === pendingSessionId && Boolean(pendingSessionId)
+  useEffect(() => {
+    if (!pendingSessionId || !sessionQueueRestoreIsPending) {
+      queueRestoreWaitStartedRef.current = null
+      return
+    }
+    const started = queueRestoreWaitStartedRef.current?.sessionId === pendingSessionId
+      ? queueRestoreWaitStartedRef.current
+      : { sessionId: pendingSessionId, at: Date.now() }
+    queueRestoreWaitStartedRef.current = started
+    if (sessionQueueReadyTimedOut || status !== 'ready' || sessionQueueRestoreFailed || sessionQueueIsTerminal) return
+    const elapsed = Date.now() - started.at
+    const remaining = Math.max(0, SESSION_QUEUE_RESTORE_TIMEOUT_MS - elapsed)
+    const timer = window.setTimeout(() => setQueueRestoreTimedOutSessionId(pendingSessionId), remaining)
+    return () => window.clearTimeout(timer)
+  }, [pendingSessionId, sessionQueueIsTerminal, sessionQueueReadyTimedOut, sessionQueueRestoreFailed, sessionQueueRestoreIsPending, status])
 
   useEffect(() => {
     function onWorkspaceCallCommand(event: Event) {
@@ -1445,7 +1476,13 @@ export function SoftphoneCore({
               dialDisplay={dialNumber ? formatDialDisplay(dialNumber) : ''}
               dialReady={Boolean(dialNumber.trim()) && status === 'ready' && workspaceSessionStatus !== 'paused'}
               effectiveCallerId={effectiveCallerId}
-              loadingSessionQueue={Boolean(pendingSessionId && !pendingQueue && !queue?.length)}
+              loadingSessionQueue={showSessionQueueLoading({
+                restorePending: sessionQueueRestoreIsPending,
+                deviceReady: status === 'ready',
+                restoreFailed: sessionQueueRestoreFailed,
+                sessionTerminal: sessionQueueIsTerminal,
+                readyTimedOut: sessionQueueReadyTimedOut,
+              })}
               onCall={makeCall}
               outcomeRequired={outcomeRequired || Boolean(recoveryPending)}
               queueItem={queueItem}

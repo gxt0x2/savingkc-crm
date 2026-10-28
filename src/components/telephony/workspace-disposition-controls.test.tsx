@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 
+import { readFileSync } from 'node:fs'
+
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -42,5 +44,19 @@ describe('WorkspaceDispositionControls', () => {
 
     expect(screen.getByText('Read-only preview')).toHaveClass('sr-only')
     expect(screen.getByRole('button', { name: 'Contact' })).toBeDisabled()
+  })
+
+  it('paints the six outcomes with brand red instead of the lavender workspace brand', () => {
+    render(<WorkspaceDispositionControls outcomeRequired={false} />)
+
+    for (const label of labels) {
+      const button = screen.getByRole('button', { name: label })
+      expect(button.className).toContain('bg-[var(--crm-red)]')
+      expect(button.className).toContain('border-[var(--crm-red)]')
+      expect(button.className).not.toContain('--crm-brand')
+    }
+
+    const lightDialer = readFileSync('src/app/prospecting.css', 'utf8')
+    expect(lightDialer).toMatch(/\.crm-workspace-shell\[data-theme="light"\] \.prospecting-answer-workspace \.prospecting-dialer-control-surface \{[^}]*--crm-red:\s*#c8242d;/s)
   })
 })
