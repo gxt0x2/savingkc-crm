@@ -565,20 +565,20 @@ describe('verified inbound TwiML routing', () => {
     expect(text).not.toContain('<Hangup/>')
   })
 
-  it('routes Casey Legacy directly to Casey without the seller IVR', async () => {
+  it('rings Casey Legacy in the app and on his cell without the seller IVR', async () => {
     const { text } = await responseText(inboundRequest('+18163754666'))
 
-    expect(text).toContain('<Dial')
-    expect(text).toContain('callerId="+18163754666"')
-    expect(text).not.toContain('callerId="+18165550199"')
+    expect(text).toContain('<Identity>casey</Identity>')
+    expect(text).not.toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('callerId="+18163754666"')
     expect(text).toContain('+18167564943')
     expect(text).toContain('type=direct')
-    expect(text).not.toContain('<Client')
-    expect(text).not.toContain('twilio-inbound-client-status')
+    expect(text).toContain('twilio-inbound-client-status')
     expect(text).not.toContain('<Gather')
-    expect(text).toContain('timeout="15"')
-    expect(text).not.toContain('timeout="60"')
-    expect(mocks.lookupInboundCallerName).not.toHaveBeenCalled()
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
+    expect(mocks.lookupInboundCallerName).toHaveBeenCalledWith('+18165550199')
   })
 
   it('keeps the company DID when an inbound client call has no E.164 From', async () => {
@@ -645,16 +645,20 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('+18162262552')
   })
 
-  it('keeps Casey company routing on his cell and off client:ernest', async () => {
+  it('rings Casey company in the app and omits his cell when personal forward is off', async () => {
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
     const { text } = await responseText(inboundRequest('+18167277667'))
 
-    expect(text).toContain('callerId="+18167277667"')
-    expect(text).toContain('+18167564943')
-    expect(text).not.toContain('<Client')
+    expect(text).toMatch(/<Client\b[^>]*>\s*<Identity>casey<\/Identity>/)
+    expect(text).not.toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('callerId="+18167277667"')
+    expect(text).not.toContain('+18167564943')
     expect(text).not.toContain('+18162262552')
-    expect(text).toContain('timeout="15"')
+    expect(text).not.toContain('<Number')
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
   })
 
   it('does not restore the personal cell when routing throws and personal forward is off', async () => {
