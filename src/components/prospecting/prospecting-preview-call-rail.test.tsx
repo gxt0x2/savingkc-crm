@@ -37,6 +37,8 @@ describe('ProspectingPreviewCallRail', () => {
     expect(screen.getByRole('button', { name: 'DNC Contact' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'DNC Number' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Contact' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Contact' }).className).toContain('bg-[var(--crm-red)]')
+    expect(screen.getByRole('button', { name: 'Contact' }).className).not.toContain('--crm-brand')
     expect(screen.getByRole('button', { name: 'Redial' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Hang up' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Pause' })).toBeVisible()

@@ -44,6 +44,7 @@ import { useDialerSessionCallContext } from './use-dialer-session-call-context'
 import { prepareCallMicrophone, releaseCallMicrophone, monitorCallMicrophone } from '@/lib/telephony/selected-microphone'
 import { DialerMicrophoneControls } from './dialer-microphone-controls'
 import { initializeTwilioDevice } from './initialize-twilio-device'
+import { useSessionQueueRestoreLoading } from './use-session-queue-restore'
 import { useDialerRingback } from './use-dialer-ringback'
 import { bindCallRingback } from '@/lib/telephony/call-ringback'
 import {
@@ -161,6 +162,7 @@ export function SoftphoneCore({
   const pausedSessionIdRef = useRef<string | null>(null)
   const pauseLeaveAfterOutcomeRef = useRef(false)
   const [workspaceSessionStatus, setWorkspaceSessionStatus] = useState<'active' | 'paused' | 'completed' | 'stopped' | null>(null)
+  const { loading: sessionQueueLoading, fail: failSessionQueueRestore } = useSessionQueueRestoreLoading({ pendingSessionId, pendingQueue, queueLength: queue?.length ?? 0, deviceReady: status === 'ready', sessionTerminal: workspaceSessionStatus === 'completed' || workspaceSessionStatus === 'stopped' })
   const campaignCallerIdRef = useRef<string | null>(null)
   const pendingAutoDialRef = useRef(false)
   const cancelQueuedAutoDial = useCallback(() => {
@@ -334,10 +336,10 @@ export function SoftphoneCore({
         requireDisposition()
       })
       .catch((restoreError) => {
-        if (!cancelled) setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.')
+        if (!cancelled) { failSessionQueueRestore(pendingSessionId); setError(restoreError instanceof Error ? restoreError.message : 'Could not restore the unfinished call outcome.') }
       })
     return () => { cancelled = true }
-  }, [cancelQueuedAutoDial, open, pendingQueue, pendingSessionId, requireDisposition, sessionCall])
+  }, [cancelQueuedAutoDial, failSessionQueueRestore, open, pendingQueue, pendingSessionId, requireDisposition, sessionCall])
 
   useEffect(() => {
     function onWorkspaceCallCommand(event: Event) {
@@ -1445,7 +1447,7 @@ export function SoftphoneCore({
               dialDisplay={dialNumber ? formatDialDisplay(dialNumber) : ''}
               dialReady={Boolean(dialNumber.trim()) && status === 'ready' && workspaceSessionStatus !== 'paused'}
               effectiveCallerId={effectiveCallerId}
-              loadingSessionQueue={Boolean(pendingSessionId && !pendingQueue && !queue?.length)}
+              loadingSessionQueue={sessionQueueLoading}
               onCall={makeCall}
               outcomeRequired={outcomeRequired || Boolean(recoveryPending)}
               queueItem={queueItem}
