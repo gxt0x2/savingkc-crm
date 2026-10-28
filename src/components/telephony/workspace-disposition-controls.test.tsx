@@ -57,6 +57,6 @@ describe('WorkspaceDispositionControls', () => {
     }
 
     const lightDialer = readFileSync('src/app/prospecting.css', 'utf8')
-    expect(lightDialer).toMatch(/\.crm-workspace-shell\[data-theme="light"\] \.prospecting-answer-workspace \.prospecting-dialer-control-surface \{[^}]*--crm-red:\s*#c8242d;/s)
+    expect(lightDialer).toMatch(/\.crm-workspace-shell\[data-theme="light"\] \.prospecting-answer-workspace \.prospecting-dialer-control-surface \{[^}]*--crm-red:\s*#c8242d;/)
   })
 })
