@@ -78,13 +78,19 @@ describe('carrier voice fallback', () => {
     expect(text).not.toContain('<Number')
   })
 
-  it('keeps a cell-only company line on the company DID', async () => {
+  it('rings Casey in the app and omits his cell when personal forward is off', async () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
     const response = await POST(request('+18167277667'))
     const text = await response.text()
 
-    expect(text).toContain('callerId="+18167277667"')
-    expect(text).not.toContain('<Client')
-    expect(text).toContain('<Number>')
-    expect(mocks.lookupInboundCallerName).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(text).toContain('<Client><Identity>casey</Identity>')
+    expect(text).not.toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('callerId="+18167277667"')
+    expect(text).not.toContain('+18167564943')
+    expect(text).not.toContain('<Number')
+    expect(mocks.lookupInboundCallerName).toHaveBeenCalledWith('+18165550199')
   })
 })

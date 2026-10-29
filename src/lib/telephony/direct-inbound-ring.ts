@@ -22,8 +22,9 @@ export type InboundRingPlan = {
   identity: string | null
   cell: string | null
   /**
-   * True when this Ernest company DID has no personal-cell leg.
-   * MOBILE_PERSONAL_FORWARD must be the exact string "true" to dial his cell.
+   * True when this ring has no personal-cell leg.
+   * Ernest and Casey company DIDs dial the cell unless MOBILE_PERSONAL_FORWARD=false.
+   * +18164292900 dials the cell only when that flag is exactly "true".
    * "false" never falls back to PSTN, including when the Voice client is down.
    */
   personalForwardSuppressed: boolean
@@ -46,11 +47,11 @@ function caseyPersonalCell(): string {
 
 /**
  * How an inbound company DID rings.
- * Casey's direct numbers stay on his cell. These flags do not retarget them.
- * Ernest's company and dispositions DIDs ring client:ernest. The cell remains
- * unless MOBILE_PERSONAL_FORWARD=false. +18164292900 leaves the seller IVR
- * only when MOBILE_IN_APP_VOICE=true, and then dials his cell only when
- * personal forward is explicitly true.
+ * Casey's company and legacy DIDs follow Ernest's company and dispositions
+ * DIDs: client identity unless MOBILE_IN_APP_VOICE=false, and the personal
+ * cell unless MOBILE_PERSONAL_FORWARD=false. +18164292900 leaves the seller
+ * IVR only when MOBILE_IN_APP_VOICE=true, and then dials Ernest's cell only
+ * when personal forward is explicitly true.
  */
 export function inboundRingPlan(calledNumber: string | null | undefined): InboundRingPlan {
   const number = normalizePhoneToE164(calledNumber)
@@ -59,17 +60,15 @@ export function inboundRingPlan(calledNumber: string | null | undefined): Inboun
   const none = { kind: 'passthrough' as const, identity: null, cell: null, personalForwardSuppressed: false }
   if (!number) return none
 
-  if (CASEY_DIRECT_DIDS.has(number)) {
-    return { kind: 'direct', identity: null, cell: caseyPersonalCell(), personalForwardSuppressed: false }
-  }
-
+  const caseyDirect = CASEY_DIRECT_DIDS.has(number)
   const ernestDirect = ERNEST_DIRECT_DIDS.has(number)
   const ernestBusiness = number === ERNEST_BUSINESS_DID && inApp === true
-  if (!ernestDirect && !ernestBusiness) return none
+  if (!caseyDirect && !ernestDirect && !ernestBusiness) return none
 
-  const identity = inApp === false ? null : resolveAgentTelephonyProfile('ernest@savingkc.com').identity
-  const cell = ernestDirect
-    ? (personal === false ? null : ernestPersonalCell())
+  const ownerEmail = caseyDirect ? 'casey@savingkc.com' : 'ernest@savingkc.com'
+  const identity = inApp === false ? null : resolveAgentTelephonyProfile(ownerEmail).identity
+  const cell = (caseyDirect || ernestDirect)
+    ? (personal === false ? null : (caseyDirect ? caseyPersonalCell() : ernestPersonalCell()))
     : (personal === true ? ernestPersonalCell() : null)
 
   return {
