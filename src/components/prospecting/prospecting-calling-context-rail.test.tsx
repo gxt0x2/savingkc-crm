@@ -153,6 +153,25 @@ describe('ProspectingCallingContextRail', () => {
     expect(screen.getByRole('button', { name: 'Marked as Lead' })).toBeDisabled()
   })
 
+  it('resets seller workspace state for the next record without remounting the live dialer slot', () => {
+    const { rerender } = render(<ProspectingCallingContextRail {...baseProps} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Zillow' }))
+
+    rerender(<ProspectingCallingContextRail
+      {...baseProps}
+      ownerName="Nora Seller"
+      prospect={{ ...prospect, id: 'prospect-2', owner_1: 'Nora Seller', situs_street: '9 Oak Street' }}
+      situsAddress="9 Oak Street Kansas City, MO 64108"
+    />)
+
+    expect(screen.getByRole('heading', { name: 'Nora Seller' })).toBeVisible()
+    expect(screen.getByRole('tab', { name: 'Notes' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Street View' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Mark as Lead' })).toBeEnabled()
+    expect(screen.getByRole('complementary', { name: 'Persistent live dialer controls' })).toBeVisible()
+  })
+
   it('shows all quick-action tabs while locking writes in preview', () => {
     render(<ProspectingCallingContextRail {...baseProps} readOnlyPreview />)
 

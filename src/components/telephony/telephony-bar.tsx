@@ -105,6 +105,7 @@ export function SoftphoneCore({
   const { play: playLocalRingback, stop: stopLocalRingback } = useDialerRingback()
   const callTimer = useCallTimer(status === 'on_call')
   const deviceInitialized = useRef(false)
+  const dialerAliveRef = useRef(true)
   // Ring count for the current heir-queue session → Twilio Dial timeout.
   const ringCountRef = useRef<number | null>(null)
 
@@ -407,6 +408,7 @@ export function SoftphoneCore({
   }
 
   const setStatusLogged = useCallback((s: CallStatus) => {
+    if (!dialerAliveRef.current) return
     log(`status → ${s}`)
     setStatus(s)
     onStatusChange?.(s)
@@ -421,7 +423,7 @@ export function SoftphoneCore({
       setStatusLogged('connecting')
       setError(null)
       try {
-        deviceRef.current = await initializeTwilioDevice({
+        const device = await initializeTwilioDevice({
           log,
           onCallerId: (callerId) => {
             setCallerIdDisplay(callerId)
@@ -442,8 +444,11 @@ export function SoftphoneCore({
           },
           onStatus: setStatusLogged,
         })
+        if (!dialerAliveRef.current) { device.destroy?.(); return }
+        deviceRef.current = device
         deviceInitialized.current = true
       } catch (err) {
+        if (!dialerAliveRef.current) return
         const msg = extractTwilioErrorMessage(err)
         log(`init error: ${msg}`)
         deviceRef.current = null
@@ -468,6 +473,8 @@ export function SoftphoneCore({
       initDevice()
     }
   }, [open, initDevice])
+
+  useEffect(() => () => { dialerAliveRef.current = false; deviceRef.current?.destroy?.() }, [])
 
 
   useEffect(() => {
@@ -1651,7 +1658,7 @@ export function SoftphoneCore({
           {/* Reconnect button when offline */}
           {status === 'offline' && !error && viewTab === 'dial' && (
             <button
-              onClick={initDevice}
+              onClick={reconnectDevice}
               className="w-full py-2.5 bg-[#17171D] text-white/70 font-bold rounded-[6px] hover:bg-[#1E1E26] transition-colors flex items-center justify-center gap-2 text-xs border border-[#2F2F38]"
             >
               <Icon name="refresh" size="text-sm" />
