@@ -294,6 +294,20 @@ export async function requestPauseDurableDialerSession(
   }
 }
 
+export async function rememberDurableParentCallSid(input: {
+  sessionId: string
+  clientAttemptId: string
+  providerCallSid: string
+}) {
+  const response = await fetch(`/api/dialer/sessions/${encodeURIComponent(input.sessionId)}/attempts/${encodeURIComponent(input.clientAttemptId)}`, {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json', ...await dialerControllerHeaders() },
+    body: JSON.stringify({ action: 'provider_sid', providerCallSid: input.providerCallSid }),
+  })
+  await payload(response, 'Call provider id could not be saved')
+}
+
 export async function transitionDurableDialerAttempt(input: {
   sessionId: string
   clientAttemptId: string

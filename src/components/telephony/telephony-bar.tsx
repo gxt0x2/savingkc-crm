@@ -18,7 +18,7 @@ import {
 } from '@/lib/dialer-dispositions'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { agentNameForCallerId, resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
-import { DialerSessionClientError, loadDialerAttemptHistory, transitionDurableDialerAttempt, transitionDurableDialerSession } from '@/lib/dialer-session-client'
+import { DialerSessionClientError, loadDialerAttemptHistory, rememberDurableParentCallSid, transitionDurableDialerAttempt, transitionDurableDialerSession } from '@/lib/dialer-session-client'
 import { transitionLeadLifecycle } from '@/lib/crm-lifecycle-client'
 import { useDialerPostCallReview } from './use-dialer-post-call-review'
 import { WorkspaceCallController } from './workspace-call-controller'
@@ -47,6 +47,12 @@ import { initializeTwilioDevice } from './initialize-twilio-device'
 import { useSessionQueueRestoreLoading } from './use-session-queue-restore'
 import { useDialerRingback } from './use-dialer-ringback'
 import { bindCallRingback } from '@/lib/telephony/call-ringback'
+import {
+  createParentSidPublisher,
+  finishOwnedOutboundCall,
+  postDialerCallLog,
+  retirePreviousOutboundCall,
+} from '@/lib/telephony/sequential-outbound-call'
 import {
   DIALER_KEYPAD,
   DIALER_STATUS_DOT_COLOR,
@@ -644,6 +650,15 @@ export function SoftphoneCore({
       }
       const authorizedRingCount = authorized.ringCount ?? ringCountRef.current
       if (authorizedRingCount && authorizedRingCount > 0) params.RingCount = String(authorizedRingCount)
+      const attemptIdForThisCall = authorized.clientAttemptId
+      const publishParentSid = createParentSidPublisher({
+        sessionId: () => activeSessionIdRef.current,
+        remember: (providerCallSid) => {
+          const sessionId = activeSessionIdRef.current
+          if (sessionId) void rememberDurableParentCallSid({ sessionId, clientAttemptId: attemptIdForThisCall, providerCallSid }).catch(() => {})
+        },
+      })
+      await retirePreviousOutboundCall(callRef, deviceRef.current)
       // The event includes whether Twilio/carrier early media exists. When it
       // does not, play the bundled ringback so the agent never waits in silence.
       await prepareCallMicrophone(deviceRef.current)
@@ -658,22 +673,29 @@ export function SoftphoneCore({
         setAttemptsPlaced((current) => current + 1)
       }
       callRef.current = call
-      callStartRef.current = Date.now()
+      const callStartedAt = Date.now()
+      callStartRef.current = callStartedAt
       let callWasAccepted = false
       bindCallRingback(call, { play: playLocalRingback, stop: stopLocalRingback, log })
+      const finishThisCall = () => (publishParentSid(call.parameters), finishOwnedOutboundCall({
+        call, attemptId: attemptIdForThisCall, activeAttemptId: activeAttemptIdRef.current, callRef,
+        release: () => { setStatusLogged('ready'); setMuted(false) },
+      }))
       call.on('ringing', () => {
+        publishParentSid(call.parameters)
         log('ringing...')
         setStatusLogged('calling')
       })
       call.on('accept', () => {
+        publishParentSid(call.parameters)
         stopLocalRingback()
         callWasAccepted = true
         log('call accepted')
         setStatusLogged('on_call')
-        if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+        if (activeSessionIdRef.current && activeAttemptIdRef.current === attemptIdForThisCall) {
           void transitionDurableDialerAttempt({
             sessionId: activeSessionIdRef.current,
-            clientAttemptId: activeAttemptIdRef.current,
+            clientAttemptId: attemptIdForThisCall,
             action: 'connected',
           }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
         }
@@ -688,6 +710,7 @@ export function SoftphoneCore({
         setError((current) => current === MICROPHONE_SILENCE_MESSAGE ? null : current)
       })
       call.on('error', (callError: TwilioErrorLike) => {
+        publishParentSid(call.parameters)
         stopLocalRingback()
         setError(formatTwilioCallError(callError))
       })
@@ -702,26 +725,17 @@ export function SoftphoneCore({
             prospect_owner_name: activeQueueItemRef.current.deceasedOwnerName,
           }
         : null
-      fetch('/api/call-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: authorized.to,
-          event: 'started',
-          agent: activeAgentName,
-          agent_identity: agentIdentity,
-          from_number: authorized.callerId,
-          dial_source: authorized.source,
-          dial_surface: authorized.surface,
-          lead_id: authorized.leadId,
-          clientAttemptId: authorized.clientAttemptId,
-          ...heirMeta,
-        }),
-      }).catch(() => {})
+      const callLogBase = {
+        phone: authorized.to, agent: activeAgentName, agent_identity: agentIdentity, from_number: authorized.callerId,
+        dial_source: authorized.source, dial_surface: authorized.surface, lead_id: authorized.leadId,
+        clientAttemptId: attemptIdForThisCall, ...heirMeta,
+      }
+      postDialerCallLog({ ...callLogBase, event: 'started' })
       call.on('disconnect', () => {
         stopLocalRingback()
         if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
-        const duration = Math.round((Date.now() - callStartRef.current) / 1000)
+        if (!finishThisCall()) return
+        const duration = Math.round((Date.now() - callStartedAt) / 1000)
         // The SDK accept event means the browser leg opened, not that the
         // seller answered. Treat this as an attempt until the user disposition
         // or Twilio status callbacks provide a firmer outcome.
@@ -730,33 +744,13 @@ export function SoftphoneCore({
         const finalDisposition = callWasAccepted ? 'needs_disposition' : 'no_answer'
         lastCallDurationSecondsRef.current = duration
         setLastCallDuration(formatDuration(duration))
-        fetch('/api/call-log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: authorized.to,
-            event: 'ended',
-            duration,
-            status: finalStatus,
-            outcome: finalOutcome,
-            disposition: finalDisposition,
-            agent: activeAgentName,
-            agent_identity: agentIdentity,
-            from_number: authorized.callerId,
-            dial_source: authorized.source,
-            dial_surface: authorized.surface,
-            lead_id: authorized.leadId,
-            clientAttemptId: authorized.clientAttemptId,
-            ...heirMeta,
-          }),
-        }).catch(() => {})
-        callRef.current = null
-        setStatusLogged('ready')
-        setMuted(false)
-        if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+        postDialerCallLog({
+          ...callLogBase, event: 'ended', duration, status: finalStatus, outcome: finalOutcome, disposition: finalDisposition,
+        })
+        if (activeSessionIdRef.current) {
           void transitionDurableDialerAttempt({
             sessionId: activeSessionIdRef.current,
-            clientAttemptId: activeAttemptIdRef.current,
+            clientAttemptId: attemptIdForThisCall,
             action: 'ended',
             durationSeconds: duration,
           }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
@@ -768,15 +762,13 @@ export function SoftphoneCore({
       call.on('cancel', () => {
         stopLocalRingback()
         if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
-        callRef.current = null
-        setStatusLogged('ready')
-        setMuted(false)
-        if (activeSessionIdRef.current && activeAttemptIdRef.current) {
+        if (!finishThisCall()) return
+        if (activeSessionIdRef.current) {
           void transitionDurableDialerAttempt({
             sessionId: activeSessionIdRef.current,
-            clientAttemptId: activeAttemptIdRef.current,
+            clientAttemptId: attemptIdForThisCall,
             action: 'ended',
-            durationSeconds: lastCallDurationSecondsRef.current,
+            durationSeconds: Math.round((Date.now() - callStartedAt) / 1000),
           }).catch((transitionError) => setError(extractTwilioErrorMessage(transitionError)))
         }
         requireDisposition()
@@ -827,15 +819,7 @@ export function SoftphoneCore({
     }
 
     const timeout = window.setTimeout(() => {
-      if (
-        !pendingAutoDialRef.current ||
-        outcomeRequired ||
-        status !== 'ready' ||
-        !queueItem ||
-        !dialNumber.trim()
-      ) {
-        return
-      }
+      if (!pendingAutoDialRef.current || outcomeRequired || status !== 'ready' || !queueItem || !dialNumber.trim()) return
       pendingAutoDialRef.current = false
       void makeCallRef.current()
     }, 350)

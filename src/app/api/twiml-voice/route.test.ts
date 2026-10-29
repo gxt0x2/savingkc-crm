@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   isGoogleAdsPhoneNumber: vi.fn(),
   lookupInboundCallerName: vi.fn(async () => ''),
   recordBlockedDialerCall: vi.fn(),
+  rememberOutboundParentCallSid: vi.fn(),
   validateTwilioWebhook: vi.fn(),
   verifyDialerCallIntent: vi.fn(),
 }))
@@ -28,6 +29,10 @@ vi.mock('@/lib/telephony/inbound-caller-name', () => ({
 vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   evaluateOutboundDialerCall: mocks.evaluateOutboundDialerCall,
   recordBlockedDialerCall: mocks.recordBlockedDialerCall,
+}))
+
+vi.mock('@/lib/server/dialer-parent-call', () => ({
+  rememberOutboundParentCallSid: mocks.rememberOutboundParentCallSid,
 }))
 
 import { POST } from './route'
@@ -145,6 +150,7 @@ describe('TwiML request containment', () => {
     mocks.verifyDialerCallIntent.mockReturnValue({ valid: false, reason: 'invalid_signature' })
     mocks.evaluateOutboundDialerCall.mockResolvedValue(allowedDecision)
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
+    mocks.rememberOutboundParentCallSid.mockResolvedValue(false)
     mocks.isGoogleAdsPhoneNumber.mockReturnValue(false)
   })
 
@@ -267,7 +273,7 @@ describe('TwiML request containment', () => {
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text).toContain('answerOnBridge="true" ringTone="us"')
     expect(text).toContain('timeout="60"')
-    expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
+    expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;phone=%2B19135550123&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
     expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
   })
 
@@ -349,6 +355,10 @@ describe('TwiML request containment', () => {
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text).toContain(`>${DESTINATION}</Number>`)
     expect(text).not.toContain('leadId=prospect-1')
+    expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?prospectId=prospect-1&amp;phone=%2B19135550123&amp;clientAttemptId=attempt-prospect-1&amp;source=web_heir_dialer"')
+    expect(mocks.rememberOutboundParentCallSid.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.evaluateOutboundDialerCall.mock.invocationCallOrder[0],
+    )
   })
 
   it('fails closed when a present intent is invalid or expired', async () => {

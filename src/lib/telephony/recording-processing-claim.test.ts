@@ -25,6 +25,7 @@ function activityChain({
   const chain: Record<string, unknown> = {}
   chain.select = vi.fn(() => chain)
   chain.eq = vi.fn(() => chain)
+  chain.is = vi.fn(() => chain)
   chain.contains = vi.fn(() => chain)
   chain.limit = vi.fn(() => chain)
   chain.maybeSingle = vi.fn(async () => ({ data: existing, error: null }))
@@ -143,6 +144,25 @@ describe('recording processing claims', () => {
     mocks.from.mockReturnValue(db.chain)
     const claim = await claimPlayableRecordingActivity({ ...claimInput(), from: '', to: '' })
     expect(claim.metadata.direction).toBeUndefined()
+  })
+
+  it('claims a prospect recording without a lead', async () => {
+    const db = activityChain()
+    mocks.from.mockReturnValue(db.chain)
+
+    const claim = await claimPlayableRecordingActivity({
+      ...claimInput(),
+      leadId: null,
+      prospectId: 'prospect-1',
+    })
+
+    expect(claim.shouldProcess).toBe(true)
+    expect(db.chain.is).toHaveBeenCalledWith('lead_id', null)
+    expect(db.inserts).toContainEqual(expect.objectContaining({
+      lead_id: null,
+      prospect_id: 'prospect-1',
+      description: 'Call recording available',
+    }))
   })
 
 })
