@@ -31,6 +31,8 @@ import {
 } from '@/lib/server/dialer-post-call-review'
 import type { CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 import { createCallAnalysisLeadProposal } from '@/lib/server/ai-change-proposals'
+import { isCallerIdVerificationRobocall } from '@/lib/telephony/caller-id-verification'
+import { retireUnconfirmedCallerIdVerificationLead } from '@/lib/telephony/caller-id-verification-lead'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -268,25 +270,25 @@ export async function POST(req: Request) {
         })
       }
 
-      const analysis = await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
-      if (analysis) {
+      const processed = await processRecording(recordingUrl, recordingSid, leadId, recordingDuration, recordingContext)
+      if (processed.kind === 'processed' && processed.analysis) {
         await createCallAnalysisLeadProposal({
           leadId,
           clientAttemptId,
           recordingSid,
-          analysis,
+          analysis: processed.analysis,
         }).catch((proposalError) => {
           console.error('[recording-callback] Failed to persist AI change proposal:', proposalError)
         })
       }
       await markRecordingProcessing(processingClaim, 'completed')
-      const reviewUpdate = analysis
+      const reviewUpdate = processed.kind === 'processed' && processed.analysis
         ? completeDialerPostCallReview({
           clientAttemptId,
           leadId,
           providerCallSid: callSid || null,
           recordingSid,
-          analysis,
+          analysis: processed.analysis,
         })
         : markDialerPostCallUnavailable({
           clientAttemptId,
@@ -294,7 +296,9 @@ export async function POST(req: Request) {
           providerCallSid: callSid || null,
           recordingSid,
           status: 'skipped',
-          failureCode: 'transcript_too_short',
+          failureCode: processed.kind === 'caller_id_verification'
+            ? 'caller_id_verification'
+            : 'transcript_too_short',
         })
       await reviewUpdate.catch((stateError) => {
         console.error('[recording-callback] Failed to persist post-call review:', stateError)
@@ -322,13 +326,18 @@ export async function POST(req: Request) {
   }
 }
 
+type RecordingProcessResult =
+  | { kind: 'too_short' }
+  | { kind: 'caller_id_verification' }
+  | { kind: 'processed'; analysis: CallAnalysisResult | null }
+
 async function processRecording(
   recordingUrl: string,
   recordingSid: string,
   leadId: string,
   duration: number,
   context: RecordingContext = {},
-): Promise<CallAnalysisResult | null> {
+): Promise<RecordingProcessResult> {
   // 1. Download recording
   const filePath = await downloadRecording(recordingUrl, recordingSid)
 
@@ -337,10 +346,18 @@ async function processRecording(
 
   if (!transcript || transcript.length < 10) {
     console.log(`[recording-callback] Transcript too short, skipping analysis`)
-    return null
+    return { kind: 'too_short' }
   }
 
   console.log(`[recording-callback] Transcript (${transcript.length} chars): ${transcript.slice(0, 100)}...`)
+
+  // Duration is the cheap pre-check. The transcript match is required too.
+  // Both have to agree before a new inbound lead is marked not a lead.
+  const verificationCall = isCallerIdVerificationRobocall({ transcript, durationSeconds: duration })
+  if (verificationCall) {
+    console.log(`[recording-callback] Caller ID verification robocall for lead ${leadId}; skipping AI analysis`)
+    await retireUnconfirmedCallerIdVerificationLead(leadId)
+  }
 
   const evidenceContext = {
     recordingSid,
@@ -363,12 +380,13 @@ async function processRecording(
       source: 'whisper_transcription',
       ...evidenceContext,
       fullTranscript: transcript,
+      ...(verificationCall ? { caller_id_verification: true, system_call: true } : {}),
     },
   })
   if (transcriptError) throw new Error(`transcript_evidence_write_failed:${transcriptError.message}`)
 
-  // 4. Analyze transcript with AI
-  const analysis = await analyzeCallTranscript(transcript)
+  // Verification scripts are system audio. Do not run seller call analysis on them.
+  const analysis = verificationCall ? null : await analyzeCallTranscript(transcript)
 
   // 5. Save analysis to lead_activities
   if (analysis) {
@@ -393,5 +411,5 @@ async function processRecording(
   if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
 
   console.log(`[recording-callback] Recording processed for lead ${leadId}: transcript=${transcript.length} chars, analysis=${!!analysis}`)
-  return analysis
+  return verificationCall ? { kind: 'caller_id_verification' } : { kind: 'processed', analysis }
 }

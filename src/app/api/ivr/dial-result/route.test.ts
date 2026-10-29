@@ -39,6 +39,10 @@ vi.mock('@/middleware/rate-limit', () => ({
   phoneRateLimit: () => ({ allowed: true, remaining: 1 }),
 }))
 
+vi.mock('@/lib/prospect-lookup', () => ({
+  lookupProspectByPhone: vi.fn(async () => []),
+}))
+
 import { POST } from './route'
 
 const CALLER = '+19135550123'
@@ -47,7 +51,8 @@ const DIRECT_LINE = '+18166088588'
 
 type QueryResult = { data: unknown; error: null }
 
-function query(table: string, sink?: unknown[]) {
+function query(table: string, sink?: unknown[], options?: { lead?: unknown; captureAll?: boolean }) {
+  const lead = options && 'lead' in options ? options.lead : { id: 'lead-1', full_name: 'Jane Seller' }
   const builder = {
     select: () => builder,
     eq: () => builder,
@@ -56,14 +61,15 @@ function query(table: string, sink?: unknown[]) {
     order: () => builder,
     limit: () => builder,
     insert: (payload: unknown) => {
-      if (table === 'lead_activities') sink?.push(payload)
+      if (options?.captureAll) sink?.push({ table, payload })
+      else if (table === 'lead_activities') sink?.push(payload)
       return builder
     },
     update: () => builder,
-    single: async (): Promise<QueryResult> => ({ data: { id: 'lead-1', full_name: 'Jane Seller' }, error: null }),
+    single: async (): Promise<QueryResult> => ({ data: { id: 'lead-created', full_name: 'New caller · (913) 555-0199' }, error: null }),
     maybeSingle: async (): Promise<QueryResult> => (
       table === 'leads'
-        ? { data: { id: 'lead-1', full_name: 'Jane Seller' }, error: null }
+        ? { data: lead, error: null }
         : { data: null, error: null }
     ),
     then: (resolve: (value: QueryResult) => unknown, reject?: (reason: unknown) => unknown) => (
@@ -161,6 +167,48 @@ describe('ivr dial-result missed-call alerts', () => {
       },
     })
     expect(JSON.stringify(inserts[0])).not.toContain('+18166088588')
+  })
+
+  it('still creates an inbound lead for a completed seller call', async () => {
+    const inserts: Array<{ table: string; payload: Record<string, unknown> }> = []
+    mocks.from.mockImplementation((table: string) => query(table, inserts, { lead: null, captureAll: true }))
+    const url = new URL('https://crm.savingkc.com/api/ivr/dial-result')
+    url.searchParams.set('from', '+19135550199')
+    url.searchParams.set('calledNumber', '+18164292900')
+    url.searchParams.set('type', 'direct')
+    const response = await POST(new Request(url, {
+      method: 'POST',
+      body: new URLSearchParams({
+        CallSid: 'CA33333333333333333333333333333333',
+        DialCallSid: 'CA44444444444444444444444444444444',
+        DialCallStatus: 'completed',
+        DialCallDuration: '42',
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('<Response></Response>')
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: 'leads',
+        payload: expect.objectContaining({
+          full_name: 'New caller · (913) 555-0199',
+          phone: '+19135550199',
+          source: 'inbound_call',
+          station: 'new',
+          classification: null,
+          assigned_agent: 'Ernest',
+        }),
+      }),
+      expect.objectContaining({
+        table: 'lead_activities',
+        payload: expect.objectContaining({
+          lead_id: 'lead-created',
+          activity_type: 'call',
+          metadata: expect.objectContaining({ direction: 'inbound', from: '+19135550199' }),
+        }),
+      }),
+    ]))
   })
 
   it.each(['seller', 'direct'])('does not alert when DialCallStatus is completed for a %s call', async (type) => {

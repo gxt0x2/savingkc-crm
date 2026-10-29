@@ -188,3 +188,152 @@ describe('Twilio recording callback containment', () => {
     expect(mocks.downloadRecording).not.toHaveBeenCalled()
   })
 })
+
+const VERIFICATION_TRANSCRIPTS = [
+  'Press 1 to confirm this caller ID in the Mojo Dialer. Goodbye.',
+  'Press 1 to confirm this caller ID in the Moto Dialer. Goodbye.',
+  'Press 1 to confirm this caller ID in the middle of the. Goodbye.',
+]
+const SELLER_TRANSCRIPT = 'Hi, this is Maria. I want to sell my house at 123 Oak Street in Kansas City.'
+
+function processedRecordingRequest(duration: string) {
+  const form = new FormData()
+  form.set('RecordingUrl', 'https://api.twilio.com/recordings/RE22222222222222222222222222222222')
+  form.set('RecordingSid', 'RE22222222222222222222222222222222')
+  form.set('RecordingStatus', 'completed')
+  form.set('RecordingDuration', duration)
+  form.set('CallSid', 'CA22222222222222222222222222222222')
+  form.set('From', '+16037928544')
+  form.set('To', '+18164292900')
+  return new Request('https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&calledNumber=%2B18164292900', {
+    method: 'POST',
+    body: form,
+  })
+}
+
+function recordingDb(lead: { classification: string | null; station: string; notes: string | null }) {
+  const inserts: Array<{ table: string; payload: Record<string, unknown> }> = []
+  const updates: Array<{ table: string; payload: Record<string, unknown> }> = []
+  function chain(table: string) {
+    let mode: 'select' | 'update' = 'select'
+    const builder: Record<string, unknown> = {}
+    const self = () => builder
+    builder.select = vi.fn(self)
+    builder.eq = vi.fn(self)
+    builder.is = vi.fn(self)
+    builder.contains = vi.fn(self)
+    builder.limit = vi.fn(self)
+    builder.insert = vi.fn((payload: Record<string, unknown>) => {
+      inserts.push({ table, payload })
+      return builder
+    })
+    builder.update = vi.fn((payload: Record<string, unknown>) => {
+      mode = 'update'
+      updates.push({ table, payload })
+      return builder
+    })
+    builder.maybeSingle = vi.fn(async () => {
+      if (table === 'leads' && mode === 'select') {
+        return { data: { id: 'lead-1', ...lead }, error: null }
+      }
+      if (table === 'leads' && mode === 'update') return { data: { id: 'lead-1' }, error: null }
+      return { data: null, error: null }
+    })
+    builder.then = (
+      resolve: (value: { data: null; error: null }) => unknown,
+      reject?: (reason: unknown) => unknown,
+    ) => Promise.resolve({ data: null, error: null }).then(resolve, reject)
+    return builder
+  }
+  return { inserts, updates, from: (table: string) => chain(table) }
+}
+
+describe('caller ID verification recordings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.validateTwilioWebhook.mockResolvedValue(true)
+    mocks.resolveRecordingCallDirection.mockResolvedValue('inbound')
+    mocks.resolveGoogleAdsLeadContext.mockResolvedValue({ leadId: null })
+    mocks.downloadRecording.mockResolvedValue('/tmp/recording.mp3')
+    mocks.analyzeCallTranscript.mockResolvedValue({ summary: 'Seller wants an offer', aiSummary: 'Seller wants an offer' })
+    mocks.completeDialerPostCallReview.mockResolvedValue(false)
+    mocks.markDialerPostCallProcessing.mockResolvedValue(false)
+    mocks.markDialerPostCallUnavailable.mockResolvedValue(false)
+    mocks.createCallAnalysisLeadProposal.mockResolvedValue(null)
+  })
+
+  it.each(VERIFICATION_TRANSCRIPTS)('marks a verification robocall not a lead and keeps the call log: %s', async (transcript) => {
+    const db = recordingDb({
+      classification: null,
+      station: 'new',
+      notes: 'Connected inbound call to (816) 429-2900.',
+    })
+    mocks.from.mockImplementation(db.from)
+    mocks.transcribeAudio.mockResolvedValue(transcript)
+
+    const response = await POST(processedRecordingRequest('7'))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({ ok: true, leadId: 'lead-1', processed: true })
+    expect(mocks.analyzeCallTranscript).not.toHaveBeenCalled()
+    expect(mocks.createCallAnalysisLeadProposal).not.toHaveBeenCalled()
+    expect(mocks.markDialerPostCallUnavailable).toHaveBeenCalledWith(expect.objectContaining({
+      failureCode: 'caller_id_verification',
+      status: 'skipped',
+    }))
+    expect(db.inserts.map((row) => row.payload.description)).toEqual(expect.arrayContaining([
+      'Call recording available',
+      expect.stringContaining('Call transcript:'),
+      'Marked not a lead — caller ID verification robocall',
+    ]))
+    expect(db.updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        table: 'leads',
+        payload: expect.objectContaining({
+          classification: 'dead',
+          station: 'dead',
+          priority: 'cold',
+          dead_reason: 'spam_vendor_duplicate',
+          dead_by: 'system:caller_id_verification',
+        }),
+      }),
+    ]))
+    expect(db.updates.some((row) => row.table === 'leads' && row.payload.transcript === transcript)).toBe(true)
+  })
+
+  it('keeps a normal seller call as a lead and still analyzes it', async () => {
+    const db = recordingDb({ classification: null, station: 'new', notes: null })
+    mocks.from.mockImplementation(db.from)
+    mocks.transcribeAudio.mockResolvedValue(SELLER_TRANSCRIPT)
+
+    const response = await POST(processedRecordingRequest('42'))
+
+    expect(response.status).toBe(200)
+    expect(mocks.analyzeCallTranscript).toHaveBeenCalledWith(SELLER_TRANSCRIPT)
+    expect(mocks.createCallAnalysisLeadProposal).toHaveBeenCalledWith(expect.objectContaining({
+      leadId: 'lead-1',
+      analysis: expect.objectContaining({ summary: 'Seller wants an offer' }),
+    }))
+    expect(mocks.completeDialerPostCallReview).toHaveBeenCalled()
+    expect(db.inserts.map((row) => row.payload.description)).toEqual(expect.arrayContaining([
+      'Call recording available',
+      expect.stringContaining('Call transcript:'),
+      expect.stringContaining('AI Call Analysis:'),
+    ]))
+    expect(db.updates.some((row) => row.payload.classification === 'dead')).toBe(false)
+    expect(db.inserts.some((row) => row.payload.description === 'Marked not a lead — caller ID verification robocall')).toBe(false)
+  })
+
+  it('does not retire a seller who was already confirmed when a short verification clip is attached', async () => {
+    const db = recordingDb({ classification: 'lead', station: 'contacted', notes: 'Seller confirmed.' })
+    mocks.from.mockImplementation(db.from)
+    mocks.transcribeAudio.mockResolvedValue(VERIFICATION_TRANSCRIPTS[0])
+
+    await POST(processedRecordingRequest('6'))
+
+    expect(mocks.analyzeCallTranscript).not.toHaveBeenCalled()
+    expect(db.updates.some((row) => row.payload.classification === 'dead')).toBe(false)
+    expect(db.inserts.some((row) => String(row.payload.description).startsWith('Call transcript:'))).toBe(true)
+  })
+})

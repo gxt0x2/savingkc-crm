@@ -9,6 +9,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { listOverdueScheduledAppointments } from '@/lib/server/overdue-appointment-outcomes'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
 import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
+import { withoutCallerIdVerificationLeads } from '@/lib/telephony/caller-id-verification'
 
 type Db = ReturnType<typeof supabaseAdmin>
 type JsonRecord = Record<string, unknown>
@@ -387,11 +388,11 @@ export async function readAssistantWebsiteFunnel(db: Db, days: number) {
   const generatedAt = new Date().toISOString()
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
   const [leadsResult, eventsResult] = await Promise.all([
-    db.from('leads').select('id, full_name, source, form_status, station, classification, created_at, updated_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
+    db.from('leads').select('id, full_name, source, form_status, station, classification, dead_by, created_at, updated_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
     db.from('ppc_tracking_events').select('id, event_name, event_category, event_time, lead_id, page_path, traffic_source, campaign, utm_source, utm_medium, utm_campaign, form_step, form_status, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
   ])
   if (leadsResult.error) throw new Error(`Website lead funnel unavailable: ${leadsResult.error.message}`)
-  const leads = (leadsResult.data || []) as JsonRecord[]
+  const leads = withoutCallerIdVerificationLeads((leadsResult.data || []) as JsonRecord[])
   const events = eventsResult.error ? [] : (eventsResult.data || []) as JsonRecord[]
   const recent = leads.slice(0, 15).map(mapLeadLink)
   return {
@@ -410,12 +411,12 @@ export async function readAssistantMarketingSummary(db: Db, days: number) {
   const generatedAt = new Date().toISOString()
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
   const [leadsResult, eventsResult, outboxResult] = await Promise.all([
-    db.from('leads').select('id, source, station, classification, opportunity_score, created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
+    db.from('leads').select('id, source, station, classification, dead_by, opportunity_score, created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
     db.from('ppc_tracking_events').select('event_name, event_category, event_time, traffic_source, campaign, lead_id, gclid, gbraid, wbraid, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
     db.from('ppc_conversion_outbox').select('id, event_name, event_category, status, optimization_role, lead_id, conversion_value, event_time, click_id_type, attempts, last_error, approved_for_google_ads, sent_at, created_at, updated_at').gte('event_time', since).order('event_time', { ascending: false }).limit(2000),
   ])
   if (leadsResult.error) throw new Error(`Marketing lead summary unavailable: ${leadsResult.error.message}`)
-  const leads = (leadsResult.data || []) as JsonRecord[]
+  const leads = withoutCallerIdVerificationLeads((leadsResult.data || []) as JsonRecord[])
   const events = eventsResult.error ? [] : (eventsResult.data || []) as JsonRecord[]
   const outbox = outboxResult.error ? [] : (outboxResult.data || []) as JsonRecord[]
   const pending = outbox.filter((row) => ['pending', 'processing', 'failed', 'dead_letter'].includes(String(row.status)))
