@@ -34,15 +34,18 @@ export function canStartQueuedDial(input: {
     && !input.deviceBusy
 }
 
+type CallEventSubscriber = (event: string, listener: () => void) => void
+
 export function waitForCallToClear(
-  call: { on?: (event: string, listener: () => void) => void } | null,
+  call: { on?: CallEventSubscriber } | null,
   timeoutMs = 1500,
 ): Promise<void> {
-  if (!call || typeof call.on !== 'function') return Promise.resolve()
+  const subscribe = call?.on
+  if (typeof subscribe !== 'function') return Promise.resolve()
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(), timeoutMs)
     try {
-      call.on('disconnect', () => {
+      subscribe('disconnect', () => {
         clearTimeout(timer)
         resolve()
       })
@@ -63,7 +66,7 @@ export async function waitForDeviceIdle(
   }
 }
 
-type PreviousCall = { disconnect?: () => void; on?: (event: string, listener: () => void) => void }
+type PreviousCall = { disconnect?: () => void; on?: CallEventSubscriber }
 
 export async function retirePreviousOutboundCall(
   callRef: { current: PreviousCall | null },

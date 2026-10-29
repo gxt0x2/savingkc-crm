@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   canStartQueuedDial,
   outboundCallEventOwnsAttempt,
@@ -47,15 +47,17 @@ describe('sequential outbound dial ownership', () => {
   })
 
   it('waits for the previous call to disconnect before the next connect', async () => {
-    let listener: (() => void) | null = null
+    const registered: { current: (() => void) | null } = { current: null }
     const call = {
-      on: vi.fn((event: string, next: () => void) => {
-        if (event === 'disconnect') listener = next
-      }),
+      on(event: string, next: () => void) {
+        if (event === 'disconnect') registered.current = next
+      },
     }
     const pending = waitForCallToClear(call, 1000)
-    expect(listener).toEqual(expect.any(Function))
-    listener?.()
+    const disconnect = registered.current
+    expect(typeof disconnect).toBe('function')
+    if (typeof disconnect !== 'function') throw new Error('disconnect listener was not registered')
+    disconnect()
     await pending
   })
 
