@@ -3,9 +3,11 @@ import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { isReachedDisposition } from '@/lib/dialer-dispositions'
 import {
   advanceDialerSessionAfterDisposition,
+  assertDialerSessionControl,
   DialerSessionError,
   transitionDialerAttempt,
 } from '@/lib/server/dialer-session-engine'
+import { rememberOutboundParentCallSid } from '@/lib/server/dialer-parent-call'
 import { getDialerPostCallReview } from '@/lib/server/dialer-post-call-review'
 import { decideAiChangeProposal } from '@/lib/server/ai-change-proposals'
 import { dialerControllerFromRequest, invalidDialerControllerResponse } from '@/lib/api/dialer-controller'
@@ -81,6 +83,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     if (action === 'advance') {
       return NextResponse.json({ session: await advanceDialerSessionAfterDisposition({ actor, sessionId: id, controllerToken: controller.token, clientAttemptId: attemptId }) }, { headers: NO_STORE })
+    }
+    if (action === 'provider_sid') {
+      await assertDialerSessionControl({ actor, sessionId: id, controllerToken: controller.token })
+      const providerCallSid = typeof body.providerCallSid === 'string' ? body.providerCallSid : ''
+      const saved = await rememberOutboundParentCallSid({
+        clientAttemptId: attemptId,
+        callSid: providerCallSid,
+        sessionId: id,
+      })
+      return NextResponse.json({ ok: true, saved }, { headers: NO_STORE })
     }
     if (!['started', 'connected', 'ended', 'failed', 'cancelled', 'disposition'].includes(action)) {
       return NextResponse.json({ error: 'Invalid attempt action' }, { status: 400, headers: NO_STORE })

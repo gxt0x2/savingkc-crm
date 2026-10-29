@@ -57,6 +57,7 @@ function isFreshProcessingLease(metadata: JsonObject, now: number): boolean {
 
 export async function claimPlayableRecordingActivity({
   leadId,
+  prospectId = null,
   recordingSid,
   recordingUrl,
   callSid,
@@ -66,7 +67,8 @@ export async function claimPlayableRecordingActivity({
   to,
   context,
 }: {
-  leadId: string
+  leadId: string | null
+  prospectId?: string | null
   recordingSid: string
   recordingUrl: string
   callSid: string
@@ -76,6 +78,7 @@ export async function claimPlayableRecordingActivity({
   to: string
   context?: RecordingContext
 }): Promise<RecordingProcessingClaim> {
+  if (!leadId && !prospectId) throw new Error('recording claim requires a lead or prospect')
   const processingStartedAt = new Date().toISOString()
   const metadata: RecordingCallbackMeta = {
     callSid,
@@ -99,12 +102,15 @@ export async function claimPlayableRecordingActivity({
     recordingProcessingStartedAt: processingStartedAt,
   }
 
-  const { data: existing, error: existingError } = await supabase
+  let existingQuery = supabase
     .from('lead_activities')
     .select('id, metadata')
-    .eq('lead_id', leadId)
     .eq('activity_type', 'call')
     .contains('metadata', { recordingSid })
+  existingQuery = leadId
+    ? existingQuery.eq('lead_id', leadId)
+    : existingQuery.eq('prospect_id', prospectId).is('lead_id', null)
+  const { data: existing, error: existingError } = await existingQuery
     .limit(1)
     .maybeSingle()
 
@@ -134,11 +140,14 @@ export async function claimPlayableRecordingActivity({
     }
 
     if (!existingMetadata.recordingProcessingState) {
-      const { data: existingTranscript, error: transcriptLookupError } = await supabase
+        let transcriptQuery = supabase
         .from('lead_activities')
         .select('id')
-        .eq('lead_id', leadId)
         .eq('activity_type', 'note')
+        transcriptQuery = leadId
+          ? transcriptQuery.eq('lead_id', leadId)
+          : transcriptQuery.eq('prospect_id', prospectId).is('lead_id', null)
+        const { data: existingTranscript, error: transcriptLookupError } = await transcriptQuery
         .eq('metadata->>source', 'whisper_transcription')
         .eq('metadata->>recordingSid', recordingSid)
         .limit(1)
@@ -187,6 +196,7 @@ export async function claimPlayableRecordingActivity({
   const { error: insertError } = await supabase.from('lead_activities').insert({
     id: activityId,
     lead_id: leadId,
+    ...(prospectId ? { prospect_id: prospectId } : {}),
     activity_type: 'call',
     description: 'Call recording available',
     agent: 'System',

@@ -20,6 +20,7 @@ import {
   type OutboundDialerCallSource,
   type OutboundDialerCallDecision,
 } from '@/lib/server/dialer-call-eligibility'
+import { rememberOutboundParentCallSid } from '@/lib/server/dialer-parent-call'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -69,11 +70,17 @@ function xmlResponse(body: string, status = 200) {
 
 function outboundRecordingCallback(input: {
   leadId: string | null
+  prospectId: string | null
+  phone: string | null
   clientAttemptId: string | null
   source: OutboundDialerCallSource
 }): string {
   const callback = new URL('/api/twilio-recording-callback', BASE_URL)
   if (input.leadId) callback.searchParams.set('leadId', input.leadId)
+  if (input.prospectId) callback.searchParams.set('prospectId', input.prospectId)
+  // The parent recording leg's To/From are client identifiers. Keep the dialed
+  // PSTN number on the callback so a prospect with no lead can still be resolved.
+  if (input.phone) callback.searchParams.set('phone', input.phone)
   if (input.clientAttemptId) callback.searchParams.set('clientAttemptId', input.clientAttemptId)
   callback.searchParams.set('source', input.source)
   return callback.toString().replaceAll('&', '&amp;')
@@ -354,6 +361,15 @@ export async function POST(req: Request) {
             prospectPhoneId,
           }), outboundContext)
         }
+
+        // Persist the parent Call SID before the safety check. A slow or failed
+        // TwiML response otherwise leaves the next number in a multi-phone queue
+        // with no provider SID when the child status callback never runs.
+        if (clientAttemptId && callSid) {
+          await rememberOutboundParentCallSid({ clientAttemptId, callSid }).catch((error) => {
+            console.error('[IVR] Failed to remember parent Call SID:', error)
+          })
+        }
       }
 
       const policyInput: OutboundDialerCallInput = {
@@ -390,7 +406,13 @@ export async function POST(req: Request) {
       }
 
       const statusCallback = outboundStatusCallback(identity, clientAttemptId, source)
-      const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
+      const recordingCallback = outboundRecordingCallback({
+        leadId,
+        prospectId,
+        phone: sanitizedTo,
+        clientAttemptId,
+        source,
+      })
       // Manual calls need time for a person (or their voicemail) to answer.
       // Keep explicit campaign ring counts and the legacy fallback intact.
       const dialTimeout = parseDialTimeout(

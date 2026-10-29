@@ -103,10 +103,11 @@ export async function POST(req: Request) {
     const to = (url.searchParams.get('calledNumber') || url.searchParams.get('to') || body.get('To') || '') as string
     const from = (url.searchParams.get('from') || body.get('From') || '') as string
     const hintedLeadId = url.searchParams.get('leadId') || ''
+    const hintedPhone = url.searchParams.get('phone') || ''
     const clientAttemptId = url.searchParams.get('clientAttemptId') || null
     const sourceHint = url.searchParams.get('source') || ''
-    const calledNumber = url.searchParams.get('calledNumber') || to || ''
-    const externalPhone = from?.startsWith('client:') ? to : from
+    const calledNumber = url.searchParams.get('calledNumber') || to || hintedPhone || ''
+    const externalPhone = from?.startsWith('client:') ? (to || hintedPhone) : (from || hintedPhone)
     const isInternalTestRecording = isInternalTestPhone(externalPhone)
     const profile = getGoogleAdsPhoneProfile(sourceHint || calledNumber)
     const isFormLeadAgentCallback = sourceHint === 'ppc_form_agent_callback'
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
     }
 
     // Match the recorded call back to a lead by the external phone number.
-    const callerPhone = from?.startsWith('client:') ? to : from
+    const callerPhone = from?.startsWith('client:') ? (to || hintedPhone) : (from || hintedPhone)
     const cleanPhone = callerPhone?.replace(/[^\d+]/g, '') || ''
 
     let leadId: string | null = null
@@ -208,6 +209,30 @@ export async function POST(req: Request) {
       if (leadId) {
         console.log(`[recording-callback] Resolved lead ${leadId} via call activity lookup`)
       }
+    }
+
+    // A prospecting dial has no lead. The signed attempt still names the parcel.
+    const dialerSubject = clientAttemptId ? await loadDialerRecordingSubject(clientAttemptId) : null
+    if (!leadId && dialerSubject?.leadId) {
+      leadId = dialerSubject.leadId
+      console.log(`[recording-callback] Resolved lead ${leadId} via dialer attempt`)
+    }
+
+    if (!leadId && dialerSubject?.prospectId) {
+      return processProspectRecording({
+        clientAttemptId,
+        callSid,
+        recordingSid,
+        recordingUrl,
+        recordingDuration,
+        recordingStatus,
+        from,
+        to: to || dialerSubject.phone || hintedPhone,
+        prospectId: dialerSubject.prospectId,
+        prospectPhoneId: dialerSubject.prospectPhoneId,
+        phone: dialerSubject.phone || cleanPhone || null,
+        recordingContext,
+      })
     }
 
     // Fallback: WebRTC parent legs have empty To — look at child legs via Twilio
@@ -322,12 +347,132 @@ export async function POST(req: Request) {
   }
 }
 
+type DialerRecordingSubject = {
+  leadId: string | null
+  prospectId: string | null
+  prospectPhoneId: string | null
+  phone: string | null
+}
+
+async function loadDialerRecordingSubject(clientAttemptId: string): Promise<DialerRecordingSubject | null> {
+  const { data, error } = await supabase
+    .from('dialer_session_attempts')
+    .select('lead_id, prospect_id, prospect_phone_id, phone')
+    .eq('client_attempt_id', clientAttemptId)
+    .maybeSingle()
+  if (error) throw new Error(`dialer_recording_subject_lookup_failed:${error.message}`)
+  if (!data) return null
+  const row = data as { lead_id?: unknown; prospect_id?: unknown; prospect_phone_id?: unknown; phone?: unknown }
+  return {
+    leadId: typeof row.lead_id === 'string' ? row.lead_id : null,
+    prospectId: typeof row.prospect_id === 'string' ? row.prospect_id : null,
+    prospectPhoneId: typeof row.prospect_phone_id === 'string' ? row.prospect_phone_id : null,
+    phone: typeof row.phone === 'string' ? row.phone : null,
+  }
+}
+
+async function processProspectRecording(input: {
+  clientAttemptId: string | null
+  callSid: string
+  recordingSid: string
+  recordingUrl: string
+  recordingDuration: number
+  recordingStatus: string
+  from: string
+  to: string
+  prospectId: string
+  prospectPhoneId: string | null
+  phone: string | null
+  recordingContext: RecordingContext
+}) {
+  const processingClaim = await claimPlayableRecordingActivity({
+    leadId: null,
+    prospectId: input.prospectId,
+    recordingSid: input.recordingSid,
+    recordingUrl: input.recordingUrl,
+    callSid: input.callSid,
+    duration: input.recordingDuration,
+    recordingStatus: input.recordingStatus,
+    from: input.from,
+    to: input.to,
+    context: { ...input.recordingContext, direction: 'outbound' },
+  })
+  if (!processingClaim.shouldProcess) {
+    console.log(`[recording-callback] Skipping ${input.recordingSid}: ${processingClaim.skipped}`)
+    return NextResponse.json({
+      ok: true,
+      prospectId: input.prospectId,
+      processed: false,
+      skipped: processingClaim.skipped,
+    })
+  }
+
+  console.log(`[recording-callback] Processing recording for prospect ${input.prospectId}`)
+  try {
+    await markDialerPostCallProcessing({
+      clientAttemptId: input.clientAttemptId,
+      leadId: null,
+      providerCallSid: input.callSid || null,
+      recordingSid: input.recordingSid,
+    }).catch((stateError) => {
+      console.error('[recording-callback] Failed to mark prospect review processing:', stateError)
+    })
+    const analysis = await processRecording(
+      input.recordingUrl,
+      input.recordingSid,
+      null,
+      input.recordingDuration,
+      input.recordingContext,
+      {
+        prospectId: input.prospectId,
+        prospectPhoneId: input.prospectPhoneId,
+        phone: input.phone,
+      },
+    )
+    const reviewUpdate = analysis
+      ? completeDialerPostCallReview({
+        clientAttemptId: input.clientAttemptId,
+        leadId: null,
+        providerCallSid: input.callSid || null,
+        recordingSid: input.recordingSid,
+        analysis,
+      })
+      : markDialerPostCallUnavailable({
+        clientAttemptId: input.clientAttemptId,
+        providerCallSid: input.callSid || null,
+        recordingSid: input.recordingSid,
+        status: 'skipped',
+        failureCode: 'transcript_too_short',
+      })
+    await reviewUpdate.catch((stateError) => {
+      console.error('[recording-callback] Failed to persist prospect post-call review:', stateError)
+    })
+    await markRecordingProcessing(processingClaim, 'completed')
+  } catch (processingError) {
+    await markDialerPostCallUnavailable({
+      clientAttemptId: input.clientAttemptId,
+      providerCallSid: input.callSid || null,
+      recordingSid: input.recordingSid,
+      failureCode: 'processing_failed',
+    }).catch((stateError) => {
+      console.error('[recording-callback] Failed to mark prospect review failure:', stateError)
+    })
+    await markRecordingProcessing(processingClaim, 'failed', processingError).catch((stateError) => {
+      console.error('[recording-callback] Failed to record prospect processing failure:', stateError)
+    })
+    throw processingError
+  }
+
+  return NextResponse.json({ ok: true, prospectId: input.prospectId, processed: true })
+}
+
 async function processRecording(
   recordingUrl: string,
   recordingSid: string,
-  leadId: string,
+  leadId: string | null,
   duration: number,
   context: RecordingContext = {},
+  prospect: { prospectId: string | null; prospectPhoneId: string | null; phone: string | null } | null = null,
 ): Promise<CallAnalysisResult | null> {
   // 1. Download recording
   const filePath = await downloadRecording(recordingUrl, recordingSid)
@@ -356,12 +501,16 @@ async function processRecording(
   // 3. Save the provider-backed transcript as canonical activity evidence.
   const { error: transcriptError } = await supabase.from('lead_activities').insert({
     lead_id: leadId,
+    ...(prospect?.prospectId ? { prospect_id: prospect.prospectId } : {}),
     activity_type: 'note',
     description: `Call transcript: ${transcript.slice(0, 500)}${transcript.length > 500 ? '...' : ''}`,
     agent: 'AI',
     metadata: {
       source: 'whisper_transcription',
       ...evidenceContext,
+      ...(prospect?.prospectId ? { prospect_id: prospect.prospectId } : {}),
+      ...(prospect?.prospectPhoneId ? { prospect_phone_id: prospect.prospectPhoneId } : {}),
+      ...(prospect?.phone ? { phone: prospect.phone } : {}),
       fullTranscript: transcript,
     },
   })
@@ -374,6 +523,7 @@ async function processRecording(
   if (analysis) {
     const { error: analysisError } = await supabase.from('lead_activities').insert({
       lead_id: leadId,
+      ...(prospect?.prospectId ? { prospect_id: prospect.prospectId } : {}),
       activity_type: 'note',
       description: `AI Call Analysis: ${analysis.aiSummary || analysis.summary || 'Analysis complete'}`,
       agent: 'AI',
@@ -386,11 +536,14 @@ async function processRecording(
   // edit, so this write must not refresh leads.updated_at. That column is not
   // maintained by a trigger or an UPDATE default; it changes only when a writer
   // sets it. AI-extracted lead fields stay behind ai_change_proposals.
-  const { error: leadEvidenceError } = await supabase.from('leads').update({
-    transcript,
-    call_duration_seconds: duration,
-  }).eq('id', leadId)
-  if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
+  // A prospect recording has no lead row to update.
+  if (leadId) {
+    const { error: leadEvidenceError } = await supabase.from('leads').update({
+      transcript,
+      call_duration_seconds: duration,
+    }).eq('id', leadId)
+    if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
+  }
 
   console.log(`[recording-callback] Recording processed for lead ${leadId}: transcript=${transcript.length} chars, analysis=${!!analysis}`)
   return analysis
