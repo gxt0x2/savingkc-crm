@@ -537,11 +537,12 @@ async function processRecording(
   // maintained by a trigger or an UPDATE default; it changes only when a writer
   // sets it. AI-extracted lead fields stay behind ai_change_proposals.
   // A prospect recording has no lead row to update.
-  if (leadId) {
-    const { error: leadEvidenceError } = await supabase.from('leads').update({
-      transcript,
-      call_duration_seconds: duration,
-    }).eq('id', leadId)
+  const leadEvidence = leadId ? {
+    transcript,
+    call_duration_seconds: duration,
+  } : null
+  if (leadEvidence && leadId) {
+    const { error: leadEvidenceError } = await supabase.from('leads').update(leadEvidence).eq('id', leadId)
     if (leadEvidenceError) throw new Error(`lead_call_evidence_write_failed:${leadEvidenceError.message}`)
   }
 
