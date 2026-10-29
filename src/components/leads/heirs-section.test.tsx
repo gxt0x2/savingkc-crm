@@ -133,15 +133,69 @@ afterEach(() => {
 describe('HeirsSection dial queue', () => {
   it('renders the focused calling workspace as compact person cards without duplicate note forms', async () => {
     mockHeirsFetch()
-    renderHeirsSection({ variant: 'calling-compact', readOnlyPreview: true, autoStart: true })
+    renderHeirsSection({ variant: 'calling-compact', showAllPhones: true, readOnlyPreview: true, autoStart: true })
 
-    expect(await screen.findByText('Angela Taylor')).toBeVisible()
-    expect(screen.getByText('Ben Taylor')).toBeVisible()
-    expect(screen.getByText(/Daughter · mobile/i)).toBeVisible()
-    expect(screen.getByText(/Son · verified mobile/i)).toBeVisible()
-    expect(screen.getByRole('button', { name: /Call Angela Taylor at/i })).toBeDisabled()
+    const angela = await screen.findByRole('article', { name: 'Angela Taylor' })
+    const ben = screen.getByRole('article', { name: 'Ben Taylor' })
+    expect(angela).toBeVisible()
+    expect(ben).toBeVisible()
     expect(screen.queryByRole('textbox', { name: /Note for/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Re-sync' })).not.toBeInTheDocument()
+    expect(within(angela).getAllByRole('button', { name: /Call Angela Taylor at/i }).every((button) => button.hasAttribute('disabled'))).toBe(true)
+  })
+
+  it('lists every callable number for a person and marks the one being dialed', async () => {
+    mockHeirsFetch()
+    renderHeirsSection({ variant: 'calling-compact', showAllPhones: true, readOnlyPreview: true })
+
+    const angela = await screen.findByRole('article', { name: 'Angela Taylor' })
+    const angelaNumbers = within(angela).getAllByRole('listitem')
+    expect(angelaNumbers).toHaveLength(2)
+    expect(angelaNumbers[0]).toHaveTextContent('(816) 000-0001')
+    expect(angelaNumbers[0]).toHaveTextContent('1 of 2')
+    expect(angelaNumbers[1]).toHaveTextContent('(816) 000-0002')
+    expect(angelaNumbers[1]).toHaveTextContent('2 of 2')
+    expect(within(angela).queryByText('(816) 000-0003')).not.toBeInTheDocument()
+    expect(within(angela).queryByText('(816) 000-0006')).not.toBeInTheDocument()
+    expect(within(angela).queryByText('(816) 000-0007')).not.toBeInTheDocument()
+
+    const ben = screen.getByRole('article', { name: 'Ben Taylor' })
+    const benNumbers = within(ben).getAllByRole('listitem')
+    expect(benNumbers).toHaveLength(2)
+    expect(benNumbers[0]).toHaveTextContent('(816) 000-0005')
+    expect(benNumbers[0]).toHaveTextContent('1 of 2')
+    expect(benNumbers[1]).toHaveTextContent('(816) 000-0004')
+    expect(benNumbers[1]).toHaveTextContent('2 of 2')
+    expect(benNumbers[1]).toHaveTextContent(/verified/i)
+    expect(within(angela).queryByText('Active')).not.toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent('heir-queue-state', {
+      detail: {
+        queueItem: { prospect_phone_id: 'phone-no-answer', phone: '+18160000002' },
+        queueIndex: 1,
+        queueLength: 4,
+        status: 'calling',
+      },
+    }))
+
+    await waitFor(() => expect(within(angelaNumbers[1]).getByText('Active')).toBeVisible())
+    expect(angelaNumbers[1]).toHaveAttribute('aria-current', 'true')
+    expect(within(angelaNumbers[0]).queryByText('Active')).not.toBeInTheDocument()
+    expect(within(ben).queryByText('Active')).not.toBeInTheDocument()
+    expect(angelaNumbers[0]).toHaveTextContent('1 of 2')
+    expect(angelaNumbers[1]).toHaveTextContent('2 of 2')
+
+    window.dispatchEvent(new CustomEvent('heir-queue-state', {
+      detail: {
+        queueItem: { prospect_phone_id: null, phone: '+18160000004' },
+        queueIndex: 3,
+        queueLength: 4,
+        status: 'calling',
+      },
+    }))
+
+    await waitFor(() => expect(within(benNumbers[1]).getByText('Active')).toBeVisible())
+    expect(within(angela).queryByText('Active')).not.toBeInTheDocument()
   })
 
   it('keeps calling-floor readiness compact beside the primary phone action', async () => {

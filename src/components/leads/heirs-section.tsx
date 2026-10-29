@@ -107,14 +107,16 @@ export function HeirsSection({
   })
   const autoStartKey = subjectKey ? `${subjectKey}:${autoStartEpoch}` : null
 
-  // Currently-dialing prospect_phone_id — populated from the telephony bar's
-  // heir-queue-state event. The matching heir row auto-expands; the rest stay
-  // collapsed until the user clicks one.
+  // Currently-dialing number — populated from the telephony bar's
+  // heir-queue-state event. The matching heir row auto-expands; the compact
+  // calling card uses the same id to mark the active number.
   const [activePhoneId, setActivePhoneId] = useState<string | null>(null)
+  const [activePhoneNumber, setActivePhoneNumber] = useState<string | null>(null)
   useEffect(() => {
     function onState(e: Event) {
-      const detail = (e as CustomEvent).detail as { queueItem?: { prospect_phone_id?: string } | null }
+      const detail = (e as CustomEvent).detail as { queueItem?: { prospect_phone_id?: string | null; phone?: string | null } | null }
       setActivePhoneId(detail?.queueItem?.prospect_phone_id ?? null)
+      setActivePhoneNumber(detail?.queueItem?.phone ?? null)
     }
     window.addEventListener('heir-queue-state', onState)
     return () => window.removeEventListener('heir-queue-state', onState)
@@ -299,7 +301,7 @@ export function HeirsSection({
   }, [autoStart, autoStartKey, autoStartSkipPhoneIds, autoStartSkipPhones, buildQueueForHeir, dialerCallerId, dialerCallerPlan, dialerSessionId, dialerSurface, error, heirs, loading, onAutoStartEmpty, onAutoStartHandled, readOnlyPreview, ringCount])
 
   if (variant === 'calling-compact') {
-    return <HeirsCallingCompact {...{ callablePhonesForHeir, error, heirs, loading, queueOne, readOnlyPreview }} />
+    return <HeirsCallingCompact {...{ activePhoneId, activePhoneNumber, callablePhonesForHeir, error, heirs, loading, queueOne, readOnlyPreview, showAllPhones }} />
   }
 
   return (
