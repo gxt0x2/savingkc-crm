@@ -7,7 +7,7 @@ import { NewsletterSignup } from './newsletter-signup'
 const SANDBOX = 'savingkc@gmail.com'
 
 describe('NewsletterSignup', () => {
-  it('posts email, role, and county with consent', async () => {
+  it('defaults to general and posts the segment the subscriber picks', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ ok: true, status: 'received', message: 'Got it. If this address can receive the newsletter, you are on the list.' }),
@@ -15,8 +15,9 @@ describe('NewsletterSignup', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<NewsletterSignup source="funnel" />)
 
+    expect(screen.getByRole('radio', { name: 'Homeowner thinking about a sale' })).toBeChecked()
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: SANDBOX } })
-    fireEvent.click(screen.getByRole('radio', { name: 'Seller' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Behind on property taxes' }))
     fireEvent.change(screen.getByLabelText('County'), { target: { value: 'Platte' } })
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Send me the Tuesday note' }))
@@ -26,7 +27,7 @@ describe('NewsletterSignup', () => {
     expect(url).toBe('/api/email/newsletters/signup')
     expect(JSON.parse(String(init.body))).toEqual({
       email: SANDBOX,
-      role: 'seller',
+      segment: 'tax',
       county: 'Platte',
       consent: true,
       source: 'funnel',
