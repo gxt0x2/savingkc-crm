@@ -24,33 +24,7 @@ export interface PhoneSystemRecord {
 }
 
 const GERTHA_ADMIN_NUMBER = '+18166086699'
-
-const PARKED_2026_09_23 = new Set([
-  '+18163100845',
-  '+18162538313',
-  '+18164761589',
-  '+18166408032',
-])
-
-const PARKED_2026_10_30 = new Set([
-  '+18164761344',
-  '+18166404701',
-  '+18165788107',
-  '+18166536616',
-])
-
-function coldCallbackHealthNote(config: TwilioNumberConfig): string {
-  if (config.dialerEligible) {
-    return 'Prospecting dialer caller ID. Inbound Press-1 reaches Acquisitions; no input follows the cold-no-input path.'
-  }
-  if (PARKED_2026_10_30.has(config.value)) {
-    return 'PARKED 2026-10-30 owner — removed from cold/prospecting rotation; inbound Press-1 callback kept so old callbacks still work; Twilio ownership retained; do not release.'
-  }
-  if (PARKED_2026_09_23.has(config.value)) {
-    return 'PARKED 2026-09-23 owner — spam/high-risk community flags; outbound disabled; Twilio ownership retained; do not release.'
-  }
-  return 'Outbound disabled. Twilio ownership retained; do not release.'
-}
+const PROSPECTING_HEALTH_NOTE = 'Prospecting dialer caller ID. Inbound Press-1 reaches Acquisitions; no input follows the cold-no-input path.'
 
 const DIRECT_AGENT_NUMBERS: Record<string, {
   owner: string
@@ -129,7 +103,9 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       team: 'Acquisitions',
       routeType: 'cold_callback',
       health: 'healthy',
-      healthNote: coldCallbackHealthNote(config),
+      healthNote: config.dialerEligible
+        ? PROSPECTING_HEALTH_NOTE
+        : 'Outbound disabled.',
       workflowId: 'cold-call-callback-flow',
       inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
       answeredPath: 'A seller who presses 1 is routed to the acquisition team and the call is recorded after answer.',

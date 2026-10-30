@@ -33,21 +33,9 @@ export const TWILIO_NUMBERS = [
   // Gertha Dotson (Admin/TC). Excluded from cold/prospecting rotation.
   // Purpose stays general so inbound remains the seller IVR, not cold Press-1.
   { label: '(816) 608-6699 - Gertha Dotson (Admin/TC)', value: '+18166086699', purpose: 'general', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: false },
-  // PARKED 2026-09-23 owner: spam/high-risk. Same restriction as Casey Legacy —
-  // kept in the registry, excluded from dialer rotation and broadcasts. Do not release.
-  { label: '(816) 310-0845 - PARKED', value: '+18163100845', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
-  { label: '(816) 253-8313 - PARKED', value: '+18162538313', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
-  { label: '(816) 476-1589 - PARKED', value: '+18164761589', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
-  // PARKED 2026-10-30 owner: current cold numbers are bad. Out of prospecting
-  // rotation. Twilio ownership and inbound cold_callback stay. Do not release.
-  { label: '(816) 640-4701 - PARKED', value: '+18166404701', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
-  { label: '(816) 578-8107 - PARKED', value: '+18165788107', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
-  { label: '(816) 640-8032 - PARKED', value: '+18166408032', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
-  { label: '(816) 653-6616 - PARKED', value: '+18166536616', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
   { label: '(816) 608-6648 - Google Ads: Property Tax', value: GOOGLE_ADS_PROPERTY_TAX_TWILIO_NUMBER, purpose: 'google_ads', smsEligible: true, conversationEligible: false, broadcastEligible: false, dialerEligible: false, reservedFor: 'google_ads' },
   { label: '(816) 608-6999 - Prospecting', value: '+18166086999', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 608-8588 - Ernest Company', value: '+18166088588', purpose: 'company', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
-  { label: '(816) 476-1344 - PARKED', value: '+18164761344', purpose: 'cold_call', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
   { label: '(816) 727-7667 - Casey Company', value: '+18167277667', purpose: 'company', smsEligible: true, conversationEligible: true, broadcastEligible: true, dialerEligible: true },
   { label: '(816) 375-4666 - Casey Legacy', value: '+18163754666', purpose: 'company', smsEligible: true, conversationEligible: true, broadcastEligible: false, dialerEligible: false },
 ] as const satisfies readonly TwilioNumberConfig[]
@@ -58,7 +46,7 @@ export const DIALER_CALLER_ID_NUMBERS = TWILIO_NUMBERS.filter((number) => number
 export const COLD_CALL_DIALER_NUMBERS = TWILIO_NUMBERS.filter((number) => (
   number.purpose === 'cold_call' && number.dialerEligible
 ))
-/** Every cold-callback DID, including parked numbers that may still receive callbacks. */
+/** Cold-callback DIDs. Inbound Press-1 uses this set. */
 export const COLD_CALL_CALLBACK_NUMBERS = TWILIO_NUMBERS.filter((number) => number.purpose === 'cold_call')
 
 export type SmsSenderUse = 'conversation' | 'broadcast' | 'reply' | 'system'

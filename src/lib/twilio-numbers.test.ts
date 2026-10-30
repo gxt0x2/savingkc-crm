@@ -17,9 +17,9 @@ import {
 } from './twilio-numbers'
 
 describe('twilio number inventory', () => {
-  it('contains the full 21-number owned inventory without duplicates', () => {
-    expect(TWILIO_NUMBERS).toHaveLength(21)
-    expect(new Set(TWILIO_NUMBERS.map((number) => number.value)).size).toBe(21)
+  it('contains the owned inventory without duplicates', () => {
+    expect(TWILIO_NUMBERS).toHaveLength(13)
+    expect(new Set(TWILIO_NUMBERS.map((number) => number.value)).size).toBe(13)
   })
 
   it('reserves Google Ads tracking numbers out of team sending and dialer pools', () => {
@@ -41,28 +41,24 @@ describe('twilio number inventory', () => {
     expect(isAllowedSmsSender('+18165550199', 'conversation')).toBe(false)
   })
 
-  it('parks burned cold numbers and rotates prospecting through the four new DIDs', () => {
-    const parked20260923 = ['+18162538313', '+18166408032', '+18163100845', '+18164761589']
-    const parked20261030 = ['+18164761344', '+18166404701', '+18165788107', '+18166536616']
+  it('drops the released cold numbers and rotates prospecting through the four new DIDs', () => {
+    const released = [
+      '+18164761344', '+18166404701', '+18165788107', '+18166536616',
+      '+18163100845', '+18162538313', '+18164761589', '+18166408032',
+    ]
     const prospecting = ['+18166088770', '+18166088552', '+18166088559', '+18166086999']
 
-    for (const number of [...parked20260923, ...parked20261030]) {
-      const config = findTwilioNumber(number)
-      expect(config?.purpose).toBe('cold_call')
-      expect(config?.label).toContain('PARKED')
-      expect(config?.smsEligible).toBe(true)
-      expect(config?.conversationEligible).toBe(true)
-      expect(config?.broadcastEligible).toBe(false)
-      expect(config?.dialerEligible).toBe(false)
+    for (const number of released) {
+      expect(findTwilioNumber(number)).toBeUndefined()
       expect(isDialerCallerIdNumber(number)).toBe(false)
       expect(isColdCallDialerNumber(number)).toBe(false)
-      expect(isColdCallCallbackNumber(number)).toBe(true)
+      expect(isColdCallCallbackNumber(number)).toBe(false)
       expect(DIALER_CALLER_ID_NUMBERS.some((option) => option.value === number)).toBe(false)
       expect(COLD_CALL_DIALER_NUMBERS.some((option) => option.value === number)).toBe(false)
       expect(BROADCAST_TWILIO_NUMBERS.some((option) => option.value === number)).toBe(false)
-      expect(isAllowedSmsSender(number, 'reply')).toBe(true)
+      expect(isAllowedSmsSender(number, 'reply')).toBe(false)
       expect(isAllowedSmsSender(number, 'broadcast')).toBe(false)
-      expect(isAllowedSmsSender(number, 'conversation')).toBe(true)
+      expect(isAllowedSmsSender(number, 'conversation')).toBe(false)
     }
 
     expect(COLD_CALL_DIALER_NUMBERS.map((number) => number.value)).toEqual(prospecting)

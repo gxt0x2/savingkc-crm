@@ -1,8 +1,7 @@
--- Rotate the prospecting dialer caller-ID allowlist.
--- Twilio ownership stays. Inbound cold_callback routing stays on every
--- cold_call DID, including parked numbers, so old callbacks still work.
--- This only changes which numbers start_prospecting_dialer_session_v4
--- will authorize for a new cold/prospecting session.
+-- Replace the prospecting dialer caller-ID allowlist with the four
+-- remaining cold DIDs. The eight bad cold numbers are removed from the
+-- CRM phone inventory and must not return to this allowlist.
+-- Twilio number release is outside this migration.
 --
 -- Into the pool (Press-1 cold callback):
 --   +18166088770  (816) 608-8770
@@ -10,14 +9,15 @@
 --   +18166088559  (816) 608-8559
 --   +18166086999  (816) 608-6999
 --
--- Parked 2026-10-30 (do not release; keep inbound cold_callback):
+-- Removed from inventory (2026-10-30 owner):
 --   +18164761344  (816) 476-1344
 --   +18166404701  (816) 640-4701
 --   +18165788107  (816) 578-8107
 --   +18166536616  (816) 653-6616
---
--- Already parked 2026-09-23 and still excluded:
---   +18163100845, +18162538313, +18164761589, +18166408032
+--   +18163100845  (816) 310-0845
+--   +18162538313  (816) 253-8313
+--   +18164761589  (816) 476-1589
+--   +18166408032  (816) 640-8032
 --
 -- Not in this pool:
 --   +18166086699  (816) 608-6699  Gertha Dotson (Admin/TC)

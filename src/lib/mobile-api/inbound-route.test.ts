@@ -3,7 +3,7 @@ import { mobileInboundRoute } from './inbound-route'
 
 describe('mobile inbound route classification', () => {
   it('classifies only cold callback DIDs and preserves company-line eligibility', () => {
-    expect(mobileInboundRoute({ calledNumber: '+18166404701' })).toBe('cold_callback')
+    expect(mobileInboundRoute({ calledNumber: '+18166088770' })).toBe('cold_callback')
     expect(mobileInboundRoute({ calledNumber: '+18166088588' })).toBeNull()
   })
 

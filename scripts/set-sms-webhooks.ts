@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * One-time script: Set SMS webhooks on all 20 Saving KC numbers
+ * One-time script: Set SMS webhooks on the owned Saving KC numbers
  * Points them at the CRM webhook: https://crm.savingkc.com/api/twilio-sms-webhook
  *
  * Usage: npx tsx scripts/set-sms-webhooks.ts
@@ -15,9 +15,7 @@ const SMS_WEBHOOK_URL = 'https://crm.savingkc.com/api/twilio-sms-webhook'
 const SAVING_KC_NUMBERS = [
   '+18166088858', '+18166088770', '+18166088808', '+18166088552',
   '+18166088559', '+18163077835', '+18166086699', '+18164292900',
-  '+18163100845', '+18166404701', '+18166086648', '+18166086999',
-  '+18166088588', '+18164761344', '+18167277667', '+18164761589',
-  '+18165788107', '+18162538313', '+18166408032', '+18166536616',
+  '+18166086648', '+18166086999', '+18166088588', '+18167277667',
 ]
 
 async function main() {

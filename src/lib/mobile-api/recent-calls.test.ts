@@ -42,7 +42,7 @@ describe('mobile recent call projection', () => {
 
   it('retains cold-callback classification when a higher-ranked disposition wins the grouped call', () => {
     const items = buildMobileRecentCalls([
-      row('callback', { callSid: 'callback-1', direction: 'inbound', calledNumber: '+18166404701', from: '+18165550125' }),
+      row('callback', { callSid: 'callback-1', direction: 'inbound', calledNumber: '+18166088770', from: '+18165550125' }),
       row('disposition', { source: 'savingkc_mobile', callSid: 'callback-1', direction: 'inbound', outcome: 'no_answer', from: '+18165550125' }, '2026-10-01T12:01:00Z'),
       row('company', { direction: 'inbound', calledNumber: '+18166088588', from: '+18165550126', outcome: 'no_answer' }),
     ])

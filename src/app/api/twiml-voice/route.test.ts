@@ -615,7 +615,7 @@ describe('verified inbound TwiML routing', () => {
   })
 
   it('keeps cold-callback IVR off the Voice client and the mobile outbound timeout', async () => {
-    const { text } = await responseText(inboundRequest('+18166404701'))
+    const { text } = await responseText(inboundRequest('+18166088770'))
 
     expect(text).toContain('coldcall=1')
     expect(text).toContain('<Gather')

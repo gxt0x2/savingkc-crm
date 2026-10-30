@@ -22,14 +22,14 @@ describe('rotate prospecting cold caller ids migration', () => {
     }
   })
 
-  it('fails closed when the live allowlist has drifted and does not release numbers', () => {
+  it('fails closed when the live allowlist has drifted and does not drop tables', () => {
     expect(migration).toContain('start_prospecting_dialer_session_v4_missing')
     expect(migration).toContain('unexpected_start_prospecting_dialer_session_v4_caller_allowlist')
     expect(migration).not.toMatch(/\b(?:DELETE|TRUNCATE|DROP TABLE|UPDATE public\.)\b/)
-    expect(migration).toContain('Twilio ownership stays')
-    expect(migration).toContain('do not release')
+    expect(migration).toContain('CRM phone inventory')
+    expect(migration).toContain('Twilio number release is outside this migration')
     expect(migration).toContain('Gertha Dotson (Admin/TC)')
-    for (const number of parked20261030) expect(migration).toContain(number)
+    for (const number of [...parked20261030, ...parked20260923]) expect(migration).toContain(number)
   })
 
   it('keeps session start server-only', () => {

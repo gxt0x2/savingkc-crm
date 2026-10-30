@@ -5,7 +5,7 @@ import { WORKFLOW_CATALOG } from './workflow-catalog'
 
 describe('master phone system', () => {
   it('registers every owned number exactly once', () => {
-    expect(TWILIO_NUMBERS).toHaveLength(21)
+    expect(TWILIO_NUMBERS).toHaveLength(13)
     expect(PHONE_SYSTEM).toHaveLength(TWILIO_NUMBERS.length)
     expect(new Set(PHONE_SYSTEM.map((record) => record.number)).size).toBe(PHONE_SYSTEM.length)
     expect(PHONE_SYSTEM.map((record) => record.number).sort())
@@ -47,32 +47,14 @@ describe('master phone system', () => {
     })
   })
 
-  it('keeps parked cold numbers on the callback IVR and out of outbound rotation', () => {
-    const parked20260923 = 'PARKED 2026-09-23 owner — spam/high-risk community flags; outbound disabled; Twilio ownership retained; do not release.'
-    const parked20261030 = 'PARKED 2026-10-30 owner — removed from cold/prospecting rotation; inbound Press-1 callback kept so old callbacks still work; Twilio ownership retained; do not release.'
+  it('keeps the four prospecting DIDs on the callback IVR and omits released cold numbers', () => {
+    const released = [
+      '+18164761344', '+18166404701', '+18165788107', '+18166536616',
+      '+18163100845', '+18162538313', '+18164761589', '+18166408032',
+    ]
     const prospectingNote = 'Prospecting dialer caller ID. Inbound Press-1 reaches Acquisitions; no input follows the cold-no-input path.'
-    for (const number of ['+18162538313', '+18166408032', '+18163100845', '+18164761589']) {
-      expect(PHONE_SYSTEM.find((record) => record.number === number)).toMatchObject({
-        routeType: 'cold_callback',
-        health: 'healthy',
-        healthNote: parked20260923,
-        workflowId: 'cold-call-callback-flow',
-        outboundUse: 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
-        inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
-        noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input and ends the call. No SMS is sent.',
-      })
-    }
-    for (const number of ['+18166404701', '+18165788107', '+18166536616', '+18164761344']) {
-      expect(PHONE_SYSTEM.find((record) => record.number === number)).toMatchObject({
-        label: expect.stringContaining('PARKED'),
-        routeType: 'cold_callback',
-        health: 'healthy',
-        healthNote: parked20261030,
-        workflowId: 'cold-call-callback-flow',
-        outboundUse: 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
-        inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
-        noAnswerPath: 'No IVR input enters /api/ivr/cold-no-input and ends the call. No SMS is sent.',
-      })
+    for (const number of released) {
+      expect(PHONE_SYSTEM.find((record) => record.number === number)).toBeUndefined()
     }
     for (const number of ['+18166088770', '+18166088552', '+18166088559', '+18166086999']) {
       expect(PHONE_SYSTEM.find((record) => record.number === number)).toMatchObject({
