@@ -23,16 +23,34 @@ export interface PhoneSystemRecord {
   sourceFiles: readonly string[]
 }
 
-const COLD_CALLBACK_NUMBERS = new Set([
+const GERTHA_ADMIN_NUMBER = '+18166086699'
+
+const PARKED_2026_09_23 = new Set([
   '+18163100845',
   '+18162538313',
-  '+18164761344',
   '+18164761589',
+  '+18166408032',
+])
+
+const PARKED_2026_10_30 = new Set([
+  '+18164761344',
   '+18166404701',
   '+18165788107',
-  '+18166408032',
   '+18166536616',
 ])
+
+function coldCallbackHealthNote(config: TwilioNumberConfig): string {
+  if (config.dialerEligible) {
+    return 'Prospecting dialer caller ID. Inbound Press-1 reaches Acquisitions; no input follows the cold-no-input path.'
+  }
+  if (PARKED_2026_10_30.has(config.value)) {
+    return 'PARKED 2026-10-30 owner — removed from cold/prospecting rotation; inbound Press-1 callback kept so old callbacks still work; Twilio ownership retained; do not release.'
+  }
+  if (PARKED_2026_09_23.has(config.value)) {
+    return 'PARKED 2026-09-23 owner — spam/high-risk community flags; outbound disabled; Twilio ownership retained; do not release.'
+  }
+  return 'Outbound disabled. Twilio ownership retained; do not release.'
+}
 
 const DIRECT_AGENT_NUMBERS: Record<string, {
   owner: string
@@ -102,7 +120,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
     }
   }
 
-  if (COLD_CALLBACK_NUMBERS.has(config.value)) {
+  if (config.purpose === 'cold_call') {
     return {
       number: config.value,
       label: config.label,
@@ -111,9 +129,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
       team: 'Acquisitions',
       routeType: 'cold_callback',
       health: 'healthy',
-      healthNote: config.dialerEligible
-        ? 'Callback identity and reply-from number remain the dialed number.'
-        : 'PARKED 2026-09-23 owner — spam/high-risk community flags; outbound disabled; Twilio ownership retained; do not release.',
+      healthNote: coldCallbackHealthNote(config),
       workflowId: 'cold-call-callback-flow',
       inboundPath: ['Twilio number', '/api/twiml-voice', 'Press-1 callback IVR', '/api/ivr/handle-input', 'Acquisitions team'],
       answeredPath: 'A seller who presses 1 is routed to the acquisition team and the call is recorded after answer.',
@@ -127,6 +143,28 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
         : 'Conversation reply only; excluded from broadcasts and dialer caller-ID rotation.',
       carrierFallback: 'Voice falls back to the route owner and SMS is durably captured with the callback number preserved. Live carrier configuration is verified from this registry.',
       sourceFiles: [...sourceFiles, '/api/ivr/handle-input', '/api/ivr/cold-no-input'],
+    }
+  }
+
+  if (config.value === GERTHA_ADMIN_NUMBER) {
+    return {
+      number: config.value,
+      label: config.label,
+      purpose: config.purpose,
+      owner: 'Gertha Dotson',
+      team: 'Acquisitions',
+      routeType: 'acquisitions_ivr',
+      health: 'healthy',
+      healthNote: 'Gertha Dotson (Admin/TC). Excluded from the cold/prospecting caller-ID pool. Inbound stays on the standard seller IVR.',
+      workflowId: 'acquisitions-seller-call-flow',
+      inboundPath: ['Twilio number', '/api/twiml-voice', 'Seller IVR', '/api/ivr/handle-input', 'Acquisitions team'],
+      answeredPath: 'Seller inquiries ring the acquisition team and record the call after answer.',
+      noAnswerPath: 'No input is logged and routed through the general no-input follow-up and voicemail path.',
+      smsPath: 'Inbound SMS enters /api/twilio-sms-webhook, resolves identity, records the message, and updates attention.',
+      smsSenderPolicy: 'Approved for conversation and broadcast sends. The API validates the selected identity and records Twilio\'s actual sender.',
+      outboundUse: 'Excluded from cold and prospecting caller-ID rotation. Conversation and broadcast sends stay on this Admin/TC line.',
+      carrierFallback: 'Voice falls back to the route owner and SMS is durably captured as New work when the primary Twilio webhook fails. Live carrier configuration is verified from this registry.',
+      sourceFiles,
     }
   }
 

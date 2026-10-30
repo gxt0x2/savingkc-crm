@@ -95,14 +95,14 @@ describe('prospecting campaign contract', () => {
     expect(parseProspectingDialerSessionSetup({
       startBehavior: 'first_unworked',
       callerMode: 'rotation',
-      callerIds: ['(816) 640-4701', '+18165788107'],
+      callerIds: ['(816) 608-8770', '+18166088552'],
       ringCount: 5,
       notDialedHours: 72,
       notContactedHours: 168,
     })).toEqual({
       startBehavior: 'first_unworked',
       callerMode: 'rotation',
-      callerIds: ['+18166404701', '+18165788107'],
+      callerIds: ['+18166088770', '+18166088552'],
       ringCount: 5,
       notDialedHours: 72,
       notContactedHours: 168,
@@ -117,7 +117,11 @@ describe('prospecting campaign contract', () => {
       callerIds: Array.from({ length: 6 }, (_, index) => `+1816310084${index}`),
       ringCount: 7,
     })).toThrow(/between 1 and 5/i)
-    for (const parked of ['+18162538313', '+18166408032', '+18163100845', '+18164761589']) {
+    for (const parked of [
+      '+18162538313', '+18166408032', '+18163100845', '+18164761589',
+      '+18164761344', '+18166404701', '+18165788107', '+18166536616',
+      '+18166086699',
+    ]) {
       expect(() => parseProspectingDialerSessionSetup({
         callerMode: 'static',
         callerIds: [parked],
@@ -130,7 +134,7 @@ describe('prospecting campaign contract', () => {
     expect(parseProspectingDialerSessionSetup({})).toMatchObject({
       startBehavior: 'resume',
       callerMode: 'static',
-      callerIds: ['+18166404701'],
+      callerIds: ['+18166088770'],
       ringCount: 7,
       notDialedHours: null,
       notContactedHours: null,
@@ -216,12 +220,12 @@ describe('prospecting campaign contract', () => {
     expect(() => parseCreateProspectingCampaignInput({
       name: 'Jackson · Tax 3+ · Deceased · Aug 30',
       kind: 'dialer',
-      callerId: '+18166404701',
+      callerId: '+18166088770',
     })).toThrow(/separate piles/)
     expect(parseCreateProspectingCampaignInput({
       name: 'Jackson · Tax 3+ · 7 zips · Aug 30',
       kind: 'dialer',
-      callerId: '+18166404701',
+      callerId: '+18166088770',
     })).toMatchObject({ name: 'Jackson · Tax 3+ · 7 zips · Aug 30', kind: 'dialer' })
     expect(() => parseCreateProspectingCampaignInput({
       name: 'Jackson · Tax 3+ · 7 zips · Aug 30',

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isColdCallCallbackNumber } from '@/lib/twilio-numbers'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -10,11 +11,6 @@ function invalidTwilioResponse() {
     headers: { 'Content-Type': 'text/xml', 'Cache-Control': 'no-store' },
   })
 }
-
-const COLD_CALL_NUMBERS = new Set([
-  '+18163100845', '+18162538313', '+18164761344', '+18164761589',
-  '+18166404701', '+18165788107', '+18166408032', '+18166536616',
-])
 
 // Standard greetings (company name included)
 const GREETING_AUDIO: Record<string, string> = {
@@ -47,7 +43,7 @@ export async function POST(req: Request) {
 
     console.log(`[VOICEMAIL] agent=${agent} from=${from} calledNumber=${calledNumber}`)
 
-  const isColdCall = COLD_CALL_NUMBERS.has(calledNumber)
+  const isColdCall = isColdCallCallbackNumber(calledNumber)
 
   // Use recorded greetings where available, text-to-speech as the fallback.
   const audioGreeting = GREETING_AUDIO[agent]

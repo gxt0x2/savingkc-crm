@@ -89,7 +89,7 @@ describe('prospecting campaign transition route', () => {
     const dialerPreset = {
       startBehavior: 'resume',
       callerMode: 'static',
-      callerIds: ['+18166404701'],
+      callerIds: ['+18166088770'],
       ringCount: 5,
       notDialedHours: 24,
       notContactedHours: 72,

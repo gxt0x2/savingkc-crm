@@ -47,8 +47,8 @@ const AGENT_PROFILES: Array<{ match: string; profile: AgentTelephonyProfile }> =
       identity: 'gertha',
       displayName: 'Gertha',
       initials: 'GD',
-      // No dedicated Gertha DID is recorded in the canonical inventory yet.
-      // Keep her on the company main line instead of guessing a personal line.
+      // (816) 608-6699 is labeled Gertha Dotson (Admin/TC) and stays on the seller IVR.
+      // It is not a direct-agent or prospecting caller ID. Her Voice caller ID stays Main.
       defaultCallerId: MAIN_SAVINGKC_CALLER_ID,
       hasDedicatedCallerId: false,
     },

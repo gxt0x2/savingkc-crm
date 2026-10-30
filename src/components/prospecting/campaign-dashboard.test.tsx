@@ -136,7 +136,7 @@ describe('CampaignDashboard', () => {
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({
       startBehavior: 'resume',
       callerMode: 'static',
-      callerIds: ['+18166404701'],
+      callerIds: ['+18166088770'],
       ringCount: 7,
     }))
     expect(screen.queryByText('Calls worked')).not.toBeInTheDocument()
@@ -268,7 +268,15 @@ describe('CampaignDashboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Session setup/ }))
     expect(screen.getByRole('region', { name: 'Calling session setup' })).toBeVisible()
-    expect(screen.getByText('(816) 640-4701')).toBeVisible()
+    expect(screen.getByText('(816) 608-8770')).toBeVisible()
+    expect(screen.getByText('(816) 608-8552')).toBeVisible()
+    expect(screen.getByText('(816) 608-8559')).toBeVisible()
+    expect(screen.getByText('(816) 608-6999')).toBeVisible()
+    expect(screen.queryByText('(816) 608-6699')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 476-1344')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 640-4701')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 578-8107')).not.toBeInTheDocument()
+    expect(screen.queryByText('(816) 653-6616')).not.toBeInTheDocument()
     expect(screen.queryByText('(816) 310-0845')).not.toBeInTheDocument()
     expect(screen.queryByText('(816) 253-8313')).not.toBeInTheDocument()
     expect(screen.queryByText('(816) 476-1589')).not.toBeInTheDocument()
