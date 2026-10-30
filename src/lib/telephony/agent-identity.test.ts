@@ -25,13 +25,14 @@ describe('resolveAgentTelephonyProfile', () => {
     })
   })
 
-  it('keeps Gertha and unknown users on Main until a dedicated number is recorded', () => {
+  it('keeps Gertha and unknown users on Main and off the Admin/TC line', () => {
     expect(resolveAgentTelephonyProfile('gertha@savingkc.com')).toMatchObject({
       identity: 'gertha',
       displayName: 'Gertha',
       defaultCallerId: MAIN_SAVINGKC_CALLER_ID,
       hasDedicatedCallerId: false,
     })
+    expect(MAIN_SAVINGKC_CALLER_ID).not.toBe('+18166086699')
     expect(resolveAgentTelephonyProfile('new.user@savingkc.com').defaultCallerId).toBe(MAIN_SAVINGKC_CALLER_ID)
   })
 })

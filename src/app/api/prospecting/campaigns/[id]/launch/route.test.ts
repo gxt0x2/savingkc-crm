@@ -49,7 +49,7 @@ describe('prospecting campaign launch route', () => {
       expect.objectContaining({
         startBehavior: 'resume',
         callerMode: 'static',
-        callerIds: ['+18166404701'],
+        callerIds: ['+18166088770'],
         ringCount: 7,
       }),
       {

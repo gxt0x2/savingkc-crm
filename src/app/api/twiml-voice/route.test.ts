@@ -615,13 +615,26 @@ describe('verified inbound TwiML routing', () => {
   })
 
   it('keeps cold-callback IVR off the Voice client and the mobile outbound timeout', async () => {
-    const { text } = await responseText(inboundRequest('+18166404701'))
+    const { text } = await responseText(inboundRequest('+18166088770'))
 
     expect(text).toContain('coldcall=1')
     expect(text).toContain('<Gather')
     expect(text).not.toContain('<Client')
     expect(text).not.toContain('twilio-inbound-client-status')
     expect(text).not.toContain('timeout="45"')
+  })
+
+  it('puts the four prospecting DIDs on Press-1 and leaves Gertha on the seller IVR', async () => {
+    for (const number of ['+18166088770', '+18166088552', '+18166088559', '+18166086999']) {
+      const { text } = await responseText(inboundRequest(number))
+      expect(text, number).toContain('coldcall=1')
+      expect(text, number).toContain('/api/ivr/cold-no-input')
+      expect(text, number).not.toMatch(/\/api\/ivr\/no-input\?/)
+    }
+    const { text } = await responseText(inboundRequest('+18166086699'))
+    expect(text).toContain('/api/audio/ivr-greeting.mp3')
+    expect(text).toContain('/api/ivr/no-input?')
+    expect(text).not.toContain('coldcall=1')
   })
 
   it('rings client:ernest for the business line with the real caller and no personal cell', async () => {

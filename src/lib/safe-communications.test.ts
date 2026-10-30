@@ -58,7 +58,7 @@ describe('safeSendSMS', () => {
 
     const result = await safeSendSMS({
       to: '+18155550199',
-      from: '+18164761344',
+      from: '+18166088770',
       body: 'Hey! We recently tried reaching you about a property in your area.',
       senderUse: 'reply',
     })
