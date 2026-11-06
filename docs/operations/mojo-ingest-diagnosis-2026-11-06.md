@@ -43,4 +43,4 @@ These are data-hygiene items. Recovery can't clear them, so it exhausts forever 
 
 - The 11 evidence-pending records: re-request recordings, or mark them reviewed-unavailable through the reviewed correction path. Do not advance cursors manually.
 - The 3 dead-lead work items and the 1 lifecycle conflict: close or correct in the CRM.
-- Incident alert SMS shows `failed` — likely the #763 automated-SMS shutdown. Decide whether Mojo incidents should alert by push instead.
+- Incident alert SMS shows `failed`; the cause wasn't traced in this pass. Worth checking alongside #763 (automated SMS disabled), and deciding whether Mojo incidents should alert by push.
