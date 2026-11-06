@@ -48,10 +48,14 @@ import { useSessionQueueRestoreLoading } from './use-session-queue-restore'
 import { useDialerRingback } from './use-dialer-ringback'
 import { bindCallRingback } from '@/lib/telephony/call-ringback'
 import {
+  classifyOutboundDialResult,
+  createOutboundEndLatch,
   createParentSidPublisher,
   finishOwnedOutboundCall,
+  hangupMustRequireDisposition,
   postDialerCallLog,
   retirePreviousOutboundCall,
+  twilioCallIsClosed,
 } from '@/lib/telephony/sequential-outbound-call'
 import {
   DIALER_KEYPAD,
@@ -676,6 +680,8 @@ export function SoftphoneCore({
       const callStartedAt = Date.now()
       callStartRef.current = callStartedAt
       let callWasAccepted = false
+      let callRang = false
+      const endOnce = createOutboundEndLatch()
       bindCallRingback(call, { play: playLocalRingback, stop: stopLocalRingback, log })
       const finishThisCall = () => (publishParentSid(call.parameters), finishOwnedOutboundCall({
         call, attemptId: attemptIdForThisCall, activeAttemptId: activeAttemptIdRef.current, callRef,
@@ -683,6 +689,7 @@ export function SoftphoneCore({
       }))
       call.on('ringing', () => {
         publishParentSid(call.parameters)
+        callRang = true
         log('ringing...')
         setStatusLogged('calling')
       })
@@ -713,6 +720,10 @@ export function SoftphoneCore({
         publishParentSid(call.parameters)
         stopLocalRingback()
         setError(formatTwilioCallError(callError))
+        // A fatal error can close the call without a disconnect event. Finish
+        // it here so the outcome UI still opens; the latch keeps a later
+        // disconnect from double-logging.
+        if (twilioCallIsClosed(call)) endThisCall('error')
       })
 
       const heirMeta = activeQueueItemRef.current
@@ -731,11 +742,13 @@ export function SoftphoneCore({
         clientAttemptId: attemptIdForThisCall, ...heirMeta,
       }
       postDialerCallLog({ ...callLogBase, event: 'started' })
-      call.on('disconnect', () => {
+      const endThisCall = (endReason: 'disconnect' | 'error') => {
         stopLocalRingback()
         if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
+        if (!endOnce()) return
         if (!finishThisCall()) return
         const duration = Math.round((Date.now() - callStartedAt) / 1000)
+        const dialResult = classifyOutboundDialResult({ accepted: callWasAccepted, rang: callRang })
         // The SDK accept event means the browser leg opened, not that the
         // seller answered. Treat this as an attempt until the user disposition
         // or Twilio status callbacks provide a firmer outcome.
@@ -746,6 +759,7 @@ export function SoftphoneCore({
         setLastCallDuration(formatDuration(duration))
         postDialerCallLog({
           ...callLogBase, event: 'ended', duration, status: finalStatus, outcome: finalOutcome, disposition: finalDisposition,
+          dial_result: dialResult, end_reason: endReason,
         })
         if (activeSessionIdRef.current) {
           void transitionDurableDialerAttempt({
@@ -758,10 +772,12 @@ export function SoftphoneCore({
         // Always prompt for disposition after a call ends — the modal
         // handles the no-lead case (manual dial) gracefully.
         requireDisposition()
-      })
+      }
+      call.on('disconnect', () => endThisCall('disconnect'))
       call.on('cancel', () => {
         stopLocalRingback()
         if (dialerControlChanged(pendingSessionId, controlLossRevisionAtStart)) return
+        if (!endOnce()) return
         if (!finishThisCall()) return
         if (activeSessionIdRef.current) {
           void transitionDurableDialerAttempt({
@@ -842,10 +858,15 @@ export function SoftphoneCore({
   }, [open, status, viewTab])
 
   function hangup() {
-    callRef.current?.disconnect()
+    const call = callRef.current
+    const callAlreadyDead = hangupMustRequireDisposition({ call, activeAttemptId: activeAttemptIdRef.current })
+    call?.disconnect()
     callRef.current = null
     setStatusLogged('ready')
     setMuted(false)
+    // A call Twilio already dropped emits no disconnect event, so Hang Up must
+    // open the outcome UI itself while the attempt is still unsaved.
+    if (callAlreadyDead) requireDisposition()
   }
 
   async function finishRecoveredAttempt() {
