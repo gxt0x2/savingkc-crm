@@ -39,6 +39,28 @@ export type Ga4LandingRow = {
   synced_at?: string | null
 }
 
+/** ga4_event_daily row (analytics-sync source ga4_events). */
+export type Ga4EventRow = {
+  date: string
+  event_name: string | null
+  session_source_medium: string | null
+  event_count: number | null
+  key_events: number | null
+}
+
+/** Funnel steps shown on the board, in order. */
+export const GA4_FUNNEL_EVENTS = [
+  'page_view', 'cta_click', 'quiz_started', 'form_started', 'form_step_completed',
+  'contact_started', 'phone_click', 'lead_submitted', 'generate_lead', 'appointment_booked',
+] as const
+
+export type Ga4FunnelRow = {
+  event: string
+  total: number
+  keyEvents: number
+  bySource: Record<SourceKey, number>
+}
+
 export type GscQueryRow = {
   date: string
   page: string | null
@@ -173,6 +195,10 @@ export type WebsiteConversionReport = {
   rates: {
     sessionToForm: number | null
     engagedToForm: number | null
+  }
+  ga4Events: {
+    status: MetricStatus
+    rows: Ga4FunnelRow[]
   }
   callIntent: {
     telClicks: number | null
@@ -470,6 +496,8 @@ export function buildWebsiteConversionReport(input: {
   syncRuns?: AnalyticsSyncRun[]
   ga4Latest?: { date: string | null; syncedAt: string | null }
   gscLatest?: { date: string | null; syncedAt: string | null }
+  /** null = table not migrated / unreadable; undefined = not requested. */
+  ga4EventRows?: Ga4EventRow[] | null
 }): WebsiteConversionReport {
   const now = input.now ?? new Date()
   const anchorDate = lastCompleteAnalyticsDay(now)
@@ -594,6 +622,25 @@ export function buildWebsiteConversionReport(input: {
     : []
   const phoneLeads = leadsStatus === 'ready' ? googleAdsPhone + googleAdsTaxPhone : null
 
+  const ga4EventsStatus: MetricStatus = input.ga4EventRows ? 'ready' : 'missing'
+  const funnelByEvent = new Map<string, Ga4FunnelRow>()
+  for (const name of GA4_FUNNEL_EVENTS) {
+    funnelByEvent.set(name, {
+      event: name,
+      total: 0,
+      keyEvents: 0,
+      bySource: Object.fromEntries(SOURCE_KEYS.map((key) => [key, 0])) as Record<SourceKey, number>,
+    })
+  }
+  for (const row of input.ga4EventRows ?? []) {
+    const entry = funnelByEvent.get(row.event_name ?? '')
+    if (!entry || row.date < window.start || row.date > window.end) continue
+    const count = finite(row.event_count)
+    entry.total += count
+    entry.keyEvents += finite(row.key_events)
+    entry.bySource[bucketSessionSource(row.session_source_medium)] += count
+  }
+
   return {
     generatedAt: now.toISOString(),
     range: input.range,
@@ -644,6 +691,10 @@ export function buildWebsiteConversionReport(input: {
     rates: {
       sessionToForm: sessionTotal == null || websiteForm == null ? null : rate(websiteForm, sessionTotal),
       engagedToForm: engagedTotal == null || websiteForm == null ? null : rate(websiteForm, engagedTotal),
+    },
+    ga4Events: {
+      status: ga4EventsStatus,
+      rows: ga4EventsStatus === 'ready' ? [...funnelByEvent.values()] : [],
     },
     callIntent: {
       telClicks: funnelStatus === 'ready' ? telClicks : null,
