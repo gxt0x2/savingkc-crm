@@ -78,6 +78,20 @@ function htmlToText(html: string): string {
     .trim()
 }
 
+/**
+ * Clay County collector API returns balance_amount as a number on some parcels
+ * and as a string ("1234.56", "1,234.56", "$1,234.56") on others. Parse both;
+ * anything unparseable or non-finite is treated as 0.
+ */
+export function parseCollectorBalance(raw: unknown): number {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0
+  if (typeof raw !== 'string') return 0
+  const cleaned = raw.replace(/[$,\s]/g, '')
+  if (cleaned === '' || !/^-?\d*\.?\d+$/.test(cleaned)) return 0
+  const n = Number(cleaned)
+  return Number.isFinite(n) ? n : 0
+}
+
 export class CountyEnrichmentService {
   private browser: Browser | null = null
   private readonly timeout = 30000
@@ -1177,7 +1191,10 @@ export class CountyEnrichmentService {
       if (result.status !== 'fulfilled') continue
       const { year, json } = result.value
       if (!json.success || json.data?.no_charges_due) continue
-      const balance = typeof json.data?.balance_amount === 'number' ? json.data.balance_amount : 0
+      const balance = parseCollectorBalance(json.data?.balance_amount)
+      if (balance === 0 && typeof json.data?.balance_amount === 'string' && !/^[$\s0.,]*$/.test(json.data.balance_amount)) {
+        console.warn(`[clay-collector] Unparseable balance_amount for parcel ${parcelNumber} year ${year}:`, json.data.balance_amount)
+      }
       if (balance > 0) {
         totalOwed += balance
         delinquentYearsList.push(year)
