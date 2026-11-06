@@ -140,6 +140,60 @@ type TrackingEventClient = {
   from: (table: string) => TrackingEventTable
 }
 
+/** Traffic sources the paid dashboards (Ads Command, PPC report, clicks) read. */
+export const PAID_TRAFFIC_SOURCES = ['google_ads', 'openai_ads', 'google'] as const
+
+/** Sources the sitewide journey (savingkc.com/skc-journey.js) sends. */
+export const SITE_TRAFFIC_SOURCES = [
+  'google_ads', 'openai_ads', 'paid_other', 'ai_referral', 'organic_search', 'social', 'email', 'referral', 'direct',
+] as const
+const PAID_MEDIUMS = new Set(['cpc', 'ppc', 'paid', 'paidsearch', 'paid_search', 'sem'])
+const AI_REFERRER = /(^|\.)(chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|bard\.google\.com|copilot\.microsoft\.com)$/
+const SEARCH_REFERRER = /(^|\.)(google|bing|yahoo|duckduckgo|ecosia|search\.brave)\.[a-z.]+$/
+const SOCIAL_REFERRER = /(^|\.)(facebook|instagram|youtube|tiktok|linkedin|x|twitter|nextdoor|reddit)\.com$|(^|\.)t\.co$/
+
+function hostOf(url: string | null): string {
+  if (!url) return ''
+  try { return new URL(url).hostname.toLowerCase() } catch { return '' }
+}
+
+/**
+ * Traffic source for a tracking row. Explicit paid sources and the site
+ * journey's own classification are kept. Everything else used to fall back to
+ * paidSourceSlug(), which only knows google_ads/openai_ads — so an organic or
+ * ChatGPT visitor would have been logged as Google Ads. Paid is now only
+ * claimed with paid evidence (click id, paid medium, /ppc* lander).
+ */
+export function classifyTrafficSource(input: {
+  trafficSource?: string | null
+  attribution: PpcTrackingAttribution
+  pagePath?: string | null
+  pageLocation?: string | null
+  pageReferrer?: string | null
+}): string {
+  const given = text(input.trafficSource)?.toLowerCase() ?? null
+  // Explicit labels win (middleware, lead/book routes, site journey); bare non_paid gets refined.
+  if (given && given !== 'non_paid') return given
+  const a = input.attribution
+  const medium = (text(a.utm_medium) ?? '').toLowerCase()
+  const source = (text(a.utm_source) ?? '').toLowerCase()
+  const path = text(input.pagePath) ?? ''
+  const paidLander = path === '/ppc' || path.startsWith('/ppc-') || path.startsWith('/ppc/') || path.startsWith('/ppc?')
+  if (text(a.oppref) || text(a.skc_openai_click_id)) return 'openai_ads'
+  if (text(a.gclid) || text(a.gbraid) || text(a.wbraid)) return 'google_ads'
+  if (PAID_MEDIUMS.has(medium)) return /openai|chatgpt/.test(source) ? 'openai_ads' : /google|adwords/.test(source) ? 'google_ads' : 'paid_other'
+  if (!given && paidLander) {
+    return paidSourceSlug({ ...a, page_location: input.pageLocation, page_referrer: input.pageReferrer, source_url: input.pageLocation })
+  }
+  const referrerHost = hostOf(text(input.pageReferrer) ?? text(a.referrer) ?? null)
+  if (AI_REFERRER.test(referrerHost) || /^(chatgpt|openai|perplexity|claude|gemini|copilot)/.test(source)) return 'ai_referral'
+  if (medium === 'email' || source === 'email') return 'email'
+  if (!referrerHost || referrerHost.endsWith('savingkc.com')) return given === 'non_paid' ? 'direct' : source ? 'referral' : 'direct'
+  if (SEARCH_REFERRER.test(referrerHost)) return 'organic_search'
+  if (SOCIAL_REFERRER.test(referrerHost)) return 'social'
+  return 'referral'
+}
+
 function iso(value: string | Date | undefined): string {
   if (value instanceof Date) return value.toISOString()
   if (typeof value === 'string' && value.trim()) return value
@@ -181,11 +235,12 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
   const skcOpenAIClickId = text(attribution.skc_openai_click_id)
   const pageLocation = text(input.pageLocation) || text(attribution.landingUrl)
   const pageReferrer = text(input.pageReferrer) || text(attribution.referrer)
-  const trafficSource = text(input.trafficSource) || paidSourceSlug({
-    ...attribution,
-    page_location: pageLocation,
-    page_referrer: pageReferrer,
-    source_url: pageLocation,
+  const trafficSource = classifyTrafficSource({
+    trafficSource: input.trafficSource,
+    attribution,
+    pagePath: input.pagePath,
+    pageLocation,
+    pageReferrer,
   })
   const payload = cleanJsonRecord({
     ...(input.payload ?? {}),

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { PAID_TRAFFIC_SOURCES } from '@/lib/ppc/tracking-events'
 import { getCurrentUserEmail } from '@/lib/auth/admin'
 import {
   buildLandingPageHeatmapReport,
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
         .from('ppc_tracking_events')
         .select('id,event_id,event_name,event_category,event_time,session_id,visitor_id,lead_id,page_path,page_location,campaign,form_step,payload')
         .eq('is_test', false)
+        .in('traffic_source', [...PAID_TRAFFIC_SOURCES])
         .gte('event_time', since.toISOString())
         .lte('event_time', until.toISOString())
         .order('event_time', { ascending: false })

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { PAID_TRAFFIC_SOURCES } from '@/lib/ppc/tracking-events'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -229,6 +230,7 @@ export async function GET(req: Request) {
     .gte('event_time', startIso)
     .lt('event_time', endIso)
     .eq('is_test', false)
+    .in('traffic_source', [...PAID_TRAFFIC_SOURCES])
     .order('event_time', { ascending: true })
     .limit(2000)
 
