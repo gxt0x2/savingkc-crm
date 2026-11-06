@@ -103,4 +103,17 @@ describe('SMS consent persistence and audit', () => {
     expect(mocks.handleOptIn).toHaveBeenCalledWith(input.from)
     expect(mocks.from).not.toHaveBeenCalled()
   })
+  it('does not send a second confirmation when the number is already opted out', async () => {
+    mocks.isOptedOut.mockResolvedValue(true)
+    const twiml = await processInboundSmsConsent(input)
+    expect(twiml).not.toContain('<Message>')
+    expect(twiml).toContain('<Response></Response>')
+    // Consent is still re-persisted and audited.
+    expect(mocks.handleOptOut).toHaveBeenCalledWith(input.from, 'STOP')
+  })
+
+  it('still confirms a STOP when prior opt-out status cannot be read', async () => {
+    mocks.isOptedOut.mockRejectedValue(new Error('db down'))
+    await expect(processInboundSmsConsent(input)).resolves.toContain('unsubscribed')
+  })
 })

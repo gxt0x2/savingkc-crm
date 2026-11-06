@@ -694,4 +694,26 @@ describe('twilio SMS webhook seller responses', () => {
       expect(row.payload).toMatchObject({ metadata: { is_team: true } })
     }
   })
+  it('logs the 2026-11-04 Missouri REALTORS survey blast as not_a_lead without a lead, alert, or reply', async () => {
+    reviewUnknown = true
+    const blast = 'Missouri REALTORS: Your opinion matters! Share your views and help us to better represent you by taking a short survey and enter to win 1 of 5 $100 Visa gift cards. Responses are confidential: https://www.opinion-counts.com/jfe/form/SV_3e1sDtfYApdGRXE \r\nText STOP to quit'
+    const response = await POST(makeSmsRequest(blast, '+16176908812'))
+
+    await expect(response.text()).resolves.toBe(EMPTY_TWIML)
+    expect(inserts.filter((row) => row.table === 'leads')).toHaveLength(0)
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(inserts.some((row) => (row.payload as { metadata?: { trigger?: string } }).metadata?.trigger === 'unknown_sms_alert')).toBe(false)
+    expect(inserts.filter((row) => row.table === 'sms_opt_outs')).toHaveLength(0)
+    expect(mocks.handleOptOut).not.toHaveBeenCalled()
+    expect(existingSmsRow?.metadata).toMatchObject({ not_a_lead: true, junk_reason: 'bulk_survey', inbound_processing_state: 'completed' })
+  })
+
+  it('still creates a lead for a real unknown seller text without a bulk footer', async () => {
+    reviewUnknown = true
+    const response = await POST(makeSmsRequest('Hi got your letter about my house, what would you offer?', '+16176908812'))
+
+    expect(response.status).toBe(200)
+    expect(inserts.filter((row) => row.table === 'leads')).toHaveLength(1)
+    expect(inserts.some((row) => (row.payload as { metadata?: { trigger?: string } }).metadata?.trigger === 'unknown_sms_alert')).toBe(true)
+  })
 })

@@ -12,6 +12,7 @@ import { normalizeDisposition } from '@/lib/dialer-dispositions'
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { readPhoneEnv } from '@/lib/phone-config'
+import { isMissingColumnError } from '@/lib/schema-compat'
 import { supabase } from '@/lib/supabase-lazy'
 import { stableWebhookActivityId } from '@/lib/telephony/webhook-idempotency'
 import { isDialerCallerIdNumber, TWILIO_NUMBERS } from '@/lib/twilio-numbers'
@@ -73,6 +74,7 @@ type ProspectPhoneRow = {
 
 type ActivityRow = { lead_id: string | null; activity_type: string; metadata: unknown; created_at: string }
 type SuppressionRow = { phone: string | null; reason: string | null }
+type VoiceHoldRow = { id: string; phone: string | null; voice_hold_reason?: string | null }
 type ResolvedActivityPolicyFact = DialerActivityPolicyFact & { leadId: string | null }
 
 const VALID_SOURCES = new Set<OutboundDialerCallSource>([
@@ -290,7 +292,7 @@ async function evaluateOutboundDialerCallUnchecked(
         .maybeSingle()
       : Promise.resolve({ data: null, error: null })
 
-    const [exactLeadResult, exactProspectPhoneResult, matchedLeads, matchedProspectPhones, suppressions] = await Promise.all([
+    const [exactLeadResult, exactProspectPhoneResult, matchedLeads, matchedProspectPhones, suppressions, voiceHolds] = await Promise.all([
       exactLeadPromise,
       exactProspectPhonePromise,
       matchingRows<LeadRow>(db, 'leads', 'id, phone, station, classification, dead_reason', variants),
@@ -307,6 +309,20 @@ async function evaluateOutboundDialerCallUnchecked(
         return input.surface === 'crm'
           ? rows.filter((row) => isInternalVoiceDncReason(row.reason))
           : rows
+      })(),
+      // Per-phone voice hold set by an agent. Independent of SMS opt-outs:
+      // a hold blocks voice only and never writes or reads SMS STOP state.
+      (async () => {
+        const { data, error } = await db
+          .from('prospect_phones')
+          .select('id, phone, voice_hold_reason')
+          .in('phone', variants)
+          .eq('voice_hold', true)
+          .limit(50)
+        // Column not migrated yet → no holds exist. Any other error fails closed.
+        if (error && isMissingColumnError(error)) return [] as VoiceHoldRow[]
+        if (error) throw new Error('dialer policy voice hold lookup failed')
+        return (data ?? []) as unknown as VoiceHoldRow[]
       })(),
     ])
 
@@ -361,6 +377,17 @@ async function evaluateOutboundDialerCallUnchecked(
           reasonSource: 'lead_context',
         })
       }
+    }
+
+    const heldPhone = voiceHolds.find((row) => normalizePhoneToE164(row.phone) === normalizedPhone)
+    if (heldPhone) {
+      return decision(dialerCallBlock('voice_hold', normalizedPhone), {
+        checkedAt,
+        leadId: input.leadId,
+        prospectId: input.prospectId ?? exactProspectPhone?.prospect_id ?? null,
+        prospectPhoneId: input.prospectPhoneId ?? heldPhone.id,
+        reasonSource: 'prospect_phones.voice_hold',
+      })
     }
 
     let leads = uniqueById([

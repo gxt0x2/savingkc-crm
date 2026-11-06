@@ -207,6 +207,25 @@ export function HeirsSection({
     }
   }, [dialerSessionId, leadId, load, setError])
 
+  // Per-phone voice hold. Blocks outbound voice only; never touches SMS opt-out.
+  const toggleVoiceHold = useCallback(async (phone: HeirPhone, nextHold: boolean) => {
+    const prospectPhoneId = sourceProspectPhoneId(phone)
+    if (!prospectPhoneId) return
+    try {
+      const res = await fetch('/api/heirs/voice-hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prospect_phone_id: prospectPhoneId, hold: nextHold, lead_id: leadId, prospect_id: phone.prospect_id }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error || 'Could not update voice hold')
+      await load()
+      if (data?.warning) setError(data.warning)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update voice hold')
+    }
+  }, [leadId, load, setError])
+
   const mapHeirPhones = useCallback((h: Heir, phones: HeirPhone[]): HeirDialerQueueItem[] => {
     return phones.map((p) => ({
       prospect_phone_id: sourceProspectPhoneId(p),
@@ -400,6 +419,7 @@ export function HeirsSection({
               onCallPhone={(phone) => queueOne(heir, phone)}
               onCallHeir={() => queueHeir(heir)}
               onToggleVerify={toggleVerify}
+              onToggleVoiceHold={toggleVoiceHold}
               onSaveNote={(description) => saveContactNote(heir, description)}
               readOnlyPreview={readOnlyPreview}
               onSmsPhone={onSmsPhone ? (phone) => onSmsPhone({
@@ -442,6 +462,7 @@ function HeirRow({
   onCallPhone,
   onCallHeir,
   onToggleVerify,
+  onToggleVoiceHold,
   onSaveNote,
   onSmsPhone,
   readOnlyPreview,
@@ -453,6 +474,7 @@ function HeirRow({
   onCallPhone: (phone: HeirPhone) => void
   onCallHeir: () => void
   onToggleVerify: (phone: HeirPhone, nextVerified: boolean) => void
+  onToggleVoiceHold?: (phone: HeirPhone, nextHold: boolean) => void
   onSaveNote: (description: string) => Promise<void>
   onSmsPhone?: (phone: HeirPhone) => void
   readOnlyPreview: boolean
@@ -579,6 +601,7 @@ function HeirRow({
             verified={isVerifiedPhone(phone)}
             onCall={() => onCallPhone(phone)}
             onToggleVerify={(next) => onToggleVerify(phone, next)}
+            onToggleVoiceHold={onToggleVoiceHold ? (next) => onToggleVoiceHold(phone, next) : undefined}
             onSms={onSmsPhone ? () => onSmsPhone(phone) : undefined}
             readOnlyPreview={readOnlyPreview}
           />
@@ -595,6 +618,7 @@ function PhonePill({
   verified,
   onCall,
   onToggleVerify,
+  onToggleVoiceHold,
   onSms,
   readOnlyPreview,
 }: {
@@ -602,6 +626,7 @@ function PhonePill({
   verified: boolean
   onCall: () => void
   onToggleVerify: (nextVerified: boolean) => void
+  onToggleVoiceHold?: (nextHold: boolean) => void
   onSms?: () => void
   readOnlyPreview: boolean
 }) {
@@ -674,6 +699,21 @@ function PhonePill({
         <Icon name={verified ? 'verified' : 'verified_user'} size="text-sm" filled={verified} />
       </button> : null}
 
+      {onToggleVoiceHold && sourceProspectPhoneId(phone) ? <button
+        onClick={() => onToggleVoiceHold(!phone.voice_hold)}
+        disabled={readOnlyPreview}
+        className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors border ${
+          phone.voice_hold
+            ? 'bg-[#C8242D]/15 border-[#C8242D]/40 text-[#E04A52] hover:bg-[#C8242D]/25'
+            : 'bg-[var(--ck-surface-elev)] border-[var(--ck-border)] text-[var(--ck-text-muted)] hover:text-[var(--ck-text)]'
+        } disabled:cursor-not-allowed disabled:opacity-50`}
+        title={phone.voice_hold ? `Voice hold on${phone.voice_hold_reason ? ` (${phone.voice_hold_reason})` : ''} — click to clear. SMS is not affected.` : 'Put this number on voice hold (blocks calls, not texts)'}
+        aria-label={phone.voice_hold ? 'Clear voice hold' : 'Set voice hold'}
+        aria-pressed={Boolean(phone.voice_hold)}
+      >
+        <Icon name="phone_paused" size="text-sm" filled={Boolean(phone.voice_hold)} />
+      </button> : null}
+
       {(onSms || (readOnlyPreview && sourceProspectPhoneId(phone))) && (
         <button
           onClick={onSms}
@@ -700,6 +740,8 @@ function PhonePill({
         title={
           readOnlyPreview
             ? 'Calling is disabled in this read-only preview'
+            : phone.voice_hold
+            ? 'Calling paused: voice hold is on'
             : !callable
             ? 'Calling blocked by saved disposition'
             : verified
