@@ -1,7 +1,7 @@
-// County Property Enrichment Service
-// Queries county assessor systems for property data
+// County Property Enrichment Service: queries county assessor systems for property data
 
 import type { Browser } from 'playwright'
+import { collectorBalanceOrWarn } from './county-collector-balance'
 import { supabase as supabaseCache } from '@/lib/supabase-lazy'
 import type {
   CountyApiRecord,
@@ -1177,7 +1177,7 @@ export class CountyEnrichmentService {
       if (result.status !== 'fulfilled') continue
       const { year, json } = result.value
       if (!json.success || json.data?.no_charges_due) continue
-      const balance = typeof json.data?.balance_amount === 'number' ? json.data.balance_amount : 0
+      const balance = collectorBalanceOrWarn(json.data?.balance_amount, parcelNumber, year)
       if (balance > 0) {
         totalOwed += balance
         delinquentYearsList.push(year)
