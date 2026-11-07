@@ -6,8 +6,9 @@ import { SprintBurndownChart } from '@/components/feedback/sprint-burndown-chart
 
 interface SystemHealthStats {
   feature_completion: { current: number; total: number; percentage: number }
-  open_bugs: number
+  open_bugs: number | null
   error_rate_trend: { date: string; count: number }[]
+  health_errors?: string[]
   workers: {
     name: string
     status: 'healthy' | 'degraded' | 'down' | 'unknown'
@@ -25,22 +26,21 @@ export function HealthDashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    async function fetchStats() {
+      try {
+        const res = await fetch('/api/system-health/stats')
+        const data = await res.json()
+        if (res.ok) {
+          setStats(data)
+        }
+      } catch (err) {
+        console.error('Failed to fetch system health stats:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
     fetchStats()
   }, [])
-
-  async function fetchStats() {
-    try {
-      const res = await fetch('/api/system-health/stats')
-      if (res.ok) {
-        const data = await res.json()
-        setStats(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch system health stats:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   if (loading) {
     return (
@@ -64,6 +64,22 @@ export function HealthDashboard() {
 
   return (
     <div className="space-y-6">
+      {stats.health_errors && stats.health_errors.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-5 shadow-sm">
+          <h3 className="text-sm font-black uppercase tracking-widest text-amber-300 mb-3 flex items-center gap-2">
+            <Icon name="warning" size="text-base" />
+            Health Configuration Gaps
+          </h3>
+          <div className="space-y-2">
+            {stats.health_errors.map((err) => (
+              <p key={err} className="text-xs font-semibold text-amber-100/90">
+                {err}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Sprint Burndown Chart - FBK-07 */}
       <SprintBurndownChart />
 
@@ -109,7 +125,7 @@ export function HealthDashboard() {
           <h3 className="text-sm font-black uppercase tracking-widest text-primary mb-5">Open Bugs</h3>
           <div className="flex items-center justify-center h-40">
             <div className="text-center">
-              <div className="text-6xl font-black text-red-600 mb-2">{stats.open_bugs}</div>
+              <div className="text-6xl font-black text-red-600 mb-2">{stats.open_bugs ?? '—'}</div>
               <div className="text-xs text-on-surface-variant uppercase tracking-wider">Active Issues</div>
               <div className="mt-4 px-4 py-2 bg-red-50 text-red-600 text-xs font-semibold rounded-lg inline-block">
                 Target: 0

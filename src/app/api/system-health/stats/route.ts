@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase-lazy'
  */
 export async function GET() {
   try {
+    const health_errors: string[] = []
+
     // Feature completion (hardcoded for now - could be dynamic from a config table)
     const feature_completion = {
       current: 110,
@@ -15,20 +17,28 @@ export async function GET() {
     }
 
     // Open bugs count
-    const { data: bugs } = await supabase
+    const { data: bugs, error: bugsError } = await supabase
       .from('feedback_submissions')
       .select('id')
       .eq('type', 'bug')
       .in('status', ['open', 'acknowledged', 'in_progress'])
 
-    const open_bugs = bugs?.length || 0
+    if (bugsError) {
+      health_errors.push(`feedback_submissions health query failed: ${bugsError.message}`)
+    }
+
+    const open_bugs = bugsError ? null : bugs?.length || 0
 
     // Error rate trend (last 14 days)
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
-    const { data: errors } = await supabase
+    const { data: errors, error: errorsError } = await supabase
       .from('error_log')
       .select('created_at')
       .gte('created_at', fourteenDaysAgo.toISOString())
+
+    if (errorsError) {
+      health_errors.push(`error_log health query failed: ${errorsError.message}`)
+    }
 
     // Group errors by date
     const errorsByDate: Record<string, number> = {}
@@ -52,14 +62,19 @@ export async function GET() {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
     // System workers status
-    const { data: workers } = await supabase
+    const { data: workers, error: workersError } = await supabase
       .from('system_workers')
       .select('name, status, last_run, failure_count_24h')
+
+    if (workersError) {
+      health_errors.push(`system_workers health query failed: ${workersError.message}`)
+    }
 
     return NextResponse.json({
       feature_completion,
       open_bugs,
       error_rate_trend,
+      health_errors,
       workers: (workers || []).map((w) => ({
         name: w.name,
         status: w.status,
@@ -67,8 +82,9 @@ export async function GET() {
         failure_count: w.failure_count_24h,
       })),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
     console.error('System health stats error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
