@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PAID_TRAFFIC_SOURCES } from '@/lib/ppc/tracking-events'
 import { getCurrentUserEmail } from '@/lib/auth/admin'
-import {
-  isGoogleAdsApprovalRequiredPpcEvent,
-  isGoogleAdsExportablePpcEvent,
-  nonExportablePpcEventReason,
-} from '@/lib/ppc/exportable-events'
+import { isGoogleAdsApprovalRequiredPpcEvent, isGoogleAdsExportablePpcEvent, nonExportablePpcEventReason } from '@/lib/ppc/exportable-events'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import {
   CAMPAIGNS,
