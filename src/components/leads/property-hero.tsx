@@ -72,7 +72,8 @@ export function PropertyHero({
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
+    const frame = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(frame)
   }, [])
 
   function openStreetView() {
@@ -135,7 +136,7 @@ export function PropertyHero({
           <img
             src={streetViewUrl}
             alt={`Street view of ${fullAddress || property.address}`}
-            className="block w-full h-[220px] sm:h-[260px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+            className="block w-full h-[136px] sm:h-[168px] object-cover transition-transform duration-500 group-hover:scale-[1.02]"
             loading="lazy"
           />
           {/* subtle vignette */}
@@ -158,10 +159,10 @@ export function PropertyHero({
         </button>
 
         {/* Address + estimate row */}
-        <div className="px-5 pt-4 pb-5 flex items-start justify-between gap-4">
+        <div className="px-5 py-4 flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <p className="ck-microlabel mb-1.5">Primary Asset</p>
-            <p className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight break-words">
+            <p className="text-lg sm:text-xl font-black text-white leading-tight tracking-tight break-words">
               {property.address}
             </p>
             <p className="text-xs text-[color:var(--ck-text-muted)] mt-1">
@@ -207,7 +208,7 @@ export function PropertyHero({
             </p>
             {assessedValue ? (
               <span
-                className="block text-xl sm:text-2xl font-black tracking-tight leading-none"
+                className="block text-lg sm:text-xl font-black tracking-tight leading-none"
                 style={{ color: 'var(--ck-text)' }}
                 title={`$${assessedValue.toLocaleString()}`}
               >
@@ -215,7 +216,7 @@ export function PropertyHero({
               </span>
             ) : (
               <span
-                className="block text-xl sm:text-2xl font-black tracking-tight leading-none"
+                className="block text-lg sm:text-xl font-black tracking-tight leading-none"
                 style={{ color: 'var(--ck-text-dim)' }}
               >
                 —
@@ -231,7 +232,7 @@ export function PropertyHero({
                   Taxes Owed
                 </p>
                 <span
-                  className="block text-xl sm:text-2xl font-black tracking-tight leading-none"
+                  className="block text-lg sm:text-xl font-black tracking-tight leading-none"
                   style={{ color: 'var(--ck-text)' }}
                   title={`$${taxOwed.toLocaleString()}`}
                 >
