@@ -48,14 +48,8 @@ import { useSessionQueueRestoreLoading } from './use-session-queue-restore'
 import { useDialerRingback } from './use-dialer-ringback'
 import { bindCallRingback } from '@/lib/telephony/call-ringback'
 import {
-  classifyOutboundDialResult,
-  createOutboundEndLatch,
-  createParentSidPublisher,
-  finishOwnedOutboundCall,
-  hangupMustRequireDisposition,
-  postDialerCallLog,
-  retirePreviousOutboundCall,
-  twilioCallIsClosed,
+  classifyOutboundDialResult, createOutboundEndLatch, createParentSidPublisher, finishOwnedOutboundCall,
+  hangupMustRequireDisposition, postDialerCallLog, retirePreviousOutboundCall, twilioCallIsClosed,
 } from '@/lib/telephony/sequential-outbound-call'
 import {
   DIALER_KEYPAD,
@@ -720,9 +714,7 @@ export function SoftphoneCore({
         publishParentSid(call.parameters)
         stopLocalRingback()
         setError(formatTwilioCallError(callError))
-        // A fatal error can close the call without a disconnect event. Finish
-        // it here so the outcome UI still opens; the latch keeps a later
-        // disconnect from double-logging.
+        // A fatal error can close the call with no disconnect event; finish it so the outcome UI opens (latched).
         if (twilioCallIsClosed(call)) endThisCall('error')
       })
 
