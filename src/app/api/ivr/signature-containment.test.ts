@@ -102,6 +102,7 @@ vi.mock('@/lib/format', () => ({
 import { POST as afterRecordPost } from './after-record/route'
 import { POST as coldNoInputPost } from './cold-no-input/route'
 import { POST as dialFallbackPost } from './dial-fallback/route'
+import { POST as businessMenuPost } from './business-menu/route'
 import { POST as googleAdsPost } from './google-ads/route'
 import { POST as handleInputPost } from './handle-input/route'
 import { POST as noInputPost } from './no-input/route'
@@ -124,6 +125,7 @@ const newlyContainedHandlers = [
   { name: 'dial-fallback', path: '/api/ivr/dial-fallback?from=%2B19135550123', post: dialFallbackPost },
   { name: 'voicemail', path: '/api/ivr/voicemail?from=%2B19135550123', post: voicemailPost },
   { name: 'whisper', path: '/api/ivr/whisper?from=%2B19135550123', post: whisperPost },
+  { name: 'business-menu', path: '/api/ivr/business-menu?from=%2B19135550123', post: businessMenuPost },
 ]
 
 function expectNoDownstreamWork() {
