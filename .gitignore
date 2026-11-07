@@ -55,3 +55,7 @@ supabase/.temp/
 
 # Runtime logs: never repo content (gitleaks already treats logs/ as non-code)
 logs/
+
+# Git worktree pointers: tooling state, not repo content
+.claude/worktrees/
+.claude-worktrees/
