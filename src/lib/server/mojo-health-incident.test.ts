@@ -24,6 +24,7 @@ function database(exhausted = false, legacy = false) {
     type Query = {
       select: () => Query; order: () => Query; limit: () => Query
       eq: (k: string, v: unknown) => Query; is: (k: string, v: unknown) => Query
+      lt: (k: string, v: unknown) => Query
       update: (v: Record<string, unknown>) => Query; insert: (v: Record<string, unknown>) => Query
       maybeSingle: () => Query; single: () => Query
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise<unknown>
@@ -32,6 +33,8 @@ function database(exhausted = false, legacy = false) {
       select: () => q, order: () => q, limit: () => q,
       eq: (k: string, v: unknown) => { filters.push(r => r[k] === v); return q },
       is: (k: string, v: unknown) => { filters.push(r => (r[k] ?? null) === v); return q },
+      // SQL semantics: NULL never satisfies a less-than predicate.
+      lt: (k: string, v: unknown) => { filters.push(r => r[k] != null && String(r[k]) < String(v)); return q },
       update: (v: Record<string, unknown>) => { op = 'update'; patch = v; return q },
       insert: (v: Record<string, unknown>) => { op = 'insert'; patch = v; return q },
       maybeSingle: () => { single = true; return q },
@@ -104,5 +107,44 @@ describe('one recovery gate for every Mojo alert producer', () => {
     await recordMojoHealthIncident(db as never, input, now)
     expect(mocks.sendAlert).toHaveBeenCalledOnce()
     expect(db.tables.mojo_recovery_incidents[0].sms_status).toBe('unknown')
+  })
+  it('never resends an ambiguous delivery even after the retry backoff elapses', async () => {
+    const db = database(true)
+    mocks.sendAlert.mockRejectedValue(new Error('delivery status unknown'))
+    await expect(recordMojoHealthIncident(db as never, input, now)).rejects.toThrow('delivery status unknown')
+    await recordMojoHealthIncident(db as never, input, new Date('2026-09-11T17:00:00Z'))
+    expect(mocks.sendAlert).toHaveBeenCalledOnce()
+    expect(db.tables.mojo_recovery_incidents[0].sms_status).toBe('unknown')
+  })
+  it('resends a definitely failed escalation after the backoff and keeps one warning', async () => {
+    const db = database(true)
+    mocks.sendAlert.mockResolvedValue({ result: { success: false } })
+    expect(await recordMojoHealthIncident(db as never, input, now)).toEqual({ created: true, alerted: false })
+    expect(db.tables.mojo_recovery_incidents[0].sms_status).toBe('failed')
+    mocks.sendAlert.mockResolvedValue({ result: { success: true } })
+    expect(await recordMojoHealthIncident(db as never, input, new Date('2026-09-11T16:01:00Z')))
+      .toEqual({ created: true, alerted: true })
+    expect(mocks.sendAlert).toHaveBeenCalledTimes(2)
+    expect(db.tables.mojo_recovery_incidents[0].sms_status).toBe('sent')
+    expect(db.tables.ari_briefing_events).toHaveLength(1)
+  })
+  it('holds a failed escalation until the backoff elapses', async () => {
+    const db = database(true)
+    mocks.sendAlert.mockResolvedValue({ result: { success: false } })
+    await recordMojoHealthIncident(db as never, input, now)
+    await recordMojoHealthIncident(db as never, input, new Date('2026-09-11T15:30:00Z'))
+    expect(mocks.sendAlert).toHaveBeenCalledOnce()
+    expect(db.tables.mojo_recovery_incidents[0].sms_status).toBe('failed')
+  })
+  it('escalates a concurrent retry claim only once', async () => {
+    const db = database(true)
+    mocks.sendAlert.mockResolvedValue({ result: { success: false } })
+    await recordMojoHealthIncident(db as never, input, now)
+    const later = new Date('2026-09-11T16:01:00Z')
+    await Promise.all([
+      recordMojoHealthIncident(db as never, input, later),
+      recordMojoHealthIncident(db as never, { ...input, source: 'vercel-mojo-performance' }, later),
+    ])
+    expect(mocks.sendAlert).toHaveBeenCalledTimes(2)
   })
 })
