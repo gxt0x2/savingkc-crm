@@ -59,3 +59,12 @@ describe('call log commands', () => {
     expect(buildCallLogCommand({ phone: '8165550100', event: 'rewound' })).toMatchObject({ ok: false })
   })
 })
+
+describe('call-log dial result labels', () => {
+  it('keeps hangup_before_ring and end_reason, drops unknown values', () => {
+    const ok = buildCallLogCommand({ phone: '8165550100', event: 'ended', dial_result: 'hangup_before_ring', end_reason: 'error' })
+    expect(ok).toMatchObject({ ok: true, command: { dialResult: 'hangup_before_ring', endReason: 'error' } })
+    const junk = buildCallLogCommand({ phone: '8165550100', event: 'ended', dial_result: 'whatever', end_reason: 'x' })
+    expect(junk).toMatchObject({ ok: true, command: { dialResult: null, endReason: null } })
+  })
+})
