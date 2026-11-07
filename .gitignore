@@ -49,3 +49,6 @@ query-sharion.js
 # Local reprocess progress log (regenerated per run)
 scripts/.reprocess-progress.jsonl
 supabase/.temp/
+
+# Runtime pid file: versioning it let a branch switch restore a stale pid
+.crm.pid
