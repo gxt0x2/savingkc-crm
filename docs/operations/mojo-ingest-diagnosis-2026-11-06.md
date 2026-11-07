@@ -1,5 +1,7 @@
 # Mojo → Atlas ingest diagnosis — 2026-11-06
 
+> **Correction (11/06 evening, after the reinstall).** Cause 2 below is wrong. Ernest reinstalled the supervisor from `main` @ `082e97b3`. The packaged runtime verified at content digest `ae7d0ee9…`, the same digest `src/config/mojo-runtime-manifest.json` has carried since #718. So the runtime **content** did not change, only its revision label. #762 does not change the runtime at all. It adds a one-off backfill, `npm run mojo:calls:backfill` (window 2026-10-09 → 10-19). That backfill needs Mojo MCP OAuth (`mcp:calls.read`) credentials and writes `crm_mojo_calls` only with `--apply`. An empty `crm_mojo_calls` is therefore expected until someone runs that backfill. It is not ingest staleness. The reinstall was harmless (same digest, so batches keep being accepted). Running the backfill is Ernest's call.
+
 Read-only check against Atlas (`fprrknfyzlthbxewnwmi`) at ~19:00 UTC. Nothing was drained, advanced, replayed or edited. `mojo_call_queue` untouched.
 
 ## Bottom line
