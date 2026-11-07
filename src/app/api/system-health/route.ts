@@ -2,7 +2,6 @@
 // Night 4 Phase 4: Check and report on system worker status
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import {
   getAllWorkers,
   getWorkerHealthSummary,
@@ -10,15 +9,11 @@ import {
   resetFailureCounts,
   alertOnWorkerIssues,
 } from '@/lib/system-health'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+import { supabase } from '@/lib/supabase-lazy'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const action = searchParams.get('action') || 'summary'
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
   try {
     switch (action) {
@@ -83,8 +78,6 @@ export async function GET(request: NextRequest) {
 
 // POST endpoint to record worker runs
 export async function POST(request: NextRequest) {
-  const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
   try {
     const body = await request.json()
     const { workerName, success, error } = body

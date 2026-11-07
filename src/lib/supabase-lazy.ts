@@ -20,7 +20,7 @@ function getClient(): SupabaseClient {
   if (_client) return _client
   _client = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)!,
     { auth: { autoRefreshToken: false, persistSession: false } },
   )
   return _client
@@ -31,8 +31,8 @@ function getClient(): SupabaseClient {
 // references stay correct (e.g., chained `.from().select()` calls).
 export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
-    const c = getClient() as any
+    const c = getClient() as unknown as Record<PropertyKey, unknown>
     const val = c[prop]
-    return typeof val === 'function' ? val.bind(c) : val
+    return typeof val === 'function' ? val.bind(getClient()) : val
   },
 })
