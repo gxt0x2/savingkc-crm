@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { formatPhone } from '@/lib/format'
-import { agentDialTwiml, businessMenuTwiml, isBusinessLine, optOutTwiml } from '@/lib/telephony/business-line-ivr'
+import { agentDialTwiml, businessMenuTwiml, optOutTwiml } from '@/lib/telephony/business-line-ivr'
 import { handleOptOut } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
@@ -143,8 +143,8 @@ export async function POST(req: Request) {
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // PRESS 9 — business line: do not call or text this number again (owner 11/07).
-  if (digit === '9' && !isColdCall && isBusinessLine(calledNumber) && from) {
+  // PRESS 9 — menu lines: do not call or text this number again (owner 11/07).
+  if (digit === '9' && !isColdCall && from) {
     try {
       await handleOptOut(from, 'DNC')
       await supabase.from('lead_activities').insert({
@@ -160,22 +160,14 @@ export async function POST(req: Request) {
     return new NextResponse(optOutTwiml(), { headers: { 'Content-Type': 'text/xml' } })
   }
 
-  // Invalid input — cold callbacks go to auto-text, the business line gets one
-  // shorter retry, other standard numbers replay the greeting
-  if (!isColdCall && isBusinessLine(calledNumber)) {
+  // Invalid input — cold callbacks go to auto-text, menu lines get one
+  // shorter retry (never the 15 s ring again)
+  if (!isColdCall) {
     return new NextResponse(businessMenuTwiml({ baseUrl: BASE_URL, from, callSid, calledNumber, attempt: 2 }), { headers: { 'Content-Type': 'text/xml' } })
   }
-  if (isColdCall) {
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(calledNumber)}</Redirect>
-</Response>`
-    return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
-  }
-
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Redirect method="POST">${BASE_URL}/api/twiml-voice</Redirect>
+  <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(calledNumber)}</Redirect>
 </Response>`
   return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   } catch (error) {

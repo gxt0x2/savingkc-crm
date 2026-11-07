@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
-import { agentDialTwiml, BUSINESS_MENU_PROMPT, businessMenuTwiml, isBusinessLine, MENU_GATHER_TIMEOUT_SECONDS } from './business-line-ivr'
+import { agentDialTwiml, BUSINESS_MENU_PROMPT, businessMenuTwiml, CECILY_VOICE, isBusinessLine, MENU_GATHER_TIMEOUT_SECONDS, menuVoice } from './business-line-ivr'
 
 const base = { baseUrl: 'https://crm.savingkc.com', from: '+19137179716', callSid: 'CA1', calledNumber: '+18164292900' }
 
 describe('business line call flow', () => {
-  it('first menu offers 1, 2 and 9, waits 7 s, then retries instead of ending', () => {
+  it('rings 15 s, then the Cecily menu offers 1, 2 and 9, waits 7 s, then retries instead of ending', () => {
     const xml = businessMenuTwiml({ ...base, attempt: 1 })
-    expect(xml).toContain(BUSINESS_MENU_PROMPT)
+    expect(xml.indexOf('/api/audio/ring-15s.wav')).toBeGreaterThan(-1)
+    expect(xml.indexOf('/api/audio/ring-15s.wav')).toBeLessThan(xml.indexOf('<Gather'))
+    expect(xml).toContain(`<Say voice="${CECILY_VOICE}" language="en-US">${BUSINESS_MENU_PROMPT}`)
+    expect(BUSINESS_MENU_PROMPT).toContain('press 2 to speak with a member of our team')
     expect(xml).toMatch(/press 1[\s\S]*press 2[\s\S]*press 9/)
     expect(xml).toContain(`timeout="${MENU_GATHER_TIMEOUT_SECONDS}"`)
     expect(xml).toContain('/api/ivr/business-menu?from=%2B19137179716&amp;callSid=CA1&amp;calledNumber=%2B18164292900&amp;attempt=2')
@@ -16,6 +19,7 @@ describe('business line call flow', () => {
   it('retry says staying on the line connects, then hands off to the team', () => {
     const xml = businessMenuTwiml({ ...base, attempt: 2 })
     expect(xml).toContain('stay on the line')
+    expect(xml).not.toContain('ring-15s.wav')
     expect(xml).toContain('/api/ivr/no-input?from=%2B19137179716&amp;calledNumber=%2B18164292900')
     expect(xml).not.toContain('<Hangup')
   })
@@ -35,7 +39,12 @@ describe('business line call flow', () => {
     vi.unstubAllEnvs()
   })
 
-  it('only the public business line uses this flow', () => {
+  it('IVR_VOICE swaps the voice without a code change', () => {
+    expect(menuVoice({} as NodeJS.ProcessEnv)).toBe(CECILY_VOICE)
+    expect(menuVoice({ IVR_VOICE: 'Polly.Joanna-Neural' } as unknown as NodeJS.ProcessEnv)).toBe('Polly.Joanna-Neural')
+  })
+
+  it('identifies the public business line', () => {
     expect(isBusinessLine('+18164292900')).toBe(true)
     expect(isBusinessLine('+18166088588')).toBe(false)
   })
