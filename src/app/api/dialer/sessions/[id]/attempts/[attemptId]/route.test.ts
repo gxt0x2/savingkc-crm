@@ -5,8 +5,10 @@ const mocks = vi.hoisted(() => ({
   assertDialerSessionControl: vi.fn(),
   transitionDialerAttempt: vi.fn(),
   advanceDialerSessionAfterDisposition: vi.fn(),
+  getDialerSession: vi.fn(),
   getDialerPostCallReview: vi.fn(),
   decideAiChangeProposal: vi.fn(),
+  rememberOutboundParentCallSid: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.resolveAuthenticatedActor }))
@@ -17,8 +19,10 @@ vi.mock('@/lib/server/dialer-session-engine', () => ({
   assertDialerSessionControl: mocks.assertDialerSessionControl,
   transitionDialerAttempt: mocks.transitionDialerAttempt,
   advanceDialerSessionAfterDisposition: mocks.advanceDialerSessionAfterDisposition,
+  getDialerSession: mocks.getDialerSession,
 }))
 vi.mock('@/lib/server/dialer-post-call-review', () => ({ getDialerPostCallReview: mocks.getDialerPostCallReview }))
+vi.mock('@/lib/server/dialer-parent-call', () => ({ rememberOutboundParentCallSid: mocks.rememberOutboundParentCallSid }))
 vi.mock('@/lib/server/ai-change-proposals', () => ({ decideAiChangeProposal: mocks.decideAiChangeProposal }))
 
 import { GET, PATCH, POST } from './route'
@@ -93,6 +97,28 @@ describe('dialer session attempt transitions', () => {
       sessionId: 'session-1',
       controllerToken,
       clientAttemptId: 'attempt-1',
+    })
+    expect(mocks.transitionDialerAttempt).not.toHaveBeenCalled()
+  })
+
+  it('stores the browser parent Call SID without changing attempt status', async () => {
+    const parentSid = `CA${'c'.repeat(32)}`
+    mocks.assertDialerSessionControl.mockResolvedValue(undefined)
+    mocks.rememberOutboundParentCallSid.mockResolvedValue(true)
+
+    const response = await PATCH(request({ action: 'provider_sid', providerCallSid: parentSid }), context)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, saved: true })
+    expect(mocks.assertDialerSessionControl).toHaveBeenCalledWith({
+      actor: { email: 'casey@savingkc.com', name: 'Casey' },
+      sessionId: 'session-1',
+      controllerToken,
+    })
+    expect(mocks.rememberOutboundParentCallSid).toHaveBeenCalledWith({
+      clientAttemptId: 'attempt-1',
+      callSid: parentSid,
+      sessionId: 'session-1',
     })
     expect(mocks.transitionDialerAttempt).not.toHaveBeenCalled()
   })

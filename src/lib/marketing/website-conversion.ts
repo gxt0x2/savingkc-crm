@@ -1,3 +1,5 @@
+import { buildGa4EventsSection, type Ga4EventRow, type Ga4EventsSection } from './website-conversion-ga4'
+
 export const CONVERSION_RANGES = ['day', 'week', 'month', 'quarter', 'year'] as const
 export type ConversionRange = (typeof CONVERSION_RANGES)[number]
 
@@ -30,6 +32,7 @@ const LANDING_EVENTS = new Set<string>(LANDING_EVENT_NAMES)
 const PHONE_EVENTS = new Set<string>(PHONE_EVENT_NAMES)
 const EXCLUDED_EVENTS = new Set<string>(EXCLUDED_EVENT_NAMES)
 
+export type { Ga4EventRow, Ga4FunnelRow } from './website-conversion-ga4'
 export type Ga4LandingRow = {
   date: string
   landing_page: string | null
@@ -174,6 +177,7 @@ export type WebsiteConversionReport = {
     sessionToForm: number | null
     engagedToForm: number | null
   }
+  ga4Events: Ga4EventsSection
   callIntent: {
     telClicks: number | null
     googleAdsPhoneLeads: number | null
@@ -306,7 +310,7 @@ export function normalizeLandingPath(value: string | null | undefined): string {
   return path || '/'
 }
 
-function finite(value: number | null | undefined): number {
+export function finite(value: number | null | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
@@ -470,6 +474,7 @@ export function buildWebsiteConversionReport(input: {
   syncRuns?: AnalyticsSyncRun[]
   ga4Latest?: { date: string | null; syncedAt: string | null }
   gscLatest?: { date: string | null; syncedAt: string | null }
+  ga4EventRows?: Ga4EventRow[] | null // null = unreadable; undefined = not requested
 }): WebsiteConversionReport {
   const now = input.now ?? new Date()
   const anchorDate = lastCompleteAnalyticsDay(now)
@@ -645,6 +650,7 @@ export function buildWebsiteConversionReport(input: {
       sessionToForm: sessionTotal == null || websiteForm == null ? null : rate(websiteForm, sessionTotal),
       engagedToForm: engagedTotal == null || websiteForm == null ? null : rate(websiteForm, engagedTotal),
     },
+    ga4Events: buildGa4EventsSection(input.ga4EventRows, window),
     callIntent: {
       telClicks: funnelStatus === 'ready' ? telClicks : null,
       googleAdsPhoneLeads: phoneLeads,

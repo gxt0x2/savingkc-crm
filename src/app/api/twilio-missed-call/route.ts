@@ -180,16 +180,18 @@ export async function POST(req: Request) {
           )
         }
 
-        // If no prospect match, create bare lead
+        // If no prospect match, create bare lead — serialized per phone so two
+        // simultaneous Twilio parent calls from one caller yield one lead.
+        let createdBareLead = true
         if (!newLeadId) {
-          const { data: newLead } = await supabase.from('leads').insert({
-            full_name: `Missed Call ${formatPhone(from) || from}`,
+          const { claimInboundCallerLead } = await import('@/lib/server/inbound-caller-lead')
+          const claim = await claimInboundCallerLead(supabase as unknown as Parameters<typeof claimInboundCallerLead>[0], {
             phone: from,
-            source: 'inbound_call',
-            station: 'new',
+            fullName: `Missed Call ${formatPhone(from) || from}`,
             priority: 'hot',
-          }).select('id').single()
-          newLeadId = newLead?.id || null
+          })
+          newLeadId = claim.leadId
+          createdBareLead = claim.created
         }
 
         // Re-link the already-logged call activity to the new lead
@@ -203,7 +205,8 @@ export async function POST(req: Request) {
 
         // Alert eligible agents about unknown caller.
         // Abandoned calls still create the lead. The caller is not texted.
-        if (!abandonedBeforeAnswer) {
+        // A concurrent duplicate callback already alerted for this caller.
+        if (!abandonedBeforeAnswer && createdBareLead) {
           const agentAlert = `📞 Missed call from unknown number ${formatPhone(from)}. ${newLeadId ? (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com') + '/leads/' + newLeadId : ''}`
           await sendTeamLeadAlert({
             leadId: newLeadId,

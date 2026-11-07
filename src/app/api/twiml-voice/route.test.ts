@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   isGoogleAdsPhoneNumber: vi.fn(),
   lookupInboundCallerName: vi.fn(async () => ''),
   recordBlockedDialerCall: vi.fn(),
+  rememberOutboundParentCallSid: vi.fn(),
   validateTwilioWebhook: vi.fn(),
   verifyDialerCallIntent: vi.fn(),
 }))
@@ -28,6 +29,10 @@ vi.mock('@/lib/telephony/inbound-caller-name', () => ({
 vi.mock('@/lib/server/dialer-call-eligibility', () => ({
   evaluateOutboundDialerCall: mocks.evaluateOutboundDialerCall,
   recordBlockedDialerCall: mocks.recordBlockedDialerCall,
+}))
+
+vi.mock('@/lib/server/dialer-parent-call', () => ({
+  rememberOutboundParentCallSid: mocks.rememberOutboundParentCallSid,
 }))
 
 import { POST } from './route'
@@ -145,6 +150,7 @@ describe('TwiML request containment', () => {
     mocks.verifyDialerCallIntent.mockReturnValue({ valid: false, reason: 'invalid_signature' })
     mocks.evaluateOutboundDialerCall.mockResolvedValue(allowedDecision)
     mocks.recordBlockedDialerCall.mockResolvedValue(undefined)
+    mocks.rememberOutboundParentCallSid.mockResolvedValue(false)
     mocks.isGoogleAdsPhoneNumber.mockReturnValue(false)
   })
 
@@ -267,7 +273,7 @@ describe('TwiML request containment', () => {
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text).toContain('answerOnBridge="true" ringTone="us"')
     expect(text).toContain('timeout="60"')
-    expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
+    expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?leadId=lead-1&amp;phone=%2B19135550123&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
     expect(text).toContain('statusCallback="https://crm.savingkc.com/api/twilio-call-status?identity=ernest&amp;clientAttemptId=attempt-1&amp;source=web_click_to_call"')
   })
 
@@ -349,6 +355,10 @@ describe('TwiML request containment', () => {
     expect(text.match(/<Dial\b/g)).toHaveLength(1)
     expect(text).toContain(`>${DESTINATION}</Number>`)
     expect(text).not.toContain('leadId=prospect-1')
+    expect(text).toContain('recordingStatusCallback="https://crm.savingkc.com/api/twilio-recording-callback?prospectId=prospect-1&amp;phone=%2B19135550123&amp;clientAttemptId=attempt-prospect-1&amp;source=web_heir_dialer"')
+    expect(mocks.rememberOutboundParentCallSid.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.evaluateOutboundDialerCall.mock.invocationCallOrder[0],
+    )
   })
 
   it('fails closed when a present intent is invalid or expired', async () => {
@@ -495,6 +505,11 @@ describe('TwiML request containment', () => {
   })
 })
 
+const COLD_CALLBACK_NUMBERS = ['+18163100845', '+18162538313', '+18164761344', '+18164761589', '+18166404701', '+18165788107', '+18166408032', '+18166536616']
+const COLD_CALLBACK_PROMPT = "Hey, thanks for calling. We buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press one. For anything else, press two."
+const COMPANY_NAME = /saving\s*kc|savingkc|homebuyers/i
+const spokenCopy = (twiml: string) => [...twiml.matchAll(/<(?:Say|Message)\b[^>]*>([\s\S]*?)<\/(?:Say|Message)>/gi)].map((match) => match[1]).join('\n')
+
 describe('verified inbound TwiML routing', () => {
   beforeEach(() => {
     vi.unstubAllEnvs()
@@ -565,20 +580,20 @@ describe('verified inbound TwiML routing', () => {
     expect(text).not.toContain('<Hangup/>')
   })
 
-  it('routes Casey Legacy directly to Casey without the seller IVR', async () => {
+  it('rings Casey Legacy in the app and on his cell without the seller IVR', async () => {
     const { text } = await responseText(inboundRequest('+18163754666'))
 
-    expect(text).toContain('<Dial')
-    expect(text).toContain('callerId="+18163754666"')
-    expect(text).not.toContain('callerId="+18165550199"')
+    expect(text).toContain('<Identity>casey</Identity>')
+    expect(text).not.toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('callerId="+18163754666"')
     expect(text).toContain('+18167564943')
     expect(text).toContain('type=direct')
-    expect(text).not.toContain('<Client')
-    expect(text).not.toContain('twilio-inbound-client-status')
+    expect(text).toContain('twilio-inbound-client-status')
     expect(text).not.toContain('<Gather')
-    expect(text).toContain('timeout="15"')
-    expect(text).not.toContain('timeout="60"')
-    expect(mocks.lookupInboundCallerName).not.toHaveBeenCalled()
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
+    expect(mocks.lookupInboundCallerName).toHaveBeenCalledWith('+18165550199')
   })
 
   it('keeps the company DID when an inbound client call has no E.164 From', async () => {
@@ -600,8 +615,18 @@ describe('verified inbound TwiML routing', () => {
 
     expect(text).toContain('<Gather')
     expect(text).toContain('/api/ivr/handle-input')
+    expect(text).toContain('/api/audio/ivr-greeting.mp3')
+    expect([text.includes('coldcall=1'), text.includes(COLD_CALLBACK_PROMPT)]).toEqual([false, false])
     expect(text).not.toContain('<Client')
     expect(text).not.toContain('twilio-inbound-client-status')
+  })
+
+  it.each(COLD_CALLBACK_NUMBERS)('plays the unbranded press-1/press-2 script for cold callback %s', async (to) => {
+    const { text } = await responseText(inboundRequest(to))
+    for (const attr of ['numDigits="1"', 'coldcall=1', 'timeout="15"']) expect(text.match(/<Gather\b[^>]*>/)?.[0] ?? '').toContain(attr)
+    for (const part of [`<Say voice="Polly.Matthew">${COLD_CALLBACK_PROMPT}</Say>`, '/api/ivr/cold-no-input']) expect(text).toContain(part)
+    expect([text.includes('ivr-press1.mp3'), text.includes('ivr-greeting.mp3')]).toEqual([false, false])
+    expect(spokenCopy(text)).not.toMatch(COMPANY_NAME)
   })
 
   it('keeps cold-callback IVR off the Voice client and the mobile outbound timeout', async () => {
@@ -614,7 +639,7 @@ describe('verified inbound TwiML routing', () => {
     expect(text).not.toContain('timeout="45"')
   })
 
-  it('rings client:ernest for the business line with the real caller and no personal cell', async () => {
+  it('plays the seller IVR on the business line even with in-app voice on', async () => {
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
     const { text } = await responseText(twilioRequest({
@@ -623,16 +648,11 @@ describe('verified inbound TwiML routing', () => {
       To: '+18164292900',
     }))
 
-    expect(text).toContain('<Identity>ernest</Identity>')
-    expect(text).toContain('callerId="+18162608357"')
-    expect(text).not.toContain('callerId="+18166088588"')
-    expect(text).toContain('<Parameter name="callerNumber" value="+18162608357" />')
-    expect(text).toContain('<Parameter name="calledNumber" value="+18164292900" />')
-    expect(text).toContain('/api/ivr/dial-result')
-    expect(text).not.toContain('+18162262552')
-    expect(text).not.toContain('+18167564943')
-    expect(text).not.toContain('<Number')
-    expect(text).not.toContain('<Gather')
+    expect(text).toContain('<Gather')
+    expect(text).toContain('/api/audio/ivr-greeting.mp3')
+    expect(text).toContain('/api/ivr/handle-input')
+    expect(text).not.toContain('<Client')
+    expect(text).not.toContain('<Dial')
   })
 
   it('dials the documented cell when personal forward is on', async () => {
@@ -645,16 +665,20 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('+18162262552')
   })
 
-  it('keeps Casey company routing on his cell and off client:ernest', async () => {
+  it('rings Casey company in the app and omits his cell when personal forward is off', async () => {
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
     const { text } = await responseText(inboundRequest('+18167277667'))
 
-    expect(text).toContain('callerId="+18167277667"')
-    expect(text).toContain('+18167564943')
-    expect(text).not.toContain('<Client')
+    expect(text).toMatch(/<Client\b[^>]*>\s*<Identity>casey<\/Identity>/)
+    expect(text).not.toContain('<Identity>ernest</Identity>')
+    expect(text).toContain('callerId="+18165550199"')
+    expect(text).not.toContain('callerId="+18167277667"')
+    expect(text).not.toContain('+18167564943')
     expect(text).not.toContain('+18162262552')
-    expect(text).toContain('timeout="15"')
+    expect(text).not.toContain('<Number')
+    expect(text).toContain('timeout="60"')
+    expect(text).not.toContain('timeout="15"')
   })
 
   it('does not restore the personal cell when routing throws and personal forward is off', async () => {
@@ -664,9 +688,9 @@ describe('verified inbound TwiML routing', () => {
       throw new Error('inbound routing unavailable')
     })
     const { text } = await responseText(twilioRequest({
-      CallSid: 'CA_business_emergency',
+      CallSid: 'CA_company_emergency',
       From: '+18162608357',
-      To: '+18164292900',
+      To: '+18166088588',
     }))
 
     expect(text).toContain('<Identity>ernest</Identity>')

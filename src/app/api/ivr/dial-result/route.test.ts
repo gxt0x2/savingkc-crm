@@ -137,7 +137,7 @@ describe('ivr dial-result missed-call alerts', () => {
     expect(mocks.sendTeamLeadAlert).not.toHaveBeenCalled()
   })
 
-  it('records the real caller and Ernest client identity for the business line', async () => {
+  it('records the real caller and Ernest client identity for his direct line', async () => {
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
     const inserts: unknown[] = []
@@ -146,7 +146,7 @@ describe('ivr dial-result missed-call alerts', () => {
     const response = await POST(dialResultRequest({
       dialStatus: 'completed',
       type: 'direct',
-      calledNumber: '+18164292900',
+      calledNumber: '+18166088858',
       duration: '12',
     }))
 
@@ -156,7 +156,7 @@ describe('ivr dial-result missed-call alerts', () => {
       metadata: {
         direction: 'inbound',
         from: CALLER,
-        calledNumber: '+18164292900',
+        calledNumber: '+18166088858',
         agent_identity: 'ernest',
       },
     })

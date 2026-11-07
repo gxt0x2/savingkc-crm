@@ -109,7 +109,7 @@ export function ProspectingPreviewCallRail(props: ProspectingPreviewCallRailProp
           aria-pressed={selectedOutcome === id}
           disabled={callState !== 'live' && callState !== 'paused'}
           onClick={() => recordOutcome(id)}
-          className={`flex min-h-10 w-full items-center gap-2 rounded-lg border px-3 text-left text-xs font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-75 ${selectedOutcome === id ? 'border-[var(--crm-brand-active)] bg-[var(--crm-brand-active)] ring-2 ring-[var(--crm-brand-border)]' : 'border-[var(--crm-brand)] bg-[var(--crm-brand)] enabled:hover:border-[var(--crm-brand-hover)] enabled:hover:bg-[var(--crm-brand-hover)]'}`}
+          className={`prospecting-disposition-button flex min-h-10 w-full items-center gap-2 rounded-lg border border-[var(--crm-red)] bg-[var(--crm-red)] px-3 text-left text-xs font-semibold text-white transition-colors enabled:hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-75 ${selectedOutcome === id ? 'ring-2 ring-[var(--crm-red)]' : ''}`}
         >
           <Icon name={icon} size="text-sm" className="shrink-0 text-white" />
           <span className="min-w-0 flex-1">{label}</span>

@@ -203,6 +203,29 @@ describe('mobile call-event scope', () => {
     expect(mocks.authorize).not.toHaveBeenCalled()
   })
 
+  it('logs an answered inbound call as inbound and keeps only a real client-leg SID', async () => {
+    mocks.authorize.mockResolvedValue({ actor: { fullName: 'Ernest' }, user: { id: 'user-ernest', email: 'ernest@savingkc.com' } })
+    const inserted: Array<Record<string, unknown>> = []
+    mocks.admin.mockReturnValue({ from: (table: string) => table === 'lead_activities'
+      ? { insert: (row: Record<string, unknown>) => { inserted.push(row); return { select: () => ({ single: async () => ({ data: { id: 'call-1' }, error: null }) }) } } }
+      : { update: () => ({ eq: async () => ({ error: null }) }) },
+    })
+    const sid = 'CA' + 'b'.repeat(32)
+    await POST(request({ leadId: 'lead-1', phone: '+19137179716', event: 'ended', outcome: 'answered', direction: 'inbound', callSid: sid }))
+    expect(inserted[0]).toMatchObject({ description: 'Mobile inbound call ended: answered', metadata: { direction: 'inbound', from: '+19137179716', callSid: sid } })
+    expect(inserted[0].metadata).not.toHaveProperty('to')
+    await POST(request({ leadId: 'lead-1', phone: '+19137179716', event: 'ended', outcome: 'answered', direction: 'sideways', callSid: 'nope' }))
+    expect(inserted[1]).toMatchObject({ description: 'Mobile outbound call ended: answered', metadata: { direction: 'outbound', to: '+19137179716' } })
+    expect(inserted[1].metadata).not.toHaveProperty('callSid')
+  })
+
+  it('logs an ad-hoc answered inbound call as inbound', async () => {
+    const db = memoryAdmin()
+    mocks.admin.mockReturnValue(db)
+    await POST(request({ phone: '(913) 717-9716', event: 'ended', outcome: 'answered', clientCallId: 'in-1', direction: 'inbound', callSid: 'CA' + 'c'.repeat(32) }))
+    expect(db.rows[0]).toMatchObject({ description: 'Mobile inbound call ended: answered', metadata: { direction: 'inbound', from: '+19137179716', callSid: 'CA' + 'c'.repeat(32) } })
+  })
+
   it('stores the verified actor instead of a client-supplied agent', async () => {
     mocks.authorize.mockResolvedValue({ actor: { fullName: 'Casey' }, user: { id: 'user-casey', email: 'casey@savingkc.com' } })
     const inserted: Array<Record<string, unknown>> = []

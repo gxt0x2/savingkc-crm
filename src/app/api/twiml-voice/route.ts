@@ -20,6 +20,7 @@ import {
   type OutboundDialerCallSource,
   type OutboundDialerCallDecision,
 } from '@/lib/server/dialer-call-eligibility'
+import { rememberOutboundParentCallSid } from '@/lib/server/dialer-parent-call'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -55,6 +56,14 @@ const EMPTY_TWIML = `<?xml version="1.0" encoding="UTF-8"?>
 // Cold call outbound dialing numbers — callbacks get a different IVR.
 const COLD_CALL_NUMBERS = new Set<string>(COLD_CALL_CALLBACK_NUMBERS.map((number) => number.value))
 
+// Locked cold-callback prompt. No company name. Spoken with Twilio Polly
+// because the checked-in clips are the wrong prompt (ivr-press1.mp3) or the
+// branded standard greeting (ivr-greeting.mp3), and a new ElevenLabs asset
+// cannot be generated without that API key. Gather timeout is the silence
+// window after this Say finishes, long enough to hear both options and press.
+const COLD_CALLBACK_PROMPT = "Hey, thanks for calling. We buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press one. For anything else, press two."
+const COLD_CALLBACK_GATHER_TIMEOUT = 15
+
 function getFormString(body: FormData, keys: string[]): string | null {
   for (const key of keys) {
     const value = body.get(key)
@@ -69,11 +78,17 @@ function xmlResponse(body: string, status = 200) {
 
 function outboundRecordingCallback(input: {
   leadId: string | null
+  prospectId: string | null
+  phone: string | null
   clientAttemptId: string | null
   source: OutboundDialerCallSource
 }): string {
   const callback = new URL('/api/twilio-recording-callback', BASE_URL)
   if (input.leadId) callback.searchParams.set('leadId', input.leadId)
+  if (input.prospectId) callback.searchParams.set('prospectId', input.prospectId)
+  // The parent recording leg's To/From are client identifiers. Keep the dialed
+  // PSTN number on the callback so a prospect with no lead can still be resolved.
+  if (input.phone) callback.searchParams.set('phone', input.phone)
   if (input.clientAttemptId) callback.searchParams.set('clientAttemptId', input.clientAttemptId)
   callback.searchParams.set('source', input.source)
   return callback.toString().replaceAll('&', '&amp;')
@@ -354,6 +369,15 @@ export async function POST(req: Request) {
             prospectPhoneId,
           }), outboundContext)
         }
+
+        // Persist the parent Call SID before the safety check. A slow or failed
+        // TwiML response otherwise leaves the next number in a multi-phone queue
+        // with no provider SID when the child status callback never runs.
+        if (clientAttemptId && callSid) {
+          await rememberOutboundParentCallSid({ clientAttemptId, callSid }).catch((error) => {
+            console.error('[IVR] Failed to remember parent Call SID:', error)
+          })
+        }
       }
 
       const policyInput: OutboundDialerCallInput = {
@@ -390,7 +414,13 @@ export async function POST(req: Request) {
       }
 
       const statusCallback = outboundStatusCallback(identity, clientAttemptId, source)
-      const recordingCallback = outboundRecordingCallback({ leadId, clientAttemptId, source })
+      const recordingCallback = outboundRecordingCallback({
+        leadId,
+        prospectId,
+        phone: sanitizedTo,
+        clientAttemptId,
+        source,
+      })
       // Manual calls need time for a person (or their voicemail) to answer.
       // Keep explicit campaign ring counts and the legacy fallback intact.
       const dialTimeout = parseDialTimeout(
@@ -451,8 +481,8 @@ export async function POST(req: Request) {
     if (COLD_CALL_NUMBERS.has(to)) {
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="4">
-    <Play>${BASE_URL}/api/audio/ivr-press1.mp3</Play>
+  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="${COLD_CALLBACK_GATHER_TIMEOUT}">
+    <Say voice="Polly.Matthew">${COLD_CALLBACK_PROMPT}</Say>
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`

@@ -30,7 +30,7 @@ async function updateAttempt(
 
 export async function markDialerPostCallProcessing(input: {
   clientAttemptId: string | null
-  leadId: string
+  leadId: string | null
   providerCallSid: string | null
   recordingSid: string
 }): Promise<boolean> {
@@ -47,7 +47,7 @@ export async function markDialerPostCallProcessing(input: {
 
 export async function completeDialerPostCallReview(input: {
   clientAttemptId: string | null
-  leadId: string
+  leadId: string | null
   providerCallSid: string | null
   recordingSid: string
   analysis: CallAnalysisResult

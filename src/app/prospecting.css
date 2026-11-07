@@ -143,10 +143,23 @@
   --prospecting-primary-strong: var(--crm-brand-hover);
   --prospecting-primary-soft: var(--crm-brand-soft);
   --prospecting-on-primary: var(--crm-on-brand);
+  /* Disposition rows stay Saving KC red. Workspace --crm-brand is lavender. */
+  --crm-red: #c8242d;
+  --crm-red-soft: #fbeaec;
   --ck-text: var(--crm-ink);
   --ck-text-muted: var(--crm-text-muted);
   --ck-text-dim: var(--crm-text-dim);
   color-scheme: light;
+}
+
+.prospecting-dialer-control-surface .prospecting-disposition-button {
+  background-color: var(--crm-red);
+  border-color: var(--crm-red);
+  color: #fff;
+}
+
+.prospecting-dialer-control-surface .prospecting-disposition-button:hover:not(:disabled) {
+  filter: brightness(0.95);
 }
 
 .prospecting-dialer-secondary-button {

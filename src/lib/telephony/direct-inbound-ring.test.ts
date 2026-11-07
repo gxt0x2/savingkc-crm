@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resolveAgentTelephonyProfile } from './agent-identity'
 import {
+  ivrAgentClientIdentities,
+  ivrAgentClientNouns,
   directInboundClientIdentity,
   directInboundClientNoun,
   inboundCallerDisplayName,
@@ -20,13 +23,18 @@ describe('direct inbound Voice client', () => {
   })
 
   it('does not attach Ernest to Casey or the main IVR line', () => {
-    expect(directInboundClientIdentity('+18167277667')).toBeNull()
-    expect(directInboundClientIdentity('+18163754666')).toBeNull()
+    expect(directInboundClientIdentity('+18167277667')).toBe('casey')
+    expect(directInboundClientIdentity('+18163754666')).toBe('casey')
     expect(directInboundClientIdentity('+18163077835')).toBeNull()
-    expect(directInboundClientNoun('+18167277667')).toBe('')
-    expect(directInboundClientNoun('+18167277667', {
-      statusCallback: 'https://crm.savingkc.com/api/twilio-inbound-client-status',
-    })).toBe('')
+    expect(directInboundClientNoun('+18167277667')).toBe('<Client>casey</Client>')
+    expect(directInboundClientNoun('+18167277667')).not.toContain('ernest')
+    expect(directInboundClientNoun('+18163077835')).toBe('')
+    expect(inboundRingPlan('+18167277667')).toEqual({
+      kind: 'direct',
+      identity: resolveAgentTelephonyProfile('casey@savingkc.com').identity,
+      cell: '+18167564943',
+      personalForwardSuppressed: false,
+    })
   })
 
   it('adds a client-leg status callback without changing the identity', () => {
@@ -73,7 +81,7 @@ describe('direct inbound Voice client', () => {
   it('dials client:ernest only when in-app voice is on and personal forward is off', () => {
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
-    for (const number of ['+18164292900', '+18166088588', '+18166088858']) {
+    for (const number of ['+18166088588', '+18166088858']) {
       expect(inboundRingPlan(number)).toMatchObject({
         kind: 'direct',
         identity: 'ernest',
@@ -81,14 +89,27 @@ describe('direct inbound Voice client', () => {
         personalForwardSuppressed: true,
       })
     }
-    expect(directInboundClientIdentity('+18164292900')).toBe('ernest')
+    // Owner 11/06: the public business line always plays the seller IVR.
+    expect(inboundRingPlan('+18164292900')).toMatchObject({ kind: 'passthrough', identity: null, cell: null })
+    expect(directInboundClientIdentity('+18164292900')).toBeNull()
     expect(ownedInboundCompanyNumbers('ernest')).toContain('+18164292900')
+  })
+
+  it('rings both apps on IVR press 1/2, route owner first, and none when in-app voice is off', () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    expect(ivrAgentClientIdentities('+18164292900')).toEqual(['ernest', 'casey'])
+    expect(ivrAgentClientIdentities('+18167277667')).toEqual(['casey', 'ernest'])
+    const nouns = ivrAgentClientNouns('+18164292900', { callerNumber: '+19137179716', callerName: '', calledNumber: '+18164292900' })
+    expect(nouns).toContain('<Identity>ernest</Identity><Parameter name="callerNumber" value="+19137179716" />')
+    expect(nouns).toContain('<Identity>casey</Identity>')
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'false')
+    expect(ivrAgentClientIdentities('+18164292900')).toEqual([])
   })
 
   it('dials the documented personal cell when personal forward is on', () => {
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'true')
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
-    expect(inboundRingPlan('+18164292900')).toMatchObject({
+    expect(inboundRingPlan('+18166088588')).toMatchObject({
       identity: 'ernest',
       cell: '+18162262552',
       personalForwardSuppressed: false,
@@ -101,7 +122,7 @@ describe('direct inbound Voice client', () => {
     })
   })
 
-  it('leaves the business line on the seller IVR until in-app voice is enabled', () => {
+  it('leaves the business line on the seller IVR', () => {
     expect(inboundRingPlan('+18164292900')).toMatchObject({ kind: 'passthrough', identity: null, cell: null })
     expect(directInboundClientIdentity('+18164292900')).toBeNull()
   })
@@ -117,17 +138,48 @@ describe('direct inbound Voice client', () => {
     })
   })
 
-  it('keeps Casey on his cell when Ernest in-app flags are set', () => {
-    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+  it('rings Casey company DIDs in the app unless in-app voice is off, and the cell unless personal forward is off', () => {
+    const numbers = ['+18167277667', '+18163754666']
+    const rows = [
+      { inApp: 'true', personal: 'false', identity: 'casey', cell: null, personalForwardSuppressed: true },
+      { inApp: 'true', personal: 'true', identity: 'casey', cell: '+18167564943', personalForwardSuppressed: false },
+      { inApp: 'false', personal: 'true', identity: null, cell: '+18167564943', personalForwardSuppressed: false },
+      { inApp: 'false', personal: 'false', identity: null, cell: null, personalForwardSuppressed: true },
+    ] as const
+
+    for (const number of numbers) {
+      for (const row of rows) {
+        vi.stubEnv('MOBILE_IN_APP_VOICE', row.inApp)
+        vi.stubEnv('MOBILE_PERSONAL_FORWARD', row.personal)
+        expect(inboundRingPlan(number), `${number} inApp=${row.inApp} personal=${row.personal}`).toEqual({
+          kind: 'direct',
+          identity: row.identity,
+          cell: row.cell,
+          personalForwardSuppressed: row.personalForwardSuppressed,
+        })
+        expect(directInboundClientIdentity(number)).not.toBe('ernest')
+      }
+    }
+
+    vi.stubEnv('MOBILE_IN_APP_VOICE', '')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
-    expect(inboundRingPlan('+18167277667')).toMatchObject({
+    expect(inboundRingPlan('+18167277667')).toEqual({
       kind: 'direct',
-      identity: null,
-      cell: '+18167564943',
-      personalForwardSuppressed: false,
+      identity: 'casey',
+      cell: null,
+      personalForwardSuppressed: true,
     })
-    expect(inboundRingPlan('+18163754666').identity).toBeNull()
-    expect(directInboundClientIdentity('+18167277667')).toBeNull()
+    expect(directInboundClientNoun('+18167277667', {
+      callerNumber: '+18165550199',
+      callerName: 'Jane Seller',
+      calledNumber: '+18167277667',
+    })).toContain('<Client><Identity>casey</Identity>')
+    expect(directInboundClientNoun('+18163754666', {
+      statusCallback: 'https://crm.savingkc.com/api/twilio-inbound-client-status',
+      callerNumber: '+18165550199',
+      calledNumber: '+18163754666',
+    })).toContain('<Identity>casey</Identity>')
+    expect(directInboundClientNoun('+18167277667')).not.toContain('ernest')
     expect(ownedInboundCompanyNumbers('casey')).toEqual(['+18167277667'])
   })
 

@@ -22,8 +22,9 @@ export type InboundRingPlan = {
   identity: string | null
   cell: string | null
   /**
-   * True when this Ernest company DID has no personal-cell leg.
-   * MOBILE_PERSONAL_FORWARD must be the exact string "true" to dial his cell.
+   * True when this ring has no personal-cell leg.
+   * Ernest and Casey company DIDs dial the cell unless MOBILE_PERSONAL_FORWARD=false.
+   * +18164292900 dials the cell only when that flag is exactly "true".
    * "false" never falls back to PSTN, including when the Voice client is down.
    */
   personalForwardSuppressed: boolean
@@ -46,11 +47,11 @@ function caseyPersonalCell(): string {
 
 /**
  * How an inbound company DID rings.
- * Casey's direct numbers stay on his cell. These flags do not retarget them.
- * Ernest's company and dispositions DIDs ring client:ernest. The cell remains
- * unless MOBILE_PERSONAL_FORWARD=false. +18164292900 leaves the seller IVR
- * only when MOBILE_IN_APP_VOICE=true, and then dials his cell only when
- * personal forward is explicitly true.
+ * Casey's company and legacy DIDs follow Ernest's company and dispositions
+ * DIDs: client identity unless MOBILE_IN_APP_VOICE=false, and the personal
+ * cell unless MOBILE_PERSONAL_FORWARD=false. +18164292900 is the public
+ * business line: it always plays the seller IVR (owner 11/06), and press 1 /
+ * press 2 ring the app clients through ivrAgentClientNouns().
  */
 export function inboundRingPlan(calledNumber: string | null | undefined): InboundRingPlan {
   const number = normalizePhoneToE164(calledNumber)
@@ -59,18 +60,13 @@ export function inboundRingPlan(calledNumber: string | null | undefined): Inboun
   const none = { kind: 'passthrough' as const, identity: null, cell: null, personalForwardSuppressed: false }
   if (!number) return none
 
-  if (CASEY_DIRECT_DIDS.has(number)) {
-    return { kind: 'direct', identity: null, cell: caseyPersonalCell(), personalForwardSuppressed: false }
-  }
-
+  const caseyDirect = CASEY_DIRECT_DIDS.has(number)
   const ernestDirect = ERNEST_DIRECT_DIDS.has(number)
-  const ernestBusiness = number === ERNEST_BUSINESS_DID && inApp === true
-  if (!ernestDirect && !ernestBusiness) return none
+  if (!caseyDirect && !ernestDirect) return none
 
-  const identity = inApp === false ? null : resolveAgentTelephonyProfile('ernest@savingkc.com').identity
-  const cell = ernestDirect
-    ? (personal === false ? null : ernestPersonalCell())
-    : (personal === true ? ernestPersonalCell() : null)
+  const ownerEmail = caseyDirect ? 'casey@savingkc.com' : 'ernest@savingkc.com'
+  const identity = inApp === false ? null : resolveAgentTelephonyProfile(ownerEmail).identity
+  const cell = personal === false ? null : (caseyDirect ? caseyPersonalCell() : ernestPersonalCell())
 
   return {
     kind: 'direct',
@@ -171,7 +167,34 @@ export function directInboundClientNoun(
   calledNumber: string | null | undefined,
   options?: DirectInboundClientNounOptions,
 ): string {
-  const identity = directInboundClientIdentity(calledNumber)
+  return clientNounFor(directInboundClientIdentity(calledNumber), calledNumber, options)
+}
+
+/**
+ * Seller-IVR press 1 / press 2: the app clients to ring with the agents'
+ * cells, route owner first. None when MOBILE_IN_APP_VOICE=false.
+ */
+export function ivrAgentClientIdentities(calledNumber: string | null | undefined): string[] {
+  if (mobileFlag('MOBILE_IN_APP_VOICE') === false) return []
+  const number = normalizePhoneToE164(calledNumber)
+  const owners = number && CASEY_DIRECT_DIDS.has(number)
+    ? ['casey@savingkc.com', 'ernest@savingkc.com']
+    : ['ernest@savingkc.com', 'casey@savingkc.com']
+  return [...new Set(owners.map((email) => resolveAgentTelephonyProfile(email).identity).filter((identity): identity is string => Boolean(identity)))]
+}
+
+export function ivrAgentClientNouns(
+  calledNumber: string | null | undefined,
+  options: DirectInboundClientNounOptions,
+): string {
+  return ivrAgentClientIdentities(calledNumber).map((identity) => clientNounFor(identity, calledNumber, options)).join('')
+}
+
+function clientNounFor(
+  identity: string | null,
+  calledNumber: string | null | undefined,
+  options?: DirectInboundClientNounOptions,
+): string {
   if (!identity || /[^a-z0-9_-]/i.test(identity)) return ''
   const statusCallback = options?.statusCallback?.trim()
   const opening = statusCallback

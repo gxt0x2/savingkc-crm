@@ -187,4 +187,67 @@ describe('Twilio recording callback containment', () => {
     }))
     expect(mocks.downloadRecording).not.toHaveBeenCalled()
   })
+
+  it('transcribes a dialer recording against the prospect when no lead exists', async () => {
+    const leads = chain({ data: null, error: null })
+    const attempts = chain({
+      data: {
+        lead_id: null,
+        prospect_id: 'prospect-1',
+        prospect_phone_id: 'phone-1',
+        phone: '+18162554006',
+      },
+      error: null,
+    })
+    const activities = chain({ data: null, error: null })
+    activities.is = vi.fn(() => activities)
+    activities.insert = vi.fn(async () => ({ error: null }))
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'leads') return leads
+      if (table === 'dialer_session_attempts') return attempts
+      return activities
+    })
+    mocks.resolveLeadIdFromCallActivity.mockResolvedValue(null)
+    mocks.downloadRecording.mockResolvedValue('/tmp/recording.mp3')
+    mocks.transcribeAudio.mockResolvedValue('The caller heard an application error and hung up immediately after.')
+    mocks.analyzeCallTranscript.mockResolvedValue({ aiSummary: 'No conversation. The call played an application error.' })
+    mocks.completeDialerPostCallReview.mockResolvedValue(true)
+
+    const form = new FormData()
+    form.set('RecordingUrl', 'https://api.twilio.com/recordings/REe96938e8f89f08ae01be31a50fb215a6')
+    form.set('RecordingSid', 'REe96938e8f89f08ae01be31a50fb215a6')
+    form.set('RecordingStatus', 'completed')
+    form.set('RecordingDuration', '6')
+    form.set('CallSid', 'CA90cea5d21f97622a5d7b36d0319722b7')
+    form.set('From', 'client:casey')
+    form.set('To', '')
+    const response = await POST(new Request(
+      'https://crm.savingkc.com/api/twilio-recording-callback?prospectId=prospect-1&phone=%2B18162554006&clientAttemptId=attempt-1&source=web_heir_dialer',
+      { method: 'POST', body: form },
+    ))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, prospectId: 'prospect-1', processed: true })
+    expect(mocks.markDialerPostCallUnavailable).not.toHaveBeenCalled()
+    expect(mocks.createCallAnalysisLeadProposal).not.toHaveBeenCalled()
+    expect(leads.update).not.toHaveBeenCalled()
+    expect(activities.insert).toHaveBeenCalledWith(expect.objectContaining({
+      lead_id: null,
+      prospect_id: 'prospect-1',
+      activity_type: 'call',
+    }))
+    expect(activities.insert).toHaveBeenCalledWith(expect.objectContaining({
+      prospect_id: 'prospect-1',
+      metadata: expect.objectContaining({
+        source: 'whisper_transcription',
+        prospect_phone_id: 'phone-1',
+        phone: '+18162554006',
+      }),
+    }))
+    expect(mocks.completeDialerPostCallReview).toHaveBeenCalledWith(expect.objectContaining({
+      clientAttemptId: 'attempt-1',
+      leadId: null,
+      recordingSid: 'REe96938e8f89f08ae01be31a50fb215a6',
+    }))
+  })
 })

@@ -57,6 +57,52 @@ describe('DialerMicrophoneControls', () => {
     expect(screen.getByRole('region', { name: 'Microphone check' })).toBeVisible()
   })
 
+  it('hides a successful check after the phone returns to Ready', async () => {
+    testSelectedMicrophone.mockResolvedValue(0.02)
+    const { rerender } = render(<DialerMicrophoneControls
+      deviceRef={{ current: {} } as never}
+      status="ready"
+      open
+      sessionId="session-1"
+      workspace
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Microphone check' })).not.toBeInTheDocument())
+
+    rerender(<DialerMicrophoneControls
+      deviceRef={{ current: {} } as never}
+      status="connecting"
+      open
+      sessionId="session-1"
+      workspace
+    />)
+    rerender(<DialerMicrophoneControls
+      deviceRef={{ current: {} } as never}
+      status="ready"
+      open
+      sessionId="session-1"
+      workspace
+    />)
+
+    expect(screen.queryByRole('region', { name: 'Microphone check' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Speak toward the selected microphone/)).not.toBeInTheDocument()
+  })
+
+  it('hides a successful check even before a calling session id is attached', async () => {
+    testSelectedMicrophone.mockResolvedValue(0.02)
+    render(<DialerMicrophoneControls
+      deviceRef={{ current: {} } as never}
+      status="ready"
+      open
+      workspace
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test microphone' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Microphone check' })).not.toBeInTheDocument())
+    expect(screen.queryByText('Input signal detected. Confirm two-way speech with a test call.')).not.toBeInTheDocument()
+  })
+
   it('keeps the check visible when no usable input is detected', async () => {
     testSelectedMicrophone.mockResolvedValue(0.001)
     render(<DialerMicrophoneControls
