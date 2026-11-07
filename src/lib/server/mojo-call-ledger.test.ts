@@ -323,7 +323,7 @@ describe('October 9-19 backfill', () => {
       missing: ['MOJO_MCP_ACCESS_TOKEN', 'MOJO_MCP_CLIENT_ID', 'MOJO_MCP_CLIENT_SECRET', 'MOJO_MCP_REFRESH_TOKEN'],
     })
     const selected = createMojoCallSource({ env: emptyEnv, sessionId: 'scraper-session' })
-    expect(selected.source?.kind).toBe('mojo_session_recordings')
+    expect(selected.source?.kind).toBe('mojo_session_calling_report')
     expect(pageFromListCalls({ total_count: 0, total_pages: 0, page: 1, results: [] }, 1).totalCount).toBe(0)
   })
 

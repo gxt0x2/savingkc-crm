@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { centralDateString, parseMojoRecordingDuration, parseMojoTimestamp } from '../../../scripts/mojo-call-evidence.mjs'
 
-export const MOJO_CALL_SOURCES = ['mojo_mcp_list_calls', 'mojo_session_recordings'] as const
+export const MOJO_CALL_SOURCES = ['mojo_mcp_list_calls', 'mojo_session_recordings', 'mojo_session_calling_report'] as const
 export type MojoCallSourceKind = (typeof MOJO_CALL_SOURCES)[number]
 
 export const MOJO_CALL_BACKFILL_FROM = '2026-10-09'
@@ -229,6 +229,31 @@ export function mapOfficialListCall(value: unknown): MojoCallFact {
   return mapped
 }
 
+/**
+ * One row of Mojo's Calling Report call detail (POST
+ * /v2/rest/reports/calling-report-calls/, the web app's own per-dial list).
+ * Names, notes, full numbers and addresses are dropped here; only ids,
+ * last four digits, the result label and flags are kept. The report has no
+ * duration, so the caller supplies talk seconds from the recording report.
+ */
+export function mapCallingReportRow(value: unknown, durationSeconds = 0): MojoCallFact {
+  const input = objectInput(value) as CallInput & { session?: { id?: unknown } | null; appointment_exists?: unknown }
+  const callId = integerId(input.id)
+  if (callId == null) throw new Error('invalid_mojo_call_id')
+  return fact({
+    id: callId,
+    contact: input.contact,
+    create_date: input.create_date,
+    phone_number: input.phone_number,
+    duration_seconds: durationSeconds,
+    result_label: input.result,
+    dial_session_id: input.session?.id,
+    is_recorded: input.is_recorded,
+    appointment_count: input.appointment_exists,
+    lead_exists: input.lead_exists,
+  }, 'mojo_session_calling_report', callId)
+}
+
 export function mapRecordingReportRow(value: unknown): MojoCallFact | null {
   const input = objectInput(value)
   const callId = integerId(input.call_id)
@@ -248,7 +273,7 @@ export function assertMojoCallFact(value: unknown): MojoCallFact {
     if (FORBIDDEN_FIELDS.includes(key)) throw new Error('mojo_call_payload_has_forbidden_field')
   }
   const source = record.source
-  if (source !== 'mojo_mcp_list_calls' && source !== 'mojo_session_recordings') throw new Error('invalid_mojo_call_source')
+  if (!(MOJO_CALL_SOURCES as readonly unknown[]).includes(source)) throw new Error('invalid_mojo_call_source')
   return fact({
     id: record.provider_call_id,
     create_date: record.call_at,
@@ -262,7 +287,7 @@ export function assertMojoCallFact(value: unknown): MojoCallFact {
     lead_exists: record.lead_exists,
     contact_id: record.provider_contact_id,
     contact_initials: record.contact_initials,
-  }, source, requiredId(record.provider_call_id))
+  }, source as MojoCallSourceKind, requiredId(record.provider_call_id))
 }
 
 function requiredId(value: unknown): number {

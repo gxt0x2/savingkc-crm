@@ -47,7 +47,7 @@ export async function executeMojoCallBackfill(options: {
     ...result,
     source: selected.source.kind,
     auth,
-    requirements: selected.source.kind === 'mojo_session_recordings' ? MOJO_MCP_AUTH_REQUIREMENTS : undefined,
+    requirements: selected.source.kind === 'mojo_mcp_list_calls' ? undefined : MOJO_MCP_AUTH_REQUIREMENTS,
     comparison: result.comparison,
     fallbackCannotSatisfyExpectedCounts: selected.source.kind === 'mojo_session_recordings',
   }

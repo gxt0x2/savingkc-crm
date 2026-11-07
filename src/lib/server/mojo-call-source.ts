@@ -1,4 +1,5 @@
 import {
+  mapCallingReportRow,
   mapOfficialListCall,
   mapRecordingReportRow,
   type MojoCallListPage,
@@ -8,6 +9,7 @@ import {
 export const MOJO_MCP_RESOURCE = 'https://mcp.mojosells.com/mcp'
 export const MOJO_MCP_TOKEN_ENDPOINT = 'https://mcp.mojosells.com/oauth/token'
 export const MOJO_RECORDING_REPORT_PATH = '/v2/rest/reports/call-recording-report-data/'
+export const MOJO_CALLING_REPORT_PATH = '/v2/rest/reports/calling-report-calls/'
 
 /**
  * Server-side access to Mojo's read-only MCP is OAuth 2.1, not the scraper cookie.
@@ -148,6 +150,105 @@ export function createSessionRecordingCallSource(options: {
   }
 }
 
+/**
+ * Every dial, read from Mojo's Calling Report (the web app's own per-call list)
+ * with the same browser session the activity scraper already uses. Checked
+ * 11/07 in the owner's signed-in Mojo: 10/09–10/19 returns 595 calls (249 and
+ * 346 per day, sessions 474/475/476 = 3/47/296, ids 31597–31942 on 10/19),
+ * exactly the counts the MCP backfill expects. The report has no talk time,
+ * so durations come from the recording report; unrecorded dials stay 0 s.
+ */
+export function createSessionCallingReportSource(options: {
+  sessionId: string
+  baseUrl?: string
+  fetchImpl?: FetchLike
+}): MojoCallSource {
+  if (!options.sessionId.trim()) throw new Error('mojo_session_required')
+  const fetchImpl = options.fetchImpl ?? fetch
+  const baseUrl = (options.baseUrl ?? 'https://app71.mojosells.com').replace(/\/$/, '')
+  const recordings = createSessionRecordingCallSource({ ...options, fetchImpl, baseUrl })
+  const durations = new Map<string, Map<string, number>>()
+
+  async function durationsFor(dateFrom: string, dateTo: string): Promise<Map<string, number>> {
+    const key = `${dateFrom}:${dateTo}`
+    const known = durations.get(key)
+    if (known) return known
+    const map = new Map<string, number>()
+    for (let page = 1; ; page += 1) {
+      const listed = await recordings.listCalls({ dateFrom, dateTo, page, pageSize: 500 })
+      for (const call of listed.results) map.set(call.provider_call_id, call.duration_seconds)
+      if (page >= listed.totalPages) break
+    }
+    durations.set(key, map)
+    return map
+  }
+
+  return {
+    kind: 'mojo_session_calling_report',
+    async listCalls(query) {
+      const talk = await durationsFor(query.dateFrom, query.dateTo)
+      const page = positiveInt(query.page, 1)
+      const pageSize = Math.min(positiveInt(query.pageSize, 100), 500)
+      const response = await fetchImpl(`${baseUrl}${MOJO_CALLING_REPORT_PATH}`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/plain, */*',
+          'content-type': 'application/json',
+          cookie: `sessionid=${options.sessionId}`,
+          referer: `${baseUrl}/reports/calling-report/`,
+        },
+        body: JSON.stringify(callingReportBody(query.dateFrom, query.dateTo, page, pageSize)),
+      })
+      if (response.status === 401 || response.status === 403) throw new Error('session_expired')
+      if (!response.ok) throw new Error(`mojo_calling_report_${response.status}`)
+      let payload: { total_count?: unknown; total_pages?: unknown; page?: unknown; results?: unknown }
+      try {
+        payload = await response.json()
+      } catch {
+        // Mojo answers an expired session with its login page, not JSON.
+        throw new Error('session_expired')
+      }
+      if (!Array.isArray(payload.results)) throw new Error('invalid_mojo_calling_report')
+      const results = payload.results.map((row) => {
+        const id = row && typeof row === 'object' ? String((row as { id?: unknown }).id ?? '') : ''
+        return mapCallingReportRow(row, talk.get(id) ?? 0)
+      })
+      return {
+        totalCount: typeof payload.total_count === 'number' ? payload.total_count : results.length,
+        totalPages: Math.max(1, typeof payload.total_pages === 'number' ? payload.total_pages : 1),
+        page: typeof payload.page === 'number' ? payload.page : page,
+        results,
+        skippedUnkeyed: 0,
+      }
+    },
+  }
+}
+
+/** All agents, whole Central-time days. Mojo rejects date_range=custom. */
+export function callingReportBody(dateFrom: string, dateTo: string, page: number, pageSize: number) {
+  return {
+    agents: '[]',
+    caller_ids: '[]',
+    weekdays: '[]',
+    select_field_filters: JSON.stringify({ lists: [], sublists: [], groups: [], subgroups: [] }),
+    session_types: '[]',
+    search: '',
+    start_date: `${dateFrom}T00:00:00${centralOffset(dateFrom)}`,
+    end_date: `${dateTo}T23:59:59${centralOffset(dateTo)}`,
+    page,
+    page_size: pageSize,
+  }
+}
+
+/** UTC offset of America/Chicago at noon on a YYYY-MM-DD date, e.g. -05:00. */
+export function centralOffset(date: string): string {
+  const name = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'shortOffset' })
+    .formatToParts(new Date(`${date}T12:00:00Z`))
+    .find((part) => part.type === 'timeZoneName')?.value ?? 'GMT-6'
+  const hours = Number(name.replace('GMT', '') || '0')
+  return `${hours < 0 ? '-' : '+'}${String(Math.abs(hours)).padStart(2, '0')}:00`
+}
+
 export function createMojoCallSource(options: {
   env?: NodeJS.ProcessEnv
   sessionId?: string | null
@@ -161,7 +262,7 @@ export function createMojoCallSource(options: {
   }
   if (options.sessionId?.trim()) {
     return {
-      source: createSessionRecordingCallSource({
+      source: createSessionCallingReportSource({
         sessionId: options.sessionId,
         fetchImpl: options.fetchImpl,
         baseUrl: options.baseUrl,
