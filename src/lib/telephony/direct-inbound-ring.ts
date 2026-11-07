@@ -49,9 +49,9 @@ function caseyPersonalCell(): string {
  * How an inbound company DID rings.
  * Casey's company and legacy DIDs follow Ernest's company and dispositions
  * DIDs: client identity unless MOBILE_IN_APP_VOICE=false, and the personal
- * cell unless MOBILE_PERSONAL_FORWARD=false. +18164292900 leaves the seller
- * IVR only when MOBILE_IN_APP_VOICE=true, and then dials Ernest's cell only
- * when personal forward is explicitly true.
+ * cell unless MOBILE_PERSONAL_FORWARD=false. +18164292900 is the public
+ * business line: it always plays the seller IVR (owner 11/06), and press 1 /
+ * press 2 ring the app clients through ivrAgentClientNouns().
  */
 export function inboundRingPlan(calledNumber: string | null | undefined): InboundRingPlan {
   const number = normalizePhoneToE164(calledNumber)
@@ -62,14 +62,11 @@ export function inboundRingPlan(calledNumber: string | null | undefined): Inboun
 
   const caseyDirect = CASEY_DIRECT_DIDS.has(number)
   const ernestDirect = ERNEST_DIRECT_DIDS.has(number)
-  const ernestBusiness = number === ERNEST_BUSINESS_DID && inApp === true
-  if (!caseyDirect && !ernestDirect && !ernestBusiness) return none
+  if (!caseyDirect && !ernestDirect) return none
 
   const ownerEmail = caseyDirect ? 'casey@savingkc.com' : 'ernest@savingkc.com'
   const identity = inApp === false ? null : resolveAgentTelephonyProfile(ownerEmail).identity
-  const cell = (caseyDirect || ernestDirect)
-    ? (personal === false ? null : (caseyDirect ? caseyPersonalCell() : ernestPersonalCell()))
-    : (personal === true ? ernestPersonalCell() : null)
+  const cell = personal === false ? null : (caseyDirect ? caseyPersonalCell() : ernestPersonalCell())
 
   return {
     kind: 'direct',
@@ -170,7 +167,34 @@ export function directInboundClientNoun(
   calledNumber: string | null | undefined,
   options?: DirectInboundClientNounOptions,
 ): string {
-  const identity = directInboundClientIdentity(calledNumber)
+  return clientNounFor(directInboundClientIdentity(calledNumber), calledNumber, options)
+}
+
+/**
+ * Seller-IVR press 1 / press 2: the app clients to ring with the agents'
+ * cells, route owner first. None when MOBILE_IN_APP_VOICE=false.
+ */
+export function ivrAgentClientIdentities(calledNumber: string | null | undefined): string[] {
+  if (mobileFlag('MOBILE_IN_APP_VOICE') === false) return []
+  const number = normalizePhoneToE164(calledNumber)
+  const owners = number && CASEY_DIRECT_DIDS.has(number)
+    ? ['casey@savingkc.com', 'ernest@savingkc.com']
+    : ['ernest@savingkc.com', 'casey@savingkc.com']
+  return [...new Set(owners.map((email) => resolveAgentTelephonyProfile(email).identity).filter((identity): identity is string => Boolean(identity)))]
+}
+
+export function ivrAgentClientNouns(
+  calledNumber: string | null | undefined,
+  options: DirectInboundClientNounOptions,
+): string {
+  return ivrAgentClientIdentities(calledNumber).map((identity) => clientNounFor(identity, calledNumber, options)).join('')
+}
+
+function clientNounFor(
+  identity: string | null,
+  calledNumber: string | null | undefined,
+  options?: DirectInboundClientNounOptions,
+): string {
   if (!identity || /[^a-z0-9_-]/i.test(identity)) return ''
   const statusCallback = options?.statusCallback?.trim()
   const opening = statusCallback

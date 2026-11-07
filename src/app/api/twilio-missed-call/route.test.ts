@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
   validateTwilioWebhook: vi.fn(),
   sendTeamLeadAlert: vi.fn(),
   safeSendSMS: vi.fn(),
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/supabase-lazy', () => ({
-  supabase: { from: mocks.from },
+  supabase: { from: mocks.from, rpc: mocks.rpc },
 }))
 
 vi.mock('@/lib/twilio-validate', () => ({
@@ -119,6 +120,8 @@ describe('twilio missed-call parent callback', () => {
     vi.clearAllMocks()
     vi.useFakeTimers()
     mocks.from.mockImplementation((table: string) => query(table, writes))
+    // Default: claim RPC not migrated yet → legacy insert path.
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } })
     mocks.validateTwilioWebhook.mockResolvedValue(true)
     mocks.automatedSmsBlockReason.mockResolvedValue(null)
     mocks.safeSendSMS.mockResolvedValue({ sid: 'SM1' })
@@ -218,5 +221,24 @@ describe('twilio missed-call parent callback', () => {
     expect(leadInserts()).toHaveLength(1)
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(mocks.getMissedCallResponse).not.toHaveBeenCalled()
+  })
+  it('reuses the lead a concurrent duplicate callback already created (no second lead, no second alert)', async () => {
+    mocks.rpc.mockResolvedValue({ data: [{ lead_id: 'lead-from-racer', created: false }], error: null })
+    const response = await post({ To: '+18166088858', CallStatus: 'no-answer', CallDuration: '0' })
+
+    expect(response.status).toBe(200)
+    expect(mocks.rpc).toHaveBeenCalledWith('claim_inbound_caller_lead', expect.objectContaining({ p_phone: CALLER }))
+    expect(leadInserts()).toHaveLength(0)
+    expect(mocks.sendTeamLeadAlert).not.toHaveBeenCalled()
+  })
+
+  it('alerts once when the claim RPC creates the lead', async () => {
+    mocks.rpc.mockResolvedValue({ data: [{ lead_id: 'lead-claimed', created: true }], error: null })
+    const response = await post({ To: '+18166088858', CallStatus: 'no-answer', CallDuration: '0' })
+
+    expect(response.status).toBe(200)
+    expect(leadInserts()).toHaveLength(0)
+    expect(mocks.sendTeamLeadAlert).toHaveBeenCalledTimes(1)
+    expect(mocks.sendTeamLeadAlert).toHaveBeenCalledWith(expect.objectContaining({ leadId: 'lead-claimed' }))
   })
 })

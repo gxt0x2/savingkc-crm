@@ -1,11 +1,47 @@
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { formatPhone } from '@/lib/format'
+import { inboundClientDialCallerId, ivrAgentClientNouns } from '@/lib/telephony/direct-inbound-ring'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const INVALID_TWILIO_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
+
+/**
+ * Press 1 / press 2 ring the agents' SavingKC apps together with their cells
+ * (owner 11/06: the app, cells as backup). Cold callbacks keep cells only.
+ * A Voice client must present the caller's number so CallKit shows the seller.
+ */
+function agentDial(input: {
+  from: string
+  calledNumber: string
+  companyNumber: string
+  leadId: string
+  type: 'seller' | 'non_seller'
+  cells: string[]
+  ringApps: boolean
+}): string {
+  const whisper = `${BASE_URL}/api/ivr/whisper?type=${input.type}&amp;from=${encodeURIComponent(input.from)}${input.type === 'seller' ? `&amp;leadId=${encodeURIComponent(input.leadId)}` : ''}`
+  const clients = input.ringApps ? ivrAgentClientNouns(input.calledNumber, {
+    statusCallback: `${BASE_URL}/api/twilio-inbound-client-status`,
+    callerNumber: input.from,
+    callerName: '',
+    calledNumber: input.calledNumber,
+  }) : ''
+  const callerId = clients
+    ? inboundClientDialCallerId({ from: input.from, calledNumber: input.companyNumber, ringsClient: true })
+    : input.companyNumber
+  // CallKit needs longer than a cell to wake a locked phone.
+  const timeout = clients ? 30 : 20
+  const numbers = input.cells.map((cell) => `<Number url="${whisper}">${cell}</Number>`).join('\n    ')
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(input.from)}&amp;leadId=${encodeURIComponent(input.leadId)}&amp;calledNumber=${encodeURIComponent(input.calledNumber)}&amp;type=${input.type}" method="POST" timeout="${timeout}" callerId="${callerId}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
+    ${clients}${numbers}
+  </Dial>
+</Response>`
+}
 
 function invalidTwilioResponse() {
   return new NextResponse(INVALID_TWILIO_TWIML, {
@@ -91,14 +127,16 @@ export async function POST(req: Request) {
 
     }
 
-    // Sim-ring both agents — first to answer gets connected
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.primary.phone}</Number>
-    <Number url="${BASE_URL}/api/ivr/whisper?type=seller&amp;from=${encodeURIComponent(from)}&amp;leadId=${encodeURIComponent(leadId)}">${routing.secondary.phone}</Number>
-  </Dial>
-</Response>`
+    // Sim-ring both agents (apps and cells) — first to answer gets connected
+    const twiml = agentDial({
+      from,
+      calledNumber,
+      companyNumber: routing.primary.companyNumber,
+      leadId,
+      type: 'seller',
+      cells: [routing.primary.phone, routing.secondary.phone],
+      ringApps: !isColdCall,
+    })
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
@@ -123,13 +161,15 @@ export async function POST(req: Request) {
       })
     }
 
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial action="${BASE_URL}/api/ivr/dial-result?from=${encodeURIComponent(from)}&amp;leadId=&amp;calledNumber=${encodeURIComponent(calledNumber)}&amp;type=non_seller" method="POST" timeout="20" callerId="${routing.primary.companyNumber}" answerOnBridge="true" record="record-from-answer-dual" recordingStatusCallback="${BASE_URL}/api/twilio-recording-callback" recordingStatusCallbackMethod="POST">
-    <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${routing.primary.phone}</Number>
-    <Number url="${BASE_URL}/api/ivr/whisper?type=non_seller&amp;from=${encodeURIComponent(from)}">${routing.secondary.phone}</Number>
-  </Dial>
-</Response>`
+    const twiml = agentDial({
+      from,
+      calledNumber,
+      companyNumber: routing.primary.companyNumber,
+      leadId: '',
+      type: 'non_seller',
+      cells: [routing.primary.phone, routing.secondary.phone],
+      ringApps: true,
+    })
     return new NextResponse(twiml, { headers: { 'Content-Type': 'text/xml' } })
   }
 
