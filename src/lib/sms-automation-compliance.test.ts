@@ -204,6 +204,11 @@ describe('INC-2026-09-22-001 automated SMS suppression', () => {
     await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBe('contact_opted_out')
   })
 
+  it('never auto-texts one of our own Twilio numbers (recipient allowlist)', async () => {
+    await expect(automatedSmsBlockReason({ phone: '(816) 429-2900', leadId: null })).resolves.toBe('company_number')
+    await expect(automatedSmsBlockReason({ phone: '+18163077835', leadId: null })).resolves.toBe('company_number')
+  })
+
   it('blocks automated SMS to a DND lead without rewriting the lead', async () => {
     harness.state.leads[0].dead_reason = 'dnc_refused'
     await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBe('dnd')
