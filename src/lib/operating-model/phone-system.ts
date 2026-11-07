@@ -140,7 +140,7 @@ function routeFor(config: TwilioNumberConfig): PhoneSystemRecord {
     routeType: 'acquisitions_ivr',
     health: 'healthy',
     healthNote: businessLine
-      ? 'Public business line. Plays the seller IVR. Press 1 and press 2 ring Ernest and Casey in the SavingKC app and on their cells at the same time. (816) 608-8588 remains his outbound caller ID.'
+      ? 'Public business line. Menu: 1 selling, 2 anything else, 9 stop calls. No key gets one retry, then connects anyway. Every connection is announced, then rings Ernest and Casey in the SavingKC app and on their cells together for 30 s before voicemail. (816) 608-8588 remains his outbound caller ID.'
       : 'Standard seller intake and acquisition routing.',
     workflowId: 'acquisitions-seller-call-flow',
     inboundPath: ['Twilio number', '/api/twiml-voice', 'Seller IVR', '/api/ivr/handle-input', 'Acquisitions team'],

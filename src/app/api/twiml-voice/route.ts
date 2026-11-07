@@ -1,3 +1,4 @@
+import { businessMenuTwiml, isBusinessLine } from '@/lib/telephony/business-line-ivr'
 import { NextResponse } from 'next/server'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS } from '@/lib/twilio-numbers'
@@ -489,6 +490,8 @@ export async function POST(req: Request) {
       return xmlResponse(twiml)
     }
 
+    // ── BUSINESS LINE (816) 429-2900: menu with retry and press 9 ──
+    if (isBusinessLine(to)) return xmlResponse(businessMenuTwiml({ baseUrl: BASE_URL, from, callSid, calledNumber: to, attempt: 1 }))
     // ── STANDARD INBOUND: ElevenLabs Jessica greeting ──
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

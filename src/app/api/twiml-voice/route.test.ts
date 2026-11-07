@@ -648,9 +648,10 @@ describe('verified inbound TwiML routing', () => {
       To: '+18164292900',
     }))
 
-    expect(text).toContain('<Gather')
-    expect(text).toContain('/api/audio/ivr-greeting.mp3')
+    expect(text).toContain('<Gather numDigits="1"')
+    expect(text).toContain('press 9')
     expect(text).toContain('/api/ivr/handle-input')
+    expect(text).toContain('/api/ivr/business-menu?')
     expect(text).not.toContain('<Client')
     expect(text).not.toContain('<Dial')
   })
