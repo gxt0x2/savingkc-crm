@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Deno edge function carried over verbatim from live v4; Google API payloads are untyped. */
 // analytics-sync: GSC + GA4 pull; Admin key-event mark when SA has analytics.edit + Editor on property.
 // v5 (2026-11-06): + GA4 eventName × landingPage × sessionSourceMedium daily (ga4_event_daily) and a
 // read-only events_probe mode. Source of truth now lives in the CRM repo (supabase/functions/analytics-sync).

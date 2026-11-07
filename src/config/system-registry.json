@@ -527,7 +527,7 @@
       "status": "active",
       "routes": ["/marketing/website-conversion"],
       "apiRoutes": ["/api/marketing/website-conversion"],
-      "tables": ["ga4_landing_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events"],
+      "tables": ["ga4_landing_daily", "ga4_event_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events"],
       "environment": []
     },
     {
