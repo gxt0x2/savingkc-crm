@@ -527,7 +527,7 @@
       "status": "active",
       "routes": ["/marketing/website-conversion"],
       "apiRoutes": ["/api/marketing/website-conversion"],
-      "tables": ["ga4_landing_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events"],
+      "tables": ["ga4_landing_daily", "ga4_event_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events"],
       "environment": []
     },
     {
@@ -711,6 +711,7 @@
         "/api/mobile/v1/work-items/[id]/reopen",
         "/api/mobile/v1/work-items/[id]/cancel",
         "/api/mobile/v1/twilio/hangup",
+        "/api/mobile/v1/twilio/registration",
         "/api/mobile/v1/devices/push-token"
       ],
       "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents", "mobile_voice_attempts"],

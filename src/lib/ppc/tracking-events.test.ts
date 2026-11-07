@@ -57,3 +57,27 @@ describe('ppc tracking event rows', () => {
     })
   })
 })
+
+describe('sitewide journey traffic sources (Item 1)', () => {
+  const base = { eventId: 'sid-1:page_view:1', eventName: 'page_view', sessionId: 'sid-1' }
+
+  it('does not label an organic or ChatGPT visitor on the main site as Google Ads', () => {
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/probate/', pageReferrer: 'https://www.google.com/', attribution: {} }).traffic_source).toBe('organic_search')
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/', pageReferrer: 'https://chatgpt.com/', attribution: {} }).traffic_source).toBe('ai_referral')
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/', attribution: { utm_source: 'chatgpt.com' } }).traffic_source).toBe('ai_referral')
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/', attribution: {} }).traffic_source).toBe('direct')
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/', trafficSource: 'non_paid', pageReferrer: 'https://www.facebook.com/', attribution: {} }).traffic_source).toBe('social')
+  })
+
+  it('keeps paid when there is paid evidence', () => {
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/', attribution: { gclid: 'Cj0abc' } }).traffic_source).toBe('google_ads')
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/', attribution: { utm_source: 'google', utm_medium: 'cpc' } }).traffic_source).toBe('google_ads')
+    expect(buildPpcTrackingEventRow({ ...base, pagePath: '/', trafficSource: 'google_ads', attribution: {} }).traffic_source).toBe('google_ads')
+  })
+
+  it('keeps the site journey label and flags test events', () => {
+    const row = buildPpcTrackingEventRow({ ...base, eventName: 'cta_click', trafficSource: 'ai_referral', isTest: true, attribution: {} })
+    expect(row).toMatchObject({ traffic_source: 'ai_referral', is_test: true, event_category: 'web' })
+    expect(buildPpcTrackingEventRow({ ...base, eventName: 'form_step_completed', formStep: 2, attribution: {} })).toMatchObject({ event_category: 'form', form_step: 2 })
+  })
+})

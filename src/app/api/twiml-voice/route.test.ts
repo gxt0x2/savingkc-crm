@@ -639,7 +639,7 @@ describe('verified inbound TwiML routing', () => {
     expect(text).not.toContain('timeout="45"')
   })
 
-  it('rings client:ernest for the business line with the real caller and no personal cell', async () => {
+  it('plays the seller IVR on the business line even with in-app voice on', async () => {
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
     const { text } = await responseText(twilioRequest({
@@ -648,16 +648,11 @@ describe('verified inbound TwiML routing', () => {
       To: '+18164292900',
     }))
 
-    expect(text).toContain('<Identity>ernest</Identity>')
-    expect(text).toContain('callerId="+18162608357"')
-    expect(text).not.toContain('callerId="+18166088588"')
-    expect(text).toContain('<Parameter name="callerNumber" value="+18162608357" />')
-    expect(text).toContain('<Parameter name="calledNumber" value="+18164292900" />')
-    expect(text).toContain('/api/ivr/dial-result')
-    expect(text).not.toContain('+18162262552')
-    expect(text).not.toContain('+18167564943')
-    expect(text).not.toContain('<Number')
-    expect(text).not.toContain('<Gather')
+    expect(text).toContain('<Gather')
+    expect(text).toContain('/api/audio/ivr-greeting.mp3')
+    expect(text).toContain('/api/ivr/handle-input')
+    expect(text).not.toContain('<Client')
+    expect(text).not.toContain('<Dial')
   })
 
   it('dials the documented cell when personal forward is on', async () => {
@@ -693,9 +688,9 @@ describe('verified inbound TwiML routing', () => {
       throw new Error('inbound routing unavailable')
     })
     const { text } = await responseText(twilioRequest({
-      CallSid: 'CA_business_emergency',
+      CallSid: 'CA_company_emergency',
       From: '+18162608357',
-      To: '+18164292900',
+      To: '+18166088588',
     }))
 
     expect(text).toContain('<Identity>ernest</Identity>')

@@ -206,3 +206,31 @@ describe('website conversion aggregation', () => {
     expect(report.gsc.averagePosition).toBe(2)
   })
 })
+
+describe('GA4 event funnel (ga4_event_daily)', () => {
+  const base = { range: 'day' as const, now: NOW, ga4Rows: [], gscRows: [], leads: [], events: [], syncRuns: covered }
+
+  it('sums allowlisted events by source for the window, in funnel order', () => {
+    const report = buildWebsiteConversionReport({
+      ...base,
+      ga4EventRows: [
+        { date: '2026-10-24', event_name: 'page_view', session_source_medium: 'chatgpt.com / ai-assistant', event_count: 40, key_events: 0 },
+        { date: '2026-10-24', event_name: 'page_view', session_source_medium: 'google / organic', event_count: 60, key_events: 0 },
+        { date: '2026-10-24', event_name: 'phone_click', session_source_medium: 'google / cpc', event_count: 3, key_events: 3 },
+        { date: '2026-10-24', event_name: 'generate_lead', session_source_medium: '(direct) / (none)', event_count: 2, key_events: 2 },
+        { date: '2026-10-23', event_name: 'page_view', session_source_medium: 'google / organic', event_count: 999, key_events: 0 },
+        { date: '2026-10-24', event_name: 'user_engagement', session_source_medium: 'google / organic', event_count: 500, key_events: 0 },
+      ],
+    })
+    expect(report.ga4Events.status).toBe('ready')
+    expect(report.ga4Events.rows[0]).toMatchObject({ event: 'page_view', total: 100, bySource: expect.objectContaining({ chatgpt: 40, google_organic: 60 }) })
+    expect(report.ga4Events.rows.find((r) => r.event === 'phone_click')).toMatchObject({ total: 3, keyEvents: 3, bySource: expect.objectContaining({ google_cpc: 3 }) })
+    expect(report.ga4Events.rows.find((r) => r.event === 'generate_lead')).toMatchObject({ total: 2, bySource: expect.objectContaining({ direct: 2 }) })
+    expect(report.ga4Events.rows.some((r) => r.event === 'user_engagement')).toBe(false)
+  })
+
+  it('reports missing until the table exists', () => {
+    expect(buildWebsiteConversionReport({ ...base, ga4EventRows: null }).ga4Events).toEqual({ status: 'missing', rows: [] })
+    expect(buildWebsiteConversionReport(base).ga4Events.status).toBe('missing')
+  })
+})
