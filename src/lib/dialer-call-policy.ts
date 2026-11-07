@@ -14,6 +14,7 @@ export type DialerCallBlockReason =
   | 'wrong_number'
   | 'disconnected'
   | 'blocked_number'
+  | 'voice_hold'
   | 'internal_destination'
   | 'destination_mismatch'
   | 'policy_unavailable'
@@ -69,6 +70,7 @@ const BLOCK_MESSAGES: Record<DialerCallBlockReason, string> = {
   wrong_number: 'This number is marked as a wrong number.',
   disconnected: 'This number is marked disconnected.',
   blocked_number: 'This number is blocked from outbound calling.',
+  voice_hold: 'This number is on voice hold. Clear the hold on the phone before calling it.',
   internal_destination: 'Company-owned phone numbers cannot be called from this dialer.',
   destination_mismatch: 'The selected contact does not match this phone number.',
   policy_unavailable: 'Calling is paused because the safety check is unavailable.',

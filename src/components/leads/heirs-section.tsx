@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '@/components/ui/icon'
 import { ContactNoteComposer } from '@/components/leads/contact-note-composer'
+import { VoiceHoldButton } from '@/components/leads/voice-hold-button'
 import { HeirsCallingCompact } from '@/components/leads/heirs-calling-compact'
 import { useHeirsSectionData } from '@/components/leads/use-heirs-section-data'
 import { formatPhone, toProperCase } from '@/lib/format'
@@ -673,7 +674,7 @@ function PhonePill({
       >
         <Icon name={verified ? 'verified' : 'verified_user'} size="text-sm" filled={verified} />
       </button> : null}
-
+      <VoiceHoldButton phone={phone} readOnly={readOnlyPreview} />
       {(onSms || (readOnlyPreview && sourceProspectPhoneId(phone))) && (
         <button
           onClick={onSms}
@@ -700,6 +701,8 @@ function PhonePill({
         title={
           readOnlyPreview
             ? 'Calling is disabled in this read-only preview'
+            : phone.voice_hold
+            ? 'Calling paused: voice hold is on'
             : !callable
             ? 'Calling blocked by saved disposition'
             : verified

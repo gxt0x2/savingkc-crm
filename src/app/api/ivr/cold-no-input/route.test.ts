@@ -64,6 +64,7 @@ describe('cold-no-input voice path', () => {
     expect(twiml).toContain('No problem. Have a great day.')
     expect(twiml).not.toContain("We'll send you a quick text")
     expect(twiml).not.toContain('cash offer')
+    expect(twiml).not.toMatch(/saving\s*kc|savingkc|homebuyers/i)
 
     await vi.runAllTimersAsync()
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()

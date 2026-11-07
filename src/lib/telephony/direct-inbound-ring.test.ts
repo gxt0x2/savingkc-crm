@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveAgentTelephonyProfile } from './agent-identity'
 import {
+  ivrAgentClientIdentities,
+  ivrAgentClientNouns,
   directInboundClientIdentity,
   directInboundClientNoun,
   inboundCallerDisplayName,
@@ -79,7 +81,7 @@ describe('direct inbound Voice client', () => {
   it('dials client:ernest only when in-app voice is on and personal forward is off', () => {
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
-    for (const number of ['+18164292900', '+18166088588', '+18166088858']) {
+    for (const number of ['+18166088588', '+18166088858']) {
       expect(inboundRingPlan(number)).toMatchObject({
         kind: 'direct',
         identity: 'ernest',
@@ -87,14 +89,27 @@ describe('direct inbound Voice client', () => {
         personalForwardSuppressed: true,
       })
     }
-    expect(directInboundClientIdentity('+18164292900')).toBe('ernest')
+    // Owner 11/06: the public business line always plays the seller IVR.
+    expect(inboundRingPlan('+18164292900')).toMatchObject({ kind: 'passthrough', identity: null, cell: null })
+    expect(directInboundClientIdentity('+18164292900')).toBeNull()
     expect(ownedInboundCompanyNumbers('ernest')).toContain('+18164292900')
+  })
+
+  it('rings both apps on IVR press 1/2, route owner first, and none when in-app voice is off', () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    expect(ivrAgentClientIdentities('+18164292900')).toEqual(['ernest', 'casey'])
+    expect(ivrAgentClientIdentities('+18167277667')).toEqual(['casey', 'ernest'])
+    const nouns = ivrAgentClientNouns('+18164292900', { callerNumber: '+19137179716', callerName: '', calledNumber: '+18164292900' })
+    expect(nouns).toContain('<Identity>ernest</Identity><Parameter name="callerNumber" value="+19137179716" />')
+    expect(nouns).toContain('<Identity>casey</Identity>')
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'false')
+    expect(ivrAgentClientIdentities('+18164292900')).toEqual([])
   })
 
   it('dials the documented personal cell when personal forward is on', () => {
     vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'true')
     vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
-    expect(inboundRingPlan('+18164292900')).toMatchObject({
+    expect(inboundRingPlan('+18166088588')).toMatchObject({
       identity: 'ernest',
       cell: '+18162262552',
       personalForwardSuppressed: false,
@@ -107,7 +122,7 @@ describe('direct inbound Voice client', () => {
     })
   })
 
-  it('leaves the business line on the seller IVR until in-app voice is enabled', () => {
+  it('leaves the business line on the seller IVR', () => {
     expect(inboundRingPlan('+18164292900')).toMatchObject({ kind: 'passthrough', identity: null, cell: null })
     expect(directInboundClientIdentity('+18164292900')).toBeNull()
   })

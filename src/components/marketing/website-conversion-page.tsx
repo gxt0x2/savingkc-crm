@@ -324,6 +324,40 @@ export function WebsiteConversionPage() {
                 </table>
               )}
             </Panel>
+            <Panel title="GA4 event funnel" hint="ga4_event_daily from the analytics-sync GA4 events pull. Event counts by session source for this range. Key = counted as a GA4 key event.">
+              {report.ga4Events.status === 'missing' ? <EmptyNote>GA4 events are not synced yet. They appear after the ga4_event_daily migration and the next analytics-sync run.</EmptyNote> : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-left text-[11px]">
+                    <thead>
+                      <tr className="text-[var(--crm-text-muted)]">
+                        <th className="py-1.5 pr-2 font-semibold">Event</th>
+                        <th className="py-1.5 px-1 text-right font-semibold">All</th>
+                        <th className="py-1.5 px-1 text-right font-semibold">ChatGPT</th>
+                        <th className="py-1.5 px-1 text-right font-semibold">Google org</th>
+                        <th className="py-1.5 px-1 text-right font-semibold">Google cpc</th>
+                        <th className="py-1.5 px-1 text-right font-semibold">Direct</th>
+                        <th className="py-1.5 px-1 text-right font-semibold">Other</th>
+                        <th className="py-1.5 pl-1 text-right font-semibold">Key</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--crm-border)]">
+                      {report.ga4Events.rows.map((row) => (
+                        <tr key={row.event}>
+                          <th className="py-2 pr-2 text-left font-semibold text-[var(--crm-text-muted)]">{row.event}</th>
+                          <td className="py-2 px-1 text-right font-black text-[var(--crm-ink)]">{formatCount(row.total)}</td>
+                          <td className="py-2 px-1 text-right text-[var(--crm-ink)]">{formatCount(row.bySource.chatgpt)}</td>
+                          <td className="py-2 px-1 text-right text-[var(--crm-ink)]">{formatCount(row.bySource.google_organic)}</td>
+                          <td className="py-2 px-1 text-right text-[var(--crm-ink)]">{formatCount(row.bySource.google_cpc)}</td>
+                          <td className="py-2 px-1 text-right text-[var(--crm-ink)]">{formatCount(row.bySource.direct)}</td>
+                          <td className="py-2 px-1 text-right text-[var(--crm-ink)]">{formatCount(row.bySource.bing_organic + row.bySource.other)}</td>
+                          <td className="py-2 pl-1 text-right text-[var(--crm-ink)]">{formatCount(row.keyEvents)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
             <Panel title="Call intent" hint="Tel clicks are phone_click and skc_phone_number_selected. Phone leads are google_ads_phone and google_ads_tax_phone.">
               <table className="w-full text-left text-[11px]">
                 <tbody className="divide-y divide-[var(--crm-border)]">

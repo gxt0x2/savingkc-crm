@@ -31,6 +31,32 @@ export type UnassignedMobileCallInput = {
   userId: string
   userEmail: string | null
   agentName: string
+  /** The app answered an inbound call. Defaults to outbound. */
+  direction?: MobileCallDirection
+  /** Twilio client-leg SID, joins this log to the provider rows for the call. */
+  callSid?: string | null
+}
+
+export type MobileCallDirection = 'inbound' | 'outbound'
+
+export function mobileCallDirection(value: unknown): MobileCallDirection {
+  return value === 'inbound' ? 'inbound' : 'outbound'
+}
+
+/** Only a real Twilio Call SID; anything else is dropped, never stored. */
+export function boundedCallSid(value: unknown): string | null {
+  return typeof value === 'string' && /^CA[0-9a-f]{32}$/i.test(value.trim()) ? value.trim() : null
+}
+
+export function mobileCallDescription(phone: string, event: 'started' | 'ended', outcome: string | null, direction: MobileCallDirection = 'outbound'): string {
+  if (direction === 'inbound') {
+    return event === 'started'
+      ? `Mobile inbound call from ${formatPhone(phone)}`
+      : `Mobile inbound call ended: ${outcome || 'unknown'}`
+  }
+  return event === 'started'
+    ? `Mobile outbound call to ${formatPhone(phone)}`
+    : `Mobile outbound call ended: ${outcome || 'unknown'}`
 }
 
 type CallMetadata = Record<string, unknown>
@@ -103,11 +129,6 @@ function durationOf(value: unknown): number {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0
 }
 
-function description(phone: string, event: 'started' | 'ended', outcome: string | null): string {
-  return event === 'started'
-    ? `Mobile outbound call to ${formatPhone(phone)}`
-    : `Mobile outbound call ended: ${outcome || 'unknown'}`
-}
 
 function mergedCall(input: UnassignedMobileCallInput, previous: CallMetadata | null) {
   const previousEnded = previous?.event === 'ended'
@@ -128,9 +149,10 @@ function metadataFor(input: UnassignedMobileCallInput, previous: CallMetadata | 
     source: MOBILE_PHONE_CALL_SOURCE,
     phoneLevel: true,
     is_internal: true,
-    direction: 'outbound',
+    direction: input.direction ?? 'outbound',
     phone: input.phone,
-    to: input.phone,
+    ...(input.direction === 'inbound' ? { from: input.phone } : { to: input.phone }),
+    ...(input.callSid ? { callSid: input.callSid } : {}),
     event: merged.event,
     status: merged.event === 'ended' ? 'completed' : 'initiated',
     outcome: merged.outcome,
@@ -147,7 +169,7 @@ function rowFor(input: UnassignedMobileCallInput, metadata: CallMetadata) {
   return {
     lead_id: null,
     activity_type: 'call',
-    description: description(input.phone, metadata.event === 'ended' ? 'ended' : 'started', text(metadata.outcome)),
+    description: mobileCallDescription(input.phone, metadata.event === 'ended' ? 'ended' : 'started', text(metadata.outcome), input.direction),
     agent: input.agentName,
     metadata,
   }

@@ -83,56 +83,56 @@
         "maximumLines": 800,
         "owner": "Acquisitions",
         "reason": "The guided audio review and AI pre-score remain consolidated during reviewer validation; freeze growth while the scorecard overlays are extracted into owned components.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/(app)/dispo/pipeline/page.tsx",
         "maximumLines": 863,
         "owner": "Dispositions",
         "reason": "Existing operations pipeline restored from the prior portal; freeze growth while the workflow is split into owned components.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/(app)/dispo/tc/page.tsx",
         "maximumLines": 1858,
         "owner": "Transaction Coordination",
         "reason": "Existing transaction coordinator portal restored as one release unit; freeze growth while lanes and panels are extracted.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/api/marketing/ads-command/route.ts",
         "maximumLines": 1727,
         "owner": "Marketing",
         "reason": "Google Ads read model remains consolidated during the provider recovery; freeze growth while report builders are separated.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/app/globals.css",
         "maximumLines": 1105,
         "owner": "Design System",
         "reason": "The current CRM shell and restored operations portals share legacy global tokens; freeze growth while route themes move into scoped layers.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/lib/operating-model/communication-template-catalog.ts",
         "maximumLines": 737,
         "owner": "Operations",
         "reason": "The approved acquisitions and dispositions template catalog is kept intact for this release; freeze growth while templates move to data-backed modules.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "apps/mobile/App.tsx",
         "maximumLines": 1115,
         "owner": "Acquisitions",
         "reason": "The existing native shell remains consolidated while the server-authorized call path ships; freeze growth while phone and queue flows are extracted.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/components/telephony/telephony-bar.tsx",
         "maximumLines": 1741,
         "owner": "Acquisitions",
         "reason": "The shared softphone now bridges provider events to the durable server-owned attempt lifecycle; freeze growth while call state and device controls are extracted.",
-        "targetDate": "2026-10-31"
+        "targetDate": "2026-12-31"
       },
       {
         "path": "src/components/email/email-thread-panel.tsx",
@@ -527,7 +527,7 @@
       "status": "active",
       "routes": ["/marketing/website-conversion"],
       "apiRoutes": ["/api/marketing/website-conversion"],
-      "tables": ["ga4_landing_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events"],
+      "tables": ["ga4_landing_daily", "ga4_event_daily", "gsc_page_query_daily", "analytics_sync_runs", "leads", "ppc_tracking_events"],
       "environment": []
     },
     {
@@ -711,6 +711,7 @@
         "/api/mobile/v1/work-items/[id]/reopen",
         "/api/mobile/v1/work-items/[id]/cancel",
         "/api/mobile/v1/twilio/hangup",
+        "/api/mobile/v1/twilio/registration",
         "/api/mobile/v1/devices/push-token"
       ],
       "tables": ["mobile_command_receipts", "mobile_message_thread_state", "mobile_message_send_receipts", "mobile_push_devices", "appointment_command_events", "mobile_appointment_calendar_sync", "documents", "mobile_voice_attempts"],

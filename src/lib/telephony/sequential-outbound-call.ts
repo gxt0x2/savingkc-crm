@@ -116,3 +116,54 @@ export function postDialerCallLog(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   }).catch(() => {})
 }
+
+export type OutboundDialResult = 'connected' | 'no_answer' | 'hangup_before_ring'
+
+/**
+ * With enableRingingState, Twilio emits `ringing` once the far end is ringing
+ * and `accept` once it answers. A call that ends with neither never reached
+ * the seller's phone (SIP 487 / cancel before ring) — label it so it is not
+ * mistaken for a real no-answer.
+ */
+export function classifyOutboundDialResult(input: { accepted: boolean; rang: boolean }): OutboundDialResult {
+  if (input.accepted) return 'connected'
+  return input.rang ? 'no_answer' : 'hangup_before_ring'
+}
+
+/**
+ * disconnect / cancel / error can all report the same dead call. The first
+ * one handles the end; later ones are ignored.
+ */
+export function createOutboundEndLatch(): () => boolean {
+  let ended = false
+  return () => {
+    if (ended) return false
+    ended = true
+    return true
+  }
+}
+
+export function twilioCallIsClosed(call: unknown): boolean {
+  const status = (call as { status?: () => unknown } | null)?.status
+  if (typeof status !== 'function') return false
+  try {
+    return status.call(call) === 'closed'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Hang Up pressed after Twilio already dropped the call (error, network loss)
+ * fires no disconnect event, which used to skip the outcome UI. If an attempt
+ * is still open and the call is closed, the disposition must still be required.
+ */
+export function hangupMustRequireDisposition(input: {
+  call: unknown
+  activeAttemptId: string | null
+}): boolean {
+  // A null call can mean "still connecting" (attempt authorized, connect()
+  // pending) — only a call Twilio reports closed is known dead.
+  if (!input.activeAttemptId || !input.call) return false
+  return twilioCallIsClosed(input.call)
+}

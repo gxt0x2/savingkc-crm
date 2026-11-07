@@ -10,6 +10,7 @@ import {
   type ConversionLeadRow,
   type ConversionRange,
   type ConversionTrackingRow,
+  type Ga4EventRow,
   type Ga4LandingRow,
   type GscQueryRow,
   type WebsiteConversionReport,
@@ -59,7 +60,7 @@ export async function loadWebsiteConversionReport(
   const window = rangeWindow(range, anchorDate)
   const { startIso, endIso } = chicagoRangeInstants(window.start, window.end)
 
-  const [ga4Rows, gscRows, leads, events, syncRuns, ga4LatestResult, gscLatestResult] = await Promise.all([
+  const [ga4Rows, gscRows, leads, events, syncRuns, ga4LatestResult, gscLatestResult, ga4EventRows] = await Promise.all([
     selectAll<Ga4LandingRow>((from, to) => db
       .from('ga4_landing_daily')
       .select('date, landing_page, session_source_medium, sessions, engaged_sessions, synced_at')
@@ -110,6 +111,17 @@ export async function loadWebsiteConversionReport(
       }),
     db.from('ga4_landing_daily').select('date, synced_at').order('date', { ascending: false }).limit(1).maybeSingle(),
     db.from('gsc_page_query_daily').select('date, synced_at').order('date', { ascending: false }).limit(1).maybeSingle(),
+    // GA4 event funnel (ga4_event_daily). Missing table → null → panel says not synced yet.
+    selectAll<Ga4EventRow>((from, to) => db
+      .from('ga4_event_daily')
+      .select('date, event_name, session_source_medium, event_count, key_events')
+      .gte('date', window.start)
+      .lte('date', window.end)
+      .order('date', { ascending: true })
+      .order('event_name', { ascending: true })
+      .order('landing_page', { ascending: true })
+      .order('session_source_medium', { ascending: true })
+      .range(from, to)),
   ])
 
   if (ga4LatestResult.error && !isMissingRelation(ga4LatestResult.error)) {
@@ -130,6 +142,7 @@ export async function loadWebsiteConversionReport(
     ga4Latest: ga4LatestResult.data
       ? { date: ga4LatestResult.data.date ?? null, syncedAt: ga4LatestResult.data.synced_at ?? null }
       : undefined,
+    ga4EventRows,
     gscLatest: gscLatestResult.data
       ? { date: gscLatestResult.data.date ?? null, syncedAt: gscLatestResult.data.synced_at ?? null }
       : undefined,

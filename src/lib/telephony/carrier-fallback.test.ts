@@ -61,15 +61,29 @@ describe('carrier fallbacks', () => {
     const xml = buildCarrierVoiceFallbackTwiml({
       baseUrl: 'https://crm.savingkc.com',
       from: '+18162608357',
-      calledNumber: '+18164292900',
+      calledNumber: '+18166088588',
       agentPhone: '+18162262552',
     })
 
     expect(xml).toContain('<Identity>ernest</Identity>')
     expect(xml).toContain('callerId="+18162608357"')
-    expect(xml).not.toContain('callerId="+18166088588"')
     expect(xml).not.toContain('<Number>')
     expect(xml).not.toContain('+18162262552')
+  })
+
+  it('rings both apps and the owner cell for the business line when the IVR cannot run', () => {
+    vi.stubEnv('MOBILE_IN_APP_VOICE', 'true')
+    vi.stubEnv('MOBILE_PERSONAL_FORWARD', 'false')
+    const xml = buildCarrierVoiceFallbackTwiml({
+      baseUrl: 'https://crm.savingkc.com',
+      from: '+18162608357',
+      calledNumber: '+18164292900',
+      agentPhone: '+18162262552',
+    })
+    expect(xml).toContain('<Number>+18162262552</Number>')
+    expect(xml).toContain('<Identity>ernest</Identity>')
+    expect(xml).toContain('<Identity>casey</Identity>')
+    expect(xml).toContain('callerId="+18162608357"')
   })
 
   it('puts a CRM name on the Voice client without dropping the cell', () => {
