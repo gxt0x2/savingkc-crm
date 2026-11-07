@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CountyEnrichmentService, parseCollectorBalance } from './county-enrichment'
+import { CountyEnrichmentService } from './county-enrichment'
+import { parseCollectorBalance } from './county-collector-balance'
 
 describe('parseCollectorBalance', () => {
   it('passes numbers through', () => {
