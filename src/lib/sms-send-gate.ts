@@ -2,6 +2,7 @@ import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { handleOptOut, isSmsOptOutMessage } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
+import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
 /**
  * Fail-closed gate for automatic seller/buyer SMS (A2P templates and auto-text).
@@ -20,6 +21,7 @@ export type AutomatedSmsBlockReason =
   | 'contact_opted_out'
   | 'dnd'
   | 'inbound_opt_out'
+  | 'company_number'
 
 const INBOUND_DIRECTIONS = new Set(['received', 'inbound', 'in', 'incoming'])
 const INBOUND_ACTIVITY_TYPES = ['sms', 'sms_received', 'sms_inbound']
@@ -174,6 +176,10 @@ export async function automatedSmsBlockReason(input: {
 }): Promise<AutomatedSmsBlockReason | null> {
   const phone = normalizePhoneToE164(input.phone) ?? input.phone.trim()
   if (!phone) throw suppressionError()
+
+  // Recipient allowlist: automated texts go to outside contacts only. Never
+  // auto-text one of our own Twilio numbers (loops, self-alerts on junk).
+  if (TWILIO_NUMBERS.some((number) => normalizePhoneToE164(number.value) === phone)) return 'company_number'
 
   const optOut = await loadOptOut(phone)
   if (optOut?.is_opted_out) return 'opted_out'

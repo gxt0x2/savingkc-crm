@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AttributionTouch, LeadAttribution } from '@/lib/attribution/lead-attribution'
+import type { JourneyStep } from '@/lib/ppc/lead-journey'
 
 function host(url?: string): string | undefined {
   if (!url) return undefined
@@ -29,6 +30,52 @@ function touchLine(t?: AttributionTouch): string {
   return parts.join(' · ')
 }
 
+const EVENT_LABELS: Record<string, string> = {
+  page_view: 'Viewed',
+  cta_click: 'Clicked',
+  phone_click: 'Tapped call',
+  form_in_view: 'Saw the form',
+  scroll_depth: 'Scrolled',
+  quiz_started: 'Started the quiz',
+  quiz_qualified: 'Finished the quiz',
+  form_step_completed: 'Form step',
+  contact_started: 'Started contact info',
+  form_started: 'Started the form',
+  lead_submitted: 'Submitted',
+  ppc_visit_started: 'Ad visit',
+}
+
+function sourceLabel(source: string | null): string | undefined {
+  if (!source) return undefined
+  return source.replace(/_/g, ' ')
+}
+
+function JourneyList({ steps }: { steps: JourneyStep[] }) {
+  if (!steps.length) return null
+  const source = steps.find((step) => step.source)?.source ?? null
+  return (
+    <div className="pt-2">
+      <dt className="mb-1 text-sm text-muted-foreground">
+        Journey ({steps.length} events{source ? ` · ${sourceLabel(source)}` : ''})
+      </dt>
+      <dd>
+        <ol className="space-y-0.5 text-sm">
+          {steps.map((step, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="w-40 shrink-0 text-muted-foreground">{when(step.at)}</span>
+              <span className="min-w-0 break-words">
+                {EVENT_LABELS[step.event] ?? step.event.replace(/_/g, ' ')}
+                {step.detail ? ` — ${step.detail}` : ''}
+                {step.page ? <span className="text-muted-foreground"> · {step.page}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </dd>
+    </div>
+  )
+}
+
 function Row({ label, value }: { label: string; value?: string }) {
   if (!value) return null
   return (
@@ -41,11 +88,17 @@ function Row({ label, value }: { label: string; value?: string }) {
 
 export function PathToLeadPanel({ leadId }: { leadId: string }) {
   const [attr, setAttr] = useState<LeadAttribution | null | undefined>(undefined)
+  const [journey, setJourney] = useState<JourneyStep[]>([])
 
   useEffect(() => {
     let alive = true
     createClient().from('leads').select('attribution').eq('id', leadId).maybeSingle()
       .then(({ data, error }) => { if (alive) setAttr(error ? null : ((data as { attribution?: LeadAttribution } | null)?.attribution ?? null)) })
+    // Website + lander journey for this lead's session, any traffic source.
+    fetch(`/api/leads/${leadId}/journey`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { journey?: JourneyStep[] } | null) => { if (alive && body?.journey) setJourney(body.journey) })
+      .catch(() => {})
     return () => { alive = false }
   }, [leadId])
 
@@ -54,7 +107,7 @@ export function PathToLeadPanel({ leadId }: { leadId: string }) {
     <section className="rounded-lg border p-4" aria-label="Path to lead">
       <h3 className="mb-3 text-sm font-semibold">Path to lead</h3>
       {!attr ? (
-        <p className="text-sm text-muted-foreground">No attribution recorded for this lead.</p>
+        journey.length ? <dl className="space-y-1.5"><JourneyList steps={journey} /></dl> : <p className="text-sm text-muted-foreground">No attribution recorded for this lead.</p>
       ) : (
         <dl className="space-y-1.5">
           <Row label="Lead source" value={attr.lead_source_type.replace(/_/g, ' ')} />
@@ -78,6 +131,7 @@ export function PathToLeadPanel({ leadId }: { leadId: string }) {
               </dd>
             </div>
           ) : null}
+          <JourneyList steps={journey} />
           {attr.derived_from?.startsWith('backfill') ? (
             <p className="pt-2 text-xs text-muted-foreground">Backfilled from older records — partial.</p>
           ) : null}
