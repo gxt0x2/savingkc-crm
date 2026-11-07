@@ -52,3 +52,6 @@ supabase/.temp/
 
 # Runtime pid file: versioning it let a branch switch restore a stale pid
 .crm.pid
+
+# Runtime logs: never repo content (gitleaks already treats logs/ as non-code)
+logs/
