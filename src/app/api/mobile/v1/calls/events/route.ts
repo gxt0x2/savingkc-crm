@@ -1,4 +1,3 @@
-import { formatPhone } from '@/lib/format'
 import { NextRequest, NextResponse } from 'next/server'
 import { normalizeDisposition } from '@/lib/dialer-dispositions'
 import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse, requireMobileUser } from '@/lib/mobile-api/auth'
@@ -9,8 +8,11 @@ import {
 } from '@/lib/mobile-api/authorized-lead'
 import {
   boundedCallNote,
+  boundedCallSid,
   boundedCallToken,
   boundedClientCallId,
+  mobileCallDescription,
+  mobileCallDirection,
   persistUnassignedMobileCall,
   PhoneCallRecordError,
   requireE164Phone,
@@ -34,6 +36,8 @@ type CallEventBody = {
   disposition?: string
   note?: string
   clientCallId?: string
+  direction?: unknown
+  callSid?: unknown
 }
 
 function readBody(value: unknown): CallEventBody {
@@ -68,6 +72,8 @@ export async function POST(req: NextRequest) {
     const disposition = boundedCallToken(body.disposition)
     const note = boundedCallNote(body.note)
     const clientCallId = boundedClientCallId(body.clientCallId)
+    const direction = mobileCallDirection(body.direction)
+    const callSid = boundedCallSid(body.callSid)
     const parsedDuration = Number(body.durationSeconds)
     const duration = Number.isFinite(parsedDuration)
       ? Math.min(86_400, Math.max(0, Math.round(parsedDuration)))
@@ -99,6 +105,8 @@ export async function POST(req: NextRequest) {
         userId,
         userEmail: email,
         agentName,
+        direction,
+        callSid,
       })
       return NextResponse.json({
         ok: true,
@@ -111,9 +119,7 @@ export async function POST(req: NextRequest) {
     const { actor, user } = await requireAuthorizedMobileLead(req, leadId)
     if (dnc) await suppressPhoneForVoiceDnc(requireE164Phone(phone))
 
-    const description = event === 'started'
-      ? `Mobile outbound call to ${formatPhone(phone)}`
-      : `Mobile outbound call ended: ${outcome || 'unknown'}`
+    const description = mobileCallDescription(phone, event, outcome, direction)
 
     const db = supabaseAdmin()
     const { data, error } = await db
@@ -125,9 +131,10 @@ export async function POST(req: NextRequest) {
         agent: actor.fullName,
         metadata: {
           source: 'savingkc_mobile',
-          direction: 'outbound',
+          direction,
           phone,
-          to: phone,
+          ...(direction === 'inbound' ? { from: phone } : { to: phone }),
+          ...(callSid ? { callSid } : {}),
           event,
           status: event === 'started' ? 'initiated' : 'completed',
           outcome: outcome || null,
