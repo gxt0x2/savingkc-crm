@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { recordAppointmentSmsResponse } from '@/lib/server/appointment-sms-response'
 import { resolveInboundSmsLead } from '@/lib/server/inbound-sms-lead'
+import { classifyJunkInboundSms } from '@/lib/sms-junk-filter'
 import {
   googleAdsNewTextTeamMessage,
   markLeadAsGoogleAdsPhoneLead,
@@ -388,6 +389,23 @@ export async function POST(req: Request) {
 
       await completeInboundProcessing()
       return emptyTwimlResponse()
+    }
+
+    // ── Junk / bulk vendor blasts from unknown senders ──
+    // Log on the inbound row as not_a_lead and stop: no lead, no agent page,
+    // no auto-reply, and never any opt-out/DNC write.
+    if (!lead && !prospectMatch) {
+      const junk = classifyJunkInboundSms(messageBody)
+      if (junk) {
+        inboundMetadata = {
+          ...(inboundMetadata ?? primaryMetadata),
+          not_a_lead: true,
+          junk_reason: junk.reason,
+          hub_action: 'mark_read',
+        }
+        await completeInboundProcessing()
+        return emptyTwimlResponse()
+      }
     }
 
     if (isGoogleAdsSms) {

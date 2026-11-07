@@ -4,6 +4,7 @@ import { normalizeDisposition, type DispositionId } from '@/lib/dialer-dispositi
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { queuePpcAppointmentBookedConversion } from '@/lib/ppc/appointment-booked-conversion'
 import { supabase } from '@/lib/supabase-lazy'
+import { markLeadProspectPhoneAttempted, type ProspectPhoneAttemptDb } from '@/lib/server/prospect-phone-attempt'
 
 export interface LeadDispositionCommand {
   disposition: DispositionId
@@ -210,6 +211,12 @@ export async function recordLeadDisposition(
   }
   const { error: leadError } = await supabase.from('leads').update(leadPatch).eq('id', leadId)
   if (leadError) throw new Error('Contact outcome snapshot could not be saved')
+
+  // Keep prospect_phones.attempted in sync when the dialed number belongs to
+  // this lead's source prospect (no_answer used to leave it false).
+  await markLeadProspectPhoneAttempted(supabase as unknown as ProspectPhoneAttemptDb, {
+    leadId, phone, disposition, actorName,
+  })
 
   let lifecycleWarning: string | null = null
   if (disposition === 'appointment_set' && appointmentAt) {
