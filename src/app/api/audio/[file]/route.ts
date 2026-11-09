@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
 import path from 'path'
 
-const ALLOWED = new Set(['ivr-greeting.mp3', 'ivr-press1.mp3', 'ivr-no-answer.mp3', 'ivr-voicemail.mp3', 'us-ringback.wav'])
+const ALLOWED = new Set(['ivr-greeting.mp3', 'ivr-press1.mp3', 'ivr-no-answer.mp3', 'ivr-voicemail.mp3', 'us-ringback.wav', 'ring-15s.wav'])
 
 export async function GET(req: Request, { params }: { params: Promise<{ file: string }> }) {
   const { file } = await params

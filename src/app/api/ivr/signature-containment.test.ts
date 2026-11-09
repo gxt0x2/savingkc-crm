@@ -210,7 +210,7 @@ describe('IVR Twilio signature containment', () => {
       name: 'handle-input',
       post: handleInputPost,
       request: () => twilioRequest('/api/ivr/handle-input?calledNumber=%2B18163077835', { Digits: '9' }),
-      expected: '<Redirect method="POST">https://crm.savingkc.com/api/twiml-voice</Redirect>',
+      expected: '<Redirect method="POST">https://crm.savingkc.com/api/ivr/no-input?from=&amp;calledNumber=%2B18163077835</Redirect>',
     },
     {
       name: 'no-input',

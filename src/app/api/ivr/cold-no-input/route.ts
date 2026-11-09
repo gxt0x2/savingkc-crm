@@ -1,6 +1,7 @@
 import { formatPhone } from '@/lib/format'
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-lazy'
+import { sayMenu } from '@/lib/telephony/business-line-ivr'
 
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
   return new NextResponse(
     `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Matthew">No problem. Have a great day.</Say>
+  ${sayMenu('No problem. Have a great day.')}
   <Hangup />
 </Response>`,
     { headers: { 'Content-Type': 'text/xml' } }

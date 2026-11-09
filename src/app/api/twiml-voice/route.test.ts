@@ -610,12 +610,15 @@ describe('verified inbound TwiML routing', () => {
     expect(text).toContain('timeout="60"')
   })
 
-  it('keeps standard acquisition numbers on the seller IVR', async () => {
+  it('puts standard acquisition numbers on the ring-first Cecily menu', async () => {
     const { text } = await responseText(inboundRequest('+18163077835'))
 
     expect(text).toContain('<Gather')
     expect(text).toContain('/api/ivr/handle-input')
-    expect(text).toContain('/api/audio/ivr-greeting.mp3')
+    expect(text.indexOf('/api/audio/ring-15s.wav')).toBeLessThan(text.indexOf('<Gather'))
+    expect(text).toContain('voice="ElevenLabs.NQMJRVvPew6HsaebYnZj"')
+    expect(text).toContain('press 9')
+    expect(text).not.toContain('ivr-greeting.mp3')
     expect([text.includes('coldcall=1'), text.includes(COLD_CALLBACK_PROMPT)]).toEqual([false, false])
     expect(text).not.toContain('<Client')
     expect(text).not.toContain('twilio-inbound-client-status')
@@ -624,7 +627,7 @@ describe('verified inbound TwiML routing', () => {
   it.each(COLD_CALLBACK_NUMBERS)('plays the unbranded press-1/press-2 script for cold callback %s', async (to) => {
     const { text } = await responseText(inboundRequest(to))
     for (const attr of ['numDigits="1"', 'coldcall=1', 'timeout="15"']) expect(text.match(/<Gather\b[^>]*>/)?.[0] ?? '').toContain(attr)
-    for (const part of [`<Say voice="Polly.Matthew">${COLD_CALLBACK_PROMPT}</Say>`, '/api/ivr/cold-no-input']) expect(text).toContain(part)
+    for (const part of [`<Say voice="ElevenLabs.NQMJRVvPew6HsaebYnZj" language="en-US">${COLD_CALLBACK_PROMPT}</Say>`, '/api/ivr/cold-no-input']) expect(text).toContain(part)
     expect([text.includes('ivr-press1.mp3'), text.includes('ivr-greeting.mp3')]).toEqual([false, false])
     expect(spokenCopy(text)).not.toMatch(COMPANY_NAME)
   })

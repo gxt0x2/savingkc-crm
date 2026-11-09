@@ -1,4 +1,4 @@
-import { businessMenuTwiml, isBusinessLine } from '@/lib/telephony/business-line-ivr'
+import { businessMenuTwiml, sayMenu } from '@/lib/telephony/business-line-ivr'
 import { NextResponse } from 'next/server'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { DIALER_CALLER_ID_NUMBERS as TWILIO_NUMBERS, COLD_CALL_CALLBACK_NUMBERS } from '@/lib/twilio-numbers'
@@ -57,10 +57,9 @@ const EMPTY_TWIML = `<?xml version="1.0" encoding="UTF-8"?>
 // Cold call outbound dialing numbers — callbacks get a different IVR.
 const COLD_CALL_NUMBERS = new Set<string>(COLD_CALL_CALLBACK_NUMBERS.map((number) => number.value))
 
-// Locked cold-callback prompt. No company name. Spoken with Twilio Polly
-// because the checked-in clips are the wrong prompt (ivr-press1.mp3) or the
-// branded standard greeting (ivr-greeting.mp3), and a new ElevenLabs asset
-// cannot be generated without that API key. Gather timeout is the silence
+// Locked cold-callback prompt. No company name. Read in the menu voice
+// (ElevenLabs Cecily through <Say>, owner 11/07) since no line is tied to one
+// agent; the checked-in clips are the wrong prompt. Gather timeout is the silence
 // window after this Say finishes, long enough to hear both options and press.
 const COLD_CALLBACK_PROMPT = "Hey, thanks for calling. We buy homes in any condition, and we can close in as little as seven days. If you're calling about selling a property, press one. For anything else, press two."
 const COLD_CALLBACK_GATHER_TIMEOUT = 15
@@ -483,25 +482,17 @@ export async function POST(req: Request) {
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}&amp;coldcall=1" method="POST" timeout="${COLD_CALLBACK_GATHER_TIMEOUT}">
-    <Say voice="Polly.Matthew">${COLD_CALLBACK_PROMPT}</Say>
+    ${sayMenu(COLD_CALLBACK_PROMPT)}
   </Gather>
   <Redirect method="POST">${BASE_URL}/api/ivr/cold-no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
 </Response>`
       return xmlResponse(twiml)
     }
 
-    // ── BUSINESS LINE (816) 429-2900: menu with retry and press 9 ──
-    if (isBusinessLine(to)) return xmlResponse(businessMenuTwiml({ baseUrl: BASE_URL, from, callSid, calledNumber: to, attempt: 1 }))
-    // ── STANDARD INBOUND: ElevenLabs Jessica greeting ──
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather numDigits="1" action="${BASE_URL}/api/ivr/handle-input?from=${encodeURIComponent(from)}&amp;callSid=${encodeURIComponent(callSid)}&amp;calledNumber=${encodeURIComponent(to)}" method="POST" timeout="5">
-    <Play>${BASE_URL}/api/audio/ivr-greeting.mp3</Play>
-  </Gather>
-  <Redirect method="POST">${BASE_URL}/api/ivr/no-input?from=${encodeURIComponent(from)}&amp;calledNumber=${encodeURIComponent(to)}</Redirect>
-</Response>`
-
-    return xmlResponse(twiml)
+    // ── MENU LINES: (816) 429-2900 and every company line not tied to Ernest,
+    // Casey or Gertha (owner 11/07). 15 s ringback, then the Cecily menu with
+    // one retry and press 9. Replaces the Jessica clip and its 5 s silence.
+    return xmlResponse(businessMenuTwiml({ baseUrl: BASE_URL, from, callSid, calledNumber: to, attempt: 1 }))
   } catch (error) {
     console.error('[IVR] Critical error in main handler:', error)
     if (requestKind === 'outbound') {
