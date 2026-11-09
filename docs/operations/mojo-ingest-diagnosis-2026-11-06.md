@@ -46,3 +46,22 @@ These are data-hygiene items. Recovery can't clear them, so it exhausts forever 
 - The 11 evidence-pending records: re-request recordings, or mark them reviewed-unavailable through the reviewed correction path. Do not advance cursors manually.
 - The 3 dead-lead work items and the 1 lifecycle conflict: close or correct in the CRM.
 - Incident alert SMS shows `failed`; the cause wasn't traced in this pass. Worth checking alongside #763 (automated SMS disabled), and deciding whether Mojo incidents should alert by push.
+
+## Update 11/07 — per-dial backfill without Mojo MCP OAuth
+
+Mojo's web Calling Report (Reports → Calling Report → Call Detail) is backed by
+`POST /v2/rest/reports/calling-report-calls/` and works with the same browser
+`sessionid` the activity scraper already uses. Checked read-only in the owner's
+signed-in Mojo: 10/09–10/19 returns **595** calls (249 on 10/09, 346 on 10/19),
+sessions 474/475/476 = 3/47/296, ids 31597–31942 — every count the backfill
+expects. `createMojoCallSource` now uses it when no MCP credentials are set
+(source `mojo_session_calling_report`); talk seconds come from the recording
+report, unrecorded dials stay 0 s. Names, notes, addresses and full numbers are
+dropped before anything is written.
+
+On the Mac (owner):
+
+1. `cd` into the CRM repo, `git pull` on `main`.
+2. Dry-run: `npm run mojo:calls:backfill` — expect `calls: 595` and `matches: true`.
+3. Apply: `npm run mojo:calls:backfill -- --apply`.
+4. If it reports `session_expired`, refresh with `npm run mojo:session:manual`, then repeat step 2.
