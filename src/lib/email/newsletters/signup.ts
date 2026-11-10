@@ -3,15 +3,19 @@ import {
   NEWSLETTER_CONSENT_TEXT,
   NEWSLETTER_COUNTIES,
   NEWSLETTER_ROLES,
+  NEWSLETTER_SEGMENTS,
   NEWSLETTER_SIGNUP_SUCCESS,
+  newsletterRoleForSegment,
   newsletterTags,
   type NewsletterCounty,
   type NewsletterRole,
+  type NewsletterSegment,
 } from './constants'
 
 export type NewsletterContact = {
   email: string
   role: NewsletterRole
+  segment: NewsletterSegment
   county: NewsletterCounty
   tags: string[]
   consent: {
@@ -39,6 +43,10 @@ function isRole(value: unknown): value is NewsletterRole {
   return typeof value === 'string' && (NEWSLETTER_ROLES as readonly string[]).includes(value)
 }
 
+function isSegment(value: unknown): value is NewsletterSegment {
+  return typeof value === 'string' && (NEWSLETTER_SEGMENTS as readonly string[]).includes(value)
+}
+
 function isCounty(value: unknown): value is NewsletterCounty {
   return typeof value === 'string' && (NEWSLETTER_COUNTIES as readonly string[]).includes(value)
 }
@@ -51,7 +59,11 @@ export function parseNewsletterSignup(input: unknown, now: Date):
   const normalized = typeof body.email === 'string' ? normalizeEmailAddress(body.email) : null
   const email = normalized ? normalized.toLowerCase() : null
   if (!email) return { ok: false, error: 'Enter a valid email address.' }
-  if (!isRole(body.role)) return { ok: false, error: 'Choose seller or buyer.' }
+  const segment = body.segment === undefined || body.segment === '' ? 'general' : body.segment
+  if (!isSegment(segment)) return { ok: false, error: 'Choose a newsletter.' }
+  const role = newsletterRoleForSegment(segment)
+  if (body.role !== undefined && !isRole(body.role)) return { ok: false, error: 'Choose a newsletter.' }
+  if (isRole(body.role) && body.role !== role) return { ok: false, error: 'Choose a newsletter.' }
   if (!isCounty(body.county)) return { ok: false, error: 'Choose a county.' }
   if (body.consent !== true) return { ok: false, error: 'Consent is required before we save this signup.' }
   const source = typeof body.source === 'string' && SOURCE_PATTERN.test(body.source) ? body.source : 'funnel'
@@ -59,9 +71,10 @@ export function parseNewsletterSignup(input: unknown, now: Date):
     ok: true,
     contact: {
       email,
-      role: body.role,
+      role,
+      segment,
       county: body.county,
-      tags: newsletterTags(body.role, body.county),
+      tags: newsletterTags(role, body.county, segment),
       consent: {
         text: NEWSLETTER_CONSENT_TEXT,
         recordedAt: now.toISOString(),

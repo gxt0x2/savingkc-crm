@@ -24,10 +24,11 @@ export function emailNewsletterStore(sql: Sql): NewsletterStore {
     async save(contact: NewsletterContact) {
       const rows = await sql<Hit[]>`
         insert into em_newsletter_contacts (
-          normalized_email, role, county, tags, consent_text, consent_recorded_at, consent_source, status
+          normalized_email, role, segment, county, tags, consent_text, consent_recorded_at, consent_source, status
         ) values (
           ${contact.email},
           ${contact.role},
+          ${contact.segment},
           ${contact.county},
           ${sql.json(contact.tags)},
           ${contact.consent.text},
@@ -36,6 +37,7 @@ export function emailNewsletterStore(sql: Sql): NewsletterStore {
           'subscribed'
         )
         on conflict (normalized_email, role) do update set
+          segment = excluded.segment,
           county = excluded.county,
           tags = excluded.tags,
           consent_text = excluded.consent_text,

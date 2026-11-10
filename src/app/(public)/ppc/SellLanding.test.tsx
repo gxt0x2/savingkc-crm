@@ -38,6 +38,11 @@ describe('SellLanding', () => {
 
     expect(html).toContain('Step 1 of 4')
     expect(html).toContain('id="tuesday-newsletter"')
+    expect(html).toContain('Which Tuesday note do you want?')
+    expect(html).toContain('Homeowner thinking about a sale')
+    expect(html).toContain('Behind on property taxes')
+    expect(html).toContain('Inherited a house')
+    expect(html).toContain('Investor looking for deals')
     expect(html).toContain('Sell My House In <span class="accent">Kansas City</span> Today.')
     expect(html).toContain('Back taxes. An inherited headache. A tenant who won’t leave. Repairs that never end.')
     expect(html).toContain('Whatever stress you’re facing, you don’t have to fix it, clean it, or explain it. Just give us the address and we’ll bring you a fair cash offer in under an hour. You pick the closing date.')

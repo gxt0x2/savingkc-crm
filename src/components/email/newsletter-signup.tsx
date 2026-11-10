@@ -7,14 +7,16 @@ import {
   NEWSLETTER_CONSENT_TEXT,
   NEWSLETTER_COUNTIES,
   NEWSLETTER_LICENSE_LINE,
+  NEWSLETTER_SEGMENT_CHOICES,
   NEWSLETTER_SIGNUP_SUCCESS,
+  type NewsletterSegment,
 } from '@/lib/email/newsletters/constants'
 
 type Status = { kind: 'idle' } | { kind: 'saving' } | { kind: 'done' } | { kind: 'error'; message: string }
 
 export function NewsletterSignup({ source = 'funnel' }: { source?: string }) {
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'seller' | 'buyer' | ''>('')
+  const [segment, setSegment] = useState<NewsletterSegment>('general')
   const [county, setCounty] = useState('')
   const [consent, setConsent] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
@@ -26,7 +28,7 @@ export function NewsletterSignup({ source = 'funnel' }: { source?: string }) {
       const response = await fetch('/api/email/newsletters/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role, county, consent, source }),
+        body: JSON.stringify({ email, segment, county, consent, source }),
       })
       const body = (await response.json()) as { ok?: boolean; error?: string; message?: string }
       if (!response.ok || !body.ok) {
@@ -45,7 +47,7 @@ export function NewsletterSignup({ source = 'funnel' }: { source?: string }) {
         <p style={{ margin: 0, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#71717a' }}>{NEWSLETTER_BRAND}</p>
         <h2 style={{ margin: '8px 0', fontSize: 28, lineHeight: 1.2 }}>The Tuesday newsletters</h2>
         <p style={{ margin: '0 0 18px', fontSize: 16, lineHeight: 1.5 }}>
-          One short note each Tuesday from Ernest. Sellers get The Tuesday Note. Buyers and investors get The Tuesday Deal Desk.
+          One short note each Tuesday from Ernest. Pick the list that fits. Homeowners, tax, inherited houses, or the investor deal desk. It starts on the homeowner note unless you choose another.
         </p>
         <form onSubmit={onSubmit} style={{ border: '1px solid #d4d4d8', borderRadius: 8, padding: 16 }}>
           <label htmlFor={`${source}-newsletter-email`} style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Email</label>
@@ -60,13 +62,19 @@ export function NewsletterSignup({ source = 'funnel' }: { source?: string }) {
             style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d4d4d8', borderRadius: 6, padding: 10, font: 'inherit' }}
           />
           <fieldset style={{ border: 0, padding: '12px 0 0', margin: 0 }}>
-            <legend style={{ fontSize: 14, fontWeight: 700 }}>I am a</legend>
-            <label style={{ display: 'block', marginTop: 8 }}>
-              <input type="radio" name="role" value="seller" checked={role === 'seller'} onChange={() => setRole('seller')} required /> Seller
-            </label>
-            <label style={{ display: 'block', marginTop: 8 }}>
-              <input type="radio" name="role" value="buyer" checked={role === 'buyer'} onChange={() => setRole('buyer')} /> Buyer or investor
-            </label>
+            <legend style={{ fontSize: 14, fontWeight: 700 }}>Which Tuesday note do you want?</legend>
+            {NEWSLETTER_SEGMENT_CHOICES.map((choice) => (
+              <label key={choice.value} style={{ display: 'block', marginTop: 8 }}>
+                <input
+                  type="radio"
+                  name="segment"
+                  value={choice.value}
+                  checked={segment === choice.value}
+                  onChange={() => setSegment(choice.value)}
+                  required
+                /> {choice.label}
+              </label>
+            ))}
           </fieldset>
           <label htmlFor={`${source}-newsletter-county`} style={{ display: 'block', fontSize: 14, fontWeight: 700, margin: '12px 0 6px' }}>County</label>
           <select
