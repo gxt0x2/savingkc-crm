@@ -19,6 +19,7 @@ const AttributionSchema = z
     gclid: z.string().max(180).optional(),
     gbraid: z.string().max(180).optional(),
     wbraid: z.string().max(180).optional(),
+    msclkid: z.string().max(180).optional(),
     oppref: z.string().max(240).optional(),
     gad_source: z.string().max(120).optional(),
     gad_campaignid: z.string().max(180).optional(),
@@ -52,6 +53,7 @@ const BodySchema = z.object({
   phoneNumber: z.string().max(32).optional(),
   smsConsent: z.boolean().optional(),
   isTest: z.boolean().optional(),
+  is_test: z.union([z.boolean(), z.enum(['true', 'false', '1', '0'])]).optional(),
   attribution: AttributionSchema,
   payload: z.record(z.string(), z.unknown()).optional(),
 })
