@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase-lazy'
 import { cleanJsonRecord } from '@/lib/ppc/conversion-outbox'
-import { ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
+import { DEFAULT_PPC_CAMPAIGN, ppcCampaignNameForContext } from '@/lib/ppc/campaigns'
 import { paidSourceSlug } from '@/lib/marketing/paid-source'
 
 export const SITUATION_TO_TAG = {
@@ -53,6 +53,7 @@ export type PpcTrackingAttribution = {
   gclid?: string
   gbraid?: string
   wbraid?: string
+  msclkid?: string
   oppref?: string
   gad_source?: string
   gad_campaignid?: string
@@ -85,6 +86,8 @@ export type RecordPpcTrackingEventInput = {
   phoneNumber?: string | null
   smsConsent?: boolean | null
   isTest?: boolean
+  /** Website journey flag. `true` or `"true"` stores the row as a test event. */
+  is_test?: boolean | string | number
   attribution?: PpcTrackingAttribution | null
   payload?: Record<string, unknown> | null
 }
@@ -148,6 +151,9 @@ export const SITE_TRAFFIC_SOURCES = [
   'google_ads', 'openai_ads', 'paid_other', 'ai_referral', 'organic_search', 'social', 'email', 'referral', 'direct',
 ] as const
 const PAID_MEDIUMS = new Set(['cpc', 'ppc', 'paid', 'paidsearch', 'paid_search', 'sem'])
+/** Evidence that may store a paid campaign name. Traffic classification uses the wider PAID_MEDIUMS set. */
+const EVENT_PAID_CLICK_KEYS = ['gclid', 'gbraid', 'wbraid', 'msclkid'] as const
+const EVENT_PAID_MEDIUMS = new Set(['cpc', 'ppc', 'paid'])
 const AI_REFERRER = /(^|\.)(chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|bard\.google\.com|copilot\.microsoft\.com)$/
 const SEARCH_REFERRER = /(^|\.)(google|bing|yahoo|duckduckgo|ecosia|search\.brave)\.[a-z.]+$/
 const SOCIAL_REFERRER = /(^|\.)(facebook|instagram|youtube|tiktok|linkedin|x|twitter|nextdoor|reddit)\.com$|(^|\.)t\.co$/
@@ -212,6 +218,85 @@ function hasTestMarker(...values: Array<unknown>): boolean {
   return values.some((value) => typeof value === 'string' && /(^|[^a-z0-9])(codex|test|dummy|probe|smoke)([^a-z0-9]|$)/i.test(value))
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function flagTrue(value: unknown): boolean {
+  return value === true || value === 'true' || value === 1 || value === '1'
+}
+
+/** Click id or paid medium on any of the supplied attribution records. */
+export function hasPaidCampaignEvidence(...sources: Array<Record<string, unknown> | null | undefined>): boolean {
+  for (const source of sources) {
+    if (!source) continue
+    if (EVENT_PAID_CLICK_KEYS.some((key) => text(source[key]))) return true
+    const medium = (text(source.utm_medium) ?? '').toLowerCase()
+    if (EVENT_PAID_MEDIUMS.has(medium)) return true
+  }
+  return false
+}
+
+function campaignEvidenceSources(input: {
+  attribution?: Record<string, unknown> | null
+  payload?: Record<string, unknown> | null
+}): Array<Record<string, unknown> | null> {
+  const payload = input.payload ?? null
+  return [input.attribution ?? null, payload, asRecord(payload?.attribution)]
+}
+
+/**
+ * Campaign stored on a first-party event row.
+ * utm_campaign wins. Otherwise the paid campaign name (page match, explicit
+ * name, or the Search 2026 default inside ppcCampaignNameForContext) is stored
+ * only when a click id or paid medium is present. Direct traffic stays null.
+ * The conversion outbox still calls ppcCampaignNameForContext directly.
+ */
+export function storedFirstPartyEventCampaign(input: {
+  campaign?: unknown
+  attribution?: Record<string, unknown> | null
+  pagePath?: unknown
+  pageLocation?: unknown
+  payload?: Record<string, unknown> | null
+}): string | null {
+  const sources = campaignEvidenceSources(input)
+  const utmCampaign = sources.map((source) => text(source?.utm_campaign)).find((value) => value)
+  if (utmCampaign) return utmCampaign
+  if (!hasPaidCampaignEvidence(...sources)) return null
+  return ppcCampaignNameForContext({
+    campaign: input.campaign,
+    attribution: input.attribution,
+    pagePath: input.pagePath,
+    pageLocation: input.pageLocation,
+  })
+}
+
+/**
+ * Historical rows written before the campaign default was removed. Read-only:
+ * true when the stored campaign is the old Search 2026 fill-in and the row
+ * still has no utm_campaign or paid click/medium evidence.
+ */
+export function unprovenStoredSearchCampaign(row: Record<string, unknown>): boolean {
+  if (text(row.campaign) !== DEFAULT_PPC_CAMPAIGN.name) return false
+  const payload = asRecord(row.payload)
+  const sources = [row, payload, asRecord(payload?.attribution)]
+  if (sources.some((source) => text(source?.utm_campaign))) return false
+  return !hasPaidCampaignEvidence(...sources)
+}
+
+export function unprovenSearch2026CampaignNote(rows: Array<Record<string, unknown>>): { unprovenSearch2026: number; note: string } {
+  const unprovenSearch2026 = rows.filter(unprovenStoredSearchCampaign).length
+  const note = unprovenSearch2026 === 0
+    ? 'Stored campaign is utm_campaign when present, otherwise the paid campaign name only with a click id (gclid, gbraid, wbraid, msclkid) or paid medium (cpc, ppc, paid). This window has no Search 2026 rows without that evidence.'
+    : `${unprovenSearch2026} events in this window still store campaign "Search 2026" with no utm_campaign, gclid, gbraid, wbraid, or cpc/ppc/paid medium on the row. This read does not change them. A click id kept only in the payload is not part of this count. scripts/backfill-unproven-search-2026-campaigns.mts checks the payload too and can set those campaigns to null; it is a dry run unless --write is passed.`
+  return { unprovenSearch2026, note }
+}
+
+function websiteMarkedTest(input: RecordPpcTrackingEventInput): boolean {
+  const payload = input.payload ?? {}
+  return flagTrue(input.isTest) || flagTrue(input.is_test) || flagTrue(payload.is_test) || flagTrue(payload.isTest)
+}
+
 function categoryFor(eventName: string, fallback?: PpcTrackingEventCategory): PpcTrackingEventCategory {
   if (fallback) return fallback
   if (eventName === 'ppc_visit_started' || eventName === 'page_view') return 'visit'
@@ -261,11 +346,12 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
     page_location: pageLocation,
     page_referrer: pageReferrer,
     traffic_source: trafficSource,
-    campaign: ppcCampaignNameForContext({
+    campaign: storedFirstPartyEventCampaign({
       campaign: input.campaign,
       attribution,
       pagePath: input.pagePath,
       pageLocation,
+      payload: input.payload,
     }),
     utm_source: text(attribution.utm_source),
     utm_medium: text(attribution.utm_medium),
@@ -288,7 +374,7 @@ export function buildPpcTrackingEventRow(input: RecordPpcTrackingEventInput): Pp
     condition_overall: condition && condition in CONDITION_TO_OVERALL ? CONDITION_TO_OVERALL[condition as keyof typeof CONDITION_TO_OVERALL] : null,
     phone_number: text(input.phoneNumber),
     sms_consent: bool(input.smsConsent),
-    is_test: Boolean(input.isTest) || hasTestMarker(input.eventId, gclid, gbraid, wbraid, skcOpenAIClickId, input.sessionId, input.visitorId),
+    is_test: websiteMarkedTest(input) || hasTestMarker(input.eventId, gclid, gbraid, wbraid, skcOpenAIClickId, input.sessionId, input.visitorId),
     payload,
   }
 }

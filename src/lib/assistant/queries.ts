@@ -9,6 +9,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { listOverdueScheduledAppointments } from '@/lib/server/overdue-appointment-outcomes'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
 import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
+import { unprovenSearch2026CampaignNote } from '@/lib/ppc/tracking-events'
 
 type Db = ReturnType<typeof supabaseAdmin>
 type JsonRecord = Record<string, unknown>
@@ -388,7 +389,7 @@ export async function readAssistantWebsiteFunnel(db: Db, days: number) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
   const [leadsResult, eventsResult] = await Promise.all([
     db.from('leads').select('id, full_name, source, form_status, station, classification, created_at, updated_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
-    db.from('ppc_tracking_events').select('id, event_name, event_category, event_time, lead_id, page_path, traffic_source, campaign, utm_source, utm_medium, utm_campaign, form_step, form_status, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
+    db.from('ppc_tracking_events').select('id, event_name, event_category, event_time, lead_id, page_path, traffic_source, campaign, utm_source, utm_medium, utm_campaign, gclid, gbraid, wbraid, form_step, form_status, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
   ])
   if (leadsResult.error) throw new Error(`Website lead funnel unavailable: ${leadsResult.error.message}`)
   const leads = (leadsResult.data || []) as JsonRecord[]
@@ -397,7 +398,7 @@ export async function readAssistantWebsiteFunnel(db: Db, days: number) {
   return {
     action: 'website_funnel', generatedAt, periodDays: days,
     leads: { total: leads.length, bySource: countBy(leads, 'source'), byFormStatus: countBy(leads, 'form_status'), byClassification: countBy(leads, 'classification'), recent },
-    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCategory: countBy(events, 'event_category'), byPage: countBy(events, 'page_path'), byCampaign: countBy(events, 'campaign'), recent: events.slice(0, 20) },
+    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCategory: countBy(events, 'event_category'), byPage: countBy(events, 'page_path'), byCampaign: countBy(events, 'campaign'), campaignStorage: unprovenSearch2026CampaignNote(events), recent: events.slice(0, 20) },
     availability: { firstPartyEvents: eventsResult.error ? eventsResult.error.message : 'available', ga4: 'not connected', searchConsole: 'not connected' },
     sources: [
       source('SavingKC website leads stored in CRM', `${CRM_ORIGIN}/contacts`, generatedAt),
@@ -411,7 +412,7 @@ export async function readAssistantMarketingSummary(db: Db, days: number) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString()
   const [leadsResult, eventsResult, outboxResult] = await Promise.all([
     db.from('leads').select('id, source, station, classification, opportunity_score, created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
-    db.from('ppc_tracking_events').select('event_name, event_category, event_time, traffic_source, campaign, lead_id, gclid, gbraid, wbraid, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
+    db.from('ppc_tracking_events').select('event_name, event_category, event_time, traffic_source, campaign, utm_campaign, utm_medium, lead_id, gclid, gbraid, wbraid, is_test').gte('event_time', since).eq('is_test', false).order('event_time', { ascending: false }).limit(5000),
     db.from('ppc_conversion_outbox').select('id, event_name, event_category, status, optimization_role, lead_id, conversion_value, event_time, click_id_type, attempts, last_error, approved_for_google_ads, sent_at, created_at, updated_at').gte('event_time', since).order('event_time', { ascending: false }).limit(2000),
   ])
   if (leadsResult.error) throw new Error(`Marketing lead summary unavailable: ${leadsResult.error.message}`)
@@ -422,7 +423,7 @@ export async function readAssistantMarketingSummary(db: Db, days: number) {
   return {
     action: 'marketing_summary', generatedAt, periodDays: days,
     leads: { total: leads.length, bySource: countBy(leads, 'source'), byStage: countBy(leads, 'station'), byClassification: countBy(leads, 'classification') },
-    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCampaign: countBy(events, 'campaign'), attributedLeadEvents: events.filter((row) => row.lead_id).length, clickIdEvents: events.filter((row) => row.gclid || row.gbraid || row.wbraid).length },
+    firstPartyEvents: { total: events.length, byName: countBy(events, 'event_name'), byCampaign: countBy(events, 'campaign'), campaignStorage: unprovenSearch2026CampaignNote(events), attributedLeadEvents: events.filter((row) => row.lead_id).length, clickIdEvents: events.filter((row) => row.gclid || row.gbraid || row.wbraid).length },
     conversionOutbox: { total: outbox.length, byStatus: countBy(outbox, 'status'), byEvent: countBy(outbox, 'event_name'), byOptimizationRole: countBy(outbox, 'optimization_role'), pending: pending.slice(0, 25) },
     availability: { firstPartyEvents: eventsResult.error ? eventsResult.error.message : 'available', conversionOutbox: outboxResult.error ? outboxResult.error.message : 'available', googleAdsLiveAccount: 'not queried by this read endpoint' },
     sources: [
