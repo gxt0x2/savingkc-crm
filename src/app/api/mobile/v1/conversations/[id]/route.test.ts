@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mocks = vi.hoisted(() => ({ authorize: vi.fn(), admin: vi.fn() }))
+const mocks = vi.hoisted(() => ({ authorize: vi.fn(), admin: vi.fn(), command: vi.fn() }))
 vi.mock('@/lib/mobile-api/authorized-lead', async (original) => ({ ...await original<typeof import('@/lib/mobile-api/authorized-lead')>(), requireAuthorizedMobileLead: mocks.authorize }))
+vi.mock('@/lib/mobile-api/mobile-command-access', () => ({
+  requireMobileCommandActor: mocks.command,
+  MobileCommandAccessError: class MobileCommandAccessError extends Error {
+    status: number
+    constructor(message: string, status: number) { super(message); this.status = status }
+  },
+}))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: mocks.admin }))
 import { GET } from './route'
 
@@ -129,6 +136,62 @@ describe('mobile customer conversation history', () => {
     expect(body.activities[0]).toMatchObject({ id: 'email-1', description: 'email-1', metadata: { gmail_message_id: 'gmail-1' } })
     expect(body.activities[0].metadata.body_text).toBeUndefined()
     errors.mockRestore()
+  })
+
+  it('returns team-to-company photo activities for an unmatched phone thread', async () => {
+    const phone = '+18162262552'
+    const storagePath = `SM${'a'.repeat(32)}/0-mms-0.jpg`
+    const filters: string[] = []
+    const rows = [
+      row('team-coordination', { direction: 'internal', from: phone, to: '+18166088588', is_team: true }),
+      row('team-photo', {
+        direction: 'received',
+        from: phone,
+        to: '+18166088588',
+        team_sender: true,
+        num_media: 1,
+        mms: [{ storage_bucket: 'inbound-mms', storage_path: storagePath, content_type: 'image/jpeg', byte_size: 4, index: 0 }],
+      }),
+    ]
+    rows[1].description = 'Sent a photo'
+    mocks.command.mockResolvedValue({ scopedActor: { access: 'owner', email: 'ernest@savingkc.com' } })
+    mocks.admin.mockReturnValue({ from: (table: string) => {
+      if (table !== 'lead_activities') throw new Error(`unexpected table ${table}`)
+      const query = {
+        select: () => query, eq: () => query, in: () => query, order: () => query,
+        is: (column: string, value: unknown) => { filters.push(`${column}=${String(value)}`); return query },
+        or: (filter: string) => { filters.push(filter); return query },
+        limit: async () => ({ data: rows, error: null }),
+      }
+      return query
+    } })
+
+    for (const threadId of [`unmatched:${phone}`, `phone:${phone}`]) {
+      filters.length = 0
+      const response = await GET(new NextRequest(`https://crm.savingkc.com/api/mobile/v1/conversations/${encodeURIComponent(threadId)}`), { params: Promise.resolve({ id: threadId }) })
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.contact).toMatchObject({ id: `unmatched:${phone}`, phone, source: 'unmatched_activity' })
+      expect(body.activities).toHaveLength(1)
+      expect(body.activities[0]).toMatchObject({
+        id: 'team-photo',
+        description: 'Sent a photo',
+        metadata: { num_media: 1, team_sender: true, mms: [{ storage_bucket: 'inbound-mms', storage_path: storagePath }] },
+      })
+      expect(JSON.stringify(body.activities)).not.toMatch(/twilio\.com|X-Amz-|signed/i)
+      expect(filters).toContain('lead_id=null')
+      expect(filters.some((filter) => filter.includes(`metadata->>from.eq."${phone}"`))).toBe(true)
+    }
+    expect(mocks.authorize).not.toHaveBeenCalled()
+  })
+
+  it('does not open an unmatched phone thread outside company-wide access', async () => {
+    mocks.command.mockResolvedValue({ scopedActor: { access: 'agent', email: 'agent@savingkc.com' } })
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/conversations/unmatched:%2B18162262552'), {
+      params: Promise.resolve({ id: 'unmatched:+18162262552' }),
+    })
+    expect(response.status).toBe(403)
+    expect(mocks.admin).not.toHaveBeenCalled()
   })
 
 })

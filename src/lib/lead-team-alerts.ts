@@ -32,6 +32,8 @@ type PushInput = {
 
 type TeamLeadAlertInput = {
   leadId?: string | null
+  /** Opens this conversation when the alert is not a seller lead record. */
+  conversationThreadId?: string | null
   smsBody: string
   trigger: string
   source?: string | null
@@ -105,7 +107,7 @@ function teamAlertMobilePush(input: TeamLeadAlertInput, names: Array<LeadAlertRe
   if (!input.push || names.length === 0) return null
   const kind = teamAlertMobileKind(input.trigger)
   if (!kind) return null
-  const leadId = input.leadId || ''
+  const leadId = input.conversationThreadId || input.leadId || ''
   return {
     title: input.push.title,
     body: input.push.body,
