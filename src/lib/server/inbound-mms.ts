@@ -1,4 +1,4 @@
-import { INBOUND_MMS_BUCKET } from '@/lib/inbound-mms-view'
+import { INBOUND_MMS_BUCKET, inboundSmsDisplayBody } from '@/lib/inbound-mms-view'
 import {
   isSupportedMessageAttachmentMime,
   messageAttachmentExtension,
@@ -6,7 +6,11 @@ import {
 } from '@/lib/mobile-api/message-attachments'
 import { supabase } from '@/lib/supabase-lazy'
 
-export { INBOUND_MMS_BUCKET }
+export { INBOUND_MMS_BUCKET, inboundSmsDisplayBody }
+
+export const TWILIO_MESSAGE_SID = /^(?:SM|MM)[0-9a-f]{32}$/i
+const ACCOUNT_SID = /^AC[0-9a-f]{32}$/i
+const MEDIA_SID = /^ME[0-9a-f]{32}$/i
 
 export const INBOUND_MMS_MAX_BYTES = 5 * 1024 * 1024
 const MAX_MEDIA = 10
@@ -31,6 +35,13 @@ export class InboundMmsInputError extends Error {
   }
 }
 
+export class TwilioMediaNotFoundError extends Error {
+  constructor() {
+    super('Twilio media was not found')
+    this.name = 'TwilioMediaNotFoundError'
+  }
+}
+
 export interface TwilioMediaRef {
   index: number
   url: string
@@ -51,14 +62,6 @@ export interface CapturedInboundMms {
 }
 
 type Upload = (path: string, bytes: Uint8Array, contentType: string) => Promise<void>
-
-export function inboundSmsDisplayBody(body: string | null | undefined, mediaCount: number): string {
-  const text = (body ?? '').trim()
-  if (text) return text
-  if (mediaCount === 1) return 'Sent a photo'
-  if (mediaCount > 1) return `Sent ${mediaCount} photos`
-  return ''
-}
 
 export function readTwilioInboundMedia(form: FormData): TwilioMediaRef[] {
   const raw = form.get('NumMedia')
@@ -157,6 +160,7 @@ async function downloadTwilioMedia(url: string, fetchImpl: typeof fetch): Promis
       current = next
       continue
     }
+    if (response.status === 404) throw new TwilioMediaNotFoundError()
     if (!response.ok) throw new Error(`Twilio media download failed (${response.status})`)
     const bytes = new Uint8Array(await response.arrayBuffer())
     if (bytes.byteLength < 1 || bytes.byteLength > INBOUND_MMS_MAX_BYTES) {
@@ -175,6 +179,34 @@ async function defaultUpload(path: string, bytes: Uint8Array, contentType: strin
   if (error) throw new Error('Inbound MMS storage upload failed')
 }
 
+export async function listTwilioMessageMedia(messageSid: string, fetchImpl: typeof fetch = fetch): Promise<TwilioMediaRef[]> {
+  if (!TWILIO_MESSAGE_SID.test(messageSid)) throw new Error('Invalid MessageSid for media lookup')
+  const accountSid = (process.env.TWILIO_ACCOUNT_SID || '').trim()
+  if (!ACCOUNT_SID.test(accountSid)) throw new Error('Twilio media download is not configured')
+  const response = await fetchImpl(
+    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages/${messageSid}/Media.json?PageSize=20`,
+    { headers: { Authorization: twilioAuthorization() }, redirect: 'manual' },
+  )
+  if (response.status === 404) throw new TwilioMediaNotFoundError()
+  if (response.status >= 300 && response.status < 400) throw new Error('Twilio media list redirect was refused')
+  if (!response.ok) throw new Error(`Twilio media list failed (${response.status})`)
+  const payload = await response.json() as { media_list?: unknown }
+  if (!payload || !Array.isArray(payload.media_list)) throw new Error('Twilio media list was unreadable')
+  if (payload.media_list.length > MAX_MEDIA) throw new Error('Twilio media list is too large')
+  return payload.media_list.map((item, index) => {
+    if (!item || typeof item !== 'object') throw new Error('Twilio media list was unreadable')
+    const row = item as Record<string, unknown>
+    const sid = typeof row.sid === 'string' ? row.sid : ''
+    if (!MEDIA_SID.test(sid)) throw new Error('Invalid Twilio media sid')
+    const declared = typeof row.content_type === 'string' ? row.content_type.split(';')[0].trim().toLowerCase() : ''
+    return {
+      index,
+      url: `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages/${messageSid}/Media/${sid}`,
+      contentType: declared,
+    }
+  })
+}
+
 export async function storeTwilioInboundMedia(input: {
   messageSid: string
   media: TwilioMediaRef[]
@@ -185,7 +217,7 @@ export async function storeTwilioInboundMedia(input: {
   if (input.media.length === 0) return []
   const prior = storedFromMetadata(input.priorMetadata, input.media.length)
   if (prior) return prior
-  if (!/^SM[0-9a-f]{32}$/i.test(input.messageSid)) throw new Error('Invalid MessageSid for media storage')
+  if (!TWILIO_MESSAGE_SID.test(input.messageSid)) throw new Error('Invalid MessageSid for media storage')
   const fetchImpl = input.fetchImpl ?? fetch
   const upload = input.upload ?? defaultUpload
   const stored: StoredInboundMms[] = []

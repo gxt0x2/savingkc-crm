@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { assistantActorCanReadCompanyWide } from '@/lib/assistant/auth'
 import { formatPhone } from '@/lib/format'
+import { presentConversationMmsActivity } from '@/lib/inbound-mms-view'
 import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
 import { normalizeMobileCallActivities } from '@/lib/mobile-api/activity-calls'
@@ -79,7 +80,7 @@ async function readUnmatchedPhoneConversation(req: NextRequest, phone: string) {
       source: 'unmatched_activity',
       updated_at: activities[0]?.created_at ?? null,
     },
-    activities,
+    activities: activities.map(presentConversationMmsActivity),
   }, { headers: mobileNoStoreHeaders() })
 }
 
@@ -107,7 +108,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return result.data ?? []
     }, isMobileCustomerActivity)
 
-    const activities = await attachLeadEmailBodies(db as unknown as LeadEmailBodyReader, id, normalizeMobileCallActivities(customerActivities))
+    const activities = (await attachLeadEmailBodies(db as unknown as LeadEmailBodyReader, id, normalizeMobileCallActivities(customerActivities))).map(presentConversationMmsActivity)
     const [contact] = await attachManualEmailConsent([leadResult.data])
     return NextResponse.json({ contact, activities }, { headers: mobileNoStoreHeaders() })
   } catch (error) {

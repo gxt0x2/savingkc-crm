@@ -185,6 +185,30 @@ describe('mobile customer conversation history', () => {
     expect(mocks.authorize).not.toHaveBeenCalled()
   })
 
+  it('returns stored inbound MMS media and captions a photo that could not be recovered', async () => {
+    const sid = `MM${'b'.repeat(32)}`
+    const storagePath = `${sid}/0-mms-0.jpg`
+    const missing = row('missing-photo', { direction: 'received', message_sid: sid, from: '+19137179716', to: '+18166088588' })
+    const stored = row('stored-photo', {
+      direction: 'received',
+      message_sid: sid,
+      from: '+19137179716',
+      to: '+18166088588',
+      num_media: 1,
+      mms: [{ storage_bucket: 'inbound-mms', storage_path: storagePath, content_type: 'image/jpeg', byte_size: 4, index: 0 }],
+    })
+    missing.description = ''
+    stored.description = ''
+    rows = [missing, stored]
+    const body = await (await GET(request(), { params: Promise.resolve({ id }) })).json()
+    expect(body.activities.find((activity: { id: string }) => activity.id === 'missing-photo').description).toBe('Photo unavailable')
+    expect(body.activities.find((activity: { id: string }) => activity.id === 'stored-photo')).toMatchObject({
+      description: 'Sent a photo',
+      metadata: { num_media: 1, mms: [{ storage_bucket: 'inbound-mms', storage_path: storagePath }] },
+    })
+    expect(JSON.stringify(body.activities)).not.toMatch(/twilio\.com|MediaUrl/)
+  })
+
   it('does not open an unmatched phone thread outside company-wide access', async () => {
     mocks.command.mockResolvedValue({ scopedActor: { access: 'agent', email: 'agent@savingkc.com' } })
     const response = await GET(new NextRequest('https://crm.savingkc.com/api/mobile/v1/conversations/unmatched:%2B18162262552'), {
