@@ -11,6 +11,7 @@ import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
 import { readPhoneEnv } from '@/lib/phone-config'
 import { safeSendSMS } from '@/lib/safe-communications'
 import { supabase } from '@/lib/supabase-lazy'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 
 function twilioPhone(): string {
   return readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
@@ -111,6 +112,13 @@ export async function markLeadAsGoogleAdsPhoneLead(leadId: string, from: string,
   if (isInternalTestPhone(from)) return
 
   await updateLeadSource(leadId, calledNumber)
+  queueInboundLeadAttribution({
+    leadId,
+    channel: 'call',
+    callerNumber: from,
+    calledNumber: calledNumber || GOOGLE_ADS_PHONE_NUMBER,
+    prospectMatched: false,
+  })
 }
 
 async function findExistingLeadByPhone(phone: string): Promise<{ id: string; full_name: string | null } | null> {

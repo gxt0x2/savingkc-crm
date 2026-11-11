@@ -7,6 +7,7 @@ import { analyzeCallTranscript } from '@/lib/mojo-call-analyzer'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { formatPhone } from '@/lib/format'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 import { createCallAnalysisLeadProposal } from '@/lib/server/ai-change-proposals'
 
 
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
     const recordingUrl = body.get('RecordingUrl') as string
     const recordingSid = body.get('RecordingSid') as string
     const recordingDuration = body.get('RecordingDuration') as string
+    const callSid = String(body.get('CallSid') || '')
 
   if (recordingSid) {
     const { data: existingVoicemail } = await supabase
@@ -68,6 +70,8 @@ export async function POST(req: Request) {
       resolvedLeadId = newLead?.id || ''
     }
   }
+
+  queueInboundLeadAttribution({ leadId: resolvedLeadId, channel: 'call', callerNumber: from, calledNumber, callSid })
 
   // Log voicemail to lead_activities
   await supabase.from('lead_activities').insert({

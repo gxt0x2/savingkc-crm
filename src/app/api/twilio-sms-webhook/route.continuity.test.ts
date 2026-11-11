@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   resolveGoogleAdsLeadContext: vi.fn(),
   processInboundSmsConsent: vi.fn(),
   recordAppointmentSmsResponse: vi.fn(),
+  queueInboundLeadAttribution: vi.fn(),
   afterRequest: vi.fn((work: () => unknown) => {
     void work()
   }),
@@ -96,6 +97,10 @@ vi.mock('@/lib/google-ads-phone', () => ({
 
 vi.mock('@/lib/server/appointment-sms-response', () => ({
   recordAppointmentSmsResponse: mocks.recordAppointmentSmsResponse,
+}))
+
+vi.mock('@/lib/server/inbound-lead-attribution', () => ({
+  queueInboundLeadAttribution: mocks.queueInboundLeadAttribution,
 }))
 
 vi.mock('@/lib/after-request', () => ({
@@ -486,6 +491,13 @@ describe('twilio SMS webhook identity continuity', () => {
       title: 'Unknown SMS',
       data: expect.objectContaining({ kind: 'inbound_sms', leadId: 'lead-created' }),
     }))
+    expect(mocks.queueInboundLeadAttribution).toHaveBeenCalledWith({
+      leadId: 'lead-created',
+      channel: 'sms',
+      callerNumber: '+19137179716',
+      calledNumber: '+18166088588',
+      prospectMatched: false,
+    })
   })
 
 })

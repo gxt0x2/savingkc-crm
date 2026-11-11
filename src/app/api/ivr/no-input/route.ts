@@ -7,6 +7,7 @@ import { createEnrichedLeadFromProspect } from '@/lib/prospect-to-lead'
 import { readPhoneEnv } from '@/lib/phone-config'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { agentDialTwiml } from '@/lib/telephony/business-line-ivr'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 
 const TWILIO_PHONE = readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
@@ -50,6 +51,8 @@ export async function POST(req: Request) {
     const url = new URL(req.url)
     const from = url.searchParams.get('from') || ''
     const calledNumber = url.searchParams.get('calledNumber') || TWILIO_PHONE
+    // Only used to look up where the call was forwarded from.
+    const callSid = await req.formData().then((body) => String(body.get('CallSid') || ''), () => '')
 
     const routing = getAgentRouting(calledNumber)
 
@@ -103,6 +106,8 @@ export async function POST(req: Request) {
       }).select('id').single()
       noInputLeadId = newLead?.id || null
     }
+
+    queueInboundLeadAttribution({ leadId: noInputLeadId, channel: 'call', callerNumber: from, calledNumber, callSid })
 
     // Log call (feeds spam counter for future calls)
     await supabase.from('lead_activities').insert({

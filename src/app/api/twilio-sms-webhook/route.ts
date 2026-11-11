@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { isGoogleAdsPhoneNumber } from '@/lib/call-quality-events'
 import { recordAppointmentSmsResponse } from '@/lib/server/appointment-sms-response'
 import { resolveInboundSmsLead } from '@/lib/server/inbound-sms-lead'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 import { classifyJunkInboundSms } from '@/lib/sms-junk-filter'
 import {
   googleAdsNewTextTeamMessage,
@@ -630,6 +631,14 @@ export async function POST(req: Request) {
       }
 
       if (newLeadId) {
+        queueInboundLeadAttribution({
+          leadId: newLeadId,
+          channel: 'sms',
+          callerNumber: from,
+          calledNumber: to,
+          prospectMatched: Boolean(prospectMatch),
+        })
+
         // Link the original inbound activity before sending alerts or completing
         // the lease; retry after any error can find the created lead by phone.
         if (!primaryActivityId) throw new Error('Inbound SMS has no persisted activity to link')
