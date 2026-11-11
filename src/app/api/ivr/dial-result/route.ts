@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
@@ -148,6 +149,15 @@ async function ensureUnknownDirectInboundContact(input: {
   }
 
   if (!leadId) return { id: null, name: leadName }
+
+  queueInboundLeadAttribution({
+    leadId,
+    channel: 'call',
+    callerNumber: input.from,
+    calledNumber: input.calledNumber,
+    callSid: input.callSid,
+    prospectMatched: prospectMatches.length > 0,
+  })
 
   await supabase.from('ari_briefing_events').insert({
     event_type: 'inbound_call',

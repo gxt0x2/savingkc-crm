@@ -33,7 +33,7 @@ export type LeadAttribution = {
   first_visit_at?: string
   device?: { type?: string; ua?: string; viewport?: string; lang?: string }
   form?: { source?: string; step?: string; status?: string }
-  phone?: { tracking_number?: string; caller_number?: string; call_sid?: string }
+  phone?: { tracking_number?: string; caller_number?: string; call_sid?: string; forwarded_from?: string }
   dialer?: { provider?: string; campaign_id?: string; list_id?: string }
   import?: { batch_id?: string; file_name?: string; list_name?: string }
   captured_at?: string

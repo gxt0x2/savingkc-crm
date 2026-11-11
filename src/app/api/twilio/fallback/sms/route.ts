@@ -1,4 +1,5 @@
 import { formatPhone } from '@/lib/format'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
       if (error) throw error
       leadId = created?.id || null
     }
+    queueInboundLeadAttribution({ leadId, channel: 'sms', callerNumber: from, calledNumber: to })
 
     await supabase.from('lead_activities').insert({
       lead_id: leadId,

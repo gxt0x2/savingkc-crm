@@ -5,6 +5,7 @@ import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { formatPhone } from '@/lib/format'
 import { readPhoneEnv } from '@/lib/phone-config'
 import { supabase } from '@/lib/supabase-lazy'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 
 const TWILIO_PHONE = readPhoneEnv('TWILIO_PHONE_NUMBER', '+18163077835')
 
@@ -196,6 +197,14 @@ export async function POST(req: Request) {
 
         // Re-link the already-logged call activity to the new lead
         if (newLeadId) {
+          queueInboundLeadAttribution({
+            leadId: newLeadId,
+            channel: 'call',
+            callerNumber: from,
+            calledNumber: to || TWILIO_PHONE,
+            callSid,
+            prospectMatched: prospectMatches.length > 0,
+          })
           await supabase.from('lead_activities')
             .update({ lead_id: newLeadId })
             .eq('metadata->>callSid', callSid)

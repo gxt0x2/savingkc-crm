@@ -5,6 +5,7 @@ import { agentDialTwiml, businessMenuTwiml, optOutTwiml } from '@/lib/telephony/
 import { handleOptOut } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
+import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 const INVALID_TWILIO_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>'
@@ -80,6 +81,8 @@ export async function POST(req: Request) {
           leadId = newLead?.id || ''
         }
       }
+
+      queueInboundLeadAttribution({ leadId, channel: 'call', callerNumber: from, calledNumber, callSid })
 
       await supabase.from('lead_activities').insert({
         lead_id: leadId || null,

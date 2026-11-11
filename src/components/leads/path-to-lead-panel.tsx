@@ -119,6 +119,7 @@ export function PathToLeadPanel({ leadId }: { leadId: string }) {
           <Row label="GA4 client ID" value={attr.ga_client_id} />
           <Row label="GA4 session" value={attr.ga_session_id} />
           <Row label="Tracking number" value={attr.phone?.tracking_number} />
+          <Row label="Forwarded from" value={attr.phone?.forwarded_from} />
           <Row label="Dialer" value={attr.dialer ? [attr.dialer.provider, attr.dialer.campaign_id, attr.dialer.list_id].filter(Boolean).join(' · ') : undefined} />
           <Row label="Import batch" value={attr.import?.batch_id} />
           {attr.page_history?.length ? (
