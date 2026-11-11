@@ -14,6 +14,7 @@ import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { Icon } from '@/components/ui/icon'
 import { useDialogAccessibility } from '@/hooks/use-dialog-accessibility'
 import { getAvatarLabel, getDisplayLeadName } from '@/lib/contact-display'
+import { conversationMmsViews } from '@/lib/inbound-mms-view'
 import { formatPhone } from '@/lib/format'
 import { CRM_DIALER_OPEN_EVENT } from '@/lib/telephony/dialer-events'
 import { playableRecordingUrl, readCallReviewWorkflow, readRecordingDuration } from '@/lib/marketing/call-recordings'
@@ -262,6 +263,7 @@ function timelineItemToEntry(item: ConversationTimelineItem, lead: ConversationT
       timestamp,
       senderInitials,
       agentName: direction === 'sent' ? agentName : undefined,
+      attachments: conversationMmsViews(metadata),
     },
   }
 }

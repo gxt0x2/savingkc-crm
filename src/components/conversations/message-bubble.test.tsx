@@ -66,6 +66,28 @@ describe('conversation call card', () => {
   })
 })
 
+describe('inbound MMS timeline', () => {
+  it('shows a stored photo in the message', () => {
+    const sid = `SM${'a'.repeat(32)}`
+    render(<MessageBubble message={{
+      id: 'mms-1',
+      type: 'sms',
+      direction: 'received',
+      content: 'Sent a photo',
+      timestamp: '8:12 PM',
+      senderInitials: 'ED',
+      attachments: [{
+        src: `/api/conversations/mms?path=${encodeURIComponent(`${sid}/0-mms-0.jpg`)}`,
+        contentType: 'image/jpeg',
+        label: 'Photo 1',
+      }],
+    }} />)
+
+    expect(screen.getByText('Sent a photo')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Photo 1' })).toHaveAttribute('src', expect.stringContaining('/api/conversations/mms?path='))
+  })
+})
+
 describe('typed conversation timeline', () => {
   it('renders an internal note as a note instead of a sent text', () => {
     render(<MessageBubble message={{

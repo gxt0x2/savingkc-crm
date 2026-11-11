@@ -354,7 +354,7 @@ describe('twilio SMS webhook seller responses', () => {
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.sendPushToAgents).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Lead Texted',
-      url: '/leads/lead-123',
+      url: '/conversations?lead=lead-123',
     }))
     expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Ernest', 'Casey'], {
       title: 'Lead Texted',
@@ -679,20 +679,20 @@ describe('twilio SMS webhook seller responses', () => {
     expect(mocks.processInboundSmsConsent).toHaveBeenCalledOnce()
   })
 
-  it('marks every team-originated activity as internal conversation traffic', async () => {
+  it('keeps team coordination internal and the primary text off the seller lead', async () => {
     const response = await POST(makeSmsRequest('Internal coordination', '+18167564943'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
-    const teamSmsRows = inserts.filter(({ table, payload }) => (
+    const smsRows = inserts.filter(({ table, payload }) => (
       table === 'lead_activities' &&
-      typeof payload === 'object' &&
-      payload !== null &&
+      typeof payload === 'object' && payload !== null &&
       (payload as { activity_type?: string }).activity_type === 'sms'
     ))
-    expect(teamSmsRows.length).toBeGreaterThan(0)
-    for (const row of teamSmsRows) {
-      expect(row.payload).toMatchObject({ metadata: { is_team: true } })
-    }
+    const primary = smsRows.find((row) => (row.payload as { metadata?: { inbound_webhook_source?: string } }).metadata?.inbound_webhook_source)
+    expect(primary?.payload).toMatchObject({ lead_id: null, metadata: { team_sender: true, direction: 'received' } })
+    expect((primary?.payload as { metadata?: { is_team?: boolean } }).metadata?.is_team).toBeUndefined()
+    expect(smsRows.some((row) => (row.payload as { lead_id?: string | null; metadata?: { is_team?: boolean } }).metadata?.is_team === true && (row.payload as { lead_id?: string | null }).lead_id == null)).toBe(true)
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
   })
   it('logs a bulk survey blast as not_a_lead with no lead, alert, reply or opt-out', async () => {
     reviewUnknown = true
