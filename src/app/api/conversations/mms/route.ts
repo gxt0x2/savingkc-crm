@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { requireAuthenticatedUser } from '@/lib/api/require-authenticated-user'
 import { INBOUND_MMS_BUCKET, isSafeInboundMmsPath } from '@/lib/inbound-mms-view'
+import { requireMobileUser } from '@/lib/mobile-api/auth'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -9,8 +10,14 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   const unauthorized = await requireAuthenticatedUser()
   if (unauthorized) {
-    unauthorized.headers.set('Cache-Control', 'private, no-store')
-    return unauthorized
+    try {
+      // Mobile photo fetches send the same Supabase access token the
+      // /api/mobile/v1 routes verify. A cookie session still wins on its own.
+      await requireMobileUser(request)
+    } catch {
+      unauthorized.headers.set('Cache-Control', 'private, no-store')
+      return unauthorized
+    }
   }
   const path = new URL(request.url).searchParams.get('path')?.trim() || ''
   if (!isSafeInboundMmsPath(path)) {
