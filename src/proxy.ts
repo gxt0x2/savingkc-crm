@@ -187,6 +187,17 @@ function isPublicApiRoute(request: NextRequest): boolean {
   return false
 }
 
+// The web timeline loads inbound MMS with the cookie session. The mobile app
+// loads the same URL with the Supabase bearer that mobile route handlers
+// verify. Only this exact read skips the cookie gate, and only when a bearer
+// is present, so the handler can accept either proof. Missing and invalid
+// tokens still stop before the private bucket.
+function isInboundMmsBearerRead(request: NextRequest): boolean {
+  return request.method === 'GET'
+    && request.nextUrl.pathname === '/api/conversations/mms'
+    && Boolean(bearerToken(request.headers.get('authorization')))
+}
+
 function isTrustedBearerRoute(request: NextRequest): boolean {
   const { pathname } = request.nextUrl
 
@@ -519,6 +530,12 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 
   // Let server-to-server checks through only when they carry a trusted bearer.
   if (isTrustedBearerRoute(request)) {
+    return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
+  }
+
+  // Verified in the route with requireMobileUser. Anonymous reads stay on the
+  // cookie gate below and still return 401.
+  if (isInboundMmsBearerRead(request)) {
     return withCrawlDirective(withPaidLandingCookies(NextResponse.next(), paidLandingCookies), pathname)
   }
 
