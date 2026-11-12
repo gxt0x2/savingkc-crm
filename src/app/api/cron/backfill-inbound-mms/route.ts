@@ -15,7 +15,7 @@ export const maxDuration = 300
 
 const HEADERS = { 'Cache-Control': 'private, no-store' }
 
-/** Production cron applies the last 30 days. Vercel sends the existing cron bearer. */
+/** Applies the last 30 days. The existing cron bearer is required; it is not scheduled. */
 export async function GET(request: Request) {
   const unauthorized = await requireAdminOrSecret(request)
   if (unauthorized) return unauthorized
