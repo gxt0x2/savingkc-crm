@@ -8,6 +8,7 @@ import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { buildUserIdentifiers } from '@/lib/ppc/enhanced-conversions'
 import { DEFAULT_PPC_CAMPAIGN, ppcCampaignForPagePath } from '@/lib/ppc/campaigns'
 import { enqueuePpcConversion } from '@/lib/ppc/conversion-outbox'
+import { linkJourneyToLead } from '@/lib/ppc/journey-link'
 import { getPpcRequestContext } from '@/lib/ppc/request-context'
 import {
   buildPpcLeadCacheUpdates,
@@ -831,6 +832,9 @@ export async function POST(req: NextRequest) {
       // while surfacing the failure for repair or deterministic replay.
       console.error('[ppc/lead] seller intake workflow failed', err)
     }
+
+    // Tie this visitor's earlier and later journey events to the lead.
+    await linkJourneyToLead({ leadId: resolvedLeadId, sessionId: parsed.sessionId, visitorId: parsed.visitorId })
 
     if (!isTestLead && !externalSideEffectsDisabled()) {
       const conversionEventId = `lead:${resolvedLeadId}:lead_submitted`

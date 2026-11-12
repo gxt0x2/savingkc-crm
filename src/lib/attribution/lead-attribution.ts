@@ -30,6 +30,7 @@ export type LeadAttribution = {
   ga_client_id?: string
   ga_session_id?: string
   site_session_id?: string
+  site_visitor_id?: string
   first_visit_at?: string
   device?: { type?: string; ua?: string; viewport?: string; lang?: string }
   form?: { source?: string; step?: string; status?: string }
@@ -99,7 +100,7 @@ export function normalizePageHistory(value: unknown): PageView[] | undefined {
  */
 export function websiteFormAttribution(input: {
   touch: unknown
-  legacy: { referrer?: string | null; landingUrl?: string | null; sessionId?: string | null; formSource?: string | null; attribution?: Record<string, unknown> }
+  legacy: { referrer?: string | null; landingUrl?: string | null; sessionId?: string | null; visitorId?: string | null; formSource?: string | null; attribution?: Record<string, unknown> }
   userAgent?: string | null
   now?: string
 }): LeadAttribution {
@@ -120,6 +121,7 @@ export function websiteFormAttribution(input: {
     ga_client_id: gaClientIdFromCookie(touch.ga_client_id),
     ga_session_id: str(touch.ga_session_id, 40),
     site_session_id: str(input.legacy.sessionId ?? undefined, 64),
+    site_visitor_id: str(input.legacy.visitorId ?? touch.visitor_id ?? undefined, 64),
     first_visit_at: str(touch.first_visit_at, 40),
     device: compact({
       type: str(device.type, 20),

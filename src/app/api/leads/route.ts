@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase-lazy'
 import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-intake'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { mergeLeadAttribution, websiteFormAttribution } from '@/lib/attribution/lead-attribution'
+import { linkJourneyToLead, visitorIdFromBody } from '@/lib/ppc/journey-link'
 import { retiredLegacyLeadsPatchResponse } from '@/lib/server/legacy-leads-patch-retirement'
 
 const corsHeaders = {
@@ -334,6 +335,7 @@ export async function POST(req: NextRequest) {
     const email = cleanString(body.email)?.toLowerCase() ?? null
     const formSource = cleanString(body.source) || WEBSITE_LEAD_SOURCE
     const sessionId = cleanSessionId(body.session_id)
+    const visitorId = visitorIdFromBody(body)
     const attribution = cleanAttribution(body.attribution)
     const landingUrl = cleanString(body.landing_url) || cleanString(attribution.landingUrl)
     const referrer = cleanString(body.referrer) || cleanString(attribution.referrer)
@@ -431,9 +433,12 @@ export async function POST(req: NextRequest) {
     // Standard attribution audit trail (best-effort; never blocks intake).
     await writeLeadAttribution(resolvedLeadId, websiteFormAttribution({
       touch: body.touch,
-      legacy: { referrer, landingUrl, sessionId, formSource, attribution },
+      legacy: { referrer, landingUrl, sessionId, visitorId, formSource, attribution },
       userAgent: req.headers.get('user-agent'),
     }))
+
+    // Tie the visits before this submit (and later return visits) to the lead.
+    await linkJourneyToLead({ leadId: resolvedLeadId, sessionId, visitorId })
 
     const activityId = await upsertWebsiteLeadActivity({
       leadId: resolvedLeadId,
