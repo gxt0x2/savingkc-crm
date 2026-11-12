@@ -39,7 +39,10 @@ describe('historical inbound MMS backfill', () => {
       return new Response(bytes, { status: 200, headers: { 'content-type': 'image/jpeg' } })
     })
     const upload = vi.fn(async () => undefined)
-    const save = vi.fn(async () => undefined)
+    const saved: Array<{ description: string; metadata: Record<string, unknown> }> = []
+    const save = vi.fn(async (_row: InboundMmsBackfillRow, patch: { description: string; metadata: Record<string, unknown> }) => {
+      saved.push(patch)
+    })
     const original = row({
       direction: 'received',
       from: SANDBOX,
@@ -47,6 +50,21 @@ describe('historical inbound MMS backfill', () => {
       message_sid: SID,
       source: 'twilio_sms_webhook',
     })
+    const storedMetadata = {
+      direction: 'received',
+      from: SANDBOX,
+      to: '+18166088588',
+      message_sid: SID,
+      source: 'twilio_sms_webhook',
+      num_media: 1,
+      mms: [{
+        index: 0,
+        storage_bucket: 'inbound-mms',
+        storage_path: `${SID}/0-mms-0.jpg`,
+        content_type: 'image/jpeg',
+        byte_size: 4,
+      }],
+    }
 
     const report = await backfillInboundMmsActivities({
       rows: [original],
@@ -58,27 +76,10 @@ describe('historical inbound MMS backfill', () => {
 
     expect(report).toMatchObject({ stored: 1, storedSids: [SID], notFound: [], failed: [] })
     expect(upload).toHaveBeenCalledWith(`${SID}/0-mms-0.jpg`, bytes, 'image/jpeg')
-    expect(save).toHaveBeenCalledWith(original, {
-      description: 'Sent a photo',
-      metadata: {
-        direction: 'received',
-        from: SANDBOX,
-        to: '+18166088588',
-        message_sid: SID,
-        source: 'twilio_sms_webhook',
-        num_media: 1,
-        mms: [{
-          index: 0,
-          storage_bucket: 'inbound-mms',
-          storage_path: `${SID}/0-mms-0.jpg`,
-          content_type: 'image/jpeg',
-          byte_size: 4,
-        }],
-      },
-    })
-    expect(JSON.stringify(save.mock.calls)).not.toMatch(/twilio\.com|evil\.example|test-token/)
+    expect(saved).toEqual([{ description: 'Sent a photo', metadata: storedMetadata }])
+    expect(JSON.stringify(saved)).not.toMatch(/twilio\.com|evil\.example|test-token/)
 
-    const stored = row(save.mock.calls[0][1].metadata as Record<string, unknown>, 'Sent a photo')
+    const stored = row(storedMetadata, 'Sent a photo')
     fetchImpl.mockClear()
     const again = await backfillInboundMmsActivities({
       rows: [stored],
