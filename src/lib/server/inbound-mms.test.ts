@@ -3,11 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   captureInboundMms,
   inboundSmsDisplayBody,
+  listTwilioMessageMedia,
   readTwilioInboundMedia,
   storeTwilioInboundMedia,
 } from './inbound-mms'
 
 const SID = `SM${'a'.repeat(32)}`
+const MMS_SID = `MM${'d'.repeat(32)}`
+const ACCOUNT_SID = `AC${'b'.repeat(32)}`
 const MEDIA_URL = `https://api.twilio.com/2010-04-01/Accounts/AC${'b'.repeat(32)}/Messages/${SID}/Media/ME${'c'.repeat(32)}`
 
 function form(fields: Record<string, string>): FormData {
@@ -95,6 +98,33 @@ describe('inbound MMS capture', () => {
       upload,
     })).rejects.toThrow('left the provider')
     expect(upload).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists Twilio media for an MM sid and stores it on the same path #802 uses', async () => {
+    vi.stubEnv('TWILIO_ACCOUNT_SID', ACCOUNT_SID)
+    vi.stubEnv('TWILIO_AUTH_TOKEN', 'test-token')
+    const mediaSid = `ME${'e'.repeat(32)}`
+    const bytes = Uint8Array.from([1, 2, 3, 4])
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/Media.json')) {
+        return new Response(JSON.stringify({
+          media_list: [{ sid: mediaSid, content_type: 'image/jpeg', uri: 'https://evil.example/steal' }],
+        }), { status: 200 })
+      }
+      expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages/${MMS_SID}/Media/${mediaSid}`)
+      return new Response(bytes, { status: 200, headers: { 'content-type': 'image/jpeg' } })
+    })
+    const media = await listTwilioMessageMedia(MMS_SID, fetchImpl as unknown as typeof fetch)
+    const upload = vi.fn(async () => undefined)
+    const stored = await storeTwilioInboundMedia({
+      messageSid: MMS_SID,
+      media,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      upload,
+    })
+    expect(upload).toHaveBeenCalledWith(`${MMS_SID}/0-mms-0.jpg`, bytes, 'image/jpeg')
+    expect(stored[0]?.storage_path).toBe(`${MMS_SID}/0-mms-0.jpg`)
+    expect(JSON.stringify(stored)).not.toMatch(/evil\.example|twilio\.com|test-token/)
   })
 
   it('rejects a missing media URL before any download', () => {

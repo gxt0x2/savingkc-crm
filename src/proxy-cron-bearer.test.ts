@@ -36,6 +36,7 @@ describe('cron proxy bearer allowlist', () => {
   })
 
   it.each([
+    '/api/cron/backfill-inbound-mms',
     '/api/cron/data-retention',
     '/api/cron/google-ads-missed-calls',
     '/api/cron/google-ads-reporting-sync',
