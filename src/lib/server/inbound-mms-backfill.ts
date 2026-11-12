@@ -82,6 +82,22 @@ export function isHistoricalInboundMms(metadata: unknown): boolean {
   return conversationMmsViews(row).length === 0
 }
 
+export async function saveInboundMmsBackfill(
+  db: InboundMmsBackfillDb,
+  row: InboundMmsBackfillRow,
+  patch: { description: string; metadata: Record<string, unknown> },
+): Promise<void> {
+  const sid = typeof row.metadata?.message_sid === 'string' ? row.metadata.message_sid : ''
+  const { data, error } = await db.from('lead_activities')
+    .update(patch)
+    .eq('id', row.id)
+    .eq('activity_type', 'sms')
+    .eq('metadata->>message_sid', sid)
+    .select('id')
+    .maybeSingle()
+  if (error || !data) throw new Error('Inbound MMS activity update failed')
+}
+
 export async function loadInboundMmsBackfillRows(
   db: InboundMmsBackfillDb,
   input: { since: string; messageSid?: string; limit: number },

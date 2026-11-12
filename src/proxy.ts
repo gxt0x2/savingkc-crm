@@ -87,6 +87,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/admin/system-config',
   // Cron routes are exact-listed so a newly added scheduled endpoint cannot
   // inherit service-bearer trust before its handler authorization is reviewed.
+  '/api/cron/backfill-inbound-mms',
   '/api/cron/data-retention',
   '/api/cron/google-ads-missed-calls',
   '/api/cron/google-ads-reporting-sync',

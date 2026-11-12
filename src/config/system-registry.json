@@ -309,9 +309,15 @@
       "owner": "Acquisitions",
       "status": "active",
       "routes": ["/conversations"],
-      "apiRoutes": ["/api/conversations/hub", "/api/conversations/timeline", "/api/conversations/attention", "/api/conversations/attention-count", "/api/conversations/send", "/api/conversations/mms", "/api/notifications", "/api/admin/backfill-inbound-mms"],
+      "apiRoutes": ["/api/conversations/hub", "/api/conversations/timeline", "/api/conversations/attention", "/api/conversations/attention-count", "/api/conversations/send", "/api/conversations/mms", "/api/notifications", "/api/admin/backfill-inbound-mms", "/api/cron/backfill-inbound-mms"],
       "tables": ["communications", "conversation_thread_state", "notifications", "sms_delivery_log", "lead_activities"],
-      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN"]
+      "environment": ["TWILIO_ACCOUNT_SID", "TWILIO_API_KEY", "TWILIO_API_SECRET", "TWILIO_AUTH_TOKEN", "CRON_SECRET"],
+      "crons": [
+        {
+          "path": "/api/cron/backfill-inbound-mms",
+          "schedule": "*/15 * * * *"
+        }
+      ]
     },
     {
       "id": "dialer",

@@ -5,8 +5,8 @@ import {
   backfillInboundMmsActivities,
   inboundMmsBackfillSince,
   loadInboundMmsBackfillRows,
+  saveInboundMmsBackfill,
   type InboundMmsBackfillDb,
-  type InboundMmsBackfillRow,
 } from '@/lib/server/inbound-mms-backfill'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -59,7 +59,7 @@ async function run(request: Request, apply: boolean) {
     const report = await backfillInboundMmsActivities({
       rows,
       apply,
-      save: (row, patch) => saveBackfill(db, row, patch),
+      save: (row, patch) => saveInboundMmsBackfill(db, row, patch),
     })
     return NextResponse.json({ ok: report.failed.length === 0, ...report }, {
       status: report.failed.length ? 500 : 200,
@@ -69,22 +69,6 @@ async function run(request: Request, apply: boolean) {
     console.error('[backfill-inbound-mms] failed', error instanceof Error ? error.message : 'failed')
     return NextResponse.json({ error: 'Inbound MMS backfill failed' }, { status: 500, headers: HEADERS })
   }
-}
-
-async function saveBackfill(
-  db: InboundMmsBackfillDb,
-  row: InboundMmsBackfillRow,
-  patch: { description: string; metadata: Record<string, unknown> },
-): Promise<void> {
-  const sid = typeof row.metadata?.message_sid === 'string' ? row.metadata.message_sid : ''
-  const { data, error } = await db.from('lead_activities')
-    .update(patch)
-    .eq('id', row.id)
-    .eq('activity_type', 'sms')
-    .eq('metadata->>message_sid', sid)
-    .select('id')
-    .maybeSingle()
-  if (error || !data) throw new Error(error?.message || 'Inbound MMS activity update failed')
 }
 
 export async function GET(request: Request) {
