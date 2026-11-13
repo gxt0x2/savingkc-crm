@@ -7,6 +7,7 @@ import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
 import { supabase } from '@/lib/supabase-lazy'
 import { validateTwilioWebhook } from '@/lib/twilio-validate'
 import { createCallAnalysisLeadProposal } from '@/lib/server/ai-change-proposals'
+import { hasExplicitSellingIntent } from '@/lib/selling-intent'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com'
 
@@ -42,15 +43,13 @@ export async function POST(req: Request) {
 
     if (existingLead?.id) {
       leadId = existingLead.id
-      const { error: priorityError } = await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
-      if (priorityError) throw priorityError
     } else {
       const { data: newLead } = await supabase.from('leads').insert({
         full_name: 'Inbound Seller',
         phone: from,
         source: 'inbound_ivr',
         station: 'new',
-        priority: 'hot',
+        priority: 'warm',
         notes: `Inbound IVR voicemail. Recording: ${recordingUrl}. CallSid: ${callSid}`
       }).select('id').single()
       leadId = newLead?.id || ''
@@ -62,7 +61,7 @@ export async function POST(req: Request) {
     await supabase.from('lead_activities').insert({
       lead_id: leadId,
       activity_type: 'voicemail',
-      description: 'Voicemail left after both agents missed inbound seller call',
+      description: 'Voicemail left after both agents missed the call',
       agent: 'System',
       metadata: {
         direction: 'inbound',
@@ -76,7 +75,7 @@ export async function POST(req: Request) {
   }
 
   // Alert eligible agents.
-  const urgentMsg = `[URGENT] Inbound seller voicemail from ${formatPhone(from)}. Recording: ${recordingUrl}${leadId ? '\n' + BASE_URL + '/leads/' + leadId : ''}\nCall back NOW.`
+  const urgentMsg = `Voicemail from ${formatPhone(from)}. Call them back. Recording: ${recordingUrl}${leadId ? '\n' + BASE_URL + '/leads/' + leadId : ''}`
   await sendTeamLeadAlert({
     leadId,
     smsBody: urgentMsg,
@@ -84,8 +83,8 @@ export async function POST(req: Request) {
     source: 'inbound_ivr',
     calledNumber,
     push: leadId ? {
-      title: 'Inbound Seller Voicemail',
-      body: `Voicemail from ${formatPhone(from)}. Call back now.`,
+      title: 'Voicemail',
+      body: `Voicemail from ${formatPhone(from)}. Call them back.`,
       url: `/leads/${leadId}`,
       tag: 'inbound-seller-voicemail',
     } : false,
@@ -102,8 +101,8 @@ export async function POST(req: Request) {
     await supabase.from('ari_briefing_events').insert({
       event_type: 'inbound_seller_voicemail',
       priority: 'critical',
-      title: `[URGENT] Inbound seller voicemail from ${formatPhone(from)}`,
-      description: `Both agents missed. Voicemail left and the conversation needs a reply.`,
+      title: `Voicemail from ${formatPhone(from)}`,
+      description: 'Both agents missed. Voicemail left. Call them back.',
       lead_id: leadId,
       action_url: `/leads/${leadId}`
     })
@@ -111,7 +110,7 @@ export async function POST(req: Request) {
 
   // Async transcript analysis (fire-and-forget)
   if (recordingUrl && leadId) {
-    transcribeAndAnalyze(recordingUrl, recordingSid, leadId, recordingDuration).catch(err =>
+    transcribeAndAnalyze(recordingUrl, recordingSid, leadId, recordingDuration, from).catch(err =>
       console.error('Voicemail transcript analysis failed:', err)
     )
   }
@@ -128,11 +127,33 @@ export async function POST(req: Request) {
   }
 }
 
-async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string, duration: number) {
+async function transcribeAndAnalyze(recordingUrl: string, recordingSid: string, leadId: string, duration: number, from: string) {
   const filePath = await downloadRecording(recordingUrl, recordingSid)
   const transcript = await transcribeAudio(filePath)
 
   if (!transcript || transcript.length < 10) return
+
+  const selling = hasExplicitSellingIntent(transcript)
+  if (selling.intent) {
+    const { error: promoteError } = await supabase.from('leads').update({
+      classification: 'lead',
+      priority: 'hot',
+    }).eq('id', leadId)
+    if (promoteError) throw promoteError
+    await sendTeamLeadAlert({
+      leadId,
+      smsBody: `Seller intent in a voicemail from ${formatPhone(from)}: "${selling.quote}"`,
+      trigger: 'voicemail_selling_intent_alert',
+      source: 'inbound_ivr',
+      push: {
+        title: 'Voicemail selling intent',
+        body: selling.quote.slice(0, 140),
+        url: `/leads/${leadId}`,
+        tag: 'voicemail-selling-intent',
+      },
+      metadata: { intent_quote: selling.quote, intent_reason: selling.reason, recordingSid },
+    })
+  }
 
   // Save transcript to lead activity
   const { error: transcriptError } = await supabase.from('lead_activities').insert({

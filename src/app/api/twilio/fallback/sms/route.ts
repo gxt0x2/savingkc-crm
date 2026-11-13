@@ -1,5 +1,7 @@
 import { formatPhone } from '@/lib/format'
+import { loadLatestOutboundSmsBody } from '@/lib/server/latest-outbound-sms'
 import { queueInboundLeadAttribution } from '@/lib/server/inbound-lead-attribution'
+import { hasExplicitSellingIntent, isBareYesReply } from '@/lib/selling-intent'
 import { NextResponse } from 'next/server'
 import { getAgentRouting } from '@/lib/agent-routing'
 import { sendTeamLeadAlert } from '@/lib/lead-team-alerts'
@@ -124,21 +126,34 @@ export async function POST(request: Request) {
         tag: 'team-sms',
       }, { leadId: null, from, messageSid })
     } else {
-      await sendTeamLeadAlert({
-        leadId,
-        conversationThreadId: target.threadId,
-        smsBody: `Carrier fallback captured an inbound text from ${formatPhone(from)} to ${formatPhone(to)}: “${messageText.slice(0, 180)}”`,
-        trigger: 'carrier_sms_fallback',
-        source: 'inbound_sms',
-        calledNumber: to,
-        push: {
-          title: 'Inbound text recovered',
-          body: `${formatPhone(from)}: ${messageText.slice(0, 100)}`,
-          url: target.url,
-          tag: `carrier-sms-fallback-${messageSid}`,
-        },
-        metadata: { from, to, messageSid, assignedTo: routing.primary.name },
-      })
+      const priorOutbound = isBareYesReply(message)
+        ? await loadLatestOutboundSmsBody({ phone: from, leadId })
+        : null
+      const selling = hasExplicitSellingIntent(messageText || message, { priorOutbound })
+      if (selling.intent) {
+        await sendTeamLeadAlert({
+          leadId,
+          conversationThreadId: target.threadId,
+          smsBody: `Seller intent recovered from ${formatPhone(from)} to ${formatPhone(to)}: “${selling.quote.slice(0, 180)}”`,
+          trigger: 'carrier_sms_fallback',
+          source: 'inbound_sms',
+          calledNumber: to,
+          push: {
+            title: 'Inbound text recovered',
+            body: `${formatPhone(from)}: ${selling.quote.slice(0, 100)}`,
+            url: target.url,
+            tag: `carrier-sms-fallback-${messageSid}`,
+          },
+          metadata: {
+            from,
+            to,
+            messageSid,
+            assignedTo: routing.primary.name,
+            intent_quote: selling.quote,
+            intent_reason: selling.reason,
+          },
+        })
+      }
     }
   } catch (error) {
     console.error('[carrier-sms-fallback] capture failed', error)

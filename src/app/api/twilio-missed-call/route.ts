@@ -134,15 +134,10 @@ export async function POST(req: Request) {
     // Missed call specific handling (no-answer or busy)
     if (callStatus === 'no-answer' || callStatus === 'busy') {
       if (leadId && leadName) {
-        // ── KNOWN LEAD MISSED CALL ──
-        await supabase.from('leads')
-          .update({ priority: 'hot' })
-          .eq('id', leadId)
-
-        // Alert eligible agents about known lead missed call.
-        // Abandoned calls stay in the CRM. The caller is not texted.
+        // A missed call is a callback, not selling intent. Do not raise
+        // priority or classification just because the phone rang.
         if (!abandonedBeforeAnswer) {
-          const missedAlert = `🔥 Missed call from ${leadName} (hot lead). Callback in 5 min. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
+          const missedAlert = `Missed call from ${leadName}. Call them back. ${(process.env.NEXT_PUBLIC_APP_URL || 'https://crm.savingkc.com')}/leads/${leadId}`
           await sendTeamLeadAlert({
             leadId,
             smsBody: missedAlert,
@@ -150,8 +145,8 @@ export async function POST(req: Request) {
             source: 'inbound_call',
             calledNumber: to || TWILIO_PHONE,
             push: {
-              title: 'Missed Call - Hot Lead',
-              body: `${leadName} called and got no answer.`,
+              title: 'Missed Call',
+              body: `${leadName} called and nobody answered.`,
               url: `/leads/${leadId}`,
               tag: 'missed-call',
             },
@@ -177,7 +172,7 @@ export async function POST(req: Request) {
             prospectMatches[0],
             from,
             'inbound_call',
-            'hot'
+            'warm'
           )
         }
 
@@ -189,7 +184,7 @@ export async function POST(req: Request) {
           const claim = await claimInboundCallerLead(supabase as unknown as Parameters<typeof claimInboundCallerLead>[0], {
             phone: from,
             fullName: `Missed Call ${formatPhone(from) || from}`,
-            priority: 'hot',
+            priority: 'warm',
           })
           newLeadId = claim.leadId
           createdBareLead = claim.created

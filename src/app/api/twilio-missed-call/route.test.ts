@@ -179,7 +179,7 @@ describe('twilio missed-call parent callback', () => {
     expect(payloadOf(leadInserts()[0])).toMatchObject({
       phone: CALLER,
       source: 'inbound_call',
-      priority: 'hot',
+      priority: 'warm',
     })
     expect(mocks.lookupProspectByPhone).toHaveBeenCalledWith(CALLER)
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
@@ -213,6 +213,8 @@ describe('twilio missed-call parent callback', () => {
         tag: 'missed-call-unknown',
       }),
     }))
+    const alert = mocks.sendTeamLeadAlert.mock.calls[0]?.[0] as { smsBody?: string }
+    expect(alert.smsBody).not.toMatch(/wants to sell|hot lead/i)
     expect(callLogs()).toHaveLength(1)
     expect(payloadOf(callLogs()[0])).toMatchObject({
       metadata: { callStatus: 'no-answer', to: '+18166088858' },

@@ -81,7 +81,7 @@ export async function createEnrichedLeadFromProspect(
   const { error: promotionEvidenceError } = await supabase.from('lead_activities').insert({
     lead_id: leadId,
     activity_type: 'status_change',
-    description: `Prospect promoted to a lead from the ${match.county} County tax list.`,
+    description: `Inbound contact created from the ${match.county} County tax list (prospect; not classified as a lead).`,
     agent: 'System',
     metadata: {
       source: 'prospect_promotion',

@@ -51,8 +51,6 @@ export async function POST(req: Request) {
 
       if (existingLead?.id) {
         leadId = existingLead.id
-        const { error: priorityError } = await supabase.from('leads').update({ priority: 'hot' }).eq('id', leadId)
-        if (priorityError) throw priorityError
       } else {
         // Check prospects before creating bare lead
         const { lookupProspectByPhone } = await import('@/lib/prospect-lookup')
@@ -64,7 +62,7 @@ export async function POST(req: Request) {
             prospectMatches[0],
             from,
             isColdCall ? 'cold_call_callback' : 'inbound_ivr',
-            'hot'
+            'warm'
           )
           if (createdId) leadId = createdId
         }
@@ -76,7 +74,7 @@ export async function POST(req: Request) {
             phone: from,
             source,
             station: 'new',
-            priority: 'hot',
+            priority: 'warm',
           }).select('id').single()
           leadId = newLead?.id || ''
         }
@@ -88,8 +86,8 @@ export async function POST(req: Request) {
         lead_id: leadId || null,
         activity_type: 'call',
         description: isColdCall
-          ? `Cold call callback from ${formatPhone(from)} — pressed 1, wants to sell`
-          : `Inbound seller call from ${formatPhone(from)} — pressed 1`,
+          ? `Cold call callback from ${formatPhone(from)} — pressed 1`
+          : `Inbound call from ${formatPhone(from)} — pressed 1`,
         agent: 'System',
         metadata: { direction: 'inbound', from, callSid, source: isColdCall ? 'cold_callback_press_1' : 'ivr_press_1' }
       })
