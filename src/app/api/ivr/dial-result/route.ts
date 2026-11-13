@@ -465,7 +465,7 @@ export async function POST(req: Request) {
     } else {
     // Alert both agents for IVR calls that actually rang out or were busy.
     if (shouldSendMissedCallAlert) {
-      const missedMsg = `MISSED: Inbound ${type === 'seller' ? 'seller' : 'caller'} ${formatPhone(from)} — nobody answered. Going to voicemail.\n${BASE_URL}/leads/${resolvedLeadId}`
+      const missedMsg = `MISSED: Inbound caller ${formatPhone(from)} — nobody answered. Call them back.\n${BASE_URL}/leads/${resolvedLeadId}`
       await sendTeamLeadAlert({
         leadId: resolvedLeadId,
         smsBody: missedMsg,
@@ -474,7 +474,7 @@ export async function POST(req: Request) {
         calledNumber,
         push: {
           title: 'Missed Inbound Call',
-          body: `${type === 'seller' ? 'Seller' : 'Caller'} ${formatPhone(from)} reached voicemail.`,
+          body: `Caller ${formatPhone(from)} reached voicemail.`,
           url: `/leads/${resolvedLeadId}`,
           tag: 'ivr-missed-call',
         },

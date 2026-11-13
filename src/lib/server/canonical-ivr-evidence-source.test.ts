@@ -44,12 +44,14 @@ describe('canonical IVR evidence writers', () => {
     }
   })
 
-  it('persists explicit caller intent through typed priority fields and checks failures', () => {
+  it('does not treat a menu digit as selling intent', () => {
     const handleInput = sources.find(({ file }) => file.includes('handle-input'))?.source || ''
     const coldNoInput = sources.find(({ file }) => file.includes('cold-no-input'))?.source || ''
 
-    expect(handleInput).toContain(".update({ priority: 'hot' })")
-    expect(handleInput).toContain('if (priorityError) throw priorityError')
+    expect(handleInput).not.toContain(".update({ priority: 'hot' })")
+    expect(handleInput).not.toContain('wants to sell')
+    expect(handleInput).not.toContain("classification: 'lead'")
+    expect(handleInput).toContain("priority: 'warm'")
     expect(coldNoInput).toContain(".update({ priority: 'warm' })")
     expect(coldNoInput).toContain('if (priorityError) throw priorityError')
   })

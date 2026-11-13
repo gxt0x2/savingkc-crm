@@ -462,7 +462,7 @@ describe('twilio SMS webhook identity continuity', () => {
     mocks.afterRequest.mockImplementation((work: () => unknown) => {
       queued.push(work)
     })
-    const response = await POST(makeSmsRequest('Please call me', '+19137179716', '+18166088588'))
+    const response = await POST(makeSmsRequest('I am interested in selling', '+19137179716', '+18166088588'))
     expect(response.status).toBe(200)
     expect(mocks.sendPushToAgents).not.toHaveBeenCalled()
     expect(mocks.sendMobilePushToAgentNames).not.toHaveBeenCalled()
@@ -480,7 +480,7 @@ describe('twilio SMS webhook identity continuity', () => {
     mocks.afterRequest.mockImplementation((work: () => unknown) => {
       queued.push(work)
     })
-    const response = await POST(makeSmsRequest('Can you call me?', '+19137179716', '+18166088588'))
+    const response = await POST(makeSmsRequest('I want an offer on my property', '+19137179716', '+18166088588'))
     expect(response.status).toBe(200)
     expect(mocks.sendPushToAgents).not.toHaveBeenCalled()
     expect(mocks.sendMobilePushToAgentNames).not.toHaveBeenCalled()

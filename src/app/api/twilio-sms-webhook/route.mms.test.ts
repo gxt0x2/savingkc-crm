@@ -187,13 +187,8 @@ describe('inbound MMS webhook', () => {
       },
     })
     expect(JSON.stringify(primary?.payload)).not.toMatch(/twilio\.com|test-token|MediaUrl/)
-    expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({
-      body: 'Seller: "Sent a photo"',
-      data: expect.objectContaining({
-        href: '/conversation/lead-seller',
-        leadId: 'lead-seller',
-      }),
-    }))
+    expect(mocks.sendMobilePushToAgentNames).not.toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(mocks.safeSendSMS).not.toHaveBeenCalledWith(expect.objectContaining({ to: SELLER }))
   })
 

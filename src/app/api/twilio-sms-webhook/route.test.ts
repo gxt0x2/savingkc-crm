@@ -301,8 +301,8 @@ describe('twilio SMS webhook seller responses', () => {
     const response = await POST(makeSmsRequest('YES'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
-    expect(mocks.safeSendSMS).toHaveBeenCalledTimes(2)
-    expect(mocks.safeSendSMS).not.toHaveBeenCalledWith(expect.objectContaining({ to: PROSPECT_PHONE }))
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+    expect(inserts.some((row) => (row.payload as { metadata?: { trigger?: string } }).metadata?.trigger === 'yes_reply_alert')).toBe(false)
     expect(inserts.some(({ table, payload }) => (
       table === 'lead_activities' &&
       typeof payload === 'object' &&
@@ -315,7 +315,7 @@ describe('twilio SMS webhook seller responses', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-03T13:00:00.000Z')) // 8:00 AM Central
 
-    const response = await POST(makeSmsRequest('YES', PROSPECT_PHONE, '+18167277667'))
+    const response = await POST(makeSmsRequest('I want to sell', PROSPECT_PHONE, '+18167277667'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.safeSendSMS).toHaveBeenCalledTimes(1)
@@ -327,7 +327,7 @@ describe('twilio SMS webhook seller responses', () => {
         kind: 'inbound_sms',
         href: '/conversation/lead-123',
         leadId: 'lead-123',
-        eventId: 'sms_SM-YES',
+        eventId: 'sms_SM-I want to sell',
       }),
     }))
     vi.useRealTimers()
@@ -337,19 +337,19 @@ describe('twilio SMS webhook seller responses', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-03T22:00:00.000Z')) // 5:00 PM Central
 
-    const response = await POST(makeSmsRequest('YES', PROSPECT_PHONE, '+18167277667'))
+    const response = await POST(makeSmsRequest('I want to sell', PROSPECT_PHONE, '+18167277667'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(mocks.sendPushToAgentNames).toHaveBeenCalledWith([], expect.any(Object))
     expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith([], expect.objectContaining({
-      data: expect.objectContaining({ kind: 'inbound_sms', eventId: 'sms_SM-YES' }),
+      data: expect.objectContaining({ kind: 'inbound_sms', eventId: 'sms_SM-I want to sell' }),
     }))
     vi.useRealTimers()
   })
 
-  it('sends Expo push to Ernest and Casey for a known lead text while keeping Web Push', async () => {
-    const response = await POST(makeSmsRequest('Please call me', '+19137179716', '+18166088588'))
+  it('sends Expo push to Ernest and Casey for a known contact with selling intent while keeping Web Push', async () => {
+    const response = await POST(makeSmsRequest('I am interested in selling', '+19137179716', '+18166088588'))
 
     await expect(response.text()).resolves.toBe(EMPTY_TWIML)
     expect(mocks.sendPushToAgents).toHaveBeenCalledWith(expect.objectContaining({
@@ -358,12 +358,12 @@ describe('twilio SMS webhook seller responses', () => {
     }))
     expect(mocks.sendMobilePushToAgentNames).toHaveBeenCalledWith(['Ernest', 'Casey'], {
       title: 'Lead Texted',
-      body: 'Jessica Watkins: "Please call me"',
+      body: 'Jessica Watkins: "I am interested in selling"',
       data: {
         href: '/conversation/lead-123',
         kind: 'inbound_sms',
         leadId: 'lead-123',
-        eventId: 'sms_SM-Please call me',
+        eventId: 'sms_SM-I am interested in selling',
       },
     })
   })
@@ -423,7 +423,7 @@ describe('twilio SMS webhook seller responses', () => {
     } }
     const response = await POST(makeSmsRequest('Please call me'))
     expect(response.status).toBe(200)
-    expect(mocks.safeSendSMS).toHaveBeenCalled()
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
     expect(updates).toContainEqual(expect.objectContaining({
       table: 'lead_activities',
       payload: expect.objectContaining({ metadata: expect.objectContaining({ inbound_processing_state: 'completed' }) }),
@@ -432,7 +432,7 @@ describe('twilio SMS webhook seller responses', () => {
 
   it('returns retryable after inbound persistence when downstream processing is interrupted, then resumes the same SID', async () => {
     mocks.safeSendSMS.mockRejectedValueOnce(new Error('alert transport interrupted'))
-    const first = await POST(makeSmsRequest('Please call me'))
+    const first = await POST(makeSmsRequest('I am interested in selling'))
     expect(first.status).toBe(503)
     expect(existingSmsRow?.metadata?.inbound_processing_state).toBe('processing')
     expect(updates.some(({ payload }) => (
@@ -440,7 +440,7 @@ describe('twilio SMS webhook seller responses', () => {
     ))).toBe(false)
 
     vi.setSystemTime(new Date('2026-06-03T15:01:01.000Z'))
-    const retry = await POST(makeSmsRequest('Please call me'))
+    const retry = await POST(makeSmsRequest('I am interested in selling'))
     expect(retry.status).toBe(200)
     expect(updates.some(({ payload }) => (
       (payload as { metadata?: { inbound_processing_state?: string } }).metadata?.inbound_processing_state === 'completed'
