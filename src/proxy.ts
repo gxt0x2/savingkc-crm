@@ -22,6 +22,8 @@ const PUBLIC_API_EXACT = new Set([
   '/api/webhooks/email/lead-sms',
   // The receiving-only worker validates a separate scoped bearer inside its route.
   '/api/workers/email',
+  // The weekday foreclosure pull authenticates FORECLOSURE_INTAKE_SECRET in the route.
+  '/api/prospecting/foreclosure/intake',
   '/api/availability',
   '/api/book',
   '/api/buyers/intake',
