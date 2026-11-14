@@ -10,7 +10,6 @@ export const NEWSLETTER_COUNTIES = [
   'Jackson',
   'Clay',
   'Platte',
-  'Cass',
   'Johnson KS',
   'Wyandotte KS',
   'Other',

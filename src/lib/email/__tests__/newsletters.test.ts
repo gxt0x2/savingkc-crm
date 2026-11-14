@@ -203,6 +203,20 @@ describe('newsletter signup', () => {
     expect(store.saved).toHaveLength(0)
   })
 
+  it('rejects Cass County because it is outside the service area', async () => {
+    const store = memoryStore()
+    const result = await submitNewsletterSignup({
+      email: SANDBOX,
+      role: 'seller',
+      county: 'Cass',
+      consent: true,
+    }, store)
+    expect(result.httpStatus).toBe(400)
+    expect(result.stored).toBe(false)
+    expect(result.body).toEqual({ ok: false, error: 'Choose a county.' })
+    expect(store.saved).toHaveLength(0)
+  })
+
   it('rejects a signup without consent and fails closed when suppression cannot be read', async () => {
     const missingConsent = await submitNewsletterSignup({
       email: SANDBOX,
@@ -230,7 +244,7 @@ describe('newsletter signup', () => {
     })
     const response = await handler(new Request('https://crm.example.test/api/email/newsletters/signup', {
       method: 'POST',
-      body: JSON.stringify({ email: 'not-an-email', role: 'seller', county: 'Cass', consent: true }),
+      body: JSON.stringify({ email: 'not-an-email', role: 'seller', county: 'Jackson', consent: true }),
     }))
     expect(response.status).toBe(400)
     expect(opened).toBe(false)
@@ -270,6 +284,8 @@ describe('newsletter previews', () => {
     expect(buyer.html).not.toMatch(DEAL_CARD)
     expect(form).toContain('Send me the Tuesday note')
     for (const county of NEWSLETTER_COUNTIES) expect(form).toContain(county)
+    expect(form).not.toContain('value="Cass"')
+    expect(NEWSLETTER_COUNTIES).toEqual(['Jackson', 'Clay', 'Platte', 'Johnson KS', 'Wyandotte KS', 'Other'])
     expect(`${seller.html}\n${buyer.html}\n${form}`).not.toMatch(AMBER)
     expect(`${seller.html}\n${buyer.html}\n${form}`).not.toMatch(EM_DASH)
     const dir = '/opt/cursor/artifacts'
