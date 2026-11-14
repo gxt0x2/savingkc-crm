@@ -360,6 +360,66 @@ describe('associate type and property owner fan-out', () => {
       phones: [{ phone: '+18165550444', relationship: 'owner', phoneConnected: 'dataskip_dnc' }],
       mojoCalls: [{ phoneLast4: '0444', resultLabel: 'No Answer' }],
     })).toBeNull()
+    expect(exportBlockReason('+18165550444', {
+      phones: [{ phone: '+18165550444', relationship: 'owner', lastDisposition: 'no_answer' }],
+      mojoEvents: [{ phone: '+18165559944', recordId: 'call-1', outcome: 'other', dispositionRaw: 'DNC Number' }],
+      mojoCalls: [{ phoneLast4: '9944', recordId: 'call-1', resultLabel: 'DNC Number' }],
+    })).toBeNull()
+  })
+
+  it('releases an owner-matched number that is only associate or unknown on another record', () => {
+    const phone = '+18165550501'
+    const world = {
+      prospects: [
+        { id: 'home', parcelId: 'P-HOME', ownerType: 'Individual' },
+        { id: 'other', parcelId: 'P-OTHER', ownerType: 'Individual' },
+      ],
+      phones: [
+        { phone, prospectId: 'home', relationship: 'owner', lastDisposition: 'no_answer' },
+        { phone, prospectId: 'other', relationship: 'associate', lastDisposition: 'no_answer' },
+      ],
+    }
+    expect(exportBlockReason(phone, world, 'home')).toBeNull()
+    expect(exportBlockReason(phone, world, 'other')).toBe('associate_non_family')
+    const unknown = {
+      ...world,
+      phones: [
+        { phone, prospectId: 'home', relationship: 'owner', lastDisposition: 'no_answer' },
+        { phone, prospectId: 'other', relationship: 'unknown', lastDisposition: 'no_answer' },
+      ],
+    }
+    expect(exportBlockReason(phone, unknown, 'home')).toBeNull()
+    expect(exportBlockReason(phone, unknown, 'other')).toBe('relationship_unknown')
+    expect(exportBlockReason(phone, {
+      ...world,
+      phones: [
+        { phone, prospectId: 'home', relationship: 'owner', voiceHold: true },
+        { phone, prospectId: 'other', relationship: 'associate' },
+      ],
+    }, 'home')).toBe('voice_hold')
+  })
+
+  it('keeps unknown ties blocked except an owner skip-trace match and a member or officer', () => {
+    const phone = '+18165550511'
+    expect(exportBlockReason(phone, {
+      prospects: [{ id: 'corp', ownerType: 'Corporate', ownerName: 'Oak LLC' }],
+      phones: [{ phone, prospectId: 'corp', relationship: 'entity_contact', contactName: 'Registered Agent' }],
+    }, 'corp')).toBe('relationship_unknown')
+    expect(exportBlockReason(phone, {
+      prospects: [{ id: 'corp', ownerType: 'Corporate' }],
+      phones: [{ phone, prospectId: 'corp', relationship: 'entity_contact', entityRole: 'officer' }],
+    }, 'corp')).toBeNull()
+    expect(exportBlockReason(phone, {
+      prospects: [{ id: 'corp', ownerType: 'Corporate' }],
+      phones: [{ phone, prospectId: 'corp', relationship: 'entity_contact' }],
+    }, 'corp')).toBe('relationship_unknown')
+    expect(exportBlockReason(phone, {
+      prospects: [{ id: 'home', ownerType: 'Individual', ownerName: 'Ada Owner', ownerLast: 'Owner', skipTraced: true }],
+      phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Ada Owner', verifiedSource: 'dataskip_run1' }],
+    }, 'home')).toBeNull()
+    expect(exportBlockReason(phone, {
+      phones: [{ phone, prospectId: 'home', relationship: 'unknown', phoneConnected: 'dataskip_dnc' }],
+    }, 'home')).toBe('relationship_unknown')
   })
 
   it('refuses line mode above 1 while multi-line export is suspended', () => {

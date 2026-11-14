@@ -101,4 +101,18 @@ describe('dialer export suppression migration', () => {
     expect(raw).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(raw).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
   })
+
+  it('ranks unmapped labels above a weak stamp and classifies phones once', () => {
+    const speed = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261202170000_dialer_export_speed_f1_stamp.sql'),
+      'utf8',
+    )
+    expect(speed).toContain("WHEN public.dialer_suppression_class_v1('prospect_disposition', label) = 'unmapped' THEN 25")
+    expect(speed).toContain('dialer_unknown_tie_release_v1')
+    expect(speed).toContain('classified_phones AS MATERIALIZED')
+    expect(speed).toContain('registered_agent')
+    expect(speed).not.toMatch(/voice_hold\s*=\s*false/)
+    expect(speed).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
+    expect(speed).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+  })
 })

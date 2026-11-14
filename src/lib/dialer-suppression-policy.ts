@@ -130,6 +130,9 @@ export interface SuppressionPhone {
   voiceHold?: boolean | null
   voiceHoldReason?: string | null
   relationship?: string | null
+  contactName?: string | null
+  verifiedSource?: string | null
+  entityRole?: string | null
 }
 
 export interface SuppressionProspect {
@@ -142,6 +145,7 @@ export interface SuppressionProspect {
   ownerType?: string | null
   parcelId?: string | null
   zip?: string | null
+  skipTraced?: boolean | null
 }
 
 export interface SuppressionLead {
@@ -156,11 +160,14 @@ export interface SuppressionMojoEvent {
   outcome?: string | null
   dispositionRaw?: string | null
   providerContactId?: string | null
+  recordId?: string | null
 }
 
 export interface SuppressionMojoCall {
   phoneLast4: string
   resultLabel?: string | null
+  recordId?: string | null
+  hasFullPhone?: boolean | null
 }
 
 export interface SuppressionOptOut {
@@ -468,11 +475,54 @@ function candidatePhones(world: SuppressionWorld, key: string): SuppressionPhone
   return phonesOf(world).filter((phone) => sameKey(phone.phone, key))
 }
 
-function relationshipBlock(world: SuppressionWorld, key: string): 'associate_non_family' | 'relationship_unknown' | null {
-  const buckets = candidatePhones(world, key).map((phone) => relationshipForPhone(world, phone))
-  if (buckets.includes('associate_non_family')) return 'associate_non_family'
-  if (buckets.includes('relationship_unknown')) return 'relationship_unknown'
-  return null
+function roleTokens(value: string | null | undefined): string[] {
+  return (labelKey(value) ?? '').split('_').filter(Boolean)
+}
+
+function showsRegisteredAgent(phone: SuppressionPhone): boolean {
+  return roleTokens(phone.relationship).includes('registered') && roleTokens(`${phone.relationship} ${phone.entityRole ?? ''} ${phone.contactName ?? ''}`).includes('agent')
+    || roleTokens(phone.entityRole).join('_') === 'registered_agent'
+    || roleTokens(phone.contactName).join('_').includes('registered_agent')
+    || (labelKey(phone.relationship) ?? '') === 'registered_agent'
+    || (labelKey(phone.entityRole) ?? '') === 'registered_agent'
+    || (labelKey(phone.contactName) ?? '').includes('registered_agent')
+}
+
+function showsMemberOrOfficer(phone: SuppressionPhone): boolean {
+  if (showsRegisteredAgent(phone)) return false
+  const tokens = [
+    ...roleTokens(phone.relationship),
+    ...roleTokens(phone.entityRole),
+    ...roleTokens(phone.contactName),
+  ]
+  return tokens.includes('member') || tokens.includes('officer')
+}
+
+function ownerSkipTraceRelease(world: SuppressionWorld, phone: SuppressionPhone): boolean {
+  const prospect = prospectFor(world, phone.prospectId)
+  const source = labelKey(phone.verifiedSource) ?? ''
+  const skipTraced = prospect?.skipTraced === true || source.includes('skip')
+  if (!skipTraced) return false
+  if (relationshipForPhone(world, phone) === 'owner') return true
+  const contact = labelKey(phone.contactName)
+  const owner = labelKey(prospect?.ownerName)
+  const last = labelKey(prospect?.ownerLast)
+  if (!contact) return false
+  return contact === owner || contact === last || (last !== null && contact.split('_').includes(last))
+}
+
+function relationshipBlock(world: SuppressionWorld, key: string, prospectId?: string | null): 'associate_non_family' | 'relationship_unknown' | null {
+  const rows = candidatePhones(world, key).filter((phone) => !prospectId || phone.prospectId === prospectId)
+  let unknown = false
+  for (const phone of rows) {
+    const bucket = relationshipForPhone(world, phone)
+    if (bucket === 'owner') continue
+    if (bucket === 'associate_non_family') return 'associate_non_family'
+    if (bucket !== 'relationship_unknown') continue
+    if (ownerSkipTraceRelease(world, phone) || showsMemberOrOfficer(phone)) continue
+    unknown = true
+  }
+  return unknown ? 'relationship_unknown' : null
 }
 
 function ownerPhoneHasPropertyDnc(world: SuppressionWorld, ownerKey: string): boolean {
@@ -522,7 +572,13 @@ function shortSuppressionMatch(world: SuppressionWorld, key: string): boolean {
   ))) return true
   if ((world.mojoCalls ?? []).some((call) => {
     const rawClass = suppressionClass('mojo_disposition_raw', call.resultLabel)
-    return call.phoneLast4 === last4 && (rawClass === 'mojo_dnc' || rawClass === 'person_dnc' || rawClass === 'disconnected')
+    const dncClass = rawClass === 'mojo_dnc' || rawClass === 'person_dnc' || rawClass === 'disconnected'
+    if (call.phoneLast4 !== last4 || !dncClass) return false
+    if (call.hasFullPhone === true) return false
+    const fullPhone = (world.mojoEvents ?? []).some((event) => (
+      call.recordId != null && event.recordId === call.recordId && phoneKey(event.phone).length === 10
+    ))
+    return !fullPhone
   })) {
     return true
   }
@@ -616,7 +672,7 @@ export function exportBlockReason(
   )
   if (mojoReason) return mojoReason
 
-  const tie = relationshipBlock(world, key)
+  const tie = relationshipBlock(world, key, prospectId)
   if (tie) return tie
   if (propertyOwnerDncFanout(world, key, prospectId)) return 'property_owner_dnc_fanout'
   const held = counselOrPersonHold(world, key, prospectId)

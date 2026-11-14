@@ -56,7 +56,8 @@ CREATE TABLE public.prospects (
   parcel_id text,
   owner_1 text,
   owner_1_last text,
-  owner_1_type text
+  owner_1_type text,
+  is_skip_traced boolean NOT NULL DEFAULT false
 );
 CREATE TABLE public.prospect_phones (
   id uuid PRIMARY KEY,
@@ -69,6 +70,8 @@ CREATE TABLE public.prospect_phones (
   voice_hold_at timestamptz,
   voice_hold_by text,
   relationship text,
+  contact_name text,
+  verified_source text,
   attempted boolean,
   last_attempt_at timestamptz,
   last_attempt_by text
@@ -87,12 +90,13 @@ CREATE TABLE public.crm_contact_methods (
   deliverability_status text
 );
 CREATE TABLE public.crm_mojo_call_events (
+  record_id text,
   normalized_phone text,
   outcome text,
   disposition_raw text,
   provider_contact_id text
 );
-CREATE TABLE public.crm_mojo_calls (phone_last4 text, result_label text);
+CREATE TABLE public.crm_mojo_calls (record_id text, phone_last4 text, result_label text);
 CREATE TABLE public.system_config (
   key text PRIMARY KEY,
   value jsonb,
@@ -173,7 +177,8 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202140000_dialer_export_suppression.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202150000_dialer_export_associate_property_dnc.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202160000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202160000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202170000_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202170000_dialer_export_speed_f1_stamp.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -350,6 +355,76 @@ BEGIN
     END IF;
   END LOOP;
 
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1, owner_1_last, owner_1_type, is_skip_traced) VALUES
+    ('20000000-0000-4000-8000-0000000000b1', 'jackson', '11 Home', 'P-F1-HOME', 'Ada Owner', 'Owner', 'Individual', true),
+    ('20000000-0000-4000-8000-0000000000b2', 'jackson', '12 Other', 'P-F1-OTHER', 'Other', 'Other', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000b3', 'jackson', '13 Corp', 'P-F1-CORP', 'Oak LLC', 'LLC', 'Corporate', false);
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship, contact_name, verified_source) VALUES
+    ('30000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1', '+18165550501', 'no_answer', 'owner', 'Ada Owner', 'dataskip_run1'),
+    ('30000000-0000-4000-8000-0000000000b2', '20000000-0000-4000-8000-0000000000b2', '+18165550501', 'no_answer', 'associate', NULL, NULL),
+    ('30000000-0000-4000-8000-0000000000b3', '20000000-0000-4000-8000-0000000000b1', '+18165550502', 'no_answer', 'owner', 'Ada Owner', 'dataskip_run1'),
+    ('30000000-0000-4000-8000-0000000000b4', '20000000-0000-4000-8000-0000000000b2', '+18165550502', 'no_answer', 'unknown', NULL, NULL),
+    ('30000000-0000-4000-8000-0000000000b5', '20000000-0000-4000-8000-0000000000b3', '+18165550511', NULL, 'entity_contact', 'Registered Agent', NULL),
+    ('30000000-0000-4000-8000-0000000000b6', '20000000-0000-4000-8000-0000000000b3', '+18165550512', NULL, 'entity_contact', 'Officer', NULL),
+    ('30000000-0000-4000-8000-0000000000b7', '20000000-0000-4000-8000-0000000000b3', '+18165550513', NULL, 'entity_contact', NULL, NULL),
+    ('30000000-0000-4000-8000-0000000000b8', '20000000-0000-4000-8000-0000000000b1', '+18165550514', NULL, 'unknown', 'Ada Owner', 'dataskip_run1'),
+    ('30000000-0000-4000-8000-0000000000b9', '20000000-0000-4000-8000-0000000000b1', '+18165550515', 'litigator', 'owner', NULL, NULL);
+  IF public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b1') IS NOT NULL THEN
+    RAISE EXCEPTION 'owner number blocked by an associate on another record: %',
+      public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b1');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b2') IS DISTINCT FROM 'associate_non_family' THEN
+    RAISE EXCEPTION 'associate copy was released';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550502', '20000000-0000-4000-8000-0000000000b1') IS NOT NULL THEN
+    RAISE EXCEPTION 'owner number blocked by an unknown tie on another record';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550502', '20000000-0000-4000-8000-0000000000b2') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'unknown copy was released';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550511', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'registered agent was released';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3') IS NOT NULL THEN
+    RAISE EXCEPTION 'entity officer stayed blocked: %',
+      public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550513', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'unknown entity role was released';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550514', '20000000-0000-4000-8000-0000000000b1') IS NOT NULL THEN
+    RAISE EXCEPTION 'owner skip-trace match stayed blocked';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550515', '20000000-0000-4000-8000-0000000000b1') IS DISTINCT FROM 'unmapped_label' THEN
+    RAISE EXCEPTION 'litigator was not blocked before the stamp';
+  END IF;
+  IF public.apply_mojo_dial_phone_stamp_v1('+18165550515', 'no_answer', now()) < 1 THEN
+    RAISE EXCEPTION 'litigator stamp did not run';
+  END IF;
+  IF (SELECT last_disposition FROM public.prospect_phones WHERE phone = '+18165550515') IS DISTINCT FROM 'litigator' THEN
+    RAISE EXCEPTION 'no_answer overwrote litigator';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550515', '20000000-0000-4000-8000-0000000000b1') IS DISTINCT FROM 'unmapped_label' THEN
+    RAISE EXCEPTION 'litigator exported after no_answer';
+  END IF;
+  DELETE FROM public.prospect_phones WHERE phone = '+18165550515';
+
+  INSERT INTO public.crm_mojo_call_events (record_id, normalized_phone, outcome, disposition_raw) VALUES
+    ('full-phone-call', '+18165559944', 'other', 'DNC Number');
+  INSERT INTO public.crm_mojo_calls (record_id, phone_last4, result_label) VALUES
+    ('full-phone-call', '9944', 'DNC Number');
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type) VALUES
+    ('20000000-0000-4000-8000-0000000000c1', 'jackson', '14 Full', 'P-FULL', 'Full', 'Individual');
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship) VALUES
+    ('30000000-0000-4000-8000-0000000000c1', '20000000-0000-4000-8000-0000000000c1', '+18165551944', 'no_answer', 'owner');
+  IF public.source_list_phone_block_reason_v1('+18165551944', '20000000-0000-4000-8000-0000000000c1') IS NOT NULL THEN
+    RAISE EXCEPTION 'last-4 hold fired even though the Mojo call has a full phone: %',
+      public.source_list_phone_block_reason_v1('+18165551944', '20000000-0000-4000-8000-0000000000c1');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165559944', '20000000-0000-4000-8000-0000000000c1') IS DISTINCT FROM 'mojo_dnc' THEN
+    RAISE EXCEPTION 'full DNC number was not blocked';
+  END IF;
+
   report := public.record_source_list_export_batch_v1('rehearsal', NULL, NULL, NULL, NULL, NULL, 1);
   IF report->>'phone_count' IS DISTINCT FROM (
     SELECT count(*)::text FROM public.source_list_dialer_export WHERE phone_e164 IS NOT NULL
@@ -378,5 +453,89 @@ BEGIN
   END;
 END $$;
 RESET ROLE;
-SELECT 'PASS: raw Fax and DNC Number, DNC Contact fan-out, dnc_refused without a prospect link, dead_reason dnc versus DNC Number only, fan-out voice hold, last-4 hold, monotonic stamps, associate and property fan-out, dataskip_dnc export, encode queue no-op' AS result;
+SELECT 'PASS: raw Fax and DNC Number, DNC Contact fan-out, dnc_refused without a prospect link, dead_reason dnc versus DNC Number only, fan-out voice hold, last-4 hold, monotonic stamps, associate and property fan-out, dataskip_dnc export, encode queue no-op, F1 release, litigator stamp' AS result;
+SQL
+
+"${PSQL[@]}" <<'SQL'
+INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type)
+SELECT
+  ('70000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  'jackson',
+  'bg ' || n,
+  'BG-' || n,
+  'Bg',
+  'Individual'
+FROM generate_series(1, 4000) AS n;
+INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship)
+SELECT
+  ('71000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  ('70000000-0000-4000-8000-' || lpad(to_hex(((n - 1) / 2) + 1), 12, '0'))::uuid,
+  '+1' || lpad((3000000000 + n)::text, 10, '0'),
+  'no_answer',
+  'owner'
+FROM generate_series(1, 8000) AS n;
+
+INSERT INTO public.source_lists VALUES
+  ('60000000-0000-4000-8000-000000000099', DATE '2026-11-14', 'speed.csv');
+INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type)
+SELECT
+  ('72000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  'jackson',
+  'speed ' || n,
+  'SP-' || n,
+  'Speed',
+  'Individual'
+FROM generate_series(1, 500) AS n;
+INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship)
+SELECT
+  ('73000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  ('72000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  '+1816556' || lpad(n::text, 4, '0'),
+  'no_answer',
+  'owner'
+FROM generate_series(1, 500) AS n;
+INSERT INTO public.source_list_rows (
+  id, source_list_id, list_type, county, state, parcel_id, address, owner_names, prospect_id, status, phones
+)
+SELECT
+  ('74000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  '60000000-0000-4000-8000-000000000099',
+  'tax_delinquent',
+  'jackson',
+  'MO',
+  'SP-' || n,
+  'speed ' || n,
+  'Speed',
+  ('72000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  'ready',
+  ARRAY['+1816556' || lpad(n::text, 4, '0')]
+FROM generate_series(1, 500) AS n;
+
+ANALYZE public.prospects;
+ANALYZE public.prospect_phones;
+ANALYZE public.leads;
+ANALYZE public.crm_mojo_calls;
+ANALYZE public.crm_mojo_call_events;
+ANALYZE public.sms_opt_outs;
+SET statement_timeout = '8s';
+SET ROLE service_role;
+DO $$
+DECLARE
+  started timestamptz := clock_timestamp();
+  report jsonb;
+  elapsed numeric;
+BEGIN
+  report := public.record_source_list_export_batch_v1(
+    'speed', NULL, NULL, NULL, NULL, '60000000-0000-4000-8000-000000000099', 1
+  );
+  elapsed := round(extract(epoch FROM clock_timestamp() - started)::numeric, 3);
+  IF report->>'phone_count' <> '500' THEN
+    RAISE EXCEPTION 'speed batch exported % phones', report->>'phone_count';
+  END IF;
+  IF elapsed >= 5 THEN
+    RAISE EXCEPTION '500 phone batch took % seconds', elapsed;
+  END IF;
+  RAISE NOTICE '500 phone batch took % seconds', elapsed;
+END $$;
+RESET ROLE;
 SQL
