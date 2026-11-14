@@ -97,7 +97,7 @@ export class LineCheckConfigError extends Error {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-export function lineCheckCostUsd(env: NodeJS.ProcessEnv = process.env): number {
+export function lineCheckCostUsd(env: Record<string, string | undefined> = process.env): number {
   const raw = env.LINE_CHECK_COST_USD?.trim()
   if (!raw) throw new LineCheckConfigError('LINE_CHECK_COST_USD is not configured')
   const value = Number(raw)
@@ -107,12 +107,12 @@ export function lineCheckCostUsd(env: NodeJS.ProcessEnv = process.env): number {
   return Math.round(value * 10000) / 10000
 }
 
-export function lineCheckBlockEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+export function lineCheckBlockEnabled(env: Record<string, string | undefined> = process.env): boolean {
   const raw = (env.LINE_CHECK_BLOCK_ENABLED ?? '').trim().toLowerCase()
   return raw === 'true' || raw === '1' || raw === 'on' || raw === 'yes'
 }
 
-export function lineCheckFreshReserveUsd(env: NodeJS.ProcessEnv = process.env): number {
+export function lineCheckFreshReserveUsd(env: Record<string, string | undefined> = process.env): number {
   const raw = env.LINE_CHECK_FRESH_RESERVE_USD?.trim()
   if (!raw) return 5
   const value = Number(raw)
@@ -286,6 +286,7 @@ function decideOpen(input: {
   priorCheckedAt: Date | null
   lastActiveAt: Date | null
   suppressedAt: Date | null
+  dialDisconnected: boolean
   rnd: RndResult
   now: Date
 }, priorCount: number): LineCheckDecision {
