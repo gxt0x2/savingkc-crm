@@ -56,10 +56,27 @@ export async function GET(request: Request) {
       violationKind: selected.lane?.violationKind ?? null,
       sourceListId: selected.sourceListId,
     })
-    const headers = { ...NO_STORE, 'X-Source-List-Export-Batch': scrub.exportBatchId }
+    console.info(JSON.stringify({
+      event: 'dialer_export_scrub',
+      exportBatchId: scrub.exportBatchId,
+      exported: scrub.rows.length,
+      excludedCounts: scrub.excludedCounts,
+      excludedPhones: scrub.excludedPhones,
+    }))
+    const headers = {
+      ...NO_STORE,
+      'X-Source-List-Export-Batch': scrub.exportBatchId,
+      'X-Dialer-Export-Excluded-Counts': JSON.stringify(scrub.excludedCounts),
+    }
 
     if (format === 'json') {
-      return NextResponse.json({ exportBatchId: scrub.exportBatchId, count: scrub.rows.length, rows: scrub.rows }, { headers })
+      return NextResponse.json({
+        exportBatchId: scrub.exportBatchId,
+        count: scrub.rows.length,
+        rows: scrub.rows,
+        excludedCounts: scrub.excludedCounts,
+        excludedPhones: scrub.excludedPhones,
+      }, { headers })
     }
     return new NextResponse(dialerExportCsv(scrub.rows), {
       headers: {

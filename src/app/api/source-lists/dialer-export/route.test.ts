@@ -44,12 +44,21 @@ describe('GET /api/source-lists/dialer-export', () => {
           source_list_id: '33333333-3333-4333-8333-333333333333',
           phone_origin: 'source_row',
         }],
+        excluded_counts: { prospect_dnc: 3, disconnected: 1, person_fanout: 60 },
+        excluded_phones: [
+          { reason: 'prospect_dnc', phone_masked: '******0101' },
+          { reason: 'disconnected', phone_masked: '+18165555774' },
+        ],
       },
       error: null,
     })
   })
 
   it('records a scrub batch and returns only the phones from that batch', async () => {
+    const logged: string[] = []
+    const spy = vi.spyOn(console, 'info').mockImplementation((message) => {
+      logged.push(String(message))
+    })
     const response = await GET(new NextRequest('https://crm.savingkc.com/api/source-lists/dialer-export?listType=tax&county=jackson&state=MO'))
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('text/csv')
@@ -65,6 +74,11 @@ describe('GET /api/source-lists/dialer-export', () => {
       p_county: 'jackson',
       p_state: 'MO',
     })
+    expect(response.headers.get('x-dialer-export-excluded-counts')).toBe('{"prospect_dnc":3,"disconnected":1,"person_fanout":60}')
+    expect(logged.join('\n')).toContain('******0101')
+    expect(logged.join('\n')).not.toContain('8165555774')
+    expect(logged.join('\n')).not.toContain('+18165555774')
+    spy.mockRestore()
   })
 
   it('refuses an anonymous export', async () => {

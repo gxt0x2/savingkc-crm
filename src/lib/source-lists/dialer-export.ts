@@ -48,6 +48,18 @@ export interface DialerExportRow {
   export_batch_id: string
 }
 
+export interface DialerExportExclusion {
+  reason: string
+  phoneMasked: string
+}
+
+export interface DialerExportScrub {
+  exportBatchId: string
+  rows: DialerExportRow[]
+  excludedCounts: Record<string, number>
+  excludedPhones: DialerExportExclusion[]
+}
+
 export interface DialerExportFilters {
   listType: string | null
   county: string | null
@@ -107,11 +119,42 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
   }
 }
 
+function maskedExportPhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  if (value === '****') return value
+  if (!/^\*{6}\d{4}$/.test(value)) return null
+  return value
+}
+
+function excludedCounts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const counts: Record<string, number> = {}
+  for (const [reason, count] of Object.entries(value)) {
+    if (!reason || !Number.isInteger(count) || Number(count) < 0) continue
+    counts[reason] = Number(count)
+  }
+  return counts
+}
+
+function excludedPhones(value: unknown): DialerExportExclusion[] {
+  if (!Array.isArray(value)) return []
+  const phones: DialerExportExclusion[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const reason = typeof row.reason === 'string' ? row.reason : ''
+    const phoneMasked = maskedExportPhone(row.phone_masked)
+    if (!reason || !phoneMasked) continue
+    phones.push({ reason, phoneMasked })
+  }
+  return phones
+}
+
 export async function recordDialerExportBatch(
   db: SourceListRpcClient,
   actor: string,
   filters: DialerExportFilters,
-): Promise<{ exportBatchId: string; rows: DialerExportRow[] }> {
+): Promise<DialerExportScrub> {
   const { data, error } = await db.rpc('record_source_list_export_batch_v1', {
     p_actor: actor.trim(),
     p_list_type: filters.listType,
@@ -134,7 +177,12 @@ export async function recordDialerExportBatch(
   if (rows.length !== rawRows.length) {
     throw new SourceListImportError('The dialer export is unavailable.', 503, 'source_list_unavailable')
   }
-  return { exportBatchId, rows }
+  return {
+    exportBatchId,
+    rows,
+    excludedCounts: excludedCounts(payload.excluded_counts),
+    excludedPhones: excludedPhones(payload.excluded_phones),
+  }
 }
 
 export async function readDialerExport(
