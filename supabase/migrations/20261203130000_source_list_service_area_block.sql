@@ -207,6 +207,9 @@ COMMENT ON VIEW public.source_list_dialer_export IS
 COMMENT ON VIEW public.source_list_dialer_suppressed IS
   'Phones removed from the dialer export, with block_reason such as wrong_number, disconnected, or out_of_service_area.';
 
+-- The only one-argument call was source_list_dialer_phone_review in
+-- 20261202120000_source_lists.sql. This migration replaces that view
+-- above, so nothing still calls source_list_phone_block_reason_v1(text).
 DROP FUNCTION IF EXISTS public.source_list_phone_block_reason_v1(text);
 
 REVOKE ALL ON FUNCTION public.source_list_phone_block_reason_v1(text, text, text)
