@@ -750,6 +750,16 @@
       "crons": [
         { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
       ]
+    },
+    {
+      "id": "caller_id_reputation",
+      "name": "Caller ID reputation log",
+      "owner": "Operations",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/ops/caller-id-reputation/log"],
+      "tables": ["caller_id_reputation_log", "caller_id_reputation_latest"],
+      "environment": ["CALLER_ID_LOG_SECRET"]
     }
   ]
 }
