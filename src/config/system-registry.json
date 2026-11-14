@@ -729,6 +729,20 @@
       "environment": ["CRM_MOBILE_ALLOWED_ASSIGNEES", "SAVINGKC_MOBILE_SOURCE", "EXPO_ACCESS_TOKEN", "MOBILE_PUSH_ENABLED", "MOBILE_IN_APP_VOICE", "MOBILE_PERSONAL_FORWARD"]
     },
     {
+      "id": "caller_id_health",
+      "name": "Outbound caller ID health",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/cron/caller-id-health", "/api/admin/caller-id-health"],
+      "tables": ["caller_ids", "caller_id_health_events", "crm_mojo_calls", "lead_activities"],
+      "environment": ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+      "crons": [
+        { "path": "/api/cron/caller-id-health", "schedule": "5 13 * * 1-5" },
+        { "path": "/api/cron/caller-id-health", "schedule": "5 14 * * 1-5" }
+      ]
+    },
+    {
       "id": "mobile_device_testing",
       "name": "Physical iPhone smoke testing",
       "owner": "Platform",

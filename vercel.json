@@ -65,6 +65,14 @@
     {
       "path": "/api/cron/appointment-outcomes",
       "schedule": "20 12 * * *"
+    },
+    {
+      "path": "/api/cron/caller-id-health",
+      "schedule": "5 13 * * 1-5"
+    },
+    {
+      "path": "/api/cron/caller-id-health",
+      "schedule": "5 14 * * 1-5"
     }
   ],
   "rewrites": [

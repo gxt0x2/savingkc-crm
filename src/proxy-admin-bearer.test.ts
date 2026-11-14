@@ -36,6 +36,7 @@ describe('admin proxy bearer allowlist', () => {
   })
 
   it.each([
+    '/api/admin/caller-id-health',
     '/api/admin/mojo-health',
     '/api/admin/mojo-incident',
     '/api/admin/mojo-performance',

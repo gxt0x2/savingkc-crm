@@ -106,6 +106,7 @@ describe('per-call Mojo mapping', () => {
       source: 'mojo_mcp_list_calls',
     })
     const serialized = JSON.stringify(mapped)
+    expect(mapped.caller_id).toBeNull()
     expect(serialized).not.toContain('4701')
     expect(serialized).not.toContain('Casey')
     expect(serialized).not.toContain('Davis')

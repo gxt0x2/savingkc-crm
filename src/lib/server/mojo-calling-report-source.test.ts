@@ -46,6 +46,7 @@ describe('Mojo calling report source', () => {
         ['mojo-call-31598', '476', '0142', 65, 'Contact', true, 1],
       ])
     expect(page.results[0]?.source).toBe('mojo_session_calling_report')
+    expect(page.results[0]?.caller_id).toBe('+18165550199')
     const text = JSON.stringify(page.results)
     for (const leaked of ['Pat Example', 'Main St', '555-0142', 'called back', 'Ernest']) expect(text).not.toContain(leaked)
   })
