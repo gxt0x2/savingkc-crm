@@ -31,6 +31,9 @@ function gate(partial: Partial<ExpiredRowGateInput> = {}): string | null {
     listDay: '2026-11-14',
     channel: 'single_line_live_agent',
     expiredOwnerConfirmed: true,
+    requiresLicenseeDisclosure: true,
+    prospectId: '00000000-0000-4000-8000-000000000010',
+    phoneOrigin: 'prospect_phone',
     ...partial,
   })
 }
@@ -84,10 +87,22 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
     expect(expiredRowStamp('MO').multiLineAllowed).toBe(false)
   })
 
-  it('requires the licensee disclosure on every expired row', () => {
+  it('requires the licensee disclosure on the export path, not only as a stamp', () => {
     expect(expiredRowStamp('MO').requiresLicenseeDisclosure).toBe(true)
     expect(expiredRowStamp('KS').requiresLicenseeDisclosure).toBe(true)
-    expect(migration).toContain('requires_licensee_disclosure')
+    expect(gate({ requiresLicenseeDisclosure: false })).toBe('licensee_disclosure_required')
+    expect(gate({ requiresLicenseeDisclosure: undefined })).toBe('licensee_disclosure_required')
+    expect(migration).toContain("RAISE EXCEPTION 'licensee_disclosure_required'")
+    expect(migration).toContain("RAISE EXCEPTION 'expired_single_line_only'")
+    expect(migration).toContain('requires_licensee_disclosure IS TRUE')
+    expect(migration).toContain("phone_origin = 'prospect_phone'")
+  })
+
+  it('blocks a skip-traced expired phone that has no linked prospect', () => {
+    expect(gate({ prospectId: null, phoneOrigin: 'source_row' })).toBe('owner_match_missing')
+    expect(gate({ prospectId: null, phoneOrigin: 'prospect_phone' })).toBe('owner_match_missing')
+    expect(gate({ prospectId: '00000000-0000-4000-8000-000000000010', phoneOrigin: 'source_row' })).toBe('owner_match_missing')
+    expect(migration).toContain("RETURN 'owner_match_missing'")
   })
 
   it('stamps the owner-override basis and never treats it as 8/29-cleared', () => {

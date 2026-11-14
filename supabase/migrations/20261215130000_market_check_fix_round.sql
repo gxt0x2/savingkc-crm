@@ -511,7 +511,15 @@ SELECT
   row_status, phone_e164, phone_origin, pull_date, source_file_name,
   requires_licensee_disclosure, ks_license_unconfirmed, basis, calling_window
 FROM public.source_list_dialer_phone_review
-WHERE block_reason IS NULL;
+WHERE block_reason IS NULL
+  AND (
+    (list_type IS DISTINCT FROM 'mls_expired' AND basis IS DISTINCT FROM 'owner_override_2026-11-14')
+    OR (
+      requires_licensee_disclosure IS TRUE
+      AND prospect_id IS NOT NULL
+      AND phone_origin = 'prospect_phone'
+    )
+  );
 
 CREATE OR REPLACE VIEW public.source_list_dialer_suppressed
 WITH (security_invoker = true) AS
@@ -558,6 +566,7 @@ AS $function$
       'owner_changed', 'owner_check_unknown', 'relist_check_missing', 'listing_check_unknown',
       'active_high_price', 'outside_calling_hours', 'expired_owner_confirm_pending',
       'market_check_missing', 'line_check_unknown', 'owner_match_missing', 'relationship_unknown',
+      'licensee_disclosure_required', 'expired_single_line_only',
       'listed_active', 'listed_pending', 'sold_new_owner', 'listed_withdrawn', 'listing_expired', 'off_market_ok'
     )
     AND public.dialer_suppression_class_v1(labeled.source, labeled.label) = 'unmapped';
@@ -607,12 +616,12 @@ BEGIN
   IF v_kind IS NOT NULL AND v_kind NOT IN ('dangerous_building', 'board_up', 'structural') THEN
     RAISE EXCEPTION 'source_list_lane_invalid';
   END IF;
+  IF v_list_type = 'mls_expired' AND coalesce(p_line_mode, 1) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'expired_single_line_only';
+  END IF;
   IF coalesce(p_line_mode, 1) < 1
     OR (public.dialer_multi_line_suspended_v1() AND coalesce(p_line_mode, 1) > 1) THEN
     RAISE EXCEPTION 'multi_line_suspended';
-  END IF;
-  IF v_list_type = 'mls_expired' AND coalesce(p_line_mode, 1) IS DISTINCT FROM 1 THEN
-    RAISE EXCEPTION 'expired_single_line_only';
   END IF;
 
   SELECT coalesce(string_agg(gap.source || '=' || gap.label, ', ' ORDER BY gap.source, gap.label), '')
@@ -640,16 +649,102 @@ BEGIN
       )
   )
   SELECT
-    coalesce((SELECT jsonb_agg(to_jsonb(export_row) ORDER BY export_row.list_type, export_row.county, export_row.parcel_id, export_row.phone_e164) FROM reviewed AS export_row WHERE export_row.block_reason IS NULL AND export_row.phone_e164 IS NOT NULL), '[]'::jsonb),
-    coalesce((SELECT jsonb_object_agg(counted.reason, counted.n) FROM (SELECT blocked.block_reason AS reason, count(*) AS n FROM reviewed AS blocked WHERE blocked.block_reason IS NOT NULL GROUP BY blocked.block_reason) AS counted), '{}'::jsonb),
-    coalesce((SELECT jsonb_agg(jsonb_build_object('reason', samples.reason, 'phone_masked', samples.phone_masked) ORDER BY samples.reason, samples.phone_masked) FROM (SELECT blocked.block_reason AS reason, public.dialer_phone_mask_v1(coalesce(blocked.phone_e164, blocked.phone_value)) AS phone_masked, row_number() OVER (PARTITION BY blocked.block_reason ORDER BY public.dialer_phone_mask_v1(coalesce(blocked.phone_e164, blocked.phone_value))) AS sample_index FROM reviewed AS blocked WHERE blocked.block_reason IS NOT NULL) AS samples WHERE samples.sample_index <= 20), '[]'::jsonb)
+    coalesce((
+      SELECT jsonb_agg(to_jsonb(export_row) ORDER BY export_row.list_type, export_row.county, export_row.parcel_id, export_row.phone_e164)
+      FROM reviewed AS export_row
+      WHERE export_row.block_reason IS NULL
+        AND export_row.phone_e164 IS NOT NULL
+        AND (
+          (export_row.list_type IS DISTINCT FROM 'mls_expired' AND export_row.basis IS DISTINCT FROM 'owner_override_2026-11-14')
+          OR (
+            export_row.requires_licensee_disclosure IS TRUE
+            AND export_row.prospect_id IS NOT NULL
+            AND export_row.phone_origin = 'prospect_phone'
+          )
+        )
+    ), '[]'::jsonb),
+    coalesce((
+      SELECT jsonb_object_agg(counted.reason, counted.n)
+      FROM (
+        SELECT blocked.export_reason AS reason, count(*) AS n
+        FROM (
+          SELECT coalesce(
+            review.block_reason,
+            CASE
+              WHEN review.requires_licensee_disclosure IS DISTINCT FROM true THEN 'licensee_disclosure_required'
+              ELSE 'owner_match_missing'
+            END
+          ) AS export_reason
+          FROM reviewed AS review
+          WHERE review.block_reason IS NOT NULL
+            OR (
+              (review.list_type = 'mls_expired' OR review.basis = 'owner_override_2026-11-14')
+              AND (
+                review.requires_licensee_disclosure IS DISTINCT FROM true
+                OR review.prospect_id IS NULL
+                OR review.phone_origin IS DISTINCT FROM 'prospect_phone'
+              )
+            )
+        ) AS blocked
+        GROUP BY blocked.export_reason
+      ) AS counted
+    ), '{}'::jsonb),
+    coalesce((
+      SELECT jsonb_agg(jsonb_build_object('reason', samples.reason, 'phone_masked', samples.phone_masked) ORDER BY samples.reason, samples.phone_masked)
+      FROM (
+        SELECT samples.reason, samples.phone_masked
+        FROM (
+          SELECT
+            coalesce(
+              review.block_reason,
+              CASE
+                WHEN review.requires_licensee_disclosure IS DISTINCT FROM true THEN 'licensee_disclosure_required'
+                ELSE 'owner_match_missing'
+              END
+            ) AS reason,
+            public.dialer_phone_mask_v1(coalesce(review.phone_e164, review.phone_value)) AS phone_masked,
+            row_number() OVER (
+              PARTITION BY coalesce(
+                review.block_reason,
+                CASE
+                  WHEN review.requires_licensee_disclosure IS DISTINCT FROM true THEN 'licensee_disclosure_required'
+                  ELSE 'owner_match_missing'
+                END
+              )
+              ORDER BY public.dialer_phone_mask_v1(coalesce(review.phone_e164, review.phone_value))
+            ) AS sample_index
+          FROM reviewed AS review
+          WHERE review.block_reason IS NOT NULL
+            OR (
+              (review.list_type = 'mls_expired' OR review.basis = 'owner_override_2026-11-14')
+              AND (
+                review.requires_licensee_disclosure IS DISTINCT FROM true
+                OR review.prospect_id IS NULL
+                OR review.phone_origin IS DISTINCT FROM 'prospect_phone'
+              )
+            )
+        ) AS samples
+        WHERE samples.sample_index <= 20
+      ) AS samples
+    ), '[]'::jsonb)
   INTO v_rows, v_excluded_counts, v_excluded_phones;
 
+  IF v_list_type = 'mls_expired' AND coalesce(p_line_mode, 1) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'expired_single_line_only';
+  END IF;
   IF EXISTS (
     SELECT 1 FROM jsonb_array_elements(v_rows) AS item
     WHERE item->>'basis' = 'owner_override_2026-11-14'
+       OR item->>'list_type' = 'mls_expired'
   ) AND coalesce(p_line_mode, 1) IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'expired_single_line_only';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(v_rows) AS item
+    WHERE (item->>'list_type' = 'mls_expired' OR item->>'basis' = 'owner_override_2026-11-14')
+      AND coalesce((item->>'requires_licensee_disclosure')::boolean, false) IS DISTINCT FROM true
+  ) THEN
+    RAISE EXCEPTION 'licensee_disclosure_required';
   END IF;
 
   v_count := jsonb_array_length(v_rows);

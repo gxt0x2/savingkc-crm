@@ -185,6 +185,41 @@ BEGIN
     RAISE EXCEPTION 'B7 expected line_check_unknown, got %', v_reason;
   END IF;
 
+  INSERT INTO public.source_list_rows (
+    source_list_id, list_type, county, state, match_key, address, phones, status, prospect_id, list_day, requires_licensee_disclosure
+  )
+    SELECT id, 'mls_expired', 'jackson', 'MO', 'addr:12OAK64114', '12 Oak St', ARRAY['+18165550199'], 'new_needs_skip',
+    NULL, CURRENT_DATE, false
+  FROM public.source_lists
+  WHERE list_type = 'mls_expired'
+  LIMIT 1;
+  SELECT public.source_list_market_block_reason_v1(
+    row.id, NULL, row.address, row.prospect_id, row.list_type, 'source_row', '+18165550199'
+  ) INTO v_reason
+  FROM public.source_list_rows AS row
+  WHERE row.match_key = 'addr:12OAK64114';
+  IF v_reason IS DISTINCT FROM 'owner_match_missing' THEN
+    RAISE EXCEPTION 'B10 expected owner_match_missing, got %', v_reason;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export
+    WHERE phone_e164 = '+18165550199'
+  ) THEN
+    RAISE EXCEPTION 'B10 exported a skip-traced phone with no prospect';
+  END IF;
+  IF position('licensee_disclosure_required' IN pg_get_functiondef('public.record_source_list_export_batch_v1(text,text,text,text,text,uuid,integer)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'B6 disclosure is not enforced on the export function';
+  END IF;
+  BEGIN
+    PERFORM public.record_source_list_export_batch_v1('rehearsal', 'mls_expired', NULL, NULL, NULL, NULL, 2);
+    RAISE EXCEPTION 'B6 multi-line expired export was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE '%expired_single_line_only%' THEN
+        RAISE;
+      END IF;
+  END;
+
   v_started := clock_timestamp();
   INSERT INTO public.property_market_latest (property_key, parcel_key, addr_norm, zip5, listing_status, list_day, source, owner_changed, owner_check_unknown, checked_at, check_id)
   SELECT 'parcel:P' || g, 'P' || g, g::text || ' MAIN', '64114', 'off_market_ok', CURRENT_DATE, 'heartland_matrix', false, false, clock_timestamp(), gen_random_uuid()
