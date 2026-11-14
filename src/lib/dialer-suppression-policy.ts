@@ -540,22 +540,16 @@ function mojoLast4Tied(world: SuppressionWorld, key: string, call: SuppressionMo
   return (mineKey !== null && keys.has(mineKey)) || phonesOf(world).some((phone) => sameKey(phone.phone, key) && keys.has(householdKey(prospectFor(world, phone.prospectId)) ?? ''))
 }
 
-function serviceSlug(value: string | null | undefined): string | null {
-  const slug = String(value ?? '')
-    .toLowerCase()
-    .replace(/[^a-z]+/g, ' ')
-    .replace(/\b(county|missouri|kansas|mo|ks)\b/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return slug || null
-}
-
-function outOfServiceArea(world: SuppressionWorld): boolean {
-  const allowed = new Set(['jackson', 'clay', 'platte', 'johnson', 'wyandotte'])
-  return [world.county, world.situsCounty].some((value) => {
-    const slug = serviceSlug(value)
-    return Boolean(slug && !allowed.has(slug))
-  })
+function serviceAreaReason(world: SuppressionWorld): 'out_of_service_area' | 'county_unresolved' | null {
+  if (!('county' in world) && !('situsCounty' in world)) return null
+  const allowed = new Set(['jackson', 'clay', 'platte', 'wyandotte', 'johnson'])
+  const unresolved = new Set(['unknown', 'unresolved'])
+  const named = [world.county, world.situsCounty]
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .filter((value) => value && !unresolved.has(value))
+  if (named.some((value) => !allowed.has(value))) return 'out_of_service_area'
+  if (!named.some((value) => allowed.has(value))) return 'county_unresolved'
+  return null
 }
 
 function shortSuppressionMatch(world: SuppressionWorld, key: string, prospectId?: string | null): boolean {
@@ -687,6 +681,5 @@ export function exportBlockReason(
   if (householdFanout(world, key, prospectId)) return 'household_fanout'
   if ((world.encodePending ?? []).some((row) => sameKey(row, key))) return 'mojo_encode_pending'
   if (shortSuppressionMatch(world, key, prospectId)) return 'hold_last4'
-  if (outOfServiceArea(world)) return 'out_of_service_area'
-  return null
+  return serviceAreaReason(world)
 }

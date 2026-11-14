@@ -518,6 +518,24 @@ BEGIN
   IF public.source_list_phone_block_reason_v1('+18165550140', 'jackson', 'jackson') IS NOT NULL THEN
     RAISE EXCEPTION 'Jackson clean phone was blocked by the 3-arg scrub';
   END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550140', 'Jackson', 'Jackson') IS NOT NULL THEN
+    RAISE EXCEPTION 'capitalized Jackson was blocked';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550140', ' clay ', 'clay') IS NOT NULL
+    OR public.source_list_phone_block_reason_v1('+18165550140', 'Platte', 'platte') IS NOT NULL
+    OR public.source_list_phone_block_reason_v1('+18165550140', 'Wyandotte', 'wyandotte') IS NOT NULL
+    OR public.source_list_phone_block_reason_v1('+18165550140', 'Johnson', 'johnson') IS NOT NULL THEN
+    RAISE EXCEPTION 'a service county was blocked';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550140', 'Bates', 'Bates') IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'a named county outside the service area was not out_of_service_area';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550140', NULL, NULL) IS DISTINCT FROM 'county_unresolved'
+    OR public.source_list_phone_block_reason_v1('+18165550140', '   ', '') IS DISTINCT FROM 'county_unresolved'
+    OR public.source_list_phone_block_reason_v1('+18165550140', 'unknown', 'unknown') IS DISTINCT FROM 'county_unresolved'
+    OR public.source_list_phone_block_reason_v1('+18165550140', 'Unresolved', NULL) IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'an unresolved county was not county_unresolved';
+  END IF;
 
   INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
   SELECT DISTINCT row.parcel_id, 'jackson', 'tax_delinquent', row.prospect_id, now(), 'jackson_tax_portal', 'delinquent', 0

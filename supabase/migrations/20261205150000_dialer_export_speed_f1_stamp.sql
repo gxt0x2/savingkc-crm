@@ -623,35 +623,35 @@ AS $function$
        )
        OR public.dialer_suppression_class_v1('lead_call_result', lead.call_result) = 'person_dnc'
     UNION ALL
-    SELECT input.ordinal, 'out_of_service_area', 200
+    SELECT input.ordinal,
+      CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM (VALUES (input.county), (input.situs_county)) AS candidate(county_value)
+          CROSS JOIN LATERAL (SELECT NULLIF(lower(btrim(candidate.county_value)), '') AS slug) AS normalized
+          WHERE normalized.slug IS NOT NULL
+            AND normalized.slug NOT IN ('unknown', 'unresolved', 'jackson', 'clay', 'platte', 'wyandotte', 'johnson')
+        ) THEN 'out_of_service_area'
+        ELSE 'county_unresolved'
+      END,
+      200
     FROM input
-    WHERE EXISTS (
-      SELECT 1
-      FROM (VALUES (input.county), (input.situs_county)) AS candidate(county_value)
-      CROSS JOIN LATERAL (
-        SELECT NULLIF(
-          regexp_replace(
-            btrim(regexp_replace(
-              regexp_replace(
-                lower(btrim(coalesce(candidate.county_value, ''))),
-                '[^a-z]+',
-                ' ',
-                'g'
-              ),
-              '\y(county|missouri|kansas|mo|ks)\y',
-              '',
-              'g'
-            )),
-            '\s+',
-            ' ',
-            'g'
-          ),
-          ''
-        ) AS slug
-      ) AS normalized
-      WHERE normalized.slug IS NOT NULL
-        AND normalized.slug NOT IN ('jackson', 'clay', 'platte', 'johnson', 'wyandotte')
-    )
+    WHERE (p_counties IS NOT NULL OR p_situs_counties IS NOT NULL)
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM (VALUES (input.county), (input.situs_county)) AS candidate(county_value)
+          CROSS JOIN LATERAL (SELECT NULLIF(lower(btrim(candidate.county_value)), '') AS slug) AS normalized
+          WHERE normalized.slug IS NOT NULL
+            AND normalized.slug NOT IN ('unknown', 'unresolved', 'jackson', 'clay', 'platte', 'wyandotte', 'johnson')
+        )
+        OR NOT EXISTS (
+          SELECT 1
+          FROM (VALUES (input.county), (input.situs_county)) AS candidate(county_value)
+          CROSS JOIN LATERAL (SELECT NULLIF(lower(btrim(candidate.county_value)), '') AS slug) AS normalized
+          WHERE normalized.slug IN ('jackson', 'clay', 'platte', 'wyandotte', 'johnson')
+        )
+      )
     UNION ALL
     SELECT input.ordinal, encode.block_reason, CASE encode.block_reason WHEN 'mojo_encode_pending' THEN 140 ELSE 150 END
     FROM input
@@ -885,7 +885,7 @@ AS $function$
 $function$;
 
 COMMENT ON FUNCTION public.source_list_phone_block_reason_v1(text, text, text) IS
-  'Three-argument scrub for existing callers. Phone suppression still wins over out_of_service_area. Null or blank county is not a block. Cass is outside the service area.';
+  'Three-argument scrub for existing callers. Phone suppression still wins over the county gate. A trimmed, lowercased Jackson, Clay, Platte, Wyandotte, or Johnson county passes. Any other named county is out_of_service_area. Null, blank, unknown, and unresolved are county_unresolved so they can be backfilled.';
 
 CREATE OR REPLACE VIEW public.source_list_dialer_export
 WITH (security_invoker = true) AS

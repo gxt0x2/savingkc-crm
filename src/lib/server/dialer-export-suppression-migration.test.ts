@@ -121,6 +121,8 @@ describe('dialer export suppression migration', () => {
     expect(speed).toContain('classified_phones AS MATERIALIZED')
     expect(speed).toContain('registered_agent')
     expect(speed).toContain('out_of_service_area')
+    expect(speed).toContain('county_unresolved')
+    expect(speed).toContain("NULLIF(lower(btrim(candidate.county_value)), '')")
     expect(speed).toContain('tax_status_export_allowed_v1')
     expect(speed).toContain('source_list_phone_block_reason_v1(text, text, text)')
     expect(readFileSync(join(process.cwd(), 'supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql'), 'utf8')).not.toContain("RAISE EXCEPTION 'dialer_label_unmapped")

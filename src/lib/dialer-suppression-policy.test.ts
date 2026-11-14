@@ -413,6 +413,16 @@ describe('associate type and property owner fan-out', () => {
       phones: [{ phone: '+18165550138', relationship: 'owner', lastDisposition: 'no_answer' }],
     })).toBeNull()
     expect(exportBlockReason('+18165550139', { county: 'Cass', phones: [{ phone: '+18165550139', relationship: 'owner' }] })).toBe('out_of_service_area')
+    const areaPhone = '+18165550148'
+    const areaOwner = { phones: [{ phone: areaPhone, relationship: 'owner' as const, lastDisposition: 'no_answer' }] }
+    for (const county of ['Jackson', 'jackson', ' clay ', 'Platte', 'Wyandotte', 'Johnson']) {
+      expect(exportBlockReason(areaPhone, { ...areaOwner, county })).toBeNull()
+    }
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: 'Bates' })).toBe('out_of_service_area')
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: null })).toBe('county_unresolved')
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: '   ' })).toBe('county_unresolved')
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: 'unknown' })).toBe('county_unresolved')
+    expect(exportBlockReason(areaPhone, { ...areaOwner, county: 'Unresolved' })).toBe('county_unresolved')
   })
 
   it('releases an owner-matched number that is only associate or unknown on another record', () => {
