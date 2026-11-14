@@ -1,7 +1,7 @@
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { isMissingColumnError } from '@/lib/schema-compat'
-import { lineTypeAllowsSms } from '@/lib/server/phone-line-check'
+import { lineCheckBlockEnabled, lineTypeAllowsSms } from '@/lib/server/phone-line-check'
 import { handleOptOut, isSmsOptOutMessage } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
@@ -166,6 +166,7 @@ async function loadRecentSms(phone: string, leadId: string | null): Promise<SmsA
 }
 
 async function prospectLineBlock(phone: string): Promise<AutomatedSmsBlockReason | null> {
+  if (!lineCheckBlockEnabled()) return null
   const variants = phoneLookupVariants(phone)
   if (!variants.length) return null
   const { data, error } = await supabase

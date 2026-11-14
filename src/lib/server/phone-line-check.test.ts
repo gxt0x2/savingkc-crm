@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  PHONE_LINE_CHECK_COST_USD,
   decidePhoneLineCheck,
+  lineCheckBlockEnabled,
+  lineCheckCostUsd,
+  lineCheckExportBlock,
+  lineCheckLane,
+  lineCheckSkippedByClass,
+  lineCheckSuppressOnly,
   mapTwilioLineStatus,
   mapTwilioLineType,
   parseTwilioLookupPayload,
@@ -34,8 +39,7 @@ describe('Twilio Lookup value mapping', () => {
     expect(mapTwilioLineType('')).toBeNull()
   })
 
-  it('reads the Lookup v2 field names and prices both packages at $0.015', () => {
-    expect(PHONE_LINE_CHECK_COST_USD).toBe(0.015)
+  it('reads the Lookup v2 field names', () => {
     expect(parseTwilioLookupPayload({
       valid: true,
       line_status: { status: 'Inactive', error_code: null },
@@ -53,214 +57,290 @@ describe('Twilio Lookup value mapping', () => {
   })
 })
 
-describe('counsel line-check decisions', () => {
-  it('soft-suppresses a first inactive result and does not treat it as a recheck', () => {
-    expect(decidePhoneLineCheck({
-      mappedStatus: 'inactive',
-      failed: false,
-      priorStatus: null,
-      priorCheckedAt: null,
+
+const THIRTY = new Date(NOW.getTime() - 30 * DAY)
+const SIXTY = new Date(NOW.getTime() - 60 * DAY)
+
+function decision(overrides: Parameters<typeof decidePhoneLineCheck>[0]) {
+  return decidePhoneLineCheck({
+    mappedStatus: 'inactive',
+    failed: false,
+    priorStatus: null,
+    priorCheckedAt: null,
+    lastActiveAt: null,
+    suppressedAt: null,
+    recheckCount: 0,
+    dialDisconnected: false,
+    rnd: 'unavailable',
+    now: NOW,
+    suppressOnly: false,
+    ...overrides,
+  })
+}
+
+describe('counsel ruling §4a, 2026-11-14 (Lookup inactive)', () => {
+  it('B1 keeps a soft suppress when a later result is unreachable or unknown', () => {
+    const prior = {
+      priorStatus: 'suppressed_lookup_inactive' as const,
+      suppressedAt: new Date(NOW.getTime() - 10 * DAY),
       recheckCount: 0,
-      dialDisconnected: false,
-      rnd: 'unavailable',
-      now: NOW,
-    })).toMatchObject({
+    }
+    expect(decision({ ...prior, mappedStatus: 'unreachable' })).toMatchObject({
       lineStatus: 'suppressed_lookup_inactive',
       reason: 'lookup_inactive',
       recheckCount: 0,
+      keepPriorStatus: true,
+      touchLastActive: false,
+    })
+    expect(decision({ ...prior, mappedStatus: 'unknown', failed: true })).toMatchObject({
+      lineStatus: 'suppressed_lookup_inactive',
+      keepPriorStatus: true,
+    })
+    expect(decision({ ...prior, mappedStatus: 'active' })).toMatchObject({
+      lineStatus: 'suppressed_lookup_inactive',
+      keepPriorStatus: true,
       fillPhoneConnected: false,
     })
   })
 
-  it('keeps the soft suppress at the 30-day recheck and permanent-suppresses the 60-day recheck', () => {
-    expect(decidePhoneLineCheck({
+  it('B1 lets only the 30- and 60-day recheck change a soft suppress', () => {
+    expect(decision({
       mappedStatus: 'inactive',
-      failed: false,
       priorStatus: 'suppressed_lookup_inactive',
-      priorCheckedAt: new Date(NOW.getTime() - 30 * DAY),
+      suppressedAt: THIRTY,
       recheckCount: 0,
-      dialDisconnected: false,
-      rnd: 'unavailable',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'suppressed_lookup_inactive', reason: 'lookup_inactive', recheckCount: 1 })
-    expect(decidePhoneLineCheck({
+    })).toMatchObject({ lineStatus: 'suppressed_lookup_inactive', recheckCount: 1, keepPriorStatus: false })
+    expect(decision({
       mappedStatus: 'inactive',
-      failed: false,
       priorStatus: 'suppressed_lookup_inactive',
-      priorCheckedAt: new Date(NOW.getTime() - 30 * DAY),
+      suppressedAt: SIXTY,
       recheckCount: 1,
-      dialDisconnected: false,
-      rnd: 'unavailable',
-      now: NOW,
     })).toMatchObject({ lineStatus: 'suppressed_bad_number', reason: 'recheck_still_inactive', recheckCount: 2 })
   })
 
-  it('does not restore a recheck that comes back active while RND is unavailable', () => {
-    expect(decidePhoneLineCheck({
+  it('§4a keeps an active recheck suppressed unless RND is clear', () => {
+    expect(decision({
       mappedStatus: 'active',
-      failed: false,
       priorStatus: 'suppressed_lookup_inactive',
-      priorCheckedAt: new Date(NOW.getTime() - 30 * DAY),
+      suppressedAt: THIRTY,
       recheckCount: 0,
-      dialDisconnected: false,
       rnd: 'unavailable',
-      now: NOW,
     })).toMatchObject({
       lineStatus: 'suppressed_bad_number',
       reason: 'recheck_active_rnd_unavailable',
       fillPhoneConnected: false,
-      rnd: 'unavailable',
+      touchLastActive: false,
+    })
+    expect(decision({
+      mappedStatus: 'active',
+      priorStatus: 'suppressed_lookup_inactive',
+      suppressedAt: THIRTY,
+      recheckCount: 0,
+      rnd: 'clear',
+    })).toMatchObject({
+      lineStatus: 'active',
+      reason: 'recheck_active_rnd_clear',
+      fillPhoneConnected: true,
+      touchLastActive: true,
+      rnd: 'clear',
     })
   })
 
-  it('leaves the RND clear path ready without using it today', () => {
-    expect(decidePhoneLineCheck({
+  it('§4a never rechecks a dial-proven disconnect and does not treat line type as consent', () => {
+    expect(decision({
       mappedStatus: 'active',
-      failed: false,
-      priorStatus: 'suppressed_lookup_inactive',
-      priorCheckedAt: new Date(NOW.getTime() - 30 * DAY),
-      recheckCount: 1,
-      dialDisconnected: false,
-      rnd: 'clear',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'active', reason: 'recheck_active_rnd_clear', fillPhoneConnected: true, rnd: 'clear' })
-    expect(decidePhoneLineCheck({
-      mappedStatus: 'active',
-      failed: false,
-      priorStatus: 'suppressed_lookup_inactive',
-      priorCheckedAt: new Date(NOW.getTime() - 30 * DAY),
-      recheckCount: 1,
-      dialDisconnected: false,
-      rnd: 'permanent_disconnect',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'suppressed_bad_number', reason: 'rnd_permanent_disconnect' })
-  })
-
-  it('holds an unreachable line without counting it as an inactive recheck', () => {
-    expect(decidePhoneLineCheck({
-      mappedStatus: 'unreachable',
-      failed: false,
-      priorStatus: 'active',
-      priorCheckedAt: new Date(NOW.getTime() - 30 * DAY),
-      recheckCount: 0,
-      dialDisconnected: false,
-      rnd: 'unavailable',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'unreachable', reason: 'unreachable_hold', recheckCount: 0 })
-  })
-
-  it('keeps a dial disconnect permanent', () => {
-    expect(decidePhoneLineCheck({
-      mappedStatus: 'active',
-      failed: false,
-      priorStatus: 'active',
-      priorCheckedAt: new Date(NOW.getTime() - DAY),
-      recheckCount: 0,
       dialDisconnected: true,
       rnd: 'clear',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'suppressed_bad_number', reason: 'dial_disconnect', fillPhoneConnected: false })
+    })).toMatchObject({
+      lineStatus: 'suppressed_bad_number',
+      reason: 'dial_disconnect',
+      fillPhoneConnected: false,
+      touchLastActive: false,
+    })
+    const active = decision({ mappedStatus: 'active' })
+    expect(active).toMatchObject({ reason: 'lookup_active', touchLastActive: true })
+    expect(active).not.toHaveProperty('consent')
+    expect(lineCheckSkippedByClass(['disconnected'])).toBe(true)
+    expect(lineCheckSkippedByClass(['prospect_dnc', 'allow'])).toBe(true)
+    expect(lineCheckSkippedByClass(['allow', null])).toBe(false)
   })
 
-  it('flags a failed check when the phone was active within 90 days and fails closed after that', () => {
-    expect(decidePhoneLineCheck({
+  it('B2 does not rewrite status to active or bump freshness when the check fails', () => {
+    expect(decision({
       mappedStatus: 'unknown',
       failed: true,
       priorStatus: 'active',
-      priorCheckedAt: new Date(NOW.getTime() - 89 * DAY),
-      recheckCount: 0,
-      dialDisconnected: false,
-      rnd: 'unavailable',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'active', reason: 'check_failed_stale_active', staleActiveExport: true })
-    expect(decidePhoneLineCheck({
+      lastActiveAt: new Date(NOW.getTime() - 10 * DAY),
+    })).toMatchObject({
+      lineStatus: 'active',
+      reason: 'check_failed_stale_active',
+      touchLastActive: false,
+      keepPriorStatus: true,
+      staleActiveExport: true,
+    })
+    expect(decision({
       mappedStatus: 'unknown',
       failed: true,
       priorStatus: 'active',
-      priorCheckedAt: new Date(NOW.getTime() - 91 * DAY),
-      recheckCount: 0,
-      dialDisconnected: false,
-      rnd: 'unavailable',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'unknown', reason: 'check_failed', staleActiveExport: false })
+      lastActiveAt: new Date(NOW.getTime() - 91 * DAY),
+    })).toMatchObject({
+      lineStatus: 'unknown',
+      reason: 'check_failed',
+      touchLastActive: false,
+      staleActiveExport: false,
+    })
+    expect(decision({ mappedStatus: 'active' }).touchLastActive).toBe(true)
   })
 
-  it('fills phone_connected only for a real active result', () => {
-    expect(decidePhoneLineCheck({
+  it('B2 blocks export when the last real active result is outside 90 days', () => {
+    expect(lineCheckBlockEnabled({})).toBe(false)
+    expect(lineCheckExportBlock({
+      lineStatus: 'active',
+      lineCheckedAt: NOW,
+      lineLastActiveAt: new Date(NOW.getTime() - 10 * DAY),
+      now: NOW,
+      blockEnabled: false,
+    })).toBeNull()
+    expect(lineCheckExportBlock({
+      lineStatus: 'active',
+      lineCheckedAt: NOW,
+      lineLastActiveAt: new Date(NOW.getTime() - 10 * DAY),
+      now: NOW,
+      blockEnabled: true,
+    })).toBeNull()
+    expect(lineCheckExportBlock({
+      lineStatus: 'active',
+      lineCheckedAt: NOW,
+      lineLastActiveAt: new Date(NOW.getTime() - 91 * DAY),
+      now: NOW,
+      blockEnabled: true,
+    })).toBe('line_check_stale')
+    expect(lineCheckExportBlock({
+      lineStatus: null,
+      lineCheckedAt: null,
+      lineLastActiveAt: null,
+      now: NOW,
+      blockEnabled: true,
+    })).toBe('line_check_unknown')
+  })
+
+  it('B6 refuses to make a phone exportable between 4am and 9pm Chicago', () => {
+    expect(lineCheckSuppressOnly(new Date('2026-11-14T08:00:00.000Z'))).toBe(false)
+    expect(lineCheckSuppressOnly(new Date('2026-11-14T16:00:00.000Z'))).toBe(true)
+    expect(lineCheckSuppressOnly(new Date('2026-07-14T09:00:00.000Z'))).toBe(true)
+    expect(lineCheckSuppressOnly(new Date('2026-07-14T07:00:00.000Z'))).toBe(false)
+    expect(decision({
       mappedStatus: 'active',
-      failed: false,
-      priorStatus: null,
-      priorCheckedAt: null,
-      recheckCount: 0,
-      dialDisconnected: false,
-      rnd: 'unavailable',
-      now: NOW,
-    })).toMatchObject({ lineStatus: 'active', reason: 'lookup_active', fillPhoneConnected: true })
+      now: new Date('2026-11-14T16:00:00.000Z'),
+      suppressOnly: true,
+    })).toMatchObject({
+      reason: 'calling_window_lock',
+      touchLastActive: false,
+      fillPhoneConnected: false,
+      keepPriorStatus: true,
+    })
+  })
+})
+
+describe('line check lanes and price', () => {
+  it('F5 reads the per-lookup price from the environment', () => {
+    expect(lineCheckCostUsd({ LINE_CHECK_COST_USD: '0.02' } as NodeJS.ProcessEnv)).toBe(0.02)
+    expect(() => lineCheckCostUsd({} as NodeJS.ProcessEnv)).toThrow(/LINE_CHECK_COST_USD is not configured/)
+  })
+
+  it('B4 orders fresh intake, then the loaded calling list, then backfill', () => {
+    expect(lineCheckLane({
+      lineCheckedAt: null,
+      listPullDate: '2026-11-14',
+      rowCreatedAt: null,
+      rowStatus: 'ready',
+      today: '2026-11-14',
+    })).toBe('fresh_intake')
+    expect(lineCheckLane({
+      lineCheckedAt: NOW,
+      listPullDate: '2026-11-01',
+      rowCreatedAt: null,
+      rowStatus: 'loaded_to_dialer',
+      today: '2026-11-14',
+    })).toBe('tier_1')
+    expect(lineCheckLane({
+      lineCheckedAt: null,
+      listPullDate: '2026-10-01',
+      rowCreatedAt: new Date('2026-10-01T12:00:00.000Z'),
+      rowStatus: 'ready',
+      today: '2026-11-14',
+    })).toBe('backfill')
   })
 })
 
 describe('line check runner', () => {
-  it('looks up due phones with a mock and stops when the cap is already hit', async () => {
-    const lookup = vi.fn()
-    const applyChecks = vi.fn().mockResolvedValue({
-      accepted: 0, stopped: true, cap: 'daily_cost', batchSize: 0, phonesToday: 1000, costTodayUsd: 15, costMonthUsd: 15,
-    })
-    const store: PhoneLineCheckStore = {
-      selectCandidates: vi.fn().mockResolvedValue({ remaining: 0, cap: 'daily_cost', candidates: [], skipped: [] }),
-      applyChecks,
+  vi.stubEnv('LINE_CHECK_COST_USD', '0.02')
+
+  function store(reserve: ReturnType<typeof vi.fn>, apply: ReturnType<typeof vi.fn>): PhoneLineCheckStore {
+    return {
+      syncConfig: vi.fn().mockResolvedValue(undefined),
+      reserveCandidates: reserve,
+      applyChecks: apply,
     }
+  }
+
+  it('B3 reserves budget before calling Twilio and does not look up a dropped row', async () => {
+    const order: string[] = []
+    const lookup = vi.fn(async () => {
+      order.push('lookup')
+      return {
+        mappedStatus: 'inactive' as const,
+        lineType: 'landline',
+        twilioStatus: 'Inactive',
+        twilioType: 'landline',
+        failed: false,
+        raw: { twilio_status: 'Inactive' },
+      }
+    })
+    const reserve = vi.fn(async () => {
+      order.push('reserve')
+      return {
+        remaining: 2,
+        cap: null,
+        candidates: [{ phoneE164: '+18165550100', prospectPhoneId: 'phone-1' }],
+        skipped: [{ prospectPhoneId: 'phone-2', reason: 'dnc' }],
+      }
+    })
+    const apply = vi.fn(async () => {
+      order.push('apply')
+      return { accepted: 1, stopped: false, cap: null, batchSize: 1, phonesToday: 1, costTodayUsd: 0.02, costMonthUsd: 0.02 }
+    })
     const summary = await runPhoneLineChecks({
-      store,
+      store: store(reserve, apply),
       lookup,
       source: 'cron',
       actor: 'line-check-cron',
-      now: () => NOW.getTime(),
-      deadlineMs: NOW.getTime() + 1000,
+      now: () => new Date('2026-11-14T08:00:00.000Z').getTime(),
+      deadlineMs: new Date('2026-11-14T08:00:00.000Z').getTime() + 1000,
     })
-    expect(lookup).not.toHaveBeenCalled()
-    expect(applyChecks).toHaveBeenCalledWith(expect.objectContaining({ reportCap: true, results: [], source: 'cron' }))
-    expect(summary).toMatchObject({ checked: 0, stopped: true, cap: 'daily_cost', costUsd: 0 })
-  })
-
-  it('records a failed mock lookup without calling a live provider', async () => {
-    const lookup = vi.fn().mockResolvedValue({
-      mappedStatus: 'active',
-      lineType: 'mobile',
-      twilioStatus: 'Active',
-      twilioType: 'mobile',
-      failed: false,
-      raw: { twilio_status: 'Active', twilio_type: 'mobile' },
-    })
-    const store: PhoneLineCheckStore = {
-      selectCandidates: vi.fn()
-        .mockResolvedValueOnce({
-          remaining: 10,
-          cap: null,
-          candidates: [{ phoneE164: '+18165550100', prospectPhoneId: 'phone-1' }],
-          skipped: [{ prospectPhoneId: 'phone-2', reason: 'dnc' }],
-        })
-        .mockResolvedValueOnce({ remaining: 9, cap: null, candidates: [], skipped: [] }),
-      applyChecks: vi.fn().mockResolvedValue({
-        accepted: 1, stopped: false, cap: null, batchSize: 1, phonesToday: 1, costTodayUsd: 0.015, costMonthUsd: 0.015,
-      }),
-    }
-    const summary = await runPhoneLineChecks({
-      store,
-      lookup,
-      source: 'manual',
-      actor: 'casey@savingkc.com',
-      prospectPhoneIds: ['phone-1', 'phone-2'],
-      now: () => NOW.getTime(),
-      deadlineMs: NOW.getTime() + 1000,
-    })
+    expect(order).toEqual(['reserve', 'lookup', 'apply'])
     expect(lookup).toHaveBeenCalledTimes(1)
     expect(lookup).toHaveBeenCalledWith('+18165550100')
-    expect(summary).toMatchObject({
-      checked: 1,
-      failed: 0,
-      costUsd: 0.015,
-      skipped: [{ prospectPhoneId: 'phone-2', reason: 'dnc' }],
+    expect(summary).toMatchObject({ checked: 1, costUsd: 0.02, suppressOnly: false, skipped: [{ reason: 'dnc' }] })
+  })
+
+  it('does not call Twilio when the reserved batch is empty', async () => {
+    const lookup = vi.fn()
+    const apply = vi.fn().mockResolvedValue({
+      accepted: 0, stopped: true, cap: 'daily_cost', batchSize: 0, phonesToday: 1000, costTodayUsd: 15, costMonthUsd: 15,
     })
-    expect(JSON.stringify(summary)).not.toContain('CRON_SECRET')
+    const summary = await runPhoneLineChecks({
+      store: store(
+        vi.fn().mockResolvedValue({ remaining: 0, cap: 'daily_cost', candidates: [], skipped: [] }),
+        apply,
+      ),
+      lookup,
+      source: 'cron',
+      actor: 'line-check-cron',
+      now: () => new Date('2026-11-14T08:00:00.000Z').getTime(),
+      deadlineMs: new Date('2026-11-14T08:00:00.000Z').getTime() + 1000,
+    })
+    expect(lookup).not.toHaveBeenCalled()
+    expect(summary).toMatchObject({ checked: 0, stopped: true, cap: 'daily_cost' })
   })
 })

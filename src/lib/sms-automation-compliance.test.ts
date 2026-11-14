@@ -218,14 +218,16 @@ describe('INC-2026-09-22-001 automated SMS suppression', () => {
     expect(harness.state.leads[0]).toMatchObject({ id: LEAD_ID, dead_reason: 'dnc_refused' })
   })
 
-  it('blocks a prospect landline and allows an active mobile', async () => {
-    harness.state.prospectPhones.push({ phone: PHONE, line_type: 'landline', line_status: 'active' })
+  it('blocks a prospect landline and allows an active mobile when line-check blocks are on', async () => {
+    vi.stubEnv('LINE_CHECK_BLOCK_ENABLED', 'true')
+    harness.state.prospectPhones.push({ phone: PHONE, line_type: 'landline', line_status: 'active', line_last_active_at: '2026-11-01T00:00:00.000Z' })
     await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBe('sms_requires_mobile')
     harness.state.prospectPhones[0].line_type = 'nonFixedVoip'
     await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBeNull()
   })
 
-  it('fails closed when a prospect phone has not been checked', async () => {
+  it('fails closed when a prospect phone has not been checked and line-check blocks are on', async () => {
+    vi.stubEnv('LINE_CHECK_BLOCK_ENABLED', 'true')
     harness.state.prospectPhones.push({ phone: PHONE, line_type: null, line_status: null })
     await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBe('line_check_unknown')
   })
