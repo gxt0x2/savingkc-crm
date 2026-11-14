@@ -47,6 +47,7 @@ describe('cron proxy bearer allowlist', () => {
     '/api/cron/sync-gmail/trigger',
     '/api/cron/sync-mojo-emails',
     '/api/cron/sync-mojo-performance',
+    '/api/cron/sync-mojo-calls',
   ])('allows the reviewed server-to-server endpoint %s', async (pathname) => {
     const response = await proxy(bearerRequest(pathname), event)
 

@@ -6,6 +6,7 @@ import { readGmailConnectionHealth } from '@/lib/gmail-oauth-health'
 import { hasGoogleOAuthConfig } from '@/lib/gmail-sync'
 import type { GmailHealthSnapshot } from '@/lib/gmail-oauth-status'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { readMojoCallIngestHealth } from '@/lib/server/mojo-dial-health'
 import { listOverdueScheduledAppointments } from '@/lib/server/overdue-appointment-outcomes'
 import { assistantActorCanReadCompanyWide, type AssistantActor } from '@/lib/assistant/auth'
 import { ASSISTANT_ACTIVE_STAGES, cleanLeadSearch, crmLeadUrl } from '@/lib/assistant/read-model'
@@ -260,7 +261,7 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
 
   const activityBase = db.from('lead_activities').select('id, lead_id, activity_type, description, agent, metadata, created_at').in('activity_type', TASK_ACTIVITY_TYPES).order('created_at', { ascending: false }).limit(1000)
   const leadBase = db.from('leads').select('id, full_name, property_address, city, state, station, priority, assigned_agent, updated_at').in('station', ASSISTANT_ACTIVE_STAGES).lt('updated_at', staleCutoff).order('updated_at', { ascending: true }).limit(limit)
-  const [activitiesResult, appointmentsResult, staleLeadsResult, tcTasksResult, tcFilesResult, dealsResult, overdueAppointments] = await Promise.all([
+  const [activitiesResult, appointmentsResult, staleLeadsResult, tcTasksResult, tcFilesResult, dealsResult, overdueAppointments, mojoCallIngest] = await Promise.all([
     activityBase,
     db.from('appointments').select('id, lead_id, scheduled_at, type, status, assigned_to, address, notes').in('status', ['scheduled', 'confirmed']).gte('scheduled_at', generatedAt).lte('scheduled_at', nextWeek).order('scheduled_at', { ascending: true }).limit(limit),
     actorLeadQuery(leadBase, actor),
@@ -272,6 +273,7 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
       error: error instanceof Error ? error.message : 'Overdue appointments could not be read',
       cutoff: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
     })),
+    readMojoCallIngestHealth(db, now),
   ])
 
   if (activitiesResult.error || staleLeadsResult.error) throw new Error(`CRM attention lookup failed: ${(activitiesResult.error || staleLeadsResult.error)?.message}`)
@@ -332,11 +334,13 @@ export async function readAssistantAttention(db: Db, actor: AssistantActor, limi
       return { ...task, file, lead: attachLead(file?.lead_id), crmUrl: file?.lead_id ? crmLeadUrl(String(file.lead_id)) : `${CRM_ORIGIN}/tc` }
     }),
     dispositionDeadlines: visibleDeals.filter((deal) => deal.close_date || deal.debrief_due_at || deal.closeout_status === 'awaiting_debrief').slice(0, limit).map((deal) => ({ ...deal, lead: attachLead(deal.lead_id), crmUrl: deal.lead_id ? crmLeadUrl(String(deal.lead_id)) : `${CRM_ORIGIN}/dispo` })),
+    mojoCallIngest,
     availability: {
       appointments: appointmentsResult.error ? appointmentsResult.error.message : 'available',
       overdueAppointmentOutcomes: overdueAppointments.error ?? 'available',
       tcTasks: tcTasksResult.error || tcFilesResult.error ? (tcTasksResult.error || tcFilesResult.error)?.message : 'available',
       dispositions: dealsResult.error ? dealsResult.error.message : 'available',
+      mojoCallIngest: mojoCallIngest.status === 'unknown' ? mojoCallIngest.message : 'available',
     },
     sources: [
       source('SavingKC canonical activity tasks', `${CRM_ORIGIN}/calendar`, generatedAt, 'lead_activities task, follow-up, callback and offer actions'),

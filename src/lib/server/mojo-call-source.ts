@@ -3,8 +3,10 @@ import {
   mapOfficialListCall,
   mapRecordingReportRow,
   type MojoCallListPage,
+  type MojoCallListQuery,
   type MojoCallSource,
 } from './mojo-call-ledger'
+import { mapCallingReportDial, type MojoDialCapture } from './mojo-dial-outcome'
 
 export const MOJO_MCP_RESOURCE = 'https://mcp.mojosells.com/mcp'
 export const MOJO_MCP_TOKEN_ENDPOINT = 'https://mcp.mojosells.com/oauth/token'
@@ -162,7 +164,7 @@ export function createSessionCallingReportSource(options: {
   sessionId: string
   baseUrl?: string
   fetchImpl?: FetchLike
-}): MojoCallSource {
+}): MojoCallSource & MojoDialReader {
   if (!options.sessionId.trim()) throw new Error('mojo_session_required')
   const fetchImpl = options.fetchImpl ?? fetch
   const baseUrl = (options.baseUrl ?? 'https://app71.mojosells.com').replace(/\/$/, '')
@@ -183,45 +185,127 @@ export function createSessionCallingReportSource(options: {
     return map
   }
 
+  async function loadCallingReportPage(query: MojoCallListQuery): Promise<{
+    totalCount: number
+    totalPages: number
+    page: number
+    rows: unknown[]
+    talk: Map<string, number>
+  }> {
+    const talk = await durationsFor(query.dateFrom, query.dateTo)
+    const page = positiveInt(query.page, 1)
+    const pageSize = Math.min(positiveInt(query.pageSize, 100), 500)
+    const response = await fetchImpl(`${baseUrl}${MOJO_CALLING_REPORT_PATH}`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        'content-type': 'application/json',
+        cookie: `sessionid=${options.sessionId}`,
+        referer: `${baseUrl}/reports/calling-report/`,
+      },
+      body: JSON.stringify(callingReportBody(query.dateFrom, query.dateTo, page, pageSize)),
+    })
+    if (response.status === 401 || response.status === 403) throw new Error('session_expired')
+    if (!response.ok) throw new Error(`mojo_calling_report_${response.status}`)
+    let payload: { total_count?: unknown; total_pages?: unknown; page?: unknown; results?: unknown }
+    try {
+      payload = await response.json()
+    } catch {
+      // Mojo answers an expired session with its login page, not JSON.
+      throw new Error('session_expired')
+    }
+    if (!Array.isArray(payload.results)) throw new Error('invalid_mojo_calling_report')
+    return {
+      totalCount: typeof payload.total_count === 'number' ? payload.total_count : payload.results.length,
+      totalPages: Math.max(1, typeof payload.total_pages === 'number' ? payload.total_pages : 1),
+      page: typeof payload.page === 'number' ? payload.page : page,
+      rows: payload.results,
+      talk,
+    }
+  }
+
   return {
     kind: 'mojo_session_calling_report',
     async listCalls(query) {
-      const talk = await durationsFor(query.dateFrom, query.dateTo)
-      const page = positiveInt(query.page, 1)
-      const pageSize = Math.min(positiveInt(query.pageSize, 100), 500)
-      const response = await fetchImpl(`${baseUrl}${MOJO_CALLING_REPORT_PATH}`, {
-        method: 'POST',
-        headers: {
-          accept: 'application/json, text/plain, */*',
-          'content-type': 'application/json',
-          cookie: `sessionid=${options.sessionId}`,
-          referer: `${baseUrl}/reports/calling-report/`,
-        },
-        body: JSON.stringify(callingReportBody(query.dateFrom, query.dateTo, page, pageSize)),
-      })
-      if (response.status === 401 || response.status === 403) throw new Error('session_expired')
-      if (!response.ok) throw new Error(`mojo_calling_report_${response.status}`)
-      let payload: { total_count?: unknown; total_pages?: unknown; page?: unknown; results?: unknown }
-      try {
-        payload = await response.json()
-      } catch {
-        // Mojo answers an expired session with its login page, not JSON.
-        throw new Error('session_expired')
-      }
-      if (!Array.isArray(payload.results)) throw new Error('invalid_mojo_calling_report')
-      const results = payload.results.map((row) => {
-        const id = row && typeof row === 'object' ? String((row as { id?: unknown }).id ?? '') : ''
-        return mapCallingReportRow(row, talk.get(id) ?? 0)
-      })
+      const loaded = await loadCallingReportPage(query)
       return {
-        totalCount: typeof payload.total_count === 'number' ? payload.total_count : results.length,
-        totalPages: Math.max(1, typeof payload.total_pages === 'number' ? payload.total_pages : 1),
-        page: typeof payload.page === 'number' ? payload.page : page,
-        results,
+        totalCount: loaded.totalCount,
+        totalPages: loaded.totalPages,
+        page: loaded.page,
         skippedUnkeyed: 0,
+        results: loaded.rows.map((row) => {
+          const id = row && typeof row === 'object' ? String((row as { id?: unknown }).id ?? '') : ''
+          return mapCallingReportRow(row, loaded.talk.get(id) ?? 0)
+        }),
+      }
+    },
+    async listDials(query) {
+      const loaded = await loadCallingReportPage(query)
+      return {
+        totalCount: loaded.totalCount,
+        totalPages: loaded.totalPages,
+        page: loaded.page,
+        skippedUnkeyed: 0,
+        results: loaded.rows.map((row) => {
+          const id = row && typeof row === 'object' ? String((row as { id?: unknown }).id ?? '') : ''
+          return mapCallingReportDial(row, loaded.talk.get(id) ?? 0)
+        }),
       }
     },
   }
+}
+
+export type MojoDialPage = {
+  totalCount: number
+  totalPages: number
+  page: number
+  results: MojoDialCapture[]
+  skippedUnkeyed: number
+}
+
+export type MojoDialReader = {
+  readonly kind: MojoCallSource['kind']
+  listDials(query: MojoCallListQuery): Promise<MojoDialPage>
+}
+
+/**
+ * Session first: the Calling Report carries the dialed number, which MCP
+ * list_calls masks. MCP remains the fallback when no browser session is stored.
+ */
+export function createMojoDialReader(options: {
+  env?: NodeJS.ProcessEnv
+  sessionId?: string | null
+  fetchImpl?: FetchLike
+  baseUrl?: string
+} = {}): { reader: MojoDialReader | null; auth: MojoMcpCredentialState } {
+  const env = options.env ?? process.env
+  const auth = mojoMcpCredentialState(env)
+  const sessionId = options.sessionId?.trim() ?? ''
+  if (sessionId) {
+    const source = createSessionCallingReportSource({
+      sessionId,
+      fetchImpl: options.fetchImpl,
+      baseUrl: options.baseUrl,
+    })
+    return { reader: source, auth }
+  }
+  if (auth.mode !== 'missing') {
+    const source = createOfficialMojoCallSource({ env, fetchImpl: options.fetchImpl })
+    return {
+      auth,
+      reader: {
+        kind: source.kind,
+        async listDials(query) {
+          const page = await source.listCalls(query)
+          return {
+            ...page,
+            results: page.results.map((fact) => ({ fact, dialedPhone: null, agentName: null })),
+          }
+        },
+      },
+    }
+  }
+  return { reader: null, auth }
 }
 
 /** All agents, whole Central-time days. Mojo rejects date_range=custom. */
