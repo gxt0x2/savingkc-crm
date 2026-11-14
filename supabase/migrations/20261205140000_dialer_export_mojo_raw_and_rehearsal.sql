@@ -1027,6 +1027,7 @@ CREATE OR REPLACE FUNCTION public.record_source_list_export_batch_v1(
 RETURNS jsonb
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
+SET jit = off
 AS $function$
 DECLARE
   v_actor text := nullif(btrim(coalesce(p_actor, '')), '');
