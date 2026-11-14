@@ -11,11 +11,11 @@ export const maxDuration = 300
 
 const HEADERS = { 'Cache-Control': 'no-store' }
 
-// 7:30am America/Chicago. vercel.json stores cron schedules in UTC, so the
-// schedule is '30 13 * * *' while Chicago is on standard time (UTC-6).
-// Daylight time (second Sunday in March through the first Sunday in November)
-// is UTC-5, and 13:30 UTC becomes 8:30am Chicago until the schedule moves to
-// '30 12 * * *'.
+// The day's calling list locks at 4:00am America/Chicago. vercel.json is UTC,
+// so the schedule is '0 8 * * *' (08:00 UTC). That is 2:00am CST (UTC-6) and
+// 3:00am CDT (UTC-5). 09:00 UTC would land on the 4:00am lock during daylight
+// time, so this stays an hour earlier all year. The run is bounded to a few
+// minutes and finishes before the lock.
 
 function failure(error: unknown) {
   const message = error instanceof Error ? error.message : ''
