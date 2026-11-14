@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  exportLineModeBlock,
+  propertyKey,
+  relationshipBucket,
   LEAD_CALL_ALLOW,
   LEAD_CALL_DEAD,
   LEAD_DEAD_ALLOW,
@@ -113,8 +116,8 @@ describe('dialer suppression labels', () => {
 
   it('keeps a null disposition and dataskip_dnc exportable', () => {
     const phone = '+18165550120'
-    expect(exportBlockReason(phone, { phones: [{ phone, lastDisposition: null, phoneConnected: null }] })).toBeNull()
-    expect(exportBlockReason(phone, { phones: [{ phone, phoneConnected: 'dataskip_dnc' }] })).toBeNull()
+    expect(exportBlockReason(phone, { phones: [{ phone, lastDisposition: null, phoneConnected: null, relationship: 'owner' }] })).toBeNull()
+    expect(exportBlockReason(phone, { phones: [{ phone, phoneConnected: 'dataskip_dnc', relationship: 'owner' }] })).toBeNull()
     expect(suppressionClass('phone_connected', 'dataskip_dnc')).toBe('allow')
   })
 
@@ -144,6 +147,121 @@ describe('dialer suppression labels', () => {
     for (const label of LEAD_DEAD_ALLOW) expect(suppressionClass('lead_dead_reason', label)).toBe('allow')
     for (const label of MOJO_ALLOW) expect(suppressionClass('mojo_outcome', label)).toBe('allow')
     for (const label of PHONE_CONNECTED_ALLOW) expect(suppressionClass('phone_connected', label)).toBe('allow')
+  })
+})
+
+describe('associate type and property owner fan-out', () => {
+  it('blocks neighbors and other non-family associates', () => {
+    const phone = '+18165550201'
+    for (const ownerType of ['Neighbor', 'Coworker', 'Past neighbor', 'Friend', 'Landlord', 'Tenant']) {
+      expect(relationshipBucket('relative', ownerType)).toBe('associate_non_family')
+      expect(exportBlockReason(phone, {
+        prospects: [{ id: 'p', ownerType }],
+        phones: [{ phone, prospectId: 'p', relationship: 'relative', lastDisposition: 'no_answer' }],
+      }, 'p')).toBe('associate_non_family')
+    }
+    expect(exportBlockReason(phone, {
+      phones: [{ phone, prospectId: 'p', relationship: 'associate' }],
+    })).toBe('associate_non_family')
+  })
+
+  it('blocks unknown, entity contacts, and a null tie on a non-owner row', () => {
+    const phone = '+18165550202'
+    expect(relationshipBucket('unknown', 'Individual')).toBe('relationship_unknown')
+    expect(relationshipBucket('entity_contact', null)).toBe('relationship_unknown')
+    expect(relationshipBucket(null, null)).toBe('relationship_unknown')
+    expect(relationshipBucket(null, 'Corporate')).toBe('relationship_unknown')
+    expect(exportBlockReason(phone, {
+      phones: [{ phone, prospectId: 'p', relationship: null }],
+    })).toBe('relationship_unknown')
+  })
+
+  it('dials a relative only while the property owner has no DNC', () => {
+    const owner = '+18165550210'
+    const relative = '+18165550211'
+    const prospects = [{ id: 'parcel', parcelId: 'P-100', county: 'jackson', street: '9 Elm', zip: '64111', ownerType: 'Individual' }]
+    const clear = {
+      prospects,
+      phones: [
+        { phone: owner, prospectId: 'parcel', relationship: 'owner', lastDisposition: 'no_answer' },
+        { phone: relative, prospectId: 'parcel', relationship: 'spouse', lastDisposition: 'no_answer' },
+      ],
+    }
+    expect(exportBlockReason(relative, clear, 'parcel')).toBeNull()
+    expect(exportBlockReason(owner, clear, 'parcel')).toBeNull()
+    const blocked = {
+      prospects,
+      phones: [
+        { phone: owner, prospectId: 'parcel', relationship: 'owner', lastDisposition: 'dnc_number' },
+        { phone: relative, prospectId: 'parcel', relationship: 'Child', lastDisposition: 'no_answer' },
+      ],
+    }
+    expect(exportBlockReason(owner, blocked, 'parcel')).toBe('prospect_dnc')
+    expect(exportBlockReason(relative, blocked, 'parcel')).toBe('property_owner_dnc_fanout')
+  })
+
+  it('fans an owner DNC across every phone on the parcel, including a DNC recorded on another prospect', () => {
+    const relative = '+18165550220'
+    const owner = '+18165550221'
+    expect(exportBlockReason(relative, {
+      prospects: [
+        { id: 'here', parcelId: 'AB 12', county: 'jackson', street: '1 Main', zip: '64111-1234' },
+        { id: 'elsewhere', parcelId: 'ZZ', county: 'clay', street: '2 Side', zip: '64116' },
+      ],
+      phones: [
+        { phone: owner, prospectId: 'here', relationship: 'co-owner', lastDisposition: 'no_answer' },
+        { phone: relative, prospectId: 'here', relationship: 'in-law', lastDisposition: 'no_answer' },
+        { phone: owner, prospectId: 'elsewhere', relationship: 'owner', lastDisposition: 'Take me off' },
+      ],
+    }, 'here')).toBe('property_owner_dnc_fanout')
+    expect(propertyKey({ id: 'x', parcelId: 'ab 12', county: 'jackson', street: '1 Main', zip: '64111' })).toBe('parcel:AB12')
+  })
+
+  it('uses county and street when the parcel and zip are blank', () => {
+    const relative = '+18165550230'
+    const owner = '+18165550231'
+    expect(propertyKey({ id: 'a', county: 'Jackson', street: '10 Oak St.', zip: '' })).toBe(
+      propertyKey({ id: 'b', county: 'jackson', street: '10 oak st', zip: null }),
+    )
+    expect(exportBlockReason(relative, {
+      prospects: [
+        { id: 'a', county: 'Jackson', street: '10 Oak St.', zip: '' },
+        { id: 'b', county: 'jackson', street: '10 oak st', zip: null },
+      ],
+      phones: [
+        { phone: owner, prospectId: 'a', relationship: 'owner', lastDisposition: 'fax' },
+        { phone: relative, prospectId: 'b', relationship: 'other relative', lastDisposition: 'no_answer' },
+      ],
+    }, 'b')).toBe('property_owner_dnc_fanout')
+  })
+
+  it('treats an opted-out or Mojo-DNC owner number as property DNC', () => {
+    const relative = '+18165550240'
+    const owner = '+18165550241'
+    const prospects = [{ id: 'a', parcelId: 'Z1', county: 'platte', street: '4 Pine', zip: '64152' }]
+    expect(exportBlockReason(relative, {
+      prospects,
+      phones: [
+        { phone: owner, prospectId: 'a', relationship: 'subject', lastDisposition: 'no_answer' },
+        { phone: relative, prospectId: 'a', relationship: 'parent', lastDisposition: 'no_answer' },
+      ],
+      optOuts: [{ phone: owner, optedOut: true }],
+    }, 'a')).toBe('property_owner_dnc_fanout')
+    expect(exportBlockReason(relative, {
+      prospects,
+      phones: [
+        { phone: owner, prospectId: 'a', relationship: 'subject', lastDisposition: null },
+        { phone: relative, prospectId: 'a', relationship: 'sibling', lastDisposition: 'no_answer' },
+      ],
+      mojoEvents: [{ phone: owner, outcome: 'dnc' }],
+    }, 'a')).toBe('property_owner_dnc_fanout')
+  })
+
+  it('refuses line mode above 1 while multi-line export is suspended', () => {
+    expect(exportLineModeBlock(1)).toBeNull()
+    expect(exportLineModeBlock(2)).toBe('multi_line_suspended')
+    expect(exportLineModeBlock(2, false)).toBeNull()
+    expect(exportLineModeBlock(0)).toBe('multi_line_suspended')
   })
 })
 

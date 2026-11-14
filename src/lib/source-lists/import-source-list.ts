@@ -44,6 +44,7 @@ const CLIENT_ERRORS = new Set([
   'source_list_export_batch_mismatch',
   'source_list_export_too_large',
   'dialer_label_unmapped',
+  'multi_line_suspended',
 ])
 
 const RPC_ERROR_RESPONSE: Record<string, { status: number; message: string }> = {
@@ -53,6 +54,7 @@ const RPC_ERROR_RESPONSE: Record<string, { status: number; message: string }> = 
   source_list_export_batch_mismatch: { status: 400, message: 'That export batch does not include this row.' },
   source_list_export_too_large: { status: 409, message: 'This export is larger than 10000 phones. Filter by list type, county, or source list and run it again.' },
   dialer_label_unmapped: { status: 409, message: 'The dialer export is paused because a phone label is not classified.' },
+  multi_line_suspended: { status: 409, message: 'Multi-line dialer export is suspended. Export one line at a time.' },
 }
 
 export function sourceListRpcError(error: SourceListRpcResult['error']): SourceListImportError {
