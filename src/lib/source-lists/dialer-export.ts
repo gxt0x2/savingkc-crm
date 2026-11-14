@@ -25,6 +25,9 @@ export const DIALER_EXPORT_COLUMNS = [
   'source_list_id',
   'phone_origin',
   'export_batch_id',
+  'requires_licensee_disclosure',
+  'ks_license_unconfirmed',
+  'basis',
 ] as const
 
 export interface DialerExportRow {
@@ -47,6 +50,9 @@ export interface DialerExportRow {
   source_list_id: string
   phone_origin: string
   export_batch_id: string
+  requires_licensee_disclosure: boolean
+  ks_license_unconfirmed: boolean
+  basis: string
 }
 
 export interface DialerExportExclusion {
@@ -118,6 +124,11 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
     source_list_id: sourceListId,
     phone_origin: typeof row.phone_origin === 'string' ? row.phone_origin : '',
     export_batch_id: exportBatchId,
+    requires_licensee_disclosure: row.requires_licensee_disclosure === true || row.requires_licensee_disclosure === 'true',
+    ks_license_unconfirmed: row.ks_license_unconfirmed === true || row.ks_license_unconfirmed === 'true' || row.state === 'KS',
+    basis: typeof row.basis === 'string' && row.basis
+      ? row.basis
+      : (typeof row.list_type === 'string' ? row.list_type : ''),
   }
 }
 

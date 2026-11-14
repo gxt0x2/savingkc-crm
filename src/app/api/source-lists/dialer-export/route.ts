@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
+import { syncMarketFlags } from '@/lib/market-check/run'
 import { dialerExportCsv, recordDialerExportBatch } from '@/lib/source-lists/dialer-export'
 import { normalizeSourceListLane, SourceListImportError, SOURCE_LIST_COUNTIES } from '@/lib/source-lists/csv'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -53,7 +54,9 @@ export async function GET(request: Request) {
     const lineMode = lineModeRaw === null || lineModeRaw.trim() === ''
       ? 1
       : (/^\d+$/.test(lineModeRaw.trim()) ? Number(lineModeRaw.trim()) : 0)
-    const scrub = await recordDialerExportBatch(supabaseAdmin(), actor.email, {
+    const db = supabaseAdmin()
+    await syncMarketFlags(db)
+    const scrub = await recordDialerExportBatch(db, actor.email, {
       listType: selected.lane?.listType ?? null,
       county: selected.county,
       state: selected.lane?.state ?? null,
@@ -73,6 +76,10 @@ export async function GET(request: Request) {
       'X-Source-List-Export-Batch': scrub.exportBatchId,
       'X-Dialer-Export-Excluded-Counts': JSON.stringify(scrub.excludedCounts),
     }
+    const expiredFile = selected.lane?.listType === 'mls_expired'
+    const filename = expiredFile
+      ? 'EXPIRED · licensee disclosure · single-line.csv'
+      : 'source-list-dialer-export.csv'
 
     if (format === 'json') {
       return NextResponse.json({
@@ -87,7 +94,7 @@ export async function GET(request: Request) {
       headers: {
         ...headers,
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': 'attachment; filename="source-list-dialer-export.csv"',
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     })
   } catch (error) {
