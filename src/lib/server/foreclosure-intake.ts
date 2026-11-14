@@ -14,12 +14,14 @@ import {
   normalizeNoticeKey,
   normalizeParcelId,
   normalizePartyName,
-  normalizeStreetAddress,
+  reviewFlagForCandidates,
+  splitPropertyAddress,
   noticeTypeForIntake,
   openingTimeline,
   parseIntakeBatch,
   prepareIntakeRow,
 } from '@/lib/prospecting/foreclosure-intake'
+import { liveFilingSalePatch, preExportFilter } from '@/lib/prospecting/foreclosure-intake-gates'
 import {
   appendNoticeFileEvents,
   classifyOwnerEntity,
@@ -67,6 +69,9 @@ interface IntakeStored {
   notice_timeline: unknown
   matched_prospect_id: string | null
   promoted_prospect_id: string | null
+  approved_at: string | null
+  match_flag: 'possible_match' | 'identity_conflict' | null
+  unit_key: string | null
   raw_payload?: unknown
 }
 
@@ -104,7 +109,7 @@ export async function ingestForeclosureBatch(body: unknown): Promise<IntakeBatch
 export async function listPendingForeclosureIntake(): Promise<IntakeReviewRow[]> {
   const { data, error } = await supabase
     .from(INTAKE)
-    .select('id, source_name, source_url, notice_timeline, sale_date, county, state, owner_name, trustee_or_firm, equity_band, review_status')
+    .select('id, source_name, source_url, notice_timeline, sale_date, county, state, owner_name, trustee_or_firm, equity_band, review_status, match_flag')
     .eq('review_status', 'pending')
     .order('sale_date', { ascending: true, nullsFirst: false })
     .limit(200)
@@ -151,14 +156,17 @@ export async function attemptForeclosureIntakeDialerOrExport(id: string): Promis
   const phones: string[] = []
   const optedOut = await optedOutPhone(phones)
   const ksLicenseConfirmed = process.env.KS_FORECLOSURE_LICENSE_CONFIRMED === 'true' ? true : null
-  const blockers = foreclosureIntakeOutreachBlockers({
+  const gate = {
     reviewStatus: row.review_status,
+    approvedAt: row.approved_at,
     state: row.state,
     county: row.county,
     dnc: false,
     optedOut,
     ksLicenseConfirmed,
-  })
+  }
+  const blockers = foreclosureIntakeOutreachBlockers(gate)
+  if (blockers.length === 0 && preExportFilter([gate], new Date()).length === 0) blockers.push('calling_list_locked')
   if (blockers.length === 0) blockers.push('intake_holding_area')
   return { allowed: false, blockers }
 }
@@ -172,12 +180,14 @@ async function ingestOne(input: Record<string, unknown>, pullDate: string | null
   const control = county ? await loadControl(county, noticeTypeForIntake(definition, stage)) : null
   const prepared = prepareIntakeRow(input, sourceRow, control, pullDate)
   if (!prepared.ok) return prepared
-  const match = bestIntakeMatch(prepared.record, await loadCandidates(prepared.record))
+  const candidates = await loadCandidates(prepared.record)
+  const match = bestIntakeMatch(prepared.record, candidates)
   if (match?.candidate.kind === 'intake') {
     await appendToIntake(match.candidate.id, prepared.record)
     return { ok: true, appended: true }
   }
-  await insertIntake(prepared.record, match?.candidate ?? null)
+  const flag = match ? null : reviewFlagForCandidates(prepared.record, candidates)
+  await insertIntake(prepared.record, match?.candidate.kind === 'filing' ? match.candidate : null, flag)
   return { ok: true, appended: false }
 }
 
@@ -214,7 +224,11 @@ async function appendToIntake(id: string, record: PreparedIntake) {
   if (error) throw databaseError(error)
 }
 
-async function insertIntake(record: PreparedIntake, filing: IntakeMatchCandidate | null) {
+async function insertIntake(
+  record: PreparedIntake,
+  filing: IntakeMatchCandidate | null,
+  flag: { flag: 'possible_match' | 'identity_conflict'; candidate: IntakeMatchCandidate } | null,
+) {
   const prior = filing?.saleDate ? [{
     date: null,
     source: filing.sourceName,
@@ -237,7 +251,14 @@ async function insertIntake(record: PreparedIntake, filing: IntakeMatchCandidate
       saleDate: record.saleDate,
       url: record.sourceUrl,
     }).timeline
-  const { error } = await supabase.from(INTAKE).insert(intakePayload(record, timeline, filing?.kind === 'filing' ? filing.id : null))
+  const relatedId = flag?.candidate.kind === 'filing' ? flag.candidate.id : null
+  const { error } = await supabase.from(INTAKE).insert(intakePayload(
+    record,
+    timeline,
+    filing?.id ?? null,
+    flag?.flag ?? null,
+    relatedId,
+  ))
   if (error) throw databaseError(error)
 }
 
@@ -248,7 +269,10 @@ async function approveOne(actor: AuthenticatedActor, id: string) {
   if (isProtectedSandboxFiling({ ownerName: row.owner_name, propertyAddress: row.property_address })) {
     throw new ForeclosureError('sandbox_protected', 409, 'The sandbox filing stays unchanged.')
   }
-  const promotedId = row.matched_prospect_id
+  if (row.match_flag === 'identity_conflict') {
+    throw new ForeclosureError('identity_conflict', 409, 'This notice conflicts with another property. Address, owner, and parcel stay unchanged.')
+  }
+  const promotedId = row.matched_prospect_id && row.match_flag !== 'possible_match'
     ? await updateMatchedFiling(actor, row)
     : await insertFiling(actor, row)
   const { error } = await supabase.from(INTAKE).update({
@@ -274,11 +298,14 @@ async function rejectOne(actor: AuthenticatedActor, id: string) {
 }
 
 async function updateMatchedFiling(actor: AuthenticatedActor, row: IntakeStored): Promise<string> {
-  const { data, error } = await supabase.from(PROSPECTS).select('id, owner_name, situs, sale_date, attorney_name, notice_timeline, status').eq('id', row.matched_prospect_id).maybeSingle<{
+  const { data, error } = await supabase.from(PROSPECTS).select('id, owner_name, situs, parcel_id, zip, sale_date, sale_status, attorney_name, notice_timeline, status').eq('id', row.matched_prospect_id).maybeSingle<{
     id: string
     owner_name: string
     situs: string
+    parcel_id: string | null
+    zip: string | null
     sale_date: string | null
+    sale_status: string | null
     attorney_name: string | null
     notice_timeline: unknown
     status: string
@@ -288,14 +315,39 @@ async function updateMatchedFiling(actor: AuthenticatedActor, row: IntakeStored)
   if (isProtectedSandboxFiling({ ownerName: data.owner_name, situs: data.situs })) {
     throw new ForeclosureError('sandbox_protected', 409, 'The sandbox filing stays unchanged.')
   }
-  if (row.sale_date && row.sale_date !== data.sale_date) {
+  const decision = liveFilingSalePatch({
+    ownerName: data.owner_name,
+    situs: data.situs,
+    parcelId: data.parcel_id,
+    zip: data.zip,
+    saleDate: data.sale_date,
+    saleStatus: data.sale_status,
+  }, {
+    ownerName: row.owner_name,
+    propertyAddress: row.property_address,
+    parcelId: row.parcel_id,
+    zip: row.zip,
+    saleDate: row.sale_date,
+    saleStatus: row.sale_status,
+  })
+  if (!decision.ok) {
+    await supabase.from(INTAKE).update({
+      match_flag: 'identity_conflict',
+      matched_prospect_id: null,
+      related_prospect_id: data.id,
+      review_status: 'pending',
+      updated_at: new Date().toISOString(),
+    }).eq('id', row.id)
+    throw new ForeclosureError('identity_conflict', 409, 'This notice conflicts with a live filing. Address, owner, and parcel were left unchanged.')
+  }
+  if (decision.patch.sale_date || decision.patch.sale_status) {
     const timeline = appendNoticeFileEvents(
       parseNoticeTimeline(data.notice_timeline),
       { saleDate: data.sale_date, attorneyName: data.attorney_name },
-      { saleDate: row.sale_date, attorneyName: data.attorney_name },
+      { saleDate: decision.patch.sale_date ?? data.sale_date, attorneyName: data.attorney_name },
     )
     const { error: updateError } = await supabase.from(PROSPECTS).update({
-      sale_date: row.sale_date,
+      ...decision.patch,
       notice_timeline: timeline,
       updated_by: actor.email,
       updated_at: new Date().toISOString(),
@@ -384,6 +436,7 @@ function intakeCandidate(row: Record<string, unknown>): IntakeMatchCandidate {
     parcelId: normalizeParcelId(row.parcel_id),
     addressKey: typeof row.address_key === 'string' ? row.address_key : null,
     zip: typeof row.zip === 'string' ? row.zip : null,
+    unitKey: typeof row.unit_key === 'string' ? row.unit_key : null,
     ownerKey: typeof row.owner_key === 'string' ? row.owner_key : null,
     trusteeKey: typeof row.trustee_key === 'string' ? row.trustee_key : null,
     saleDate: typeof row.sale_date === 'string' ? row.sale_date : null,
@@ -404,12 +457,14 @@ function filingCandidate(row: Record<string, unknown>): IntakeMatchCandidate {
   const owner = typeof row.owner_name === 'string' ? row.owner_name : null
   const trustee = typeof row.trustee_or_firm === 'string' ? row.trustee_or_firm : null
   const situs = typeof row.situs === 'string' ? row.situs : null
+  const address = splitPropertyAddress(situs)
   return {
     id: String(row.id),
     kind: 'filing',
     parcelId: normalizeParcelId(row.parcel_id),
-    addressKey: normalizeStreetAddress(situs),
+    addressKey: address.street,
     zip: typeof row.zip === 'string' ? row.zip : null,
+    unitKey: address.unit,
     ownerKey: normalizePartyName(owner),
     trusteeKey: normalizePartyName(trustee),
     saleDate: typeof row.sale_date === 'string' ? row.sale_date : null,
@@ -423,7 +478,13 @@ function filingCandidate(row: Record<string, unknown>): IntakeMatchCandidate {
   }
 }
 
-function intakePayload(record: PreparedIntake, timeline: IntakeTimelineEvent[], matchedProspectId: string | null) {
+function intakePayload(
+  record: PreparedIntake,
+  timeline: IntakeTimelineEvent[],
+  matchedProspectId: string | null,
+  matchFlag: 'possible_match' | 'identity_conflict' | null = null,
+  relatedProspectId: string | null = null,
+) {
   return {
     source_key: record.sourceKey,
     source_name: record.sourceName,
@@ -445,6 +506,7 @@ function intakePayload(record: PreparedIntake, timeline: IntakeTimelineEvent[], 
     parcel_id: record.parcelId,
     zip: record.zip,
     address_key: record.addressKey,
+    unit_key: record.unitKey,
     owner_key: record.ownerKey,
     trustee_key: record.trusteeKey,
     notice_key: record.noticeKey,
@@ -455,6 +517,8 @@ function intakePayload(record: PreparedIntake, timeline: IntakeTimelineEvent[], 
     equity_band: record.equityBand,
     notice_timeline: timeline,
     matched_prospect_id: matchedProspectId,
+    match_flag: matchFlag,
+    related_prospect_id: relatedProspectId,
   }
 }
 
@@ -507,6 +571,7 @@ function toReviewRow(row: IntakeStored): IntakeReviewRow {
     trusteeOrFirm: row.trustee_or_firm,
     equityBand: row.equity_band,
     reviewStatus: row.review_status,
+    matchFlag: row.match_flag,
   }
 }
 

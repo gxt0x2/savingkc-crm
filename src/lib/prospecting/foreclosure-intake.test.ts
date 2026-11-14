@@ -7,6 +7,7 @@ import {
   bestIntakeMatch,
   equityEnrichmentHook,
   extractZip,
+  matchDisposition,
   foreclosureIntakeOutreachBlockers,
   intakeRowsReachableForDialerOrExport,
   intakeSourceAcceptsRows,
@@ -19,6 +20,7 @@ import {
   type IntakeMatchCandidate,
   type PreparedIntake,
 } from '@/lib/prospecting/foreclosure-intake'
+import { callingListExportDay, liveFilingSalePatch, preExportFilter } from '@/lib/prospecting/foreclosure-intake-gates'
 
 const enabled = { enabled: true }
 const running = { paused: false }
@@ -52,10 +54,11 @@ function candidate(overrides: Partial<IntakeMatchCandidate> = {}): IntakeMatchCa
   return {
     id: 'intake-1',
     kind: 'intake',
-    parcelId: null,
-    addressKey: null,
-    zip: null,
-    ownerKey: null,
+  parcelId: null,
+  addressKey: null,
+  zip: null,
+  unitKey: null,
+  ownerKey: null,
     trusteeKey: null,
     saleDate: null,
     noticeKey: null,
@@ -131,10 +134,10 @@ describe('foreclosure intake matching', () => {
     expect(match).toMatchObject({ tier: 'address_zip', candidate: { id: 'street' } })
   })
 
-  it('matches normalized owner, trustee, and sale date when address is unknown', () => {
+  it('matches owner, trustee, and sale date only when the property also agrees', () => {
     const incoming = prepared({
       parcel_id: '',
-      property_address: 'No street listed',
+      property_address: '100 Sample Street, Kansas City, MO 64108',
       owner_or_defendant: 'Homeowner, Sample',
       plaintiff_or_trustee_firm: 'Sample Trustee, LLC',
       sale_date: '2026-12-01',
@@ -143,6 +146,9 @@ describe('foreclosure intake matching', () => {
     const match = bestIntakeMatch(incoming, [
       candidate({
         id: 'party',
+        addressKey: '100 sample st',
+        zip: '64108',
+        unitKey: null,
         ownerKey: 'sample homeowner',
         trusteeKey: 'sample trustee llc',
         saleDate: '2026-12-01',
@@ -151,12 +157,107 @@ describe('foreclosure intake matching', () => {
     expect(match).toMatchObject({ tier: 'owner_trustee_sale', candidate: { id: 'party' } })
   })
 
-  it('uses the case or notice number as a second key', () => {
-    const incoming = prepared({ parcel_id: '', property_address: '', sale_date: '2026-12-15' })
+  it('flags owner, trustee, and sale date across two addresses instead of merging', () => {
+    const incoming = prepared({
+      parcel_id: '',
+      property_address: '100 Main St, Kansas City, MO 64108',
+      owner_or_defendant: 'Sample Homeowner',
+      plaintiff_or_trustee_firm: 'Sample Trustee LLC',
+      sale_date: '2026-12-01',
+    })
+    const other = candidate({
+      id: 'other-house',
+      addressKey: '200 oak ave',
+      zip: '64111',
+      ownerKey: incoming.ownerKey,
+      trusteeKey: incoming.trusteeKey,
+      saleDate: '2026-12-01',
+    })
+    expect(bestIntakeMatch(incoming, [other])).toBeNull()
+    expect(matchDisposition(incoming, other)).toBe('possible_match')
+  })
+
+  it('uses the case or notice number only when the property agrees', () => {
+    const incoming = prepared({
+      parcel_id: '',
+      property_address: '100 Sample Street, Kansas City, MO 64108',
+      sale_date: '2026-12-15',
+    })
     const match = bestIntakeMatch(incoming, [
-      candidate({ id: 'case', noticeKey: incoming.noticeKey, saleDate: '2026-12-01' }),
+      candidate({
+        id: 'case',
+        noticeKey: incoming.noticeKey,
+        addressKey: '100 sample st',
+        zip: '64108',
+        saleDate: '2026-12-01',
+      }),
     ])
     expect(match).toMatchObject({ tier: 'case_or_notice', candidate: { id: 'case' } })
+  })
+
+  it('does not merge the same case id on two properties', () => {
+    const incoming = prepared({
+      parcel_id: '',
+      property_address: '100 Main St, Kansas City, MO 64108',
+    })
+    const other = candidate({
+      id: 'other-case',
+      noticeKey: incoming.noticeKey,
+      addressKey: '200 oak ave',
+      zip: '64111',
+    })
+    expect(bestIntakeMatch(incoming, [other])).toBeNull()
+    expect(matchDisposition(incoming, other)).toBe('identity_conflict')
+  })
+
+  it('keeps different units on the same street from merging', () => {
+    const apt2 = prepared({ parcel_id: '', property_address: '100 Main St, Apt 2, Kansas City, MO 64108' })
+    const apt3 = prepared({ parcel_id: '', property_address: '100 Main St, Apt 3, Kansas City, MO 64108' })
+    expect(apt2.addressKey).toBe('100 main st')
+    expect(apt2.unitKey).toBe('2')
+    expect(apt3.unitKey).toBe('3')
+    expect(bestIntakeMatch(apt2, [
+      candidate({ id: 'apt-3', addressKey: apt3.addressKey, zip: '64108', unitKey: '3' }),
+    ])).toBeNull()
+  })
+
+  it('does not merge a shared parcel when the units differ', () => {
+    const incoming = prepared({ parcel_id: 'PARCEL-100', property_address: '100 Main St, Apt 2, Kansas City, MO 64108' })
+    const other = candidate({ id: 'apt-3', parcelId: 'PARCEL100', addressKey: '100 main st', zip: '64108', unitKey: '3' })
+    expect(matchDisposition(incoming, other)).toBe('identity_conflict')
+    expect(bestIntakeMatch(incoming, [other])).toBeNull()
+  })
+
+  it('does not overwrite address, parcel, or owner on a live filing', () => {
+    const existing = {
+      ownerName: 'Sample Homeowner',
+      situs: '100 Main St, Kansas City, MO 64108',
+      parcelId: 'PARCEL-100',
+      zip: '64108',
+      saleDate: '2026-12-01',
+      saleStatus: 'scheduled',
+    }
+    const conflict = liveFilingSalePatch(existing, {
+      ownerName: 'Another Owner',
+      propertyAddress: '200 Oak Ave, Kansas City, MO 64111',
+      parcelId: 'OTHER',
+      zip: '64111',
+      saleDate: '2026-12-15',
+      saleStatus: 'scheduled',
+    })
+    expect(conflict).toEqual({ ok: false, code: 'identity_conflict' })
+    const patch = liveFilingSalePatch(existing, {
+      ownerName: 'Sample Homeowner',
+      propertyAddress: '100 Main St, Kansas City, MO 64108',
+      parcelId: 'PARCEL-100',
+      zip: '64108',
+      saleDate: '2026-12-15',
+      saleStatus: 'postponed',
+    })
+    expect(patch).toEqual({ ok: true, patch: { sale_date: '2026-12-15', sale_status: 'postponed' } })
+    if (patch.ok) {
+      expect(Object.keys(patch.patch).sort()).toEqual(['sale_date', 'sale_status'])
+    }
   })
 
   it('does not match the Ernest Dodson sandbox filing', () => {
@@ -275,5 +376,18 @@ describe('foreclosure intake dialer and export gate', () => {
       optedOut: false,
       ksLicenseConfirmed: true,
     }])).toEqual([])
+  })
+
+  it('keeps an approval after the 4:00am CT lock off that day\'s export', () => {
+    const beforeLock = new Date('2026-11-14T09:30:00.000Z')
+    const atLock = new Date('2026-11-14T10:00:00.000Z')
+    expect(callingListExportDay(beforeLock)).toBe('2026-11-14')
+    expect(callingListExportDay(atLock)).toBe('2026-11-15')
+    const now = new Date('2026-11-14T14:00:00.000Z')
+    const rows = preExportFilter([
+      { reviewStatus: 'approved' as const, approvedAt: beforeLock.toISOString(), state: 'MO', county: 'jackson', dnc: false, optedOut: false, ksLicenseConfirmed: true },
+      { reviewStatus: 'approved' as const, approvedAt: atLock.toISOString(), state: 'MO', county: 'jackson', dnc: false, optedOut: false, ksLicenseConfirmed: true },
+    ], now)
+    expect(rows.map((row) => row.approvedAt)).toEqual([beforeLock.toISOString()])
   })
 })

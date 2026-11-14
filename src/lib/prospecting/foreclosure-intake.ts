@@ -90,6 +90,7 @@ export interface PreparedIntake {
   parcelId: string | null
   zip: string | null
   addressKey: string | null
+  unitKey: string | null
   ownerKey: string | null
   trusteeKey: string | null
   noticeKey: string | null
@@ -102,6 +103,8 @@ export interface PreparedIntake {
 }
 
 export type IntakeMatchTier = 'parcel_id' | 'address_zip' | 'owner_trustee_sale' | 'case_or_notice'
+export type IntakeMatchDisposition = IntakeMatchTier | 'possible_match' | 'identity_conflict'
+export type IntakeMatchFlag = 'possible_match' | 'identity_conflict'
 
 export interface IntakeMatchCandidate {
   id: string
@@ -109,6 +112,7 @@ export interface IntakeMatchCandidate {
   parcelId: string | null
   addressKey: string | null
   zip: string | null
+  unitKey: string | null
   ownerKey: string | null
   trusteeKey: string | null
   saleDate: string | null
@@ -142,6 +146,7 @@ export interface IntakeReviewRow {
   trusteeOrFirm: string | null
   equityBand: string | null
   reviewStatus: 'pending' | 'approved' | 'rejected'
+  matchFlag?: IntakeMatchFlag | null
 }
 
 export function sourceToken(raw: unknown): string {
@@ -202,17 +207,75 @@ export function normalizePartyName(raw: unknown): string | null {
   return value || null
 }
 
-export function normalizeStreetAddress(raw: unknown): string | null {
-  const original = text(raw)
-  if (!original) return null
-  const line = (original.split(',')[0] ?? original)
+const UNIT_WORD = String.raw`apt|apartment|unit|ste|suite|bldg|building|fl|floor|rm|room`
+
+function inlineUnitPattern(): RegExp {
+  return new RegExp(String.raw`\s(?:${UNIT_WORD}|#)\s*#?\s*[a-z0-9-]+\s*$`, 'i')
+}
+
+function unitToken(part: string, inline: boolean): string | null {
+  const cleaned = part.replace(/\./g, ' ').replace(/\s+/g, ' ').trim()
+  const pattern = inline
+    ? new RegExp(String.raw`(?:${UNIT_WORD}|#)\s*#?\s*([a-z0-9-]+)\s*$`, 'i')
+    : new RegExp(String.raw`^(?:${UNIT_WORD}|#)\s*#?\s*([a-z0-9-]+)$`, 'i')
+  return pattern.exec(cleaned)?.[1]?.toLowerCase() ?? null
+}
+
+function normalizeStreetLine(line: string): string | null {
+  const value = line
     .toLowerCase()
     .replace(/[#.]/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  if (!line) return null
-  return line.split(' ').map((part) => STREET_SUFFIX[part] ?? DIRECTION[part] ?? part).join(' ')
+  if (!value) return null
+  return value.split(' ').map((part) => STREET_SUFFIX[part] ?? DIRECTION[part] ?? part).join(' ')
+}
+
+export function splitPropertyAddress(raw: unknown): { street: string | null; unit: string | null } {
+  const original = text(raw)
+  if (!original) return { street: null, unit: null }
+  const parts = original.split(',').map((part) => part.trim()).filter(Boolean)
+  let streetLine = parts[0] ?? ''
+  let unit = unitToken(streetLine, true)
+  if (unit) streetLine = streetLine.replace(inlineUnitPattern(), '').trim()
+  if (!unit) {
+    for (const part of parts.slice(1)) {
+      unit = unitToken(part, false)
+      if (unit) break
+    }
+  }
+  return { street: normalizeStreetLine(streetLine), unit }
+}
+
+export function normalizeStreetAddress(raw: unknown): string | null {
+  return splitPropertyAddress(raw).street
+}
+
+export function normalizeUnit(raw: unknown): string | null {
+  if (typeof raw === 'string' && raw.trim()) {
+    const direct = unitToken(raw, false)
+    if (direct) return direct
+  }
+  return splitPropertyAddress(raw).unit
+}
+
+/** Units must match. A unit on only one side is not a match. Both absent is a match. */
+export function unitsAgree(left: string | null | undefined, right: string | null | undefined): boolean {
+  const first = left || null
+  const second = right || null
+  if (first === null && second === null) return true
+  if (first === null || second === null) return false
+  return first === second
+}
+
+export function propertyAgrees(
+  left: { addressKey: string | null; zip: string | null; unitKey: string | null },
+  right: { addressKey: string | null; zip: string | null; unitKey: string | null },
+): boolean {
+  if (!left.addressKey || !left.zip || !right.addressKey || !right.zip) return false
+  if (left.addressKey !== right.addressKey || left.zip !== right.zip) return false
+  return unitsAgree(left.unitKey, right.unitKey)
 }
 
 export function extractZip(address: unknown, explicit?: unknown): string | null {
@@ -326,7 +389,8 @@ export function prepareIntakeRow(
       stage,
       parcelId,
       zip,
-      addressKey: normalizeStreetAddress(address),
+      addressKey: splitPropertyAddress(address).street,
+      unitKey: splitPropertyAddress(address).unit,
       ownerKey: normalizePartyName(owner),
       trusteeKey: normalizePartyName(party),
       noticeKey: normalizeNoticeKey(noticeId),
@@ -398,19 +462,47 @@ export function appendIntakeNotice(
   }
 }
 
-export function matchTier(incoming: PreparedIntake, candidate: IntakeMatchCandidate): IntakeMatchTier | null {
+export function matchDisposition(incoming: PreparedIntake, candidate: IntakeMatchCandidate): IntakeMatchDisposition | null {
   if (candidate.kind === 'filing' && isProtectedSandboxFiling({ ownerName: candidate.ownerName, situs: candidate.situs })) return null
-  if (incoming.parcelId && candidate.parcelId && incoming.parcelId !== candidate.parcelId) return null
-  if (incoming.parcelId && candidate.parcelId && incoming.parcelId === candidate.parcelId) return 'parcel_id'
-  if (incoming.addressKey && incoming.zip && incoming.addressKey === candidate.addressKey && incoming.zip === candidate.zip) return 'address_zip'
-  if (
+  const sameParcel = Boolean(incoming.parcelId && candidate.parcelId && incoming.parcelId === candidate.parcelId)
+  const parcelConflict = Boolean(incoming.parcelId && candidate.parcelId && incoming.parcelId !== candidate.parcelId)
+  const sameNotice = Boolean(incoming.noticeKey && candidate.noticeKey && incoming.noticeKey === candidate.noticeKey)
+  const sameParty = Boolean(
     incoming.ownerKey && incoming.trusteeKey && incoming.saleDate
     && incoming.ownerKey === candidate.ownerKey
     && incoming.trusteeKey === candidate.trusteeKey
     && incoming.saleDate === candidate.saleDate
-  ) return 'owner_trustee_sale'
-  if (incoming.noticeKey && candidate.noticeKey && incoming.noticeKey === candidate.noticeKey) return 'case_or_notice'
+  )
+  const sameProperty = propertyAgrees(incoming, candidate)
+  if (parcelConflict) return sameNotice ? 'identity_conflict' : null
+  if (sameParcel && !unitsAgree(incoming.unitKey, candidate.unitKey)) return 'identity_conflict'
+  if (sameParcel) return 'parcel_id'
+  if (sameNotice && sameProperty) return 'case_or_notice'
+  if (sameParty && sameProperty) return 'owner_trustee_sale'
+  if (sameProperty) return 'address_zip'
+  if (sameParty) return 'possible_match'
+  if (sameNotice) return 'identity_conflict'
   return null
+}
+
+export function matchTier(incoming: PreparedIntake, candidate: IntakeMatchCandidate): IntakeMatchTier | null {
+  const disposition = matchDisposition(incoming, candidate)
+  if (disposition === 'case_or_notice' && propertyAgrees(incoming, candidate)) return 'case_or_notice'
+  if (disposition === 'parcel_id' || disposition === 'address_zip' || disposition === 'owner_trustee_sale') return disposition
+  return null
+}
+
+export function reviewFlagForCandidates(
+  incoming: PreparedIntake,
+  candidates: readonly IntakeMatchCandidate[],
+): { flag: IntakeMatchFlag; candidate: IntakeMatchCandidate } | null {
+  let possible: IntakeMatchCandidate | null = null
+  for (const candidate of candidates) {
+    const disposition = matchDisposition(incoming, candidate)
+    if (disposition === 'identity_conflict') return { flag: 'identity_conflict', candidate }
+    if (disposition === 'possible_match') possible = candidate
+  }
+  return possible ? { flag: 'possible_match', candidate: possible } : null
 }
 
 export function bestIntakeMatch(

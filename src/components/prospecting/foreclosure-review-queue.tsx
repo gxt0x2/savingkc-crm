@@ -25,6 +25,7 @@ export interface ReviewQueueRow {
   trusteeOrFirm: string | null
   equityBand: string | null
   reviewStatus: 'pending' | 'approved' | 'rejected'
+  matchFlag?: 'possible_match' | 'identity_conflict' | null
 }
 
 async function readJson<T>(response: Response): Promise<T & { error?: string }> {
@@ -197,6 +198,8 @@ export function ForeclosureReviewQueue({ fixtures = EMPTY_FIXTURES }: { fixtures
                     <span className="fc-status-cell">
                       {row.sourceName}
                       {row.demo ? <span className="fc-sample">Sample</span> : null}
+                      {row.matchFlag === 'possible_match' ? <span className="fc-sample">Possible match</span> : null}
+                      {row.matchFlag === 'identity_conflict' ? <span className="fc-sample">Conflict</span> : null}
                     </span>
                   </td>
                   <td>

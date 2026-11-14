@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS public.mortgage_foreclosure_intake (
   parcel_id text,
   zip text,
   address_key text,
+  unit_key text,
   owner_key text,
   trustee_key text,
   notice_key text,
@@ -57,6 +58,8 @@ CREATE TABLE IF NOT EXISTS public.mortgage_foreclosure_intake (
   recorder_confirmed boolean,
   equity_band text,
   notice_timeline jsonb NOT NULL DEFAULT '[]'::jsonb,
+  match_flag text,
+  related_prospect_id uuid REFERENCES public.mortgage_foreclosure_prospects(id) ON DELETE SET NULL,
   matched_prospect_id uuid REFERENCES public.mortgage_foreclosure_prospects(id) ON DELETE SET NULL,
   promoted_prospect_id uuid REFERENCES public.mortgage_foreclosure_prospects(id) ON DELETE SET NULL,
   approved_by text,
@@ -79,6 +82,9 @@ CREATE TABLE IF NOT EXISTS public.mortgage_foreclosure_intake (
   ),
   CONSTRAINT mortgage_foreclosure_intake_equity_band_check CHECK (
     equity_band IS NULL OR equity_band IN ('strong_100k+', 'ideal_75k+', 'thin_40_74', 'kill_lt40', 'unknown')
+  ),
+  CONSTRAINT mortgage_foreclosure_intake_match_flag_check CHECK (
+    match_flag IS NULL OR match_flag IN ('possible_match', 'identity_conflict')
   ),
   CONSTRAINT mortgage_foreclosure_intake_timeline_check CHECK (jsonb_typeof(notice_timeline) = 'array'),
   CONSTRAINT mortgage_foreclosure_intake_payload_check CHECK (jsonb_typeof(raw_payload) = 'object')
