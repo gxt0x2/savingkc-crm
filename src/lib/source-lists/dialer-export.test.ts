@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { dialerExportCsv, readDialerExport, type DialerExportRow } from './dialer-export'
+import { dialerExportCsv, readDialerExport, recordDialerExportBatch, type DialerExportRow } from './dialer-export'
 import { SourceListImportError } from './csv'
 
 function row(phone: string, address = '10 Oak'): DialerExportRow {
@@ -53,6 +53,31 @@ describe('dialer export file', () => {
     const fetchPage = vi.fn()
       .mockResolvedValueOnce({ data: [row('+18165550101')], error: null })
     await expect(readDialerExport(fetchPage)).resolves.toHaveLength(1)
+  })
+
+  it('keeps excluded phones masked to the last 4', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        export_batch_id: '22222222-2222-4222-8222-222222222222',
+        rows: [row('+18165550101')],
+        excluded_counts: { prospect_dnc: 1, leaked: '3' },
+        excluded_phones: [
+          { reason: 'prospect_dnc', phone_masked: '******4411' },
+          { reason: 'prospect_dnc', phone_masked: '+18165554411' },
+          { reason: 'prospect_dnc', phone_masked: '4411' },
+        ],
+      },
+      error: null,
+    })
+    const scrub = await recordDialerExportBatch({ rpc }, 'casey@savingkc.com', {
+      listType: null,
+      county: null,
+      state: null,
+      violationKind: null,
+      sourceListId: null,
+    })
+    expect(scrub.excludedCounts).toEqual({ prospect_dnc: 1 })
+    expect(scrub.excludedPhones).toEqual([{ reason: 'prospect_dnc', phoneMasked: '******4411' }])
   })
 
   it('does not turn a database error into an empty file', async () => {
