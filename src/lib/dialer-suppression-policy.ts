@@ -119,6 +119,7 @@ export type SuppressionSource =
   | 'lead_call_result'
   | 'lead_dead_reason'
   | 'mojo_outcome'
+  | 'mojo_disposition_raw'
   | 'never_downgrade'
 
 export interface SuppressionPhone {
@@ -519,7 +520,10 @@ function shortSuppressionMatch(world: SuppressionWorld, key: string): boolean {
   if ((world.mojoEvents ?? []).some((event) => short(event.phone) && (
     blockingClass('mojo_disposition_raw', event.dispositionRaw) || blockingClass('mojo_outcome', event.outcome)
   ))) return true
-  if ((world.mojoCalls ?? []).some((call) => call.phoneLast4 === last4 && PROPERTY_OWNER_DNC.includes(labelKey(call.resultLabel) as typeof PROPERTY_OWNER_DNC[number]))) {
+  if ((world.mojoCalls ?? []).some((call) => {
+    const rawClass = suppressionClass('mojo_disposition_raw', call.resultLabel)
+    return call.phoneLast4 === last4 && (rawClass === 'mojo_dnc' || rawClass === 'person_dnc' || rawClass === 'disconnected')
+  })) {
     return true
   }
   if ((world.optOuts ?? []).some((row) => row.optedOut !== false && short(row.phone))) return true
