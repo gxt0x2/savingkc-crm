@@ -14,11 +14,12 @@ const migration = fs.readFileSync('supabase/migrations/20261114180000_mojo_dial_
 
 describe('Mojo dial outcome mapping', () => {
   it('maps DNC, take-me-off, wrong number and the live Mojo result labels', () => {
-    expect(classifyMojoDialResult('DNC Contact', 5)).toEqual({ outcome: 'dnc', phoneDisposition: 'dnc' })
-    expect(classifyMojoDialResult('DNC Number', 6)).toEqual({ outcome: 'dnc', phoneDisposition: 'dnc' })
-    expect(classifyMojoDialResult('Take me off', null)).toEqual({ outcome: 'dnc', phoneDisposition: 'dnc' })
+    expect(classifyMojoDialResult('DNC Contact', 5)).toEqual({ outcome: 'dnc', phoneDisposition: 'dnc_contact' })
+    expect(classifyMojoDialResult('DNC Number', 6)).toEqual({ outcome: 'dnc', phoneDisposition: 'dnc_number' })
+    expect(classifyMojoDialResult('Take me off', null)).toEqual({ outcome: 'dnc', phoneDisposition: 'take_me_off' })
+    expect(classifyMojoDialResult('Fax', null)).toEqual({ outcome: 'disconnected', phoneDisposition: 'fax' })
     expect(classifyMojoDialResult('Wrong Number', null)).toEqual({ outcome: 'wrong_number', phoneDisposition: 'wrong_number' })
-    expect(classifyMojoDialResult('Bad Number', 3)).toEqual({ outcome: 'disconnected', phoneDisposition: 'disconnected' })
+    expect(classifyMojoDialResult('Bad Number', 3)).toEqual({ outcome: 'disconnected', phoneDisposition: 'bad_number' })
     expect(classifyMojoDialResult('No Contact', 2)).toEqual({ outcome: 'no_answer', phoneDisposition: 'no_answer' })
     expect(classifyMojoDialResult('Answering Machine', 9)).toEqual({ outcome: 'voicemail_left', phoneDisposition: 'left_voicemail' })
     expect(classifyMojoDialResult('Contact', 1)).toEqual({ outcome: 'meaningful_conversation', phoneDisposition: null })
