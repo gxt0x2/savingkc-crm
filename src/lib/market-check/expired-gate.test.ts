@@ -15,6 +15,7 @@ import { classifyMatrixStatus } from '@/lib/market-check/plan'
 const migration = [
   'supabase/migrations/20261215120000_property_market_checks.sql',
   'supabase/migrations/20261215130000_market_check_fix_round.sql',
+  'supabase/migrations/20261215140000_market_check_service_counties.sql',
 ].map((file) => readFileSync(join(process.cwd(), file), 'utf8')).join('\n')
 const gateSource = readFileSync(
   join(process.cwd(), 'src/lib/market-check/expired-gate.ts'),
@@ -72,7 +73,7 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
   it('blocks a Sunday list day and exports the calling window instead of the clock', () => {
     expect(gate({ listDay: '2026-11-15' })).toBe('outside_calling_hours')
     expect(gate({ listDay: '2026-11-14' })).toBeNull()
-    expect(migration).toContain('mon_sat_0900_1900_america_chicago')
+    expect(migration).toContain('mon_sat_0900_1700_america_chicago')
     expect(migration).toContain('EXTRACT(DOW FROM v_today) = 0')
   })
 
@@ -117,7 +118,7 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
   it('marks Kansas rows ks_license_unconfirmed', () => {
     expect(expiredRowStamp('KS').ksLicenseUnconfirmed).toBe(true)
     expect(expiredRowStamp('MO').ksLicenseUnconfirmed).toBe(false)
-    expect(migration).toContain("upper(coalesce(dialed.state, '')) = 'KS'")
+    expect(migration).toContain("upper(coalesce(review.state, '')) = 'KS'")
   })
 
   it('does not let the confirm switch skip an earlier condition', () => {

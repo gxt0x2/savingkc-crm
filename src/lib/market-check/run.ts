@@ -19,7 +19,7 @@ export async function syncMarketFlags(db: SupabaseClient): Promise<void> {
 
 export async function runMatrixLoad(
   db: SupabaseClient,
-  input: { csvText: string; fileName: string; actor: string; now?: Date },
+  input: { csvText: string; fileName: string; actor: string; now?: Date; completeSet?: boolean; parts?: string[] },
 ): Promise<MarketWriteResult> {
   const now = input.now ?? new Date()
   const clock = chicagoClock(now)
@@ -28,10 +28,7 @@ export async function runMatrixLoad(
   const poolRows = await loadCallingPool(db)
   const flag = await db.from('mls_market_config').select('value').eq('key', 'MLS_MARKET_CHECK_ENABLED').maybeSingle()
   const marketOn = flag.data?.value === 'true'
-  const groups = new Set(rows.map((row) => row.statusRaw.trim().toUpperCase()))
-  const completeFile = ['ACTIVE', 'PENDING', 'SOLD', 'EXPIRED'].every((status) =>
-    [...groups].some((value) => value === status || value.startsWith(status)),
-  )
+  const completeFile = input.completeSet === true
   const plan = planMarketCheck({
     rows,
     poolRows,
@@ -44,6 +41,8 @@ export async function runMatrixLoad(
     hasExpireColumn: matrixCsvHasExpireColumn(input.csvText),
     fileSha256: fileSha256(input.csvText),
   })
+  plan.complete = completeFile
+  plan.parts = input.parts ?? []
   if (!marketOn) {
     plan.tags = []
     plan.intakes = []

@@ -195,14 +195,14 @@ LANGUAGE sql
 IMMUTABLE
 AS $function$
   SELECT CASE p_status
-    WHEN 'listed_active' THEN 6
-    WHEN 'listed_pending' THEN 5
-    WHEN 'sold_new_owner' THEN 4
-    WHEN 'listed_withdrawn' THEN 3
+    WHEN 'listed_active' THEN 7
+    WHEN 'listed_pending' THEN 6
+    WHEN 'sold_new_owner' THEN 5
+    WHEN 'listed_withdrawn' THEN 4
+    WHEN 'listing_check_unknown' THEN 3
     WHEN 'listing_expired' THEN 2
-    WHEN 'listing_check_unknown' THEN 1
     WHEN 'off_market_ok' THEN 0
-    ELSE 1
+    ELSE 3
   END;
 $function$;
 
@@ -227,6 +227,10 @@ AS $function$
   END
   FROM split;
 $function$;
+
+ALTER TABLE public.mls_export_runs
+  ADD COLUMN IF NOT EXISTS complete boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS parts text[] NOT NULL DEFAULT '{}';
 
 DROP FUNCTION IF EXISTS public.source_list_market_block_reason_v1(uuid, text, text, uuid, text);
 
@@ -317,6 +321,7 @@ BEGIN
       FROM public.mls_export_runs AS run
       WHERE run.chicago_day = v_today
         AND run.status = 'loaded'
+        AND run.complete IS TRUE
     ) OR v_source IS DISTINCT FROM 'heartland_matrix' OR v_day IS DISTINCT FROM v_today THEN
       RETURN 'relist_check_missing';
     END IF;
@@ -377,7 +382,24 @@ BEGIN
       AND column_name = 'line_check_flag'
   ) INTO has_flag;
   IF has_flag THEN
-    flag_sql := 'dialed.line_check_flag,';
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'prospect_phones' AND column_name = 'line_check_raw'
+    ) THEN
+      flag_sql := $flag$,
+      CASE
+        WHEN public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id) IS NULL
+          AND EXISTS (
+            SELECT 1 FROM public.prospect_phones AS phone
+            WHERE public.prospecting_phone_key_v1(phone.phone) = public.prospecting_phone_key_v1(dialed.phone_value)
+              AND phone.line_check_raw->>'stale_active_export' = 'true'
+          )
+        THEN 'stale_active'
+        ELSE NULL
+      END AS line_check_flag$flag$;
+    ELSE
+      flag_sql := ', NULL::text AS line_check_flag';
+    END IF;
   END IF;
   EXECUTE format($view$
     CREATE OR REPLACE VIEW public.source_list_dialer_phone_review
@@ -408,42 +430,8 @@ BEGIN
           dialed.source_list_row_id, dialed.parcel_id, dialed.address,
           dialed.prospect_id, dialed.list_type, dialed.phone_origin, dialed.phone_value
         )
-      ) AS block_reason,
+      ) AS block_reason
       %s
-      (
-        dialed.list_type = 'mls_expired'
-        OR EXISTS (
-          SELECT 1 FROM public.source_list_row_mls_tags AS tag
-          WHERE tag.source_list_row_id = dialed.source_list_row_id
-            AND tag.mls_tag = 'expired_listing'
-            AND tag.list_day <= (timezone('America/Chicago', clock_timestamp()))::date
-        )
-      ) AS requires_licensee_disclosure,
-      (
-        upper(coalesce(dialed.state, '')) = 'KS'
-        OR public.market_zip5(dialed.address) ~ '^66[0-9]{3}$'
-        OR public.market_zip5(dialed.address) ~ '^67[0-9]{3}$'
-        OR (
-          nullif(btrim(coalesce(dialed.state, '')), '') IS NULL
-          AND public.market_zip5(dialed.address) IS NULL
-        )
-      ) AS ks_license_unconfirmed,
-      CASE
-        WHEN dialed.list_type = 'mls_expired' OR EXISTS (
-          SELECT 1 FROM public.source_list_row_mls_tags AS tag
-          WHERE tag.source_list_row_id = dialed.source_list_row_id
-            AND tag.mls_tag = 'expired_listing'
-            AND tag.list_day <= (timezone('America/Chicago', clock_timestamp()))::date
-        ) THEN 'owner_override_2026-11-14'
-        ELSE dialed.list_type
-      END AS basis,
-      CASE
-        WHEN dialed.list_type = 'mls_expired' OR EXISTS (
-          SELECT 1 FROM public.source_list_row_mls_tags AS tag
-          WHERE tag.source_list_row_id = dialed.source_list_row_id AND tag.mls_tag = 'expired_listing'
-        ) THEN 'mon_sat_0900_1900_america_chicago'
-        ELSE NULL
-      END AS calling_window
     FROM (
       SELECT DISTINCT ON (
         row.id,
@@ -474,7 +462,6 @@ BEGIN
         phone.phone_origin,
         list.pull_date,
         list.source_file_name
-        %s
       FROM public.source_list_rows AS row
       JOIN public.source_lists AS list ON list.id = row.source_list_id
       CROSS JOIN LATERAL (
@@ -497,39 +484,111 @@ BEGIN
         coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value)),
         (phone.phone_origin = 'prospect_phone') DESC
     ) AS dialed
-  $view$, flag_sql, CASE WHEN has_flag THEN ', NULL::text AS line_check_flag' ELSE '' END);
+  $view$, flag_sql);
 END;
 $function$;
 
 SELECT public.rebuild_market_review_v1();
 
-CREATE OR REPLACE VIEW public.source_list_dialer_export
+CREATE OR REPLACE FUNCTION public.rebuild_market_export_views_v1()
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  export_cols text;
+  suppressed_cols text;
+BEGIN
+  SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
+  INTO export_cols
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'source_list_dialer_export';
+  IF export_cols IS NULL THEN
+    export_cols := 'source_list_row_id, source_list_id, list_type, county, state, violation_kind, parcel_id, case_id, address, owner_names, amount_owed, property_id, prospect_id, row_status, phone_e164, phone_origin, pull_date, source_file_name';
+  END IF;
+  EXECUTE format($view$
+    CREATE OR REPLACE VIEW public.source_list_dialer_export
+    WITH (security_invoker = true) AS
+    SELECT %s
+    FROM public.source_list_dialer_phone_review
+    WHERE block_reason IS NULL
+  $view$, export_cols);
+
+  SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
+  INTO suppressed_cols
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'source_list_dialer_suppressed';
+  IF suppressed_cols IS NULL THEN
+    EXECUTE $view$
+      CREATE OR REPLACE VIEW public.source_list_dialer_suppressed
+      WITH (security_invoker = true) AS
+      SELECT * FROM public.source_list_dialer_phone_review WHERE block_reason IS NOT NULL
+    $view$;
+  ELSE
+    EXECUTE format($view$
+      CREATE OR REPLACE VIEW public.source_list_dialer_suppressed
+      WITH (security_invoker = true) AS
+      SELECT %s
+      FROM public.source_list_dialer_phone_review
+      WHERE block_reason IS NOT NULL
+    $view$, suppressed_cols);
+  END IF;
+END;
+$function$;
+
+SELECT public.rebuild_market_export_views_v1();
+
+CREATE OR REPLACE VIEW public.source_list_market_phone_review
 WITH (security_invoker = true) AS
 SELECT
-  source_list_row_id, source_list_id, list_type, county, state, violation_kind,
-  parcel_id, case_id, address, owner_names, amount_owed, property_id, prospect_id,
-  row_status, phone_e164, phone_origin, pull_date, source_file_name,
-  requires_licensee_disclosure, ks_license_unconfirmed, basis, calling_window
-FROM public.source_list_dialer_phone_review
-WHERE block_reason IS NULL
-  AND (
-    (list_type IS DISTINCT FROM 'mls_expired' AND basis IS DISTINCT FROM 'owner_override_2026-11-14')
-    OR (
-      requires_licensee_disclosure IS TRUE
-      AND prospect_id IS NOT NULL
-      AND phone_origin = 'prospect_phone'
+  review.*,
+  (
+    review.list_type = 'mls_expired'
+    OR EXISTS (
+      SELECT 1 FROM public.source_list_row_mls_tags AS tag
+      WHERE tag.source_list_row_id = review.source_list_row_id
+        AND tag.mls_tag = 'expired_listing'
+        AND tag.list_day <= (timezone('America/Chicago', clock_timestamp()))::date
     )
-  );
-
-CREATE OR REPLACE VIEW public.source_list_dialer_suppressed
-WITH (security_invoker = true) AS
-SELECT * FROM public.source_list_dialer_phone_review WHERE block_reason IS NOT NULL;
+  ) AS requires_licensee_disclosure,
+  (
+    upper(coalesce(review.state, '')) = 'KS'
+    OR public.market_zip5(review.address) ~ '^66[0-9]{3}$'
+    OR public.market_zip5(review.address) ~ '^67[0-9]{3}$'
+    OR (
+      nullif(btrim(coalesce(review.state, '')), '') IS NULL
+      AND public.market_zip5(review.address) IS NULL
+    )
+  ) AS ks_license_unconfirmed,
+  CASE
+    WHEN review.list_type = 'mls_expired' OR EXISTS (
+      SELECT 1 FROM public.source_list_row_mls_tags AS tag
+      WHERE tag.source_list_row_id = review.source_list_row_id
+        AND tag.mls_tag = 'expired_listing'
+        AND tag.list_day <= (timezone('America/Chicago', clock_timestamp()))::date
+    ) THEN 'owner_override_2026-11-14'
+    ELSE review.list_type
+  END AS basis,
+  CASE
+    WHEN review.list_type = 'mls_expired' OR EXISTS (
+      SELECT 1 FROM public.source_list_row_mls_tags AS tag
+      WHERE tag.source_list_row_id = review.source_list_row_id AND tag.mls_tag = 'expired_listing'
+    ) THEN 'mon_sat_0900_1700_america_chicago'
+    ELSE NULL
+  END AS calling_window
+FROM public.source_list_dialer_phone_review AS review;
 
 REVOKE ALL ON TABLE public.source_list_dialer_phone_review, public.source_list_dialer_export,
-  public.source_list_dialer_suppressed FROM PUBLIC, anon, authenticated;
+  public.source_list_dialer_suppressed, public.source_list_market_phone_review FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON TABLE public.source_list_dialer_phone_review, public.source_list_dialer_export,
-  public.source_list_dialer_suppressed TO service_role;
+  public.source_list_dialer_suppressed, public.source_list_market_phone_review TO service_role;
 
+ALTER TABLE public.source_list_export_batches DROP CONSTRAINT IF EXISTS source_list_export_batches_list_type_check;
+ALTER TABLE public.source_list_export_batches ADD CONSTRAINT source_list_export_batches_list_type_check CHECK (
+  list_type IS NULL OR list_type IN (
+    'tax_delinquent', 'probate_estate', 'probate_no_property', 'foreclosure', 'code_violation', 'mls_expired'
+  )
+);
 ALTER TABLE public.source_list_export_batches
   ADD COLUMN IF NOT EXISTS export_label text;
 ALTER TABLE public.source_list_export_batch_phones
@@ -633,7 +692,7 @@ BEGIN
 
   WITH reviewed AS MATERIALIZED (
     SELECT *
-    FROM public.source_list_dialer_phone_review AS review
+    FROM public.source_list_market_phone_review AS review
     WHERE (v_county IS NULL OR review.county = v_county)
       AND (v_state IS NULL OR review.state = v_state)
       AND (v_kind IS NULL OR review.violation_kind = v_kind)
@@ -915,11 +974,13 @@ BEGIN
   END IF;
 
   INSERT INTO public.mls_export_runs (
-    export_file_sha256, chicago_day, status, covered_zips, row_count, finished_at
+    export_file_sha256, chicago_day, status, covered_zips, row_count, finished_at, complete, parts
   ) VALUES (
     v_sha, v_day, 'loaded',
     ARRAY(SELECT jsonb_array_elements_text(coalesce(p_plan->'coveredZips', '[]'::jsonb))),
-    v_checks, clock_timestamp()
+    v_checks, clock_timestamp(),
+    coalesce((p_plan->>'complete')::boolean, false),
+    ARRAY(SELECT jsonb_array_elements_text(coalesce(p_plan->'parts', '[]'::jsonb)))
   );
 
   RETURN jsonb_build_object('checks', v_checks, 'intakes', v_intakes, 'enabled', v_enabled);

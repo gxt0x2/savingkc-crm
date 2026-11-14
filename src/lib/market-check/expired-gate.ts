@@ -19,7 +19,7 @@ export interface ExpiredRowStamp {
   smsAllowed: false
   predictiveAllowed: false
   multiLineAllowed: false
-  callingWindow: 'monday_saturday_0900_1900_america_chicago'
+  callingWindow: 'monday_saturday_0900_1700_america_chicago'
 }
 
 export function expiredRowStamp(state: string | null | undefined): ExpiredRowStamp {
@@ -32,7 +32,7 @@ export function expiredRowStamp(state: string | null | undefined): ExpiredRowSta
     smsAllowed: false,
     predictiveAllowed: false,
     multiLineAllowed: false,
-    callingWindow: 'monday_saturday_0900_1900_america_chicago',
+    callingWindow: 'monday_saturday_0900_1700_america_chicago',
   }
 }
 

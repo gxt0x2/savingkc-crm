@@ -1,11 +1,13 @@
-/** Jackson MO target zips and per-zip list-price floors. The loader reads the tables, not these constants. */
+/** Service-county target zips and per-zip list-price floors. The loader reads the tables, not these constants. Cass is not a service county. */
 
 export type TargetZipStatus = 'core' | 'keep' | 'parked' | 'avoid'
 
+export type ServiceCounty = 'jackson' | 'clay' | 'platte' | 'johnson' | 'wyandotte'
+
 export interface TargetZipSeed {
   zip5: string
-  county: 'jackson'
-  state: 'MO'
+  county: ServiceCounty
+  state: 'MO' | 'KS'
   status: TargetZipStatus
 }
 
@@ -25,16 +27,31 @@ const KEEP = [
 const PARKED = ['64131']
 const AVOID = ['64125', '64126', '64127', '64128', '64129', '64130']
 
-function zips(list: string[], status: TargetZipStatus): TargetZipSeed[] {
-  return list.map((zip5) => ({ zip5, county: 'jackson', state: 'MO', status }))
+function zips(list: string[], status: TargetZipStatus, county: ServiceCounty = 'jackson', state: 'MO' | 'KS' = 'MO'): TargetZipSeed[] {
+  return list.map((zip5) => ({ zip5, county, state, status }))
 }
+
+const CLAY = ['64060', '64068', '64116', '64117', '64118', '64119', '64155', '64156', '64157', '64158', '64165', '64166', '64167']
+const PLATTE = ['64079', '64098', '64151', '64152', '64153', '64154', '64163', '64164']
+const WYANDOTTE = ['66101', '66102', '66103', '66104', '66105', '66106', '66109', '66111', '66112']
+const JOHNSON = [
+  '66202', '66203', '66204', '66205', '66206', '66207', '66208', '66209', '66210',
+  '66212', '66213', '66214', '66215', '66216', '66217', '66218', '66219', '66220',
+  '66221', '66223', '66224', '66226',
+]
 
 export const TARGET_ZIPS: TargetZipSeed[] = [
   ...zips(CORE, 'core'),
   ...zips(KEEP, 'keep'),
   ...zips(PARKED, 'parked'),
   ...zips(AVOID, 'avoid'),
+  ...zips(CLAY, 'keep', 'clay', 'MO'),
+  ...zips(PLATTE, 'keep', 'platte', 'MO'),
+  ...zips(WYANDOTTE, 'keep', 'wyandotte', 'KS'),
+  ...zips(JOHNSON, 'keep', 'johnson', 'KS'),
 ]
+
+export const SERVICE_COUNTIES: ServiceCounty[] = ['jackson', 'clay', 'platte', 'johnson', 'wyandotte']
 
 const PRICES: Array<[string, number, PriceThresholdSeed['method']?]> = [
   ['64030', 265000], ['64055', 225000], ['64063', 340000], ['64114', 345000],

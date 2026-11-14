@@ -70,6 +70,8 @@ export interface MarketPlan {
   tags: TagDraft[]
   intakes: IntakeDraft[]
   coveredZips: string[]
+  complete?: boolean
+  parts?: string[]
 }
 
 export interface PlanMarketCheckInput {
@@ -99,12 +101,12 @@ export const MATRIX_STATUS_TABLE: ReadonlyArray<{ keys: readonly string[]; statu
 ]
 
 const RANK: Record<ListingStatus, number> = {
-  listed_active: 6,
-  listed_pending: 5,
-  sold_new_owner: 4,
-  listed_withdrawn: 3,
+  listed_active: 7,
+  listed_pending: 6,
+  sold_new_owner: 5,
+  listed_withdrawn: 4,
+  listing_check_unknown: 3,
   listing_expired: 2,
-  listing_check_unknown: 1,
   off_market_ok: 0,
 }
 

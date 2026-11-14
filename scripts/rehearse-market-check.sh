@@ -108,6 +108,7 @@ SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215140000_market_check_service_counties.sql" >/dev/null
 
 "${PSQL[@]}" <<'SQL'
 DO $test$
@@ -122,6 +123,17 @@ DECLARE
 BEGIN
   IF public.mls_market_check_enabled() OR public.expired_owner_confirmed() THEN
     RAISE EXCEPTION 'flags must stay false';
+  END IF;
+  IF public.market_status_rank_v1('listing_check_unknown') <= public.market_status_rank_v1('listing_expired') THEN
+    RAISE EXCEPTION 'N3 unknown must outrank expired';
+  END IF;
+  INSERT INTO public.source_list_export_batches (created_by, list_type, phone_count)
+  VALUES ('rehearsal', 'mls_expired', 0);
+  IF NOT EXISTS (SELECT 1 FROM public.target_zips WHERE county = 'wyandotte' AND state = 'KS') THEN
+    RAISE EXCEPTION 'service counties were not seeded';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.target_zips WHERE county = 'cass') THEN
+    RAISE EXCEPTION 'Cass must not be seeded';
   END IF;
 
   INSERT INTO public.source_lists (list_type, county, state, pull_date, source_file_name, source_file_sha256, source_file_bytes, imported_by)
@@ -146,7 +158,7 @@ BEGIN
 
   SELECT count(*) INTO v_count
   FROM public.source_list_dialer_export
-  WHERE list_type = 'mls_expired' OR basis = 'owner_override_2026-11-14';
+  WHERE list_type = 'mls_expired';
   IF v_count <> 0 THEN
     RAISE EXCEPTION 'B1 expected 0 expired export rows, got %', v_count;
   END IF;
@@ -172,6 +184,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.mls_export_runs WHERE status = 'loaded') THEN
     RAISE EXCEPTION 'B2 missing export run';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.mls_export_runs WHERE complete IS TRUE) THEN
+    RAISE EXCEPTION 'N4 a single file part was marked complete';
   END IF;
 
   PERFORM public.record_mls_market_flag_v1('EXPIRED_OWNER_CONFIRMED', 'true', 'EXC-2026-11-14-003');
@@ -243,6 +258,45 @@ BEGIN
   RAISE NOTICE 'market check rehearsal passed in % ms', v_ms;
 END
 $test$;
+SQL
+
+"${PSQL[@]}" <<'SQL'
+DO $n2$
+DECLARE
+  v_def text;
+BEGIN
+  v_def := regexp_replace(pg_get_viewdef('public.source_list_dialer_phone_review'::regclass, true), ';[[:space:]]*$', '');
+  DROP VIEW public.source_list_market_phone_review;
+  DROP VIEW public.source_list_dialer_export;
+  DROP VIEW public.source_list_dialer_suppressed;
+  DROP VIEW public.source_list_dialer_phone_review;
+  EXECUTE 'CREATE VIEW public.source_list_dialer_phone_review AS SELECT dialed.*, NULL::text AS line_check_flag FROM (' || v_def || ') AS dialed';
+  CREATE VIEW public.source_list_dialer_export AS
+  SELECT source_list_row_id, source_list_id, list_type, county, state, violation_kind,
+    parcel_id, case_id, address, owner_names, amount_owed, property_id, prospect_id,
+    row_status, phone_e164, phone_origin, pull_date, source_file_name, line_check_flag
+  FROM public.source_list_dialer_phone_review
+  WHERE block_reason IS NULL;
+  CREATE VIEW public.source_list_dialer_suppressed AS
+  SELECT source_list_row_id, block_reason, line_check_flag
+  FROM public.source_list_dialer_phone_review
+  WHERE block_reason IS NOT NULL;
+  PERFORM public.rebuild_market_review_v1();
+  PERFORM public.rebuild_market_export_views_v1();
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'source_list_dialer_phone_review' AND column_name = 'line_check_flag'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'source_list_dialer_export' AND column_name = 'line_check_flag'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'source_list_dialer_suppressed' AND column_name = 'line_check_flag'
+  ) THEN
+    RAISE EXCEPTION 'N2 dropped line_check_flag';
+  END IF;
+END
+$n2$;
 SQL
 
 echo "market check rehearsal passed"

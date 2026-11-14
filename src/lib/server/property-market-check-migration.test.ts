@@ -6,6 +6,7 @@ import { PRICE_THRESHOLDS, TARGET_ZIPS } from '@/lib/market-check/seeds'
 const migration = [
   'supabase/migrations/20261215120000_property_market_checks.sql',
   'supabase/migrations/20261215130000_market_check_fix_round.sql',
+  'supabase/migrations/20261215140000_market_check_service_counties.sql',
 ].map((file) => readFileSync(join(process.cwd(), file), 'utf8')).join('\n')
 
 describe('property market check migration', () => {
@@ -23,8 +24,17 @@ describe('property market check migration', () => {
     expect(migration).toContain("('EXPIRED_OWNER_CONFIRMED', 'false')")
     expect(migration).toContain("('MLS_EXPIRED_WINDOW_DAYS', '90')")
     for (const zip of TARGET_ZIPS) {
-      expect(migration).toContain(`('${zip.zip5}', 'jackson', 'MO', '${zip.status}')`)
+      expect(migration).toContain(`('${zip.zip5}', '${zip.county}', '${zip.state}', '${zip.status}')`)
     }
+    expect(migration).not.toContain("'cass'")
+    expect(migration).toContain("'mls_expired'")
+    expect(migration).toContain("WHEN 'listing_check_unknown' THEN 3")
+    expect(migration).toContain("WHEN 'listing_expired' THEN 2")
+    expect(migration).toContain('run.complete IS TRUE')
+    expect(migration).toContain('mon_sat_0900_1700_america_chicago')
+    expect(migration).not.toContain('0900_1900')
+    expect(migration).toContain('NULL::text AS line_check_flag')
+    expect(migration).toContain('source_list_market_phone_review')
     for (const price of PRICE_THRESHOLDS) {
       expect(migration).toContain(`('${price.zip5}', ${price.minListPrice}, '${price.method}')`)
     }

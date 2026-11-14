@@ -60,6 +60,12 @@ export function marketCheckWindow(instant: Date): MarketCheckWindow {
   return 'idle'
 }
 
+/** A complete Matrix set can clear today's relist check only before the 4:00am lock. */
+export function beforeListLock(instant: Date): boolean {
+  const clock = chicagoClock(instant)
+  return clock.hour < 4
+}
+
 /** off_market_ok is written only when the file is in before 3:30am CT. */
 export function offMarketAllowed(instant: Date): boolean {
   const clock = chicagoClock(instant)
