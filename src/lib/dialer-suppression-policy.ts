@@ -1,32 +1,10 @@
-/**
- * Label policy for the dialer / Mojo export scrub.
- *
- * The running check is public.dialer_suppression_class_v1 in
- * supabase/migrations/20261202140000_dialer_export_suppression.sql.
- * These arrays are the same sets. The migration test fails if they drift.
- * dataskip_dnc is an explicit allow. A label that is not allow and not block
- * is unmapped, and unmapped fails closed.
- */
+/** Label sets for the dialer export. dataskip_dnc is an allow. Anything else non-blank is unmapped. */
 
 export const PROSPECT_PHONE_DNC = ['dnc', 'do_not_call', 'dnc_number'] as const
 export const PROSPECT_PERSON_DNC = ['dnc_contact', 'take_me_off'] as const
 export const PROSPECT_DEAD = ['dead', 'fax', 'disconnected', 'bad_number', 'not_in_service'] as const
 export const PROSPECT_WRONG = ['wrong_number'] as const
-export const PROSPECT_ALLOW = [
-  'no_answer',
-  'left_voicemail',
-  'left_vm',
-  'not_interested',
-  'spoke_with_owner',
-  'callback_requested',
-  'busy',
-  'appointment_set',
-  'deal_potential',
-  'offer_made',
-  'answered',
-  'contact',
-  'interested',
-] as const
+export const PROSPECT_ALLOW = ['no_answer', 'left_voicemail', 'left_vm', 'not_interested', 'spoke_with_owner', 'callback_requested', 'busy', 'appointment_set', 'deal_potential', 'offer_made', 'answered', 'contact', 'interested'] as const
 
 export const PHONE_CONNECTED_ALLOW = ['connected', 'dataskip_dnc'] as const
 export const PHONE_CONNECTED_DISCONNECTED = ['disconnected', 'false', 'no', 'bad_number'] as const
@@ -78,20 +56,7 @@ export const MOJO_ALLOW = [
 ] as const
 
 /** Raw Mojo labels that are not a suppression. Checked before outcome. */
-export const MOJO_RAW_ALLOW = [
-  'no_contact',
-  'no_answer',
-  'answering_machine',
-  'other',
-  'voicemail',
-  'contact',
-  'skipped',
-  'callback_requested',
-  'interested',
-  'incomplete',
-  'appointment_set',
-  'busy',
-] as const
+export const MOJO_RAW_ALLOW = ['no_contact', 'no_answer', 'answering_machine', 'other', 'voicemail', 'contact', 'skipped', 'callback_requested', 'interested', 'incomplete', 'appointment_set', 'busy'] as const
 
 export const MOJO_RAW_DEAD = ['fax', 'dead'] as const
 export const MOJO_RAW_DISCONNECTED = ['bad_number', 'not_in_service', 'disconnected'] as const
@@ -167,6 +132,8 @@ export interface SuppressionMojoCall {
   phoneLast4: string
   resultLabel?: string | null
   recordId?: string | null
+  providerContactId?: string | null
+  leadId?: string | null
   hasFullPhone?: boolean | null
 }
 
@@ -182,6 +149,8 @@ export interface SuppressionContact {
 }
 
 export interface SuppressionWorld {
+  county?: string | null
+  situsCounty?: string | null
   phones?: readonly SuppressionPhone[]
   prospects?: readonly SuppressionProspect[]
   leads?: readonly SuppressionLead[]
@@ -553,7 +522,38 @@ function propertyOwnerDncFanout(world: SuppressionWorld, key: string, prospectId
   return false
 }
 
-function shortSuppressionMatch(world: SuppressionWorld, key: string): boolean {
+function mojoLast4Tied(world: SuppressionWorld, key: string, call: SuppressionMojoCall, prospectId?: string | null): boolean {
+  const contact = (call.providerContactId ?? '').trim()
+  if (contact && (world.mojoEvents ?? []).some((event) => event.providerContactId === contact && (
+    sameKey(event.phone, key) || phonesOf(world).some((phone) => phone.prospectId === prospectId && sameKey(phone.phone, event.phone))
+  ))) return true
+  if (!call.leadId) return false
+  const homes = (world.prospects ?? []).filter((prospect) => prospect.leadId === call.leadId)
+  if (homes.some((prospect) => prospect.id === prospectId)) return true
+  const keys = new Set(homes.map((prospect) => householdKey(prospect)).filter((value): value is string => Boolean(value)))
+  const mineKey = householdKey(prospectFor(world, prospectId))
+  return (mineKey !== null && keys.has(mineKey)) || phonesOf(world).some((phone) => sameKey(phone.phone, key) && keys.has(householdKey(prospectFor(world, phone.prospectId)) ?? ''))
+}
+
+function serviceSlug(value: string | null | undefined): string | null {
+  const slug = String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .replace(/\b(county|missouri|kansas|mo|ks)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return slug || null
+}
+
+function outOfServiceArea(world: SuppressionWorld): boolean {
+  const allowed = new Set(['jackson', 'clay', 'platte', 'johnson', 'wyandotte'])
+  return [world.county, world.situsCounty].some((value) => {
+    const slug = serviceSlug(value)
+    return Boolean(slug && !allowed.has(slug))
+  })
+}
+
+function shortSuppressionMatch(world: SuppressionWorld, key: string, prospectId?: string | null): boolean {
   const last4 = key.slice(-4)
   const short = (phone: string) => {
     const stored = phoneKey(phone)
@@ -578,7 +578,8 @@ function shortSuppressionMatch(world: SuppressionWorld, key: string): boolean {
     const fullPhone = (world.mojoEvents ?? []).some((event) => (
       call.recordId != null && event.recordId === call.recordId && phoneKey(event.phone).length === 10
     ))
-    return !fullPhone
+    if (fullPhone) return false
+    return mojoLast4Tied(world, key, call, prospectId)
   })) {
     return true
   }
@@ -680,6 +681,7 @@ export function exportBlockReason(
   if (personFanout(world, key, prospectId)) return 'person_fanout'
   if (householdFanout(world, key, prospectId)) return 'household_fanout'
   if ((world.encodePending ?? []).some((row) => sameKey(row, key))) return 'mojo_encode_pending'
-  if (shortSuppressionMatch(world, key)) return 'hold_last4'
+  if (shortSuppressionMatch(world, key, prospectId)) return 'hold_last4'
+  if (outOfServiceArea(world)) return 'out_of_service_area'
   return null
 }

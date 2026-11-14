@@ -351,20 +351,65 @@ describe('associate type and property owner fan-out', () => {
     }, 'away')).toBe('needs_counsel_review')
   })
 
-  it('holds every phone ending in a Mojo last-4 when the call row has no full number', () => {
+  it('holds a Mojo last-4 only when that call ties to the same contact and has no full number', () => {
+    const neighbor = '+18165553003'
+    expect(exportBlockReason(neighbor, {
+      phones: [{ phone: neighbor, relationship: 'owner', lastDisposition: 'no_answer' }],
+      mojoCalls: [{ phoneLast4: '3003', resultLabel: 'Fax' }],
+    })).toBeNull()
     expect(exportBlockReason('+18165550444', {
-      phones: [{ phone: '+18165550444', relationship: 'owner', lastDisposition: 'no_answer' }],
-      mojoCalls: [{ phoneLast4: '0444', resultLabel: 'DNC Number' }],
-    })).toBe('hold_last4')
+      phones: [{ phone: '+18165550444', prospectId: 'p', relationship: 'owner', lastDisposition: 'no_answer' }],
+      mojoEvents: [{ phone: '+18165550444', providerContactId: 'contact-44', outcome: 'other' }],
+      mojoCalls: [{ phoneLast4: '0444', resultLabel: 'DNC Number', providerContactId: 'contact-44' }],
+    }, 'p')).toBe('hold_last4')
     expect(exportBlockReason('+18165550444', {
       phones: [{ phone: '+18165550444', relationship: 'owner', phoneConnected: 'dataskip_dnc' }],
-      mojoCalls: [{ phoneLast4: '0444', resultLabel: 'No Answer' }],
+      mojoCalls: [{ phoneLast4: '0444', resultLabel: 'No Answer', providerContactId: 'contact-44' }],
     })).toBeNull()
-    expect(exportBlockReason('+18165550444', {
-      phones: [{ phone: '+18165550444', relationship: 'owner', lastDisposition: 'no_answer' }],
-      mojoEvents: [{ phone: '+18165559944', recordId: 'call-1', outcome: 'other', dispositionRaw: 'DNC Number' }],
-      mojoCalls: [{ phoneLast4: '9944', recordId: 'call-1', resultLabel: 'DNC Number' }],
+  })
+
+  it('matches the November 13 incident shapes', () => {
+    // Real last-4s stay in comments only: Robertson 5603, Al-Saady 4857, Shellner 7542, Price 9781.
+    const robertson = '+18165550131'
+    const alSaady = '+18165550132'
+    const shellner = '+18165550133'
+    const price = '+18165550134'
+    expect(exportBlockReason(robertson, {
+      phones: [{ phone: robertson, relationship: 'owner', lastDisposition: null }],
+      optOuts: [{ phone: robertson, optedOut: true }],
+    })).toBe('sms_opt_out')
+    expect(exportBlockReason(alSaady, {
+      phones: [{ phone: alSaady, relationship: 'owner', lastDisposition: 'not_interested' }],
+      optOuts: [{ phone: alSaady, optedOut: true }],
+    })).toBe('sms_opt_out')
+    expect(exportBlockReason(shellner, {
+      phones: [{ phone: shellner, relationship: 'owner', lastDisposition: null }],
+      optOuts: [{ phone: shellner, optedOut: true }],
+    })).toBe('sms_opt_out')
+    expect(exportBlockReason(price, {
+      phones: [
+        { phone: price, prospectId: 'price', relationship: 'owner', lastDisposition: 'dnc' },
+        { phone: price, prospectId: 'price', relationship: 'owner', lastDisposition: null },
+        { phone: price, prospectId: 'price', relationship: 'owner', lastDisposition: 'wrong_number' },
+      ],
+      leads: [{ id: 'price-lead', phone: price, deadReason: 'dnc_refused' }],
+    }, 'price')).toBe('prospect_dnc')
+    expect(exportBlockReason('+18165550135', {
+      phones: [{ phone: '+18165550135', relationship: 'owner', lastDisposition: 'no_answer' }],
+      mojoEvents: [{ phone: '+18165550135', outcome: 'other', dispositionRaw: 'DNC Number' }],
+    })).toBe('mojo_dnc')
+    expect(exportBlockReason('+18165550137', {
+      phones: [
+        { phone: '+18165550136', prospectId: 'mojo', relationship: 'owner', lastDisposition: null },
+        { phone: '+18165550137', prospectId: 'mojo', relationship: 'owner', lastDisposition: 'no_answer' },
+      ],
+      mojoEvents: [{ phone: '+18165550136', outcome: 'other', dispositionRaw: 'DNC Contact', providerContactId: 'contact-dnc' }],
+    }, 'mojo')).toBe('person_fanout')
+    expect(exportBlockReason('+18165550138', {
+      county: 'Jackson',
+      phones: [{ phone: '+18165550138', relationship: 'owner', lastDisposition: 'no_answer' }],
     })).toBeNull()
+    expect(exportBlockReason('+18165550139', { county: 'Cass', phones: [{ phone: '+18165550139', relationship: 'owner' }] })).toBe('out_of_service_area')
   })
 
   it('releases an owner-matched number that is only associate or unknown on another record', () => {

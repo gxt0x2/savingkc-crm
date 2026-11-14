@@ -19,12 +19,12 @@ import {
 } from '@/lib/dialer-suppression-policy'
 
 const associateMigration = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261202150000_dialer_export_associate_property_dnc.sql'),
+  join(process.cwd(), 'supabase/migrations/20261205130000_dialer_export_associate_property_dnc.sql'),
   'utf8',
 )
 
 const migration = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261202140000_dialer_export_suppression.sql'),
+  join(process.cwd(), 'supabase/migrations/20261205120000_dialer_export_suppression.sql'),
   'utf8',
 )
 
@@ -83,7 +83,7 @@ describe('dialer export suppression migration', () => {
 
   it('classifies raw Mojo labels, keeps stronger stamps, and does not require the encode queue', () => {
     const raw = readFileSync(
-      join(process.cwd(), 'supabase/migrations/20261202160000_dialer_export_mojo_raw_and_rehearsal.sql'),
+      join(process.cwd(), 'supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql'),
       'utf8',
     )
     expect(raw).toContain("WHEN 'mojo_disposition_raw'")
@@ -104,13 +104,17 @@ describe('dialer export suppression migration', () => {
 
   it('ranks unmapped labels above a weak stamp and classifies phones once', () => {
     const speed = readFileSync(
-      join(process.cwd(), 'supabase/migrations/20261202170000_dialer_export_speed_f1_stamp.sql'),
+      join(process.cwd(), 'supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql'),
       'utf8',
     )
     expect(speed).toContain("WHEN public.dialer_suppression_class_v1('prospect_disposition', label) = 'unmapped' THEN 25")
     expect(speed).toContain('dialer_unknown_tie_release_v1')
     expect(speed).toContain('classified_phones AS MATERIALIZED')
     expect(speed).toContain('registered_agent')
+    expect(speed).toContain('out_of_service_area')
+    expect(speed).toContain('tax_status_export_allowed_v1')
+    expect(speed).toContain('source_list_phone_block_reason_v1(text, text, text)')
+    expect(readFileSync(join(process.cwd(), 'supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql'), 'utf8')).not.toContain("RAISE EXCEPTION 'dialer_label_unmapped")
     expect(speed).not.toMatch(/voice_hold\s*=\s*false/)
     expect(speed).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(speed).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)

@@ -1063,13 +1063,6 @@ BEGIN
     RAISE EXCEPTION 'multi_line_suspended';
   END IF;
 
-  SELECT coalesce(string_agg(gap.source || '=' || gap.label, ', ' ORDER BY gap.source, gap.label), '')
-  INTO v_gaps
-  FROM public.dialer_label_coverage_gaps_v1() AS gap;
-  IF v_gaps <> '' THEN
-    RAISE EXCEPTION 'dialer_label_unmapped: %', v_gaps;
-  END IF;
-
   WITH reviewed AS MATERIALIZED (
     SELECT *
     FROM public.source_list_dialer_phone_review AS review
@@ -1080,7 +1073,7 @@ BEGIN
       AND (p_source_list_id IS NULL OR review.source_list_id = p_source_list_id)
   )
   SELECT
-    coalesce((SELECT jsonb_agg(to_jsonb(export_row) ORDER BY export_row.list_type, export_row.county, export_row.parcel_id, export_row.phone_e164) FROM reviewed AS export_row WHERE export_row.block_reason IS NULL AND export_row.phone_e164 IS NOT NULL), '[]'::jsonb),
+    coalesce((SELECT jsonb_agg(to_jsonb(export_row) ORDER BY export_row.list_type, export_row.county, export_row.parcel_id, export_row.phone_e164) FROM reviewed AS export_row WHERE export_row.block_reason IS NULL AND export_row.phone_e164 IS NOT NULL AND (export_row.list_type IS DISTINCT FROM 'tax_delinquent' OR public.tax_status_export_allowed_v1(export_row.parcel_id, export_row.county, export_row.prospect_id))), '[]'::jsonb),
     coalesce((SELECT jsonb_object_agg(counted.reason, counted.n) FROM (SELECT blocked.block_reason AS reason, count(*) AS n FROM reviewed AS blocked WHERE blocked.block_reason IS NOT NULL GROUP BY blocked.block_reason) AS counted), '{}'::jsonb),
     coalesce((SELECT jsonb_agg(jsonb_build_object('reason', samples.reason, 'phone_masked', samples.phone_masked) ORDER BY samples.reason, samples.phone_masked) FROM (SELECT blocked.block_reason AS reason, public.dialer_phone_mask_v1(coalesce(blocked.phone_e164, blocked.phone_value)) AS phone_masked, row_number() OVER (PARTITION BY blocked.block_reason ORDER BY public.dialer_phone_mask_v1(coalesce(blocked.phone_e164, blocked.phone_value))) AS sample_index FROM reviewed AS blocked WHERE blocked.block_reason IS NOT NULL) AS samples WHERE samples.sample_index <= 20), '[]'::jsonb)
   INTO v_rows, v_excluded_counts, v_excluded_phones;

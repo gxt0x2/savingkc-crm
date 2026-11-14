@@ -96,7 +96,13 @@ CREATE TABLE public.crm_mojo_call_events (
   disposition_raw text,
   provider_contact_id text
 );
-CREATE TABLE public.crm_mojo_calls (record_id text, phone_last4 text, result_label text);
+CREATE TABLE public.crm_mojo_calls (
+  record_id text,
+  phone_last4 text,
+  result_label text,
+  provider_contact_id text,
+  lead_id uuid
+);
 CREATE TABLE public.system_config (
   key text PRIMARY KEY,
   value jsonb,
@@ -122,8 +128,11 @@ CREATE TABLE public.source_list_rows (
   property_id uuid,
   prospect_id uuid,
   status text,
-  phones text[]
+  phones text[],
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb
 );
+CREATE TABLE public.crm_properties (id uuid PRIMARY KEY, county text);
+CREATE TABLE public.mortgage_foreclosure_prospects (id uuid PRIMARY KEY);
 CREATE TABLE public.source_list_export_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   created_by text,
@@ -174,11 +183,13 @@ CREATE VIEW public.source_list_dialer_suppressed AS
 SELECT * FROM public.source_list_dialer_phone_review WHERE block_reason IS NOT NULL;
 SQL
 
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202140000_dialer_export_suppression.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202150000_dialer_export_associate_property_dnc.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202160000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202170000_dialer_export_speed_f1_stamp.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261202170000_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261203130000_source_list_service_area_block.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261204120000_tax_status_verification.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205120000_dialer_export_suppression.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205130000_dialer_export_associate_property_dnc.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -249,9 +260,11 @@ INSERT INTO public.crm_mojo_call_events (normalized_phone, outcome, disposition_
   ('+18165551003', 'other', 'DNC Number', 'num-1'),
   ('+18165551010', 'other', 'DNC Contact', 'contact-1');
 
-INSERT INTO public.crm_mojo_calls (phone_last4, result_label) VALUES
-  ('1099', 'DNC Number'),
-  ('1100', 'No Answer');
+INSERT INTO public.crm_mojo_call_events (provider_contact_id, normalized_phone, outcome, disposition_raw) VALUES
+  ('contact-1099', '+18165551099', 'other', NULL);
+INSERT INTO public.crm_mojo_calls (phone_last4, result_label, provider_contact_id) VALUES
+  ('1099', 'DNC Number', 'contact-1099'),
+  ('1100', 'No Answer', NULL);
 
 INSERT INTO public.source_list_rows (
   id, source_list_id, list_type, county, state, parcel_id, address, owner_names, prospect_id, status, phones
@@ -278,6 +291,11 @@ DECLARE
   got text;
   report jsonb;
 BEGIN
+  INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
+  SELECT DISTINCT row.parcel_id, 'jackson', 'tax_delinquent', row.prospect_id, now(), 'jackson_tax_portal', 'delinquent', 0
+  FROM public.source_list_rows AS row
+  WHERE row.status = 'ready' AND row.prospect_id IS NOT NULL;
+
   IF public.dialer_encode_queue_has_phone_v1('8165551001') THEN
     RAISE EXCEPTION 'missing encode queue blocked a phone';
   END IF;
@@ -425,6 +443,61 @@ BEGIN
     RAISE EXCEPTION 'full DNC number was not blocked';
   END IF;
 
+  -- INC-2026-11-13-001 shapes. Real last-4s are comments only: Robertson 5603, Al-Saady 4857, Shellner 7542, Price 9781.
+  INSERT INTO public.sms_opt_outs (phone, is_opted_out) VALUES
+    ('+18165550131', true),
+    ('+18165550132', true),
+    ('+18165550133', true);
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type) VALUES
+    ('20000000-0000-4000-8000-0000000000d1', 'jackson', '15 Robertson', 'P-INC-1', 'Robertson', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000d2', 'jackson', '16 Alsaady', 'P-INC-2', 'Alsaady', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000d3', 'jackson', '17 Shellner', 'P-INC-3', 'Shellner', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000d4', 'jackson', '18 Price', 'P-INC-4', 'Price', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000d5', 'jackson', '19 Clean', 'P-CLEAN', 'Clean', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000d6', 'cass', '20 Cass', 'P-CASS', 'Cass', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000d7', 'jackson', '21 Neighbor', 'P-NEIGHBOR', 'Neighbor', 'Individual');
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship) VALUES
+    ('30000000-0000-4000-8000-0000000000d1', '20000000-0000-4000-8000-0000000000d1', '+18165550131', NULL, 'owner'),
+    ('30000000-0000-4000-8000-0000000000d2', '20000000-0000-4000-8000-0000000000d2', '+18165550132', 'not_interested', 'owner'),
+    ('30000000-0000-4000-8000-0000000000d3', '20000000-0000-4000-8000-0000000000d3', '+18165550133', NULL, 'owner'),
+    ('30000000-0000-4000-8000-0000000000d4', '20000000-0000-4000-8000-0000000000d4', '+18165550134', 'dnc', 'owner'),
+    ('30000000-0000-4000-8000-0000000000d5', '20000000-0000-4000-8000-0000000000d4', '+18165550134', NULL, 'owner'),
+    ('30000000-0000-4000-8000-0000000000d6', '20000000-0000-4000-8000-0000000000d4', '+18165550134', 'wrong_number', 'owner'),
+    ('30000000-0000-4000-8000-0000000000d7', '20000000-0000-4000-8000-0000000000d5', '+18165550140', 'no_answer', 'owner'),
+    ('30000000-0000-4000-8000-0000000000d8', '20000000-0000-4000-8000-0000000000d6', '+18165550141', 'no_answer', 'owner'),
+    ('30000000-0000-4000-8000-0000000000d9', '20000000-0000-4000-8000-0000000000d7', '+18165550142', 'no_answer', 'owner');
+  INSERT INTO public.leads (id, phone, dead_reason) VALUES
+    ('40000000-0000-4000-8000-0000000000d4', '+18165550134', 'dnc_refused');
+  INSERT INTO public.crm_mojo_calls (phone_last4, result_label) VALUES ('0142', 'Fax');
+  IF public.source_list_phone_block_reason_v1('+18165550131', '20000000-0000-4000-8000-0000000000d1') IS DISTINCT FROM 'sms_opt_out' THEN
+    RAISE EXCEPTION 'Robertson shape was not an sms opt-out';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550132', '20000000-0000-4000-8000-0000000000d2') IS DISTINCT FROM 'sms_opt_out' THEN
+    RAISE EXCEPTION 'Al-Saady shape was not an sms opt-out';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550133', '20000000-0000-4000-8000-0000000000d3') IS DISTINCT FROM 'sms_opt_out' THEN
+    RAISE EXCEPTION 'Shellner shape was not an sms opt-out';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550134', '20000000-0000-4000-8000-0000000000d4') IS DISTINCT FROM 'prospect_dnc' THEN
+    RAISE EXCEPTION 'Price siblings were not blocked: %',
+      public.source_list_phone_block_reason_v1('+18165550134', '20000000-0000-4000-8000-0000000000d4');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550142', '20000000-0000-4000-8000-0000000000d7') IS NOT NULL THEN
+    RAISE EXCEPTION 'a different number sharing a Fax last-4 was blocked: %',
+      public.source_list_phone_block_reason_v1('+18165550142', '20000000-0000-4000-8000-0000000000d7');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550141', 'cass', 'cass') IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'Cass was not out of the service area';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550140', 'jackson', 'jackson') IS NOT NULL THEN
+    RAISE EXCEPTION 'Jackson clean phone was blocked by the 3-arg scrub';
+  END IF;
+
+  INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
+  SELECT DISTINCT row.parcel_id, 'jackson', 'tax_delinquent', row.prospect_id, now(), 'jackson_tax_portal', 'delinquent', 0
+  FROM public.source_list_rows AS row
+  WHERE row.status = 'ready' AND row.prospect_id IS NOT NULL;
+
   report := public.record_source_list_export_batch_v1('rehearsal', NULL, NULL, NULL, NULL, NULL, 1);
   IF report->>'phone_count' IS DISTINCT FROM (
     SELECT count(*)::text FROM public.source_list_dialer_export WHERE phone_e164 IS NOT NULL
@@ -517,6 +590,11 @@ ANALYZE public.leads;
 ANALYZE public.crm_mojo_calls;
 ANALYZE public.crm_mojo_call_events;
 ANALYZE public.sms_opt_outs;
+INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
+SELECT 'SP-' || n, 'jackson', 'tax_delinquent',
+  ('72000000-0000-4000-8000-' || lpad(to_hex(n), 12, '0'))::uuid,
+  now(), 'jackson_tax_portal', 'delinquent', 0
+FROM generate_series(1, 500) AS n;
 SET statement_timeout = '8s';
 SET ROLE service_role;
 DO $$

@@ -225,7 +225,12 @@ EXCEPTION
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.source_list_phone_block_reasons_v1(p_phones text[], p_prospects uuid[])
+CREATE OR REPLACE FUNCTION public.source_list_phone_block_reasons_v1(
+  p_phones text[],
+  p_prospects uuid[],
+  p_counties text[] DEFAULT NULL,
+  p_situs_counties text[] DEFAULT NULL
+)
 RETURNS TABLE(ordinal bigint, block_reason text)
 LANGUAGE sql
 STABLE
@@ -236,10 +241,17 @@ AS $function$
       item.ordinal,
       item.phone,
       item.prospect_id,
+      counties.county,
+      counties.situs_county,
       public.normalize_conversation_phone(item.phone) AS e164,
       public.prospecting_phone_key_v1(item.phone) AS key10
     FROM unnest(coalesce(p_phones, ARRAY[]::text[]), coalesce(p_prospects, ARRAY[]::uuid[]))
       WITH ORDINALITY AS item(phone, prospect_id, ordinal)
+    LEFT JOIN unnest(
+      coalesce(p_counties, array_fill(NULL::text, ARRAY[coalesce(cardinality(p_phones), 0)])),
+      coalesce(p_situs_counties, array_fill(NULL::text, ARRAY[coalesce(cardinality(p_phones), 0)]))
+    ) WITH ORDINALITY AS counties(county, situs_county, ordinal)
+      ON counties.ordinal = item.ordinal
   ),
   classified_phones AS MATERIALIZED (
     SELECT
@@ -532,6 +544,36 @@ AS $function$
        )
        OR public.dialer_suppression_class_v1('lead_call_result', lead.call_result) = 'person_dnc'
     UNION ALL
+    SELECT input.ordinal, 'out_of_service_area', 200
+    FROM input
+    WHERE EXISTS (
+      SELECT 1
+      FROM (VALUES (input.county), (input.situs_county)) AS candidate(county_value)
+      CROSS JOIN LATERAL (
+        SELECT NULLIF(
+          regexp_replace(
+            btrim(regexp_replace(
+              regexp_replace(
+                lower(btrim(coalesce(candidate.county_value, ''))),
+                '[^a-z]+',
+                ' ',
+                'g'
+              ),
+              '\y(county|missouri|kansas|mo|ks)\y',
+              '',
+              'g'
+            )),
+            '\s+',
+            ' ',
+            'g'
+          ),
+          ''
+        ) AS slug
+      ) AS normalized
+      WHERE normalized.slug IS NOT NULL
+        AND normalized.slug NOT IN ('jackson', 'clay', 'platte', 'johnson', 'wyandotte')
+    )
+    UNION ALL
     SELECT input.ordinal, encode.block_reason, CASE encode.block_reason WHEN 'mojo_encode_pending' THEN 140 ELSE 150 END
     FROM input
     JOIN public.dialer_encode_block_keys_v1(coalesce(p_phones, ARRAY[]::text[])) AS encode
@@ -590,6 +632,51 @@ AS $function$
               SELECT 1 FROM public.crm_mojo_call_events AS event
               WHERE event.record_id = call.record_id AND length(event.dialer_phone_key) = 10
             )
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM public.crm_mojo_call_events AS tied
+                WHERE nullif(btrim(call.provider_contact_id), '') IS NOT NULL
+                  AND tied.provider_contact_id = call.provider_contact_id
+                  AND (
+                    tied.dialer_phone_key = input.key10
+                    OR tied.dialer_phone_key IN (
+                      SELECT same.dialer_phone_key
+                      FROM public.prospect_phones AS same
+                      WHERE same.prospect_id = input.prospect_id
+                    )
+                  )
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM public.prospects AS owned
+                WHERE call.lead_id IS NOT NULL
+                  AND owned.lead_id = call.lead_id
+                  AND (
+                    owned.id = input.prospect_id
+                    OR EXISTS (
+                      SELECT 1 FROM public.prospect_phones AS mine
+                      WHERE mine.prospect_id = owned.id AND mine.dialer_phone_key = input.key10
+                    )
+                  )
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM public.prospects AS call_home
+                JOIN public.prospects AS mine
+                  ON mine.dialer_household_key = call_home.dialer_household_key
+                 AND mine.dialer_household_key IS NOT NULL
+                WHERE call.lead_id IS NOT NULL
+                  AND call_home.lead_id = call.lead_id
+                  AND (
+                    mine.id = input.prospect_id
+                    OR EXISTS (
+                      SELECT 1 FROM public.prospect_phones AS phone
+                      WHERE phone.prospect_id = mine.id AND phone.dialer_phone_key = input.key10
+                    )
+                  )
+              )
+            )
         )
       )
   )
@@ -634,7 +721,21 @@ WITH dialed AS (
     public.normalize_conversation_phone(phone.phone_value) AS phone_e164,
     phone.phone_origin,
     list.pull_date,
-    list.source_file_name
+    list.source_file_name,
+    coalesce(
+      NULLIF(btrim(row.raw->>'situs_county'), ''),
+      NULLIF(btrim(row.raw->>'county'), ''),
+      (
+        SELECT NULLIF(btrim(prospect.county), '')
+        FROM public.prospects AS prospect
+        WHERE prospect.id = row.prospect_id
+      ),
+      (
+        SELECT NULLIF(btrim(property.county), '')
+        FROM public.crm_properties AS property
+        WHERE property.id = row.property_id
+      )
+    ) AS situs_county
   FROM public.source_list_rows AS row
   JOIN public.source_lists AS list ON list.id = row.source_list_id
   CROSS JOIN LATERAL (
@@ -662,7 +763,9 @@ reasons AS (
   SELECT *
   FROM public.source_list_phone_block_reasons_v1(
     ARRAY(SELECT ordered.phone_value FROM ordered ORDER BY ordered.ordinal),
-    ARRAY(SELECT ordered.prospect_id FROM ordered ORDER BY ordered.ordinal)
+    ARRAY(SELECT ordered.prospect_id FROM ordered ORDER BY ordered.ordinal),
+    ARRAY(SELECT ordered.county FROM ordered ORDER BY ordered.ordinal),
+    ARRAY(SELECT ordered.situs_county FROM ordered ORDER BY ordered.ordinal)
   )
 )
 SELECT
@@ -690,13 +793,73 @@ FROM ordered
 LEFT JOIN reasons ON reasons.ordinal = ordered.ordinal;
 
 COMMENT ON VIEW public.source_list_dialer_phone_review IS
-  'One set-based scrub for the export batch. Household and property matches are joins, not a loop per phone.';
+  'One set-based scrub for the export batch. Keeps out_of_service_area for counties outside Jackson, Clay, Platte, Johnson, and Wyandotte. Cass is excluded. Household and property matches are joins, not a loop per phone.';
+
+DROP FUNCTION IF EXISTS public.source_list_phone_block_reason_v1(text);
+
+DROP FUNCTION IF EXISTS public.source_list_phone_block_reason_v1(text, text, text);
+CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1(
+  p_phone text,
+  p_county text,
+  p_situs_county text
+)
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+  SELECT found.block_reason
+  FROM public.source_list_phone_block_reasons_v1(
+    ARRAY[p_phone],
+    ARRAY[NULL::uuid],
+    ARRAY[p_county],
+    ARRAY[p_situs_county]
+  ) AS found
+  LIMIT 1;
+$function$;
+
+COMMENT ON FUNCTION public.source_list_phone_block_reason_v1(text, text, text) IS
+  'Three-argument scrub for existing callers. Phone suppression still wins over out_of_service_area. Null or blank county is not a block. Cass is outside the service area.';
+
+CREATE OR REPLACE VIEW public.source_list_dialer_export
+WITH (security_invoker = true) AS
+SELECT
+  source_list_row_id,
+  source_list_id,
+  list_type,
+  county,
+  state,
+  violation_kind,
+  parcel_id,
+  case_id,
+  address,
+  owner_names,
+  amount_owed,
+  property_id,
+  prospect_id,
+  row_status,
+  phone_e164,
+  phone_origin,
+  pull_date,
+  source_file_name
+FROM public.source_list_dialer_phone_review
+WHERE block_reason IS NULL
+  AND (
+    list_type IS DISTINCT FROM 'tax_delinquent'
+    OR public.tax_status_export_allowed_v1(parcel_id, county, prospect_id)
+  );
+
+COMMENT ON VIEW public.source_list_dialer_export IS
+  'Dialer load file. Suppression still applies. Tax-delinquent rows also need a live delinquent balance from the last 7 days.';
 
 REVOKE ALL ON FUNCTION public.dialer_unknown_tie_release_v1(text, text, text, text, boolean, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dialer_encode_block_keys_v1(text[]) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.source_list_phone_block_reasons_v1(text[], uuid[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.source_list_phone_block_reasons_v1(text[], uuid[], text[], text[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.source_list_phone_block_reason_v1(text, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.dialer_stamp_rank_v1(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dialer_unknown_tie_release_v1(text, text, text, text, boolean, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dialer_encode_block_keys_v1(text[]) TO service_role;
-GRANT EXECUTE ON FUNCTION public.source_list_phone_block_reasons_v1(text[], uuid[]) TO service_role;
+GRANT EXECUTE ON FUNCTION public.source_list_phone_block_reasons_v1(text[], uuid[], text[], text[]) TO service_role;
 GRANT EXECUTE ON FUNCTION public.source_list_phone_block_reason_v1(text, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.source_list_phone_block_reason_v1(text, text, text) TO service_role;
+GRANT SELECT ON TABLE public.source_list_dialer_export TO service_role;
