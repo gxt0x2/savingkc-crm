@@ -68,8 +68,10 @@ describe('GET /api/source-lists/dialer-export', () => {
     expect(csv).toContain('+18165550101')
     expect(csv).toContain(batchId)
     expect(csv).not.toContain('8165550199')
-    expect(mocks.rpc.mock.calls[0][0]).toBe('record_source_list_export_batch_v1')
-    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({
+    expect(mocks.rpc.mock.calls[0][0]).toBe('sync_phone_line_check_config_v1')
+    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({ p_block_enabled: false })
+    expect(mocks.rpc.mock.calls[1][0]).toBe('record_source_list_export_batch_v1')
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({
       p_list_type: 'tax_delinquent',
       p_county: 'jackson',
       p_state: 'MO',

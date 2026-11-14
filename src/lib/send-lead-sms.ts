@@ -34,7 +34,7 @@ export type SendLeadSmsResult =
       deliveryState: 'delivered_and_persisted' | 'delivered_not_persisted'
       warning?: string
     }
-  | { status: 'skipped'; reason: 'opted_out' | 'duplicate' }
+  | { status: 'skipped'; reason: 'opted_out' | 'duplicate' | 'sms_requires_mobile' | 'line_check_unknown' | 'suppressed_lookup_inactive' | 'suppressed_bad_number' | 'line_status_unreachable' }
   | { status: 'failed'; error: string; deliveryState?: 'delivery_unknown' }
 
 export interface SendLeadSmsInput {
@@ -143,7 +143,17 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
   const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, templateId, signal, beforePersistence } = input
   const body = input.body.trim()
 
-  if (await automatedSmsBlockReason({ phone, leadId: leadId ?? null })) return { status: 'skipped', reason: 'opted_out' }
+  const smsBlock = await automatedSmsBlockReason({ phone, leadId: leadId ?? null })
+  if (
+    smsBlock === 'sms_requires_mobile'
+    || smsBlock === 'line_check_unknown'
+    || smsBlock === 'suppressed_lookup_inactive'
+    || smsBlock === 'suppressed_bad_number'
+    || smsBlock === 'line_status_unreachable'
+  ) {
+    return { status: 'skipped', reason: smsBlock }
+  }
+  if (smsBlock) return { status: 'skipped', reason: 'opted_out' }
   if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
 
   const from = await resolveSmsFromNumber(leadId, phone, fromPhone)
