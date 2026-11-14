@@ -5,6 +5,7 @@ import { ProviderCheckError } from './provider'
 import type { EmailValidationProvider } from './provider'
 import type { StoredEmailValidation } from './validate'
 import { validateEmail, type EmailValidationStore } from './validate'
+import { coldLedgerReviewReasons } from './cold-send'
 import { emailValidationDailyCap, isBadEmailStatus } from './status'
 
 function memoryStore(seed: StoredEmailValidation[] = []) {
@@ -75,14 +76,16 @@ describe('email validation on import', () => {
     expect(paid.verify).not.toHaveBeenCalled()
   })
 
-  it('records a role address and still asks the provider', async () => {
+  it('records a role address for cold-send review instead of mailing it', async () => {
     const paid = provider('valid')
+    const freshChecked = new Date()
     const { store, rows } = memoryStore()
     const result = await validateEmail('Info@Example.com', { store, lookupMx: present, provider: paid, dailyCap: 10 })
     expect(result).toMatchObject({ normalizedEmail: 'info@example.com', emailStatus: 'valid', isRole: true, skippedProvider: null })
     expect(paid.verify).toHaveBeenCalledOnce()
     expect(rows.get('info@example.com')?.isRole).toBe(true)
-    expect(isBadEmailStatus('valid')).toBe(false)
+    expect(isBadEmailStatus(result.emailStatus)).toBe(false)
+    expect(coldLedgerReviewReasons({ emailStatus: result.emailStatus, checkedAt: freshChecked, isRole: true }, freshChecked)).toContain('Role mailbox needs review')
   })
 
   it('stores unverified when no provider key is configured', async () => {
@@ -213,25 +216,30 @@ describe('MillionVerifier adapter', () => {
 
   it('maps a mocked provider response and never calls global fetch', async () => {
     const globalFetch = vi.spyOn(globalThis, 'fetch')
-    const fetcher = vi.fn(async () => Response.json({
-      email: 'seller@example.com',
-      quality: 'good',
-      result: 'ok',
-      resultcode: 1,
-      subresult: '',
-      free: false,
-      role: false,
-      credits: 10,
-      executiontime: 1,
-      error: '',
-      livemode: true,
-    }))
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      void input
+      return Response.json({
+        email: 'seller@example.com',
+        quality: 'good',
+        result: 'ok',
+        resultcode: 1,
+        subresult: '',
+        free: false,
+        role: false,
+        credits: 10,
+        executiontime: 1,
+        error: '',
+        livemode: true,
+      })
+    })
     const result = await createMillionVerifier('test-key', fetcher).verify('seller@example.com')
     expect(result.status).toBe('valid')
-    const url = fetcher.mock.calls[0][0] as URL
-    expect(url.origin).toBe('https://api.millionverifier.com')
-    expect(url.searchParams.get('email')).toBe('seller@example.com')
-    expect(url.searchParams.get('api')).toBe('test-key')
+    const input = fetcher.mock.calls[0]?.[0]
+    expect(input).toBeInstanceOf(URL)
+    if (!(input instanceof URL)) throw new Error('MillionVerifier was not called with a URL')
+    expect(input.origin).toBe('https://api.millionverifier.com')
+    expect(input.searchParams.get('email')).toBe('seller@example.com')
+    expect(input.searchParams.get('api')).toBe('test-key')
     expect(globalFetch).not.toHaveBeenCalled()
     globalFetch.mockRestore()
   })
@@ -246,6 +254,10 @@ describe('MillionVerifier adapter', () => {
     await expect(createMillionVerifier('test-key', fetcher).verify('seller@example.com')).resolves.toMatchObject({ status })
   })
 
+  it('stores didyoumean and does not apply it', async () => {
+    expect((await createMillionVerifier('test-key', vi.fn(async () => Response.json({ result: 'invalid', resultcode: 6, didyoumean: 'seller@example.com', role: false }))).verify('seler@example.com')).raw.didyoumean).toBe('seller@example.com')
+  })
+
   it('hides the api key when the provider request fails', async () => {
     const fetcher = vi.fn(async () => {
       throw new Error('network https://api.millionverifier.com/api/v3/?api=test-key')
@@ -257,13 +269,13 @@ describe('MillionVerifier adapter', () => {
 })
 
 describe('email validation migration', () => {
-  const sql = readFileSync('supabase/migrations/20261203120000_email_address_validation.sql', 'utf8')
+  const sql = readFileSync('supabase/migrations/20261203120300_email_address_validation.sql', 'utf8')
 
   it('adds the ledger and the daily cap without deleting data', () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS public.email_address_validations')
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS public.email_validation_usage')
     expect(sql).toContain("email_status IN ('valid', 'invalid', 'catch_all', 'unknown', 'unverified', 'disposable')")
-    expect(sql).toContain("provider IN ('local', 'millionverifier', 'bounce')")
+    expect(sql).toContain("provider IN ('local', 'millionverifier', 'zerobounce', 'bounce')")
     expect(sql).toContain('checked_at')
     expect(sql).toContain('raw_result')
     expect(sql).toContain('reserve_email_validation_check_v1')

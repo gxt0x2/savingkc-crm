@@ -139,11 +139,12 @@ describe('bad addresses are excluded from sending', () => {
     ]
     for (const file of files) {
       const source = readFileSync(file, 'utf8')
-      expect(source, file).toMatch(/blockedEmailStatus|isBadEmailStatus|emailBlockedInWorkflow|isHardBounce|bounceTypeFromPayload|recordWrittenEmails/)
+      expect(source, file).toMatch(/blockedEmailStatus|isBadEmailStatus|emailBlockedInWorkflow|isHardBounce|bounceTypeFromPayload|recordWrittenEmails|coldLedgerReviewReasons|coldLedgerBlocksDispatch|coldLedgerDispatchHold/)
     }
-    expect(readFileSync('src/lib/email/workflow/service.ts', 'utf8')).toContain('Email address cannot be mailed')
+    expect(readFileSync('src/lib/email-validation/cold-send.ts', 'utf8')).toContain('Email address cannot be mailed')
     expect(readFileSync('src/lib/email/inbound/delivery.ts', 'utf8')).toContain("provider='bounce'")
     expect(readFileSync('src/lib/email/dispatch/service.ts', 'utf8')).toContain('email_address_validations')
-    expect(readFileSync('src/lib/email/audiences/import.ts', 'utf8')).toContain('email_not_deliverable')
+    expect(readFileSync('src/lib/email/audiences/import.ts', 'utf8')).toContain('coldLedgerReviewReasons')
+    expect(readFileSync('src/lib/email/audiences/import.ts', 'utf8')).toContain('verificationStateIgnoringLedger')
   })
 })

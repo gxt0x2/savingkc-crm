@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.email_address_validations (
     email_status IN ('valid', 'invalid', 'catch_all', 'unknown', 'unverified', 'disposable')
   ),
   CONSTRAINT email_address_validations_provider_check CHECK (
-    provider IS NULL OR provider IN ('local', 'millionverifier', 'bounce')
+    provider IS NULL OR provider IN ('local', 'millionverifier', 'zerobounce', 'bounce')
   ),
   CONSTRAINT email_address_validations_raw_check CHECK (
     raw_result IS NULL OR jsonb_typeof(raw_result) = 'object'

@@ -8,8 +8,12 @@ export type ProviderVerification = {
   raw: Record<string, unknown>
 }
 
+/**
+ * Drop-in checker. MillionVerifier is the low-cost adapter implemented today.
+ * ZeroBounce is the adapter to add when accuracy matters more than price.
+ */
 export interface EmailValidationProvider {
-  readonly id: 'millionverifier'
+  readonly id: string
   verify(email: string): Promise<ProviderVerification>
 }
 

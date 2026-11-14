@@ -6,7 +6,8 @@ import {
 } from './provider'
 
 /**
- * MillionVerifier is the paid checker.
+ * MillionVerifier is the low-cost checker implemented behind EmailValidationProvider.
+ * ZeroBounce is the adapter to add when accuracy matters more than price.
  *
  * ZeroBounce and NeverBounce list around a third of a cent to eight tenths of a
  * cent per address. MillionVerifier's published packs are lower: about $0.0039
@@ -40,10 +41,10 @@ function storedRaw(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function millionVerifierFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv | { MILLIONVERIFIER_API_KEY?: string } = process.env,
   fetcher: typeof fetch = fetch,
 ): EmailValidationProvider | null {
-  const apiKey = env.MILLIONVERIFIER_API_KEY?.trim()
+  const apiKey = (env as { MILLIONVERIFIER_API_KEY?: string }).MILLIONVERIFIER_API_KEY?.trim()
   if (!apiKey) return null
   return createMillionVerifier(apiKey, fetcher)
 }

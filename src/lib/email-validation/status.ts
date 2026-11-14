@@ -9,7 +9,7 @@ export const EMAIL_STATUSES = [
 
 export type EmailStatus = (typeof EMAIL_STATUSES)[number]
 
-export type EmailValidationProviderName = 'local' | 'millionverifier' | 'bounce'
+export type EmailValidationProviderName = 'local' | 'millionverifier' | 'zerobounce' | 'bounce'
 
 /** Invalid, disposable, and hard-bounced addresses (stored as invalid) are not mailable. */
 export function isBadEmailStatus(status: string | null | undefined): status is 'invalid' | 'disposable' {
@@ -56,8 +56,8 @@ export function emailLocalPart(email: string): string {
 export const EMAIL_VALIDATION_RECHECK_MS = 90 * 24 * 60 * 60 * 1000
 export const DEFAULT_EMAIL_VALIDATION_DAILY_CAP = 2000
 
-export function emailValidationDailyCap(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.EMAIL_VALIDATION_DAILY_CAP?.trim()
+export function emailValidationDailyCap(env: NodeJS.ProcessEnv | { EMAIL_VALIDATION_DAILY_CAP?: string } = process.env): number {
+  const raw = (env as { EMAIL_VALIDATION_DAILY_CAP?: string }).EMAIL_VALIDATION_DAILY_CAP?.trim()
   if (!raw) return DEFAULT_EMAIL_VALIDATION_DAILY_CAP
   const value = Number(raw)
   if (!Number.isInteger(value) || value < 0 || value > 1_000_000) return DEFAULT_EMAIL_VALIDATION_DAILY_CAP

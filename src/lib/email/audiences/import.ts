@@ -1,4 +1,4 @@
-import { isBadEmailStatus } from "../../email-validation/status";
+import { coldLedgerReviewReasons, verificationStateIgnoringLedger } from "../../email-validation/cold-send";
 import { selectInitialAddresses, contactHygieneReasons } from '../hygiene/guards';
 import "server-only";
 import type { Sql } from "postgres";
@@ -71,10 +71,10 @@ export async function importAudience(
         verifiedAt <= now &&
         verifiedAt.getTime() > now.getTime() - 30 * 86_400_000 &&
         row.verificationSource;
-      const state =
-        row.verificationStatus === "valid" && !current
-          ? "unknown"
-          : row.verificationStatus;
+      const state = verificationStateIgnoringLedger(
+        row.verificationStatus === "valid" && !current ? "unknown" : row.verificationStatus,
+        null,
+      );
       const [address] =
         await tx`insert into em_addresses(workspace_id,raw_address,normalized_address,verification_state,verification_provider,verified_at,verification_expires_at,verification_evidence)
     values(${ws.id},${row.email},${email},${state},${row.verificationSource ?? null},${verifiedAt},${current ? new Date(verifiedAt!.getTime() + 30 * 86_400_000) : null},${tx.json({ source: input.source, permissionBasis: input.permissionBasis, importedBy: subject })})
@@ -126,8 +126,8 @@ export async function importAudience(
         reasons.push("address_verification");
       if (stop) reasons.push("marketing_stopped");
       const [ledger] =
-        await tx`select email_status from email_address_validations where normalized_email=${email}`;
-      if (isBadEmailStatus(ledger?.email_status)) reasons.push("email_not_deliverable");
+        await tx`select email_status, checked_at, is_role from email_address_validations where normalized_email=${email}`;
+      reasons.push(...coldLedgerReviewReasons(ledger ? { emailStatus: ledger.email_status, checkedAt: ledger.checked_at, isRole: ledger.is_role } : null, now));
       prepared.push({ addressId: address.id, partyId, reasons });
     }
     const eligible = prepared.filter((r) => !r.reasons.length).length;
