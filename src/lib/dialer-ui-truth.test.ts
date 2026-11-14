@@ -81,4 +81,11 @@ describe('Prospecting calling-floor truth contract', () => {
     expect(contextRail).not.toContain('Recent Calls')
     expect(callingFloor).not.toContain('/api/call-log?limit=50')
   })
+
+  it('does not remount the live dialer when the current seller changes', () => {
+    expect(callingFloor).not.toContain('key={currentSubjectKey || \'current\'}')
+    expect(callingFloor).toContain('<ProspectingCallingContextRail')
+    expect(contextRail).toContain('useWorkspaceCallRail()')
+    expect(contextRail).toContain('if (recordScope !== recordKey)')
+  })
 })
