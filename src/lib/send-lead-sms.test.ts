@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   insert: vi.fn(),
   automatedSmsBlockReason: vi.fn(),
+  evaluateHumanOneToOneSms: vi.fn(),
   isDuplicateSms: vi.fn(),
   logSmsSend: vi.fn(),
   safeSendSMS: vi.fn(),
@@ -14,12 +15,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/supabase-lazy', () => ({
   supabase: { rpc: mocks.rpc, from: mocks.from },
 }))
-vi.mock('@/lib/sms-send-gate', () => ({ automatedSmsBlockReason: mocks.automatedSmsBlockReason }))
+vi.mock('@/lib/sms-send-gate', () => ({
+  automatedSmsBlockReason: mocks.automatedSmsBlockReason,
+  evaluateHumanOneToOneSms: mocks.evaluateHumanOneToOneSms,
+}))
 vi.mock('@/lib/sms-dedup', () => ({
   isDuplicateSms: mocks.isDuplicateSms,
   logSmsSend: mocks.logSmsSend,
 }))
-vi.mock('@/lib/safe-communications', () => ({ safeSendSMS: mocks.safeSendSMS }))
+vi.mock('@/lib/safe-communications', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/safe-communications')>('@/lib/safe-communications')
+  return { ...actual, safeSendSMS: mocks.safeSendSMS }
+})
 vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.checkAutoAdvance }))
 
 import { resolveSmsFromNumber, sendLeadSms } from './send-lead-sms'
@@ -29,6 +36,7 @@ describe('conversation SMS sender resolution and persistence', () => {
     vi.clearAllMocks()
     mocks.rpc.mockResolvedValue({ data: [], error: null })
     mocks.automatedSmsBlockReason.mockResolvedValue(null)
+    mocks.evaluateHumanOneToOneSms.mockResolvedValue({ ok: true, cold: false, warnings: [] })
     mocks.isDuplicateSms.mockResolvedValue(false)
     mocks.logSmsSend.mockResolvedValue(undefined)
     mocks.safeSendSMS.mockImplementation(async (params: { beforePostProviderWrite?: () => Promise<void> }) => {
@@ -116,11 +124,13 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello from the composer',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
     })
 
     expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
       to: '+19135550123',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       senderUse: 'conversation',
     }))
   })
@@ -133,6 +143,8 @@ describe('conversation SMS sender resolution and persistence', () => {
       phone: '+19135550123',
       body: 'Cash offer',
       fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
     })
 
     expect(result).toEqual({ status: 'skipped', reason: 'opted_out' })
@@ -147,6 +159,8 @@ describe('conversation SMS sender resolution and persistence', () => {
       phone: '+19135550123',
       body: 'Hello',
       fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       agent: 'Casey',
     })
 
@@ -167,6 +181,8 @@ describe('conversation SMS sender resolution and persistence', () => {
       phone: '+19135550123',
       body: 'Hello',
       fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
     })
 
     expect(result).toMatchObject({
@@ -185,6 +201,8 @@ describe('conversation SMS sender resolution and persistence', () => {
       phone: '+19135550123',
       body: 'Hello',
       fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       beforePersistence,
     })
 
@@ -203,6 +221,8 @@ describe('conversation SMS sender resolution and persistence', () => {
       phone: '+19135550123',
       body: 'Hello',
       fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       beforePersistence,
     })
 
@@ -232,6 +252,8 @@ describe('conversation SMS sender resolution and persistence', () => {
       phone: '+19135550123',
       body: 'Hello',
       fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       beforePersistence: vi.fn().mockResolvedValue(undefined),
     }).then(settled)
 
@@ -258,6 +280,8 @@ describe('conversation SMS sender resolution and persistence', () => {
       phone: '+19135550123',
       body: 'Hello',
       fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       signal: new AbortController().signal,
       beforePersistence: vi.fn().mockResolvedValue(undefined),
     })
@@ -270,5 +294,42 @@ describe('conversation SMS sender resolution and persistence', () => {
     expect(mocks.insert).not.toHaveBeenCalled()
     expect(mocks.logSmsSend).not.toHaveBeenCalled()
     expect(mocks.checkAutoAdvance).not.toHaveBeenCalled()
+  })
+
+  it('refuses the human template without a signed-in user or with more than one recipient', async () => {
+    const noSession = await sendLeadSms({
+      phone: '+19135550123',
+      body: 'Hello',
+      fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+    })
+    const many = await sendLeadSms({
+      phone: '+19135550123, +18165550199',
+      body: 'Hello',
+      fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
+    })
+
+    expect(noSession).toMatchObject({ status: 'failed', code: 'automated_sms_disabled' })
+    expect(many).toMatchObject({ status: 'failed', code: 'automated_sms_disabled' })
+    expect(mocks.evaluateHumanOneToOneSms).not.toHaveBeenCalled()
+  })
+
+  it('returns automated_sms_disabled for any template other than a human 1:1', async () => {
+    const result = await sendLeadSms({
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Campaign blast',
+      fromPhone: '+18166088552',
+      templateId: 'sms.campaign.v1',
+    })
+
+    expect(result).toMatchObject({ status: 'failed', code: 'automated_sms_disabled' })
+    expect(mocks.evaluateHumanOneToOneSms).not.toHaveBeenCalled()
+    expect(mocks.automatedSmsBlockReason).not.toHaveBeenCalled()
+    expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
+      templateId: 'sms.campaign.v1',
+    }))
   })
 })

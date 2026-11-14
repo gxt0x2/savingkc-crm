@@ -142,11 +142,20 @@ export async function POST(req: Request) {
         agent: actor,
         source: activitySource,
         templateId: HUMAN_1TO1_SMS_TEMPLATE_ID,
+        humanSession: authenticatedActor.subject ? { userId: authenticatedActor.subject } : null,
         metadata: Object.keys(prospectMetadata).length > 0 ? prospectMetadata : undefined,
         signal: providerSignal,
         beforePersistence: reassertPersistenceControl,
       })
 
+      if (result.status === 'refused') {
+        return NextResponse.json({
+          success: false,
+          sent: false,
+          error: result.error,
+          code: result.code,
+        }, { status: 409 })
+      }
       if (result.status === 'failed') {
         if (result.deliveryState === 'delivery_unknown') {
           return NextResponse.json({

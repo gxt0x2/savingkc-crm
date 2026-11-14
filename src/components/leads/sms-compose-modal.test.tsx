@@ -68,4 +68,44 @@ describe('SmsComposeModal Dialer operation control', () => {
     expect(JSON.parse(String(sends[1]?.[1]?.body))).toMatchObject({ mode: 'email', to: 'helen@example.com' })
     await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/control/operations'))).toHaveLength(4))
   })
+
+  it('shows a quiet-hours refusal instead of calling it a duplicate', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/leads/lead-1/activities?limit=100') return { ok: true, json: async () => ({ activities: [] }) }
+      if (url === '/api/sms-templates') return { ok: true, json: async () => ({ templates: [] }) }
+      if (url === '/api/conversations/send') {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({
+            success: false,
+            sent: false,
+            code: 'sms_quiet_hours',
+            error: "This text is outside 8:00am–9:00pm in the recipient's local time.",
+          }),
+        }
+      }
+      throw new Error(`Unexpected request ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SmsComposeModal
+      lead={{
+        id: 'lead-1',
+        full_name: 'Helen Seller',
+        phone: '+18165550123',
+        email: 'helen@example.com',
+        property_address: '123 Main Street',
+        assigned_agent: null,
+      }}
+      onClose={vi.fn()}
+    />)
+
+    const textComposer = screen.getByPlaceholderText('Type a message…')
+    fireEvent.change(textComposer, { target: { value: 'Hello from the floor.' } })
+    fireEvent.keyDown(textComposer, { key: 'Enter', metaKey: true })
+
+    expect(await screen.findByText("This text is outside 8:00am–9:00pm in the recipient's local time.")).toBeTruthy()
+    expect(screen.queryByText('Duplicate message — already sent recently')).toBeNull()
+  })
 })

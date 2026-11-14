@@ -5,9 +5,9 @@
 // Both the canonical single-send endpoint (/api/conversations/send) and the bulk
 // sender (/api/sms/bulk) call this so they never drift apart.
 
-import { automatedSmsBlockReason } from '@/lib/sms-send-gate'
+import { automatedSmsBlockReason, evaluateHumanOneToOneSms } from '@/lib/sms-send-gate'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
-import { HUMAN_1TO1_SMS_TEMPLATE_ID, safeSendSMS } from '@/lib/safe-communications'
+import { HUMAN_1TO1_SMS_TEMPLATE_ID, humanOneToOneProof, safeSendSMS, type HumanSmsSession } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { supabase } from '@/lib/supabase-lazy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -27,15 +27,16 @@ type SmsActivityRow = {
 
 export type SendLeadSmsResult =
   | {
-      status: 'sent'
-      sid: string | undefined
-      from: string
-      persisted: boolean
-      deliveryState: 'delivered_and_persisted' | 'delivered_not_persisted'
-      warning?: string
-    }
+    status: 'sent'
+    sid: string | undefined
+    from: string
+    persisted: boolean
+    deliveryState: 'delivered_and_persisted' | 'delivered_not_persisted'
+    warning?: string
+  }
   | { status: 'skipped'; reason: 'opted_out' | 'duplicate' }
-  | { status: 'failed'; error: string; deliveryState?: 'delivery_unknown' }
+  | { status: 'refused'; code: 'sms_quiet_hours' | 'sms_dnc_blocked' | 'sms_registry_dnc'; error: string }
+  | { status: 'failed'; error: string; code?: 'automated_sms_disabled'; deliveryState?: 'delivery_unknown' }
 
 export interface SendLeadSmsInput {
   leadId?: string | null
@@ -56,6 +57,10 @@ export interface SendLeadSmsInput {
   signal?: AbortSignal
   /** Revalidates the dialer operation after provider acceptance and before CRM persistence. */
   beforePersistence?: () => Promise<void>
+  /** Clock used for recipient quiet hours. Defaults to the current time. */
+  now?: Date
+  /** Verified signed-in user. Required for the human 1:1 template. */
+  humanSession?: HumanSmsSession | null
 }
 
 /**
@@ -139,9 +144,36 @@ export async function resolveSmsFromNumber(
 
 export { HUMAN_1TO1_SMS_TEMPLATE_ID }
 
+function notedWarning(warning: string | undefined, phoneWarnings: string[]): string | undefined {
+  if (!phoneWarnings.length) return warning
+  const note = `Noted ${phoneWarnings.join(', ')} on this number. The text was not blocked.`
+  return warning ? `${warning} ${note}` : note
+}
+
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
-  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, templateId, signal, beforePersistence } = input
+  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, templateId, signal, beforePersistence, now, humanSession } = input
   const body = input.body.trim()
+
+  if (!humanOneToOneProof({ templateId, to: phone, humanSession })) {
+    const msg = await safeSendSMS({
+      body,
+      from: fromPhone || '',
+      to: typeof phone === 'string' ? phone : '',
+      senderUse: 'conversation',
+      statusCallback,
+      templateId,
+      humanSession,
+      signal,
+    })
+    return {
+      status: 'failed',
+      code: 'automated_sms_disabled',
+      error: msg.error || `Automated SMS is disabled. Only a human-initiated 1:1 send (${HUMAN_1TO1_SMS_TEMPLATE_ID}) is allowed.`,
+    }
+  }
+
+  const decision = await evaluateHumanOneToOneSms({ phone, leadId: leadId ?? null, now })
+  if (!decision.ok) return { status: 'refused', code: decision.code, error: decision.error }
 
   if (await automatedSmsBlockReason({ phone, leadId: leadId ?? null })) return { status: 'skipped', reason: 'opted_out' }
   if (await isDuplicateSms(phone, body)) return { status: 'skipped', reason: 'duplicate' }
@@ -154,6 +186,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     senderUse: 'conversation',
     statusCallback,
     templateId,
+    humanSession,
     signal,
     beforePostProviderWrite: beforePersistence,
   })
@@ -173,7 +206,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
       from: msg.from,
       persisted: false,
       deliveryState: 'delivered_not_persisted',
-      warning: 'SMS delivered, but CRM history could not be saved. Do not resend this message.',
+      warning: notedWarning('SMS delivered, but CRM history could not be saved. Do not resend this message.', decision.warnings),
     }
   }
 
@@ -188,7 +221,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
         from: msg.from,
         persisted: false,
         deliveryState: 'delivered_not_persisted',
-        warning: 'SMS delivered, but CRM history could not be saved. Do not resend this message.',
+        warning: notedWarning('SMS delivered, but CRM history could not be saved. Do not resend this message.', decision.warnings),
       }
     }
   }
@@ -209,6 +242,12 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
         sender_mismatch: Boolean(msg.senderMismatch),
         to: phone,
         message_sid: msg.sid,
+        ...(decision.cold ? {
+          consent_basis: 'owner_accepted_cold_1to1',
+          sender_line: msg.from,
+          registry_status: decision.registryStatus,
+        } : {}),
+        ...(decision.warnings.length ? { phone_warnings: decision.warnings } : {}),
       },
     })
     persistenceError = persistence.error
@@ -245,7 +284,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
       from: msg.from,
       persisted: false,
       deliveryState: 'delivered_not_persisted',
-      warning: 'SMS delivered, but CRM history could not be saved. Do not resend this message.',
+      warning: notedWarning('SMS delivered, but CRM history could not be saved. Do not resend this message.', decision.warnings),
     }
   }
 
@@ -255,5 +294,6 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     from: msg.from,
     persisted: true,
     deliveryState: 'delivered_and_persisted',
+    warning: notedWarning(undefined, decision.warnings),
   }
 }
