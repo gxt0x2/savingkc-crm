@@ -8,6 +8,7 @@ const harness = vi.hoisted(() => {
     leads: [] as Row[],
     methods: [] as Row[],
     activities: [] as Row[],
+    prospectPhones: [] as Row[],
     errors: new Set<string>(),
   }
 
@@ -16,6 +17,7 @@ const harness = vi.hoisted(() => {
     if (table === 'leads') return state.leads
     if (table === 'crm_contact_methods') return state.methods
     if (table === 'lead_activities') return state.activities
+    if (table === 'prospect_phones') return state.prospectPhones
     return []
   }
 
@@ -108,6 +110,7 @@ describe('INC-2026-09-22-001 automated SMS suppression', () => {
     harness.state.leads.length = 0
     harness.state.methods.length = 0
     harness.state.activities.length = 0
+    harness.state.prospectPhones.length = 0
     harness.state.errors.clear()
     seedLead()
   })
@@ -213,6 +216,18 @@ describe('INC-2026-09-22-001 automated SMS suppression', () => {
     harness.state.leads[0].dead_reason = 'dnc_refused'
     await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBe('dnd')
     expect(harness.state.leads[0]).toMatchObject({ id: LEAD_ID, dead_reason: 'dnc_refused' })
+  })
+
+  it('blocks a prospect landline and allows an active mobile', async () => {
+    harness.state.prospectPhones.push({ phone: PHONE, line_type: 'landline', line_status: 'active' })
+    await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBe('sms_requires_mobile')
+    harness.state.prospectPhones[0].line_type = 'nonFixedVoip'
+    await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBeNull()
+  })
+
+  it('fails closed when a prospect phone has not been checked', async () => {
+    harness.state.prospectPhones.push({ phone: PHONE, line_type: null, line_status: null })
+    await expect(automatedSmsBlockReason({ phone: PHONE, leadId: LEAD_ID })).resolves.toBe('line_check_unknown')
   })
 
   it('does not send when suppression status cannot be verified', async () => {

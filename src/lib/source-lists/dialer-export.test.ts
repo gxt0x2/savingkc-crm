@@ -23,13 +23,14 @@ function row(phone: string, address = '10 Oak'): DialerExportRow {
     source_list_id: 'list-1',
     phone_origin: 'source_row',
     export_batch_id: 'batch-1',
+    line_check_flag: null,
   }
 }
 
 describe('dialer export file', () => {
   it('writes a header even when every number was scrubbed', () => {
     expect(dialerExportCsv([])).toBe(
-      'list_type,county,state,violation_kind,parcel_id,case_id,address,owner_names,amount_owed,phone_e164,property_id,prospect_id,row_status,pull_date,source_file_name,source_list_row_id,source_list_id,phone_origin,export_batch_id\n',
+      'list_type,county,state,violation_kind,parcel_id,case_id,address,owner_names,amount_owed,phone_e164,property_id,prospect_id,row_status,pull_date,source_file_name,source_list_row_id,source_list_id,phone_origin,export_batch_id,line_check_flag\n',
     )
   })
 

@@ -25,6 +25,7 @@ export const DIALER_EXPORT_COLUMNS = [
   'source_list_id',
   'phone_origin',
   'export_batch_id',
+  'line_check_flag',
 ] as const
 
 export interface DialerExportRow {
@@ -47,6 +48,7 @@ export interface DialerExportRow {
   source_list_id: string
   phone_origin: string
   export_batch_id: string
+  line_check_flag: string | null
 }
 
 export interface DialerExportExclusion {
@@ -118,6 +120,7 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
     source_list_id: sourceListId,
     phone_origin: typeof row.phone_origin === 'string' ? row.phone_origin : '',
     export_batch_id: exportBatchId,
+    line_check_flag: typeof row.line_check_flag === 'string' ? row.line_check_flag : null,
   }
 }
 
