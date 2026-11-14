@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAdminOrSecret } from '@/lib/api/admin-auth'
-import { runPhoneLineChecks } from '@/lib/server/phone-line-check'
+import { LineCheckConfigError, runPhoneLineChecks } from '@/lib/server/phone-line-check'
 import { phoneLineCheckStore } from '@/lib/server/phone-line-check-store'
 import { createTwilioLookupClient, lookupPhoneLine } from '@/lib/server/phone-line-lookup'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -19,6 +19,9 @@ const HEADERS = { 'Cache-Control': 'no-store' }
 
 function failure(error: unknown) {
   const message = error instanceof Error ? error.message : ''
+  if (error instanceof LineCheckConfigError || message.includes('LINE_CHECK_COST_USD') || message.includes('line_check_cost_unconfigured')) {
+    return NextResponse.json({ ok: false, error: 'Line check price is not configured', code: 'line_check_cost_unconfigured' }, { status: 503, headers: HEADERS })
+  }
   if (message.includes('not configured')) {
     return NextResponse.json({ ok: false, error: 'Twilio Lookup is not configured' }, { status: 503, headers: HEADERS })
   }

@@ -7,18 +7,16 @@
  * active. Inactive is the Lookup-only disconnected result.
  *
  * Type names are the Line Type Intelligence values, stored with Twilio's
- * spelling (fixedVoip, nonFixedVoip, tollFree, sharedCost).
+ * spelling (fixedVoip, nonFixedVoip, tollFree, sharedCost). Line type is not
+ * consent. Counsel ruling §4a, 2026-11-14 (Lookup inactive).
  *
- * Published price, October 2026, first volume tier: line status $0.007 plus
- * line type intelligence $0.008 = $0.015 per check. The database function is
- * the writer and uses this same price for the hard caps.
+ * The per-check price comes from LINE_CHECK_COST_USD. The database function
+ * reads the same value after the app stores it, and it reserves that spend
+ * before any Lookup call.
  *
- * Counsel rules (Pat, 2026-11-14) are applied in
- * public.apply_phone_line_checks_v1. decidePhoneLineCheck mirrors that
- * function so the branches stay reviewable here.
+ * decidePhoneLineCheck mirrors public.phone_line_decide_v1.
  */
 
-export const PHONE_LINE_CHECK_COST_USD = 0.015
 export const PHONE_LINE_DAILY_PHONE_CAP = 1500
 export const PHONE_LINE_DAILY_COST_CAP_USD = 15
 export const PHONE_LINE_MONTHLY_COST_CAP_USD = 60
@@ -75,6 +73,7 @@ export type LineCheckReason =
   | 'check_failed'
   | 'check_failed_stale_active'
   | 'permanent_bad_number'
+  | 'calling_window_lock'
 
 export type RndResult = 'unavailable' | 'clear' | 'permanent_disconnect'
 
@@ -84,7 +83,130 @@ export type LineCheckDecision = {
   recheckCount: number
   staleActiveExport: boolean
   fillPhoneConnected: boolean
+  touchLastActive: boolean
+  keepPriorStatus: boolean
   rnd: RndResult | null
+}
+
+export class LineCheckConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'LineCheckConfigError'
+  }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export function lineCheckCostUsd(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.LINE_CHECK_COST_USD?.trim()
+  if (!raw) throw new LineCheckConfigError('LINE_CHECK_COST_USD is not configured')
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0 || value > 1) {
+    throw new LineCheckConfigError('LINE_CHECK_COST_USD is invalid')
+  }
+  return Math.round(value * 10000) / 10000
+}
+
+export function lineCheckBlockEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = (env.LINE_CHECK_BLOCK_ENABLED ?? '').trim().toLowerCase()
+  return raw === 'true' || raw === '1' || raw === 'on' || raw === 'yes'
+}
+
+export function lineCheckFreshReserveUsd(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.LINE_CHECK_FRESH_RESERVE_USD?.trim()
+  if (!raw) return 5
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0 || value > PHONE_LINE_DAILY_COST_CAP_USD) {
+    throw new LineCheckConfigError('LINE_CHECK_FRESH_RESERVE_USD is invalid')
+  }
+  return Math.round(value * 100) / 100
+}
+
+export function chicagoHour(now: Date): number {
+  const hour = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    hour: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(now).find((part) => part.type === 'hour')?.value
+  return Number(hour ?? '0')
+}
+
+/** 04:00 inclusive through 21:00 exclusive, America/Chicago. */
+export function lineCheckSuppressOnly(now: Date): boolean {
+  const hour = chicagoHour(now)
+  return hour >= 4 && hour < 21
+}
+
+export type LineCheckLane = 'fresh_intake' | 'tier_1' | 'backfill'
+
+export function lineCheckLane(input: {
+  lineCheckedAt: Date | null
+  listPullDate: string | null
+  rowCreatedAt: Date | null
+  rowStatus: string
+  today: string
+}): LineCheckLane {
+  const createdToday = input.rowCreatedAt !== null
+    && chicagoDate(input.rowCreatedAt) === input.today
+  if (input.lineCheckedAt === null && (input.listPullDate === input.today || createdToday)) {
+    return 'fresh_intake'
+  }
+  if (input.rowStatus === 'loaded_to_dialer') return 'tier_1'
+  return 'backfill'
+}
+
+export function chicagoDate(now: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
+
+const SKIP_CLASSES = new Set([
+  'prospect_dnc',
+  'person_dnc',
+  'lead_dnc',
+  'mojo_dnc',
+  'disconnected',
+  'dead_number',
+  'wrong_number',
+])
+
+export function lineCheckSkippedByClass(classes: Array<string | null | undefined>): boolean {
+  return classes.some((value) => typeof value === 'string' && SKIP_CLASSES.has(value))
+}
+
+export function lineCheckExportBlock(input: {
+  lineStatus: string | null
+  lineCheckedAt: Date | null
+  lineLastActiveAt: Date | null
+  now: Date
+  blockEnabled: boolean
+}): string | null {
+  if (!input.blockEnabled) return null
+  if (input.lineStatus === 'suppressed_bad_number') return 'suppressed_bad_number'
+  if (input.lineStatus === 'suppressed_lookup_inactive') return 'suppressed_lookup_inactive'
+  if (input.lineStatus === 'unreachable') return 'line_status_unreachable'
+  if (!input.lineCheckedAt) return 'line_check_unknown'
+  const fresh = input.lineLastActiveAt !== null
+    && input.lineLastActiveAt.getTime() >= input.now.getTime() - PHONE_LINE_STALE_ACTIVE_DAYS * DAY_MS
+  if (!fresh) return 'line_check_stale'
+  return null
+}
+
+function scheduledRecheck(suppressedAt: Date | null, recheckCount: number, now: Date): boolean {
+  if (!suppressedAt) return false
+  const waitDays = recheckCount <= 0 ? PHONE_LINE_RECHECK_DAYS : PHONE_LINE_RECHECK_DAYS * 2
+  return suppressedAt.getTime() <= now.getTime() - waitDays * DAY_MS
+}
+
+function freshLastActive(lastActiveAt: Date | null, now: Date): boolean {
+  return !!lastActiveAt
+    && lastActiveAt.getTime() >= now.getTime() - PHONE_LINE_STALE_ACTIVE_DAYS * DAY_MS
 }
 
 const SMS_LINE_TYPES = new Set(['mobile', 'nonFixedVoip'])
@@ -107,137 +229,136 @@ export function lineTypeAllowsSms(lineType: string | null | undefined): boolean 
   return SMS_LINE_TYPES.has(lineType ?? '')
 }
 
+function held(input: {
+  lineStatus: StoredLineStatus
+  reason: LineCheckReason
+  recheckCount: number
+  staleActiveExport?: boolean
+  fillPhoneConnected?: boolean
+  touchLastActive?: boolean
+  keepPriorStatus?: boolean
+  rnd?: RndResult | null
+}): LineCheckDecision {
+  return {
+    lineStatus: input.lineStatus,
+    reason: input.reason,
+    recheckCount: input.recheckCount,
+    staleActiveExport: input.staleActiveExport ?? false,
+    fillPhoneConnected: input.fillPhoneConnected ?? false,
+    touchLastActive: input.touchLastActive ?? false,
+    keepPriorStatus: input.keepPriorStatus ?? false,
+    rnd: input.rnd ?? null,
+  }
+}
+
 export function decidePhoneLineCheck(input: {
   mappedStatus: MappedLineStatus
   failed: boolean
   priorStatus: StoredLineStatus | null
   priorCheckedAt: Date | null
+  lastActiveAt: Date | null
+  suppressedAt: Date | null
   recheckCount: number
   dialDisconnected: boolean
   rnd: RndResult
   now: Date
+  suppressOnly?: boolean
 }): LineCheckDecision {
   const priorCount = Number.isFinite(input.recheckCount) ? Math.max(0, input.recheckCount) : 0
+  const decision = decideOpen(input, priorCount)
+  if (!input.suppressOnly) return decision
+  if (decision.lineStatus !== 'active' && !decision.touchLastActive && !decision.fillPhoneConnected) {
+    return decision
+  }
+  return held({
+    lineStatus: input.priorStatus ?? 'unknown',
+    reason: 'calling_window_lock',
+    recheckCount: priorCount,
+    keepPriorStatus: true,
+    rnd: decision.rnd,
+  })
+}
+
+function decideOpen(input: {
+  mappedStatus: MappedLineStatus
+  failed: boolean
+  priorStatus: StoredLineStatus | null
+  priorCheckedAt: Date | null
+  lastActiveAt: Date | null
+  suppressedAt: Date | null
+  rnd: RndResult
+  now: Date
+}, priorCount: number): LineCheckDecision {
   if (input.dialDisconnected) {
-    return {
-      lineStatus: 'suppressed_bad_number',
-      reason: 'dial_disconnect',
-      recheckCount: priorCount,
-      staleActiveExport: false,
-      fillPhoneConnected: false,
-      rnd: null,
-    }
+    return held({ lineStatus: 'suppressed_bad_number', reason: 'dial_disconnect', recheckCount: priorCount })
   }
   if (input.priorStatus === 'suppressed_bad_number') {
-    return {
-      lineStatus: 'suppressed_bad_number',
-      reason: 'permanent_bad_number',
-      recheckCount: priorCount,
-      staleActiveExport: false,
-      fillPhoneConnected: false,
-      rnd: null,
-    }
+    return held({ lineStatus: 'suppressed_bad_number', reason: 'permanent_bad_number', recheckCount: priorCount, keepPriorStatus: true })
   }
 
   const failed = input.failed || input.mappedStatus === 'unknown'
+  if (input.priorStatus === 'suppressed_lookup_inactive') {
+    const scheduled = scheduledRecheck(input.suppressedAt, priorCount, input.now)
+    const qualifying = scheduled && !failed && input.mappedStatus !== 'unreachable'
+    if (!qualifying) {
+      return held({
+        lineStatus: 'suppressed_lookup_inactive',
+        reason: 'lookup_inactive',
+        recheckCount: priorCount,
+        keepPriorStatus: true,
+      })
+    }
+    if (input.mappedStatus === 'inactive') {
+      const nextCount = priorCount + 1
+      if (nextCount >= PHONE_LINE_MAX_RECHECKS) {
+        return held({ lineStatus: 'suppressed_bad_number', reason: 'recheck_still_inactive', recheckCount: nextCount })
+      }
+      return held({ lineStatus: 'suppressed_lookup_inactive', reason: 'lookup_inactive', recheckCount: nextCount })
+    }
+    if (input.rnd === 'clear') {
+      return held({
+        lineStatus: 'active',
+        reason: 'recheck_active_rnd_clear',
+        recheckCount: 0,
+        fillPhoneConnected: true,
+        touchLastActive: true,
+        rnd: 'clear',
+      })
+    }
+    return held({
+      lineStatus: 'suppressed_bad_number',
+      reason: input.rnd === 'permanent_disconnect' ? 'rnd_permanent_disconnect' : 'recheck_active_rnd_unavailable',
+      recheckCount: priorCount,
+      rnd: input.rnd === 'permanent_disconnect' ? 'permanent_disconnect' : 'unavailable',
+    })
+  }
+
   if (failed) {
-    const freshActive = input.priorStatus === 'active'
-      && input.priorCheckedAt !== null
-      && input.priorCheckedAt.getTime() >= input.now.getTime() - PHONE_LINE_STALE_ACTIVE_DAYS * 24 * 60 * 60 * 1000
-    if (freshActive) {
-      return {
+    if (input.priorStatus === 'active' && freshLastActive(input.lastActiveAt, input.now)) {
+      return held({
         lineStatus: 'active',
         reason: 'check_failed_stale_active',
         recheckCount: priorCount,
         staleActiveExport: true,
-        fillPhoneConnected: false,
-        rnd: null,
-      }
+        keepPriorStatus: true,
+      })
     }
-    return {
-      lineStatus: 'unknown',
-      reason: 'check_failed',
-      recheckCount: priorCount,
-      staleActiveExport: false,
-      fillPhoneConnected: false,
-      rnd: null,
-    }
+    return held({ lineStatus: 'unknown', reason: 'check_failed', recheckCount: priorCount })
   }
 
   if (input.mappedStatus === 'unreachable') {
-    return {
-      lineStatus: 'unreachable',
-      reason: 'unreachable_hold',
-      recheckCount: priorCount,
-      staleActiveExport: false,
-      fillPhoneConnected: false,
-      rnd: null,
-    }
+    return held({ lineStatus: 'unreachable', reason: 'unreachable_hold', recheckCount: priorCount })
   }
-
   if (input.mappedStatus === 'inactive') {
-    if (input.priorStatus === 'suppressed_lookup_inactive') {
-      const nextCount = priorCount + 1
-      if (nextCount >= PHONE_LINE_MAX_RECHECKS) {
-        return {
-          lineStatus: 'suppressed_bad_number',
-          reason: 'recheck_still_inactive',
-          recheckCount: nextCount,
-          staleActiveExport: false,
-          fillPhoneConnected: false,
-          rnd: null,
-        }
-      }
-      return {
-        lineStatus: 'suppressed_lookup_inactive',
-        reason: 'lookup_inactive',
-        recheckCount: nextCount,
-        staleActiveExport: false,
-        fillPhoneConnected: false,
-        rnd: null,
-      }
-    }
-    return {
-      lineStatus: 'suppressed_lookup_inactive',
-      reason: 'lookup_inactive',
-      recheckCount: 0,
-      staleActiveExport: false,
-      fillPhoneConnected: false,
-      rnd: null,
-    }
+    return held({ lineStatus: 'suppressed_lookup_inactive', reason: 'lookup_inactive', recheckCount: 0 })
   }
-
-  if (input.priorStatus === 'suppressed_lookup_inactive') {
-    if (input.rnd === 'clear') {
-      return {
-        lineStatus: 'active',
-        reason: 'recheck_active_rnd_clear',
-        recheckCount: 0,
-        staleActiveExport: false,
-        fillPhoneConnected: true,
-        rnd: 'clear',
-      }
-    }
-    return {
-      lineStatus: 'suppressed_bad_number',
-      reason: input.rnd === 'permanent_disconnect'
-        ? 'rnd_permanent_disconnect'
-        : 'recheck_active_rnd_unavailable',
-      recheckCount: priorCount,
-      staleActiveExport: false,
-      fillPhoneConnected: false,
-      rnd: input.rnd,
-    }
-  }
-
-  return {
+  return held({
     lineStatus: 'active',
     reason: 'lookup_active',
     recheckCount: 0,
-    staleActiveExport: false,
     fillPhoneConnected: true,
-    rnd: null,
-  }
+    touchLastActive: true,
+  })
 }
 
 type LookupField = Record<string, unknown> | null | undefined
@@ -322,16 +443,21 @@ export type LineCheckApplyResult = {
 }
 
 export type PhoneLineCheckStore = {
-  selectCandidates(input: {
+  syncConfig(input: { costUsd: number; blockEnabled: boolean }): Promise<void>
+  reserveCandidates(input: {
     limit: number
     sourceListId: string | null
     prospectPhoneIds: string[] | null
+    freshReserveUsd: number
+    source: 'cron' | 'manual'
+    actor: string
   }): Promise<LineCheckSelection>
   applyChecks(input: {
     results: LineCheckWrite[]
     source: 'cron' | 'manual'
     actor: string
     reportCap: boolean
+    suppressOnly: boolean
   }): Promise<LineCheckApplyResult>
 }
 
@@ -347,6 +473,8 @@ export type PhoneLineRunSummary = {
   cap: string | null
   costUsd: number
   remaining: number
+  suppressOnly: boolean
+  code: 'calling_window_suppress_only' | null
 }
 
 function numberValue(value: unknown): number {
@@ -429,6 +557,9 @@ export async function runPhoneLineChecks(input: {
   const deadline = input.deadlineMs ?? now() + 240_000
   const batchSize = Math.min(100, Math.max(1, input.batchSize ?? 40))
   const concurrency = Math.min(8, Math.max(1, input.concurrency ?? 8))
+  const costUsd = lineCheckCostUsd()
+  const suppressOnly = lineCheckSuppressOnly(new Date(now()))
+  await input.store.syncConfig({ costUsd, blockEnabled: lineCheckBlockEnabled() })
   let checked = 0
   let failed = 0
   let stopped = false
@@ -438,10 +569,13 @@ export async function runPhoneLineChecks(input: {
   const attempted = new Set<string>()
 
   while (now() < deadline) {
-    const selection = await input.store.selectCandidates({
+    const selection = await input.store.reserveCandidates({
       limit: batchSize,
       sourceListId: input.sourceListId ?? null,
       prospectPhoneIds: input.prospectPhoneIds ?? null,
+      freshReserveUsd: lineCheckFreshReserveUsd(),
+      source: input.source,
+      actor: input.actor,
     })
     remaining = selection.remaining
     for (const candidate of selection.candidates) {
@@ -459,6 +593,7 @@ export async function runPhoneLineChecks(input: {
           source: input.source,
           actor: input.actor,
           reportCap: true,
+          suppressOnly,
         })
         stopped = true
         cap = applied.cap ?? selection.cap
@@ -497,6 +632,7 @@ export async function runPhoneLineChecks(input: {
       source: input.source,
       actor: input.actor,
       reportCap: false,
+      suppressOnly,
     })
     checked += applied.accepted
     if (applied.stopped) {
@@ -515,7 +651,9 @@ export async function runPhoneLineChecks(input: {
     skipped,
     stopped,
     cap,
-    costUsd: Number((checked * PHONE_LINE_CHECK_COST_USD).toFixed(4)),
+    costUsd: Number((checked * costUsd).toFixed(4)),
     remaining,
+    suppressOnly,
+    code: suppressOnly ? 'calling_window_suppress_only' : null,
   }
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUserEmail, isUserAdmin } from '@/lib/auth/admin'
-import { runPhoneLineChecks } from '@/lib/server/phone-line-check'
+import { LineCheckConfigError, runPhoneLineChecks } from '@/lib/server/phone-line-check'
 import { phoneLineCheckStore } from '@/lib/server/phone-line-check-store'
 import { createTwilioLookupClient, lookupPhoneLine } from '@/lib/server/phone-line-lookup'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -24,6 +24,9 @@ function failure(error: unknown) {
     || message.includes('phone_line_check_source')
   ) {
     return NextResponse.json({ ok: false, error: 'Line check request is invalid' }, { status: 400, headers: HEADERS })
+  }
+  if (error instanceof LineCheckConfigError || message.includes('line_check_cost_unconfigured')) {
+    return NextResponse.json({ ok: false, error: 'Line check price is not configured', code: 'line_check_cost_unconfigured' }, { status: 503, headers: HEADERS })
   }
   if (message.includes('not configured')) {
     return NextResponse.json({ ok: false, error: 'Twilio Lookup is not configured' }, { status: 503, headers: HEADERS })
