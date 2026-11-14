@@ -2,6 +2,7 @@
 
 import type { Browser } from 'playwright'
 import { collectorBalanceOrWarn } from './county-collector-balance'
+import { parseJacksonTaxPortalText } from './tax-status/balances'
 import { supabase as supabaseCache } from '@/lib/supabase-lazy'
 import type {
   CountyApiRecord,
@@ -804,60 +805,6 @@ export class CountyEnrichmentService {
    * if SCRAPER_API_KEY is set, otherwise return unknown gracefully.
    */
   private async enrichJacksonCountyTaxCollection(): Promise<JacksonCountyTaxData> {
-    const parseTaxText = (text: string) => {
-      const totalDueMatch = text.match(/Total Due:\s*\$?([\d,]+\.?\d*)/)
-      const taxOwed = totalDueMatch ? parseFloat(totalDueMatch[1].replace(/,/g, '')) : 0
-      const isBankruptcy = text.includes('Bankruptcy')
-      const taxStatus = taxOwed > 0 ? (isBankruptcy ? 'bankruptcy' : 'delinquent') : 'current'
-
-      const yearMatches = [...text.matchAll(/^(\d{4})\s*$/gm)]
-      const uniqueYears = new Set(
-        yearMatches.map(m => parseInt(m[1])).filter(y => y >= 2000 && y <= new Date().getFullYear())
-      )
-      const yearsDelinquent = uniqueYears.size
-
-      const delinquentBills: Array<{
-        taxYear: number; billNumber: string; totalCharges: number; totalPaid: number
-        principal: number; penalty: number; interest: number; status: string
-      }> = []
-      for (const section of text.split(/\n(?=\d{4}\s*\n)/)) {
-        const yearMatch = section.match(/^(\d{4})\s*\n/)
-        if (!yearMatch) continue
-        const taxYear = parseInt(yearMatch[1])
-        if (taxYear < 2000 || taxYear > new Date().getFullYear()) continue
-        const amounts = [...section.matchAll(/\$?([\d,]+\.\d{2})/g)].map(m =>
-          parseFloat(m[1].replace(/,/g, ''))
-        )
-        const status = section.includes('Past Due') ? 'Past Due' : section.includes('Current') ? 'Current' : 'Unknown'
-        if (amounts.length >= 4) {
-          delinquentBills.push({
-            taxYear, billNumber: '1',
-            totalCharges: amounts[0] || 0, totalPaid: amounts[amounts.length - 1] || 0,
-            principal: amounts[0] || 0, penalty: amounts[1] || 0, interest: amounts[2] || 0, status,
-          })
-        }
-      }
-
-      const paymentMatches = [...text.matchAll(/(\d{1,2}\/\d{1,2}\/\d{4})[^$]*\$?([\d,]+\.\d{2})/g)]
-      let lastPaymentDate: string | undefined
-      let lastPaymentAmount: number | undefined
-      if (paymentMatches.length > 0) {
-        const last = paymentMatches[paymentMatches.length - 1]
-        lastPaymentDate = last[1]
-        lastPaymentAmount = parseFloat(last[2].replace(/,/g, ''))
-      }
-
-      return {
-        taxOwed: taxOwed > 0 ? taxOwed : undefined,
-        taxStatus,
-        yearsDelinquent: yearsDelinquent > 0 ? yearsDelinquent : undefined,
-        lastPaymentDate,
-        lastPaymentAmount,
-        delinquentBills: delinquentBills.length > 0 ? delinquentBills : undefined,
-        isBankruptcy: isBankruptcy || undefined,
-      }
-    }
-
     const scraperApiKey = process.env.SCRAPER_API_KEY
     if (!scraperApiKey) {
       return { taxStatus: 'unknown', error: 'Tax portal is a JS SPA — set SCRAPER_API_KEY to enable' }
@@ -879,7 +826,7 @@ export class CountyEnrichmentService {
         return { taxStatus: 'unknown', error: 'Tax portal did not return account data' }
       }
 
-      return parseTaxText(text)
+      return parseJacksonTaxPortalText(text)
     } catch (err: unknown) {
       return { taxStatus: 'unknown', error: errorMessage(err, 'Tax collection lookup failed') }
     }

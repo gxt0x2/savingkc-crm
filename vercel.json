@@ -65,6 +65,22 @@
     {
       "path": "/api/cron/appointment-outcomes",
       "schedule": "20 12 * * *"
+    },
+    {
+      "path": "/api/cron/tax-status-verification",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/tax-status-verification",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/tax-status-verification",
+      "schedule": "55 12 * * *"
+    },
+    {
+      "path": "/api/cron/tax-status-verification",
+      "schedule": "55 13 * * *"
     }
   ],
   "rewrites": [

@@ -756,6 +756,22 @@
       ]
     },
     {
+      "id": "tax_status_verification",
+      "name": "Live county tax-status gate",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/cron/tax-status-verification", "/api/tax-status/mojo-removal"],
+      "tables": ["tax_status_checks", "tax_status_mojo_removals", "crm_properties", "prospects", "source_list_rows", "mortgage_foreclosure_prospects", "prospecting_campaign_members"],
+      "environment": ["CRON_SECRET", "ADMIN_API_SECRET", "SCRAPER_API_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+      "crons": [
+        { "path": "/api/cron/tax-status-verification", "schedule": "0 8 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "0 9 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "55 12 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "55 13 * * *" }
+      ]
+    },
+    {
       "id": "caller_id_reputation",
       "name": "Caller ID reputation log",
       "owner": "Operations",
