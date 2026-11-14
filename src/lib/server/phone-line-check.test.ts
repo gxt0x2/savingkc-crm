@@ -61,7 +61,7 @@ describe('Twilio Lookup value mapping', () => {
 const THIRTY = new Date(NOW.getTime() - 30 * DAY)
 const SIXTY = new Date(NOW.getTime() - 60 * DAY)
 
-function decision(overrides: Parameters<typeof decidePhoneLineCheck>[0]) {
+function decision(overrides: Partial<Parameters<typeof decidePhoneLineCheck>[0]> = {}) {
   return decidePhoneLineCheck({
     mappedStatus: 'inactive',
     failed: false,
@@ -193,7 +193,7 @@ describe('counsel ruling §4a, 2026-11-14 (Lookup inactive)', () => {
   })
 
   it('B2 blocks export when the last real active result is outside 90 days', () => {
-    expect(lineCheckBlockEnabled({})).toBe(false)
+    expect(lineCheckBlockEnabled({ LINE_CHECK_BLOCK_ENABLED: '' })).toBe(false)
     expect(lineCheckExportBlock({
       lineStatus: 'active',
       lineCheckedAt: NOW,
@@ -244,8 +244,8 @@ describe('counsel ruling §4a, 2026-11-14 (Lookup inactive)', () => {
 
 describe('line check lanes and price', () => {
   it('F5 reads the per-lookup price from the environment', () => {
-    expect(lineCheckCostUsd({ LINE_CHECK_COST_USD: '0.02' } as NodeJS.ProcessEnv)).toBe(0.02)
-    expect(() => lineCheckCostUsd({} as NodeJS.ProcessEnv)).toThrow(/LINE_CHECK_COST_USD is not configured/)
+    expect(lineCheckCostUsd({ LINE_CHECK_COST_USD: '0.02' })).toBe(0.02)
+    expect(() => lineCheckCostUsd({})).toThrow(/LINE_CHECK_COST_USD is not configured/)
   })
 
   it('B4 orders fresh intake, then the loaded calling list, then backfill', () => {
@@ -276,11 +276,11 @@ describe('line check lanes and price', () => {
 describe('line check runner', () => {
   vi.stubEnv('LINE_CHECK_COST_USD', '0.02')
 
-  function store(reserve: ReturnType<typeof vi.fn>, apply: ReturnType<typeof vi.fn>): PhoneLineCheckStore {
+  function store(reserve: unknown, apply: unknown): PhoneLineCheckStore {
     return {
       syncConfig: vi.fn().mockResolvedValue(undefined),
-      reserveCandidates: reserve,
-      applyChecks: apply,
+      reserveCandidates: reserve as PhoneLineCheckStore['reserveCandidates'],
+      applyChecks: apply as PhoneLineCheckStore['applyChecks'],
     }
   }
 
