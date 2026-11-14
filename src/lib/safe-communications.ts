@@ -10,6 +10,7 @@
 import twilio from 'twilio'
 import { supabase } from '@/lib/supabase-lazy'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { isAllowedSmsSender, normalizeTwilioNumber, type SmsSenderUse } from '@/lib/twilio-numbers'
 
 const TEST_MODE = externalSideEffectsDisabled()
@@ -73,6 +74,10 @@ function getTwilioErrorField(error: unknown, field: 'message' | 'code' | 'status
 /** The only SMS send this CRM may deliver: a person pressed send on one recipient. */
 export const HUMAN_1TO1_SMS_TEMPLATE_ID = 'sms.conversation.1to1.v1'
 
+export interface HumanSmsSession {
+  userId: string
+}
+
 interface SMSParams {
   to: string
   from: string
@@ -80,10 +85,13 @@ interface SMSParams {
   senderUse?: SmsSenderUse
   statusCallback?: string
   /**
-   * Required. Only `sms.conversation.1to1.v1` may be delivered.
-   * Automated, broadcast, drip, and staff-alert sends omit this and are refused.
+   * Required. Only `sms.conversation.1to1.v1` may be delivered, and only for
+   * one authenticated user and exactly one recipient. Automated, broadcast,
+   * drip, and staff-alert sends omit this and are refused.
    */
   templateId?: string
+  /** Verified CRM user. Service, cron, and bot callers do not have one. */
+  humanSession?: HumanSmsSession | null
   /** Cancels before provider submission when the protected request has already ended. */
   signal?: AbortSignal
   /** Revalidates protected dialing control before recording a provider outcome. */
@@ -139,9 +147,25 @@ async function protectedProviderOutcomeMayPersist(params: SMSParams): Promise<bo
  * - Returns detailed success/error information
  * - NEVER throws errors - always returns result object
  */
+export function humanOneToOneProof(input: {
+  templateId?: string
+  to: unknown
+  humanSession?: HumanSmsSession | null
+}): boolean {
+  const userId = input.humanSession?.userId?.trim()
+  return input.templateId === HUMAN_1TO1_SMS_TEMPLATE_ID && Boolean(userId) && exactlyOneRecipient(input.to)
+}
+
+function exactlyOneRecipient(to: unknown): boolean {
+  if (typeof to !== 'string') return false
+  const parts = to.split(/[,;\n]/).map((part) => part.trim()).filter(Boolean)
+  if (parts.length !== 1) return false
+  return Boolean(normalizePhoneToE164(parts[0]))
+}
+
 export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
-  if (params.templateId !== HUMAN_1TO1_SMS_TEMPLATE_ID) {
-    const digits = (params.to || '').replace(/\D/g, '')
+  if (!humanOneToOneProof(params)) {
+    const digits = String(params.to || '').replace(/\D/g, '')
     const toLast4 = digits.slice(-4)
     console.error(
       `[SMS-SENDER-POLICY] refused SMS send: not a human-initiated 1:1 send (${HUMAN_1TO1_SMS_TEMPLATE_ID}); templateId=${params.templateId ?? 'none'}; toLast4=${toLast4 || 'none'}`,
@@ -149,7 +173,7 @@ export async function safeSendSMS(params: SMSParams): Promise<SMSResult> {
     return {
       success: false,
       error: `Automated SMS is disabled. Only a human-initiated 1:1 send (${HUMAN_1TO1_SMS_TEMPLATE_ID}) is allowed.`,
-      to: params.to,
+      to: typeof params.to === 'string' ? params.to : '',
       from: params.from,
       body: params.body,
     }

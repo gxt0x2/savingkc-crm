@@ -7,7 +7,7 @@
 
 import { automatedSmsBlockReason, evaluateHumanOneToOneSms } from '@/lib/sms-send-gate'
 import { isDuplicateSms, logSmsSend } from '@/lib/sms-dedup'
-import { HUMAN_1TO1_SMS_TEMPLATE_ID, safeSendSMS } from '@/lib/safe-communications'
+import { HUMAN_1TO1_SMS_TEMPLATE_ID, humanOneToOneProof, safeSendSMS, type HumanSmsSession } from '@/lib/safe-communications'
 import { checkAutoAdvance } from '@/lib/pipeline-auto-advance'
 import { supabase } from '@/lib/supabase-lazy'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -59,6 +59,8 @@ export interface SendLeadSmsInput {
   beforePersistence?: () => Promise<void>
   /** Clock used for recipient quiet hours. Defaults to the current time. */
   now?: Date
+  /** Verified signed-in user. Required for the human 1:1 template. */
+  humanSession?: HumanSmsSession | null
 }
 
 /**
@@ -149,17 +151,18 @@ function notedWarning(warning: string | undefined, phoneWarnings: string[]): str
 }
 
 export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsResult> {
-  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, templateId, signal, beforePersistence, now } = input
+  const { leadId, phone, fromPhone, agent, source, metadata, statusCallback, templateId, signal, beforePersistence, now, humanSession } = input
   const body = input.body.trim()
 
-  if (templateId !== HUMAN_1TO1_SMS_TEMPLATE_ID) {
+  if (!humanOneToOneProof({ templateId, to: phone, humanSession })) {
     const msg = await safeSendSMS({
       body,
       from: fromPhone || '',
-      to: phone,
+      to: typeof phone === 'string' ? phone : '',
       senderUse: 'conversation',
       statusCallback,
       templateId,
+      humanSession,
       signal,
     })
     return {
@@ -183,6 +186,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
     senderUse: 'conversation',
     statusCallback,
     templateId,
+    humanSession,
     signal,
     beforePostProviderWrite: beforePersistence,
   })
@@ -241,6 +245,7 @@ export async function sendLeadSms(input: SendLeadSmsInput): Promise<SendLeadSmsR
         ...(decision.cold ? {
           consent_basis: 'owner_accepted_cold_1to1',
           sender_line: msg.from,
+          registry_status: decision.registryStatus,
         } : {}),
         ...(decision.warnings.length ? { phone_warnings: decision.warnings } : {}),
       },

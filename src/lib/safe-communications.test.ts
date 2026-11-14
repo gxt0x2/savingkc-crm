@@ -91,6 +91,7 @@ describe('safeSendSMS', () => {
       body: 'Following up on our call.',
       senderUse: 'conversation',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
     })
 
     expect(result).toMatchObject({ success: true, sid: 'SM-1to1' })
@@ -110,6 +111,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
     })
 
     expect(result).toMatchObject({
@@ -135,6 +137,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
     })
 
     expect(result).toMatchObject({
@@ -165,6 +168,7 @@ describe('safeSendSMS', () => {
     await safeSendSMS({
       to: '+19135550123', from: '+18166088588', body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       statusCallback: 'https://crm.savingkc.com/api/twilio-message-status?action_id=campaign-action',
     })
 
@@ -188,6 +192,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       signal: controller.signal,
     })
 
@@ -213,6 +218,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       beforePostProviderWrite,
     })
 
@@ -236,6 +242,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       beforePostProviderWrite: vi.fn().mockRejectedValue(new Error('Dialing control moved')),
     })
 
@@ -261,6 +268,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       signal: new AbortController().signal,
       beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
     })
@@ -286,6 +294,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       signal: new AbortController().signal,
       beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
     })
@@ -314,6 +323,7 @@ describe('safeSendSMS', () => {
       from: '+18166088588',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       signal: new AbortController().signal,
       beforePostProviderWrite: vi.fn().mockResolvedValue(undefined),
     })
@@ -339,6 +349,7 @@ describe('safeSendSMS', () => {
       from: '+18167277667',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       senderUse: 'conversation',
     })
 
@@ -360,10 +371,41 @@ describe('safeSendSMS', () => {
       from: '+18166088808',
       body: 'Hello',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
       senderUse: 'conversation',
     })
 
     expect(result).toMatchObject({ success: false, error: expect.stringContaining('not approved') })
+    expect(mocks.twilio).not.toHaveBeenCalled()
+  })
+
+  it('refuses the human template without a signed-in user or with more than one recipient', async () => {
+    clearTwilioEnv()
+    vi.stubEnv('TWILIO_ACCOUNT_SID', 'AC123')
+    vi.stubEnv('TWILIO_API_KEY', 'SK123')
+    vi.stubEnv('TWILIO_API_SECRET', 'secret123')
+    const { safeSendSMS } = await importSafeCommunications()
+    mocks.twilio.mockReturnValue({ messages: { create: mocks.createMessage } })
+
+    const noSession = await safeSendSMS({
+      to: '+19135550123',
+      from: '+18166088588',
+      body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
+      senderUse: 'conversation',
+    })
+    const many = await safeSendSMS({
+      to: '+19135550123, +18165550199',
+      from: '+18166088588',
+      body: 'Hello',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-ernest' },
+      senderUse: 'conversation',
+    })
+
+    expect(noSession).toMatchObject({ success: false, error: expect.stringContaining('sms.conversation.1to1.v1') })
+    expect(many).toMatchObject({ success: false, error: expect.stringContaining('sms.conversation.1to1.v1') })
+    expect(mocks.createMessage).not.toHaveBeenCalled()
     expect(mocks.twilio).not.toHaveBeenCalled()
   })
 })

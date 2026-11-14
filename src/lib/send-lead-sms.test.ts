@@ -23,10 +23,10 @@ vi.mock('@/lib/sms-dedup', () => ({
   isDuplicateSms: mocks.isDuplicateSms,
   logSmsSend: mocks.logSmsSend,
 }))
-vi.mock('@/lib/safe-communications', () => ({
-  HUMAN_1TO1_SMS_TEMPLATE_ID: 'sms.conversation.1to1.v1',
-  safeSendSMS: mocks.safeSendSMS,
-}))
+vi.mock('@/lib/safe-communications', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/safe-communications')>('@/lib/safe-communications')
+  return { ...actual, safeSendSMS: mocks.safeSendSMS }
+})
 vi.mock('@/lib/pipeline-auto-advance', () => ({ checkAutoAdvance: mocks.checkAutoAdvance }))
 
 import { resolveSmsFromNumber, sendLeadSms } from './send-lead-sms'
@@ -124,11 +124,13 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello from the composer',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
     })
 
     expect(mocks.safeSendSMS).toHaveBeenCalledWith(expect.objectContaining({
       to: '+19135550123',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       senderUse: 'conversation',
     }))
   })
@@ -142,6 +144,7 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Cash offer',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
     })
 
     expect(result).toEqual({ status: 'skipped', reason: 'opted_out' })
@@ -157,6 +160,7 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       agent: 'Casey',
     })
 
@@ -178,6 +182,7 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
     })
 
     expect(result).toMatchObject({
@@ -197,6 +202,7 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       beforePersistence,
     })
 
@@ -216,6 +222,7 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       beforePersistence,
     })
 
@@ -246,6 +253,7 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       beforePersistence: vi.fn().mockResolvedValue(undefined),
     }).then(settled)
 
@@ -273,6 +281,7 @@ describe('conversation SMS sender resolution and persistence', () => {
       body: 'Hello',
       fromPhone: '+18166088552',
       templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
       signal: new AbortController().signal,
       beforePersistence: vi.fn().mockResolvedValue(undefined),
     })
@@ -285,6 +294,26 @@ describe('conversation SMS sender resolution and persistence', () => {
     expect(mocks.insert).not.toHaveBeenCalled()
     expect(mocks.logSmsSend).not.toHaveBeenCalled()
     expect(mocks.checkAutoAdvance).not.toHaveBeenCalled()
+  })
+
+  it('refuses the human template without a signed-in user or with more than one recipient', async () => {
+    const noSession = await sendLeadSms({
+      phone: '+19135550123',
+      body: 'Hello',
+      fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+    })
+    const many = await sendLeadSms({
+      phone: '+19135550123, +18165550199',
+      body: 'Hello',
+      fromPhone: '+18166088552',
+      templateId: 'sms.conversation.1to1.v1',
+      humanSession: { userId: 'user-1' },
+    })
+
+    expect(noSession).toMatchObject({ status: 'failed', code: 'automated_sms_disabled' })
+    expect(many).toMatchObject({ status: 'failed', code: 'automated_sms_disabled' })
+    expect(mocks.evaluateHumanOneToOneSms).not.toHaveBeenCalled()
   })
 
   it('returns automated_sms_disabled for any template other than a human 1:1', async () => {

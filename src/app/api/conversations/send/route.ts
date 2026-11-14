@@ -142,6 +142,7 @@ export async function POST(req: Request) {
         agent: actor,
         source: activitySource,
         templateId: HUMAN_1TO1_SMS_TEMPLATE_ID,
+        humanSession: authenticatedActor.subject ? { userId: authenticatedActor.subject } : null,
         metadata: Object.keys(prospectMetadata).length > 0 ? prospectMetadata : undefined,
         signal: providerSignal,
         beforePersistence: reassertPersistenceControl,

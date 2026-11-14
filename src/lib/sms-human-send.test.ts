@@ -94,7 +94,7 @@ vi.mock('@/lib/safe-communications', async () => {
   const actual = await vi.importActual<typeof import('@/lib/safe-communications')>('@/lib/safe-communications')
   actualSafe.current = actual
   return {
-    HUMAN_1TO1_SMS_TEMPLATE_ID: actual.HUMAN_1TO1_SMS_TEMPLATE_ID,
+    ...actual,
     safeSendSMS: mocks.safeSendSMS,
   }
 })
@@ -121,6 +121,7 @@ function resetTables() {
   harness.state.tables = {
     sms_opt_outs: [],
     prospect_phones: [],
+    prospects: [],
     crm_contact_methods: [],
     leads: [],
     crm_mojo_call_events: [],
@@ -140,6 +141,7 @@ function send(phone: string, now: Date, extra: { leadId?: string | null; templat
     fromPhone: FROM,
     agent: 'Ernest',
     templateId: extra.templateId ?? HUMAN_1TO1_SMS_TEMPLATE_ID,
+    humanSession: { userId: 'user-ernest' },
     now,
   })
 }
@@ -188,6 +190,7 @@ describe('human 1:1 SMS quiet hours, DNC, and cold registry', () => {
         metadata: expect.objectContaining({
           consent_basis: 'owner_accepted_cold_1to1',
           sender_line: FROM,
+          registry_status: 'not_loaded',
           direction: 'outbound',
           from: FROM,
         }),
@@ -355,6 +358,146 @@ describe('human 1:1 SMS quiet hours, DNC, and cold registry', () => {
       error: expect.stringContaining('could not be verified'),
     })
     expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+  })
+
+  it('keeps a later text cold after owner_accepted_cold_1to1 and ignores a STOP reply', async () => {
+    harness.state.tables.lead_activities.push({
+      lead_id: 'lead-1',
+      activity_type: 'sms',
+      description: 'Checking in about the property',
+      created_at: '2026-11-14T18:00:00.000Z',
+      metadata: {
+        direction: 'outbound',
+        to: CENTRAL,
+        consent_basis: 'owner_accepted_cold_1to1',
+        sender_line: FROM,
+      },
+    })
+    harness.state.tables.prospect_phones.push({
+      phone: CENTRAL,
+      phone_connected: 'dataskip_dnc',
+      last_disposition: null,
+      voice_hold: false,
+    })
+
+    const stillCold = await send(CENTRAL, TWO_PM_CENTRAL)
+    expect(stillCold).toMatchObject({ status: 'refused', code: 'sms_registry_dnc' })
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+
+    harness.state.tables.lead_activities.push({
+      lead_id: 'lead-1',
+      activity_type: 'sms',
+      description: 'STOP',
+      created_at: '2026-11-14T19:00:00.000Z',
+      metadata: { direction: 'received', from: CENTRAL },
+    })
+    const afterStop = await send(CENTRAL, TWO_PM_CENTRAL)
+    expect(afterStop).toMatchObject({ status: 'refused', code: 'sms_registry_dnc' })
+    expect(mocks.safeSendSMS).not.toHaveBeenCalled()
+
+    harness.state.tables.lead_activities.length = 0
+    harness.state.tables.lead_activities.push({
+      lead_id: 'lead-1',
+      activity_type: 'sms',
+      description: 'Yes, text me',
+      created_at: '2026-11-14T19:30:00.000Z',
+      metadata: { direction: 'received', from: CENTRAL },
+    })
+    const replied = await send(CENTRAL, TWO_PM_CENTRAL)
+    expect(replied).toMatchObject({ status: 'sent' })
+    expect(harness.state.inserts.at(-1)?.metadata).not.toHaveProperty('consent_basis')
+    expect(harness.state.inserts.at(-1)?.metadata).not.toHaveProperty('registry_status')
+
+    harness.state.tables.lead_activities.length = 0
+    harness.state.tables.lead_activities.push({
+      lead_id: 'lead-1',
+      activity_type: 'sms',
+      description: 'Checking in about the property',
+      created_at: '2026-11-14T18:00:00.000Z',
+      metadata: { direction: 'outbound', to: CENTRAL, consent_basis: 'written_opt_in' },
+    })
+    const documented = await send(CENTRAL, TWO_PM_CENTRAL)
+    expect(documented).toMatchObject({ status: 'sent' })
+    expect(harness.state.inserts.at(-1)?.metadata).not.toHaveProperty('consent_basis')
+  })
+
+  it('blocks every phone of a person, and every phone on the property when the owner is DNC', async () => {
+    const sibling = '+18165550200'
+    const blockedPhone = '+18165550111'
+
+    async function sendSibling() {
+      mocks.safeSendSMS.mockClear()
+      harness.state.inserts = []
+      return send(sibling, TWO_PM_CENTRAL)
+    }
+
+    function seed(phones: Row[], lead: Row | null = null) {
+      resetTables()
+      harness.state.tables.prospects.push({ id: 'pros-1', lead_id: 'lead-1', owner_1: 'Ada Owner' })
+      harness.state.tables.prospect_phones.push(...phones)
+      if (lead) harness.state.tables.leads.push(lead)
+    }
+
+    seed([
+      { prospect_id: 'pros-1', phone: blockedPhone, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: 'dnc_contact', voice_hold: false, phone_connected: null },
+      { prospect_id: 'pros-1', phone: sibling, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: null, voice_hold: false, phone_connected: null },
+    ])
+    expect(await sendSibling()).toMatchObject({ status: 'refused', code: 'sms_dnc_blocked' })
+
+    seed([
+      { prospect_id: 'pros-1', phone: blockedPhone, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: 'take_me_off', voice_hold: false, phone_connected: null },
+      { prospect_id: 'pros-1', phone: sibling, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: null, voice_hold: false, phone_connected: null },
+    ])
+    expect(await sendSibling()).toMatchObject({ status: 'refused', code: 'sms_dnc_blocked' })
+
+    seed([
+      { prospect_id: 'pros-1', phone: blockedPhone, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: 'dnc', voice_hold: false, phone_connected: null },
+      { prospect_id: 'pros-1', phone: sibling, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: null, voice_hold: false, phone_connected: null },
+    ])
+    expect(await sendSibling()).toMatchObject({ status: 'refused', code: 'sms_dnc_blocked' })
+
+    seed([
+      { prospect_id: 'pros-1', phone: blockedPhone, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: null, voice_hold: false, phone_connected: null },
+      { prospect_id: 'pros-1', phone: sibling, contact_name: 'Ada Owner', relationship: 'relative', last_disposition: null, voice_hold: false, phone_connected: null },
+    ], {
+      id: 'lead-1',
+      phone: blockedPhone,
+      full_name: 'Ada Owner',
+      dead_reason: 'dnc_refused',
+      call_result: null,
+    })
+    expect(await sendSibling()).toMatchObject({ status: 'refused', code: 'sms_dnc_blocked' })
+
+    seed([
+      { prospect_id: 'pros-1', phone: blockedPhone, contact_name: 'Ada Owner', relationship: 'owner', last_disposition: 'dnc_contact', voice_hold: false, phone_connected: null },
+      { prospect_id: 'pros-1', phone: sibling, contact_name: 'Bea Heir', relationship: 'daughter', last_disposition: null, voice_hold: false, phone_connected: null },
+    ])
+    expect(await sendSibling()).toMatchObject({ status: 'refused', code: 'sms_dnc_blocked' })
+
+    seed([
+      { prospect_id: 'pros-1', phone: blockedPhone, contact_name: 'Cara Cousin', relationship: 'cousin', last_disposition: 'dnc_contact', voice_hold: false, phone_connected: null },
+      { prospect_id: 'pros-1', phone: sibling, contact_name: 'Bea Heir', relationship: 'daughter', last_disposition: null, voice_hold: false, phone_connected: null },
+    ])
+    const otherPerson = await sendSibling()
+    expect(otherPerson).toMatchObject({ status: 'sent' })
+    expect(mocks.safeSendSMS).toHaveBeenCalled()
+  })
+
+  it('records registry_status checked when a registry table exists and not_loaded when none do', async () => {
+    const missing = await send(CENTRAL, TWO_PM_CENTRAL)
+    expect(missing).toMatchObject({ status: 'sent' })
+    expect(harness.state.inserts.at(-1)).toMatchObject({
+      metadata: expect.objectContaining({ registry_status: 'not_loaded' }),
+    })
+    expect(JSON.stringify(harness.state.inserts.at(-1))).not.toMatch(/scrub/i)
+
+    harness.state.tables.federal_dnc_registry = []
+    harness.state.tables.mo_dnc_registry = []
+    const checked = await send(CENTRAL, TWO_PM_CENTRAL)
+    expect(checked).toMatchObject({ status: 'sent' })
+    expect(harness.state.inserts.at(-1)).toMatchObject({
+      metadata: expect.objectContaining({ registry_status: 'checked', consent_basis: 'owner_accepted_cold_1to1' }),
+    })
   })
 
   it('still returns automated_sms_disabled for an automated template', async () => {

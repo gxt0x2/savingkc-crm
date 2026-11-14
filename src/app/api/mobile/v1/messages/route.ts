@@ -281,6 +281,7 @@ export async function POST(req: NextRequest) {
         agent: actor.fullName,
         source: 'mobile_app',
         templateId: SMS_CONVERSATION_TEMPLATE_ID,
+        humanSession: { userId: user.id },
         metadata: receiptMeta,
       })
     } catch (error) {

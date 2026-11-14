@@ -210,9 +210,10 @@ export async function automatedSmsBlockReason(input: {
 }
 
 export type HumanSmsRefusalCode = 'sms_quiet_hours' | 'sms_dnc_blocked' | 'sms_registry_dnc'
+export type SmsRegistryStatus = 'not_loaded' | 'checked'
 
 export type HumanSmsSendDecision =
-  | { ok: true; cold: boolean; warnings: string[] }
+  | { ok: true; cold: boolean; warnings: string[]; registryStatus: SmsRegistryStatus | null }
   | { ok: false; code: HumanSmsRefusalCode; error: string }
 
 const QUIET_HOURS_ERROR = "This text is outside 8:00am–9:00pm in the recipient's local time."
@@ -220,8 +221,10 @@ const DNC_ERROR = 'This number is blocked for SMS by a do-not-call or opt-out re
 const DNC_UNKNOWN_ERROR = 'SMS suppression status could not be verified, so this send was not attempted.'
 const REGISTRY_ERROR = 'This cold text is blocked because the number is on a do-not-call registry.'
 const REGISTRY_UNKNOWN_ERROR = 'The do-not-call registry could not be checked, so this cold text was not sent.'
+const OWNER_ACCEPTED_COLD_BASIS = 'owner_accepted_cold_1to1'
 
 const DNC_LABELS = new Set(['dnc', 'do_not_call', 'dnc_number', 'dnc_contact', 'take_me_off'])
+const PERSON_DNC_LABELS = new Set(['dnc', 'do_not_call', 'dnc_contact', 'take_me_off'])
 const SOFT_REASONS = new Set(['wrong_number', 'disconnected', 'out_of_service_area'])
 const DISCONNECTED_LABELS = new Set(['disconnected', 'bad_number', 'not_in_service', 'false', 'no'])
 const THREAD_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
@@ -238,11 +241,21 @@ type ProspectPhoneRow = {
   phone_connected: string | boolean | null
   last_disposition: string | null
   voice_hold: boolean | string | null
+  prospect_id?: string | null
+  contact_name?: string | null
+  relationship?: string | null
+}
+
+type ProspectRow = {
+  id: string
+  lead_id: string | null
+  owner_1: string | null
 }
 
 type LeadDncRow = {
   id?: string
   phone: string | null
+  full_name?: string | null
   dead_reason: string | null
   call_result: string | null
 }
@@ -251,6 +264,7 @@ type ContactMethodRow = {
   normalized_value: string | null
   sms_consent_status: string | null
   deliverability_status: string | null
+  person_id?: string | null
 }
 
 type OptOutStatusRow = {
@@ -265,6 +279,7 @@ type MojoEventRow = {
 }
 
 type ThreadRow = SmsActivityRow & { lead_id?: string | null }
+type RegistryProbe = 'hit' | 'clear' | 'absent' | 'error'
 
 function last10(value: string | null | undefined): string | null {
   const digits = String(value ?? '').replace(/\D/g, '')
@@ -277,12 +292,21 @@ function label(value: unknown): string {
   return String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function personName(value: string | null | undefined): string {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 function matchesPhone(value: string | null | undefined, phoneKey: string): boolean {
   return last10(value) === phoneKey
 }
 
 function isVoiceHold(value: boolean | string | null | undefined): boolean {
   return value === true || label(value) === 'true'
+}
+
+function isOwnerRelationship(value: string | null | undefined): boolean {
+  const relationship = label(value)
+  return relationship === 'owner' || relationship === 'primary_owner' || relationship === 'property_owner'
 }
 
 function softReason(value: string): 'wrong_number' | 'disconnected' | 'out_of_service_area' | null {
@@ -302,11 +326,18 @@ function isMissingRelation(error: { code?: string; message?: string }): boolean 
     || message.includes('could not find the table')
 }
 
-function hasLoggedConsent(row: ThreadRow): boolean {
+function hasDocumentedConsent(row: ThreadRow): boolean {
   const metadata = row.metadata
   if (!metadata) return false
-  if (typeof metadata.consent_basis === 'string' && metadata.consent_basis.trim()) return true
+  const basis = typeof metadata.consent_basis === 'string' ? metadata.consent_basis.trim() : ''
+  if (basis && basis !== OWNER_ACCEPTED_COLD_BASIS) return true
   return metadata.sms_consent === true || metadata.consent === true || metadata.consented === true
+}
+
+function warmsHumanThread(row: ThreadRow): boolean {
+  const description = typeof row.description === 'string' ? row.description : ''
+  if (description && isSmsOptOutMessage(description)) return false
+  return hasDocumentedConsent(row) || isInboundSms(row)
 }
 
 function activityIsAboutPhone(row: ThreadRow, phoneKey: string, leadId: string | null): boolean {
@@ -314,6 +345,80 @@ function activityIsAboutPhone(row: ThreadRow, phoneKey: string, leadId: string |
   const to = typeof row.metadata?.to === 'string' ? last10(row.metadata.to) : null
   if (from || to) return from === phoneKey || to === phoneKey
   return Boolean(leadId) && row.lead_id === leadId
+}
+
+function leadIsPersonDnc(lead: LeadDncRow): boolean {
+  const dead = label(lead.dead_reason)
+  const callResult = label(lead.call_result)
+  return canonicalDeadReason(lead.dead_reason) === 'dnc_refused'
+    || PERSON_DNC_LABELS.has(dead)
+    || PERSON_DNC_LABELS.has(callResult)
+}
+
+function personKeys(phone: ProspectPhoneRow, methods: ContactMethodRow[]): string[] {
+  const keys: string[] = []
+  const phoneKey = last10(phone.phone)
+  const name = personName(phone.contact_name)
+  if (phone.prospect_id && name) keys.push(`name:${phone.prospect_id}:${name}`)
+  if (phoneKey) {
+    for (const method of methods) {
+      if (method.person_id && matchesPhone(method.normalized_value, phoneKey)) keys.push(`crm:${method.person_id}`)
+    }
+  }
+  return keys
+}
+
+function samePersonBlocks(input: {
+  phoneKey: string
+  phones: ProspectPhoneRow[]
+  prospects: ProspectRow[]
+  leads: LeadDncRow[]
+  methods: ContactMethodRow[]
+}): boolean {
+  const dncLeadPhones = new Set<string>()
+  for (const lead of input.leads) {
+    if (!leadIsPersonDnc(lead)) continue
+    const key = last10(lead.phone)
+    if (key) dncLeadPhones.add(key)
+  }
+  const prospectsById = new Map(input.prospects.map((prospect) => [prospect.id, prospect]))
+
+  function phoneIsPersonDnc(phone: ProspectPhoneRow): boolean {
+    if (PERSON_DNC_LABELS.has(label(phone.last_disposition))) return true
+    const key = last10(phone.phone)
+    if (key && dncLeadPhones.has(key)) return true
+    const prospect = phone.prospect_id ? prospectsById.get(phone.prospect_id) : undefined
+    if (!prospect?.lead_id) return false
+    const lead = input.leads.find((row) => row.id === prospect.lead_id)
+    if (!lead || !leadIsPersonDnc(lead)) return false
+    const name = personName(phone.contact_name) || (isOwnerRelationship(phone.relationship) ? personName(prospect.owner_1) : '')
+    return Boolean(name) && name === personName(lead.full_name)
+  }
+
+  const destinationKeys = new Set<string>()
+  for (const phone of input.phones) {
+    if (!matchesPhone(phone.phone, input.phoneKey)) continue
+    for (const key of personKeys(phone, input.methods)) destinationKeys.add(key)
+  }
+  for (const method of input.methods) {
+    if (method.person_id && matchesPhone(method.normalized_value, input.phoneKey)) destinationKeys.add(`crm:${method.person_id}`)
+  }
+
+  for (const phone of input.phones) {
+    if (!phoneIsPersonDnc(phone)) continue
+    if (personKeys(phone, input.methods).some((key) => destinationKeys.has(key))) return true
+  }
+
+  const ownerDncProspects = new Set<string>()
+  for (const phone of input.phones) {
+    if (!phone.prospect_id || !isOwnerRelationship(phone.relationship) || !phoneIsPersonDnc(phone)) continue
+    ownerDncProspects.add(phone.prospect_id)
+  }
+  return input.phones.some((phone) => (
+    matchesPhone(phone.phone, input.phoneKey)
+    && Boolean(phone.prospect_id)
+    && ownerDncProspects.has(phone.prospect_id || '')
+  ))
 }
 
 async function rowsForPhone<T>(
@@ -324,6 +429,13 @@ async function rowsForPhone<T>(
 ): Promise<T[]> {
   if (!variants.length) return []
   const { data, error } = await supabase.from(table).select(columns).in(column, variants).limit(200)
+  if (error) throw suppressionError()
+  return (data || []) as T[]
+}
+
+async function rowsByIds<T>(table: string, column: string, ids: string[], columns: string): Promise<T[]> {
+  if (!ids.length) return []
+  const { data, error } = await supabase.from(table).select(columns).in(column, ids).limit(500)
   if (error) throw suppressionError()
   return (data || []) as T[]
 }
@@ -359,13 +471,13 @@ async function threadRows(leadId: string | null, variants: string[]): Promise<Th
   return rows
 }
 
-async function registryTableHit(table: string, phoneKey: string, variants: string[]): Promise<'hit' | 'missing' | 'error'> {
+async function registryTableProbe(table: string, phoneKey: string, variants: string[]): Promise<RegistryProbe> {
   if (!variants.length) return 'error'
   try {
     const { data, error } = await supabase.from(table).select('phone').in('phone', variants).limit(20)
-    if (error) return isMissingRelation(error) ? 'missing' : 'error'
+    if (error) return isMissingRelation(error) ? 'absent' : 'error'
     const rows = (data || []) as Array<{ phone?: string | null }>
-    return rows.some((row) => matchesPhone(row.phone, phoneKey)) ? 'hit' : 'missing'
+    return rows.some((row) => matchesPhone(row.phone, phoneKey)) ? 'hit' : 'clear'
   } catch {
     return 'error'
   }
@@ -374,7 +486,9 @@ async function registryTableHit(table: string, phoneKey: string, variants: strin
 /**
  * Quiet hours, full DNC labels, and the cold-only registry flag for a human
  * 1:1 text. Existing automatedSmsBlockReason checks stay in place; this does
- * not replace them. Lookup failures refuse the send.
+ * not replace them. Lookup failures refuse the send. A prior cold send is not
+ * consent. When no federal or Missouri registry table is loaded, a cold send
+ * stays allowed under EXC-004 and records registry_status not_loaded.
  */
 export async function evaluateHumanOneToOneSms(input: {
   phone: string
@@ -393,19 +507,37 @@ export async function evaluateHumanOneToOneSms(input: {
   try {
     const variants = phoneLookupVariants(phone)
     const leadId = input.leadId ?? null
-    const [registryReason, optOuts, prospectPhones, methods, leads, mojoEvents, thread, leadRow] = await Promise.all([
+    const [registryReason, optOuts, matchedPhones, methods, leads, mojoEvents, thread, leadRow] = await Promise.all([
       blockReasonFromRegistry(phone),
       rowsForPhone<OptOutStatusRow>('sms_opt_outs', 'phone', variants, 'phone, is_opted_out'),
-      rowsForPhone<ProspectPhoneRow>('prospect_phones', 'phone', variants, 'phone, phone_connected, last_disposition, voice_hold'),
-      rowsForPhone<ContactMethodRow>('crm_contact_methods', 'normalized_value', variants, 'normalized_value, sms_consent_status, deliverability_status'),
-      rowsForPhone<LeadDncRow>('leads', 'phone', variants, 'id, phone, dead_reason, call_result'),
+      rowsForPhone<ProspectPhoneRow>('prospect_phones', 'phone', variants, 'phone, phone_connected, last_disposition, voice_hold, prospect_id, contact_name, relationship'),
+      rowsForPhone<ContactMethodRow>('crm_contact_methods', 'normalized_value', variants, 'normalized_value, sms_consent_status, deliverability_status, person_id'),
+      rowsForPhone<LeadDncRow>('leads', 'phone', variants, 'id, phone, full_name, dead_reason, call_result'),
       rowsForPhone<MojoEventRow>('crm_mojo_call_events', 'normalized_phone', variants, 'normalized_phone, outcome, disposition_raw'),
       threadRows(leadId, variants),
       leadId
-        ? supabase.from('leads').select('id, phone, dead_reason, call_result').eq('id', leadId).maybeSingle()
+        ? supabase.from('leads').select('id, phone, full_name, dead_reason, call_result').eq('id', leadId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
     ])
     if (leadRow.error) throw suppressionError()
+
+    const destinationPhones = matchedPhones.filter((row) => matchesPhone(row.phone, phoneKey))
+    const prospectIds = [...new Set(destinationPhones.map((row) => row.prospect_id).filter((id): id is string => Boolean(id)))]
+    const personIds = [...new Set(methods.map((row) => row.person_id).filter((id): id is string => Boolean(id)))]
+    const [propertyPhones, prospects, personMethods] = await Promise.all([
+      rowsByIds<ProspectPhoneRow>('prospect_phones', 'prospect_id', prospectIds, 'phone, phone_connected, last_disposition, voice_hold, prospect_id, contact_name, relationship'),
+      rowsByIds<ProspectRow>('prospects', 'id', prospectIds, 'id, lead_id, owner_1'),
+      rowsByIds<ContactMethodRow>('crm_contact_methods', 'person_id', personIds, 'normalized_value, sms_consent_status, deliverability_status, person_id'),
+    ])
+    const siblingVariants = [...new Set(personMethods.flatMap((row) => phoneLookupVariants(row.normalized_value || '')))]
+    const siblingPhones = await rowsForPhone<ProspectPhoneRow>('prospect_phones', 'phone', siblingVariants, 'phone, phone_connected, last_disposition, voice_hold, prospect_id, contact_name, relationship')
+    const leadIds = [...new Set(prospects.map((row) => row.lead_id).filter((id): id is string => Boolean(id)))]
+    const linkedLeads = await rowsByIds<LeadDncRow>('leads', 'id', leadIds, 'id, phone, full_name, dead_reason, call_result')
+    const relatedPhones = [...destinationPhones, ...propertyPhones, ...siblingPhones]
+    const relatedMethods = [...methods, ...personMethods]
+    const relatedLeads = [...leads, ...linkedLeads]
+    const directLead = leadRow.data as LeadDncRow | null
+    if (directLead) relatedLeads.push(directLead)
 
     const warnings = new Set<string>()
     let blocked = false
@@ -420,7 +552,7 @@ export async function evaluateHumanOneToOneSms(input: {
       if (matchesPhone(row.phone, phoneKey) && row.is_opted_out) blocked = true
     }
 
-    for (const row of prospectPhones.filter((item) => matchesPhone(item.phone, phoneKey))) {
+    for (const row of destinationPhones) {
       if (isVoiceHold(row.voice_hold) || DNC_LABELS.has(label(row.last_disposition))) blocked = true
       const connected = label(row.phone_connected)
       if (connected === 'dataskip_dnc') dataskip = true
@@ -432,10 +564,7 @@ export async function evaluateHumanOneToOneSms(input: {
       if (row.sms_consent_status === 'opted_out' || row.deliverability_status === 'blocked') blocked = true
     }
 
-    const leadRows = leads.filter((item) => matchesPhone(item.phone, phoneKey))
-    const directLead = leadRow.data as LeadDncRow | null
-    if (directLead && matchesPhone(directLead.phone, phoneKey)) leadRows.push(directLead)
-    for (const row of leadRows) {
+    for (const row of relatedLeads.filter((item) => matchesPhone(item.phone, phoneKey))) {
       const dead = label(row.dead_reason)
       const callResult = label(row.call_result)
       if (canonicalDeadReason(row.dead_reason) === 'dnc_refused' || DNC_LABELS.has(dead) || DNC_LABELS.has(callResult)) {
@@ -451,20 +580,28 @@ export async function evaluateHumanOneToOneSms(input: {
       if (soft) warnings.add(soft)
     }
 
+    if (!blocked && samePersonBlocks({
+      phoneKey,
+      phones: relatedPhones,
+      prospects,
+      leads: relatedLeads,
+      methods: relatedMethods,
+    })) blocked = true
+
     if (blocked) return { ok: false, code: 'sms_dnc_blocked', error: DNC_ERROR }
 
-    const cold = !thread.some((row) => (
-      activityIsAboutPhone(row, phoneKey, leadId) && (isInboundSms(row) || hasLoggedConsent(row))
-    ))
+    const cold = !thread.some((row) => activityIsAboutPhone(row, phoneKey, leadId) && warmsHumanThread(row))
     if (cold && dataskip) return { ok: false, code: 'sms_registry_dnc', error: REGISTRY_ERROR }
 
+    let registryStatus: SmsRegistryStatus | null = null
     if (cold) {
-      const probes = await Promise.all(REGISTRY_TABLES.map((table) => registryTableHit(table, phoneKey, variants)))
+      const probes = await Promise.all(REGISTRY_TABLES.map((table) => registryTableProbe(table, phoneKey, variants)))
       if (probes.includes('hit')) return { ok: false, code: 'sms_registry_dnc', error: REGISTRY_ERROR }
       if (probes.includes('error')) return { ok: false, code: 'sms_registry_dnc', error: REGISTRY_UNKNOWN_ERROR }
+      registryStatus = probes.includes('clear') ? 'checked' : 'not_loaded'
     }
 
-    return { ok: true, cold, warnings: [...warnings] }
+    return { ok: true, cold, warnings: [...warnings], registryStatus }
   } catch (error) {
     console.error('[sms-send-gate] human SMS suppression lookup failed', error)
     return { ok: false, code: 'sms_dnc_blocked', error: DNC_UNKNOWN_ERROR }
