@@ -269,22 +269,91 @@ AS $function$
       prospect.dialer_property_key,
       public.dialer_label_key_v1(phone.last_disposition) AS disposition_key,
       public.dialer_label_key_v1(phone.phone_connected) AS connected_key,
-      public.dialer_relationship_bucket_v1(phone.relationship, prospect.owner_1_type) AS bucket
+      public.dialer_label_key_v1(phone.relationship) AS relationship_key,
+      public.dialer_label_key_v1(prospect.owner_1_type) AS owner_type_key
     FROM public.prospect_phones AS phone
     JOIN public.prospects AS prospect ON prospect.id = phone.prospect_id
   ),
+  bucketed_phones AS MATERIALIZED (
+    SELECT
+      classified_phones.*,
+      CASE
+        WHEN relationship_key = 'associate'
+          OR owner_type_key IN ('neighbor', 'coworker', 'past_neighbor', 'friend', 'landlord', 'tenant') THEN 'associate_non_family'
+        WHEN relationship_key IN ('owner', 'subject', 'co_owner') THEN 'owner'
+        WHEN relationship_key IN ('unknown', 'entity_contact') THEN 'relationship_unknown'
+        WHEN relationship_key IN ('relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative')
+          OR owner_type_key IN ('in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'unknown', 'individual') THEN 'relative'
+        ELSE 'relationship_unknown'
+      END AS bucket
+    FROM classified_phones
+  ),
+  fanout_anchors AS MATERIALIZED (
+    SELECT prospect_id, key10, dialer_property_key
+    FROM bucketed_phones
+    WHERE voice_hold IS TRUE
+      AND public.dialer_label_key_v1(voice_hold_reason) LIKE '%mojo_dnc_contact_fanout%'
+      AND length(key10) = 10
+  ),
   fanout_keys AS MATERIALIZED (
     SELECT sibling.key10, anchor.dialer_property_key AS property_key, anchor.prospect_id
-    FROM classified_phones AS anchor
-    JOIN classified_phones AS sibling ON sibling.prospect_id = anchor.prospect_id
-    WHERE anchor.voice_hold IS TRUE
-      AND public.dialer_label_key_v1(anchor.voice_hold_reason) LIKE '%mojo_dnc_contact_fanout%'
-      AND length(anchor.key10) = 10
-      AND length(sibling.key10) = 10
+    FROM fanout_anchors AS anchor
+    JOIN bucketed_phones AS sibling ON sibling.prospect_id = anchor.prospect_id AND length(sibling.key10) = 10
+  ),
+  person_dnc_homes AS MATERIALIZED (
+    SELECT DISTINCT dialer_household_key, prospect_id, key10
+    FROM bucketed_phones
+    WHERE disposition_key IN ('dnc_contact', 'take_me_off')
+  ),
+  mojo_person_keys AS MATERIALIZED (
+    SELECT dialer_phone_key AS key10, provider_contact_id
+    FROM public.crm_mojo_call_events
+    WHERE length(dialer_phone_key) = 10
+      AND public.dialer_label_key_v1(disposition_raw) IN ('dnc_contact', 'take_me_off')
+  ),
+  short_last4 AS MATERIALIZED (
+    SELECT DISTINCT right(key10, 4) AS last4
+    FROM bucketed_phones
+    WHERE length(key10) BETWEEN 4 AND 9
+      AND (
+        voice_hold IS TRUE
+        OR (disposition_key IS NOT NULL AND disposition_key NOT IN (
+          'no_answer', 'left_voicemail', 'left_vm', 'not_interested', 'spoke_with_owner',
+          'callback_requested', 'busy', 'appointment_set', 'deal_potential', 'offer_made',
+          'answered', 'contact', 'interested'
+        ))
+        OR (connected_key IS NOT NULL AND connected_key NOT IN ('connected', 'dataskip_dnc'))
+      )
+  ),
+  sibling_person_keys AS MATERIALIZED (
+    SELECT DISTINCT mine.key10
+    FROM bucketed_phones AS mine
+    JOIN bucketed_phones AS flagged
+      ON flagged.prospect_id = mine.prospect_id
+     AND flagged.key10 IS DISTINCT FROM mine.key10
+     AND flagged.disposition_key IN ('dnc_contact', 'take_me_off')
+    WHERE length(mine.key10) = 10
+  ),
+  mojo_sibling_keys AS MATERIALIZED (
+    SELECT DISTINCT mine.key10
+    FROM bucketed_phones AS mine
+    JOIN bucketed_phones AS other
+      ON other.prospect_id = mine.prospect_id
+     AND other.key10 IS DISTINCT FROM mine.key10
+    JOIN mojo_person_keys AS marked ON marked.key10 = other.key10
+    WHERE length(mine.key10) = 10
+  ),
+  household_blocked_keys AS MATERIALIZED (
+    SELECT DISTINCT mine.key10, mine.prospect_id
+    FROM bucketed_phones AS mine
+    JOIN person_dnc_homes AS anchor
+      ON anchor.dialer_household_key = mine.dialer_household_key
+     AND anchor.prospect_id IS DISTINCT FROM mine.prospect_id
+    WHERE length(mine.key10) = 10
   ),
   dnc_properties AS MATERIALIZED (
     SELECT DISTINCT owner.dialer_property_key AS property_key
-    FROM classified_phones AS owner
+    FROM bucketed_phones AS owner
     WHERE owner.bucket = 'owner'
       AND length(owner.key10) = 10
       AND owner.dialer_property_key IS NOT NULL
@@ -301,6 +370,72 @@ AS $function$
         )
       )
   ),
+  property_blocked AS MATERIALIZED (
+    SELECT DISTINCT prospect_id, key10
+    FROM bucketed_phones
+    WHERE dialer_property_key IN (SELECT property_key FROM dnc_properties)
+  ),
+  voice_blocks AS MATERIALIZED (
+    SELECT DISTINCT key10
+    FROM bucketed_phones
+    WHERE length(key10) = 10
+      AND voice_hold IS TRUE
+      AND coalesce(public.dialer_label_key_v1(voice_hold_reason), '') NOT LIKE '%mojo_dnc_contact_fanout%'
+  ),
+  disposition_blocks AS MATERIALIZED (
+    SELECT key10,
+      CASE
+        WHEN disposition_key IN ('dnc', 'do_not_call', 'dnc_number', 'dnc_contact', 'take_me_off') THEN 'prospect_dnc'
+        WHEN disposition_key = 'wrong_number' THEN 'wrong_number'
+        WHEN disposition_key IN ('dead', 'fax', 'disconnected', 'bad_number', 'not_in_service') THEN 'disconnected'
+        ELSE 'unmapped_label'
+      END AS block_reason,
+      CASE
+        WHEN disposition_key IN ('dnc', 'do_not_call', 'dnc_number', 'dnc_contact', 'take_me_off') THEN 40
+        WHEN disposition_key = 'wrong_number' THEN 41
+        WHEN disposition_key IN ('dead', 'fax', 'disconnected', 'bad_number', 'not_in_service') THEN 42
+        ELSE 43
+      END AS priority
+    FROM bucketed_phones
+    WHERE length(key10) = 10
+      AND disposition_key IS NOT NULL
+      AND disposition_key NOT IN (
+        'no_answer', 'left_voicemail', 'left_vm', 'not_interested', 'spoke_with_owner',
+        'callback_requested', 'busy', 'appointment_set', 'deal_potential', 'offer_made',
+        'answered', 'contact', 'interested'
+      )
+  ),
+  connected_blocks AS MATERIALIZED (
+    SELECT key10,
+      CASE
+        WHEN connected_key = 'wrong_number' THEN 'wrong_number'
+        WHEN connected_key IN ('disconnected', 'false', 'no', 'bad_number') THEN 'disconnected'
+        ELSE 'unmapped_label'
+      END AS block_reason,
+      CASE
+        WHEN connected_key = 'wrong_number' THEN 51
+        WHEN connected_key IN ('disconnected', 'false', 'no', 'bad_number') THEN 52
+        ELSE 53
+      END AS priority
+    FROM bucketed_phones
+    WHERE length(key10) = 10
+      AND connected_key IS NOT NULL
+      AND connected_key NOT IN ('connected', 'dataskip_dnc')
+  ),
+  relationship_blocks AS MATERIALIZED (
+    SELECT prospect_id, key10,
+      CASE bucket WHEN 'associate_non_family' THEN 'associate_non_family' ELSE 'relationship_unknown' END AS block_reason,
+      CASE bucket WHEN 'associate_non_family' THEN 90 ELSE 91 END AS priority
+    FROM bucketed_phones
+    WHERE length(key10) = 10
+      AND bucket IN ('associate_non_family', 'relationship_unknown')
+      AND NOT (
+        bucket = 'relationship_unknown'
+        AND public.dialer_unknown_tie_release_v1(
+          relationship, contact_name, owner_1, owner_1_last, is_skip_traced, verified_source
+        )
+      )
+  ),
   hits AS (
     SELECT input.ordinal, 'invalid_phone'::text AS block_reason, 10 AS priority
     FROM input WHERE input.e164 IS NULL
@@ -313,51 +448,15 @@ AS $function$
     UNION ALL
     SELECT input.ordinal, 'voice_hold', 30
     FROM input
-    JOIN classified_phones AS phone
-      ON phone.key10 = input.key10
-     AND phone.voice_hold IS TRUE
-     AND coalesce(public.dialer_label_key_v1(phone.voice_hold_reason), '') NOT LIKE '%mojo_dnc_contact_fanout%'
-    WHERE length(input.key10) = 10
+    JOIN voice_blocks AS blocked ON blocked.key10 = input.key10
     UNION ALL
-    SELECT input.ordinal,
-      CASE
-        WHEN phone.disposition_key IN ('dnc', 'do_not_call', 'dnc_number', 'dnc_contact', 'take_me_off') THEN 'prospect_dnc'
-        WHEN phone.disposition_key = 'wrong_number' THEN 'wrong_number'
-        WHEN phone.disposition_key IN ('dead', 'fax', 'disconnected', 'bad_number', 'not_in_service') THEN 'disconnected'
-        ELSE 'unmapped_label'
-      END,
-      CASE
-        WHEN phone.disposition_key IN ('dnc', 'do_not_call', 'dnc_number', 'dnc_contact', 'take_me_off') THEN 40
-        WHEN phone.disposition_key = 'wrong_number' THEN 41
-        WHEN phone.disposition_key IN ('dead', 'fax', 'disconnected', 'bad_number', 'not_in_service') THEN 42
-        ELSE 43
-      END
+    SELECT input.ordinal, blocked.block_reason, blocked.priority
     FROM input
-    JOIN classified_phones AS phone ON phone.key10 = input.key10
-    WHERE length(input.key10) = 10
-      AND phone.disposition_key IS NOT NULL
-      AND phone.disposition_key NOT IN (
-        'no_answer', 'left_voicemail', 'left_vm', 'not_interested', 'spoke_with_owner',
-        'callback_requested', 'busy', 'appointment_set', 'deal_potential', 'offer_made',
-        'answered', 'contact', 'interested'
-      )
+    JOIN disposition_blocks AS blocked ON blocked.key10 = input.key10
     UNION ALL
-    SELECT input.ordinal,
-      CASE
-        WHEN phone.connected_key = 'wrong_number' THEN 'wrong_number'
-        WHEN phone.connected_key IN ('disconnected', 'false', 'no', 'bad_number') THEN 'disconnected'
-        ELSE 'unmapped_label'
-      END,
-      CASE
-        WHEN phone.connected_key = 'wrong_number' THEN 51
-        WHEN phone.connected_key IN ('disconnected', 'false', 'no', 'bad_number') THEN 52
-        ELSE 53
-      END
+    SELECT input.ordinal, blocked.block_reason, blocked.priority
     FROM input
-    JOIN classified_phones AS phone ON phone.key10 = input.key10
-    WHERE length(input.key10) = 10
-      AND phone.connected_key IS NOT NULL
-      AND phone.connected_key NOT IN ('connected', 'dataskip_dnc')
+    JOIN connected_blocks AS blocked ON blocked.key10 = input.key10
     UNION ALL
     SELECT input.ordinal, 'contact_opt_out', 60
     FROM input
@@ -425,30 +524,16 @@ AS $function$
     ) AS class
     WHERE length(input.key10) = 10
     UNION ALL
-    SELECT input.ordinal,
-      CASE phone.bucket WHEN 'associate_non_family' THEN 'associate_non_family' ELSE 'relationship_unknown' END,
-      CASE phone.bucket WHEN 'associate_non_family' THEN 90 ELSE 91 END
+    SELECT input.ordinal, blocked.block_reason, blocked.priority
     FROM input
-    JOIN classified_phones AS phone
-      ON phone.key10 = input.key10
-     AND (input.prospect_id IS NULL OR phone.prospect_id = input.prospect_id)
-    WHERE length(input.key10) = 10
-      AND phone.bucket IN ('associate_non_family', 'relationship_unknown')
-      AND NOT (
-        phone.bucket = 'relationship_unknown'
-        AND public.dialer_unknown_tie_release_v1(
-          phone.relationship, phone.contact_name, phone.owner_1, phone.owner_1_last,
-          phone.is_skip_traced, phone.verified_source
-        )
-      )
+    JOIN relationship_blocks AS blocked
+      ON blocked.key10 = input.key10
+     AND (input.prospect_id IS NULL OR blocked.prospect_id = input.prospect_id)
     UNION ALL
     SELECT input.ordinal, 'property_owner_dnc_fanout', 100
     FROM input
-    JOIN classified_phones AS candidate
-      ON candidate.dialer_property_key IS NOT NULL
-     AND (candidate.prospect_id = input.prospect_id OR candidate.key10 = input.key10)
-    JOIN dnc_properties AS dnc ON dnc.property_key = candidate.dialer_property_key
-    WHERE length(input.key10) = 10
+    JOIN property_blocked AS blocked
+      ON blocked.prospect_id = input.prospect_id OR blocked.key10 = input.key10
     UNION ALL
     SELECT input.ordinal, 'person_fanout', 110
     FROM input
@@ -470,36 +555,26 @@ AS $function$
     UNION ALL
     SELECT input.ordinal, 'person_fanout', 120
     FROM input
-    JOIN classified_phones AS mine ON mine.key10 = input.key10
-    JOIN classified_phones AS flagged
-      ON flagged.prospect_id = mine.prospect_id
-     AND flagged.key10 IS DISTINCT FROM input.key10
-     AND flagged.disposition_key IN ('dnc_contact', 'take_me_off')
-    WHERE length(input.key10) = 10
+    JOIN sibling_person_keys AS blocked ON blocked.key10 = input.key10
     UNION ALL
     SELECT input.ordinal, 'person_fanout', 121
     FROM input
-    JOIN classified_phones AS flagged
+    JOIN person_dnc_homes AS flagged
       ON flagged.prospect_id = input.prospect_id
      AND flagged.key10 IS DISTINCT FROM input.key10
-     AND flagged.disposition_key IN ('dnc_contact', 'take_me_off')
-    WHERE input.prospect_id IS NOT NULL AND length(input.key10) = 10
+    WHERE input.prospect_id IS NOT NULL
     UNION ALL
     SELECT input.ordinal, 'person_fanout', 123
     FROM input
-    JOIN classified_phones AS mine ON mine.key10 = input.key10
-    JOIN classified_phones AS other ON other.prospect_id = mine.prospect_id AND other.key10 IS DISTINCT FROM input.key10
-    JOIN public.crm_mojo_call_events AS event ON event.dialer_phone_key = other.key10
-    WHERE public.dialer_suppression_class_v1('mojo_disposition_raw', event.disposition_raw) = 'person_dnc'
+    JOIN mojo_sibling_keys AS blocked ON blocked.key10 = input.key10
     UNION ALL
     SELECT input.ordinal, 'person_fanout', 124
     FROM input
     JOIN public.crm_mojo_call_events AS mine_event ON mine_event.dialer_phone_key = input.key10
-    JOIN public.crm_mojo_call_events AS other_event
-      ON other_event.provider_contact_id = mine_event.provider_contact_id
+    JOIN mojo_person_keys AS marked
+      ON marked.provider_contact_id = mine_event.provider_contact_id
      AND nullif(btrim(mine_event.provider_contact_id), '') IS NOT NULL
-     AND other_event.dialer_phone_key IS DISTINCT FROM input.key10
-    WHERE public.dialer_suppression_class_v1('mojo_disposition_raw', other_event.disposition_raw) = 'person_dnc'
+     AND marked.key10 IS DISTINCT FROM input.key10
     UNION ALL
     SELECT input.ordinal, 'person_fanout', 125
     FROM input
@@ -514,25 +589,18 @@ AS $function$
        )
        OR public.dialer_suppression_class_v1('lead_call_result', lead.call_result) = 'person_dnc'
      )
-    JOIN classified_phones AS shared ON shared.key10 = lead.dialer_phone_key
-    JOIN classified_phones AS sibling
+    JOIN bucketed_phones AS shared ON shared.key10 = lead.dialer_phone_key
+    JOIN bucketed_phones AS sibling
       ON sibling.prospect_id = shared.prospect_id AND sibling.key10 = input.key10
     UNION ALL
     SELECT input.ordinal, 'household_fanout', 130
     FROM input
-    JOIN classified_phones AS mine
-      ON mine.dialer_household_key IS NOT NULL
-     AND (mine.prospect_id = input.prospect_id OR mine.key10 = input.key10)
-    JOIN classified_phones AS anchor
-      ON anchor.dialer_household_key = mine.dialer_household_key
-     AND anchor.prospect_id IS DISTINCT FROM mine.prospect_id
-     AND anchor.disposition_key IN ('dnc_contact', 'take_me_off')
+    JOIN household_blocked_keys AS blocked
+      ON blocked.prospect_id = input.prospect_id OR blocked.key10 = input.key10
     UNION ALL
     SELECT input.ordinal, 'household_fanout', 131
     FROM input
-    JOIN classified_phones AS mine
-      ON mine.dialer_household_key IS NOT NULL
-     AND (mine.prospect_id = input.prospect_id OR mine.key10 = input.key10)
+    JOIN bucketed_phones AS mine ON mine.prospect_id = input.prospect_id
     JOIN public.prospects AS anchor
       ON anchor.dialer_household_key = mine.dialer_household_key
      AND anchor.id IS DISTINCT FROM mine.prospect_id
@@ -584,21 +652,8 @@ AS $function$
     WHERE length(input.key10) = 10
       AND (
         EXISTS (
-          SELECT 1 FROM classified_phones AS phone
-          WHERE length(phone.key10) BETWEEN 4 AND 9
-            AND right(phone.key10, 4) = right(input.key10, 4)
-            AND (
-              phone.voice_hold IS TRUE
-              OR (
-                phone.disposition_key IS NOT NULL
-                AND phone.disposition_key NOT IN (
-                  'no_answer', 'left_voicemail', 'left_vm', 'not_interested', 'spoke_with_owner',
-                  'callback_requested', 'busy', 'appointment_set', 'deal_potential', 'offer_made',
-                  'answered', 'contact', 'interested'
-                )
-              )
-              OR (phone.connected_key IS NOT NULL AND phone.connected_key NOT IN ('connected', 'dataskip_dnc'))
-            )
+          SELECT 1 FROM short_last4 AS short_phone
+          WHERE short_phone.last4 = right(input.key10, 4)
         )
         OR EXISTS (
           SELECT 1 FROM public.leads AS lead
