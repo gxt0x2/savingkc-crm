@@ -51,6 +51,10 @@ export interface ExpiredRowGateInput {
   listDay?: string | null
   channel: ExpiredContactChannel
   expiredOwnerConfirmed: boolean
+  /** Fail closed when omitted. The export path checks this column, not only the stamp. */
+  requiresLicenseeDisclosure?: boolean
+  prospectId?: string | null
+  phoneOrigin?: string | null
 }
 
 /**
@@ -79,5 +83,7 @@ export function expiredRowBlock(input: ExpiredRowGateInput): string | null {
   }
   if (input.listDay && new Date(`${input.listDay}T00:00:00Z`).getUTCDay() === 0) return 'outside_calling_hours'
   if (input.channel !== 'single_line_live_agent') return 'single_line_live_agent_only'
+  if (input.requiresLicenseeDisclosure !== true) return 'licensee_disclosure_required'
+  if (!input.prospectId || input.phoneOrigin !== 'prospect_phone') return 'owner_match_missing'
   return null
 }

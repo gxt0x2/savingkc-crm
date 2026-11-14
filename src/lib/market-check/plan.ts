@@ -392,9 +392,12 @@ export function marketExportBlock(input: {
   phoneBlockReason?: string | null
   lineChecksMerged?: boolean
   channel?: ExpiredContactChannel
+  requiresLicenseeDisclosure?: boolean
+  prospectId?: string | null
+  phoneOrigin?: string | null
 }): string | null {
-  if (!input.enabled) return null
-  if (input.highPrice) return 'active_high_price'
+  if (!input.enabled && !input.expiredSourced) return null
+  if (input.highPrice && !input.expiredSourced) return 'active_high_price'
   if (input.expiredSourced) {
     return expiredRowBlock({
       phoneBlockReason: input.phoneBlockReason ?? null,
@@ -405,6 +408,9 @@ export function marketExportBlock(input: {
       listDay: input.today,
       channel: input.channel ?? 'single_line_live_agent',
       expiredOwnerConfirmed: input.expiredOwnerConfirmed,
+      requiresLicenseeDisclosure: input.requiresLicenseeDisclosure,
+      prospectId: input.prospectId,
+      phoneOrigin: input.phoneOrigin,
     })
   }
   if (input.ownerChanged) return 'owner_changed'
