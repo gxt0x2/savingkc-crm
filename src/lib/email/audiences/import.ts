@@ -1,3 +1,4 @@
+import { isBadEmailStatus } from "../../email-validation/status";
 import { selectInitialAddresses, contactHygieneReasons } from '../hygiene/guards';
 import "server-only";
 import type { Sql } from "postgres";
@@ -124,6 +125,9 @@ export async function importAudience(
       )
         reasons.push("address_verification");
       if (stop) reasons.push("marketing_stopped");
+      const [ledger] =
+        await tx`select email_status from email_address_validations where normalized_email=${email}`;
+      if (isBadEmailStatus(ledger?.email_status)) reasons.push("email_not_deliverable");
       prepared.push({ addressId: address.id, partyId, reasons });
     }
     const eligible = prepared.filter((r) => !r.reasons.length).length;

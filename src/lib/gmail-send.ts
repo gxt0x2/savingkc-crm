@@ -1,3 +1,4 @@
+import { blockedEmailStatus, type EmailStatusClient } from '@/lib/email-validation/gate'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { getValidAccessTokenResult, hasGoogleOAuthConfig, type StoredToken } from '@/lib/gmail-sync'
 import { formatGmailSendError, GMAIL_SEND_SCOPE, hasGoogleScope } from '@/lib/google-oauth-scopes'
@@ -52,8 +53,12 @@ export async function sendGmailMessage(input: {
   subject: string
   text: string
   fetchImpl?: GmailSendFetch
+  validationClient?: EmailStatusClient
 }): Promise<GmailSendResult> {
   if (!isValidEmailAddress(input.to)) {
+    return { ok: false, code: 'invalid_recipient', error: formatGmailSendError('invalid_recipient') }
+  }
+  if (await blockedEmailStatus(input.to, input.validationClient)) {
     return { ok: false, code: 'invalid_recipient', error: formatGmailSendError('invalid_recipient') }
   }
 

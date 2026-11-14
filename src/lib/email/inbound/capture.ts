@@ -1,4 +1,5 @@
 import "server-only";
+import { bounceTypeFromPayload } from "../../email-validation/bounce";
 import { deliveryEventTypes, reduceDeliveryEvent } from "./delivery";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -91,9 +92,10 @@ export function createResendWebhookHttp(deps: {
             connection_id: binding.connection_id as string,
             provider_email_id: parsed.data.data.email_id,
             type: parsed.data.type,
+            bounceType: bounceTypeFromPayload(parsed.data.data),
           };
-          await tx`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,state,encrypted_payload,endpoint_id,provider_email_id,provider_created_at,hold_reason)
-            values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${event.type},${hash},'pending',${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${event.provider_email_id},${new Date(parsed.data.created_at)},'awaiting_send_receipt')`;
+          await tx`insert into em_provider_events(id,workspace_id,connection_id,provider_event_id,type,payload_hash,state,encrypted_payload,endpoint_id,provider_email_id,provider_created_at,hold_reason,bounce_type)
+            values(${eventId},${binding.workspace_id},${binding.connection_id},${verified.id},${event.type},${hash},'pending',${tx.json(json(encryptEmailSecret(raw, key, `${binding.workspace_id}/${eventId}/resend-event/1`, 1)))},${endpointId},${event.provider_email_id},${new Date(parsed.data.created_at)},'awaiting_send_receipt',${event.bounceType})`;
           await reduceDeliveryEvent(tx, event, new Date());
           return;
         }

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { blockedEmailStatus, type EmailStatusClient } from '@/lib/email-validation/gate'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { resolveAgentTelephonyProfile } from '@/lib/telephony/agent-identity'
@@ -44,6 +45,7 @@ export async function processAppointmentSequence(limit = 10, db: SupabaseClient 
         const copy = appointmentCopy({ touch: step.touch, firstName: lead.full_name || 'there', repName: rep.displayName, repPhone: rep.defaultCallerId, scheduledAt: a.scheduled_at, bookedAt: a.sequence_booked_at, type: a.type, photoUrl: profile?.profile_photo_url })
         if (step.touch === 'booking_email') {
           if (!lead.email) { status = 'skipped'; reason = 'missing_email' }
+          else if (await blockedEmailStatus(lead.email, db as unknown as EmailStatusClient)) { status = 'skipped'; reason = 'email_not_deliverable' }
           else {
             if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) throw new Error('Transactional appointment email sender is not configured')
             // Network ambiguity must not cause a second submission on another worker tick.
