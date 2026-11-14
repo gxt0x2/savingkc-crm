@@ -2,10 +2,10 @@ import type { AuthenticatedActor } from '@/lib/api/authenticated-actor'
 import {
   type ForeclosureNoticeType,
   type IngestControl,
-  mergeIngestControls,
   normalizeCounty,
   parseNoticeType,
 } from '@/lib/prospecting/foreclosure'
+import { presentIngestControls } from '@/lib/prospecting/foreclosure-intake'
 import { supabase } from '@/lib/supabase-lazy'
 import { ForeclosureError } from '@/lib/server/foreclosure-prospects'
 
@@ -30,7 +30,7 @@ export async function listForeclosureIngestControls(): Promise<IngestControl[]> 
       if (!noticeType || !county) return []
       return [{ county, noticeType, paused: Boolean(row.paused), updatedSince: row.updated_since }]
     })
-  return mergeIngestControls(rows)
+  return presentIngestControls(rows)
 }
 
 export async function setForeclosureIngestControl(
