@@ -44,6 +44,8 @@ function plan(csv: string, rows: PoolRowInput[], extra: { allowOffMarket?: boole
     today: TODAY,
     additionListDay: extra.additionListDay ?? TODAY,
     allowOffMarket: extra.allowOffMarket ?? true,
+    completeFile: true,
+    hasExpireColumn: true,
     fileSha256: 'a'.repeat(64),
   })
 }
@@ -137,6 +139,7 @@ describe('listed and sold market check', () => {
 
   it('blocks when the roll owner differs from the prospect owner', () => {
     expect(ownersChanged('OWNER ADA', 'ADA OWNER')).toBe(false)
+    expect(ownersChanged('ADA L OWNER', 'ADA OWNER')).toBe(false)
     expect(ownersChanged('BOB OTHER', 'ADA OWNER')).toBe(true)
     const result = plan(FIXTURE, [pool({
       id: 'owner',
@@ -223,20 +226,19 @@ describe('listed and sold market check', () => {
       latestListDay: TODAY,
       today: TODAY,
       lineChecksMerged: true,
-      now: new Date('2026-11-14T16:00:00Z'),
     }
     expect(marketExportBlock({
       ...base,
       latestStatus: 'listing_expired' as ListingStatus,
       expiredOwnerConfirmed: false,
       hasRelistCheckToday: false,
-    })).toBe('relist_check_missing')
+    })).toBe('expired_owner_confirm_pending')
     expect(marketExportBlock({
       ...base,
       latestStatus: 'listing_expired',
-      expiredOwnerConfirmed: false,
-      hasRelistCheckToday: true,
-    })).toBe('expired_owner_confirm_pending')
+      expiredOwnerConfirmed: true,
+      hasRelistCheckToday: false,
+    })).toBe('relist_check_missing')
     expect(marketExportBlock({
       ...base,
       latestStatus: 'listed_active',
@@ -256,7 +258,6 @@ describe('listed and sold market check', () => {
       expiredOwnerConfirmed: true,
       hasRelistCheckToday: true,
       lineChecksMerged: true,
-      now: new Date('2026-11-14T16:00:00Z'),
     })).toBe('listed_pending')
   })
 

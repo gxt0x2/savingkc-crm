@@ -64,6 +64,11 @@ export function fileSha256(text: string): string {
  * One Heartland Matrix saved-search export for the whole metro.
  * The file is not fetched. The caller supplies the CSV text.
  */
+export function matrixCsvHasExpireColumn(csvText: string): boolean {
+  const header = (csvText.split(/\r?\n/)[0] ?? '').toLowerCase().replace(/\s+/g, '_')
+  return ['expire_dt', 'expire_date', 'expiration_date', 'off_market_date', 'status_date'].some((name) => header.includes(name))
+}
+
 export function parseMatrixCsv(csvText: string): MatrixRow[] {
   const table = parseCsv(csvText)
   if (!table.length) throw new MarketCheckFileError('The Matrix export has no rows.')

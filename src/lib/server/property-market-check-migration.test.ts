@@ -3,10 +3,10 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PRICE_THRESHOLDS, TARGET_ZIPS } from '@/lib/market-check/seeds'
 
-const migration = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261215120000_property_market_checks.sql'),
-  'utf8',
-)
+const migration = [
+  'supabase/migrations/20261215120000_property_market_checks.sql',
+  'supabase/migrations/20261215130000_market_check_fix_round.sql',
+].map((file) => readFileSync(join(process.cwd(), file), 'utf8')).join('\n')
 
 describe('property market check migration', () => {
   it('follows the suppression classifier and keeps the phone scrub', () => {

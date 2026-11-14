@@ -12,21 +12,14 @@ import {
 } from '@/lib/market-check/expired-gate'
 import { classifyMatrixStatus } from '@/lib/market-check/plan'
 
-const migration = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261215120000_property_market_checks.sql'),
-  'utf8',
-)
+const migration = [
+  'supabase/migrations/20261215120000_property_market_checks.sql',
+  'supabase/migrations/20261215130000_market_check_fix_round.sql',
+].map((file) => readFileSync(join(process.cwd(), file), 'utf8')).join('\n')
 const gateSource = readFileSync(
   join(process.cwd(), 'src/lib/market-check/expired-gate.ts'),
   'utf8',
 )
-
-/** Saturday 14 Nov 2026, 10:00 America/Chicago (CST). */
-const OPEN = new Date('2026-11-14T16:00:00Z')
-/** Sunday 15 Nov 2026, 10:00 America/Chicago. */
-const SUNDAY = new Date('2026-11-15T16:00:00Z')
-/** Saturday 14 Nov 2026, 8:30pm America/Chicago, after 7:00pm. */
-const LATE = new Date('2026-11-15T02:30:00Z')
 
 function gate(partial: Partial<ExpiredRowGateInput> = {}): string | null {
   return expiredRowBlock({
@@ -35,7 +28,7 @@ function gate(partial: Partial<ExpiredRowGateInput> = {}): string | null {
     ownerChanged: false,
     latestStatus: 'listing_expired',
     hasRelistCheckToday: true,
-    now: OPEN,
+    listDay: '2026-11-14',
     channel: 'single_line_live_agent',
     expiredOwnerConfirmed: true,
     ...partial,
@@ -73,12 +66,11 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
     expect(migration).toContain("v_status IN ('listed_active', 'listed_pending')")
   })
 
-  it('keeps the Monday-Saturday 9am-7pm Chicago calling window', () => {
-    expect(gate({ now: SUNDAY })).toBe('outside_calling_hours')
-    expect(gate({ now: LATE })).toBe('outside_calling_hours')
-    expect(gate({ now: OPEN })).toBeNull()
-    expect(migration).toContain("'outside_calling_hours'")
-    expect(migration).toContain('America/Chicago')
+  it('blocks a Sunday list day and exports the calling window instead of the clock', () => {
+    expect(gate({ listDay: '2026-11-15' })).toBe('outside_calling_hours')
+    expect(gate({ listDay: '2026-11-14' })).toBeNull()
+    expect(migration).toContain('mon_sat_0900_1900_america_chicago')
+    expect(migration).toContain('EXTRACT(DOW FROM v_today) = 0')
   })
 
   it('allows only a single live-agent line', () => {
@@ -110,7 +102,7 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
   it('marks Kansas rows ks_license_unconfirmed', () => {
     expect(expiredRowStamp('KS').ksLicenseUnconfirmed).toBe(true)
     expect(expiredRowStamp('MO').ksLicenseUnconfirmed).toBe(false)
-    expect(migration).toContain("dialed.state = 'KS'")
+    expect(migration).toContain("upper(coalesce(dialed.state, '')) = 'KS'")
   })
 
   it('does not let the confirm switch skip an earlier condition', () => {

@@ -28,6 +28,7 @@ export const DIALER_EXPORT_COLUMNS = [
   'requires_licensee_disclosure',
   'ks_license_unconfirmed',
   'basis',
+  'calling_window',
 ] as const
 
 export interface DialerExportRow {
@@ -53,6 +54,7 @@ export interface DialerExportRow {
   requires_licensee_disclosure: boolean
   ks_license_unconfirmed: boolean
   basis: string
+  calling_window: string | null
 }
 
 export interface DialerExportExclusion {
@@ -129,6 +131,7 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
     basis: typeof row.basis === 'string' && row.basis
       ? row.basis
       : (typeof row.list_type === 'string' ? row.list_type : ''),
+    calling_window: typeof row.calling_window === 'string' ? row.calling_window : null,
   }
 }
 
