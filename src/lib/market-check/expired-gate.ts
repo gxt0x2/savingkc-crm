@@ -1,5 +1,3 @@
-import { isWithinDialerCallingHours } from '@/lib/dialer-call-policy'
-
 /** Counsel exception EXC-2026-11-14-003. This is not the 8/29 clearance. */
 export const EXPIRED_OWNER_OVERRIDE_BASIS = 'owner_override_2026-11-14'
 export const AUGUST_29_CLEARED_BASIS = '2026-08-29-cleared'
@@ -47,9 +45,10 @@ export interface ExpiredRowGateInput {
   phoneBlockReason: string | null
   lineChecksMerged?: boolean
   ownerChanged: boolean
+  ownerCheckUnknown?: boolean
   latestStatus: string | null
   hasRelistCheckToday: boolean
-  now: Date
+  listDay?: string | null
   channel: ExpiredContactChannel
   expiredOwnerConfirmed: boolean
 }
@@ -60,15 +59,25 @@ export interface ExpiredRowGateInput {
  * from source_list_phone_block_reason_v1 (#814). They are not reimplemented here.
  */
 export function expiredRowBlock(input: ExpiredRowGateInput): string | null {
+  if (!input.expiredOwnerConfirmed) return 'expired_owner_confirm_pending'
   if (input.phoneBlockReason) return input.phoneBlockReason
   if ((input.lineChecksMerged ?? PHONE_LINE_CHECKS_MERGED) !== true) return 'line_check_unknown'
+  if (input.ownerCheckUnknown) return 'owner_check_unknown'
   if (input.ownerChanged) return 'owner_changed'
   if (!input.hasRelistCheckToday) return 'relist_check_missing'
-  if (input.latestStatus === 'listed_active' || input.latestStatus === 'listed_pending') {
+  if (
+    input.latestStatus === 'listed_active'
+    || input.latestStatus === 'listed_pending'
+    || input.latestStatus === 'sold_new_owner'
+    || input.latestStatus === 'listed_withdrawn'
+    || input.latestStatus === 'listing_check_unknown'
+  ) {
     return input.latestStatus
   }
-  if (!isWithinDialerCallingHours(input.now)) return 'outside_calling_hours'
+  if (input.latestStatus !== 'listing_expired' && input.latestStatus !== 'off_market_ok') {
+    return 'relist_check_missing'
+  }
+  if (input.listDay && new Date(`${input.listDay}T00:00:00Z`).getUTCDay() === 0) return 'outside_calling_hours'
   if (input.channel !== 'single_line_live_agent') return 'single_line_live_agent_only'
-  if (!input.expiredOwnerConfirmed) return 'expired_owner_confirm_pending'
   return null
 }

@@ -14,10 +14,17 @@ const NO_STORE = { 'Cache-Control': 'private, no-store, max-age=0' }
 
 function filters(url: URL) {
   const listType = url.searchParams.get('listType')
+  const sourceListId = url.searchParams.get('sourceListId')
+  if (listType && listType.trim().toLowerCase() === 'mls_expired') {
+    return {
+      lane: { listType: 'mls_expired', county: null, state: null, violationKind: null },
+      county: null,
+      sourceListId,
+    }
+  }
   const county = url.searchParams.get('county')
   const state = url.searchParams.get('state')
   const violationKind = url.searchParams.get('violationKind')
-  const sourceListId = url.searchParams.get('sourceListId')
   const lane = listType
     ? normalizeSourceListLane({
         listType,

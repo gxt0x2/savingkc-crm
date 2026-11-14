@@ -84,10 +84,21 @@ export function normalizeOwnerName(value: string | null | undefined): string {
     .trim()
 }
 
-/** True when both names are present and differ after token-sorted normalization. */
+export type OwnerNameVerdict = 'same' | 'changed' | 'unknown'
+
+/** Extra tokens on one side are formatting, not a new owner. A missing name is unknown. */
+export function ownerNameVerdict(
+  rollOwner: string | null | undefined,
+  prospectOwner: string | null | undefined,
+): OwnerNameVerdict {
+  const left = normalizeOwnerName(rollOwner).split(' ').filter(Boolean)
+  const right = normalizeOwnerName(prospectOwner).split(' ').filter(Boolean)
+  if (!left.length || !right.length) return 'unknown'
+  const [small, large] = left.length <= right.length ? [left, right] : [right, left]
+  const largeSet = new Set(large)
+  return small.every((token) => largeSet.has(token)) ? 'same' : 'changed'
+}
+
 export function ownersChanged(rollOwner: string | null | undefined, prospectOwner: string | null | undefined): boolean {
-  const left = normalizeOwnerName(rollOwner).split(' ').filter(Boolean).sort().join(' ')
-  const right = normalizeOwnerName(prospectOwner).split(' ').filter(Boolean).sort().join(' ')
-  if (!left || !right) return false
-  return left !== right
+  return ownerNameVerdict(rollOwner, prospectOwner) === 'changed'
 }

@@ -357,7 +357,7 @@
       "status": "active",
       "routes": [],
       "apiRoutes": ["/api/admin/market-check", "/api/cron/market-check"],
-      "tables": ["mls_market_config", "property_market_checks", "property_market_status_v1", "target_zips", "mls_price_thresholds", "mls_export_runs", "mls_market_alerts", "source_list_row_mls_tags", "review_high_price", "parcel_inventory"],
+      "tables": ["mls_market_config", "mls_market_flag_changes", "property_market_checks", "property_market_status_v1", "property_market_latest", "target_zips", "mls_price_thresholds", "mls_export_runs", "mls_market_alerts", "source_list_row_mls_tags", "review_high_price", "parcel_inventory"],
       "environment": ["MLS_MARKET_CHECK_ENABLED", "EXPIRED_OWNER_CONFIRMED", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
         {"path": "/api/cron/market-check", "schedule": "30 7 * * *"},

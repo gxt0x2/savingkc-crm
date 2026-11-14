@@ -26,13 +26,14 @@ function row(phone: string, address = '10 Oak'): DialerExportRow {
     requires_licensee_disclosure: false,
     ks_license_unconfirmed: false,
     basis: 'tax_delinquent',
+    calling_window: null,
   }
 }
 
 describe('dialer export file', () => {
   it('writes a header even when every number was scrubbed', () => {
     expect(dialerExportCsv([])).toBe(
-      'list_type,county,state,violation_kind,parcel_id,case_id,address,owner_names,amount_owed,phone_e164,property_id,prospect_id,row_status,pull_date,source_file_name,source_list_row_id,source_list_id,phone_origin,export_batch_id,requires_licensee_disclosure,ks_license_unconfirmed,basis\n',
+      'list_type,county,state,violation_kind,parcel_id,case_id,address,owner_names,amount_owed,phone_e164,property_id,prospect_id,row_status,pull_date,source_file_name,source_list_row_id,source_list_id,phone_origin,export_batch_id,requires_licensee_disclosure,ks_license_unconfirmed,basis,calling_window\n',
     )
   })
 

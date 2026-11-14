@@ -1,4 +1,4 @@
-import { coreMarketAddress, normalizeMarketAddress, normalizeParcelId, ownersChanged, zip5 } from '@/lib/market-check/address'
+import { coreMarketAddress, normalizeMarketAddress, normalizeParcelId, ownerNameVerdict, zip5 } from '@/lib/market-check/address'
 import { expiredRowBlock, type ExpiredContactChannel } from '@/lib/market-check/expired-gate'
 import type { MatrixRow } from '@/lib/market-check/matrix-csv'
 import type { TargetZipStatus } from '@/lib/market-check/seeds'
@@ -10,6 +10,7 @@ export type ListingStatus =
   | 'listed_active'
   | 'listed_pending'
   | 'sold_new_owner'
+  | 'listed_withdrawn'
   | 'off_market_ok'
   | 'listing_check_unknown'
   | 'listing_expired'
@@ -39,6 +40,7 @@ export interface MarketCheckDraft {
   listPrice: number | null
   ownerOnRoll: string | null
   ownerChanged: boolean
+  ownerCheckUnknown: boolean
   propertyKey: string
 }
 
@@ -78,24 +80,40 @@ export interface PlanMarketCheckInput {
   today: string
   additionListDay: string
   allowOffMarket: boolean
+  completeFile?: boolean
+  hasExpireColumn?: boolean
   expiredWindowDays?: number
   fileSha256: string
 }
 
-const ACTIVE = new Set(['ACTIVE', 'ACT', 'COMING SOON', 'CSN'])
-const PENDING = new Set([
-  'ACTIVE UNDER CONTRACT', 'AUC', 'CONTINGENT', 'CONT', 'PENDING', 'PND',
-  'SHOW FOR BACKUPS', 'BACKUP', 'UC', 'U/C', 'UNDER CONTRACT',
-])
-const SOLD = new Set(['SOLD', 'SLD', 'CLOSED'])
-const EXPIRED = new Set(['EXPIRED', 'EXP'])
+/** Table-driven. Real Heartland codes for Expired, Withdrawn, and TOM can be added here. */
+export const MATRIX_STATUS_TABLE: ReadonlyArray<{ keys: readonly string[]; status: ListingStatus }> = [
+  { keys: ['ACT', 'ACTIVE', 'COMING SOON', 'CSN'], status: 'listed_active' },
+  {
+    keys: ['PND', 'PENDING', 'CONT', 'CONTINGENT', 'BACKUP', 'SHOW FOR BACKUPS', 'AUC', 'UNDER CONTRACT', 'UC', 'U C', 'ACTIVE UNDER CONTRACT'],
+    status: 'listed_pending',
+  },
+  { keys: ['SLD', 'SOLD', 'CLOSED'], status: 'sold_new_owner' },
+  { keys: ['WTH', 'WITHDRAWN', 'TOM', 'TEMP OFF MARKET', 'CAN', 'CANCELLED', 'CANCELED'], status: 'listed_withdrawn' },
+  { keys: ['EXP', 'EXPIRED'], status: 'listing_expired' },
+]
+
 const RANK: Record<ListingStatus, number> = {
-  listed_active: 4,
-  listed_pending: 3,
+  listed_active: 6,
+  listed_pending: 5,
+  sold_new_owner: 4,
+  listed_withdrawn: 3,
   listing_expired: 2,
-  sold_new_owner: 1,
-  listing_check_unknown: 0,
+  listing_check_unknown: 1,
   off_market_ok: 0,
+}
+
+export function matrixStatusKey(raw: string): string {
+  return raw.trim().toUpperCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+export function matrixStatusRank(status: ListingStatus): number {
+  return RANK[status]
 }
 
 interface Hit {
@@ -122,20 +140,24 @@ export function classifyMatrixStatus(
   dates: { closeDate: string | null; expireDate: string | null },
   today: string,
   expiredWindowDays: number,
-): ListingStatus | null {
-  const status = raw.trim().toUpperCase()
-  if (ACTIVE.has(status)) return 'listed_active'
-  if (PENDING.has(status)) return 'listed_pending'
-  if (SOLD.has(status)) {
+): ListingStatus | 'unmapped' | null {
+  const status = matrixStatusKey(raw)
+  if (!status) return null
+  const mapped = status.startsWith('UNDER CONTRACT')
+    ? 'listed_pending'
+    : MATRIX_STATUS_TABLE.find((row) => row.keys.includes(status))?.status
+  if (!mapped) return 'unmapped'
+  if (mapped === 'sold_new_owner') {
     if (!dates.closeDate || dates.closeDate < SOLD_SINCE) return null
     return 'sold_new_owner'
   }
-  if (EXPIRED.has(status)) {
+  if (mapped === 'listing_expired') {
     const earliest = addDays(today, -expiredWindowDays)
-    if (!dates.expireDate || dates.expireDate < earliest || dates.expireDate > today) return null
+    if (!dates.expireDate) return 'listing_check_unknown'
+    if (dates.expireDate < earliest || dates.expireDate > today) return null
     return 'listing_expired'
   }
-  return null
+  return mapped
 }
 
 export function crmLeadListingStatus(
@@ -172,7 +194,8 @@ export function poolMatchKey(parcelId: string | null, addrNorm: string, code: st
   return `addr:${body}`
 }
 
-function prefer(current: Hit | undefined, next: Hit): Hit {
+function prefer(current: Hit | undefined, next: Hit | undefined): Hit | undefined {
+  if (!next) return current
   if (!current || RANK[next.status] > RANK[current.status]) return next
   return current
 }
@@ -193,6 +216,10 @@ function hitFrom(row: MatrixRow, status: ListingStatus): Hit {
 
 export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const windowDays = input.expiredWindowDays ?? DEFAULT_EXPIRED_WINDOW_DAYS
+  const expiredRows = input.rows.filter((row) => ['EXP', 'EXPIRED'].includes(matrixStatusKey(row.statusRaw)))
+  if (expiredRows.length > 0 && input.hasExpireColumn === false) {
+    throw new Error('An expired Matrix row needs an expire or off-market date column.')
+  }
   const exact = new Map<string, Hit>()
   const core = new Map<string, Hit>()
   const anyZip = new Map<string, Hit>()
@@ -201,16 +228,17 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
 
   for (const row of input.rows) {
     if (row.zip5 && row.addrNorm) covered.add(row.zip5)
-    const status = classifyMatrixStatus(row.statusRaw, row, input.today, windowDays)
-    if (!status) continue
+    const classified = classifyMatrixStatus(row.statusRaw, row, input.today, windowDays)
+    if (!classified) continue
+    const status: ListingStatus = classified === 'unmapped' ? 'listing_check_unknown' : classified
     const hit = hitFrom(row, status)
-    if (row.parcelId) byParcel.set(row.parcelId, prefer(byParcel.get(row.parcelId), hit))
+    if (row.parcelId) byParcel.set(row.parcelId, prefer(byParcel.get(row.parcelId), hit) as Hit)
     if (!row.addrNorm || !row.zip5) continue
     const exactKey = `${row.addrNorm}|${row.zip5}`
-    exact.set(exactKey, prefer(exact.get(exactKey), hit))
+    exact.set(exactKey, prefer(exact.get(exactKey), hit) as Hit)
     const coreKey = `${coreMarketAddress(row.address)}|${row.zip5}`
-    core.set(coreKey, prefer(core.get(coreKey), hit))
-    anyZip.set(row.addrNorm, prefer(anyZip.get(row.addrNorm), hit))
+    core.set(coreKey, prefer(core.get(coreKey), hit) as Hit)
+    anyZip.set(row.addrNorm, prefer(anyZip.get(row.addrNorm), hit) as Hit)
   }
 
   const checks: MarketCheckDraft[] = []
@@ -234,7 +262,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     const parcelId = normalizeParcelId(pool.parcelId) || null
     const addrNorm = normalizeMarketAddress(pool.address)
     const code = pool.zip5 || zip5(pool.address)
-    const changed = ownersChanged(pool.rollOwner, pool.prospectOwner)
+    const verdict = ownerNameVerdict(pool.rollOwner, pool.prospectOwner)
     const base = {
       parcelId,
       addrNorm,
@@ -242,20 +270,21 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
       closeDate: null as string | null,
       listPrice: null as number | null,
       ownerOnRoll: pool.rollOwner,
-      ownerChanged: changed,
+      ownerChanged: verdict === 'changed',
+      ownerCheckUnknown: verdict === 'unknown' || !parcelId,
     }
     const parcelHit = parcelId ? byParcel.get(parcelId) : undefined
     const sameZip = (addrNorm && code ? exact.get(`${addrNorm}|${code}`) : undefined)
       ?? (addrNorm && code ? core.get(`${coreMarketAddress(pool.address)}|${code}`) : undefined)
     const otherZip = addrNorm ? anyZip.get(addrNorm) : undefined
-    const hit = parcelHit ?? sameZip
+    const hit = prefer(parcelHit, sameZip)
     let status: ListingStatus
-    if (!code && !parcelHit) status = 'listing_check_unknown'
+    if (!code && !hit) status = 'listing_check_unknown'
     else if (hit) status = hit.status
     else if (otherZip && otherZip.zip5 !== code) status = 'listing_check_unknown'
-    else if (!addrNorm && !parcelHit) status = 'listing_check_unknown'
+    else if (!addrNorm && !hit) status = 'listing_check_unknown'
     else if (!code || !covered.has(code)) status = 'listing_check_unknown'
-    else if (input.allowOffMarket) status = 'off_market_ok'
+    else if (input.allowOffMarket && input.completeFile) status = 'off_market_ok'
     else status = 'listing_check_unknown'
 
     if (hit && status !== 'listing_check_unknown' && status !== 'off_market_ok') {
@@ -287,10 +316,11 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   }
 
   for (const row of input.rows) {
-    const status = classifyMatrixStatus(row.statusRaw, row, input.today, windowDays)
-    if (status !== 'listing_expired' || !row.addrNorm || !row.zip5) continue
+    if (!row.addrNorm || !row.zip5) continue
     if (!intakeAllowed(input.targetStatusByZip.get(row.zip5))) continue
     const parcelId = row.parcelId
+    const merged = prefer(parcelId ? byParcel.get(parcelId) : undefined, exact.get(`${row.addrNorm}|${row.zip5}`))
+    if (!merged || merged.status !== 'listing_expired') continue
     const key = propertyKey(parcelId, row.addrNorm, row.zip5)
     const already = input.poolRows.some((pool) => {
       const poolParcel = normalizeParcelId(pool.parcelId)
@@ -325,6 +355,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
         listPrice: row.listPrice,
         ownerOnRoll: null,
         ownerChanged: false,
+        ownerCheckUnknown: true,
         propertyKey: key,
       })
     }
@@ -360,7 +391,6 @@ export function marketExportBlock(input: {
   hasRelistCheckToday: boolean
   phoneBlockReason?: string | null
   lineChecksMerged?: boolean
-  now?: Date
   channel?: ExpiredContactChannel
 }): string | null {
   if (!input.enabled) return null
@@ -372,7 +402,7 @@ export function marketExportBlock(input: {
       ownerChanged: input.ownerChanged,
       latestStatus: input.latestStatus,
       hasRelistCheckToday: input.hasRelistCheckToday,
-      now: input.now ?? new Date('2026-11-14T16:00:00Z'),
+      listDay: input.today,
       channel: input.channel ?? 'single_line_live_agent',
       expiredOwnerConfirmed: input.expiredOwnerConfirmed,
     })

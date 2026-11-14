@@ -15,6 +15,9 @@ async function pages(
     const page = Array.isArray(data) ? data as Row[] : []
     rows.push(...page)
     if (page.length < 1000) break
+    if (from + 1000 >= 20000) {
+      throw new Error(`Reading ${'the calling pool'} stopped at 20000 rows. Narrow the read before continuing.`)
+    }
   }
   return rows
 }

@@ -22,11 +22,9 @@ Vercel cron is UTC. The route runs at 07:30, 08:30, and 09:30 UTC and keeps the 
 | 08:30 | 3:30am deadline | 2:30am load |
 | 09:30 | 4:30am idle | 3:30am deadline |
 
-If no export is loaded by 3:30am CT, no new `off_market_ok` rows are written. Expired and high-price tags from the last good export stay. An alert row is logged. The route does not require `CRON_SECRET` and does not download MLS data.
+If no export is loaded by 3:30am CT, no new `off_market_ok` rows are written. Expired and high-price tags from the last good export stay. An alert row is logged. The 3:30am cron only records that miss. It uses the same admin-or-secret check as the other crons. The 2:30am load is an admin `POST /api/admin/market-check` or the script below. Do not commit a Matrix file.
 
 ```bash
-npx tsx scripts/load-market-check-csv.mts --file ./data/mls-inbox/matrix.csv
-npx tsx scripts/load-market-check-csv.mts --file ./data/mls-inbox/matrix.csv --confirm
+npx tsx scripts/load-market-check-csv.mts --file /secure/matrix.csv
+npx tsx scripts/load-market-check-csv.mts --file /secure/matrix.csv --confirm
 ```
-
-An admin can also post the CSV to `POST /api/admin/market-check`. Do not commit the file.

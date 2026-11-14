@@ -111,9 +111,10 @@ CREATE TABLE IF NOT EXISTS public.property_market_checks (
   list_price numeric,
   owner_on_roll text,
   owner_changed boolean NOT NULL DEFAULT false,
+  owner_check_unknown boolean NOT NULL DEFAULT false,
   CONSTRAINT property_market_checks_status_check CHECK (
     listing_status IN (
-      'listed_active', 'listed_pending', 'sold_new_owner',
+      'listed_active', 'listed_pending', 'sold_new_owner', 'listed_withdrawn',
       'off_market_ok', 'listing_check_unknown', 'listing_expired'
     )
   ),
@@ -678,149 +679,9 @@ GRANT EXECUTE ON FUNCTION public.source_list_market_block_reason_v1(uuid, text, 
 COMMENT ON FUNCTION public.source_list_market_block_reason_v1(uuid, text, text, uuid, text) IS
   'Market half of the dialer export scrub. Phone DNC, fan-out, and line checks stay in source_list_phone_block_reason_v1, which reads dialer_suppression_class_v1. This adds owner_changed, active_high_price, relist_check_missing, expired_owner_confirm_pending, and the listed/sold fail-closed statuses. It is a no-op until MLS_MARKET_CHECK_ENABLED is true.';
 
-CREATE OR REPLACE VIEW public.source_list_dialer_phone_review
-WITH (security_invoker = true) AS
-SELECT
-  dialed.source_list_row_id,
-  dialed.source_list_id,
-  dialed.list_type,
-  dialed.county,
-  dialed.state,
-  dialed.violation_kind,
-  dialed.parcel_id,
-  dialed.case_id,
-  dialed.address,
-  dialed.owner_names,
-  dialed.amount_owed,
-  dialed.property_id,
-  dialed.prospect_id,
-  dialed.row_status,
-  dialed.phone_value,
-  dialed.phone_e164,
-  dialed.phone_origin,
-  dialed.pull_date,
-  dialed.source_file_name,
-  COALESCE(
-    public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id),
-    public.source_list_market_block_reason_v1(
-      dialed.source_list_row_id,
-      dialed.parcel_id,
-      dialed.address,
-      dialed.prospect_id,
-      dialed.list_type
-    )
-  ) AS block_reason,
-  (
-    public.mls_market_check_enabled()
-    AND (
-      dialed.list_type = 'mls_expired'
-      OR EXISTS (
-        SELECT 1
-        FROM public.source_list_row_mls_tags AS tag
-        WHERE tag.source_list_row_id = dialed.source_list_row_id
-          AND tag.mls_tag = 'expired_listing'
-          AND tag.list_day <= (timezone('America/Chicago', clock_timestamp()))::date
-      )
-    )
-  ) AS requires_licensee_disclosure,
-  (dialed.state = 'KS') AS ks_license_unconfirmed,
-  CASE
-    WHEN dialed.list_type = 'mls_expired' OR EXISTS (
-      SELECT 1
-      FROM public.source_list_row_mls_tags AS tag
-      WHERE tag.source_list_row_id = dialed.source_list_row_id
-        AND tag.mls_tag = 'expired_listing'
-        AND tag.list_day <= (timezone('America/Chicago', clock_timestamp()))::date
-    ) THEN 'owner_override_2026-11-14'
-    ELSE dialed.list_type
-  END AS basis
-FROM (
-  SELECT DISTINCT ON (
-    row.id,
-    coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value))
-  )
-    row.id AS source_list_row_id,
-    row.source_list_id,
-    row.list_type,
-    row.county,
-    row.state,
-    row.violation_kind,
-    row.parcel_id,
-    row.case_id,
-    row.address,
-    row.owner_names,
-    row.amount_owed,
-    row.property_id,
-    row.prospect_id,
-    row.status AS row_status,
-    phone.phone_value,
-    public.normalize_conversation_phone(phone.phone_value) AS phone_e164,
-    phone.phone_origin,
-    list.pull_date,
-    list.source_file_name
-  FROM public.source_list_rows AS row
-  JOIN public.source_lists AS list ON list.id = row.source_list_id
-  CROSS JOIN LATERAL (
-    SELECT phone_value, 'source_row'::text AS phone_origin
-    FROM unnest(row.phones) AS phone_value
-    WHERE nullif(btrim(phone_value), '') IS NOT NULL
-    UNION ALL
-    SELECT prospect_phone.phone, 'prospect_phone'::text
-    FROM public.prospect_phones AS prospect_phone
-    WHERE row.prospect_id IS NOT NULL
-      AND prospect_phone.prospect_id = row.prospect_id
-      AND nullif(btrim(prospect_phone.phone), '') IS NOT NULL
-  ) AS phone
-  WHERE (
-    row.status IN ('ready', 'loaded_to_dialer')
-    OR (
-      public.mls_market_check_enabled()
-      AND row.list_type = 'mls_expired'
-      AND row.status = 'new_needs_skip'
-    )
-  )
-  AND (
-    row.list_day IS NULL
-    OR row.list_day <= (timezone('America/Chicago', clock_timestamp()))::date
-  )
-  ORDER BY
-    row.id,
-    coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value)),
-    (phone.phone_origin = 'prospect_phone') DESC
-) AS dialed;
-
-CREATE OR REPLACE VIEW public.source_list_dialer_export
-WITH (security_invoker = true) AS
-SELECT
-  source_list_row_id,
-  source_list_id,
-  list_type,
-  county,
-  state,
-  violation_kind,
-  parcel_id,
-  case_id,
-  address,
-  owner_names,
-  amount_owed,
-  property_id,
-  prospect_id,
-  row_status,
-  phone_e164,
-  phone_origin,
-  pull_date,
-  source_file_name,
-  requires_licensee_disclosure,
-  ks_license_unconfirmed,
-  basis
-FROM public.source_list_dialer_phone_review
-WHERE block_reason IS NULL;
-
-CREATE OR REPLACE VIEW public.source_list_dialer_suppressed
-WITH (security_invoker = true) AS
-SELECT *
-FROM public.source_list_dialer_phone_review
-WHERE block_reason IS NOT NULL;
+-- The dialer views are replaced in 20261215130000 so a prior line_check_flag column is kept.
+-- Dialer views are rebuilt in 20261215130000_market_check_fix_round.sql.
+-- This file does not replace them, so a line_check_flag column added earlier is not dropped.
 
 CREATE OR REPLACE VIEW public.review_high_price
 WITH (security_invoker = true) AS
@@ -848,15 +709,8 @@ WHERE tag.mls_tag = 'active_high_price'
 COMMENT ON VIEW public.review_high_price IS
   'Active listings at or above the per-zip min_list_price. They stay out of the wholesale dialer export.';
 
-REVOKE ALL ON TABLE public.source_list_dialer_phone_review, public.source_list_dialer_export,
-  public.source_list_dialer_suppressed, public.review_high_price
-  FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON TABLE public.source_list_dialer_phone_review, public.source_list_dialer_export,
-  public.source_list_dialer_suppressed, public.review_high_price
-  TO service_role;
-
-COMMENT ON VIEW public.source_list_dialer_export IS
-  'Wholesale dialer file. Drops phones blocked by dialer_suppression_class_v1 and, when MLS_MARKET_CHECK_ENABLED is true, by the market check. basis is the lead source. ks_license_unconfirmed is true for KS rows.';
+REVOKE ALL ON TABLE public.review_high_price FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.review_high_price TO service_role;
 
 DO $seed$
 DECLARE
