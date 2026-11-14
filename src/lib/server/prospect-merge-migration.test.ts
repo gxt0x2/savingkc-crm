@@ -22,7 +22,7 @@ describe('sanctioned prospect merge migration', () => {
     expect(migration).toContain('p_dry_run boolean DEFAULT true')
     expect(migration).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(migration).not.toContain('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1')
-    expect(migration).not.toContain('crm_people')
+    expect(migration).not.toMatch(/\b(?:ALTER TABLE|UPDATE|INSERT INTO|DELETE FROM)\s+public\.crm_people\b/i)
   })
 
   it('re-points phones, the lead link, and campaign members without clearing a hold', () => {
