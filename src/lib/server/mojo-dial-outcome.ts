@@ -35,6 +35,12 @@ export type MojoEventOutcome = (typeof EVENT_OUTCOMES)[number]
 /** Prospect-phone stamps. Null means "mark attempted" and leave the stamp alone. */
 export type MojoPhoneDisposition =
   | 'dnc'
+  | 'dnc_contact'
+  | 'dnc_number'
+  | 'take_me_off'
+  | 'fax'
+  | 'bad_number'
+  | 'not_in_service'
   | 'wrong_number'
   | 'disconnected'
   | 'no_answer'
@@ -170,13 +176,17 @@ export function classifyMojoDialResult(label: string | null, code: number | null
 } {
   const text = (label ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')
   if (text) {
-    if (/\b(dnc|do not call|take me off|remove me|remove my number)\b/.test(text)) {
-      return { outcome: 'dnc', phoneDisposition: 'dnc' }
+    if (text.includes('dnc contact')) return { outcome: 'dnc', phoneDisposition: 'dnc_contact' }
+    if (text.includes('dnc number')) return { outcome: 'dnc', phoneDisposition: 'dnc_number' }
+    if (text.includes('take me off') || text.includes('remove me') || text.includes('remove my number')) {
+      return { outcome: 'dnc', phoneDisposition: 'take_me_off' }
     }
+    if (/\bfax\b/.test(text)) return { outcome: 'disconnected', phoneDisposition: 'fax' }
+    if (/\b(dnc|do not call)\b/.test(text)) return { outcome: 'dnc', phoneDisposition: 'dnc' }
     if (text.includes('wrong number')) return { outcome: 'wrong_number', phoneDisposition: 'wrong_number' }
-    if (text.includes('bad number') || text.includes('disconnected') || text.includes('not in service')) {
-      return { outcome: 'disconnected', phoneDisposition: 'disconnected' }
-    }
+    if (text.includes('bad number')) return { outcome: 'disconnected', phoneDisposition: 'bad_number' }
+    if (text.includes('not in service')) return { outcome: 'disconnected', phoneDisposition: 'not_in_service' }
+    if (text.includes('disconnected')) return { outcome: 'disconnected', phoneDisposition: 'disconnected' }
     if (text.includes('voicemail') || text.includes('answering machine')) {
       return { outcome: 'voicemail_left', phoneDisposition: 'left_voicemail' }
     }
@@ -194,8 +204,8 @@ export function classifyMojoDialResult(label: string | null, code: number | null
     case 11: return { outcome: 'no_answer', phoneDisposition: 'no_answer' }
     case 3:
     case 7: return { outcome: 'disconnected', phoneDisposition: 'disconnected' }
-    case 5:
-    case 6: return { outcome: 'dnc', phoneDisposition: 'dnc' }
+    case 5: return { outcome: 'dnc', phoneDisposition: 'dnc_contact' }
+    case 6: return { outcome: 'dnc', phoneDisposition: 'dnc_number' }
     case 8: return { outcome: 'busy', phoneDisposition: 'busy' }
     case 9:
     case 12: return { outcome: 'voicemail_left', phoneDisposition: 'left_voicemail' }

@@ -257,6 +257,111 @@ describe('associate type and property owner fan-out', () => {
     }, 'a')).toBe('property_owner_dnc_fanout')
   })
 
+  it('reads Mojo Fax and DNC Number from the raw label before outcome other', () => {
+    const fax = '+18165550301'
+    const dncNumber = '+18165550302'
+    expect(exportBlockReason(fax, {
+      phones: [{ phone: fax, relationship: 'owner', lastDisposition: 'no_answer' }],
+      mojoEvents: [{ phone: fax, outcome: 'other', dispositionRaw: 'Fax' }],
+    })).toBe('disconnected')
+    expect(exportBlockReason(dncNumber, {
+      phones: [{ phone: dncNumber, relationship: 'owner', lastDisposition: null }],
+      mojoEvents: [{ phone: dncNumber, outcome: 'other', dispositionRaw: 'DNC Number' }],
+    })).toBe('mojo_dnc')
+    expect(suppressionClass('mojo_disposition_raw', 'skipped')).toBe('allow')
+    expect(suppressionClass('mojo_disposition_raw', 'brand_new_mojo_label')).toBe('unmapped')
+  })
+
+  it('fans a Mojo DNC Contact out before a contact label is stored', () => {
+    const other = '+18165550310'
+    const marked = '+18165550311'
+    expect(exportBlockReason(other, {
+      phones: [
+        { phone: marked, prospectId: 'p', relationship: 'owner', lastDisposition: null },
+        { phone: other, prospectId: 'p', relationship: 'owner', lastDisposition: 'no_answer' },
+      ],
+      mojoEvents: [{ phone: marked, outcome: 'other', dispositionRaw: 'DNC Contact', providerContactId: '77' }],
+    }, 'p')).toBe('person_fanout')
+  })
+
+  it('fans a dnc_refused lead across phones that share its number even without a prospect link', () => {
+    const sibling = '+18165550320'
+    const leadPhone = '+18165550321'
+    expect(exportBlockReason(sibling, {
+      leads: [{ id: 'lead', phone: leadPhone, deadReason: 'dnc_refused' }],
+      phones: [
+        { phone: leadPhone, prospectId: 'p', relationship: 'owner', lastDisposition: 'no_answer' },
+        { phone: sibling, prospectId: 'p', relationship: 'owner', lastDisposition: 'no_answer' },
+      ],
+    }, 'p')).toBe('person_fanout')
+  })
+
+  it('fans dead_reason dnc unless the record says DNC Number only', () => {
+    const sibling = '+18165550330'
+    const leadPhone = '+18165550331'
+    const phones = [
+      { phone: leadPhone, prospectId: 'p', relationship: 'owner', lastDisposition: 'no_answer' },
+      { phone: sibling, prospectId: 'p', relationship: 'owner', lastDisposition: 'no_answer' },
+    ]
+    expect(exportBlockReason(sibling, {
+      leads: [{ id: 'lead', phone: leadPhone, deadReason: 'dnc', callResult: 'no_answer' }],
+      phones,
+    }, 'p')).toBe('person_fanout')
+    expect(exportBlockReason(sibling, {
+      leads: [{ id: 'lead', phone: leadPhone, deadReason: 'dnc', callResult: 'DNC Number' }],
+      phones,
+    }, 'p')).toBeNull()
+    expect(exportBlockReason(leadPhone, {
+      leads: [{ id: 'lead', phone: leadPhone, deadReason: 'dnc', callResult: 'DNC Number' }],
+      phones,
+    })).toBe('lead_dnc')
+  })
+
+  it('spreads a manual fan-out voice hold across the person and the property, and flags other properties for counsel', () => {
+    const anchor = '+18165550340'
+    const sibling = '+18165550341'
+    const samePropertyCopy = '+18165550340'
+    const otherProperty = '+18165550340'
+    expect(exportBlockReason(sibling, {
+      prospects: [{ id: 'home', parcelId: 'P1', county: 'jackson', street: '1 Oak', zip: '64111' }],
+      phones: [
+        { phone: anchor, prospectId: 'home', relationship: 'owner', voiceHold: true, voiceHoldReason: 'mojo_dnc_contact_fanout | cleared' },
+        { phone: sibling, prospectId: 'home', relationship: 'owner', lastDisposition: 'no_answer' },
+      ],
+    }, 'home')).toBe('person_fanout')
+    expect(exportBlockReason(samePropertyCopy, {
+      prospects: [
+        { id: 'home', parcelId: 'P1' },
+        { id: 'copy', parcelId: 'P1' },
+      ],
+      phones: [
+        { phone: anchor, prospectId: 'home', relationship: 'owner', voiceHold: true, voiceHoldReason: 'mojo_dnc_contact_fanout' },
+        { phone: samePropertyCopy, prospectId: 'copy', relationship: 'owner', lastDisposition: 'no_answer' },
+      ],
+    }, 'copy')).toBe('person_fanout')
+    expect(exportBlockReason(otherProperty, {
+      prospects: [
+        { id: 'home', parcelId: 'P1' },
+        { id: 'away', parcelId: 'P9' },
+      ],
+      phones: [
+        { phone: anchor, prospectId: 'home', relationship: 'owner', voiceHold: true, voiceHoldReason: 'mojo_dnc_contact_fanout' },
+        { phone: otherProperty, prospectId: 'away', relationship: 'owner', lastDisposition: 'no_answer' },
+      ],
+    }, 'away')).toBe('needs_counsel_review')
+  })
+
+  it('holds every phone ending in a Mojo last-4 when the call row has no full number', () => {
+    expect(exportBlockReason('+18165550444', {
+      phones: [{ phone: '+18165550444', relationship: 'owner', lastDisposition: 'no_answer' }],
+      mojoCalls: [{ phoneLast4: '0444', resultLabel: 'DNC Number' }],
+    })).toBe('hold_last4')
+    expect(exportBlockReason('+18165550444', {
+      phones: [{ phone: '+18165550444', relationship: 'owner', phoneConnected: 'dataskip_dnc' }],
+      mojoCalls: [{ phoneLast4: '0444', resultLabel: 'No Answer' }],
+    })).toBeNull()
+  })
+
   it('refuses line mode above 1 while multi-line export is suspended', () => {
     expect(exportLineModeBlock(1)).toBeNull()
     expect(exportLineModeBlock(2)).toBe('multi_line_suspended')
