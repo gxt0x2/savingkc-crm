@@ -25,6 +25,10 @@ export const DIALER_EXPORT_COLUMNS = [
   'source_list_id',
   'phone_origin',
   'export_batch_id',
+  'requires_licensee_disclosure',
+  'ks_license_unconfirmed',
+  'basis',
+  'calling_window',
 ] as const
 
 export interface DialerExportRow {
@@ -47,6 +51,10 @@ export interface DialerExportRow {
   source_list_id: string
   phone_origin: string
   export_batch_id: string
+  requires_licensee_disclosure: boolean
+  ks_license_unconfirmed: boolean
+  basis: string
+  calling_window: string | null
 }
 
 export interface DialerExportExclusion {
@@ -81,6 +89,23 @@ function csvCell(column: (typeof DIALER_EXPORT_COLUMNS)[number], value: unknown)
   if (column !== 'phone_e164' && /^[=+\-@]/.test(text)) text = `'${text}`
   if (/[",\n\r]/.test(text)) return `"${text.replaceAll('"', '""')}"`
   return text
+}
+
+/**
+ * Export-path gate for an expired listing phone. Disclosure and single-line are
+ * required here, not only as columns on the row. A skip-traced phone with no
+ * linked prospect fails closed.
+ */
+export function expiredExportPathBlock(
+  row: Pick<DialerExportRow, 'list_type' | 'basis' | 'requires_licensee_disclosure' | 'prospect_id' | 'phone_origin'>,
+  lineMode: number,
+): 'expired_single_line_only' | 'licensee_disclosure_required' | 'owner_match_missing' | null {
+  const expired = row.list_type === 'mls_expired' || row.basis === 'owner_override_2026-11-14'
+  if (!expired) return null
+  if (lineMode !== 1) return 'expired_single_line_only'
+  if (row.requires_licensee_disclosure !== true) return 'licensee_disclosure_required'
+  if (!row.prospect_id || row.phone_origin !== 'prospect_phone') return 'owner_match_missing'
+  return null
 }
 
 export function dialerExportCsv(rows: readonly DialerExportRow[]): string {
@@ -118,6 +143,12 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
     source_list_id: sourceListId,
     phone_origin: typeof row.phone_origin === 'string' ? row.phone_origin : '',
     export_batch_id: exportBatchId,
+    requires_licensee_disclosure: row.requires_licensee_disclosure === true || row.requires_licensee_disclosure === 'true',
+    ks_license_unconfirmed: row.ks_license_unconfirmed === true || row.ks_license_unconfirmed === 'true' || row.state === 'KS',
+    basis: typeof row.basis === 'string' && row.basis
+      ? row.basis
+      : (typeof row.list_type === 'string' ? row.list_type : ''),
+    calling_window: typeof row.calling_window === 'string' ? row.calling_window : null,
   }
 }
 
@@ -187,6 +218,14 @@ export async function recordDialerExportBatch(
   const rows = rawRows.map((row) => asExportRow(row, exportBatchId)).filter((row): row is DialerExportRow => row !== null)
   if (rows.length !== rawRows.length) {
     throw new SourceListImportError('The dialer export is unavailable.', 503, 'source_list_unavailable')
+  }
+  const blocked = rows.map((row) => expiredExportPathBlock(row, lineMode)).find((reason) => reason !== null)
+  if (blocked) {
+    throw new SourceListImportError(
+      'An expired listing phone failed the export gate.',
+      409,
+      blocked,
+    )
   }
   return {
     exportBatchId,
