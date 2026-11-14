@@ -78,6 +78,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   // cannot inherit service-bearer trust before its handler authorization and
   // operational caller are reviewed. These routes are used by the
   // supervised Mojo runner and retain their own admin-or-secret checks.
+  '/api/admin/caller-id-health',
   '/api/admin/mojo-health',
   '/api/admin/mojo-incident',
   '/api/admin/mojo-performance',
@@ -88,6 +89,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   // Cron routes are exact-listed so a newly added scheduled endpoint cannot
   // inherit service-bearer trust before its handler authorization is reviewed.
   '/api/cron/backfill-inbound-mms',
+  '/api/cron/caller-id-health',
   '/api/cron/data-retention',
   '/api/cron/google-ads-missed-calls',
   '/api/cron/google-ads-reporting-sync',

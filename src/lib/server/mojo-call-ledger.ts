@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { centralDateString, parseMojoRecordingDuration, parseMojoTimestamp } from '../../../scripts/mojo-call-evidence.mjs'
 
 export const MOJO_CALL_SOURCES = ['mojo_mcp_list_calls', 'mojo_session_recordings', 'mojo_session_calling_report'] as const
@@ -34,6 +35,7 @@ export type MojoCallFact = {
   appointment_count: number | null
   lead_exists: boolean | null
   source: MojoCallSourceKind
+  caller_id: string | null
 }
 
 export type MojoCallLedgerRow = MojoCallFact & { lead_id: string | null }
@@ -89,7 +91,14 @@ type CallInput = {
   lead_exists?: unknown
   contact_id?: unknown
   contact_initials?: unknown
+  caller_id?: unknown
+  caller_number?: unknown
   contact?: { id?: unknown; phone?: unknown } | null
+}
+
+function outboundCallerId(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  return normalizePhoneToE164(value)
 }
 
 export function mojoCallRecordId(callId: number): string {
@@ -215,6 +224,7 @@ function fact(input: CallInput, source: MojoCallSourceKind, callId: number): Moj
     appointment_count: optionalCount(input.appointment_count, 1000),
     lead_exists: optionalBoolean(input.lead_exists),
     source,
+    caller_id: outboundCallerId(input.caller_id ?? input.caller_number),
   }
 }
 
@@ -251,6 +261,7 @@ export function mapCallingReportRow(value: unknown, durationSeconds = 0): MojoCa
     is_recorded: input.is_recorded,
     appointment_count: input.appointment_exists,
     lead_exists: input.lead_exists,
+    caller_number: input.caller_number,
   }, 'mojo_session_calling_report', callId)
 }
 
@@ -287,6 +298,7 @@ export function assertMojoCallFact(value: unknown): MojoCallFact {
     lead_exists: record.lead_exists,
     contact_id: record.provider_contact_id,
     contact_initials: record.contact_initials,
+    caller_id: record.caller_id,
   }, source as MojoCallSourceKind, requiredId(record.provider_call_id))
 }
 
