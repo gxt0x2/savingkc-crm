@@ -66,10 +66,14 @@ async function persist(
   return decision(row, skippedProvider)
 }
 
+function completedProvider(provider: StoredEmailValidation['provider']): boolean {
+  return provider === 'zerobounce' || provider === 'millionverifier'
+}
+
 function freshProviderResult(existing: StoredEmailValidation, now: Date, recheckMs: number): boolean {
-  if (existing.provider !== 'millionverifier') return false
+  if (!completedProvider(existing.provider)) return false
   const checked = new Date(existing.checkedAt).getTime()
-  return Number.isFinite(checked) && now.getTime() - checked < recheckMs
+  return Number.isFinite(checked) && now.getTime() >= checked && now.getTime() - checked <= recheckMs
 }
 
 export async function validateEmail(raw: string | null | undefined, deps: ValidateEmailDeps): Promise<EmailValidationDecision> {
@@ -126,14 +130,14 @@ export async function validateEmail(raw: string | null | undefined, deps: Valida
     return decision(existing, 'recent')
   }
   if (!deps.provider) {
-    if (existing?.provider === 'millionverifier') return decision(existing, 'no_key')
+    if (existing && completedProvider(existing.provider)) return decision(existing, 'no_key')
     return persist(deps, { ...base, emailStatus: 'unverified', provider: null, rawResult: { skipped: 'no_key' } }, 'no_key')
   }
 
   const cap = deps.dailyCap ?? 2000
   const reserved = cap > 0 && await deps.store.reserveProviderCheck(cap)
   if (!reserved) {
-    if (existing?.provider === 'millionverifier') return decision(existing, 'daily_cap')
+    if (existing && completedProvider(existing.provider)) return decision(existing, 'daily_cap')
     return persist(deps, { ...base, emailStatus: 'unverified', provider: null, rawResult: { skipped: 'daily_cap' } }, 'daily_cap')
   }
 
@@ -142,14 +146,14 @@ export async function validateEmail(raw: string | null | undefined, deps: Valida
     return persist(deps, {
       ...base,
       emailStatus: verified.status,
-      provider: 'millionverifier',
+      provider: deps.provider.id,
       isRole: flags.role || verified.role,
       rawResult: verified.raw,
     }, null)
   } catch (error) {
     await deps.store.releaseProviderCheck().catch(() => undefined)
     const raw = error instanceof ProviderCheckError ? error.raw : { error: 'provider_unavailable' }
-    if (existing?.provider === 'millionverifier') return decision(existing, null)
+    if (existing && completedProvider(existing.provider)) return decision(existing, null)
     return persist(deps, { ...base, emailStatus: 'unknown', provider: null, rawResult: raw }, null)
   }
 }

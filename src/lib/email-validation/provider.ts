@@ -1,6 +1,7 @@
 import type { EmailStatus } from './status'
 
 export type PaidEmailStatus = Exclude<EmailStatus, 'unverified'>
+export type PaidEmailValidationProviderName = 'millionverifier' | 'zerobounce'
 
 export type ProviderVerification = {
   status: PaidEmailStatus
@@ -9,11 +10,11 @@ export type ProviderVerification = {
 }
 
 /**
- * Drop-in checker. MillionVerifier is the low-cost adapter implemented today.
- * ZeroBounce is the adapter to add when accuracy matters more than price.
+ * Drop-in checker. ZeroBounce is the default adapter.
+ * MillionVerifier is used only when EMAIL_VALIDATION_PROVIDER=millionverifier.
  */
 export interface EmailValidationProvider {
-  readonly id: string
+  readonly id: PaidEmailValidationProviderName
   verify(email: string): Promise<ProviderVerification>
 }
 

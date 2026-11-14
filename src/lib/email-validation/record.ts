@@ -1,5 +1,5 @@
+import { emailValidationProviderFromEnv } from './from-env'
 import { lookupMailExchange } from './local-checks'
-import { millionVerifierFromEnv } from './millionverifier'
 import { emailValidationDailyCap, storageKey } from './status'
 import { supabaseEmailValidationStore } from './store'
 import { validateEmail, type EmailValidationStore } from './validate'
@@ -29,7 +29,7 @@ export async function recordWrittenEmails(
     console.error('[email-validation] ledger unavailable', error)
     return
   }
-  const provider = millionVerifierFromEnv()
+  const provider = emailValidationProviderFromEnv()
   const dailyCap = emailValidationDailyCap()
   const workers = Array.from({ length: Math.min(8, pending.length) }, async () => {
     for (;;) {
