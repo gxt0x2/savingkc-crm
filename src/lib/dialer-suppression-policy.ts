@@ -77,6 +77,25 @@ export const MOJO_ALLOW = [
   'busy',
 ] as const
 
+/** Raw Mojo labels that are not a suppression. Checked before outcome. */
+export const MOJO_RAW_ALLOW = [
+  'no_contact',
+  'no_answer',
+  'answering_machine',
+  'other',
+  'voicemail',
+  'contact',
+  'skipped',
+  'callback_requested',
+  'interested',
+  'incomplete',
+  'appointment_set',
+  'busy',
+] as const
+
+export const MOJO_RAW_DEAD = ['fax', 'dead'] as const
+export const MOJO_RAW_DISCONNECTED = ['bad_number', 'not_in_service', 'disconnected'] as const
+
 /** Never overwritten by a weaker Mojo stamp. dead is protected; fax is not. */
 export const NEVER_DOWNGRADE = [...PROSPECT_PHONE_DNC, ...PROSPECT_PERSON_DNC, 'dead'] as const
 
@@ -108,6 +127,7 @@ export interface SuppressionPhone {
   lastDisposition?: string | null
   phoneConnected?: string | null
   voiceHold?: boolean | null
+  voiceHoldReason?: string | null
   relationship?: string | null
 }
 
@@ -133,7 +153,13 @@ export interface SuppressionLead {
 export interface SuppressionMojoEvent {
   phone: string
   outcome?: string | null
+  dispositionRaw?: string | null
   providerContactId?: string | null
+}
+
+export interface SuppressionMojoCall {
+  phoneLast4: string
+  resultLabel?: string | null
 }
 
 export interface SuppressionOptOut {
@@ -155,6 +181,7 @@ export interface SuppressionWorld {
   optOuts?: readonly SuppressionOptOut[]
   contacts?: readonly SuppressionContact[]
   encodePending?: readonly string[]
+  mojoCalls?: readonly SuppressionMojoCall[]
 }
 
 export function labelKey(value: string | null | undefined): string | null {
@@ -270,10 +297,17 @@ export function suppressionClass(source: SuppressionSource, raw: string | null |
     return 'unmapped'
   }
   if (source === 'lead_dead_reason') {
-    if (listed(label, LEAD_DEAD_PERSON)) return 'person_dnc'
-    if (listed(label, LEAD_DEAD_PHONE_DNC)) return 'lead_dnc'
+    if (listed(label, LEAD_DEAD_PERSON) || listed(label, LEAD_DEAD_PHONE_DNC)) return 'person_dnc'
     if (listed(label, LEAD_DEAD_DISCONNECTED)) return 'disconnected'
     if (listed(label, LEAD_DEAD_ALLOW)) return 'allow'
+    return 'unmapped'
+  }
+  if (source === 'mojo_disposition_raw') {
+    if (listed(label, MOJO_RAW_DEAD) || listed(label, MOJO_RAW_DISCONNECTED)) return 'disconnected'
+    if (listed(label, PROSPECT_PERSON_DNC)) return 'person_dnc'
+    if (listed(label, PROSPECT_PHONE_DNC)) return 'mojo_dnc'
+    if (listed(label, PROSPECT_WRONG)) return 'wrong_number'
+    if (listed(label, MOJO_RAW_ALLOW)) return 'allow'
     return 'unmapped'
   }
   if (label === 'dnc') return 'mojo_dnc'
@@ -298,8 +332,55 @@ function blockingClass(source: SuppressionSource, raw: string | null | undefined
 
 function personLevelLead(lead: SuppressionLead | undefined): boolean {
   if (!lead) return false
+  if (labelKey(lead.callResult) === 'dnc_number' && labelKey(lead.deadReason) !== 'dnc_refused') return false
   return suppressionClass('lead_dead_reason', lead.deadReason) === 'person_dnc'
     || suppressionClass('lead_call_result', lead.callResult) === 'person_dnc'
+}
+
+function mojoRawPerson(world: SuppressionWorld, phone: string): boolean {
+  return (world.mojoEvents ?? []).some((event) => (
+    sameKey(event.phone, phoneKey(phone))
+    && suppressionClass('mojo_disposition_raw', event.dispositionRaw) === 'person_dnc'
+  ))
+}
+
+function fanoutHoldReason(reason: string | null | undefined): boolean {
+  return (labelKey(reason) ?? '').includes('mojo_dnc_contact_fanout')
+}
+
+function counselOrPersonHold(world: SuppressionWorld, key: string, prospectId?: string | null): 'person_fanout' | 'needs_counsel_review' | null {
+  const anchors = phonesOf(world).filter((phone) => phone.voiceHold === true && fanoutHoldReason(phone.voiceHoldReason) && phoneKey(phone.phone).length === 10)
+  if (anchors.length === 0) return null
+  const personProspects = new Set(anchors.map((phone) => phone.prospectId).filter((id): id is string => Boolean(id)))
+  const personKeys = new Set<string>()
+  for (const id of personProspects) {
+    for (const phone of phonesOf(world)) {
+      if (phone.prospectId === id && phoneKey(phone.phone).length === 10) personKeys.add(phoneKey(phone.phone))
+    }
+  }
+  for (const anchor of anchors) personKeys.add(phoneKey(anchor.phone))
+  if (!personKeys.has(key) && !phonesOf(world).some((phone) => phone.prospectId && personProspects.has(phone.prospectId) && sameKey(phone.phone, key))) {
+    return null
+  }
+  const focusIds = new Set<string>()
+  if (prospectId) focusIds.add(prospectId)
+  for (const phone of phonesOf(world)) {
+    if (phone.prospectId && sameKey(phone.phone, key) && !(phone.voiceHold === true && fanoutHoldReason(phone.voiceHoldReason))) {
+      focusIds.add(phone.prospectId)
+    }
+  }
+  if (focusIds.size === 0) focusIds.add([...personProspects][0] ?? '')
+  const anchorProperties = new Set(
+    anchors.map((phone) => propertyKey(prospectFor(world, phone.prospectId))).filter((value): value is string => Boolean(value)),
+  )
+  const samePerson = [...focusIds].some((id) => personProspects.has(id))
+  const sameProperty = [...focusIds].some((id) => {
+    const value = propertyKey(prospectFor(world, id))
+    return Boolean(value && anchorProperties.has(value))
+  })
+  if (samePerson || sameProperty) return 'person_fanout'
+  if (personKeys.has(key)) return 'needs_counsel_review'
+  return null
 }
 
 function personLevelPhone(phone: SuppressionPhone | undefined): boolean {
@@ -324,6 +405,21 @@ function personFanout(world: SuppressionWorld, key: string, prospectId?: string 
     const prospect = world.prospects?.find((item) => item.id === id)
     const lead = world.leads?.find((item) => item.id === prospect?.leadId)
     if (personLevelLead(lead) && !sameKey(lead?.phone ?? '', key)) return true
+    if (phonesOf(world).some((phone) => phone.prospectId === id && !sameKey(phone.phone, key) && mojoRawPerson(world, phone.phone))) {
+      return true
+    }
+  }
+
+  for (const lead of world.leads ?? []) {
+    if (!personLevelLead(lead)) continue
+    const leadKey = phoneKey(lead.phone)
+    if (leadKey.length !== 10 || leadKey === key) continue
+    const prospectIds = new Set(
+      phonesOf(world).filter((phone) => phone.prospectId && sameKey(phone.phone, leadKey)).map((phone) => phone.prospectId as string),
+    )
+    if (phonesOf(world).some((phone) => phone.prospectId && prospectIds.has(phone.prospectId) && sameKey(phone.phone, key))) {
+      return true
+    }
   }
 
   const contactIds = new Set(
@@ -336,6 +432,7 @@ function personFanout(world: SuppressionWorld, key: string, prospectId?: string 
       if (other.providerContactId !== contactId || sameKey(other.phone, key)) continue
       const otherKey = phoneKey(other.phone)
       if (phonesOf(world).some((phone) => phoneKey(phone.phone) === otherKey && personLevelPhone(phone))) return true
+      if (suppressionClass('mojo_disposition_raw', other.dispositionRaw) === 'person_dnc') return true
       if ((world.leads ?? []).some((lead) => phoneKey(lead.phone) === otherKey && personLevelLead(lead))) return true
     }
   }
@@ -419,7 +516,12 @@ function shortSuppressionMatch(world: SuppressionWorld, key: string): boolean {
   if ((world.leads ?? []).some((lead) => short(lead.phone ?? '') && (
     blockingClass('lead_call_result', lead.callResult) || blockingClass('lead_dead_reason', lead.deadReason)
   ))) return true
-  if ((world.mojoEvents ?? []).some((event) => short(event.phone) && blockingClass('mojo_outcome', event.outcome))) return true
+  if ((world.mojoEvents ?? []).some((event) => short(event.phone) && (
+    blockingClass('mojo_disposition_raw', event.dispositionRaw) || blockingClass('mojo_outcome', event.outcome)
+  ))) return true
+  if ((world.mojoCalls ?? []).some((call) => call.phoneLast4 === last4 && PROPERTY_OWNER_DNC.includes(labelKey(call.resultLabel) as typeof PROPERTY_OWNER_DNC[number]))) {
+    return true
+  }
   if ((world.optOuts ?? []).some((row) => row.optedOut !== false && short(row.phone))) return true
   if ((world.encodePending ?? []).some((phone) => short(phone))) return true
   return false
@@ -427,7 +529,7 @@ function shortSuppressionMatch(world: SuppressionWorld, key: string): boolean {
 
 const PROSPECT_REASON_ORDER = ['prospect_dnc', 'wrong_number', 'disconnected', 'unmapped_label'] as const
 const LEAD_REASON_ORDER = ['lead_dnc', 'dead_number', 'disconnected', 'unmapped_label'] as const
-const MOJO_REASON_ORDER = ['mojo_dnc', 'disconnected', 'unmapped_label'] as const
+const MOJO_REASON_ORDER = ['mojo_dnc', 'wrong_number', 'disconnected', 'unmapped_label'] as const
 
 function firstReason(reasons: readonly (string | null)[], order: readonly string[]): string | null {
   for (const name of order) {
@@ -453,8 +555,9 @@ function reasonFromLeadClass(value: string): string | null {
 }
 
 function reasonFromMojoClass(value: string): string | null {
-  if (value === 'mojo_dnc') return 'mojo_dnc'
+  if (value === 'mojo_dnc' || value === 'person_dnc') return 'mojo_dnc'
   if (value === 'disconnected') return 'disconnected'
+  if (value === 'wrong_number') return 'wrong_number'
   if (value === 'unmapped') return 'unmapped_label'
   return null
 }
@@ -473,7 +576,9 @@ export function exportBlockReason(
   const key = phoneKey(phone)
 
   if ((world.optOuts ?? []).some((row) => row.optedOut !== false && sameKey(row.phone, key))) return 'sms_opt_out'
-  if (phonesOf(world).some((row) => row.voiceHold === true && sameKey(row.phone, key))) return 'voice_hold'
+  if (phonesOf(world).some((row) => row.voiceHold === true && !fanoutHoldReason(row.voiceHoldReason) && sameKey(row.phone, key))) {
+    return 'voice_hold'
+  }
 
   const prospectReason = firstReason(
     phonesOf(world).filter((row) => sameKey(row.phone, key)).map((row) => reasonFromProspectClass(blockingClass('prospect_disposition', row.lastDisposition) ?? '')),
@@ -499,7 +604,10 @@ export function exportBlockReason(
   )
   if (leadReason) return leadReason
   const mojoReason = firstReason(
-    (world.mojoEvents ?? []).filter((event) => sameKey(event.phone, key)).map((event) => reasonFromMojoClass(blockingClass('mojo_outcome', event.outcome) ?? '')),
+    (world.mojoEvents ?? []).filter((event) => sameKey(event.phone, key)).flatMap((event) => {
+      const raw = reasonFromMojoClass(blockingClass('mojo_disposition_raw', event.dispositionRaw) ?? '')
+      return raw ? [raw] : [reasonFromMojoClass(blockingClass('mojo_outcome', event.outcome) ?? '')]
+    }),
     MOJO_REASON_ORDER,
   )
   if (mojoReason) return mojoReason
@@ -507,6 +615,8 @@ export function exportBlockReason(
   const tie = relationshipBlock(world, key)
   if (tie) return tie
   if (propertyOwnerDncFanout(world, key, prospectId)) return 'property_owner_dnc_fanout'
+  const held = counselOrPersonHold(world, key, prospectId)
+  if (held) return held
   if (personFanout(world, key, prospectId)) return 'person_fanout'
   if (householdFanout(world, key, prospectId)) return 'household_fanout'
   if ((world.encodePending ?? []).some((row) => sameKey(row, key))) return 'mojo_encode_pending'

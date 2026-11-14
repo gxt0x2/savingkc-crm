@@ -80,4 +80,25 @@ describe('dialer export suppression migration', () => {
     expect(associateMigration).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(associateMigration).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
   })
+
+  it('classifies raw Mojo labels, keeps stronger stamps, and does not require the encode queue', () => {
+    const raw = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261202160000_dialer_export_mojo_raw_and_rehearsal.sql'),
+      'utf8',
+    )
+    expect(raw).toContain("WHEN 'mojo_disposition_raw'")
+    expect(raw).toContain('dialer_stamp_rank_v1')
+    expect(raw).toContain('dialer_household_key')
+    expect(raw).toContain('WITH reviewed AS MATERIALIZED')
+    expect(raw).toContain('needs_counsel_review')
+    expect(raw).toContain('mojo_dnc_contact_fanout')
+    expect(raw).toContain('crm_mojo_calls')
+    expect(raw).toContain('disposition_raw')
+    expect(raw).toContain('result_label')
+    expect(raw).toContain('RETURN false')
+    expect(raw).not.toContain('mojo_encode_pending_unreadable')
+    expect(raw).not.toMatch(/voice_hold\s*=\s*false/)
+    expect(raw).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
+    expect(raw).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+  })
 })
