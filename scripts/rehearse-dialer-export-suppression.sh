@@ -183,8 +183,8 @@ CREATE VIEW public.source_list_dialer_suppressed AS
 SELECT * FROM public.source_list_dialer_phone_review WHERE block_reason IS NOT NULL;
 SQL
 
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261203130000_source_list_service_area_block.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261204120000_tax_status_verification.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114213919_source_list_service_area_block.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114215029_tax_status_verification.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205120000_dialer_export_suppression.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205130000_dialer_export_associate_property_dnc.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
@@ -412,6 +412,32 @@ BEGIN
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550514', '20000000-0000-4000-8000-0000000000b1') IS NOT NULL THEN
     RAISE EXCEPTION 'owner skip-trace match stayed blocked';
+  END IF;
+  IF public.dialer_relationship_bucket_v1('other_relative', 'Individual') IS DISTINCT FROM 'relative' THEN
+    RAISE EXCEPTION 'other relative was not kept as a relative';
+  END IF;
+  IF public.dialer_relationship_bucket_v1(NULL, 'Other Relative') IS DISTINCT FROM 'relative' THEN
+    RAISE EXCEPTION 'other-relative owner type was not kept as a relative';
+  END IF;
+  -- Katherine round 3. Real last-4s are comments only: Unknown owner type 7005, surname-only Gus Uno 7006.
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1, owner_1_last, owner_1_type, is_skip_traced) VALUES
+    ('20000000-0000-4000-8000-0000000000e1', 'jackson', '15 Unknown', 'P-UNK', 'Pat Unknown', 'Unknown', 'Unknown', false),
+    ('20000000-0000-4000-8000-0000000000e2', 'jackson', '16 Uno', 'P-UNO', 'FAY UNO', 'UNO', 'Individual', true);
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship, contact_name, verified_source) VALUES
+    ('30000000-0000-4000-8000-0000000000e1', '20000000-0000-4000-8000-0000000000e1', '+18165550145', 'no_answer', NULL, NULL, NULL),
+    ('30000000-0000-4000-8000-0000000000e2', '20000000-0000-4000-8000-0000000000e2', '+18165550146', 'no_answer', 'unknown', 'Gus Uno', 'dataskip_run1'),
+    ('30000000-0000-4000-8000-0000000000e3', '20000000-0000-4000-8000-0000000000e2', '+18165550147', 'no_answer', 'unknown', 'Fay Uno', 'dataskip_run1');
+  IF public.source_list_phone_block_reason_v1('+18165550145', '20000000-0000-4000-8000-0000000000e1') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'unknown owner type was dialable: %',
+      public.source_list_phone_block_reason_v1('+18165550145', '20000000-0000-4000-8000-0000000000e1');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550146', '20000000-0000-4000-8000-0000000000e2') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'surname-only skip-trace contact was released: %',
+      public.source_list_phone_block_reason_v1('+18165550146', '20000000-0000-4000-8000-0000000000e2');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550147', '20000000-0000-4000-8000-0000000000e2') IS NOT NULL THEN
+    RAISE EXCEPTION 'full first-and-last owner match stayed blocked: %',
+      public.source_list_phone_block_reason_v1('+18165550147', '20000000-0000-4000-8000-0000000000e2');
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550515', '20000000-0000-4000-8000-0000000000b1') IS DISTINCT FROM 'unmapped_label' THEN
     RAISE EXCEPTION 'litigator was not blocked before the stamp';

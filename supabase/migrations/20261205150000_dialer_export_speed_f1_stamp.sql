@@ -170,6 +170,18 @@ AS $function$
       public.dialer_label_key_v1(p_owner_name) AS owner_name,
       public.dialer_label_key_v1(p_owner_last) AS owner_last,
       public.dialer_label_key_v1(p_verified_source) AS source
+  ),
+  named AS (
+    SELECT
+      tokens.*,
+      (
+        SELECT token
+        FROM unnest(string_to_array(regexp_replace(coalesce(owner_name, ''), '[^a-z0-9]+', '_', 'g'), '_')) AS token
+        WHERE token <> '' AND token IS DISTINCT FROM owner_last
+        LIMIT 1
+      ) AS owner_first,
+      string_to_array(regexp_replace(coalesce(contact, ''), '[^a-z0-9]+', '_', 'g'), '_') AS contact_tokens
+    FROM tokens
   )
   SELECT CASE
     WHEN rel = 'registered_agent'
@@ -180,15 +192,14 @@ AS $function$
       OR coalesce(rel, '') ~ '(^|_)(member|officer)($|_)'
       OR coalesce(contact, '') ~ '(^|_)(member|officer)($|_)' THEN true
     WHEN coalesce(p_skip_traced, false) OR coalesce(source, '') LIKE '%skip%' THEN
-      contact IS NOT NULL AND (
-        contact = owner_name
-        OR contact = owner_last
-        OR (owner_last IS NOT NULL AND contact LIKE ('%\_' || owner_last))
-        OR (owner_last IS NOT NULL AND contact LIKE (owner_last || '\_%'))
-      )
+      contact IS NOT NULL
+      AND owner_last IS NOT NULL
+      AND owner_first IS NOT NULL
+      AND owner_first = ANY (contact_tokens)
+      AND owner_last = ANY (contact_tokens)
     ELSE false
   END
-  FROM tokens;
+  FROM named;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.dialer_encode_block_keys_v1(p_keys text[])
@@ -281,9 +292,9 @@ AS $function$
         WHEN relationship_key = 'associate'
           OR owner_type_key IN ('neighbor', 'coworker', 'past_neighbor', 'friend', 'landlord', 'tenant') THEN 'associate_non_family'
         WHEN relationship_key IN ('owner', 'subject', 'co_owner') THEN 'owner'
-        WHEN relationship_key IN ('unknown', 'entity_contact') THEN 'relationship_unknown'
+        WHEN relationship_key IN ('unknown', 'entity_contact') OR owner_type_key = 'unknown' THEN 'relationship_unknown'
         WHEN relationship_key IN ('relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative')
-          OR owner_type_key IN ('in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'unknown', 'individual') THEN 'relative'
+          OR owner_type_key IN ('in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'individual') THEN 'relative'
         ELSE 'relationship_unknown'
       END AS bucket
     FROM classified_phones

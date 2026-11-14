@@ -69,7 +69,7 @@ export const PROPERTY_OWNER_DNC = [...PROSPECT_PHONE_DNC, ...PROSPECT_PERSON_DNC
 
 export const OWNER_RELATIONSHIPS = ['owner', 'subject', 'co_owner'] as const
 export const RELATIVE_RELATIONSHIPS = ['relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'] as const
-export const RELATIVE_OWNER_TYPES = ['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'unknown', 'individual'] as const
+export const RELATIVE_OWNER_TYPES = ['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'individual'] as const
 export const ASSOCIATE_OWNER_TYPES = ['neighbor', 'coworker', 'past_neighbor', 'friend', 'landlord', 'tenant'] as const
 export const UNKNOWN_RELATIONSHIPS = ['unknown', 'entity_contact'] as const
 
@@ -201,6 +201,7 @@ export function relationshipBucket(
   }
   if (rel !== null && OWNER_RELATIONSHIPS.includes(rel as typeof OWNER_RELATIONSHIPS[number])) return 'owner'
   if (rel !== null && UNKNOWN_RELATIONSHIPS.includes(rel as typeof UNKNOWN_RELATIONSHIPS[number])) return 'relationship_unknown'
+  if (owner === 'unknown') return 'relationship_unknown'
   if (
     (rel !== null && RELATIVE_RELATIONSHIPS.includes(rel as typeof RELATIVE_RELATIONSHIPS[number]))
     || (owner !== null && RELATIVE_OWNER_TYPES.includes(owner as typeof RELATIVE_OWNER_TYPES[number]))
@@ -467,17 +468,21 @@ function showsMemberOrOfficer(phone: SuppressionPhone): boolean {
   return tokens.includes('member') || tokens.includes('officer')
 }
 
+function nameTokens(value: string | null | undefined): string[] {
+  return (labelKey(value) ?? '').replace(/[^a-z0-9]+/g, '_').split('_').filter(Boolean)
+}
+
 function ownerSkipTraceRelease(world: SuppressionWorld, phone: SuppressionPhone): boolean {
   const prospect = prospectFor(world, phone.prospectId)
   const source = labelKey(phone.verifiedSource) ?? ''
   const skipTraced = prospect?.skipTraced === true || source.includes('skip')
   if (!skipTraced) return false
   if (relationshipForPhone(world, phone) === 'owner') return true
-  const contact = labelKey(phone.contactName)
-  const owner = labelKey(prospect?.ownerName)
+  const contact = nameTokens(phone.contactName)
   const last = labelKey(prospect?.ownerLast)
-  if (!contact) return false
-  return contact === owner || contact === last || (last !== null && contact.split('_').includes(last))
+  const first = nameTokens(prospect?.ownerName).find((token) => token !== last)
+  if (!last || !first || contact.length === 0) return false
+  return contact.includes(first) && contact.includes(last)
 }
 
 function relationshipBlock(world: SuppressionWorld, key: string, prospectId?: string | null): 'associate_non_family' | 'relationship_unknown' | null {

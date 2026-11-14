@@ -20,11 +20,11 @@ BEGIN
   IF rel = ANY (ARRAY['owner', 'subject', 'co_owner']) THEN
     RETURN 'owner';
   END IF;
-  IF rel = ANY (ARRAY['unknown', 'entity_contact']) THEN
+  IF rel = ANY (ARRAY['unknown', 'entity_contact']) OR owner_type = 'unknown' THEN
     RETURN 'relationship_unknown';
   END IF;
   IF rel = ANY (ARRAY['relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'])
-    OR owner_type = ANY (ARRAY['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'unknown', 'individual']) THEN
+    OR owner_type = ANY (ARRAY['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'individual']) THEN
     RETURN 'relative';
   END IF;
   RETURN 'relationship_unknown';

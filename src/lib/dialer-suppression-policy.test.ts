@@ -168,6 +168,9 @@ describe('associate type and property owner fan-out', () => {
   it('blocks unknown, entity contacts, and a null tie on a non-owner row', () => {
     const phone = '+18165550202'
     expect(relationshipBucket('unknown', 'Individual')).toBe('relationship_unknown')
+    expect(relationshipBucket(null, 'Unknown')).toBe('relationship_unknown')
+    expect(relationshipBucket('other_relative', 'Individual')).toBe('relative')
+    expect(relationshipBucket(null, 'Other Relative')).toBe('relative')
     expect(relationshipBucket('entity_contact', null)).toBe('relationship_unknown')
     expect(relationshipBucket(null, null)).toBe('relationship_unknown')
     expect(relationshipBucket(null, 'Corporate')).toBe('relationship_unknown')
@@ -465,6 +468,19 @@ describe('associate type and property owner fan-out', () => {
     expect(exportBlockReason(phone, {
       phones: [{ phone, prospectId: 'home', relationship: 'unknown', phoneConnected: 'dataskip_dnc' }],
     }, 'home')).toBe('relationship_unknown')
+    // Real last-4s stay in comments: Unknown owner type 7005, surname-only Gus Uno 7006.
+    expect(exportBlockReason('+18165550145', {
+      prospects: [{ id: 'unk', ownerType: 'Unknown' }],
+      phones: [{ phone: '+18165550145', prospectId: 'unk', relationship: null, lastDisposition: 'no_answer' }],
+    }, 'unk')).toBe('relationship_unknown')
+    expect(exportBlockReason('+18165550146', {
+      prospects: [{ id: 'uno', ownerName: 'FAY UNO', ownerLast: 'UNO', ownerType: 'Individual', skipTraced: true }],
+      phones: [{ phone: '+18165550146', prospectId: 'uno', relationship: 'unknown', contactName: 'Gus Uno', verifiedSource: 'dataskip_run1' }],
+    }, 'uno')).toBe('relationship_unknown')
+    expect(exportBlockReason('+18165550147', {
+      prospects: [{ id: 'uno', ownerName: 'FAY UNO', ownerLast: 'UNO', ownerType: 'Individual', skipTraced: true }],
+      phones: [{ phone: '+18165550147', prospectId: 'uno', relationship: 'unknown', contactName: 'Fay Uno', verifiedSource: 'dataskip_run1' }],
+    }, 'uno')).toBeNull()
   })
 
   it('refuses line mode above 1 while multi-line export is suspended', () => {

@@ -4,12 +4,12 @@
 -- and _suppressed inherit the function. This does not read or write
 -- mojo_call_queue, and it does not delete rows.
 
+-- No search_path, so the planner can inline this. The body uses only built-ins.
 CREATE OR REPLACE FUNCTION public.dialer_label_key_v1(p_label text)
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
 PARALLEL SAFE
-SET search_path = pg_catalog
 AS $function$
   SELECT nullif(
     regexp_replace(lower(btrim(coalesce(p_label, ''))), '[[:space:]-]+', '_', 'g'),
