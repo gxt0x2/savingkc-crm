@@ -147,6 +147,14 @@ export async function POST(req: Request) {
         beforePersistence: reassertPersistenceControl,
       })
 
+      if (result.status === 'refused') {
+        return NextResponse.json({
+          success: false,
+          sent: false,
+          error: result.error,
+          code: result.code,
+        }, { status: 409 })
+      }
       if (result.status === 'failed') {
         if (result.deliveryState === 'delivery_unknown') {
           return NextResponse.json({

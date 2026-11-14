@@ -1,6 +1,7 @@
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { handleOptOut, isSmsOptOutMessage } from '@/lib/sms-opt-out'
+import { isWithinRecipientSmsHours } from '@/lib/sms-quiet-hours'
 import { supabase } from '@/lib/supabase-lazy'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
 
@@ -206,4 +207,266 @@ export async function automatedSmsBlockReason(input: {
     console.error('[sms-send-gate] inbound opt-out could not be persisted; send remains blocked', error)
   }
   return 'inbound_opt_out'
+}
+
+export type HumanSmsRefusalCode = 'sms_quiet_hours' | 'sms_dnc_blocked' | 'sms_registry_dnc'
+
+export type HumanSmsSendDecision =
+  | { ok: true; cold: boolean; warnings: string[] }
+  | { ok: false; code: HumanSmsRefusalCode; error: string }
+
+const QUIET_HOURS_ERROR = "This text is outside 8:00am–9:00pm in the recipient's local time."
+const DNC_ERROR = 'This number is blocked for SMS by a do-not-call or opt-out record.'
+const DNC_UNKNOWN_ERROR = 'SMS suppression status could not be verified, so this send was not attempted.'
+const REGISTRY_ERROR = 'This cold text is blocked because the number is on a do-not-call registry.'
+const REGISTRY_UNKNOWN_ERROR = 'The do-not-call registry could not be checked, so this cold text was not sent.'
+
+const DNC_LABELS = new Set(['dnc', 'do_not_call', 'dnc_number', 'dnc_contact', 'take_me_off'])
+const SOFT_REASONS = new Set(['wrong_number', 'disconnected', 'out_of_service_area'])
+const DISCONNECTED_LABELS = new Set(['disconnected', 'bad_number', 'not_in_service', 'false', 'no'])
+const THREAD_ACTIVITY_TYPES = ['sms', 'sms_sent', 'sms_received', 'sms_inbound', 'sms_outbound']
+const REGISTRY_TABLES = [
+  'federal_dnc_registry',
+  'national_dnc_registry',
+  'ftc_dnc_registry',
+  'mo_dnc_registry',
+  'missouri_dnc_registry',
+] as const
+
+type ProspectPhoneRow = {
+  phone: string | null
+  phone_connected: string | boolean | null
+  last_disposition: string | null
+  voice_hold: boolean | string | null
+}
+
+type LeadDncRow = {
+  id?: string
+  phone: string | null
+  dead_reason: string | null
+  call_result: string | null
+}
+
+type ContactMethodRow = {
+  normalized_value: string | null
+  sms_consent_status: string | null
+  deliverability_status: string | null
+}
+
+type OptOutStatusRow = {
+  phone: string | null
+  is_opted_out: boolean | null
+}
+
+type MojoEventRow = {
+  normalized_phone: string | null
+  outcome: string | null
+  disposition_raw: string | null
+}
+
+type ThreadRow = SmsActivityRow & { lead_id?: string | null }
+
+function last10(value: string | null | undefined): string | null {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (digits.length < 10) return null
+  return digits.slice(-10)
+}
+
+function label(value: unknown): string {
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  return String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function matchesPhone(value: string | null | undefined, phoneKey: string): boolean {
+  return last10(value) === phoneKey
+}
+
+function isVoiceHold(value: boolean | string | null | undefined): boolean {
+  return value === true || label(value) === 'true'
+}
+
+function softReason(value: string): 'wrong_number' | 'disconnected' | 'out_of_service_area' | null {
+  if (value === 'wrong_number') return 'wrong_number'
+  if (value === 'out_of_service_area') return 'out_of_service_area'
+  if (DISCONNECTED_LABELS.has(value)) return 'disconnected'
+  return null
+}
+
+function isMissingRelation(error: { code?: string; message?: string }): boolean {
+  const code = String(error.code || '')
+  const message = String(error.message || '').toLowerCase()
+  return code === '42P01'
+    || code === 'PGRST205'
+    || message.includes('does not exist')
+    || message.includes('schema cache')
+    || message.includes('could not find the table')
+}
+
+function hasLoggedConsent(row: ThreadRow): boolean {
+  const metadata = row.metadata
+  if (!metadata) return false
+  if (typeof metadata.consent_basis === 'string' && metadata.consent_basis.trim()) return true
+  return metadata.sms_consent === true || metadata.consent === true || metadata.consented === true
+}
+
+function activityIsAboutPhone(row: ThreadRow, phoneKey: string, leadId: string | null): boolean {
+  const from = typeof row.metadata?.from === 'string' ? last10(row.metadata.from) : null
+  const to = typeof row.metadata?.to === 'string' ? last10(row.metadata.to) : null
+  if (from || to) return from === phoneKey || to === phoneKey
+  return Boolean(leadId) && row.lead_id === leadId
+}
+
+async function rowsForPhone<T>(
+  table: string,
+  column: string,
+  variants: string[],
+  columns: string,
+): Promise<T[]> {
+  if (!variants.length) return []
+  const { data, error } = await supabase.from(table).select(columns).in(column, variants).limit(200)
+  if (error) throw suppressionError()
+  return (data || []) as T[]
+}
+
+async function blockReasonFromRegistry(phone: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc('source_list_phone_block_reason_v1', { p_phone: phone })
+  if (error) throw suppressionError()
+  return typeof data === 'string' && data.trim() ? data.trim() : null
+}
+
+async function threadRows(leadId: string | null, variants: string[]): Promise<ThreadRow[]> {
+  const columns = 'lead_id, description, created_at, metadata, activity_type'
+  const rows: ThreadRow[] = []
+  if (leadId) {
+    const { data, error } = await supabase
+      .from('lead_activities')
+      .select(columns)
+      .eq('lead_id', leadId)
+      .in('activity_type', THREAD_ACTIVITY_TYPES)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (error) throw suppressionError()
+    rows.push(...((data || []) as ThreadRow[]))
+  }
+  if (variants.length) {
+    const [fromRows, toRows] = await Promise.all([
+      supabase.from('lead_activities').select(columns).in('activity_type', THREAD_ACTIVITY_TYPES).in('metadata->>from', variants).limit(100),
+      supabase.from('lead_activities').select(columns).in('activity_type', THREAD_ACTIVITY_TYPES).in('metadata->>to', variants).limit(100),
+    ])
+    if (fromRows.error || toRows.error) throw suppressionError()
+    rows.push(...((fromRows.data || []) as ThreadRow[]), ...((toRows.data || []) as ThreadRow[]))
+  }
+  return rows
+}
+
+async function registryTableHit(table: string, phoneKey: string, variants: string[]): Promise<'hit' | 'missing' | 'error'> {
+  if (!variants.length) return 'error'
+  try {
+    const { data, error } = await supabase.from(table).select('phone').in('phone', variants).limit(20)
+    if (error) return isMissingRelation(error) ? 'missing' : 'error'
+    const rows = (data || []) as Array<{ phone?: string | null }>
+    return rows.some((row) => matchesPhone(row.phone, phoneKey)) ? 'hit' : 'missing'
+  } catch {
+    return 'error'
+  }
+}
+
+/**
+ * Quiet hours, full DNC labels, and the cold-only registry flag for a human
+ * 1:1 text. Existing automatedSmsBlockReason checks stay in place; this does
+ * not replace them. Lookup failures refuse the send.
+ */
+export async function evaluateHumanOneToOneSms(input: {
+  phone: string
+  leadId?: string | null
+  now?: Date
+}): Promise<HumanSmsSendDecision> {
+  const now = input.now ?? new Date()
+  if (!isWithinRecipientSmsHours(input.phone, now)) {
+    return { ok: false, code: 'sms_quiet_hours', error: QUIET_HOURS_ERROR }
+  }
+
+  const phone = normalizePhoneToE164(input.phone) ?? input.phone.trim()
+  const phoneKey = last10(phone)
+  if (!phoneKey) return { ok: false, code: 'sms_dnc_blocked', error: DNC_UNKNOWN_ERROR }
+
+  try {
+    const variants = phoneLookupVariants(phone)
+    const leadId = input.leadId ?? null
+    const [registryReason, optOuts, prospectPhones, methods, leads, mojoEvents, thread, leadRow] = await Promise.all([
+      blockReasonFromRegistry(phone),
+      rowsForPhone<OptOutStatusRow>('sms_opt_outs', 'phone', variants, 'phone, is_opted_out'),
+      rowsForPhone<ProspectPhoneRow>('prospect_phones', 'phone', variants, 'phone, phone_connected, last_disposition, voice_hold'),
+      rowsForPhone<ContactMethodRow>('crm_contact_methods', 'normalized_value', variants, 'normalized_value, sms_consent_status, deliverability_status'),
+      rowsForPhone<LeadDncRow>('leads', 'phone', variants, 'id, phone, dead_reason, call_result'),
+      rowsForPhone<MojoEventRow>('crm_mojo_call_events', 'normalized_phone', variants, 'normalized_phone, outcome, disposition_raw'),
+      threadRows(leadId, variants),
+      leadId
+        ? supabase.from('leads').select('id, phone, dead_reason, call_result').eq('id', leadId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+    if (leadRow.error) throw suppressionError()
+
+    const warnings = new Set<string>()
+    let blocked = false
+    let dataskip = false
+
+    if (registryReason) {
+      if (SOFT_REASONS.has(registryReason)) warnings.add(registryReason)
+      else blocked = true
+    }
+
+    for (const row of optOuts) {
+      if (matchesPhone(row.phone, phoneKey) && row.is_opted_out) blocked = true
+    }
+
+    for (const row of prospectPhones.filter((item) => matchesPhone(item.phone, phoneKey))) {
+      if (isVoiceHold(row.voice_hold) || DNC_LABELS.has(label(row.last_disposition))) blocked = true
+      const connected = label(row.phone_connected)
+      if (connected === 'dataskip_dnc') dataskip = true
+      const soft = softReason(label(row.last_disposition)) || softReason(connected)
+      if (soft) warnings.add(soft)
+    }
+
+    for (const row of methods.filter((item) => matchesPhone(item.normalized_value, phoneKey))) {
+      if (row.sms_consent_status === 'opted_out' || row.deliverability_status === 'blocked') blocked = true
+    }
+
+    const leadRows = leads.filter((item) => matchesPhone(item.phone, phoneKey))
+    const directLead = leadRow.data as LeadDncRow | null
+    if (directLead && matchesPhone(directLead.phone, phoneKey)) leadRows.push(directLead)
+    for (const row of leadRows) {
+      const dead = label(row.dead_reason)
+      const callResult = label(row.call_result)
+      if (canonicalDeadReason(row.dead_reason) === 'dnc_refused' || DNC_LABELS.has(dead) || DNC_LABELS.has(callResult)) {
+        blocked = true
+      }
+    }
+
+    for (const row of mojoEvents.filter((item) => matchesPhone(item.normalized_phone, phoneKey))) {
+      const outcome = label(row.outcome)
+      const disposition = label(row.disposition_raw)
+      if (outcome === 'dnc' || DNC_LABELS.has(outcome) || DNC_LABELS.has(disposition)) blocked = true
+      const soft = softReason(outcome) || softReason(disposition)
+      if (soft) warnings.add(soft)
+    }
+
+    if (blocked) return { ok: false, code: 'sms_dnc_blocked', error: DNC_ERROR }
+
+    const cold = !thread.some((row) => (
+      activityIsAboutPhone(row, phoneKey, leadId) && (isInboundSms(row) || hasLoggedConsent(row))
+    ))
+    if (cold && dataskip) return { ok: false, code: 'sms_registry_dnc', error: REGISTRY_ERROR }
+
+    if (cold) {
+      const probes = await Promise.all(REGISTRY_TABLES.map((table) => registryTableHit(table, phoneKey, variants)))
+      if (probes.includes('hit')) return { ok: false, code: 'sms_registry_dnc', error: REGISTRY_ERROR }
+      if (probes.includes('error')) return { ok: false, code: 'sms_registry_dnc', error: REGISTRY_UNKNOWN_ERROR }
+    }
+
+    return { ok: true, cold, warnings: [...warnings] }
+  } catch (error) {
+    console.error('[sms-send-gate] human SMS suppression lookup failed', error)
+    return { ok: false, code: 'sms_dnc_blocked', error: DNC_UNKNOWN_ERROR }
+  }
 }

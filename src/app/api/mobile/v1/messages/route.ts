@@ -288,6 +288,11 @@ export async function POST(req: NextRequest) {
       await transitionMobileMessageSend({ userId: user.id, keyHash, token: claim.token, from: 'sending', to: 'uncertain', status: 409, result: { error: 'SMS delivery outcome is unknown. Do not resend this command.' } })
       return json({ error: 'SMS delivery outcome is unknown. Do not resend this command.' }, 409)
     }
+    if (result.status === 'refused') {
+      const payload = { error: result.error, code: result.code, sent: false }
+      await transitionMobileMessageSend({ userId: user.id, keyHash, token: claim.token, from: 'sending', to: 'failed', status: 409, result: payload })
+      return json(payload, 409)
+    }
     if (result.status === 'skipped') {
       const error = result.reason === 'opted_out' ? 'This number has opted out of SMS messages' : 'Duplicate SMS sent within 24 hours'
       const status = result.reason === 'opted_out' ? 400 : 409

@@ -549,4 +549,26 @@ describe('conversation sends', () => {
       id: 'email-1',
     })
   })
+
+  it('returns a human SMS refusal code without calling the provider again', async () => {
+    mocks.sendLeadSms.mockResolvedValue({
+      status: 'refused',
+      code: 'sms_quiet_hours',
+      error: "This text is outside 8:00am–9:00pm in the recipient's local time.",
+    })
+
+    const response = await POST(request({
+      mode: 'sms',
+      leadId: 'lead-1',
+      phone: '+19135550123',
+      body: 'Hello',
+    }))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      sent: false,
+      code: 'sms_quiet_hours',
+    })
+  })
 })

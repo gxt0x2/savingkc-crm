@@ -268,7 +268,7 @@ export function SmsComposeModal({
         setError('This number has opted out of SMS messages')
         return
       }
-      if (res.status === 409) {
+      if (res.status === 409 && !data.code) {
         setError('Duplicate message — already sent recently')
         return
       }

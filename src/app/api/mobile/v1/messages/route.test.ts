@@ -262,6 +262,21 @@ describe('mobile outbound message command receipts', () => {
     expect(mocks.sendLeadSms).toHaveBeenCalledOnce()
   })
 
+  it('returns a human SMS refusal code and does not mark delivery uncertain', async () => {
+    mocks.sendLeadSms.mockResolvedValueOnce({
+      status: 'refused',
+      code: 'sms_dnc_blocked',
+      error: 'This number is blocked for SMS by a do-not-call or opt-out record.',
+    })
+
+    const response = await POST(request(smsContract.payload, 'human-sms-dnc-key'))
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ code: 'sms_dnc_blocked', sent: false })
+    expect(mocks.receipts.get('user-1/hash:human-sms-dnc-key')?.state).toBe('failed')
+    expect(mocks.activities.size).toBe(0)
+  })
+
   it.each([
     { status: 'skipped', reason: 'opted_out' },
     { status: 'failed', error: 'SMS sender is not approved for conversations' },
