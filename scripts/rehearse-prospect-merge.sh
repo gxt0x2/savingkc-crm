@@ -24,6 +24,6 @@ mkdir -p "$PG_SOCKET"
 "$PG_BIN/initdb" -D "$PG_DATA" --no-locale -A trust >/dev/null
 "$PG_BIN/pg_ctl" -D "$PG_DATA" -o "-F -p $PG_PORT -k $PG_SOCKET" -w start >/dev/null
 "$PG_BIN/psql" -h "$PG_SOCKET" -p "$PG_PORT" -d postgres -v ON_ERROR_STOP=1 -X \
-  -v migration="$ROOT/supabase/migrations/20261203140000_sanctioned_prospect_merge.sql" \
+  -v migration="$ROOT/supabase/migrations/20261216120000_sanctioned_prospect_merge.sql" \
   -f "$ROOT/tests/prospect-merge-db.sql"
 echo "prospect merge rehearsal passed"

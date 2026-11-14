@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261203140000_sanctioned_prospect_merge.sql'),
+  join(process.cwd(), 'supabase/migrations/20261216120000_sanctioned_prospect_merge.sql'),
   'utf8',
 )
 const rehearsal = readFileSync(join(process.cwd(), 'tests/prospect-merge-db.sql'), 'utf8')
@@ -20,6 +20,9 @@ describe('sanctioned prospect merge migration', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS source_prospect_id uuid')
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS relationship_detail text')
     expect(migration).toContain('p_dry_run boolean DEFAULT true')
+    expect(migration).toContain('p_allow_cross_property boolean DEFAULT false')
+    expect(migration).toContain('prospect_merge_cross_property')
+    expect(migration).toContain("'work_item_key', item.work_item_key")
     expect(migration).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(migration).not.toContain('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1')
     expect(migration).not.toMatch(/\b(?:ALTER TABLE|UPDATE|INSERT INTO|DELETE FROM)\s+public\.crm_people\b/i)
@@ -44,10 +47,13 @@ describe('sanctioned prospect merge migration', () => {
 
   it('marks merged prospects non-dialable and follows merged_into_id', () => {
     expect(migration).toContain('CREATE OR REPLACE FUNCTION public.prospect_dial_subject_id_v1(p_prospect_id uuid)')
-    expect(migration).toContain('prospect_phone.prospect_id = public.prospect_dial_subject_id_v1(row.prospect_id)')
-    expect(migration).toContain("WHEN dialed.prospect_record_status = 'merged' THEN 'merged_prospect'")
-    expect(migration).toContain('CREATE OR REPLACE VIEW public.source_list_dialer_phone_review')
-    expect(migration).toContain('PR #814')
+    expect(migration).toContain('prospect_dial_subject_id_v1')
+    expect(migration).toContain("THEN ''merged_prospect''")
+    expect(migration).toContain('source_list_phone_block_reason_v1(\\1, \\2)')
+    expect(migration).toContain('prospect_merge_patch_review_view_v1')
+    expect(migration).toContain('#814')
+    expect(migration).toContain('line_check_flag')
+    expect(migration).toContain('Other Relative')
   })
 })
 
@@ -65,6 +71,12 @@ describe('prospect merge rehearsal fixture', () => {
     expect(rehearsal).toContain('re-run was not idempotent')
     expect(rehearsal).toContain('prospect_merge_target_merged')
     expect(rehearsal).toContain('merge into a merged target was allowed')
+    expect(rehearsal).toContain('cross-property merge was not refused')
+    expect(rehearsal).toContain('same-property merge was refused')
+    expect(rehearsal).toContain('cross-property override was not logged')
+    expect(rehearsal).toContain('exc-002 voice hold set is wrong')
+    expect(rehearsal).toContain('work_item_key text PRIMARY KEY')
+    expect(rehearsal).not.toContain('CREATE TABLE public.work_items (\n  id uuid PRIMARY KEY')
     expect(rehearsal).not.toMatch(/\+1(?!816555)\d{10}/)
   })
 })

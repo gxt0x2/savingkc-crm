@@ -7,11 +7,18 @@
 --
 -- crm_people.merged_into_id is a different table and is not used here.
 --
--- PR #814 (cursor/dialer-suppression-labels-a40b) replaces
--- source_list_phone_block_reason_v1 and source_list_dialer_phone_review.
--- This migration does not redefine the block function. The review view
--- resolves phones with prospect_dial_subject_id_v1 and marks a merged
--- row merged_prospect. A rebase onto #814 has to keep both of those.
+-- The review view is patched in place. It is not replaced from a copy of
+-- main, so columns added by later dialer migrations stay:
+--   #814 two-argument source_list_phone_block_reason_v1(phone, prospect_id)
+--   #812 line_check_flag
+--   #817 market-check columns (requires_licensee_disclosure and the rest)
+-- Rebase order when those land: #814, then #812, then #817, then this
+-- migration. prospect_merge_patch_review_view_v1() can be run again if a
+-- later migration replaces the view.
+--
+-- EXC-002 voice holds: associate_non_family, relationship_unknown,
+-- relationship_detail Unknown when the phone is not the owner, and
+-- entity_contact without officer or member proof. Other Relative is family.
 
 SET lock_timeout = '10s';
 SET statement_timeout = '2min';
@@ -92,7 +99,101 @@ AS $function$
 $function$;
 
 COMMENT ON FUNCTION public.prospect_associate_relationship_v1(text) IS
-  'True for Friend, Coworker, Neighbor, Past neighbor, Landlord, and Tenant. In-law and Owner are not associate holds.';
+  'EXC-002 associate_non_family. True for Friend, Coworker, Neighbor, Past neighbor, Landlord, and Tenant.';
+
+CREATE OR REPLACE FUNCTION public.prospect_relationship_label_v1(p_label text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = pg_catalog
+AS $function$
+  SELECT nullif(
+    regexp_replace(lower(btrim(coalesce(p_label, ''))), '[[:space:]-]+', '_', 'g'),
+    ''
+  );
+$function$;
+
+CREATE OR REPLACE FUNCTION public.prospect_voice_hold_force_v1(
+  p_relationship text,
+  p_relationship_detail text,
+  p_owner_type text
+)
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+  WITH labels AS (
+    SELECT ARRAY_REMOVE(ARRAY[
+      public.prospect_relationship_label_v1(p_relationship),
+      public.prospect_relationship_label_v1(p_relationship_detail),
+      public.prospect_relationship_label_v1(p_owner_type)
+    ], NULL) AS label
+  )
+  SELECT CASE
+    WHEN public.prospect_associate_relationship_v1(p_relationship)
+      OR public.prospect_associate_relationship_v1(p_relationship_detail)
+      OR public.prospect_associate_relationship_v1(p_owner_type)
+      THEN 'associate_relationship'
+    WHEN label && ARRAY['entity_contact', 'entity', 'llc', 'trust', 'company', 'corporation']
+      AND NOT label && ARRAY['officer', 'member', 'manager', 'registered_agent']
+      THEN 'entity_contact'
+    WHEN public.prospect_relationship_label_v1(p_relationship) = 'relationship_unknown'
+      OR public.prospect_relationship_label_v1(p_relationship_detail) = 'relationship_unknown'
+      OR (
+        public.prospect_relationship_label_v1(p_relationship_detail) = 'unknown'
+        AND public.prospect_relationship_label_v1(p_relationship) IS DISTINCT FROM 'owner'
+        AND public.prospect_relationship_label_v1(p_relationship) IS DISTINCT FROM 'self'
+      )
+      THEN 'relationship_unknown'
+    ELSE NULL
+  END
+  FROM labels;
+$function$;
+
+COMMENT ON FUNCTION public.prospect_voice_hold_force_v1(text, text, text) IS
+  'EXC-002 force reason, or null. Other Relative, In-law, Spouse, and Owner are not forced. Unknown is forced only when the phone is not the owner. entity_contact is forced unless officer or member proof is present.';
+
+CREATE OR REPLACE FUNCTION public.prospect_property_match_v1(
+  p_left_parcel text,
+  p_left_county text,
+  p_left_street text,
+  p_left_zip text,
+  p_right_parcel text,
+  p_right_county text,
+  p_right_street text,
+  p_right_zip text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = pg_catalog
+AS $function$
+  WITH norm AS (
+    SELECT
+      nullif(regexp_replace(lower(btrim(coalesce(p_left_parcel, ''))), '[^[:alnum:]]+', '', 'g'), '') AS left_parcel,
+      nullif(regexp_replace(lower(btrim(coalesce(p_right_parcel, ''))), '[^[:alnum:]]+', '', 'g'), '') AS right_parcel,
+      nullif(lower(btrim(coalesce(p_left_county, ''))), '') AS left_county,
+      nullif(lower(btrim(coalesce(p_right_county, ''))), '') AS right_county,
+      nullif(btrim(regexp_replace(regexp_replace(lower(btrim(coalesce(p_left_street, ''))), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g')), '') AS left_street,
+      nullif(btrim(regexp_replace(regexp_replace(lower(btrim(coalesce(p_right_street, ''))), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g')), '') AS right_street,
+      nullif(left(regexp_replace(coalesce(p_left_zip, ''), '[^0-9]', '', 'g'), 5), '') AS left_zip,
+      nullif(left(regexp_replace(coalesce(p_right_zip, ''), '[^0-9]', '', 'g'), 5), '') AS right_zip
+  )
+  SELECT CASE
+    WHEN left_parcel IS NOT NULL AND right_parcel IS NOT NULL THEN left_parcel = right_parcel
+    WHEN left_county IS NULL OR right_county IS NULL
+      OR left_street IS NULL OR right_street IS NULL
+      OR left_zip IS NULL OR right_zip IS NULL THEN false
+    ELSE left_county = right_county AND left_street = right_street AND left_zip = right_zip
+  END
+  FROM norm;
+$function$;
+
+COMMENT ON FUNCTION public.prospect_property_match_v1(text, text, text, text, text, text, text, text) IS
+  'Same property when both parcel ids are present and equal, otherwise county + normalized situs street + zip. An incomplete fallback key does not match.';
 
 CREATE OR REPLACE FUNCTION public.prospect_disposition_protected_v1(p_label text)
 RETURNS boolean
@@ -173,6 +274,7 @@ AS $function$
         'id', phone.id,
         'prospect_id', phone.prospect_id,
         'source_prospect_id', phone.source_prospect_id,
+        'relationship', phone.relationship,
         'relationship_detail', phone.relationship_detail,
         'phone', phone.phone,
         'voice_hold', phone.voice_hold,
@@ -196,10 +298,10 @@ AS $function$
     ), '[]'::jsonb),
     'work_items', COALESCE((
       SELECT jsonb_agg(jsonb_build_object(
-        'id', item.id,
+        'work_item_key', item.work_item_key,
         'prospect_id', item.prospect_id,
         'lead_id', item.lead_id
-      ) ORDER BY item.id)
+      ) ORDER BY item.work_item_key)
       FROM public.work_items AS item
       WHERE item.prospect_id = ANY (p_ids)
     ), '[]'::jsonb),
@@ -224,7 +326,8 @@ CREATE OR REPLACE FUNCTION public.merge_prospects_v1(
   p_target uuid,
   p_sources uuid[],
   p_by text,
-  p_dry_run boolean DEFAULT true
+  p_dry_run boolean DEFAULT true,
+  p_allow_cross_property boolean DEFAULT false
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -253,6 +356,8 @@ DECLARE
   v_members_left integer := 0;
   v_prospects_merged integer := 0;
   v_dry_run boolean := p_dry_run IS DISTINCT FROM false;
+  v_allow_cross_property boolean := p_allow_cross_property IS TRUE;
+  v_cross_property jsonb := '[]'::jsonb;
 BEGIN
   IF p_target IS NULL THEN
     RAISE EXCEPTION 'prospect_merge_target_required';
@@ -320,6 +425,29 @@ BEGIN
     ORDER BY source.id
   );
 
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+    'source_id', source.id,
+    'source_parcel', source.parcel_id,
+    'source_county', source.county,
+    'source_street', source.situs_street,
+    'source_zip', source.situs_zip,
+    'target_parcel', target.parcel_id,
+    'target_county', target.county,
+    'target_street', target.situs_street,
+    'target_zip', target.situs_zip
+  ) ORDER BY source.id), '[]'::jsonb)
+    INTO v_cross_property
+  FROM public.prospects AS source
+  JOIN public.prospects AS target ON target.id = p_target
+  WHERE source.id = ANY (v_pending)
+    AND NOT public.prospect_property_match_v1(
+      target.parcel_id, target.county, target.situs_street, target.situs_zip,
+      source.parcel_id, source.county, source.situs_street, source.situs_zip
+    );
+  IF jsonb_array_length(v_cross_property) > 0 AND NOT v_allow_cross_property THEN
+    RAISE EXCEPTION 'prospect_merge_cross_property';
+  END IF;
+
   v_phone_total := (SELECT count(*) FROM public.prospect_phones);
   v_prospect_total := (SELECT count(*) FROM public.prospects);
   v_member_total := (SELECT count(*) FROM public.prospecting_campaign_members);
@@ -331,29 +459,31 @@ BEGIN
     UPDATE public.prospect_phones AS phone
     SET
       source_prospect_id = COALESCE(phone.source_prospect_id, phone.prospect_id),
-      relationship_detail = COALESCE(phone.relationship_detail, source_prospect.owner_1_type),
+      relationship_detail = COALESCE(phone.relationship_detail, phone.relationship, source_prospect.owner_1_type),
+      relationship = COALESCE(phone.relationship, phone.relationship_detail, source_prospect.owner_1_type),
       prospect_id = p_target,
-      voice_hold = phone.voice_hold OR public.prospect_associate_relationship_v1(
-        COALESCE(phone.relationship_detail, source_prospect.owner_1_type)
-      ),
+      voice_hold = phone.voice_hold OR public.prospect_voice_hold_force_v1(
+        phone.relationship, phone.relationship_detail, source_prospect.owner_1_type
+      ) IS NOT NULL,
       voice_hold_reason = CASE
         WHEN phone.voice_hold IS TRUE THEN phone.voice_hold_reason
-        WHEN public.prospect_associate_relationship_v1(COALESCE(phone.relationship_detail, source_prospect.owner_1_type))
-          AND nullif(btrim(coalesce(phone.voice_hold_reason, '')), '') IS NULL
-          THEN 'associate_relationship'
-        ELSE phone.voice_hold_reason
+        WHEN nullif(btrim(coalesce(phone.voice_hold_reason, '')), '') IS NOT NULL THEN phone.voice_hold_reason
+        ELSE COALESCE(
+          public.prospect_voice_hold_force_v1(phone.relationship, phone.relationship_detail, source_prospect.owner_1_type),
+          phone.voice_hold_reason
+        )
       END,
       voice_hold_at = CASE
         WHEN phone.voice_hold_at IS NOT NULL THEN phone.voice_hold_at
         WHEN phone.voice_hold IS NOT TRUE
-          AND public.prospect_associate_relationship_v1(COALESCE(phone.relationship_detail, source_prospect.owner_1_type))
+          AND public.prospect_voice_hold_force_v1(phone.relationship, phone.relationship_detail, source_prospect.owner_1_type) IS NOT NULL
           THEN clock_timestamp()
         ELSE phone.voice_hold_at
       END,
       voice_hold_by = CASE
         WHEN nullif(btrim(coalesce(phone.voice_hold_by, '')), '') IS NOT NULL THEN phone.voice_hold_by
         WHEN phone.voice_hold IS NOT TRUE
-          AND public.prospect_associate_relationship_v1(COALESCE(phone.relationship_detail, source_prospect.owner_1_type))
+          AND public.prospect_voice_hold_force_v1(phone.relationship, phone.relationship_detail, source_prospect.owner_1_type) IS NOT NULL
           THEN btrim(p_by)
         ELSE phone.voice_hold_by
       END
@@ -517,6 +647,8 @@ BEGIN
       'dry_run', v_dry_run,
       'target_id', p_target,
       'merged_by', btrim(p_by),
+      'allow_cross_property', v_allow_cross_property,
+      'cross_property_overrides', v_cross_property,
       'before', v_before,
       'after', v_after,
       'counts', jsonb_build_object(
@@ -542,95 +674,102 @@ BEGIN
 END
 $function$;
 
-COMMENT ON FUNCTION public.merge_prospects_v1(uuid, uuid[], text, boolean) IS
-  'Fold source prospects into a survivor. Re-points phones, one shared lead, and campaign members. Keeps every row. Does not clear voice hold fields or replace a protected DNC label. Associate phones (Friend, Coworker, Neighbor, Past neighbor, Landlord, Tenant) are forced onto voice hold. Dry run is the default.';
+COMMENT ON FUNCTION public.merge_prospects_v1(uuid, uuid[], text, boolean, boolean) IS
+  'Fold source prospects into a survivor on the same property. p_allow_cross_property defaults false and is recorded on the diff when true. Re-points phones, one shared lead, and campaign members. Keeps every row, including relationship and relationship_detail. Does not clear voice hold fields or replace a protected DNC label. EXC-002 associate, unknown, and unproved entity contacts are forced onto voice hold. Dry run is the default.';
 
 REVOKE ALL ON FUNCTION public.prospect_associate_relationship_v1(text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.prospect_relationship_label_v1(text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.prospect_voice_hold_force_v1(text, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.prospect_property_match_v1(text, text, text, text, text, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.prospect_disposition_protected_v1(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.prospect_dial_subject_id_v1(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.prospect_merge_state_v1(uuid[]) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.merge_prospects_v1(uuid, uuid[], text, boolean) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.merge_prospects_v1(uuid, uuid[], text, boolean, boolean) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.prospect_associate_relationship_v1(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.prospect_relationship_label_v1(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.prospect_voice_hold_force_v1(text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.prospect_property_match_v1(text, text, text, text, text, text, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.prospect_disposition_protected_v1(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.prospect_dial_subject_id_v1(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.prospect_merge_state_v1(uuid[]) TO service_role;
-GRANT EXECUTE ON FUNCTION public.merge_prospects_v1(uuid, uuid[], text, boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.merge_prospects_v1(uuid, uuid[], text, boolean, boolean) TO service_role;
 
-CREATE OR REPLACE VIEW public.source_list_dialer_phone_review
-WITH (security_invoker = true) AS
-SELECT
-  dialed.source_list_row_id,
-  dialed.source_list_id,
-  dialed.list_type,
-  dialed.county,
-  dialed.state,
-  dialed.violation_kind,
-  dialed.parcel_id,
-  dialed.case_id,
-  dialed.address,
-  dialed.owner_names,
-  dialed.amount_owed,
-  dialed.property_id,
-  dialed.prospect_id,
-  dialed.row_status,
-  dialed.phone_value,
-  dialed.phone_e164,
-  dialed.phone_origin,
-  dialed.pull_date,
-  dialed.source_file_name,
-  CASE
-    WHEN dialed.prospect_record_status = 'merged' THEN 'merged_prospect'
-    ELSE public.source_list_phone_block_reason_v1(dialed.phone_value)
-  END AS block_reason
-FROM (
-  SELECT DISTINCT ON (
-    row.id,
-    coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value))
-  )
-    row.id AS source_list_row_id,
-    row.source_list_id,
-    row.list_type,
-    row.county,
-    row.state,
-    row.violation_kind,
-    row.parcel_id,
-    row.case_id,
-    row.address,
-    row.owner_names,
-    row.amount_owed,
-    row.property_id,
-    row.prospect_id,
-    prospect_subject.record_status AS prospect_record_status,
-    row.status AS row_status,
-    phone.phone_value,
-    public.normalize_conversation_phone(phone.phone_value) AS phone_e164,
-    phone.phone_origin,
-    list.pull_date,
-    list.source_file_name
-  FROM public.source_list_rows AS row
-  JOIN public.source_lists AS list ON list.id = row.source_list_id
-  LEFT JOIN public.prospects AS prospect_subject ON prospect_subject.id = row.prospect_id
-  CROSS JOIN LATERAL (
-    SELECT phone_value, 'source_row'::text AS phone_origin
-    FROM unnest(row.phones) AS phone_value
-    WHERE nullif(btrim(phone_value), '') IS NOT NULL
-    UNION ALL
-    SELECT prospect_phone.phone, 'prospect_phone'::text
-    FROM public.prospect_phones AS prospect_phone
-    WHERE row.prospect_id IS NOT NULL
-      AND (
-        prospect_phone.prospect_id = public.prospect_dial_subject_id_v1(row.prospect_id)
-        OR prospect_phone.prospect_id = row.prospect_id
-      )
-      AND nullif(btrim(prospect_phone.phone), '') IS NOT NULL
-  ) AS phone
-  WHERE row.status IN ('ready', 'loaded_to_dialer')
-  ORDER BY
-    row.id,
-    coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value)),
-    (phone.phone_origin = 'prospect_phone') DESC
-) AS dialed;
+-- Delegate until #814/#812 install the real two-argument scrub. Do not
+-- replace that function when it is already present.
+DO $delegate$
+BEGIN
+  IF to_regprocedure('public.source_list_phone_block_reason_v1(text,uuid)') IS NULL THEN
+    EXECUTE $fn$
+      CREATE FUNCTION public.source_list_phone_block_reason_v1(p_phone text, p_prospect_id uuid)
+      RETURNS text
+      LANGUAGE sql
+      STABLE
+      SET search_path = pg_catalog, public
+      AS $body$
+        SELECT public.source_list_phone_block_reason_v1(p_phone);
+      $body$
+    $fn$;
+    REVOKE ALL ON FUNCTION public.source_list_phone_block_reason_v1(text, uuid) FROM PUBLIC, anon, authenticated;
+    GRANT EXECUTE ON FUNCTION public.source_list_phone_block_reason_v1(text, uuid) TO service_role;
+  END IF;
+END
+$delegate$;
+
+CREATE OR REPLACE FUNCTION public.prospect_merge_patch_review_view_v1()
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  view_sql text;
+BEGIN
+  -- pg_get_viewdef quotes the reserved name "row" and drops the dialed. alias,
+  -- so the live text is prospect_phone.prospect_id = "row".prospect_id and
+  -- source_list_phone_block_reason_v1(phone_value) or (phone_value, prospect_id).
+  -- The replacement keeps the two-argument call source_list_phone_block_reason_v1(phone, prospect_id).
+  view_sql := pg_catalog.pg_get_viewdef('public.source_list_dialer_phone_review'::regclass, true);
+  IF view_sql NOT LIKE '%prospect_dial_subject_id_v1%' THEN
+    IF view_sql !~ 'prospect_phone\.prospect_id\s*=\s*"?row"?\.prospect_id' THEN
+      RAISE EXCEPTION 'prospect_merge_review_view_join_not_found';
+    END IF;
+    view_sql := regexp_replace(
+      view_sql,
+      'prospect_phone\.prospect_id\s*=\s*("?row"?\.prospect_id)',
+      '(prospect_phone.prospect_id = public.prospect_dial_subject_id_v1(\1) OR prospect_phone.prospect_id = \1)',
+      'g'
+    );
+  END IF;
+  IF view_sql NOT LIKE '%merged_prospect%' THEN
+    IF view_sql ~ 'source_list_phone_block_reason_v1\s*\([^)]*,' THEN
+      view_sql := regexp_replace(
+        view_sql,
+        '(?:public\.)?source_list_phone_block_reason_v1\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
+        '(CASE WHEN EXISTS (SELECT 1 FROM public.prospects AS merged_row WHERE merged_row.id = \2 AND merged_row.record_status = ''merged'') THEN ''merged_prospect'' ELSE public.source_list_phone_block_reason_v1(\1, \2) END)',
+        'g'
+      );
+    ELSIF view_sql ~ 'source_list_phone_block_reason_v1\s*\(' THEN
+      view_sql := regexp_replace(
+        view_sql,
+        '(?:public\.)?source_list_phone_block_reason_v1\s*\(\s*((?:dialed\.)?)phone_value\s*\)',
+        '(CASE WHEN EXISTS (SELECT 1 FROM public.prospects AS merged_row WHERE merged_row.id = \1prospect_id AND merged_row.record_status = ''merged'') THEN ''merged_prospect'' ELSE public.source_list_phone_block_reason_v1(\1phone_value, \1prospect_id) END)',
+        'g'
+      );
+    ELSE
+      RAISE EXCEPTION 'prospect_merge_review_view_block_not_found';
+    END IF;
+  END IF;
+  EXECUTE 'CREATE OR REPLACE VIEW public.source_list_dialer_phone_review WITH (security_invoker = true) AS ' || view_sql;
+END
+$function$;
+
+COMMENT ON FUNCTION public.prospect_merge_patch_review_view_v1() IS
+  'Patches the current dialer review view. Keeps line_check_flag and any other columns already on the view. Calls source_list_phone_block_reason_v1(phone, prospect_id) and adds merged_prospect plus prospect_dial_subject_id_v1.';
+
+REVOKE ALL ON FUNCTION public.prospect_merge_patch_review_view_v1() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.prospect_merge_patch_review_view_v1() TO service_role;
+
+SELECT public.prospect_merge_patch_review_view_v1();
 
 COMMENT ON VIEW public.source_list_dialer_phone_review IS
-  'Review rows include suppressed numbers and block_reason. A merged prospect is non-dialable (merged_prospect). Its phones are read through merged_into_id. Do not load the dialer from this view.';
+  'Review rows include suppressed numbers and block_reason. A merged prospect is non-dialable (merged_prospect). Its phones are read through merged_into_id. Extra columns from the line-check and market-check views are left in place. Do not load the dialer from this view.';

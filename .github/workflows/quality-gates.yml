@@ -67,6 +67,9 @@ jobs:
       - name: Mojo appointment provenance PostgreSQL rehearsal
         run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-mojo-appointment-provenance.sh
 
+      - name: Prospect merge PostgreSQL rehearsal
+        run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-prospect-merge.sh
+
       - name: Unit coverage gate
         run: |
           npm run test:coverage
