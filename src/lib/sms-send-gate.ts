@@ -1,5 +1,7 @@
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
+import { isMissingColumnError } from '@/lib/schema-compat'
+import { lineTypeAllowsSms } from '@/lib/server/phone-line-check'
 import { handleOptOut, isSmsOptOutMessage } from '@/lib/sms-opt-out'
 import { supabase } from '@/lib/supabase-lazy'
 import { TWILIO_NUMBERS } from '@/lib/twilio-numbers'
@@ -22,6 +24,11 @@ export type AutomatedSmsBlockReason =
   | 'dnd'
   | 'inbound_opt_out'
   | 'company_number'
+  | 'sms_requires_mobile'
+  | 'line_check_unknown'
+  | 'suppressed_lookup_inactive'
+  | 'suppressed_bad_number'
+  | 'line_status_unreachable'
 
 const INBOUND_DIRECTIONS = new Set(['received', 'inbound', 'in', 'incoming'])
 const INBOUND_ACTIVITY_TYPES = ['sms', 'sms_received', 'sms_inbound']
@@ -158,6 +165,30 @@ async function loadRecentSms(phone: string, leadId: string | null): Promise<SmsA
   return (data || []) as SmsActivityRow[]
 }
 
+async function prospectLineBlock(phone: string): Promise<AutomatedSmsBlockReason | null> {
+  const variants = phoneLookupVariants(phone)
+  if (!variants.length) return null
+  const { data, error } = await supabase
+    .from('prospect_phones')
+    .select('phone, line_type, line_status')
+    .in('phone', variants)
+    .limit(20)
+  if (error) {
+    if (isMissingColumnError(error)) return null
+    throw suppressionError()
+  }
+  const rows = ((data || []) as Array<{ phone: string | null; line_type: string | null; line_status: string | null }>)
+    .filter((row) => samePhone(row.phone, phone))
+  if (!rows.length) return null
+  const statuses = rows.map((row) => (row.line_status || '').toLowerCase())
+  if (statuses.includes('suppressed_bad_number')) return 'suppressed_bad_number'
+  if (statuses.includes('suppressed_lookup_inactive')) return 'suppressed_lookup_inactive'
+  if (statuses.includes('unreachable')) return 'line_status_unreachable'
+  if (!statuses.includes('active')) return 'line_check_unknown'
+  if (!rows.some((row) => lineTypeAllowsSms(row.line_type))) return 'sms_requires_mobile'
+  return null
+}
+
 function inboundOptOutAfter(rows: SmsActivityRow[], optedInAt: string | null): boolean {
   const cutoff = optedInAt ? Date.parse(optedInAt) : null
   return rows.some((row) => {
@@ -198,7 +229,7 @@ export async function automatedSmsBlockReason(input: {
     ])
     : null
   const activities = await loadRecentSms(phone, lead.id)
-  if (!inboundOptOutAfter(activities, optedInAt)) return null
+  if (!inboundOptOutAfter(activities, optedInAt)) return prospectLineBlock(phone)
 
   try {
     await handleOptOut(phone, 'NATURAL_LANGUAGE_OPT_OUT')
