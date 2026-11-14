@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   CALLER_ID_REST_COMPLIANCE,
+  CallerIdUpsertError,
+  callerIdActiveTarget,
   callerIdRestUntil,
   dedupeCallerIdDials,
   isCallerIdHealthSlot,
   mojoDialConnected,
+  parseCallerIdActiveTarget,
+  parseCallerIdUpsert,
   scoreCallerIdPool,
   twilioDialConnected,
   type CallerIdDial,
@@ -158,23 +162,31 @@ describe('scoreCallerIdPool', () => {
     expect(plan.actions.some((action) => action.type === 'rest')).toBe(false)
   })
 
-  it('does not promote a spare from another area code or a spare that is itself below the pool', () => {
+  it('promotes a same-area spare before any other area, and skips a spare that is below the pool', () => {
     const numbers = [
       number(ACTIVE, 'active'),
       number(SECOND, 'active'),
       number(THIRD, 'active'),
       number(OTHER_AREA, 'spare'),
-      { ...number(SPARE, 'spare') },
+      number(SPARE, 'spare'),
     ]
-    const noLocalSpare = scoreCallerIdPool({
+    const preferred = scoreCallerIdPool({
+      now: NOW,
+      numbers,
+      dials: [...many(ACTIVE, '2026-11-13', 20, 0), ...many(SECOND, '2026-11-13', 20, 10), ...many(THIRD, '2026-11-13', 20, 10)],
+    })
+    expect(preferred.actions.find((action) => action.type === 'promote')).toMatchObject({ number: SPARE, areaCode: '816' })
+    expect(preferred.proposedActiveSet).not.toContain(OTHER_AREA)
+
+    const fallback = scoreCallerIdPool({
       now: NOW,
       numbers: numbers.filter((row) => row.number !== SPARE),
       dials: [...many(ACTIVE, '2026-11-13', 20, 0), ...many(SECOND, '2026-11-13', 20, 10), ...many(THIRD, '2026-11-13', 20, 10)],
     })
-    expect(noLocalSpare.actions.some((action) => action.type === 'promote')).toBe(false)
-    expect(noLocalSpare.proposedActiveSet).toEqual([SECOND, THIRD])
+    expect(fallback.actions.find((action) => action.type === 'promote')).toMatchObject({ number: OTHER_AREA, areaCode: '913', replaces: ACTIVE })
+    expect(fallback.proposedActiveSet).toEqual([OTHER_AREA, SECOND, THIRD].sort())
 
-    const dirtySpare = scoreCallerIdPool({
+    const dirtyLocal = scoreCallerIdPool({
       now: NOW,
       numbers,
       dials: [
@@ -184,8 +196,23 @@ describe('scoreCallerIdPool', () => {
         ...many(SPARE, '2026-11-13', 20, 0),
       ],
     })
-    expect(dirtySpare.actions.some((action) => action.type === 'promote')).toBe(false)
-    expect(dirtySpare.proposedActiveSet).not.toContain(OTHER_AREA)
+    expect(dirtyLocal.actions.find((action) => action.type === 'promote')).toMatchObject({ number: OTHER_AREA })
+    expect(dirtyLocal.proposedActiveSet).not.toContain(SPARE)
+  })
+
+  it('uses the configured active target and does not demote a healthy number to get there', () => {
+    const wider = scoreCallerIdPool({
+      now: NOW,
+      numbers: [number(ACTIVE, 'active'), number(SPARE, 'spare'), number(OTHER_AREA, 'spare')],
+      dials: [],
+      activeTarget: 10,
+    })
+    expect(wider.activeTarget).toBe(10)
+    expect(wider.proposedActiveSet).toEqual([ACTIVE, OTHER_AREA, SPARE].sort())
+
+    const clamped = scoreCallerIdPool({ now: NOW, numbers: pool(), dials: [], activeTarget: 40 })
+    expect(clamped.activeTarget).toBe(10)
+    expect(scoreCallerIdPool({ now: NOW, numbers: pool(), dials: [] }).activeTarget).toBe(3)
   })
 
   it('leaves a rested number in place when rest_until passes and does not extend an open rest', () => {
@@ -221,6 +248,23 @@ describe('scoreCallerIdPool', () => {
       expect.objectContaining({ callerId: ACTIVE, connected: false, source: 'mojo' }),
       expect.objectContaining({ callerId: SECOND, source: 'twilio' }),
     ])
+  })
+
+  it('loads only a Mojo-verified number and refuses the lines released on 2026-10-30', () => {
+    expect(parseCallerIdUpsert({ phone: '(816) 555-0100', status: 'spare', mojoVerified: true })).toMatchObject({
+      phone: '+18165550100',
+      areaCode: '816',
+      status: 'spare',
+    })
+    expect(callerIdActiveTarget(undefined)).toBe(3)
+    expect(callerIdActiveTarget('10')).toBe(10)
+    expect(callerIdActiveTarget(11)).toBe(10)
+    expect(parseCallerIdActiveTarget(10)).toBe(10)
+    for (const phone of ['+18166404701', '+18165788107', '+18166536616', '+18164761344']) {
+      expect(() => parseCallerIdUpsert({ phone, status: 'active', mojoVerified: true })).toThrow(CallerIdUpsertError)
+    }
+    expect(() => parseCallerIdUpsert({ phone: '+18165550100', status: 'active', mojoVerified: false })).toThrow(/Mojo/)
+    expect(() => parseCallerIdActiveTarget(11)).toThrow(CallerIdUpsertError)
   })
 
   it('does not let a held number into the active set or the pool average', () => {

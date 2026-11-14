@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync(join(
   process.cwd(),
-  'supabase/migrations/20261203120000_caller_id_health.sql',
+  'supabase/migrations/20261203120100_caller_id_health.sql',
 ), 'utf8')
 const db = readFileSync(join(process.cwd(), 'src/lib/telephony/caller-id-health-db.ts'), 'utf8')
 const routes = [
@@ -19,11 +19,16 @@ describe('caller id health migration', () => {
     expect(migration).toContain("status IN ('active', 'spare', 'resting', 'held')")
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS public.caller_id_health_events')
     expect(migration).toContain('quality pause')
-    expect(migration).toContain('do not release')
-    expect(migration).toContain('ON CONFLICT (phone_e164) DO NOTHING')
-    expect(migration).toContain("'+18166404701', '816', 'active'")
-    expect(migration).toContain("'+18164761344', '816', 'spare'")
-    expect(migration).toContain("'+18162538313', '816', 'held'")
+    expect(migration).toContain('does not release')
+    expect(migration).toContain('The pool starts empty')
+    expect(migration).toContain('released_caller_id')
+    expect(migration).toContain('upsert_caller_id_v1')
+    expect(migration).toContain('mojo_caller_id_not_verified')
+    expect(migration).toContain('caller_id_active_target')
+    expect(migration).toContain('to_jsonb(3)')
+    expect(migration).toContain('p_target > 10')
+    expect(migration).not.toContain("'+18166404701', '816', 'active'")
+    expect(migration).not.toContain("'+18164761344', '816', 'spare'")
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS caller_id text')
     expect(migration).toContain('caller_id_value')
     expect(migration).toContain('COALESCE(EXCLUDED.caller_id, public.crm_mojo_calls.caller_id)')

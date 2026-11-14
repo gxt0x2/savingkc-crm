@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS public.caller_id_health_events (
   CONSTRAINT caller_id_health_events_phone_check CHECK (phone_e164 IS NULL OR phone_e164 ~ '^\+1[0-9]{10}$'),
   CONSTRAINT caller_id_health_events_phone_required_check CHECK (event_type = 'run' OR phone_e164 IS NOT NULL),
   CONSTRAINT caller_id_health_events_type_check CHECK (
-    event_type IN ('rest', 'cap_note', 'promote', 'rest_elapsed_needs_clearance', 'rest_confirmed', 'run')
+    event_type IN ('rest', 'cap_note', 'promote', 'rest_elapsed_needs_clearance', 'rest_confirmed', 'run', 'load')
   ),
   CONSTRAINT caller_id_health_events_reason_check CHECK (char_length(reason) BETWEEN 1 AND 500)
 );
@@ -74,20 +74,139 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.caller_id_health_events TO 
 COMMENT ON TABLE public.caller_id_health_events IS
   'Why a caller ID was rested, capped, or promoted. Rest events are quality pauses. Nothing in this table releases or deletes a number.';
 
--- Starting inventory. Three allowlisted cold lines stay active, the fourth is
--- the spare, and the 2026-09-23 spam/high-risk parks stay held. Re-applying
--- this insert does not change a number the health job has already rested.
-INSERT INTO public.caller_ids (phone_e164, area_code, status, held_reason)
-VALUES
-  ('+18166404701', '816', 'active', NULL),
-  ('+18165788107', '816', 'active', NULL),
-  ('+18166536616', '816', 'active', NULL),
-  ('+18164761344', '816', 'spare', NULL),
-  ('+18162538313', '816', 'held', 'hard spam/scam flag; do not release'),
-  ('+18166408032', '816', 'held', 'hard spam/scam flag; do not release'),
-  ('+18163100845', '816', 'held', 'elevated / high risk; do not release'),
-  ('+18164761589', '816', 'held', 'elevated / high risk; do not release')
-ON CONFLICT (phone_e164) DO NOTHING;
+-- The pool starts empty. +18166404701, +18165788107, +18166536616, and
+-- +18164761344 were released from Twilio on 2026-10-30 and must not be loaded.
+-- New numbers are inserted only by upsert_caller_id_v1 after the owner verifies
+-- each one as a Mojo caller ID. The health job does not insert numbers.
+
+CREATE OR REPLACE FUNCTION public.upsert_caller_id_v1(p_row jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  phone_value text;
+  status_value text;
+  rest_until_value timestamptz;
+  rest_reason_value text;
+  held_reason_value text;
+  area_value text;
+  stored public.caller_ids;
+BEGIN
+  IF jsonb_typeof(p_row) IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'invalid_caller_id';
+  END IF;
+  IF coalesce(p_row->>'mojo_verified', '') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'mojo_caller_id_not_verified';
+  END IF;
+
+  phone_value := nullif(btrim(coalesce(p_row->>'phone', '')), '');
+  IF phone_value IS NULL OR phone_value !~ '^\+1[0-9]{10}$' THEN
+    RAISE EXCEPTION 'invalid_caller_id_phone';
+  END IF;
+  IF phone_value IN ('+18166404701', '+18165788107', '+18166536616', '+18164761344') THEN
+    RAISE EXCEPTION 'released_caller_id';
+  END IF;
+
+  status_value := nullif(btrim(coalesce(p_row->>'status', '')), '');
+  IF status_value IS NULL OR status_value NOT IN ('active', 'spare', 'resting', 'held') THEN
+    RAISE EXCEPTION 'invalid_caller_id_status';
+  END IF;
+  area_value := substring(phone_value from 3 for 3);
+
+  rest_reason_value := nullif(btrim(coalesce(p_row->>'rest_reason', '')), '');
+  held_reason_value := nullif(btrim(coalesce(p_row->>'held_reason', '')), '');
+  IF status_value = 'resting' THEN
+    IF coalesce(p_row->>'rest_until', '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN
+      RAISE EXCEPTION 'invalid_caller_id_rest_until';
+    END IF;
+    rest_until_value := (p_row->>'rest_until')::timestamptz;
+    IF rest_until_value IS NULL OR rest_reason_value IS NULL OR char_length(rest_reason_value) > 500 THEN
+      RAISE EXCEPTION 'invalid_caller_id_rest';
+    END IF;
+    held_reason_value := NULL;
+  ELSIF status_value = 'held' THEN
+    IF held_reason_value IS NULL OR char_length(held_reason_value) > 200 THEN
+      RAISE EXCEPTION 'invalid_caller_id_hold';
+    END IF;
+    rest_until_value := NULL;
+    rest_reason_value := NULL;
+  ELSE
+    rest_until_value := NULL;
+    rest_reason_value := NULL;
+    held_reason_value := NULL;
+  END IF;
+
+  INSERT INTO public.caller_ids (
+    phone_e164, area_code, status, rest_until, rest_reason, held_reason, updated_at
+  ) VALUES (
+    phone_value, area_value, status_value, rest_until_value, rest_reason_value, held_reason_value, now()
+  )
+  ON CONFLICT (phone_e164) DO UPDATE SET
+    status = EXCLUDED.status,
+    rest_until = EXCLUDED.rest_until,
+    rest_reason = EXCLUDED.rest_reason,
+    held_reason = EXCLUDED.held_reason,
+    updated_at = now()
+  RETURNING * INTO stored;
+
+  INSERT INTO public.caller_id_health_events (caller_id_id, phone_e164, event_type, reason, metrics)
+  VALUES (
+    stored.id,
+    stored.phone_e164,
+    'load',
+    'Loaded after the owner attested Mojo caller-ID verification. This does not release or delete a number.',
+    jsonb_build_object('status', stored.status, 'areaCode', stored.area_code, 'mojoVerified', true)
+  );
+
+  RETURN jsonb_build_object(
+    'phone', stored.phone_e164,
+    'areaCode', stored.area_code,
+    'status', stored.status,
+    'restUntil', stored.rest_until,
+    'restReason', stored.rest_reason,
+    'heldReason', stored.held_reason
+  );
+END
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_caller_id_v1(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_caller_id_v1(jsonb) TO service_role;
+
+COMMENT ON FUNCTION public.upsert_caller_id_v1(jsonb) IS
+  'Load or update one caller ID after the owner sets mojo_verified true. Rejects the four numbers released from Twilio on 2026-10-30. Does not delete a number and does not call Mojo.';
+
+-- Default active count is 3. The owner may set 1 through 10 (for example 10
+-- active and 10 spare/resting across 816 and 913). Values outside that range
+-- are rejected here; the morning job also clamps a bad stored value.
+INSERT INTO public.system_config(key, value, updated_at)
+VALUES ('caller_id_active_target', to_jsonb(3), now())
+ON CONFLICT (key) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.set_caller_id_active_target_v1(p_target integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF p_target IS NULL OR p_target < 1 OR p_target > 10 THEN
+    RAISE EXCEPTION 'invalid_caller_id_active_target';
+  END IF;
+  INSERT INTO public.system_config(key, value, updated_at)
+  VALUES ('caller_id_active_target', to_jsonb(p_target), now())
+  ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at;
+  RETURN p_target;
+END
+$$;
+
+REVOKE ALL ON FUNCTION public.set_caller_id_active_target_v1(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_caller_id_active_target_v1(integer) TO service_role;
+
+COMMENT ON FUNCTION public.set_caller_id_active_target_v1(integer) IS
+  'Sets how many caller IDs the morning health job keeps active. Allowed range is 1 through 10. Default is 3.';
 
 ALTER TABLE public.crm_mojo_calls
   ADD COLUMN IF NOT EXISTS caller_id text;

@@ -17,6 +17,7 @@ export type CallerIdDialLoad = {
 
 export type CallerIdHealthStore = {
   loadNumbers(): Promise<CallerIdRecord[]>
+  loadActiveTarget(): Promise<number>
   loadDials(sinceIso: string): Promise<CallerIdDialLoad>
   apply(actions: CallerIdHealthAction[], chicagoDate: string): Promise<string[]>
 }
@@ -50,7 +51,7 @@ export class CallerIdHealthError extends Error {
 }
 
 export async function summarizeCallerIdHealth(
-  store: Pick<CallerIdHealthStore, 'loadNumbers' | 'loadDials'>,
+  store: Pick<CallerIdHealthStore, 'loadNumbers' | 'loadDials' | 'loadActiveTarget'>,
   now: Date,
 ): Promise<CallerIdHealthSummary> {
   const loaded = await loadPlan(store, now)
@@ -92,13 +93,18 @@ export async function runCallerIdHealth(store: CallerIdHealthStore, now: Date): 
 }
 
 async function loadPlan(
-  store: Pick<CallerIdHealthStore, 'loadNumbers' | 'loadDials'>,
+  store: Pick<CallerIdHealthStore, 'loadNumbers' | 'loadDials' | 'loadActiveTarget'>,
   now: Date,
 ): Promise<{ numbers: CallerIdRecord[]; plan: CallerIdHealthPlan; truncated: boolean }> {
-  const numbers = await store.loadNumbers()
+  const [numbers, activeTarget] = await Promise.all([store.loadNumbers(), store.loadActiveTarget()])
   const since = new Date(now.getTime() - CALLER_ID_LOOKBACK_MS).toISOString()
   const loaded = await store.loadDials(since)
-  const plan = scoreCallerIdPool({ now, numbers, dials: loaded.truncated ? [] : loaded.dials })
+  const plan = scoreCallerIdPool({
+    now,
+    numbers,
+    dials: loaded.truncated ? [] : loaded.dials,
+    activeTarget,
+  })
   return { numbers, plan, truncated: loaded.truncated }
 }
 

@@ -735,7 +735,7 @@
       "status": "active",
       "routes": [],
       "apiRoutes": ["/api/cron/caller-id-health", "/api/admin/caller-id-health"],
-      "tables": ["caller_ids", "caller_id_health_events", "crm_mojo_calls", "lead_activities"],
+      "tables": ["caller_ids", "caller_id_health_events", "crm_mojo_calls", "lead_activities", "system_config"],
       "environment": ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
       "crons": [
         { "path": "/api/cron/caller-id-health", "schedule": "5 13 * * 1-5" },

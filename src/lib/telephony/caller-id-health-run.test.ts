@@ -35,6 +35,7 @@ function memoryStore(seed = numbers(), history = dials()): CallerIdHealthStore &
   return {
     events,
     async loadNumbers() { return rows.map((row) => ({ ...row })) },
+    async loadActiveTarget() { return 3 },
     async loadDials() { return { dials: history, truncated: false } },
     async apply(actions) {
       for (const action of actions) {

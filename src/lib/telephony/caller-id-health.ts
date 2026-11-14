@@ -5,7 +5,9 @@ export const CALLER_ID_REST_DAYS = 14
 export const CALLER_ID_MIN_DIALS = 20
 export const CALLER_ID_CONNECT_GAP = 0.15
 export const CALLER_ID_DAILY_CAP = 75
-export const CALLER_ID_ACTIVE_TARGET = 3
+export const CALLER_ID_ACTIVE_TARGET_DEFAULT = 3
+export const CALLER_ID_ACTIVE_TARGET_MAX = 10
+export const CALLER_ID_ACTIVE_TARGET_KEY = 'caller_id_active_target'
 export const CALLER_ID_DIALING_DAY_LIMIT = 3
 export const CALLER_ID_LOOKBACK_MS = 21 * 24 * 60 * 60 * 1000
 export const CALLER_ID_DEDUPE_MS = 60_000
@@ -17,6 +19,19 @@ export const CALLER_ID_REST_COMPLIANCE =
 
 export const CALLER_ID_STATUSES = ['active', 'spare', 'resting', 'held'] as const
 export type CallerIdStatus = (typeof CALLER_ID_STATUSES)[number]
+
+/** Released from Twilio on 2026-10-30. Never seed or load these. */
+export const RELEASED_CALLER_IDS = ['+18166404701', '+18165788107', '+18166536616', '+18164761344'] as const
+
+export function callerIdActiveTarget(value: unknown): number {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && /^-?\d+$/.test(value.trim())
+      ? Number(value.trim())
+      : Number.NaN
+  if (!Number.isInteger(parsed) || parsed < 1) return CALLER_ID_ACTIVE_TARGET_DEFAULT
+  return Math.min(parsed, CALLER_ID_ACTIVE_TARGET_MAX)
+}
 
 export type CallerIdRecord = {
   number: string
@@ -66,6 +81,7 @@ export type CallerIdHealthPlan = {
   activeSet: string[]
   proposedActiveSet: string[]
   unattributedDials: number
+  activeTarget: number
 }
 
 const NOT_CONNECTED = new Set(['no_answer', 'busy', 'disconnected'])
@@ -236,7 +252,9 @@ export function scoreCallerIdPool(input: {
   now: Date
   numbers: CallerIdRecord[]
   dials: CallerIdDial[]
+  activeTarget?: unknown
 }): CallerIdHealthPlan {
+  const activeTarget = callerIdActiveTarget(input.activeTarget ?? CALLER_ID_ACTIVE_TARGET_DEFAULT)
   const today = chicagoDateKey(input.now)
   const pool: CallerIdRecord[] = []
   const held: CallerIdHealthPlan['held'] = []
@@ -325,7 +343,7 @@ export function scoreCallerIdPool(input: {
     })
   }
 
-  const promotions = promoteSpares(pool, restingToday, scoreByNumber)
+  const promotions = promoteSpares(pool, restingToday, scoreByNumber, activeTarget)
   actions.push(...promotions)
 
   const activeSet = pool.filter((number) => number.status === 'active').map((number) => number.number).sort()
@@ -345,6 +363,7 @@ export function scoreCallerIdPool(input: {
     activeSet,
     proposedActiveSet,
     unattributedDials,
+    activeTarget,
   }
 }
 
@@ -352,9 +371,10 @@ function promoteSpares(
   pool: CallerIdRecord[],
   restingToday: Set<string>,
   scores: Map<string, CallerIdMetrics & { number: string }>,
+  activeTarget: number,
 ): Array<Extract<CallerIdHealthAction, { type: 'promote' }>> {
   const remainingActive = pool.filter((number) => number.status === 'active' && !restingToday.has(number.number))
-  let needed = Math.max(0, CALLER_ID_ACTIVE_TARGET - remainingActive.length)
+  let needed = Math.max(0, activeTarget - remainingActive.length)
   const areaOrder = [
     ...pool.filter((number) => restingToday.has(number.number)).map((number) => number.areaCode),
     ...remainingActive.map((number) => number.areaCode),
@@ -366,22 +386,40 @@ function promoteSpares(
     const spare = nextCleanSpare(pool, areaOrder, used, scores)
     if (!spare) break
     used.add(spare.number)
-    const replaces = pool.find((number) => (
+    const sameArea = pool.find((number) => (
       restingToday.has(number.number)
       && number.areaCode === spare.areaCode
       && !replaced.has(number.number)
-    ))?.number ?? null
+    ))
+    const anyRest = pool.find((number) => restingToday.has(number.number) && !replaced.has(number.number))
+    const replaces = sameArea?.number ?? anyRest?.number ?? null
     if (replaces) replaced.add(replaces)
+    const matchedArea = Boolean(sameArea)
     promotions.push({
       type: 'promote',
       number: spare.number,
       areaCode: spare.areaCode,
       replaces,
-      reason: `Promoted spare ${spare.number} to active so the ${spare.areaCode} pool keeps ${CALLER_ID_ACTIVE_TARGET} active numbers after a quality pause. Mojo is not changed by this job.`,
+      reason: matchedArea
+        ? `Promoted spare ${spare.number} in area ${spare.areaCode} so the pool keeps ${activeTarget} active numbers after a quality pause. Mojo is not changed by this job.`
+        : `Promoted spare ${spare.number} from area ${spare.areaCode} after no clean spare remained in the same area code. The pool target is ${activeTarget} active numbers. Mojo is not changed by this job.`,
     })
     needed -= 1
   }
   return promotions
+}
+
+function cleanSpares(
+  pool: CallerIdRecord[],
+  used: Set<string>,
+  scores: Map<string, CallerIdMetrics>,
+  areaCode?: string,
+): CallerIdRecord[] {
+  return pool
+    .filter((number) => number.status === 'spare' && !used.has(number.number))
+    .filter((number) => areaCode == null || number.areaCode === areaCode)
+    .filter((number) => scores.get(number.number)?.belowPool !== true)
+    .sort((left, right) => left.number.localeCompare(right.number))
 }
 
 function nextCleanSpare(
@@ -393,11 +431,75 @@ function nextCleanSpare(
   const areas: string[] = []
   for (const area of areaOrder) if (!areas.includes(area)) areas.push(area)
   for (const area of areas) {
-    const spare = pool
-      .filter((number) => number.status === 'spare' && number.areaCode === area && !used.has(number.number))
-      .filter((number) => scores.get(number.number)?.belowPool !== true)
-      .sort((left, right) => left.number.localeCompare(right.number))[0]
+    const spare = cleanSpares(pool, used, scores, area)[0]
     if (spare) return spare
   }
-  return null
+  return cleanSpares(pool, used, scores)[0] ?? null
+}
+
+export class CallerIdUpsertError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+  }
+}
+
+export type CallerIdUpsert = {
+  phone: string
+  areaCode: string
+  status: CallerIdStatus
+  restUntil: string | null
+  restReason: string | null
+  heldReason: string | null
+}
+
+export function parseCallerIdActiveTarget(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > CALLER_ID_ACTIVE_TARGET_MAX) {
+    throw new CallerIdUpsertError('invalid_caller_id_active_target', 'Active target must be a whole number from 1 to 10.')
+  }
+  return value
+}
+
+/**
+ * Load one verified caller ID. mojoVerified must be the owner's attestation
+ * that the number already passed Mojo caller-ID verification. This does not
+ * call Mojo, and it does not release or delete a number.
+ */
+export function parseCallerIdUpsert(body: unknown): CallerIdUpsert {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new CallerIdUpsertError('invalid_caller_id', 'Caller ID load needs a phone, status, and Mojo verification.')
+  }
+  const record = body as Record<string, unknown>
+  if (record.mojoVerified !== true) {
+    throw new CallerIdUpsertError('mojo_caller_id_not_verified', 'Load a number only after it passes the owner\'s Mojo caller-ID verification.')
+  }
+  const phone = normalizePhoneToE164(typeof record.phone === 'string' ? record.phone : '')
+  if (!phone) throw new CallerIdUpsertError('invalid_caller_id_phone', 'Phone must be a US number.')
+  if ((RELEASED_CALLER_IDS as readonly string[]).includes(phone)) {
+    throw new CallerIdUpsertError('released_caller_id', 'That number was released from Twilio on 2026-10-30 and cannot be loaded.')
+  }
+  const status = record.status
+  if (typeof status !== 'string' || !(CALLER_ID_STATUSES as readonly string[]).includes(status)) {
+    throw new CallerIdUpsertError('invalid_caller_id_status', 'Status must be active, spare, resting, or held.')
+  }
+  const restReason = textField(record.restReason, 500)
+  const heldReason = textField(record.heldReason, 200)
+  if (status === 'resting') {
+    const restUntil = typeof record.restUntil === 'string' ? record.restUntil : ''
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(restUntil) || !Number.isFinite(Date.parse(restUntil)) || !restReason) {
+      throw new CallerIdUpsertError('invalid_caller_id_rest', 'A resting number needs restUntil and a reason.')
+    }
+    return { phone, areaCode: phone.slice(2, 5), status, restUntil: new Date(restUntil).toISOString(), restReason, heldReason: null }
+  }
+  if (status === 'held') {
+    if (!heldReason) throw new CallerIdUpsertError('invalid_caller_id_hold', 'A held number needs a hold reason.')
+    return { phone, areaCode: phone.slice(2, 5), status, restUntil: null, restReason: null, heldReason }
+  }
+  return { phone, areaCode: phone.slice(2, 5), status: status as CallerIdStatus, restUntil: null, restReason: null, heldReason: null }
+}
+
+function textField(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  if (!text || text.length > max) return null
+  return text
 }

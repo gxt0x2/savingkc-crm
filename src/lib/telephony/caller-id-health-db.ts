@@ -1,11 +1,14 @@
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import type { supabaseAdmin } from '@/lib/supabase/admin'
 import {
+  CALLER_ID_ACTIVE_TARGET_KEY,
   CALLER_ID_REST_COMPLIANCE,
   CALLER_ID_STATUSES,
+  callerIdActiveTarget,
   chicagoDayBounds,
   mojoDialConnected,
   twilioDialConnected,
+  type CallerIdUpsert,
   type CallerIdDial,
   type CallerIdHealthAction,
   type CallerIdRecord,
@@ -70,6 +73,27 @@ async function readPages<T>(read: (from: number, to: number) => Promise<T[]>): P
   return { rows, truncated: true }
 }
 
+export async function saveCallerId(db: Db, row: CallerIdUpsert) {
+  const { data, error } = await db.rpc('upsert_caller_id_v1', {
+    p_row: {
+      phone: row.phone,
+      status: row.status,
+      mojo_verified: true,
+      rest_until: row.restUntil,
+      rest_reason: row.restReason,
+      held_reason: row.heldReason,
+    },
+  })
+  if (error) throw new Error('caller_id_upsert_failed')
+  return data
+}
+
+export async function saveCallerIdActiveTarget(db: Db, target: number) {
+  const { data, error } = await db.rpc('set_caller_id_active_target_v1', { p_target: target })
+  if (error) throw new Error('caller_id_active_target_failed')
+  return data
+}
+
 function statusOf(value: string): CallerIdStatus | null {
   return (CALLER_ID_STATUSES as readonly string[]).includes(value) ? value as CallerIdStatus : null
 }
@@ -95,6 +119,15 @@ export function callerIdHealthStore(db: Db): CallerIdHealthStore {
         })
       }
       return numbers
+    },
+    async loadActiveTarget() {
+      const { data, error } = await db
+        .from('system_config')
+        .select('value')
+        .eq('key', CALLER_ID_ACTIVE_TARGET_KEY)
+        .maybeSingle()
+      if (error) throw new Error('caller_id_active_target_unreadable')
+      return callerIdActiveTarget(data?.value)
     },
     async loadDials(sinceIso) {
       const mojo = await readPages<MojoRow>(async (from, to) => {
