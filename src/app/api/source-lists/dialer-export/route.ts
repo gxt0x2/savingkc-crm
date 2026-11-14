@@ -49,12 +49,17 @@ export async function GET(request: Request) {
       throw new SourceListImportError('Format must be csv or json.', 400, 'invalid_format')
     }
 
+    const lineModeRaw = url.searchParams.get('lineMode')
+    const lineMode = lineModeRaw === null || lineModeRaw.trim() === ''
+      ? 1
+      : (/^\d+$/.test(lineModeRaw.trim()) ? Number(lineModeRaw.trim()) : 0)
     const scrub = await recordDialerExportBatch(supabaseAdmin(), actor.email, {
       listType: selected.lane?.listType ?? null,
       county: selected.county,
       state: selected.lane?.state ?? null,
       violationKind: selected.lane?.violationKind ?? null,
       sourceListId: selected.sourceListId,
+      lineMode,
     })
     console.info(JSON.stringify({
       event: 'dialer_export_scrub',

@@ -1,3 +1,4 @@
+import { exportLineModeBlock } from '@/lib/dialer-suppression-policy'
 import { SourceListImportError } from '@/lib/source-lists/csv'
 import { sourceListRpcError, type SourceListRpcClient } from '@/lib/source-lists/import-source-list'
 
@@ -66,6 +67,7 @@ export interface DialerExportFilters {
   state: string | null
   violationKind: string | null
   sourceListId: string | null
+  lineMode?: number | null
 }
 
 export interface DialerExportPage {
@@ -155,6 +157,14 @@ export async function recordDialerExportBatch(
   actor: string,
   filters: DialerExportFilters,
 ): Promise<DialerExportScrub> {
+  const lineMode = filters.lineMode ?? 1
+  if (exportLineModeBlock(lineMode)) {
+    throw new SourceListImportError(
+      'Multi-line dialer export is suspended. Export one line at a time.',
+      409,
+      'multi_line_suspended',
+    )
+  }
   const { data, error } = await db.rpc('record_source_list_export_batch_v1', {
     p_actor: actor.trim(),
     p_list_type: filters.listType,
@@ -162,6 +172,7 @@ export async function recordDialerExportBatch(
     p_state: filters.state,
     p_violation_kind: filters.violationKind,
     p_source_list_id: filters.sourceListId,
+    p_line_mode: lineMode,
   })
   if (error) throw sourceListRpcError(error)
   if (!data || typeof data !== 'object') {

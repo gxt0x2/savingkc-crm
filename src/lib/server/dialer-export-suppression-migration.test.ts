@@ -18,6 +18,11 @@ import {
   PROSPECT_WRONG,
 } from '@/lib/dialer-suppression-policy'
 
+const associateMigration = readFileSync(
+  join(process.cwd(), 'supabase/migrations/20261202150000_dialer_export_associate_property_dnc.sql'),
+  'utf8',
+)
+
 const migration = readFileSync(
   join(process.cwd(), 'supabase/migrations/20261202140000_dialer_export_suppression.sql'),
   'utf8',
@@ -62,5 +67,17 @@ describe('dialer export suppression migration', () => {
     expect(migration).toContain('source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id)')
     expect(migration).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(migration).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+  })
+
+  it('adds associate, unknown, and property-owner fan-out without clearing a hold', () => {
+    expect(associateMigration).toContain("RETURN 'associate_non_family'")
+    expect(associateMigration).toContain("RETURN 'relationship_unknown'")
+    expect(associateMigration).toContain("RETURN 'property_owner_dnc_fanout'")
+    expect(associateMigration).toContain("ARRAY['dead', 'fax']")
+    expect(associateMigration).toContain('dialer_multi_line_suspended')
+    expect(associateMigration).toContain("'true'::jsonb")
+    expect(associateMigration).not.toMatch(/voice_hold\s*=\s*false/)
+    expect(associateMigration).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
+    expect(associateMigration).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
   })
 })

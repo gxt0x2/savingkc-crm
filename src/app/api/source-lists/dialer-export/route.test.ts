@@ -81,6 +81,13 @@ describe('GET /api/source-lists/dialer-export', () => {
     spy.mockRestore()
   })
 
+  it('refuses a multi-line export while that mode is suspended', async () => {
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/source-lists/dialer-export?lineMode=2'))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ code: 'multi_line_suspended' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   it('refuses an anonymous export', async () => {
     mocks.actor.mockResolvedValue(null)
     expect((await GET(new NextRequest('https://crm.savingkc.com/api/source-lists/dialer-export'))).status).toBe(401)

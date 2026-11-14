@@ -80,6 +80,20 @@ export const MOJO_ALLOW = [
 /** Never overwritten by a weaker Mojo stamp. dead is protected; fax is not. */
 export const NEVER_DOWNGRADE = [...PROSPECT_PHONE_DNC, ...PROSPECT_PERSON_DNC, 'dead'] as const
 
+/** Property-owner fan-out treats these dispositions as owner DNC. Disconnected and bad_number do not. */
+export const PROPERTY_OWNER_DNC = [...PROSPECT_PHONE_DNC, ...PROSPECT_PERSON_DNC, 'dead', 'fax'] as const
+
+export const OWNER_RELATIONSHIPS = ['owner', 'subject', 'co_owner'] as const
+export const RELATIVE_RELATIONSHIPS = ['relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'] as const
+export const RELATIVE_OWNER_TYPES = ['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'unknown', 'individual'] as const
+export const ASSOCIATE_OWNER_TYPES = ['neighbor', 'coworker', 'past_neighbor', 'friend', 'landlord', 'tenant'] as const
+export const UNKNOWN_RELATIONSHIPS = ['unknown', 'entity_contact'] as const
+
+/** Refuses line mode greater than 1 unless an operator turns the flag off. */
+export const MULTI_LINE_SUSPENDED_DEFAULT = true
+
+export type RelationshipBucket = 'owner' | 'relative' | 'associate_non_family' | 'relationship_unknown'
+
 export type SuppressionSource =
   | 'prospect_disposition'
   | 'phone_connected'
@@ -94,6 +108,7 @@ export interface SuppressionPhone {
   lastDisposition?: string | null
   phoneConnected?: string | null
   voiceHold?: boolean | null
+  relationship?: string | null
 }
 
 export interface SuppressionProspect {
@@ -103,6 +118,9 @@ export interface SuppressionProspect {
   street?: string | null
   ownerLast?: string | null
   ownerName?: string | null
+  ownerType?: string | null
+  parcelId?: string | null
+  zip?: string | null
 }
 
 export interface SuppressionLead {
@@ -160,14 +178,55 @@ export function isDialablePhone(value: string | null | undefined): boolean {
   return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))
 }
 
-export function householdKey(prospect: SuppressionProspect | null | undefined): string | null {
-  if (!prospect) return null
-  const county = String(prospect.county ?? '').trim().toLowerCase()
-  const street = String(prospect.street ?? '')
+export function normalizeStreet(value: string | null | undefined): string {
+  return String(value ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+export function relationshipBucket(
+  relationship: string | null | undefined,
+  ownerType: string | null | undefined,
+): RelationshipBucket {
+  const rel = labelKey(relationship)
+  const owner = labelKey(ownerType)
+  if (rel === 'associate' || (owner !== null && ASSOCIATE_OWNER_TYPES.includes(owner as typeof ASSOCIATE_OWNER_TYPES[number]))) {
+    return 'associate_non_family'
+  }
+  if (rel !== null && OWNER_RELATIONSHIPS.includes(rel as typeof OWNER_RELATIONSHIPS[number])) return 'owner'
+  if (rel !== null && UNKNOWN_RELATIONSHIPS.includes(rel as typeof UNKNOWN_RELATIONSHIPS[number])) return 'relationship_unknown'
+  if (
+    (rel !== null && RELATIVE_RELATIONSHIPS.includes(rel as typeof RELATIVE_RELATIONSHIPS[number]))
+    || (owner !== null && RELATIVE_OWNER_TYPES.includes(owner as typeof RELATIVE_OWNER_TYPES[number]))
+  ) return 'relative'
+  return 'relationship_unknown'
+}
+
+export function propertyKey(prospect: SuppressionProspect | null | undefined): string | null {
+  if (!prospect) return null
+  const parcel = String(prospect.parcelId ?? '').replace(/\s+/g, '').toUpperCase()
+  if (parcel) return `parcel:${parcel}`
+  const county = String(prospect.county ?? '').trim().toLowerCase()
+  const street = normalizeStreet(prospect.street)
+  if (!county || !street) return null
+  const zipDigits = String(prospect.zip ?? '').replace(/\D/g, '')
+  if (zipDigits.length >= 5) return `addr:${county}|${street}|${zipDigits.slice(0, 5)}`
+  if (!zipDigits) return `addr:${county}|${street}`
+  return `addr:${county}|${street}|${zipDigits}`
+}
+
+export function exportLineModeBlock(lineMode: number, suspended = MULTI_LINE_SUSPENDED_DEFAULT): 'multi_line_suspended' | null {
+  if (!Number.isInteger(lineMode) || lineMode < 1) return 'multi_line_suspended'
+  if (suspended && lineMode > 1) return 'multi_line_suspended'
+  return null
+}
+
+export function householdKey(prospect: SuppressionProspect | null | undefined): string | null {
+  if (!prospect) return null
+  const county = String(prospect.county ?? '').trim().toLowerCase()
+  const street = normalizeStreet(prospect.street)
   let owner = String(prospect.ownerLast ?? '').trim().toLowerCase()
   if (!owner) {
     const name = String(prospect.ownerName ?? '').trim().toLowerCase()
@@ -298,6 +357,54 @@ function householdFanout(world: SuppressionWorld, key: string, prospectId?: stri
   return false
 }
 
+function prospectFor(world: SuppressionWorld, id: string | null | undefined): SuppressionProspect | undefined {
+  if (!id) return undefined
+  return world.prospects?.find((item) => item.id === id)
+}
+
+function relationshipForPhone(world: SuppressionWorld, phone: SuppressionPhone): RelationshipBucket {
+  return relationshipBucket(phone.relationship, prospectFor(world, phone.prospectId)?.ownerType)
+}
+
+function candidatePhones(world: SuppressionWorld, key: string): SuppressionPhone[] {
+  return phonesOf(world).filter((phone) => sameKey(phone.phone, key))
+}
+
+function relationshipBlock(world: SuppressionWorld, key: string): 'associate_non_family' | 'relationship_unknown' | null {
+  const buckets = candidatePhones(world, key).map((phone) => relationshipForPhone(world, phone))
+  if (buckets.includes('associate_non_family')) return 'associate_non_family'
+  if (buckets.includes('relationship_unknown')) return 'relationship_unknown'
+  return null
+}
+
+function ownerPhoneHasPropertyDnc(world: SuppressionWorld, ownerKey: string): boolean {
+  if (ownerKey.length !== 10) return false
+  if (phonesOf(world).some((phone) => sameKey(phone.phone, ownerKey) && PROPERTY_OWNER_DNC.includes(labelKey(phone.lastDisposition) as typeof PROPERTY_OWNER_DNC[number]))) {
+    return true
+  }
+  if ((world.optOuts ?? []).some((row) => row.optedOut !== false && sameKey(row.phone, ownerKey))) return true
+  if ((world.mojoEvents ?? []).some((event) => sameKey(event.phone, ownerKey) && labelKey(event.outcome) === 'dnc')) return true
+  if ((world.encodePending ?? []).some((phone) => sameKey(phone, ownerKey))) return true
+  return false
+}
+
+function propertyOwnerDncFanout(world: SuppressionWorld, key: string, prospectId?: string | null): boolean {
+  const propertyKeys = new Set<string>()
+  for (const id of prospectIdsFor(world, key, prospectId)) {
+    const value = propertyKey(prospectFor(world, id))
+    if (value) propertyKeys.add(value)
+  }
+  if (propertyKeys.size === 0) return false
+  for (const phone of phonesOf(world)) {
+    const prospect = prospectFor(world, phone.prospectId)
+    const value = propertyKey(prospect)
+    if (!value || !propertyKeys.has(value)) continue
+    if (relationshipForPhone(world, phone) !== 'owner') continue
+    if (ownerPhoneHasPropertyDnc(world, phoneKey(phone.phone))) return true
+  }
+  return false
+}
+
 function shortSuppressionMatch(world: SuppressionWorld, key: string): boolean {
   const last4 = key.slice(-4)
   const short = (phone: string) => {
@@ -397,6 +504,9 @@ export function exportBlockReason(
   )
   if (mojoReason) return mojoReason
 
+  const tie = relationshipBlock(world, key)
+  if (tie) return tie
+  if (propertyOwnerDncFanout(world, key, prospectId)) return 'property_owner_dnc_fanout'
   if (personFanout(world, key, prospectId)) return 'person_fanout'
   if (householdFanout(world, key, prospectId)) return 'household_fanout'
   if ((world.encodePending ?? []).some((row) => sameKey(row, key))) return 'mojo_encode_pending'

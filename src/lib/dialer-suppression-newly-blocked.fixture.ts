@@ -88,8 +88,8 @@ export function buildNewlyBlockedFixtures(): NewlyBlockedFixture[] {
     const prospectId = `person-${index}`
     fixtures.push(row('person_fanout', 'person_fanout', phone, {
       phones: [
-        { phone: anchor, prospectId, lastDisposition: 'dnc_contact' },
-        { phone, prospectId, lastDisposition: 'no_answer', phoneConnected: 'connected' },
+        { phone: anchor, prospectId, lastDisposition: 'dnc_contact', relationship: 'owner' },
+        { phone, prospectId, lastDisposition: 'no_answer', phoneConnected: 'connected', relationship: 'owner' },
       ],
     }, prospectId))
   }
@@ -102,8 +102,8 @@ export function buildNewlyBlockedFixtures(): NewlyBlockedFixture[] {
       leads: [{ id: `refused-lead-${index}`, phone: leadPhone, deadReason: 'dnc_refused', callResult: 'no_answer' }],
       prospects: [{ id: prospectId, leadId: `refused-lead-${index}`, county: 'jackson', street: `${index} elm`, ownerLast: `Lane${index}` }],
       phones: [
-        { phone: leadPhone, prospectId, lastDisposition: 'no_answer' },
-        { phone, prospectId, lastDisposition: 'busy', phoneConnected: 'connected' },
+        { phone: leadPhone, prospectId, lastDisposition: 'no_answer', relationship: 'owner' },
+        { phone, prospectId, lastDisposition: 'busy', phoneConnected: 'connected', relationship: 'owner' },
       ],
     }, prospectId))
   }
@@ -118,8 +118,8 @@ export function buildNewlyBlockedFixtures(): NewlyBlockedFixture[] {
         { id: `mojo-other-${index}`, county: 'platte', street: `${index} broad`, ownerLast: `Owens${index}` },
       ],
       phones: [
-        { phone: anchor, prospectId: `mojo-anchor-${index}`, lastDisposition: 'take_me_off' },
-        { phone, prospectId: `mojo-other-${index}`, lastDisposition: 'no_answer', phoneConnected: 'connected' },
+        { phone: anchor, prospectId: `mojo-anchor-${index}`, lastDisposition: 'take_me_off', relationship: 'owner' },
+        { phone, prospectId: `mojo-other-${index}`, lastDisposition: 'no_answer', phoneConnected: 'connected', relationship: 'owner' },
       ],
       mojoEvents: [
         { phone: anchor, outcome: 'no_answer', providerContactId: contactId },
@@ -139,8 +139,8 @@ export function buildNewlyBlockedFixtures(): NewlyBlockedFixture[] {
         { id: `house-b-${index}`, county: 'jackson', street: `${index} oak st`, ownerLast },
       ],
       phones: [
-        { phone: anchor, prospectId: `house-a-${index}`, lastDisposition: 'take_me_off' },
-        { phone, prospectId: `house-b-${index}`, lastDisposition: 'no_answer', phoneConnected: 'dataskip_dnc' },
+        { phone: anchor, prospectId: `house-a-${index}`, lastDisposition: 'take_me_off', relationship: 'relative' },
+        { phone, prospectId: `house-b-${index}`, lastDisposition: 'no_answer', phoneConnected: 'dataskip_dnc', relationship: 'relative' },
       ],
     }, `house-b-${index}`))
   }
