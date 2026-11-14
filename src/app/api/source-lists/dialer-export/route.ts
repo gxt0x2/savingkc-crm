@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
-import { dialerExportCsv, readDialerExport, type DialerExportRow } from '@/lib/source-lists/dialer-export'
+import { dialerExportCsv, recordDialerExportBatch } from '@/lib/source-lists/dialer-export'
 import { normalizeSourceListLane, SourceListImportError, SOURCE_LIST_COUNTIES } from '@/lib/source-lists/csv'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
@@ -49,29 +49,21 @@ export async function GET(request: Request) {
       throw new SourceListImportError('Format must be csv or json.', 400, 'invalid_format')
     }
 
-    const rows = await readDialerExport(async (from, to) => {
-      let query = supabaseAdmin()
-        .from('source_list_dialer_export')
-        .select('*')
-        .order('list_type', { ascending: true })
-        .order('county', { ascending: true })
-        .order('parcel_id', { ascending: true })
-        .order('phone_e164', { ascending: true })
-      if (selected.lane) query = query.eq('list_type', selected.lane.listType)
-      if (selected.lane?.state) query = query.eq('state', selected.lane.state)
-      if (selected.lane?.violationKind) query = query.eq('violation_kind', selected.lane.violationKind)
-      if (selected.county) query = query.eq('county', selected.county)
-      if (selected.sourceListId) query = query.eq('source_list_id', selected.sourceListId)
-      const { data, error } = await query.range(from, to)
-      return { data: data as DialerExportRow[] | null, error }
+    const scrub = await recordDialerExportBatch(supabaseAdmin(), actor.email, {
+      listType: selected.lane?.listType ?? null,
+      county: selected.county,
+      state: selected.lane?.state ?? null,
+      violationKind: selected.lane?.violationKind ?? null,
+      sourceListId: selected.sourceListId,
     })
+    const headers = { ...NO_STORE, 'X-Source-List-Export-Batch': scrub.exportBatchId }
 
     if (format === 'json') {
-      return NextResponse.json({ count: rows.length, rows }, { headers: NO_STORE })
+      return NextResponse.json({ exportBatchId: scrub.exportBatchId, count: scrub.rows.length, rows: scrub.rows }, { headers })
     }
-    return new NextResponse(dialerExportCsv(rows), {
+    return new NextResponse(dialerExportCsv(scrub.rows), {
       headers: {
-        ...NO_STORE,
+        ...headers,
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': 'attachment; filename="source-list-dialer-export.csv"',
       },

@@ -18,10 +18,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const { id } = await context.params
   try {
-    const body = await request.json() as { status?: unknown; statusReason?: unknown }
+    const body = await request.json() as { status?: unknown; statusReason?: unknown; exportBatchId?: unknown }
     const status = typeof body.status === 'string' ? body.status : ''
     const statusReason = typeof body.statusReason === 'string' ? body.statusReason : null
-    const row = await setSourceListRowStatus(supabaseAdmin(), actor.email, id, status, statusReason)
+    const exportBatchId = typeof body.exportBatchId === 'string' ? body.exportBatchId : null
+    const row = await setSourceListRowStatus(supabaseAdmin(), actor.email, id, status, statusReason, exportBatchId)
     return NextResponse.json({ success: true, ...row })
   } catch (error) {
     if (error instanceof SourceListImportError) {

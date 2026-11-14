@@ -43,7 +43,7 @@ npx tsx scripts/import-source-list-csv.mts \
 
 A signed-in CRM user can post the same file to `POST /api/source-lists/import` as JSON (`csv`, `listType`, `county`, `state`, `violationKind`, `pullDate`, `fileName`) or as multipart form data with a `file` field. The import does not send email, SMS, or calls.
 
-Rows start as `new`. An ambiguous property or prospect match starts as `needs_check`. Mark a row by `PATCH /api/source-lists/rows/{id}` with `status` of `ready`, `excluded_entity`, `dropped`, or `loaded_to_dialer`. The status history table records the change.
+Rows start as `new`. An ambiguous property or prospect match starts as `needs_check`. Mark a row by `PATCH /api/source-lists/rows/{id}` with `status` of `ready`, `excluded_entity`, `dropped`, or `loaded_to_dialer`. The status history table records the change. `loaded_to_dialer` also requires `exportBatchId` from the scrubbed download. That write stores `loaded_at` and the batch id.
 
 ## Dialer file
 
@@ -54,6 +54,6 @@ curl -sS -H "Cookie: <session>" \
   "https://crm.savingkc.com/api/source-lists/dialer-export?listType=tax_delinquent&county=jackson&state=MO"
 ```
 
-The view keeps `ready` and `loaded_to_dialer` rows. It drops a phone, at the moment of the query, when that number is on `sms_opt_outs`, has a prospect disposition of `dnc` or `do_not_call`, is on voice hold, is opted out or blocked on the CRM contact method, or belongs to a lead whose dead reason or call result is do-not-call. `source_list_dialer_suppressed` lists the numbers that were removed and why. `source_list_dialer_phone_review` includes those numbers, so it is not a load file.
+The view keeps `ready` and `loaded_to_dialer` rows. It drops a phone, at the moment of the query, when that number is on `sms_opt_outs`, has a prospect disposition of `dnc` or `do_not_call`, is on voice hold, is marked wrong number or disconnected on `prospect_phones` (`last_disposition` or `phone_connected`), is opted out or blocked on the CRM contact method, or belongs to a lead whose dead reason or call result is do-not-call. `source_list_dialer_suppressed` lists each removed number and `block_reason`, including `wrong_number` and `disconnected`.
 
-The export does not mark rows `loaded_to_dialer` and does not write `mojo_call_queue`. Set that status after a person loads the scrubbed file.
+The download records that scrub as an export batch. The response header `X-Source-List-Export-Batch` and the `export_batch_id` column are that id. After the file is loaded, mark the rows `loaded_to_dialer` with that `exportBatchId`. The export itself does not change row status and does not write `mojo_call_queue`.

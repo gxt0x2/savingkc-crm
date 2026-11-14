@@ -347,7 +347,7 @@
       "status": "active",
       "routes": [],
       "apiRoutes": ["/api/source-lists/import", "/api/source-lists/dialer-export", "/api/source-lists/rows/[id]"],
-      "tables": ["source_lists", "source_list_rows", "source_list_row_files", "source_list_row_status_history", "source_list_dialer_export"],
+      "tables": ["source_lists", "source_list_rows", "source_list_row_files", "source_list_row_status_history", "source_list_dialer_export", "source_list_export_batches", "source_list_export_batch_phones"],
       "environment": ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"]
     },
     {
