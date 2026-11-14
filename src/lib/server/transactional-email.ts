@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { blockedEmailStatus, type EmailStatusClient } from '@/lib/email-validation/gate'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 
 export type TransactionalEmailStatus = 'sent' | 'skipped' | 'failed' | 'not_configured'
@@ -19,12 +20,16 @@ export async function sendCrmTransactionalEmail(input: {
   subject: string
   text: string
   idempotencyKey?: string
+  validationClient?: EmailStatusClient
 }): Promise<TransactionalEmailResult> {
   const to = input.to.trim()
   const subject = input.subject.replace(/[\r\n]+/g, ' ').trim()
   const text = input.text.trim()
   if (!to || !to.includes('@') || !subject || !text) {
     return { success: false, status: 'failed', id: null, error: 'Transactional email is missing a recipient, subject, or body' }
+  }
+  if (await blockedEmailStatus(to, input.validationClient)) {
+    return { success: false, status: 'failed', id: null, error: 'Email address is not deliverable' }
   }
 
   if (externalSideEffectsDisabled()) {

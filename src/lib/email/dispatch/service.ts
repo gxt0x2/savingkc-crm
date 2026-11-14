@@ -1,3 +1,5 @@
+import { coldLedgerDispatchHold } from "../../email-validation/cold-send";
+import { isBadEmailStatus } from "../../email-validation/status";
 import { contactHygieneReasons } from '../hygiene/guards';
 import "server-only";
 import type { Sql } from "postgres";
@@ -85,7 +87,11 @@ export async function processNextDispatch(
       and m.roles && array['owner','reviewer','acquisitions']::text[]`
       ).length > 0;
     const hygiene = await contactHygieneReasons(tx, { workspaceId: ws.id, partyId: intent.party_id, addressId: intent.address_id, now, threadId: intent.thread_id, sequence: intent.origin === "sequence", recontactDays: intent.campaign_config.recontactDays });
+    const [validation] =
+      await tx`select v.email_status, v.checked_at, v.is_role from em_addresses a left join email_address_validations v on v.normalized_email=lower(a.normalized_address) where a.workspace_id=${ws.id} and a.id=${intent.address_id}`;
+    const ledger = validation?.email_status ? { emailStatus: validation.email_status, checkedAt: validation.checked_at, isRole: validation.is_role } : null;
     const invalid =
+      isBadEmailStatus(validation?.email_status) ||
       hygiene.length > 0 || restriction ||
       !active ||
       !controllerActive ||
@@ -96,6 +102,7 @@ export async function processNextDispatch(
       (intent.origin === "sequence" &&
         (intent.controller !== "none" || intent.campaign_state !== "active"));
     const unready =
+      coldLedgerDispatchHold(ledger, now) ||
       !payload ||
       workflowHash(payload) !== intent.provider_payload_hash ||
       workflowHash(intent.frozen_payload) !== intent.payload_hash ||

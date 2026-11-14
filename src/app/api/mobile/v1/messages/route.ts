@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { blockedEmailStatus } from '@/lib/email-validation/gate'
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { mobileNoStoreHeaders, MobileAuthError, mobileOptionsResponse } from '@/lib/mobile-api/auth'
 import { MobileLeadAccessError, requireAuthorizedMobileLead } from '@/lib/mobile-api/authorized-lead'
@@ -228,6 +229,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (channel === 'email') {
+      if (await blockedEmailStatus(destination)) {
+        const result = { error: 'Email address is not deliverable', sent: false }
+        await transitionMobileMessageSend({ userId: user.id, keyHash, token: claim.token, from: 'sending', to: 'failed', status: 400, result })
+        return json(result, 400)
+      }
       let sendResult: { data?: { id?: string } | null; error?: { message?: string; name?: string; statusCode?: number | null } | null }
       try {
         const { Resend } = await import('resend')

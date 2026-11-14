@@ -1,3 +1,4 @@
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { isInternalVoiceDncReason, phoneLookupVariants } from '@/lib/dialer-call-policy'
 import { mobileCommandIdentityUuid } from '@/lib/mobile-api/command-receipts'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
@@ -239,6 +240,7 @@ export async function createMobileManualLead(
     })
   }
 
+  await recordWrittenEmails([contact.email])
   const presetId = contact.clientRequestId ? mobileManualLeadId(input.userId, contact.clientRequestId) : null
   const deadReason = contact.phone ? await voiceDncReason(db, contact.phone) : null
   const { data, error } = await db.from('leads').insert({

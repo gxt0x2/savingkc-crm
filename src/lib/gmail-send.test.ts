@@ -38,6 +38,11 @@ describe('Gmail send helper', () => {
     vi.clearAllMocks()
     mocks.hasGoogleOAuthConfig.mockReturnValue(true)
     mocks.getValidAccessTokenResult.mockResolvedValue({ accessToken: 'live-token', error: null })
+    mocks.from.mockImplementation(() => ({
+      select() { return this },
+      eq() { return this },
+      maybeSingle: async () => ({ data: null, error: null }),
+    }))
   })
 
   it('encodes an RFC 822 message as Gmail raw base64url', () => {

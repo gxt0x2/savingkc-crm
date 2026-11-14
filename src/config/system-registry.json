@@ -600,7 +600,9 @@
         "em_reply_aliases",
         "em_preference_tokens",
         "em_newsletter_contacts",
-        "em_newsletter_schedules"
+        "em_newsletter_schedules",
+        "email_address_validations",
+        "email_validation_usage"
       ],
       "environment": [
         "EMAIL_CREDENTIALS_KEY_V1",
@@ -627,7 +629,9 @@
         "EMAIL_UI_AUTH_BYPASS_SECRET",
         "EMAIL_UI_TEST_ACTOR",
         "NODE_ENV",
-        "NEWSLETTER_OWNER_APPROVED"
+        "NEWSLETTER_OWNER_APPROVED",
+        "MILLIONVERIFIER_API_KEY",
+        "EMAIL_VALIDATION_DAILY_CAP"
       ]
     },
     {

@@ -1,5 +1,6 @@
 import "server-only";
 import type { Sql } from "postgres";
+import { isHardBounce } from "../../email-validation/bounce";
 import { ownerWorkspace } from "../connections/service";
 import { suppress } from "../workflow/service";
 import type { Tx } from "../workflow/core";
@@ -35,6 +36,7 @@ export async function reduceDeliveryEvent(
     connection_id: string;
     provider_email_id: string | null;
     type: string;
+    bounceType?: string | null;
   },
   now: Date,
 ) {
@@ -69,6 +71,14 @@ export async function reduceDeliveryEvent(
           ? "complaint"
           : "provider_suppressed",
     );
+    if (isHardBounce(event.type, event.bounceType)) {
+      await tx`insert into email_address_validations(normalized_email,email_status,checked_at,provider,raw_result,is_role,local_checks)
+        select lower(a.normalized_address),'invalid',${now},'bounce',${tx.json({ source: "resend", event: event.type, bounceType: event.bounceType ?? null })},false,${tx.json({})}
+        from em_addresses a where a.id=${intent.address_id} and a.workspace_id=${event.workspace_id}
+          and position('@' in lower(a.normalized_address)) > 1
+          and char_length(lower(a.normalized_address)) between 3 and 320
+        on conflict (normalized_email) do update set email_status='invalid',checked_at=excluded.checked_at,provider='bounce',raw_result=excluded.raw_result,updated_at=now()`;
+    }
   }
   if (event.type === "email.failed") {
     await tx`update em_send_intents set state='cancelled',cancellation_reason='provider_delivery_failed' where workspace_id=${event.workspace_id} and thread_id=${intent.thread_id} and state in ('queued','held')`;
@@ -87,14 +97,21 @@ export async function processPendingDeliveryEvents(
     const tx = transaction as unknown as Tx,
       ws = await ownerWorkspace(tx, subject);
     const rows =
-      await tx`select id,workspace_id,connection_id,provider_email_id,type from em_provider_events
+      await tx`select id,workspace_id,connection_id,provider_email_id,type,bounce_type from em_provider_events
       where workspace_id=${ws.id} and state='pending' and hold_reason='awaiting_send_receipt' order by created_at,id limit 20`;
     let processed = 0;
     for (const event of rows)
       if (
         await reduceDeliveryEvent(
           tx,
-          event as Parameters<typeof reduceDeliveryEvent>[1],
+          {
+            id: event.id,
+            workspace_id: event.workspace_id,
+            connection_id: event.connection_id,
+            provider_email_id: event.provider_email_id,
+            type: event.type,
+            bounceType: event.bounce_type,
+          },
           now,
         )
       )

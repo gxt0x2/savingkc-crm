@@ -221,7 +221,7 @@ describe('POST /api/mobile/v1/leads', () => {
       dead_reason: null,
     })])
     expect(db.activities).toEqual([])
-    expect(new Set(db.tables)).toEqual(new Set(['sms_opt_outs', 'leads']))
+    expect(new Set(db.tables)).toEqual(new Set(['sms_opt_outs', 'leads', 'email_address_validations']))
   })
 
   it('returns an existing phone match without inserting another contact', async () => {

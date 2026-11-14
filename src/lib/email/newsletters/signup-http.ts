@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { parseNewsletterSignup, submitNewsletterSignup, type NewsletterStore } from './signup'
 
 export function createNewsletterSignupHandler(openStore: () => NewsletterStore) {
@@ -22,6 +23,7 @@ export function createNewsletterSignupHandler(openStore: () => NewsletterStore) 
         { status: 503 },
       )
     }
+    await recordWrittenEmails([parsed.contact.email])
     const result = await submitNewsletterSignup(input, store)
     return NextResponse.json(result.body, { status: result.httpStatus })
   }
