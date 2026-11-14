@@ -417,15 +417,20 @@ export function bestIntakeMatch(
   incoming: PreparedIntake,
   candidates: readonly IntakeMatchCandidate[],
 ): { candidate: IntakeMatchCandidate; tier: IntakeMatchTier } | null {
-  let best: { candidate: IntakeMatchCandidate; tier: IntakeMatchTier; rank: number } | null = null
+  const ranked: Array<{ candidate: IntakeMatchCandidate; tier: IntakeMatchTier; rank: number }> = []
   for (const candidate of candidates) {
     const tier = matchTier(incoming, candidate)
-    if (!tier) continue
-    const rank = TIER_RANK[tier]
-    const preferIntake = rank === best?.rank && candidate.kind === 'intake' && best.candidate.kind !== 'intake'
-    if (!best || rank < best.rank || preferIntake) best = { candidate, tier, rank }
+    if (tier === null) continue
+    ranked.push({ candidate, tier, rank: TIER_RANK[tier] })
   }
-  return best ? { candidate: best.candidate, tier: best.tier } : null
+  ranked.sort((left, right) => {
+    if (left.rank !== right.rank) return left.rank - right.rank
+    if (left.candidate.kind === right.candidate.kind) return 0
+    return left.candidate.kind === 'intake' ? -1 : 1
+  })
+  const winner = ranked[0]
+  if (winner === undefined) return null
+  return { candidate: winner.candidate, tier: winner.tier }
 }
 
 export type IntakeReviewStatus = 'pending' | 'approved' | 'rejected'
