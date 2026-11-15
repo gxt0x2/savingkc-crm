@@ -162,7 +162,7 @@ describe('associate type and property owner fan-out', () => {
     }
     expect(exportBlockReason(phone, {
       phones: [{ phone, prospectId: 'p', relationship: 'associate' }],
-    })).toBe('associate_non_family')
+    })).toBe('associate')
   })
 
   it('blocks unknown, entity contacts, and a null tie on a non-owner row', () => {
@@ -438,7 +438,7 @@ describe('associate type and property owner fan-out', () => {
       ],
     }
     expect(exportBlockReason(phone, world, 'home')).toBeNull()
-    expect(exportBlockReason(phone, world, 'other')).toBe('associate_non_family')
+    expect(exportBlockReason(phone, world, 'other')).toBe('associate')
     const unknown = {
       ...world,
       phones: [
@@ -466,7 +466,7 @@ describe('associate type and property owner fan-out', () => {
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'corp', ownerType: 'Corporate' }],
       phones: [{ phone, prospectId: 'corp', relationship: 'entity_contact', entityRole: 'officer' }],
-    }, 'corp')).toBeNull()
+    }, 'corp')).toBe('relationship_unknown')
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'corp', ownerType: 'Corporate' }],
       phones: [{ phone, prospectId: 'corp', relationship: 'entity_contact' }],
@@ -499,7 +499,7 @@ describe('associate type and property owner fan-out', () => {
       prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual', parcelId: 'P-CO' }],
       phones: [{ phone, prospectId: 'home', relationship: 'associate', contactName: 'Mary Smith', lastDisposition: 'no_answer' }],
     }
-    expect(exportBlockReason(phone, matched, 'home')).toBe('associate_non_family')
+    expect(exportBlockReason(phone, matched, 'home')).toBe('associate')
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual' }],
       phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Jones', lastDisposition: 'no_answer' }],

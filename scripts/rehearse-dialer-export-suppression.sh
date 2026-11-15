@@ -221,6 +221,7 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261219120000_dialer_relationship_lane_gate.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -370,12 +371,12 @@ BEGIN
     ('+18165551051', '20000000-0000-4000-8000-000000000050', 'person_fanout'),
     ('+18165551050', '20000000-0000-4000-8000-000000000051', 'person_fanout'),
     ('+18165551050', '20000000-0000-4000-8000-000000000052', 'needs_counsel_review'),
-    ('+18165551210', '20000000-0000-4000-8000-000000000060', 'associate_non_family'),
+    ('+18165551210', '20000000-0000-4000-8000-000000000060', 'associate'),
     ('+18165551220', '20000000-0000-4000-8000-000000000070', 'prospect_dnc'),
-    ('+18165551221', '20000000-0000-4000-8000-000000000071', 'property_owner_dnc_fanout'),
+    ('+18165551221', '20000000-0000-4000-8000-000000000071', 'relationship_unknown'),
     ('+18165551099', '20000000-0000-4000-8000-000000000090', 'hold_last4'),
     ('+18165551100', '20000000-0000-4000-8000-000000000091', NULL),
-    ('+18165551202', '20000000-0000-4000-8000-0000000000a2', 'household_fanout');
+    ('+18165551202', '20000000-0000-4000-8000-0000000000a2', 'relationship_unknown');
 
   FOR rec IN SELECT * FROM expected LOOP
     got := public.source_list_phone_block_reason_v1(rec.phone, rec.prospect);
@@ -423,8 +424,9 @@ BEGIN
     RAISE EXCEPTION 'owner number blocked by an associate on another record: %',
       public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b1');
   END IF;
-  IF public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b2') IS DISTINCT FROM 'associate_non_family' THEN
-    RAISE EXCEPTION 'associate copy was released';
+  IF public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b2') IS DISTINCT FROM 'associate' THEN
+    RAISE EXCEPTION 'associate copy was released: %',
+      public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b2');
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550502', '20000000-0000-4000-8000-0000000000b1') IS NOT NULL THEN
     RAISE EXCEPTION 'owner number blocked by an unknown tie on another record';
@@ -435,8 +437,8 @@ BEGIN
   IF public.source_list_phone_block_reason_v1('+18165550511', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
     RAISE EXCEPTION 'registered agent was released';
   END IF;
-  IF public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3') IS NOT NULL THEN
-    RAISE EXCEPTION 'entity officer stayed blocked: %',
+  IF public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'entity contact without an SOS or entity skip was released: %',
       public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3');
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550513', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
@@ -765,7 +767,7 @@ BEGIN
     ('30000000-0000-4000-8000-0000000000fd', '20000000-0000-4000-8000-0000000000fa', '+18165550813', 'no_answer', 'unknown', 'John Smith', false, NULL),
     ('30000000-0000-4000-8000-0000000000fe', '20000000-0000-4000-8000-0000000000fb', '+18165550814', 'no_answer', 'owner', 'Mary Smith', false, NULL);
   INSERT INTO public.sms_opt_outs (phone, is_opted_out) VALUES ('+18165550807', true);
-  IF public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1') IS DISTINCT FROM 'associate_non_family' THEN
+  IF public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1') IS DISTINCT FROM 'associate' THEN
     RAISE EXCEPTION 'associate co-owner was released: %',
       public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1');
   END IF;
