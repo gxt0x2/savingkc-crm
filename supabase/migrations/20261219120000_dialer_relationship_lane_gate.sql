@@ -1,6 +1,18 @@
--- Counsel §4h / §4k. Lane comes from the source list lane (list_type) or source/lane
--- field, never from a title. Does not write campaign members or mojo_call_queue.
--- #830's owner-line release stays byte-identical and still runs for a name match.
+-- Counsel §4h / §4k. Lane comes from the caller: campaign.lane, the export
+-- row's list_type, or a probate/inherited link. A title is not a lane.
+-- Does not write campaign members or mojo_call_queue.
+
+DO $lane_column$
+BEGIN
+  IF to_regclass('public.prospecting_campaigns') IS NULL THEN
+    RETURN;
+  END IF;
+  ALTER TABLE public.prospecting_campaigns ADD COLUMN IF NOT EXISTS lane text;
+  UPDATE public.prospecting_campaigns
+  SET lane = 'tax'
+  WHERE lane IS NULL AND name ~* 'tax';
+END;
+$lane_column$;
 
 CREATE OR REPLACE FUNCTION public.dialer_source_list_lanes_v1(p_prospect_id uuid)
 RETURNS text[]
@@ -20,6 +32,55 @@ AS $function$
       )
   ) AS found
   WHERE found.value IS NOT NULL;
+$function$;
+
+-- The export row's list_type is the caller lane. A code-violation row is not a lane.
+CREATE OR REPLACE FUNCTION public.dialer_export_list_types_v1(p_prospect_id uuid)
+RETURNS text[]
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+  SELECT coalesce(array_agg(DISTINCT found.value), ARRAY[]::text[])
+  FROM (
+    SELECT nullif(btrim(row.list_type), '') AS value
+    FROM public.source_list_rows AS row
+    WHERE row.prospect_id = p_prospect_id
+      AND public.dialer_label_key_v1(row.list_type) IS DISTINCT FROM 'code_violation'
+  ) AS found
+  WHERE found.value IS NOT NULL;
+$function$;
+
+-- Ready contacts on a campaign use that campaign's lane. Missing tables fail closed.
+CREATE OR REPLACE FUNCTION public.dialer_campaign_lanes_v1(p_prospect_id uuid, p_key text)
+RETURNS text[]
+LANGUAGE plpgsql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  lanes text[];
+BEGIN
+  IF to_regclass('public.prospecting_campaigns') IS NULL
+    OR to_regclass('public.prospecting_campaign_members') IS NULL
+    OR to_regclass('public.prospecting_campaign_member_contacts') IS NULL THEN
+    RETURN ARRAY[]::text[];
+  END IF;
+  EXECUTE $sql$
+    SELECT coalesce(array_agg(DISTINCT nullif(btrim(campaign.lane), '')), ARRAY[]::text[])
+    FROM public.prospecting_campaigns AS campaign
+    JOIN public.prospecting_campaign_members AS member ON member.campaign_id = campaign.id
+    JOIN public.prospecting_campaign_member_contacts AS contact ON contact.member_id = member.id
+    LEFT JOIN public.prospect_phones AS phone ON phone.id = contact.prospect_phone_id
+    WHERE contact.status = 'ready'
+      AND (
+        contact.prospect_id = $1
+        OR member.prospect_id = $1
+        OR public.prospecting_phone_key_v1(coalesce(phone.phone, contact.phone_snapshot)) = $2
+      )
+  $sql$ INTO lanes USING p_prospect_id, p_key;
+  RETURN coalesce(lanes, ARRAY[]::text[]);
+END;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.dialer_lane_class_v1(p_lanes text[])
@@ -118,6 +179,17 @@ BEGIN
       AND (
         (contact <> '' AND contact = coalesce(public.dialer_label_key_v1(p_owner_name), ''))
         OR (
+          public.dialer_label_key_v1(p_owner_last) IS NOT NULL
+          AND public.dialer_label_key_v1(p_owner_last) = ANY (regexp_split_to_array(lower(btrim(coalesce(p_owner_name, ''))), '[^a-z]+'))
+          AND public.dialer_label_key_v1(p_owner_last) = ANY (regexp_split_to_array(lower(btrim(coalesce(p_contact_name, ''))), '[^a-z]+'))
+          AND (
+            SELECT count(DISTINCT owner_token)
+            FROM unnest(regexp_split_to_array(lower(btrim(coalesce(p_owner_name, ''))), '[^a-z]+')) AS owner_token
+            WHERE owner_token <> ''
+              AND owner_token = ANY (regexp_split_to_array(lower(btrim(coalesce(p_contact_name, ''))), '[^a-z]+'))
+          ) >= 2
+        )
+        OR (
           public.dialer_label_key_v1(p_owner_first) IS NOT NULL
           AND public.dialer_label_key_v1(p_owner_last) IS NOT NULL
           AND public.dialer_label_key_v1(p_owner_first) = ANY (string_to_array(contact, '_'))
@@ -190,10 +262,14 @@ AS $function$
 $function$;
 
 REVOKE ALL ON FUNCTION public.dialer_source_list_lanes_v1(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.dialer_export_list_types_v1(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.dialer_campaign_lanes_v1(uuid, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dialer_lane_class_v1(text[]) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dialer_entity_contact_release_v1(text, text, text, text, boolean, text[]) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.dialer_relationship_block_reason_v1(text, text, text[], text, text, text, boolean, text, boolean, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.dialer_source_list_lanes_v1(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.dialer_export_list_types_v1(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.dialer_campaign_lanes_v1(uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dialer_lane_class_v1(text[]) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dialer_entity_contact_release_v1(text, text, text, text, boolean, text[]) TO service_role;
 GRANT EXECUTE ON FUNCTION public.dialer_relationship_block_reason_v1(text, text, text[], text, text, text, boolean, text, boolean, text) TO service_role;
@@ -232,7 +308,10 @@ DECLARE
     FROM bucketed_phones
     CROSS JOIN LATERAL (
       SELECT public.dialer_relationship_block_reason_v1(
-        relationship, owner_type_key, public.dialer_source_list_lanes_v1(prospect_id),
+        relationship, owner_type_key,
+        public.dialer_source_list_lanes_v1(prospect_id)
+          || public.dialer_export_list_types_v1(prospect_id)
+          || public.dialer_campaign_lanes_v1(prospect_id, key10),
         contact_name, owner_1, owner_1_last, is_skip_traced, verified_source,
         public.dialer_prospect_deceased_v1(prospect_id), public.dialer_prospect_owner_first_v1(prospect_id)
       ) AS block_reason
@@ -429,6 +508,7 @@ BEGIN
             END AS priority
           FROM public.prospecting_campaign_member_contacts AS contact
           JOIN public.prospecting_campaign_members AS member ON member.id = contact.member_id
+          JOIN public.prospecting_campaigns AS campaign ON campaign.id = member.campaign_id
           LEFT JOIN public.prospects AS prospect ON prospect.id = coalesce(contact.prospect_id, member.prospect_id)
           LEFT JOIN public.prospect_phones AS phone ON phone.id = contact.prospect_phone_id
           JOIN LATERAL (
@@ -436,7 +516,7 @@ BEGIN
             FROM (
               SELECT public.dialer_relationship_block_reason_v1(
                 coalesce(phone.relationship, contact.relationship), prospect.owner_1_type,
-                public.dialer_source_list_lanes_v1(prospect.id) || coalesce(ARRAY[to_jsonb(member)->>'lane'], ARRAY[]::text[]),
+                public.dialer_source_list_lanes_v1(prospect.id) || ARRAY[NULLIF(btrim(campaign.lane), '')],
                 coalesce(phone.contact_name, contact.contact_name), prospect.owner_1, prospect.owner_1_last,
                 prospect.is_skip_traced, phone.verified_source,
                 public.dialer_prospect_deceased_v1(prospect.id), public.dialer_prospect_owner_first_v1(prospect.id)

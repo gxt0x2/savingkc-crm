@@ -151,14 +151,20 @@ export function entityContactReleased(input: {
   return sosFiling(input.verifiedSource) || qualifyingEntitySkip(input.verifiedSource, input.skipTraced)
 }
 
+function nameTokens(value: string | null | undefined): string[] {
+  return String(value ?? '').toLowerCase().split(/[^a-z]+/).filter(Boolean)
+}
+
 function ownerNameMatch(contactName: string | null | undefined, ownerName: string | null | undefined, ownerFirst: string | null | undefined, ownerLast: string | null | undefined): boolean {
   const contact = labelKey(contactName)
   const owner = labelKey(ownerName)
   if (contact && owner && contact === owner) return true
   const first = labelKey(ownerFirst)
   const last = labelKey(ownerLast)
-  const parts = tokens(contactName)
-  return Boolean(first && last && parts.includes(first) && parts.includes(last))
+  const parts = nameTokens(contactName)
+  if (first && last && parts.includes(first) && parts.includes(last)) return true
+  const shared = nameTokens(ownerName).filter((token) => parts.includes(token))
+  return Boolean(last && shared.length >= 2 && shared.includes(last))
 }
 
 export function deceasedOwnerLine(input: {

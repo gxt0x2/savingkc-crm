@@ -205,6 +205,28 @@ FROM public.source_list_dialer_phone_review
 WHERE block_reason IS NULL;
 CREATE VIEW public.source_list_dialer_suppressed AS
 SELECT * FROM public.source_list_dialer_phone_review WHERE block_reason IS NOT NULL;
+
+CREATE TABLE public.prospecting_campaigns (
+  id uuid PRIMARY KEY,
+  name text NOT NULL
+);
+CREATE TABLE public.prospecting_campaign_members (
+  id uuid PRIMARY KEY,
+  campaign_id uuid NOT NULL,
+  prospect_id uuid
+);
+CREATE TABLE public.prospecting_campaign_member_contacts (
+  id uuid PRIMARY KEY,
+  member_id uuid NOT NULL,
+  prospect_id uuid,
+  prospect_phone_id uuid,
+  phone_snapshot text,
+  relationship text,
+  contact_name text,
+  status text
+);
+INSERT INTO public.prospecting_campaigns (id, name) VALUES
+  ('40000000-0000-4000-8000-0000000000a1', 'Jackson · Tax 3+ · 7 zips · Aug 30');
 SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114213919_source_list_service_area_block.sql" >/dev/null
@@ -373,10 +395,10 @@ BEGIN
     ('+18165551050', '20000000-0000-4000-8000-000000000052', 'needs_counsel_review'),
     ('+18165551210', '20000000-0000-4000-8000-000000000060', 'associate'),
     ('+18165551220', '20000000-0000-4000-8000-000000000070', 'prospect_dnc'),
-    ('+18165551221', '20000000-0000-4000-8000-000000000071', 'relative_not_allowed'),
+    ('+18165551221', '20000000-0000-4000-8000-000000000071', 'property_owner_dnc_fanout'),
     ('+18165551099', '20000000-0000-4000-8000-000000000090', 'hold_last4'),
     ('+18165551100', '20000000-0000-4000-8000-000000000091', NULL),
-    ('+18165551202', '20000000-0000-4000-8000-0000000000a2', 'relative_not_allowed');
+    ('+18165551202', '20000000-0000-4000-8000-0000000000a2', 'household_fanout');
 
   FOR rec IN SELECT * FROM expected LOOP
     got := public.source_list_phone_block_reason_v1(rec.phone, rec.prospect);
@@ -452,6 +474,43 @@ BEGIN
   END IF;
   IF public.dialer_relationship_bucket_v1(NULL, 'Other Relative') IS DISTINCT FROM 'relative' THEN
     RAISE EXCEPTION 'other-relative owner type was not kept as a relative';
+  END IF;
+  IF (SELECT lane FROM public.prospecting_campaigns WHERE id = '40000000-0000-4000-8000-0000000000a1') IS DISTINCT FROM 'tax' THEN
+    RAISE EXCEPTION 'tax campaign lane was not backfilled';
+  END IF;
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type) VALUES
+    ('20000000-0000-4000-8000-0000000000c8', 'jackson', '22 Tax Parent', 'P-TAX-PARENT', 'Parent', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000c9', 'jackson', '23 Tax Relative', 'P-TAX-REL', 'Relative', 'Individual');
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship) VALUES
+    ('30000000-0000-4000-8000-0000000000c8', '20000000-0000-4000-8000-0000000000c8', '+18165551711', 'no_answer', 'parent'),
+    ('30000000-0000-4000-8000-0000000000c9', '20000000-0000-4000-8000-0000000000c9', '+18165551712', 'no_answer', 'relative');
+  INSERT INTO public.prospecting_campaign_members (id, campaign_id, prospect_id) VALUES
+    ('41000000-0000-4000-8000-0000000000c8', '40000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000c8'),
+    ('41000000-0000-4000-8000-0000000000c9', '40000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000c9');
+  INSERT INTO public.prospecting_campaign_member_contacts (
+    id, member_id, prospect_id, prospect_phone_id, phone_snapshot, relationship, status
+  ) VALUES
+    ('42000000-0000-4000-8000-0000000000c8', '41000000-0000-4000-8000-0000000000c8', '20000000-0000-4000-8000-0000000000c8', '30000000-0000-4000-8000-0000000000c8', '+18165551711', 'parent', 'ready'),
+    ('42000000-0000-4000-8000-0000000000c9', '41000000-0000-4000-8000-0000000000c9', '20000000-0000-4000-8000-0000000000c9', '30000000-0000-4000-8000-0000000000c9', '+18165551712', 'relative', 'ready');
+  IF EXISTS (
+    SELECT 1 FROM public.campaign_contacts_block_reasons_v1(ARRAY[
+      '42000000-0000-4000-8000-0000000000c8'::uuid,
+      '42000000-0000-4000-8000-0000000000c9'::uuid
+    ])
+  ) THEN
+    RAISE EXCEPTION 'tax campaign keeps a parent and a generic relative dialable failed: %',
+      (SELECT string_agg(contact_id::text || ':' || block_reason, ',') FROM public.campaign_contacts_block_reasons_v1(ARRAY[
+        '42000000-0000-4000-8000-0000000000c8'::uuid,
+        '42000000-0000-4000-8000-0000000000c9'::uuid
+      ]));
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Owner', false, NULL, true, NULL
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'contact 8188 last-name-first owner was not held: %',
+      public.dialer_relationship_block_reason_v1(
+        'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Owner', false, NULL, true, NULL
+      );
   END IF;
   -- Katherine round 3. Real last-4s are comments only: Unknown owner type 7005, surname-only Gus Uno 7006.
   INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1, owner_1_last, owner_1_type, is_skip_traced) VALUES
