@@ -212,8 +212,8 @@ export function normalizeSourceListLane(input: {
   }
 
   const fromCity = countyForCity(input.city, state)
-  let laneCounty = county
-  let laneState = state
+  let laneCounty: SourceListCounty | null = county
+  let laneState: SourceListState | null = state
   if (!laneCounty && fromCity) {
     laneCounty = fromCity.county
     laneState = laneState ?? fromCity.state
