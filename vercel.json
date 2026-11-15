@@ -81,6 +81,18 @@
     {
       "path": "/api/cron/tax-status-verification",
       "schedule": "55 13 * * *"
+    },
+    {
+      "path": "/api/cron/market-check",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron/market-check",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/cron/market-check",
+      "schedule": "30 9 * * *"
     }
   ],
   "rewrites": [

@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { WorkspaceChrome } from '@/components/conversations/workspace-frame'
 import { ForeclosureListTable } from '@/components/prospecting/foreclosure-list-table'
+import { ForeclosureReviewQueue, type ReviewQueueRow } from '@/components/prospecting/foreclosure-review-queue'
 import { ProspectingSectionNav } from '@/components/prospecting/prospecting-section-nav'
 import { foreclosureClearsDialFloor } from '@/lib/prospecting/foreclosure-list'
 import {
@@ -62,7 +63,9 @@ function countyLabel(county: string, state: string) {
   return FIRST_FORECLOSURE_COUNTIES.find((item) => item.county === county)?.label ?? `${county} ${state}`
 }
 
-export function ForeclosureWorkspace() {
+const EMPTY_REVIEW_FIXTURES: ReviewQueueRow[] = []
+
+export function ForeclosureWorkspace({ reviewFixtures = EMPTY_REVIEW_FIXTURES }: { reviewFixtures?: ReviewQueueRow[] }) {
   const router = useRouter()
   const [prospects, setProspects] = useState<ForeclosureListItem[]>([])
   const [controls, setControls] = useState<IngestControl[]>([])
@@ -75,6 +78,7 @@ export function ForeclosureWorkspace() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [section, setSection] = useState<'filings' | 'review'>('filings')
 
   const load = useCallback(async () => {
     const params = new URLSearchParams()
@@ -90,12 +94,22 @@ export function ForeclosureWorkspace() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    load()
+    const params = new URLSearchParams()
+    if (county) params.set('county', county)
+    if (status) params.set('status', status)
+    if (dialReadyOnly) params.set('dialReady', '1')
+    if (saleThisWeek) params.set('saleThisWeek', '1')
+    fetch(`/api/prospecting/foreclosure?${params.toString()}`, { cache: 'no-store' })
+      .then((response) => readJson<{ prospects: ForeclosureListItem[] }>(response).then((body) => ({ response, body })))
+      .then(({ response, body }) => {
+        if (cancelled) return
+        if (!response.ok) throw new Error(body.error || 'Foreclosure prospects could not be loaded.')
+        setProspects(body.prospects)
+      })
       .catch((loadError) => { if (!cancelled) setError(loadError instanceof Error ? loadError.message : 'Foreclosure prospects could not be loaded.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [load])
+  }, [county, dialReadyOnly, saleThisWeek, status])
 
   useEffect(() => {
     let cancelled = false
@@ -209,6 +223,12 @@ export function ForeclosureWorkspace() {
         <div className="mx-auto max-w-[90rem] space-y-2">
         <ProspectingSectionNav current="foreclosure" />
         <p className="fc-crumb">Prospecting <span aria-hidden="true">›</span> Foreclosure</p>
+        <div className="fc-quick" role="group" aria-label="Foreclosure sections">
+          <button type="button" aria-pressed={section === 'filings'} onClick={() => setSection('filings')}>Filings</button>
+          <button type="button" aria-pressed={section === 'review'} onClick={() => setSection('review')}>Review</button>
+        </div>
+        {section === 'review' ? <ForeclosureReviewQueue fixtures={reviewFixtures} /> : null}
+        {section === 'filings' ? <>
         {error ? <p role="alert" className="rounded-[14px] border border-[var(--fc-danger)]/30 bg-[var(--fc-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-danger)]">{error}</p> : null}
         {notice ? <p role="status" className="rounded-[14px] border border-[var(--fc-success)]/30 bg-[var(--crm-success-soft)] px-3 py-2 text-sm font-bold text-[var(--crm-success)]">{notice}</p> : null}
         <section className="fc-filters" aria-label="Foreclosure filters">
@@ -331,6 +351,7 @@ export function ForeclosureWorkspace() {
           {!loading && visible.length === 0 ? <p className="fc-queue-note">No mortgage foreclosure prospects in this queue.</p> : null}
           {!loading && visible.length > 0 ? <ForeclosureListTable prospects={visible} /> : null}
         </section>
+        </> : null}
       </div>
     </main>
   </>
