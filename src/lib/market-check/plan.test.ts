@@ -297,6 +297,52 @@ describe('listed and sold market check', () => {
     expect(requiresLicenseeDisclosure(false)).toBe(false)
   })
 
+  it('blocks a sold row with no close date, a blank status, and a future expiration as unknown', () => {
+    const csv = [
+      'MLS #,St,Address,Zip,Close Dt,Expire Date,List Price,Parcel ID',
+      '1,Sold,21 Oak St,64114,,,150000,U1',
+      '2,,22 Oak St,64114,,,150000,U2',
+      '3,Expired,23 Oak St,64114,,2026-12-01,150000,U3',
+    ].join('\n')
+    const result = plan(csv, [
+      pool({ id: 'sold', address: '21 Oak St', zip5: '64114', parcelId: 'U1' }),
+      pool({ id: 'blank', address: '22 Oak St', zip5: '64114', parcelId: 'U2' }),
+      pool({ id: 'future', address: '23 Oak St', zip5: '64114', parcelId: 'U3' }),
+    ])
+    expect(result.checks.find((row) => row.parcelId === 'U1')?.listingStatus).toBe('listing_check_unknown')
+    expect(result.checks.find((row) => row.parcelId === 'U2')?.listingStatus).toBe('listing_check_unknown')
+    expect(result.checks.find((row) => row.parcelId === 'U3')?.listingStatus).toBe('listing_check_unknown')
+    expect(result.intakes.some((row) => row.parcelId === 'U3')).toBe(false)
+  })
+
+  it('skips a Cass intake without aborting the other rows', () => {
+    const csv = [
+      'MLS #,St,Address,Zip,Close Dt,Expire Date,List Price,Parcel ID',
+      '1,Expired,30 Oak St,64114,,2026-11-01,100000,C1',
+    ].join('\n')
+    const zips = new Map(targetMap())
+    zips.set('64080', { zip5: '64080', county: 'cass', state: 'MO', status: 'keep' })
+    const withCass = [
+      csv,
+      '2,Expired,31 Oak St,64080,,2026-11-01,100000,C2',
+    ].join('\n')
+    const result = planMarketCheck({
+      rows: parseMatrixCsv(withCass),
+      poolRows: [],
+      targetStatusByZip: zips,
+      minListPriceByZip: priceMap(),
+      today: TODAY,
+      additionListDay: TODAY,
+      allowOffMarket: true,
+      completeFile: true,
+      hasExpireColumn: true,
+      fileSha256: 'a'.repeat(64),
+    })
+    expect(result.intakes.map((row) => row.zip5)).toEqual(['64114'])
+    expect(result.intakes[0]?.county).toBe('jackson')
+    expect(result.skipped).toEqual([expect.objectContaining({ zip5: '64080', reason: 'out_of_service_area' })])
+  })
+
   it('puts adds after the 4:00am Chicago lock on the next list', () => {
     const result = plan(FIXTURE, [], { additionListDay: '2026-11-15' })
     expect(result.intakes[0]?.listDay).toBe('2026-11-15')

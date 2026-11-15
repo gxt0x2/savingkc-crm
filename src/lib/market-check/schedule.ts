@@ -66,6 +66,27 @@ export function beforeListLock(instant: Date): boolean {
   return clock.hour < 4
 }
 
+/**
+ * Expired rows may be exported or dialed only Monday–Saturday 09:00–17:00
+ * America/Chicago. 17:00 is closed. Sunday is closed. An invalid clock fails closed.
+ */
+export function expiredCallingWindowOpen(instant: Date): boolean {
+  if (!Number.isFinite(instant.getTime())) return false
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant)
+  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+  if (read('weekday') === 'Sun') return false
+  let hour = Number(read('hour'))
+  if (hour === 24) hour = 0
+  const minutes = hour * 60 + Number(read('minute'))
+  return minutes >= 9 * 60 && minutes < 17 * 60
+}
+
 /** off_market_ok is written only when the file is in before 3:30am CT. */
 export function offMarketAllowed(instant: Date): boolean {
   const clock = chicagoClock(instant)

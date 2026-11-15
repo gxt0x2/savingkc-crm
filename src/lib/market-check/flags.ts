@@ -13,3 +13,8 @@ export function mlsMarketCheckEnabled(): boolean {
 export function expiredOwnerConfirmed(): boolean {
   return explicitEnvFlag('EXPIRED_OWNER_CONFIRMED') === true
 }
+
+/** Default false. A future written release is the only way this becomes true. */
+export function ksExpiredReleaseApproved(): boolean {
+  return explicitEnvFlag('KS_EXPIRED_RELEASE_APPROVED') === true
+}

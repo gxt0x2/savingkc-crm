@@ -10,7 +10,7 @@
  *   npx tsx scripts/load-market-check-day.mts --root /workspace/mls-exports --confirm
  */
 
-import { loadNewestMatrixDay } from '../src/lib/market-check/day-load'
+import { loadTodayMatrixDay } from '../src/lib/market-check/day-load'
 import { runMatrixLoad, syncMarketFlags } from '../src/lib/market-check/run'
 import { createClient } from '@supabase/supabase-js'
 
@@ -21,9 +21,9 @@ function arg(name: string): string {
 }
 
 const root = arg('--root') || '/workspace/mls-exports'
-const day = loadNewestMatrixDay(root)
+const day = loadTodayMatrixDay(root)
 if (!day) {
-  console.error(`No YYYY-MM-DD Matrix folder under ${root}`)
+  console.error(`No Matrix folder for today (America/Chicago) under ${root}`)
   process.exit(1)
 }
 
@@ -32,15 +32,18 @@ console.log(JSON.stringify({
   date: day.date,
   parts: day.parts,
   missing: day.missing,
+  partCounts: day.partCounts,
+  doneMarker: day.doneMarker,
   complete: day.complete,
   files: day.files.map((file) => file.name),
 }))
+if (!day.complete) {
+  console.error('Refusing to load. The day needs today\'s America/Chicago folder, non-empty expired and sold parts, a done marker whose text is that date, and a clock before 4:00am Chicago.')
+  process.exit(1)
+}
 if (!process.argv.includes('--confirm')) {
   console.log('Dry run. Pass --confirm to write.')
   process.exit(0)
-}
-if (!day.complete) {
-  console.error('Refusing to mark the day complete. Missing parts or the 4:00am Chicago lock has passed.')
 }
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -55,7 +58,9 @@ const result = await runMatrixLoad(db, {
   csvText,
   fileName: `${day.date}-matrix-day.csv`,
   actor: 'market-check-day',
-  completeSet: day.complete,
   parts: day.parts,
+  partCounts: day.partCounts,
+  doneMarker: day.doneMarker,
+  completeFile: day.complete,
 })
 console.log(JSON.stringify(result))

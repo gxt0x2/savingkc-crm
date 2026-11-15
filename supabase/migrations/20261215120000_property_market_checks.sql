@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS public.mls_market_config (
 INSERT INTO public.mls_market_config (key, value) VALUES
   ('MLS_MARKET_CHECK_ENABLED', 'false'),
   ('EXPIRED_OWNER_CONFIRMED', 'false'),
-  ('MLS_EXPIRED_WINDOW_DAYS', '90')
+  ('MLS_EXPIRED_WINDOW_DAYS', '90'),
+  ('KS_EXPIRED_RELEASE_APPROVED', 'false')
 ON CONFLICT (key) DO NOTHING;
 
 ALTER TABLE public.mls_market_config ENABLE ROW LEVEL SECURITY;
@@ -401,7 +402,13 @@ ALTER TABLE public.source_lists ADD CONSTRAINT source_lists_lane_check CHECK (
     list_type IN ('probate_estate', 'probate_no_property')
     AND (state IS NULL OR state = 'MO')
   )
-  OR list_type = 'mls_expired'
+  OR (
+    list_type = 'mls_expired'
+    AND (
+      (state = 'MO' AND county IN ('jackson', 'clay', 'platte'))
+      OR (state = 'KS' AND county IN ('wyandotte', 'johnson'))
+    )
+  )
 );
 ALTER TABLE public.source_lists DROP CONSTRAINT IF EXISTS source_lists_file_bytes_check;
 ALTER TABLE public.source_lists ADD CONSTRAINT source_lists_file_bytes_check
@@ -436,7 +443,13 @@ ALTER TABLE public.source_list_rows ADD CONSTRAINT source_list_rows_lane_check C
     list_type IN ('probate_estate', 'probate_no_property')
     AND (state IS NULL OR state = 'MO')
   )
-  OR list_type = 'mls_expired'
+  OR (
+    list_type = 'mls_expired'
+    AND (
+      (state = 'MO' AND county IN ('jackson', 'clay', 'platte'))
+      OR (state = 'KS' AND county IN ('wyandotte', 'johnson'))
+    )
+  )
 );
 ALTER TABLE public.source_list_rows DROP CONSTRAINT IF EXISTS source_list_rows_status_check;
 ALTER TABLE public.source_list_rows ADD CONSTRAINT source_list_rows_status_check CHECK (

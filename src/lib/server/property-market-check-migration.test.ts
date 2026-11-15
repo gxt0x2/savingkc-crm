@@ -10,7 +10,8 @@ const migration = [
 
 describe('property market check migration', () => {
   it('follows the suppression classifier and keeps the phone scrub', () => {
-    expect(migration).toContain('public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id)')
+    expect(migration).toContain('public.source_list_phone_block_reasons_v1')
+    expect(migration).toContain('dialed.block_reason')
     expect(migration).toContain('public.source_list_market_block_reason_v1')
     expect(migration).not.toContain('CREATE OR REPLACE FUNCTION public.dialer_suppression_class_v1')
     expect(migration).not.toMatch(/\bmojo_call_queue\b/)
@@ -30,9 +31,15 @@ describe('property market check migration', () => {
     expect(migration).toContain("WHEN 'listing_check_unknown' THEN 3")
     expect(migration).toContain("WHEN 'listing_expired' THEN 2")
     expect(migration).toContain('run.complete IS TRUE')
+    expect(migration).toContain('partCounts')
+    expect(migration).toContain('doneMarker')
+    expect(migration).not.toContain("(p_plan->>'complete')")
     expect(migration).toContain('mon_sat_0900_1700_america_chicago')
     expect(migration).not.toContain('0900_1900')
-    expect(migration).toContain('NULL::text AS line_check_flag')
+    expect(migration).toContain('tax_status_export_allowed_v1')
+    expect(migration).toContain('SET jit = off')
+    expect(migration).not.toContain('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1')
+    expect(migration).not.toContain('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reasons_v1')
     expect(migration).toContain('source_list_market_phone_review')
     expect(PRICE_THRESHOLDS.find((row) => row.zip5 === '64134')).toMatchObject({
       minListPrice: 180000,

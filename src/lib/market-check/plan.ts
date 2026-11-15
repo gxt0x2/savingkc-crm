@@ -2,6 +2,7 @@ import { coreMarketAddress, normalizeMarketAddress, normalizeParcelId, ownerName
 import { expiredRowBlock, type ExpiredContactChannel } from '@/lib/market-check/expired-gate'
 import type { MatrixRow } from '@/lib/market-check/matrix-csv'
 import type { TargetZipSeed, TargetZipStatus } from '@/lib/market-check/seeds'
+import { servicePlace } from '@/lib/market-check/service-place'
 
 export const SOLD_SINCE = '2026-01-01'
 export const DEFAULT_EXPIRED_WINDOW_DAYS = 90
@@ -65,13 +66,23 @@ export interface IntakeDraft {
   propertyKey: string
 }
 
+export interface MarketSkip {
+  reason: 'out_of_service_area' | 'county_unresolved'
+  zip5: string
+  parcelId: string | null
+  address: string
+}
+
 export interface MarketPlan {
   checks: MarketCheckDraft[]
   tags: TagDraft[]
   intakes: IntakeDraft[]
   coveredZips: string[]
+  skipped: MarketSkip[]
   complete?: boolean
   parts?: string[]
+  partCounts?: Record<string, number>
+  doneMarker?: string
 }
 
 export interface PlanMarketCheckInput {
@@ -144,19 +155,20 @@ export function classifyMatrixStatus(
   expiredWindowDays: number,
 ): ListingStatus | 'unmapped' | null {
   const status = matrixStatusKey(raw)
-  if (!status) return null
+  if (!status) return 'listing_check_unknown'
   const mapped = status.startsWith('UNDER CONTRACT')
     ? 'listed_pending'
     : MATRIX_STATUS_TABLE.find((row) => row.keys.includes(status))?.status
   if (!mapped) return 'unmapped'
   if (mapped === 'sold_new_owner') {
-    if (!dates.closeDate || dates.closeDate < SOLD_SINCE) return null
+    if (!dates.closeDate) return 'listing_check_unknown'
+    if (dates.closeDate < SOLD_SINCE) return null
     return 'sold_new_owner'
   }
   if (mapped === 'listing_expired') {
     const earliest = addDays(today, -expiredWindowDays)
-    if (!dates.expireDate) return 'listing_check_unknown'
-    if (dates.expireDate < earliest || dates.expireDate > today) return null
+    if (!dates.expireDate || dates.expireDate > today) return 'listing_check_unknown'
+    if (dates.expireDate < earliest) return null
     return 'listing_expired'
   }
   return mapped
@@ -246,6 +258,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const checks: MarketCheckDraft[] = []
   const tags: TagDraft[] = []
   const intakes: IntakeDraft[] = []
+  const skipped: MarketSkip[] = []
   const seenIntake = new Set<string>()
   const tagged = new Set<string>()
 
@@ -321,6 +334,16 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     if (!row.addrNorm || !row.zip5) continue
     const zipSeed = input.targetStatusByZip.get(row.zip5)
     if (!intakeAllowed(zipSeed?.status)) continue
+    const place = servicePlace(zipSeed?.county, zipSeed?.state)
+    if (!place) {
+      skipped.push({
+        reason: (zipSeed?.county ?? '').trim().toLowerCase() === 'cass' ? 'out_of_service_area' : 'county_unresolved',
+        zip5: row.zip5,
+        parcelId: row.parcelId,
+        address: row.address,
+      })
+      continue
+    }
     const parcelId = row.parcelId
     const merged = prefer(parcelId ? byParcel.get(parcelId) : undefined, exact.get(`${row.addrNorm}|${row.zip5}`))
     if (!merged || merged.status !== 'listing_expired') continue
@@ -341,8 +364,8 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
       zip5: row.zip5,
       mlsNumber: row.mlsNumber || null,
       listDay: input.additionListDay,
-      county: zipSeed?.county ?? '',
-      state: zipSeed?.state ?? '',
+      county: place.county,
+      state: place.state,
       propertyKey: key,
     })
     if (!checks.some((check) => check.propertyKey === key && check.listingStatus === 'listing_expired')) {
@@ -364,7 +387,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     }
   }
 
-  return { checks, tags, intakes, coveredZips: [...covered].sort() }
+  return { checks, tags, intakes, coveredZips: [...covered].sort(), skipped }
 }
 
 export function ksLicenseUnconfirmed(state: string | null | undefined): boolean {
@@ -398,6 +421,10 @@ export function marketExportBlock(input: {
   requiresLicenseeDisclosure?: boolean
   prospectId?: string | null
   phoneOrigin?: string | null
+  state?: string | null
+  county?: string | null
+  now?: Date | null
+  ksExpiredReleaseApproved?: boolean
 }): string | null {
   if (!input.enabled && !input.expiredSourced) return null
   if (input.highPrice && !input.expiredSourced) return 'active_high_price'
@@ -414,6 +441,10 @@ export function marketExportBlock(input: {
       requiresLicenseeDisclosure: input.requiresLicenseeDisclosure,
       prospectId: input.prospectId,
       phoneOrigin: input.phoneOrigin,
+      state: input.state,
+      county: input.county,
+      now: input.now,
+      ksExpiredReleaseApproved: input.ksExpiredReleaseApproved,
     })
   }
   if (input.ownerChanged) return 'owner_changed'

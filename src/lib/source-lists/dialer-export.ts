@@ -1,4 +1,7 @@
 import { exportLineModeBlock } from '@/lib/dialer-suppression-policy'
+import { ksExpiredReleaseApproved } from '@/lib/market-check/flags'
+import { kansasExpiredPlace } from '@/lib/market-check/service-place'
+import { expiredCallingWindowOpen } from '@/lib/market-check/schedule'
 import { SourceListImportError } from '@/lib/source-lists/csv'
 import { sourceListRpcError, type SourceListRpcClient } from '@/lib/source-lists/import-source-list'
 
@@ -97,11 +100,14 @@ function csvCell(column: (typeof DIALER_EXPORT_COLUMNS)[number], value: unknown)
  * linked prospect fails closed.
  */
 export function expiredExportPathBlock(
-  row: Pick<DialerExportRow, 'list_type' | 'basis' | 'requires_licensee_disclosure' | 'prospect_id' | 'phone_origin'>,
+  row: Pick<DialerExportRow, 'list_type' | 'basis' | 'requires_licensee_disclosure' | 'prospect_id' | 'phone_origin' | 'state' | 'county'>,
   lineMode: number,
-): 'expired_single_line_only' | 'licensee_disclosure_required' | 'owner_match_missing' | null {
+  now: Date = new Date(),
+): 'ks_license_unconfirmed' | 'outside_calling_hours' | 'expired_single_line_only' | 'licensee_disclosure_required' | 'owner_match_missing' | null {
   const expired = row.list_type === 'mls_expired' || row.basis === 'owner_override_2026-11-14'
   if (!expired) return null
+  if (kansasExpiredPlace(row.county, row.state) && !ksExpiredReleaseApproved()) return 'ks_license_unconfirmed'
+  if (!expiredCallingWindowOpen(now)) return 'outside_calling_hours'
   if (lineMode !== 1) return 'expired_single_line_only'
   if (row.requires_licensee_disclosure !== true) return 'licensee_disclosure_required'
   if (!row.prospect_id || row.phone_origin !== 'prospect_phone') return 'owner_match_missing'
@@ -187,6 +193,7 @@ export async function recordDialerExportBatch(
   db: SourceListRpcClient,
   actor: string,
   filters: DialerExportFilters,
+  now: Date = new Date(),
 ): Promise<DialerExportScrub> {
   const lineMode = filters.lineMode ?? 1
   if (exportLineModeBlock(lineMode)) {
@@ -219,7 +226,7 @@ export async function recordDialerExportBatch(
   if (rows.length !== rawRows.length) {
     throw new SourceListImportError('The dialer export is unavailable.', 503, 'source_list_unavailable')
   }
-  const blocked = rows.map((row) => expiredExportPathBlock(row, lineMode)).find((reason) => reason !== null)
+  const blocked = rows.map((row) => expiredExportPathBlock(row, lineMode, now)).find((reason) => reason !== null)
   if (blocked) {
     throw new SourceListImportError(
       'An expired listing phone failed the export gate.',

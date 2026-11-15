@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Rehearses the market-check migrations on a throwaway Postgres.
+# Rehearses the market-check migrations on top of the real service-area, tax-status,
+# and #814 dialer chain. Does not stub source_list_phone_block_reason_v1.
+# Does not touch mojo_call_queue or Atlas.
 set -euo pipefail
 
 PG_BIN="${PG_BIN:-$(pg_config --bindir)}"
@@ -20,89 +22,225 @@ mkdir -p "$PG_SOCKET"
 "$PG_BIN/pg_ctl" -D "$PG_DATA" -o "-F -p $PG_PORT -k $PG_SOCKET" -w start >/dev/null
 PSQL=("$PG_BIN/psql" -h "$PG_SOCKET" -p "$PG_PORT" -d postgres -v ON_ERROR_STOP=1 -X)
 
-"${PSQL[@]}" <<'SQL'
+"${PSQL[@]}" >/dev/null <<'SQL'
 CREATE ROLE anon NOLOGIN;
 CREATE ROLE authenticated NOLOGIN;
-CREATE ROLE service_role NOLOGIN;
+CREATE ROLE service_role NOLOGIN BYPASSRLS;
 
-CREATE FUNCTION public.normalize_conversation_phone(p text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT CASE WHEN p IS NULL OR p = '' THEN NULL ELSE p END $$;
-CREATE FUNCTION public.prospecting_phone_key_v1(p text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT right(regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g'), 10) $$;
-CREATE FUNCTION public.dialer_label_key_v1(p text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT nullif(lower(btrim(coalesce(p, ''))), '') $$;
-CREATE FUNCTION public.dialer_suppression_class_v1(p_source text, p_label text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT 'allow' $$;
-CREATE FUNCTION public.dialer_phone_mask_v1(p text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT '******0000' $$;
-CREATE FUNCTION public.dialer_multi_line_suspended_v1() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT true $$;
-CREATE FUNCTION public.source_list_phone_block_reason_v1(p_phone text, p_prospect_id uuid) RETURNS text
-LANGUAGE sql STABLE AS $$ SELECT NULL::text $$;
-CREATE FUNCTION public.source_list_phones_valid_v1(p_phones text[]) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT true $$;
+CREATE FUNCTION public.normalize_conversation_phone(raw_phone text)
+RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  WITH normalized AS (
+    SELECT regexp_replace(coalesce(raw_phone, ''), '[^0-9]', '', 'g') AS digits
+  )
+  SELECT CASE
+    WHEN length(digits) = 10 THEN '+1' || digits
+    WHEN length(digits) = 11 AND digits LIKE '1%' THEN '+' || digits
+    ELSE NULL
+  END
+  FROM normalized;
+$$;
 
-CREATE TABLE public.leads (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  parcel_id text, property_address text, zip text, dead_reason text, call_result text,
-  dead_at timestamptz, updated_at timestamptz, phone text
-);
+CREATE FUNCTION public.prospecting_phone_key_v1(raw_phone text)
+RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  WITH digits AS (
+    SELECT regexp_replace(coalesce(raw_phone, ''), '[^0-9]', '', 'g') AS value
+  )
+  SELECT CASE
+    WHEN length(value) >= 10 THEN right(value, 10)
+    ELSE nullif(value, '')
+  END
+  FROM digits;
+$$;
+
 CREATE TABLE public.prospects (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), parcel_id text, owner_1 text
+  id uuid PRIMARY KEY,
+  lead_id uuid,
+  county text,
+  situs_street text,
+  situs_address text,
+  situs_zip text,
+  parcel_id text,
+  owner_1 text,
+  owner_1_last text,
+  owner_1_type text,
+  is_skip_traced boolean NOT NULL DEFAULT false
 );
 CREATE TABLE public.prospect_phones (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), prospect_id uuid, phone text,
-  relationship text, last_disposition text, phone_connected text, voice_hold boolean
+  id uuid PRIMARY KEY,
+  prospect_id uuid,
+  phone text,
+  last_disposition text,
+  phone_connected text,
+  voice_hold boolean DEFAULT false,
+  voice_hold_reason text,
+  voice_hold_at timestamptz,
+  voice_hold_by text,
+  relationship text,
+  contact_name text,
+  verified_source text,
+  attempted boolean,
+  last_attempt_at timestamptz,
+  last_attempt_by text
+);
+CREATE TABLE public.leads (
+  id uuid PRIMARY KEY,
+  phone text,
+  call_result text,
+  dead_reason text
 );
 CREATE TABLE public.sms_opt_outs (phone text, is_opted_out boolean);
-CREATE TABLE public.crm_contact_methods (method_type text, normalized_value text, sms_consent_status text, deliverability_status text);
-CREATE TABLE public.crm_mojo_call_events (outcome text, normalized_phone text, disposition_raw text);
-CREATE TABLE public.crm_mojo_calls (result_label text);
-CREATE TABLE public.parcel_inventory (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  parcel_id text, owner_name text, created_at timestamptz DEFAULT clock_timestamp(), run_id uuid
+CREATE TABLE public.crm_contact_methods (
+  method_type text,
+  normalized_value text,
+  sms_consent_status text,
+  deliverability_status text
+);
+CREATE TABLE public.crm_mojo_call_events (
+  record_id text,
+  normalized_phone text,
+  outcome text,
+  disposition_raw text,
+  provider_contact_id text
+);
+CREATE TABLE public.crm_mojo_calls (
+  record_id text,
+  phone_last4 text,
+  result_label text,
+  provider_contact_id text,
+  lead_id uuid
+);
+CREATE TABLE public.system_config (
+  key text PRIMARY KEY,
+  value jsonb,
+  updated_at timestamptz
 );
 CREATE TABLE public.source_lists (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  list_type text NOT NULL, county text, state text, violation_kind text,
-  pull_date date NOT NULL, source_url text, notes text,
-  source_file_name text NOT NULL, source_file_sha256 text NOT NULL,
-  source_file_bytes integer NOT NULL, imported_by text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  id uuid PRIMARY KEY,
+  pull_date date,
+  source_file_name text
 );
 CREATE TABLE public.source_list_rows (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_list_id uuid NOT NULL REFERENCES public.source_lists(id),
-  list_type text NOT NULL, county text, state text, violation_kind text,
-  match_key text NOT NULL, parcel_id text, case_id text, address text, owner_names text,
-  amount_owed numeric, phones text[] NOT NULL DEFAULT '{}', raw jsonb NOT NULL DEFAULT '{}'::jsonb,
-  property_id uuid, prospect_id uuid, status text NOT NULL DEFAULT 'new',
-  status_reason text, updated_by text, created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(), status_changed_at timestamptz NOT NULL DEFAULT now()
+  id uuid PRIMARY KEY,
+  source_list_id uuid,
+  list_type text,
+  county text,
+  state text,
+  violation_kind text,
+  parcel_id text,
+  case_id text,
+  address text,
+  owner_names text,
+  amount_owed numeric,
+  property_id uuid,
+  prospect_id uuid,
+  status text,
+  phones text[],
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE UNIQUE INDEX source_list_rows_natural_key ON public.source_list_rows (list_type, match_key);
-CREATE TABLE public.source_list_row_status_history (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_list_row_id uuid NOT NULL REFERENCES public.source_list_rows(id),
-  from_status text, to_status text NOT NULL, status_reason text, changed_by text,
-  changed_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT source_list_row_status_history_from_check CHECK (from_status IS NULL OR from_status IN ('new', 'ready')),
-  CONSTRAINT source_list_row_status_history_to_check CHECK (to_status IN ('new', 'ready'))
-);
-CREATE FUNCTION public.source_list_row_status_history_v1() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  INSERT INTO public.source_list_row_status_history (source_list_row_id, from_status, to_status, changed_by)
-  VALUES (NEW.id, NULL, NEW.status, NEW.updated_by);
-  RETURN NEW;
-END $$;
-CREATE TRIGGER source_list_row_status_history
-  AFTER INSERT ON public.source_list_rows
-  FOR EACH ROW EXECUTE FUNCTION public.source_list_row_status_history_v1();
+CREATE TABLE public.crm_properties (id uuid PRIMARY KEY, county text);
+CREATE TABLE public.mortgage_foreclosure_prospects (id uuid PRIMARY KEY);
 CREATE TABLE public.source_list_export_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_by text NOT NULL, list_type text, county text, state text, violation_kind text,
-  source_list_id uuid, phone_count integer NOT NULL
+  created_by text,
+  list_type text,
+  county text,
+  state text,
+  violation_kind text,
+  source_list_id uuid,
+  phone_count integer
 );
 CREATE TABLE public.source_list_export_batch_phones (
-  export_batch_id uuid NOT NULL, source_list_row_id uuid NOT NULL, phone_e164 text NOT NULL
+  export_batch_id uuid,
+  source_list_row_id uuid,
+  phone_e164 text
+);
+
+CREATE VIEW public.source_list_dialer_phone_review AS
+SELECT
+  NULL::uuid AS source_list_row_id,
+  NULL::uuid AS source_list_id,
+  NULL::text AS list_type,
+  NULL::text AS county,
+  NULL::text AS state,
+  NULL::text AS violation_kind,
+  NULL::text AS parcel_id,
+  NULL::text AS case_id,
+  NULL::text AS address,
+  NULL::text AS owner_names,
+  NULL::numeric AS amount_owed,
+  NULL::uuid AS property_id,
+  NULL::uuid AS prospect_id,
+  NULL::text AS row_status,
+  NULL::text AS phone_value,
+  NULL::text AS phone_e164,
+  NULL::text AS phone_origin,
+  NULL::date AS pull_date,
+  NULL::text AS source_file_name,
+  NULL::text AS block_reason
+WHERE false;
+CREATE VIEW public.source_list_dialer_export AS
+SELECT
+  source_list_row_id, source_list_id, list_type, county, state, violation_kind,
+  parcel_id, case_id, address, owner_names, amount_owed, property_id, prospect_id,
+  row_status, phone_e164, phone_origin, pull_date, source_file_name
+FROM public.source_list_dialer_phone_review
+WHERE block_reason IS NULL;
+CREATE VIEW public.source_list_dialer_suppressed AS
+SELECT * FROM public.source_list_dialer_phone_review WHERE block_reason IS NOT NULL;
+SQL
+
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114213919_source_list_service_area_block.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114215029_tax_status_verification.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205120000_dialer_export_suppression.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205130000_dialer_export_associate_property_dnc.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql" >/dev/null
+
+"${PSQL[@]}" >/dev/null <<'SQL'
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS property_address text,
+  ADD COLUMN IF NOT EXISTS zip text,
+  ADD COLUMN IF NOT EXISTS dead_at timestamptz,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz,
+  ADD COLUMN IF NOT EXISTS parcel_id text;
+ALTER TABLE public.source_lists
+  ADD COLUMN IF NOT EXISTS list_type text,
+  ADD COLUMN IF NOT EXISTS county text,
+  ADD COLUMN IF NOT EXISTS state text,
+  ADD COLUMN IF NOT EXISTS violation_kind text,
+  ADD COLUMN IF NOT EXISTS source_url text,
+  ADD COLUMN IF NOT EXISTS notes text,
+  ADD COLUMN IF NOT EXISTS source_file_sha256 text,
+  ADD COLUMN IF NOT EXISTS source_file_bytes integer,
+  ADD COLUMN IF NOT EXISTS imported_by text,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+ALTER TABLE public.source_lists ALTER COLUMN id SET DEFAULT gen_random_uuid();
+ALTER TABLE public.source_list_rows
+  ADD COLUMN IF NOT EXISTS match_key text,
+  ADD COLUMN IF NOT EXISTS updated_by text,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS status_changed_at timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS loaded_at timestamptz,
+  ADD COLUMN IF NOT EXISTS loaded_export_batch_id uuid;
+ALTER TABLE public.source_list_rows ALTER COLUMN id SET DEFAULT gen_random_uuid();
+ALTER TABLE public.prospect_phones ALTER COLUMN id SET DEFAULT gen_random_uuid();
+CREATE TABLE IF NOT EXISTS public.source_list_row_status_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_list_row_id uuid NOT NULL,
+  from_status text,
+  to_status text NOT NULL,
+  status_reason text,
+  changed_by text,
+  changed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.parcel_inventory (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  parcel_id text,
+  owner_name text,
+  created_at timestamptz DEFAULT clock_timestamp(),
+  run_id uuid
 );
 SQL
 
@@ -283,6 +421,84 @@ BEGIN
     WHERE indexname = 'idx_property_market_latest_parcel'
   ) THEN
     RAISE EXCEPTION 'B9 missing parcel index';
+  END IF;
+
+
+  IF public.source_list_phone_block_reason_v1('+18165550141', 'cass', 'cass') IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'Cass was not out_of_service_area after the market migrations';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550140', NULL, NULL) IS DISTINCT FROM 'county_unresolved'
+    OR public.source_list_phone_block_reason_v1('+18165550140', '   ', '') IS DISTINCT FROM 'county_unresolved'
+    OR public.source_list_phone_block_reason_v1('+18165550140', 'unresolved', 'unresolved') IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'an unresolved county was not county_unresolved after the market migrations';
+  END IF;
+  IF pg_get_functiondef('public.record_source_list_export_batch_v1(text,text,text,text,text,uuid,integer)'::regprocedure) NOT ILIKE '%jit%off%' THEN
+    RAISE EXCEPTION 'jit=off was dropped from the export batch function';
+  END IF;
+  IF position('tax_status_export_allowed_v1' IN pg_get_viewdef('public.source_list_dialer_export'::regclass, true)) = 0 THEN
+    RAISE EXCEPTION 'the tax-status export filter was dropped';
+  END IF;
+
+  INSERT INTO public.source_lists (list_type, county, state, pull_date, source_file_name, source_file_sha256, source_file_bytes, imported_by)
+  VALUES ('tax_delinquent', 'jackson', 'MO', CURRENT_DATE, 'tax.csv', repeat('c', 64), 10, 'rehearsal');
+  INSERT INTO public.source_list_rows (
+    source_list_id, list_type, county, state, match_key, parcel_id, address, phones, status
+  )
+  SELECT id, 'tax_delinquent', 'jackson', 'MO', 'parcel:TAX1', 'TAX1', '77 Tax St', ARRAY['+18165550177'], 'ready'
+  FROM public.source_lists WHERE list_type = 'tax_delinquent' LIMIT 1;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export WHERE phone_e164 = '+18165550177' OR parcel_id = 'TAX1'
+  ) THEN
+    RAISE EXCEPTION 'a tax-delinquent row with no recent status check was exported';
+  END IF;
+
+  INSERT INTO public.source_lists (list_type, county, state, pull_date, source_file_name, source_file_sha256, source_file_bytes, imported_by)
+  VALUES ('mls_expired', 'wyandotte', 'KS', CURRENT_DATE, 'ks.csv', repeat('d', 64), 10, 'rehearsal');
+  INSERT INTO public.prospects (id, owner_1, county, parcel_id) VALUES ('00000000-0000-4000-8000-0000000000aa', 'KAY OWNER', 'wyandotte', 'KS1');
+  INSERT INTO public.prospect_phones (prospect_id, phone, relationship)
+  VALUES ('00000000-0000-4000-8000-0000000000aa', '+18165550188', 'owner');
+  INSERT INTO public.source_list_rows (
+    source_list_id, list_type, county, state, match_key, parcel_id, address, phones, status, prospect_id, list_day, requires_licensee_disclosure
+  )
+  SELECT id, 'mls_expired', 'wyandotte', 'KS', 'parcel:KS1', 'KS1', '88 State St', ARRAY['+18165550188'], 'new_needs_skip',
+    '00000000-0000-4000-8000-0000000000aa', CURRENT_DATE, true
+  FROM public.source_lists WHERE county = 'wyandotte' LIMIT 1;
+  SELECT public.source_list_market_block_reason_v1(
+    row.id, 'KS1', row.address, row.prospect_id, row.list_type, 'prospect_phone', '+18165550188'
+  ) INTO v_reason
+  FROM public.source_list_rows AS row
+  WHERE row.match_key = 'parcel:KS1';
+  IF v_reason IS DISTINCT FROM 'ks_license_unconfirmed' THEN
+    RAISE EXCEPTION 'KS expired row was not ks_license_unconfirmed, got %', v_reason;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.source_list_dialer_export WHERE phone_e164 = '+18165550188' OR parcel_id = 'KS1') THEN
+    RAISE EXCEPTION 'a Kansas expired row was exported';
+  END IF;
+  IF public.mls_config_flag_v1('KS_EXPIRED_RELEASE_APPROVED') THEN
+    RAISE EXCEPTION 'KS_EXPIRED_RELEASE_APPROVED must stay false';
+  END IF;
+
+  v_plan := public.apply_market_plan_v1(jsonb_build_object(
+    'actor', 'rehearsal',
+    'sha256', repeat('e', 64),
+    'bytes', 20,
+    'fileName', 'matrix.csv',
+    'pullDate', CURRENT_DATE,
+    'complete', true,
+    'parts', jsonb_build_array('expired'),
+    'partCounts', jsonb_build_object('expired', 1, 'sold', 0),
+    'doneMarker', to_char(CURRENT_DATE, 'YYYY-MM-DD'),
+    'checks', '[]'::jsonb,
+    'intakes', jsonb_build_array(
+      jsonb_build_object('matchKey', 'parcel:BAD', 'parcelId', 'BAD', 'address', '1 Nowhere', 'zip5', '00000', 'county', 'cass'),
+      jsonb_build_object('matchKey', 'parcel:GOOD1', 'parcelId', 'GOOD1', 'address', '12 Oak St', 'zip5', '64114')
+    )
+  ));
+  IF coalesce((v_plan->>'complete')::boolean, false) THEN
+    RAISE EXCEPTION 'a client complete flag was trusted';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.mls_export_runs WHERE export_file_sha256 = repeat('e', 64)) THEN
+    RAISE EXCEPTION 'a bad intake aborted the run record';
   END IF;
 
   RAISE NOTICE 'market check rehearsal passed in % ms', v_ms;

@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { intakeAllowed } from '@/lib/market-check/plan'
-import { parseTargetZips, PRICE_THRESHOLDS, TARGET_ZIPS } from '@/lib/market-check/seeds'
+import { PRICE_THRESHOLDS_PATH, parseTargetZips, PRICE_THRESHOLDS, TARGET_ZIPS, TARGET_ZIPS_PATH } from '@/lib/market-check/seeds'
 
 describe('Katherine market seeds', () => {
   it('loads the Jackson file as-is and does not invent other counties', () => {
@@ -24,6 +25,17 @@ describe('Katherine market seeds', () => {
     })
     for (const price of PRICE_THRESHOLDS) {
       expect(TARGET_ZIPS.some((zip) => zip.zip5 === price.zip5)).toBe(true)
+    }
+  })
+
+  it('keeps the 4-column raw-comma format the seed reader splits on', () => {
+    for (const path of [TARGET_ZIPS_PATH, PRICE_THRESHOLDS_PATH]) {
+      const lines = readFileSync(path, 'utf8').replace(/^\uFEFF/, '').trim().split(/\r?\n/)
+      expect(lines.length).toBeGreaterThan(1)
+      for (const line of lines) {
+        expect(line.includes('"')).toBe(false)
+        expect(line.split(',')).toHaveLength(4)
+      }
     }
   })
 

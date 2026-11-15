@@ -12,6 +12,8 @@ import {
 } from '@/lib/market-check/expired-gate'
 import { classifyMatrixStatus } from '@/lib/market-check/plan'
 
+const OPEN = new Date('2026-11-14T16:00:00Z')
+
 const migration = [
   'supabase/migrations/20261215120000_property_market_checks.sql',
   'supabase/migrations/20261215130000_market_check_fix_round.sql',
@@ -31,6 +33,9 @@ function gate(partial: Partial<ExpiredRowGateInput> = {}): string | null {
     listDay: '2026-11-14',
     channel: 'single_line_live_agent',
     expiredOwnerConfirmed: true,
+    now: OPEN,
+    state: 'MO',
+    county: 'jackson',
     requiresLicenseeDisclosure: true,
     prospectId: '00000000-0000-4000-8000-000000000010',
     phoneOrigin: 'prospect_phone',
@@ -41,7 +46,8 @@ function gate(partial: Partial<ExpiredRowGateInput> = {}): string | null {
 describe('EXC-2026-11-14-003 expired owner override', () => {
   it('uses #814 phone block reasons for DNC, opt-out, voice hold, and property fan-out', () => {
     expect(gateSource).not.toMatch(/prospect_phone_dnc|person_fanout|household_fanout/)
-    expect(migration).toContain('public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id)')
+    expect(migration).toContain('public.source_list_phone_block_reasons_v1')
+    expect(migration).toContain('dialed.block_reason')
     expect(migration).not.toContain('prospect_phone_dnc')
     for (const reason of ['prospect_dnc', 'lead_dnc', 'sms_opt_out', 'contact_opt_out', 'voice_hold', 'person_fanout', 'household_fanout']) {
       expect(gate({ phoneBlockReason: reason })).toBe(reason)
@@ -69,11 +75,16 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
     expect(migration).toContain("v_status IN ('listed_active', 'listed_pending')")
   })
 
-  it('blocks a Sunday list day and exports the calling window instead of the clock', () => {
-    expect(gate({ listDay: '2026-11-15' })).toBe('outside_calling_hours')
-    expect(gate({ listDay: '2026-11-14' })).toBeNull()
+  it('enforces Monday-Saturday 09:00-17:00 America/Chicago at the clock', () => {
+    expect(gate({ now: OPEN })).toBeNull()
+    expect(gate({ now: new Date('2026-11-14T23:30:00Z') })).toBe('outside_calling_hours')
+    expect(gate({ now: new Date('2026-11-15T16:00:00Z') })).toBe('outside_calling_hours')
+    expect(gate({ now: new Date('2026-11-16T14:59:00Z') })).toBe('outside_calling_hours')
+    expect(gate({ now: new Date('2026-11-16T15:00:00Z') })).toBeNull()
+    expect(gate({ now: undefined })).toBe('outside_calling_hours')
+    expect(migration).toContain('market_calling_window_open_v1')
+    expect(migration).not.toContain('EXTRACT(DOW FROM v_today) = 0')
     expect(migration).toContain('mon_sat_0900_1700_america_chicago')
-    expect(migration).toContain('EXTRACT(DOW FROM v_today) = 0')
   })
 
   it('allows only a single live-agent line', () => {
@@ -114,10 +125,19 @@ describe('EXC-2026-11-14-003 expired owner override', () => {
     expect(migration).toContain("'owner_override_2026-11-14'")
   })
 
-  it('marks Kansas rows ks_license_unconfirmed', () => {
+  it('refuses a Kansas expired row and leaves a Missouri expired row alone', () => {
     expect(expiredRowStamp('KS').ksLicenseUnconfirmed).toBe(true)
     expect(expiredRowStamp('MO').ksLicenseUnconfirmed).toBe(false)
+    expect(gate({ state: 'KS', county: 'johnson' })).toBe('ks_license_unconfirmed')
+    expect(gate({ state: 'KS', county: 'wyandotte', ksExpiredReleaseApproved: false })).toBe('ks_license_unconfirmed')
+    expect(gate({ state: 'MO', county: 'jackson' })).toBeNull()
+    expect(gate({ state: 'MO', county: 'clay' })).toBeNull()
+    expect(gate({ state: 'MO', county: 'platte' })).toBeNull()
+    expect(gate({ state: 'KS', county: 'johnson', ksExpiredReleaseApproved: true })).toBeNull()
+    expect(migration).toContain("('KS_EXPIRED_RELEASE_APPROVED', 'false')")
+    expect(migration).toContain("RETURN 'ks_license_unconfirmed'")
     expect(migration).toContain("upper(coalesce(review.state, '')) = 'KS'")
+    expect(migration).not.toContain("KS_EXPIRED_RELEASE_APPROVED', 'true'")
   })
 
   it('does not let the confirm switch skip an earlier condition', () => {

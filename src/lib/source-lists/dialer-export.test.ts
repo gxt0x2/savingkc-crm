@@ -89,6 +89,7 @@ describe('dialer export file', () => {
   })
 
   it('refuses an expired phone on the export path unless it is single-line, disclosed, and linked', async () => {
+    const open = new Date('2026-11-14T16:00:00Z')
     const expired = {
       ...row('+18165550109'),
       list_type: 'mls_expired',
@@ -97,19 +98,36 @@ describe('dialer export file', () => {
       prospect_id: null,
       phone_origin: 'source_row',
     }
-    expect(expiredExportPathBlock(expired, 2)).toBe('expired_single_line_only')
-    expect(expiredExportPathBlock(expired, 1)).toBe('licensee_disclosure_required')
+    expect(expiredExportPathBlock(expired, 2, open)).toBe('expired_single_line_only')
+    expect(expiredExportPathBlock(expired, 1, open)).toBe('licensee_disclosure_required')
     expect(expiredExportPathBlock({
       ...expired,
       requires_licensee_disclosure: true,
-    }, 1)).toBe('owner_match_missing')
+    }, 1, open)).toBe('owner_match_missing')
     expect(expiredExportPathBlock({
       ...expired,
       requires_licensee_disclosure: true,
       prospect_id: '00000000-0000-4000-8000-000000000010',
       phone_origin: 'prospect_phone',
-    }, 1)).toBeNull()
-    expect(expiredExportPathBlock(row('+18165550101'), 2)).toBeNull()
+    }, 1, open)).toBeNull()
+    expect(expiredExportPathBlock(row('+18165550101'), 2, open)).toBeNull()
+    expect(expiredExportPathBlock({
+      ...expired,
+      state: 'KS',
+      county: 'johnson',
+      requires_licensee_disclosure: true,
+      prospect_id: '00000000-0000-4000-8000-000000000010',
+      phone_origin: 'prospect_phone',
+    }, 1, open)).toBe('ks_license_unconfirmed')
+    expect(expiredExportPathBlock({
+      ...expired,
+      state: 'MO',
+      county: 'clay',
+      requires_licensee_disclosure: true,
+      prospect_id: '00000000-0000-4000-8000-000000000010',
+      phone_origin: 'prospect_phone',
+    }, 1, open)).toBeNull()
+    expect(expiredExportPathBlock(expired, 1, new Date('2026-11-15T16:00:00Z'))).toBe('outside_calling_hours')
 
     const rpc = vi.fn().mockResolvedValue({
       data: {
@@ -127,6 +145,6 @@ describe('dialer export file', () => {
       violationKind: null,
       sourceListId: null,
       lineMode: 1,
-    })).rejects.toMatchObject({ code: 'licensee_disclosure_required', status: 409 })
+    }, open)).rejects.toMatchObject({ code: 'licensee_disclosure_required', status: 409 })
   })
 })

@@ -24,8 +24,10 @@ export async function writeMarketPlan(
       checks: plan.checks,
       tags: plan.tags,
       intakes: plan.intakes,
-      complete: plan.complete === true,
       parts: plan.parts ?? [],
+      partCounts: plan.partCounts ?? {},
+      doneMarker: plan.doneMarker ?? '',
+      skipped: plan.skipped ?? [],
     },
   })
   if (result.error) throw new Error(result.error.message || 'The market plan could not be saved.')

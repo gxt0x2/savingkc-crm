@@ -10,17 +10,29 @@ import { marketSeedPayload } from '@/lib/market-check/seeds'
 export async function syncMarketFlags(db: SupabaseClient): Promise<void> {
   const enabled = explicitEnvFlag('MLS_MARKET_CHECK_ENABLED')
   const confirmed = explicitEnvFlag('EXPIRED_OWNER_CONFIRMED')
-  if (enabled !== false && confirmed !== false) return
+  const ksRelease = explicitEnvFlag('KS_EXPIRED_RELEASE_APPROVED')
+  if (enabled !== false && confirmed !== false && ksRelease !== false) return
   const { error } = await db.rpc('sync_mls_market_flags_v1', {
     p_market_check_enabled: enabled === false ? 'false' : null,
     p_expired_owner_confirmed: confirmed === false ? 'false' : null,
+    p_ks_expired_release_approved: ksRelease === false ? 'false' : null,
   })
   if (error) throw new Error(error.message)
 }
 
 export async function runMatrixLoad(
   db: SupabaseClient,
-  input: { csvText: string; fileName: string; actor: string; now?: Date; completeSet?: boolean; parts?: string[] },
+  input: {
+    csvText: string
+    fileName: string
+    actor: string
+    now?: Date
+    parts?: string[]
+    partCounts?: Record<string, number>
+    doneMarker?: string | null
+    /** Planner-only. The database ignores this and computes the run's complete flag. */
+    completeFile?: boolean
+  },
 ): Promise<MarketWriteResult> {
   const seeded = await db.rpc('apply_market_seeds_v1', { p_seeds: marketSeedPayload() })
   if (seeded.error) throw new Error(seeded.error.message)
@@ -31,7 +43,6 @@ export async function runMatrixLoad(
   const poolRows = await loadCallingPool(db)
   const flag = await db.from('mls_market_config').select('value').eq('key', 'MLS_MARKET_CHECK_ENABLED').maybeSingle()
   const marketOn = flag.data?.value === 'true'
-  const completeFile = input.completeSet === true
   const plan = planMarketCheck({
     rows,
     poolRows,
@@ -40,12 +51,13 @@ export async function runMatrixLoad(
     today: clock.date,
     additionListDay: additionListDay(now),
     allowOffMarket: offMarketAllowed(now),
-    completeFile,
+    completeFile: input.completeFile === true,
     hasExpireColumn: matrixCsvHasExpireColumn(input.csvText),
     fileSha256: fileSha256(input.csvText),
   })
-  plan.complete = completeFile
   plan.parts = input.parts ?? []
+  plan.partCounts = input.partCounts ?? {}
+  plan.doneMarker = input.doneMarker ?? ''
   if (!marketOn) {
     plan.tags = []
     plan.intakes = []

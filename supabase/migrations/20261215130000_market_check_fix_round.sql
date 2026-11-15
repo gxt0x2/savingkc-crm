@@ -4,7 +4,8 @@
 -- This does not read or write the dialer queue.
 
 INSERT INTO public.mls_market_config (key, value) VALUES
-  ('PHONE_LINE_CHECKS_ENFORCED', 'false')
+  ('PHONE_LINE_CHECKS_ENFORCED', 'false'),
+  ('KS_EXPIRED_RELEASE_APPROVED', 'false')
 ON CONFLICT (key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.mls_market_flag_changes (
@@ -25,6 +26,8 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $function$
 BEGIN
+  -- KS_EXPIRED_RELEASE_APPROVED stays false until a future written release.
+  -- This citation cannot raise it.
   IF p_key IS DISTINCT FROM 'EXPIRED_OWNER_CONFIRMED' AND p_key IS DISTINCT FROM 'MLS_MARKET_CHECK_ENABLED'
     AND p_key IS DISTINCT FROM 'PHONE_LINE_CHECKS_ENFORCED' THEN
     RAISE EXCEPTION 'mls_market_flag_unknown';
@@ -46,9 +49,12 @@ $function$;
 REVOKE ALL ON FUNCTION public.record_mls_market_flag_v1(text, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.record_mls_market_flag_v1(text, text, text) TO service_role;
 
+DROP FUNCTION IF EXISTS public.sync_mls_market_flags_v1(text, text);
+
 CREATE OR REPLACE FUNCTION public.sync_mls_market_flags_v1(
   p_market_check_enabled text DEFAULT NULL,
-  p_expired_owner_confirmed text DEFAULT NULL
+  p_expired_owner_confirmed text DEFAULT NULL,
+  p_ks_expired_release_approved text DEFAULT NULL
 )
 RETURNS void
 LANGUAGE plpgsql
@@ -56,6 +62,7 @@ SET search_path = pg_catalog, public
 AS $function$
 BEGIN
   -- Env sync may only lower a flag. Raising one requires record_mls_market_flag_v1.
+  -- KS_EXPIRED_RELEASE_APPROVED cannot be raised from env sync.
   IF p_market_check_enabled = 'false' THEN
     UPDATE public.mls_market_config
     SET value = 'false', updated_at = clock_timestamp()
@@ -66,8 +73,16 @@ BEGIN
     SET value = 'false', updated_at = clock_timestamp()
     WHERE key = 'EXPIRED_OWNER_CONFIRMED' AND value IS DISTINCT FROM 'false';
   END IF;
+  IF p_ks_expired_release_approved = 'false' THEN
+    UPDATE public.mls_market_config
+    SET value = 'false', updated_at = clock_timestamp()
+    WHERE key = 'KS_EXPIRED_RELEASE_APPROVED' AND value IS DISTINCT FROM 'false';
+  END IF;
 END;
 $function$;
+
+REVOKE ALL ON FUNCTION public.sync_mls_market_flags_v1(text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sync_mls_market_flags_v1(text, text, text) TO service_role;
 
 ALTER TABLE public.source_list_row_status_history DROP CONSTRAINT IF EXISTS source_list_row_status_history_from_check;
 ALTER TABLE public.source_list_row_status_history DROP CONSTRAINT IF EXISTS source_list_row_status_history_to_check;
@@ -230,7 +245,78 @@ $function$;
 
 ALTER TABLE public.mls_export_runs
   ADD COLUMN IF NOT EXISTS complete boolean NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS parts text[] NOT NULL DEFAULT '{}';
+  ADD COLUMN IF NOT EXISTS parts text[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS skipped jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+CREATE OR REPLACE FUNCTION public.market_calling_window_open_v1(p_at timestamptz DEFAULT clock_timestamp())
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+  SELECT EXTRACT(ISODOW FROM timezone('America/Chicago', p_at)) BETWEEN 1 AND 6
+    AND (timezone('America/Chicago', p_at))::time >= time '09:00'
+    AND (timezone('America/Chicago', p_at))::time < time '17:00';
+$function$;
+
+REVOKE ALL ON FUNCTION public.market_calling_window_open_v1(timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.market_calling_window_open_v1(timestamptz) TO service_role;
+
+COMMENT ON FUNCTION public.market_calling_window_open_v1(timestamptz) IS
+  'Monday-Saturday 09:00 inclusive through 17:00 exclusive, America/Chicago. Sunday and 17:00 are closed.';
+
+CREATE OR REPLACE FUNCTION public.market_service_place_v1(p_zip text, p_parcel text)
+RETURNS TABLE(county text, state text)
+LANGUAGE plpgsql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_county text;
+  v_state text;
+  v_zip text := nullif(substring(coalesce(p_zip, '') from '[0-9]{5}'), '');
+  v_parcel text := nullif(upper(regexp_replace(coalesce(p_parcel, ''), '[^A-Za-z0-9]', '', 'g')), '');
+BEGIN
+  IF v_zip IS NOT NULL AND to_regclass('public.target_zips') IS NOT NULL THEN
+    SELECT lower(btrim(z.county)), upper(btrim(z.state))
+    INTO v_county, v_state
+    FROM public.target_zips AS z
+    WHERE z.zip5 = v_zip;
+  END IF;
+  IF (v_county IS NULL OR v_state IS NULL) AND v_parcel IS NOT NULL AND to_regclass('public.prospects') IS NOT NULL THEN
+    SELECT lower(btrim(prospect.county))
+    INTO v_county
+    FROM public.prospects AS prospect
+    WHERE upper(regexp_replace(coalesce(prospect.parcel_id, ''), '[^A-Za-z0-9]', '', 'g')) = v_parcel
+      AND nullif(btrim(coalesce(prospect.county, '')), '') IS NOT NULL
+    LIMIT 1;
+    v_state := CASE
+      WHEN v_county IN ('johnson', 'wyandotte') THEN 'KS'
+      WHEN v_county IN ('jackson', 'clay', 'platte') THEN 'MO'
+      ELSE NULL
+    END;
+  END IF;
+  IF v_county IN ('unknown', 'unresolved') OR v_county IS NULL OR v_state IS NULL THEN
+    county := NULL;
+    state := NULL;
+    RETURN NEXT;
+    RETURN;
+  END IF;
+  IF (v_county IN ('jackson', 'clay', 'platte') AND v_state = 'MO')
+    OR (v_county IN ('wyandotte', 'johnson') AND v_state = 'KS') THEN
+    county := v_county;
+    state := v_state;
+    RETURN NEXT;
+    RETURN;
+  END IF;
+  county := NULL;
+  state := NULL;
+  RETURN NEXT;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.market_service_place_v1(text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.market_service_place_v1(text, text) TO service_role;
 
 DROP FUNCTION IF EXISTS public.source_list_market_block_reason_v1(uuid, text, text, uuid, text);
 
@@ -261,6 +347,8 @@ DECLARE
   v_owner_unknown boolean := false;
   v_digits text;
   v_line text;
+  v_row_county text;
+  v_row_state text;
 BEGIN
   v_expired := p_list_type = 'mls_expired' OR EXISTS (
     SELECT 1
@@ -279,6 +367,14 @@ BEGIN
   LIMIT 1;
 
   IF v_expired THEN
+    SELECT lower(btrim(coalesce(row.county, ''))), upper(btrim(coalesce(row.state, '')))
+    INTO v_row_county, v_row_state
+    FROM public.source_list_rows AS row
+    WHERE row.id = p_row_id;
+    IF NOT public.mls_config_flag_v1('KS_EXPIRED_RELEASE_APPROVED')
+      AND (v_row_state = 'KS' OR v_row_county IN ('wyandotte', 'johnson')) THEN
+      RETURN 'ks_license_unconfirmed';
+    END IF;
     IF NOT public.expired_owner_confirmed() THEN
       RETURN 'expired_owner_confirm_pending';
     END IF;
@@ -328,7 +424,7 @@ BEGIN
     IF v_status IS DISTINCT FROM 'listing_expired' AND v_status IS DISTINCT FROM 'off_market_ok' THEN
       RETURN coalesce(v_status, 'relist_check_missing');
     END IF;
-    IF EXTRACT(DOW FROM v_today) = 0 THEN
+    IF NOT public.market_calling_window_open_v1() THEN
       RETURN 'outside_calling_hours';
     END IF;
     RETURN NULL;
@@ -372,66 +468,59 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $function$
 DECLARE
-  has_flag boolean;
-  flag_sql text := '';
+  base_sql text;
+  select_list text;
+  extra_select text;
 BEGIN
-  SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'source_list_dialer_phone_review'
-      AND column_name = 'line_check_flag'
-  ) INTO has_flag;
-  IF has_flag THEN
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = 'prospect_phones' AND column_name = 'line_check_raw'
-    ) THEN
-      flag_sql := $flag$,
-      CASE
-        WHEN public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id) IS NULL
-          AND EXISTS (
-            SELECT 1 FROM public.prospect_phones AS phone
-            WHERE public.prospecting_phone_key_v1(phone.phone) = public.prospecting_phone_key_v1(dialed.phone_value)
-              AND phone.line_check_raw->>'stale_active_export' = 'true'
-          )
-        THEN 'stale_active'
-        ELSE NULL
-      END AS line_check_flag$flag$;
-    ELSE
-      flag_sql := ', NULL::text AS line_check_flag';
-    END IF;
+  IF to_regclass('public.source_list_dialer_phone_review') IS NULL THEN
+    RAISE EXCEPTION 'source_list_dialer_phone_review is missing';
   END IF;
+  base_sql := pg_get_viewdef('public.source_list_dialer_phone_review'::regclass, true);
+  base_sql := regexp_replace(base_sql, ';[[:space:]]*$', '');
+  IF position('source_list_market_block_reason_v1' IN base_sql) > 0
+     AND position('new_needs_skip' IN base_sql) > 0 THEN
+    RETURN;
+  END IF;
+
+  SELECT string_agg(
+    CASE
+      WHEN column_name = 'block_reason' THEN
+        'COALESCE(dialed.block_reason, public.source_list_market_block_reason_v1(dialed.source_list_row_id, dialed.parcel_id, dialed.address, dialed.prospect_id, dialed.list_type, dialed.phone_origin, dialed.phone_value)) AS block_reason'
+      ELSE format('dialed.%I', column_name)
+    END,
+    ', ' ORDER BY ordinal_position
+  )
+  INTO select_list
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'source_list_dialer_phone_review';
+
+  SELECT string_agg(
+    CASE
+      WHEN column_name = 'line_check_flag' THEN 'NULL::text AS line_check_flag'
+      WHEN column_name = 'block_reason' THEN 'extra.block_reason'
+      ELSE format('extra.%I', column_name)
+    END,
+    ', ' ORDER BY ordinal_position
+  )
+  INTO extra_select
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'source_list_dialer_phone_review';
+
   EXECUTE format($view$
     CREATE OR REPLACE VIEW public.source_list_dialer_phone_review
     WITH (security_invoker = true) AS
-    SELECT
-      dialed.source_list_row_id,
-      dialed.source_list_id,
-      dialed.list_type,
-      dialed.county,
-      dialed.state,
-      dialed.violation_kind,
-      dialed.parcel_id,
-      dialed.case_id,
-      dialed.address,
-      dialed.owner_names,
-      dialed.amount_owed,
-      dialed.property_id,
-      dialed.prospect_id,
-      dialed.row_status,
-      dialed.phone_value,
-      dialed.phone_e164,
-      dialed.phone_origin,
-      dialed.pull_date,
-      dialed.source_file_name,
-      COALESCE(
-        public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id),
-        public.source_list_market_block_reason_v1(
-          dialed.source_list_row_id, dialed.parcel_id, dialed.address,
-          dialed.prospect_id, dialed.list_type, dialed.phone_origin, dialed.phone_value
-        )
-      ) AS block_reason
+    SELECT %s
+    FROM (
       %s
+    ) AS dialed
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM public.source_list_rows AS future
+      WHERE future.id = dialed.source_list_row_id
+        AND future.list_day > (timezone('America/Chicago', clock_timestamp()))::date
+    )
+    UNION ALL
+    SELECT %s
     FROM (
       SELECT DISTINCT ON (
         row.id,
@@ -441,13 +530,7 @@ BEGIN
         row.source_list_id,
         row.list_type,
         row.county,
-        CASE
-          WHEN nullif(btrim(coalesce(row.state, '')), '') IS NULL
-            AND public.market_zip5(row.address) ~ '^66[0-9]{3}$' THEN 'KS'
-          WHEN nullif(btrim(coalesce(row.state, '')), '') IS NULL
-            AND public.market_zip5(row.address) ~ '^67[0-9]{3}$' THEN 'KS'
-          ELSE row.state
-        END AS state,
+        row.state,
         row.violation_kind,
         row.parcel_id,
         row.case_id,
@@ -461,7 +544,35 @@ BEGIN
         public.normalize_conversation_phone(phone.phone_value) AS phone_e164,
         phone.phone_origin,
         list.pull_date,
-        list.source_file_name
+        list.source_file_name,
+        COALESCE(
+          (
+            SELECT found.block_reason
+            FROM public.source_list_phone_block_reasons_v1(
+              ARRAY[phone.phone_value],
+              ARRAY[row.prospect_id],
+              ARRAY[row.county],
+              ARRAY[coalesce(
+                nullif(btrim(row.raw->>'situs_county'), ''),
+                nullif(btrim(row.raw->>'county'), ''),
+                (
+                  SELECT nullif(btrim(prospect.county), '')
+                  FROM public.prospects AS prospect
+                  WHERE prospect.id = row.prospect_id
+                ),
+                (
+                  SELECT nullif(btrim(property.county), '')
+                  FROM public.crm_properties AS property
+                  WHERE property.id = row.property_id
+                )
+              )]
+            ) AS found
+            LIMIT 1
+          ),
+          public.source_list_market_block_reason_v1(
+            row.id, row.parcel_id, row.address, row.prospect_id, row.list_type, phone.phone_origin, phone.phone_value
+          )
+        ) AS block_reason
       FROM public.source_list_rows AS row
       JOIN public.source_lists AS list ON list.id = row.source_list_id
       CROSS JOIN LATERAL (
@@ -475,16 +586,14 @@ BEGIN
           AND prospect_phone.prospect_id = row.prospect_id
           AND nullif(btrim(prospect_phone.phone), '') IS NOT NULL
       ) AS phone
-      WHERE (
-        row.status IN ('ready', 'loaded_to_dialer')
-        OR (row.list_type = 'mls_expired' AND row.status = 'new_needs_skip')
-      )
-      AND (row.list_day IS NULL OR row.list_day <= (timezone('America/Chicago', clock_timestamp()))::date)
+      WHERE row.list_type = 'mls_expired'
+        AND row.status = 'new_needs_skip'
+        AND (row.list_day IS NULL OR row.list_day <= (timezone('America/Chicago', clock_timestamp()))::date)
       ORDER BY row.id,
         coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value)),
         (phone.phone_origin = 'prospect_phone') DESC
-    ) AS dialed
-  $view$, flag_sql);
+    ) AS extra
+  $view$, select_list, base_sql, extra_select);
 END;
 $function$;
 
@@ -512,6 +621,10 @@ BEGIN
     SELECT %s
     FROM public.source_list_dialer_phone_review
     WHERE block_reason IS NULL
+      AND (
+        list_type IS DISTINCT FROM 'tax_delinquent'
+        OR public.tax_status_export_allowed_v1(parcel_id, county, prospect_id)
+      )
   $view$, export_cols);
 
   SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
@@ -553,12 +666,7 @@ SELECT
   ) AS requires_licensee_disclosure,
   (
     upper(coalesce(review.state, '')) = 'KS'
-    OR public.market_zip5(review.address) ~ '^66[0-9]{3}$'
-    OR public.market_zip5(review.address) ~ '^67[0-9]{3}$'
-    OR (
-      nullif(btrim(coalesce(review.state, '')), '') IS NULL
-      AND public.market_zip5(review.address) IS NULL
-    )
+    OR lower(coalesce(review.county, '')) IN ('wyandotte', 'johnson')
   ) AS ks_license_unconfirmed,
   CASE
     WHEN review.list_type = 'mls_expired' OR EXISTS (
@@ -625,7 +733,7 @@ AS $function$
       'owner_changed', 'owner_check_unknown', 'relist_check_missing', 'listing_check_unknown',
       'active_high_price', 'outside_calling_hours', 'expired_owner_confirm_pending',
       'market_check_missing', 'line_check_unknown', 'owner_match_missing', 'relationship_unknown',
-      'licensee_disclosure_required', 'expired_single_line_only',
+      'licensee_disclosure_required', 'expired_single_line_only', 'ks_license_unconfirmed',
       'listed_active', 'listed_pending', 'sold_new_owner', 'listed_withdrawn', 'listing_expired', 'off_market_ok'
     )
     AND public.dialer_suppression_class_v1(labeled.source, labeled.label) = 'unmapped';
@@ -643,6 +751,7 @@ CREATE OR REPLACE FUNCTION public.record_source_list_export_batch_v1(
 RETURNS jsonb
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
+SET jit = off
 AS $function$
 DECLARE
   v_actor text := nullif(btrim(coalesce(p_actor, '')), '');
@@ -713,6 +822,26 @@ BEGIN
       FROM reviewed AS export_row
       WHERE export_row.block_reason IS NULL
         AND export_row.phone_e164 IS NOT NULL
+        AND (
+          export_row.list_type IS DISTINCT FROM 'tax_delinquent'
+          OR public.tax_status_export_allowed_v1(export_row.parcel_id, export_row.county, export_row.prospect_id)
+        )
+        AND (
+          (
+            export_row.list_type IS DISTINCT FROM 'mls_expired'
+            AND export_row.basis IS DISTINCT FROM 'owner_override_2026-11-14'
+          )
+          OR (
+            public.market_calling_window_open_v1()
+            AND (
+              public.mls_config_flag_v1('KS_EXPIRED_RELEASE_APPROVED')
+              OR (
+                upper(coalesce(export_row.state, '')) <> 'KS'
+                AND lower(coalesce(export_row.county, '')) NOT IN ('wyandotte', 'johnson')
+              )
+            )
+          )
+        )
         AND (
           (export_row.list_type IS DISTINCT FROM 'mls_expired' AND export_row.basis IS DISTINCT FROM 'owner_override_2026-11-14')
           OR (
@@ -859,131 +988,197 @@ DECLARE
   v_checks integer := 0;
   v_intakes integer := 0;
   v_enabled boolean := public.mls_market_check_enabled();
+  v_skipped jsonb := '[]'::jsonb;
+  v_item jsonb;
+  v_county text;
+  v_state text;
+  v_complete boolean := false;
+  v_clock timestamp;
+  v_expired_rows integer := 0;
+  v_sold_rows integer := 0;
 BEGIN
   IF v_actor IS NULL OR v_sha IS NULL OR v_day IS NULL THEN
     RAISE EXCEPTION 'market_plan_invalid';
   END IF;
 
-  INSERT INTO public.property_market_checks (
-    parcel_id, addr_norm, zip5, source, list_day, export_file_sha256, mls_number,
-    list_status_raw, listing_status, close_date, list_price, owner_on_roll,
-    owner_changed, owner_check_unknown
-  )
-  SELECT
-    nullif(item->>'parcelId', ''),
-    nullif(item->>'addrNorm', ''),
-    nullif(item->>'zip5', ''),
-    'heartland_matrix',
-    coalesce((item->>'listDay')::date, v_day),
-    v_sha,
-    nullif(item->>'mlsNumber', ''),
-    nullif(item->>'listStatusRaw', ''),
-    item->>'listingStatus',
-    nullif(item->>'closeDate', '')::date,
-    nullif(item->>'listPrice', '')::numeric,
-    nullif(item->>'ownerOnRoll', ''),
-    coalesce((item->>'ownerChanged')::boolean, false),
-    coalesce((item->>'ownerCheckUnknown')::boolean, false)
-  FROM jsonb_array_elements(coalesce(p_plan->'checks', '[]'::jsonb)) AS item;
-  GET DIAGNOSTICS v_checks = ROW_COUNT;
+  BEGIN
+    INSERT INTO public.property_market_checks (
+      parcel_id, addr_norm, zip5, source, list_day, export_file_sha256, mls_number,
+      list_status_raw, listing_status, close_date, list_price, owner_on_roll,
+      owner_changed, owner_check_unknown
+    )
+    SELECT
+      nullif(item->>'parcelId', ''),
+      nullif(item->>'addrNorm', ''),
+      nullif(item->>'zip5', ''),
+      'heartland_matrix',
+      coalesce((item->>'listDay')::date, v_day),
+      v_sha,
+      nullif(item->>'mlsNumber', ''),
+      nullif(item->>'listStatusRaw', ''),
+      item->>'listingStatus',
+      nullif(item->>'closeDate', '')::date,
+      nullif(item->>'listPrice', '')::numeric,
+      nullif(item->>'ownerOnRoll', ''),
+      coalesce((item->>'ownerChanged')::boolean, false),
+      coalesce((item->>'ownerCheckUnknown')::boolean, false)
+    FROM jsonb_array_elements(coalesce(p_plan->'checks', '[]'::jsonb)) AS item
+    WHERE item->>'listingStatus' IN (
+      'listed_active', 'listed_pending', 'sold_new_owner', 'listed_withdrawn',
+      'off_market_ok', 'listing_check_unknown', 'listing_expired'
+    );
+    GET DIAGNOSTICS v_checks = ROW_COUNT;
+  EXCEPTION WHEN OTHERS THEN
+    v_checks := 0;
+    v_skipped := v_skipped || jsonb_build_array(jsonb_build_object('stage', 'checks', 'reason', 'row_skipped', 'detail', SQLERRM));
+  END;
 
-  INSERT INTO public.property_market_latest (
-    property_key, parcel_key, addr_norm, zip5, listing_status, list_day, source,
-    owner_changed, owner_check_unknown, checked_at, check_id
-  )
-  SELECT DISTINCT ON (keyed.property_key)
-    keyed.property_key,
-    nullif(upper(regexp_replace(coalesce(keyed.parcel_id, ''), '[^A-Za-z0-9]', '', 'g')), ''),
-    keyed.addr_norm,
-    keyed.zip5,
-    keyed.listing_status,
-    keyed.list_day,
-    keyed.source,
-    keyed.owner_changed,
-    keyed.owner_check_unknown,
-    keyed.checked_at,
-    keyed.id
-  FROM (
-    SELECT checks.*,
-      CASE
-        WHEN nullif(btrim(checks.parcel_id), '') IS NOT NULL
-          THEN 'parcel:' || upper(regexp_replace(checks.parcel_id, '[^A-Za-z0-9]', '', 'g'))
-        ELSE 'addr:' || checks.addr_norm || '|' || checks.zip5
-      END AS property_key
-    FROM public.property_market_checks AS checks
-    WHERE checks.list_day = v_day
-      AND checks.source = 'heartland_matrix'
-  ) AS keyed
-  ORDER BY keyed.property_key, public.market_status_rank_v1(keyed.listing_status) DESC, keyed.checked_at DESC
-  ON CONFLICT (property_key) DO UPDATE SET
-    parcel_key = EXCLUDED.parcel_key,
-    listing_status = EXCLUDED.listing_status,
-    list_day = EXCLUDED.list_day,
-    source = EXCLUDED.source,
-    owner_changed = EXCLUDED.owner_changed,
-    owner_check_unknown = EXCLUDED.owner_check_unknown,
-    checked_at = EXCLUDED.checked_at,
-    check_id = EXCLUDED.check_id;
+  BEGIN
+    INSERT INTO public.property_market_latest (
+      property_key, parcel_key, addr_norm, zip5, listing_status, list_day, source,
+      owner_changed, owner_check_unknown, checked_at, check_id
+    )
+    SELECT DISTINCT ON (keyed.property_key)
+      keyed.property_key,
+      nullif(upper(regexp_replace(coalesce(keyed.parcel_id, ''), '[^A-Za-z0-9]', '', 'g')), ''),
+      keyed.addr_norm,
+      keyed.zip5,
+      keyed.listing_status,
+      keyed.list_day,
+      keyed.source,
+      keyed.owner_changed,
+      keyed.owner_check_unknown,
+      keyed.checked_at,
+      keyed.id
+    FROM (
+      SELECT checks.*,
+        CASE
+          WHEN nullif(btrim(checks.parcel_id), '') IS NOT NULL
+            THEN 'parcel:' || upper(regexp_replace(checks.parcel_id, '[^A-Za-z0-9]', '', 'g'))
+          ELSE 'addr:' || checks.addr_norm || '|' || checks.zip5
+        END AS property_key
+      FROM public.property_market_checks AS checks
+      WHERE checks.list_day = v_day
+        AND checks.source = 'heartland_matrix'
+    ) AS keyed
+    ORDER BY keyed.property_key, public.market_status_rank_v1(keyed.listing_status) DESC, keyed.checked_at DESC
+    ON CONFLICT (property_key) DO UPDATE SET
+      parcel_key = EXCLUDED.parcel_key,
+      listing_status = EXCLUDED.listing_status,
+      list_day = EXCLUDED.list_day,
+      source = EXCLUDED.source,
+      owner_changed = EXCLUDED.owner_changed,
+      owner_check_unknown = EXCLUDED.owner_check_unknown,
+      checked_at = EXCLUDED.checked_at,
+      check_id = EXCLUDED.check_id;
+  EXCEPTION WHEN OTHERS THEN
+    v_skipped := v_skipped || jsonb_build_array(jsonb_build_object('stage', 'latest', 'reason', 'row_skipped', 'detail', SQLERRM));
+  END;
 
   IF v_enabled THEN
-    SELECT id INTO v_list_id
-    FROM public.source_lists
-    WHERE list_type = 'mls_expired' AND county = 'jackson' AND state = 'MO'
-      AND source_file_sha256 = v_sha AND pull_date = v_day
-    LIMIT 1;
-    IF v_list_id IS NULL AND jsonb_array_length(coalesce(p_plan->'intakes', '[]'::jsonb)) > 0 THEN
-      INSERT INTO public.source_lists (
-        list_type, county, state, pull_date, source_file_name, source_file_sha256, source_file_bytes, imported_by
-      ) VALUES (
-        'mls_expired', 'jackson', 'MO', v_day,
-        left(coalesce(p_plan->>'fileName', 'matrix.csv'), 200),
-        v_sha,
-        least(coalesce((p_plan->>'bytes')::integer, 0), 30000000),
-        left(v_actor, 320)
-      )
-      RETURNING id INTO v_list_id;
-    END IF;
-    IF v_list_id IS NOT NULL THEN
-      INSERT INTO public.source_list_rows (
-        source_list_id, list_type, county, state, match_key, parcel_id, address, phones, raw,
-        status, list_day, requires_licensee_disclosure, strategy, updated_by
-      )
-      SELECT
-        v_list_id, 'mls_expired', 'jackson',
-        CASE WHEN item->>'zip5' ~ '^66[0-9]{3}$' OR item->>'zip5' ~ '^67[0-9]{3}$' THEN 'KS' ELSE 'MO' END,
-        item->>'matchKey',
-        nullif(item->>'parcelId', ''),
-        item->>'address',
-        ARRAY[]::text[],
-        jsonb_build_object(
-          'mls_number', item->>'mlsNumber',
-          'basis', 'owner_override_2026-11-14',
-          'contact_channel', 'single_line_live_agent',
-          'sms_allowed', false,
-          'counted_as_829_cleared', false
-        ),
-        'new_needs_skip',
-        coalesce((item->>'listDay')::date, v_day),
-        true,
-        'wholesale',
-        left(v_actor, 320)
-      FROM jsonb_array_elements(p_plan->'intakes') AS item
-      ON CONFLICT DO NOTHING;
-      GET DIAGNOSTICS v_intakes = ROW_COUNT;
-    END IF;
+    FOR v_item IN SELECT value FROM jsonb_array_elements(coalesce(p_plan->'intakes', '[]'::jsonb)) AS value
+    LOOP
+      BEGIN
+        SELECT place.county, place.state
+        INTO v_county, v_state
+        FROM public.market_service_place_v1(v_item->>'zip5', v_item->>'parcelId') AS place;
+        IF v_county IS NULL OR v_state IS NULL THEN
+          v_skipped := v_skipped || jsonb_build_array(jsonb_build_object(
+            'stage', 'intake',
+            'zip5', v_item->>'zip5',
+            'parcelId', v_item->>'parcelId',
+            'reason', 'county_unresolved'
+          ));
+          CONTINUE;
+        END IF;
+        SELECT id INTO v_list_id
+        FROM public.source_lists
+        WHERE list_type = 'mls_expired'
+          AND county = v_county
+          AND state = v_state
+          AND source_file_sha256 = v_sha
+          AND pull_date = v_day
+        LIMIT 1;
+        IF v_list_id IS NULL THEN
+          INSERT INTO public.source_lists (
+            list_type, county, state, pull_date, source_file_name, source_file_sha256, source_file_bytes, imported_by
+          ) VALUES (
+            'mls_expired', v_county, v_state, v_day,
+            left(coalesce(p_plan->>'fileName', 'matrix.csv'), 200),
+            v_sha,
+            least(coalesce((p_plan->>'bytes')::integer, 0), 30000000),
+            left(v_actor, 320)
+          )
+          RETURNING id INTO v_list_id;
+        END IF;
+        INSERT INTO public.source_list_rows (
+          source_list_id, list_type, county, state, match_key, parcel_id, address, phones, raw,
+          status, list_day, requires_licensee_disclosure, strategy, updated_by
+        ) VALUES (
+          v_list_id,
+          'mls_expired',
+          v_county,
+          v_state,
+          v_item->>'matchKey',
+          nullif(v_item->>'parcelId', ''),
+          v_item->>'address',
+          ARRAY[]::text[],
+          jsonb_build_object(
+            'mls_number', v_item->>'mlsNumber',
+            'basis', 'owner_override_2026-11-14',
+            'contact_channel', 'single_line_live_agent',
+            'sms_allowed', false,
+            'counted_as_829_cleared', false
+          ),
+          'new_needs_skip',
+          coalesce((v_item->>'listDay')::date, v_day),
+          true,
+          'wholesale',
+          left(v_actor, 320)
+        );
+        v_intakes := v_intakes + 1;
+      EXCEPTION WHEN OTHERS THEN
+        v_skipped := v_skipped || jsonb_build_array(jsonb_build_object(
+          'stage', 'intake',
+          'zip5', v_item->>'zip5',
+          'parcelId', v_item->>'parcelId',
+          'reason', 'row_skipped',
+          'detail', SQLERRM
+        ));
+      END;
+    END LOOP;
   END IF;
 
+  v_clock := timezone('America/Chicago', clock_timestamp());
+  v_expired_rows := CASE
+    WHEN coalesce(p_plan->'partCounts'->>'expired', '') ~ '^[0-9]+$' THEN (p_plan->'partCounts'->>'expired')::integer
+    ELSE 0
+  END;
+  v_sold_rows := CASE
+    WHEN coalesce(p_plan->'partCounts'->>'sold', '') ~ '^[0-9]+$' THEN (p_plan->'partCounts'->>'sold')::integer
+    ELSE 0
+  END;
+  -- Completeness is computed from the clock, the day, the part counts, and the done marker.
+  v_complete := v_clock::time < time '04:00'
+    AND v_day = v_clock::date
+    AND v_expired_rows > 0
+    AND v_sold_rows > 0
+    AND btrim(coalesce(p_plan->>'doneMarker', '')) = to_char(v_clock::date, 'YYYY-MM-DD')
+    AND coalesce(p_plan->'parts', '[]'::jsonb) ? 'expired'
+    AND coalesce(p_plan->'parts', '[]'::jsonb) ? 'sold';
+
   INSERT INTO public.mls_export_runs (
-    export_file_sha256, chicago_day, status, covered_zips, row_count, finished_at, complete, parts
+    export_file_sha256, chicago_day, status, covered_zips, row_count, finished_at, complete, parts, skipped
   ) VALUES (
     v_sha, v_day, 'loaded',
     ARRAY(SELECT jsonb_array_elements_text(coalesce(p_plan->'coveredZips', '[]'::jsonb))),
     v_checks, clock_timestamp(),
-    coalesce((p_plan->>'complete')::boolean, false),
-    ARRAY(SELECT jsonb_array_elements_text(coalesce(p_plan->'parts', '[]'::jsonb)))
+    v_complete,
+    ARRAY(SELECT jsonb_array_elements_text(coalesce(p_plan->'parts', '[]'::jsonb))),
+    v_skipped
   );
 
-  RETURN jsonb_build_object('checks', v_checks, 'intakes', v_intakes, 'enabled', v_enabled);
+  RETURN jsonb_build_object('checks', v_checks, 'intakes', v_intakes, 'enabled', v_enabled, 'complete', v_complete, 'skipped', v_skipped);
 END;
 $function$;
 
