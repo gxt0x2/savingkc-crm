@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
 import { exportLineModeBlock } from '@/lib/dialer-suppression-policy'
+import { syncMarketFlags } from '@/lib/market-check/run'
 import { lineCheckBlockEnabled } from '@/lib/server/phone-line-check'
 import { dialerExportCsv, recordDialerExportBatch } from '@/lib/source-lists/dialer-export'
 import { normalizeSourceListLane, SourceListImportError, SOURCE_LIST_COUNTIES } from '@/lib/source-lists/csv'
@@ -15,10 +16,17 @@ const NO_STORE = { 'Cache-Control': 'private, no-store, max-age=0' }
 
 function filters(url: URL) {
   const listType = url.searchParams.get('listType')
+  const sourceListId = url.searchParams.get('sourceListId')
+  if (listType && listType.trim().toLowerCase() === 'mls_expired') {
+    return {
+      lane: { listType: 'mls_expired', county: null, state: null, violationKind: null },
+      county: null,
+      sourceListId,
+    }
+  }
   const county = url.searchParams.get('county')
   const state = url.searchParams.get('state')
   const violationKind = url.searchParams.get('violationKind')
-  const sourceListId = url.searchParams.get('sourceListId')
   const lane = listType
     ? normalizeSourceListLane({
         listType,
@@ -63,6 +71,7 @@ export async function GET(request: Request) {
       )
     }
     const db = supabaseAdmin()
+    await syncMarketFlags(db)
     const { error: flagError } = await db.rpc('sync_phone_line_check_config_v1', {
       p_block_enabled: lineCheckBlockEnabled(),
       p_cost_usd: null,
@@ -90,6 +99,10 @@ export async function GET(request: Request) {
       'X-Source-List-Export-Batch': scrub.exportBatchId,
       'X-Dialer-Export-Excluded-Counts': JSON.stringify(scrub.excludedCounts),
     }
+    const expiredFile = selected.lane?.listType === 'mls_expired'
+    const filename = expiredFile
+      ? 'EXPIRED · licensee disclosure · single-line.csv'
+      : 'source-list-dialer-export.csv'
 
     if (format === 'json') {
       return NextResponse.json({
@@ -104,7 +117,7 @@ export async function GET(request: Request) {
       headers: {
         ...headers,
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': 'attachment; filename="source-list-dialer-export.csv"',
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     })
   } catch (error) {

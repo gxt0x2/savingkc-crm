@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+/**
+ * Load today's America/Chicago Heartland Matrix folder.
+ *
+ * The folder is /workspace/mls-exports/<today>/ unless --root is set.
+ * Yesterday's folder is rejected. A 0-byte part is rejected.
+ * Expired and sold must both have rows, and a done marker must name today.
+ * The load must finish before 4:00am Chicago.
+ * Dry run unless --confirm. Does not fetch MLS data.
+ *
+ *   npx tsx scripts/load-market-check-day.mts --root /workspace/mls-exports
+ *   npx tsx scripts/load-market-check-day.mts --root /workspace/mls-exports --confirm
+ */
+
+import { loadTodayMatrixDay } from '../src/lib/market-check/day-load'
+import { runMatrixLoad, syncMarketFlags } from '../src/lib/market-check/run'
+import { createClient } from '@supabase/supabase-js'
+
+function arg(name: string): string {
+  const index = process.argv.indexOf(name)
+  const value = index >= 0 ? process.argv[index + 1] : ''
+  return value && !value.startsWith('--') ? value : ''
+}
+
+const root = arg('--root') || '/workspace/mls-exports'
+const day = loadTodayMatrixDay(root)
+if (!day) {
+  console.error(`No Matrix folder for today (America/Chicago) under ${root}`)
+  process.exit(1)
+}
+
+const csvText = day.files.map((file) => file.text.trim()).join('\n')
+console.log(JSON.stringify({
+  date: day.date,
+  parts: day.parts,
+  missing: day.missing,
+  partCounts: day.partCounts,
+  doneMarker: day.doneMarker,
+  complete: day.complete,
+  files: day.files.map((file) => file.name),
+}))
+if (!day.complete) {
+  console.error('Refusing to load. The day needs today\'s America/Chicago folder, non-empty expired and sold parts, a done marker whose text is that date, and a clock before 4:00am Chicago.')
+  process.exit(1)
+}
+if (!process.argv.includes('--confirm')) {
+  console.log('Dry run. Pass --confirm to write.')
+  process.exit(0)
+}
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!url || !key) {
+  console.error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to confirm.')
+  process.exit(1)
+}
+const db = createClient(url, key, { auth: { persistSession: false } })
+await syncMarketFlags(db)
+const result = await runMatrixLoad(db, {
+  csvText,
+  fileName: `${day.date}-matrix-day.csv`,
+  actor: 'market-check-day',
+  parts: day.parts,
+  partCounts: day.partCounts,
+  doneMarker: day.doneMarker,
+  completeFile: day.complete,
+})
+console.log(JSON.stringify(result))

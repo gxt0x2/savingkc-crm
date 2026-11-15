@@ -85,6 +85,18 @@
     {
       "path": "/api/cron/line-check",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/market-check",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron/market-check",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/cron/market-check",
+      "schedule": "30 9 * * *"
     }
   ],
   "rewrites": [

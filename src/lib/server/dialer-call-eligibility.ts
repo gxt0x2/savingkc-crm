@@ -10,6 +10,7 @@ import {
 } from '@/lib/dialer-call-policy'
 import { normalizeDisposition } from '@/lib/dialer-dispositions'
 import { canonicalDeadReason } from '@/lib/lead-outcomes'
+import { expiredCallingWindowOpen } from '@/lib/market-check/schedule'
 import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { readPhoneEnv } from '@/lib/phone-config'
 import { isMissingColumnError } from '@/lib/schema-compat'
@@ -489,6 +490,28 @@ async function evaluateOutboundDialerCallUnchecked(
     const resolvedLeadId = manualSource || input.prospectId
       ? null
       : input.leadId ?? leads[0]?.id ?? prospectPhones.map(linkedLeadId).find(Boolean) ?? null
+    if (policyDecision.allowed && !expiredCallingWindowOpen(input.now ?? new Date())) {
+      const prospectIds = [...new Set([
+        input.prospectId ?? null,
+        ...prospectPhones.map((phone) => phone.prospect_id),
+      ].filter((id): id is string => Boolean(id)))]
+      if (prospectIds.length > 0) {
+        const expiredRows = await db.from('source_list_rows')
+          .select('id')
+          .eq('list_type', 'mls_expired')
+          .in('prospect_id', prospectIds)
+          .limit(1)
+        if (!expiredRows.error && Array.isArray(expiredRows.data) && expiredRows.data.length > 0) {
+          return decision(dialerCallBlock('outside_calling_hours', normalizedPhone), {
+            checkedAt,
+            leadId: resolvedLeadId,
+            prospectId: input.prospectId ?? exactProspectPhone?.prospect_id ?? null,
+            prospectPhoneId: input.prospectPhoneId ?? exactProspectPhone?.id ?? null,
+            reasonSource: 'market_calling_window',
+          })
+        }
+      }
+    }
     return decision(policyDecision, {
       checkedAt,
       leadId: resolvedLeadId,

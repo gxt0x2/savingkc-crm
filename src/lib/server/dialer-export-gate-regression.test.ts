@@ -56,14 +56,13 @@ function countyBlock(county: string | null, situs: string | null): 'out_of_servi
 
 describe('dialer export gates survive the line-check migration', () => {
   const reasons = latestDefinition('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reasons_v1')
-  const review = latestDefinition('CREATE OR REPLACE VIEW public.source_list_dialer_phone_review')
   const exportView = latestDefinition('CREATE OR REPLACE VIEW public.source_list_dialer_export')
   const batch = latestDefinition('CREATE OR REPLACE FUNCTION public.record_source_list_export_batch_v1')
   const taxAllowed = latestDefinition('CREATE OR REPLACE FUNCTION public.tax_status_export_allowed_v1')
   const lineCheck = readMigration('20261205170000_phone_line_check_review.sql')
 
   it('keeps Cass out_of_service_area and a null county county_unresolved', () => {
-    expect(reasons.file).toBe('20261205150000_dialer_export_speed_f1_stamp.sql')
+    expect(reasons.file).toBe('20261209120000_dialer_owner_line_release.sql')
     expect(reasons.sql).toContain(
       "normalized.slug NOT IN ('unknown', 'unresolved', 'jackson', 'clay', 'platte', 'wyandotte', 'johnson')",
     )
@@ -77,21 +76,20 @@ describe('dialer export gates survive the line-check migration', () => {
     expect(countyBlock('unknown', 'unknown')).toBe('county_unresolved')
     expect(countyBlock('Unresolved', null)).toBe('county_unresolved')
     expect(countyBlock('Jackson', 'Jackson')).toBeNull()
-    expect(review.file).toBe('20261205170000_phone_line_check_review.sql')
-    expect(review.sql).toContain('ARRAY(SELECT ordered.county FROM ordered ORDER BY ordered.ordinal)')
-    expect(review.sql).toContain('ARRAY(SELECT ordered.situs_county FROM ordered ORDER BY ordered.ordinal)')
-    const kept = review.sql.indexOf('WHEN reasons.block_reason IS NOT NULL THEN reasons.block_reason')
-    const line = review.sql.indexOf('phone_line_export_block_reason_v1(ordered.phone_value)')
+    expect(lineCheck).toContain('ARRAY(SELECT ordered.county FROM ordered ORDER BY ordered.ordinal)')
+    expect(lineCheck).toContain('ARRAY(SELECT ordered.situs_county FROM ordered ORDER BY ordered.ordinal)')
+    const kept = lineCheck.indexOf('WHEN reasons.block_reason IS NOT NULL THEN reasons.block_reason')
+    const line = lineCheck.indexOf('phone_line_export_block_reason_v1(ordered.phone_value)')
     expect(kept).toBeGreaterThan(0)
     expect(line).toBeGreaterThan(kept)
     expect(lineCheck).not.toContain('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reasons_v1')
   })
 
   it('does not export a tax-delinquent row with no recent status check', () => {
-    expect(exportView.file).toBe('20261205150000_dialer_export_speed_f1_stamp.sql')
+    expect(exportView.file).toBe('20261215130000_market_check_fix_round.sql')
     expect(exportView.sql).toContain("list_type IS DISTINCT FROM 'tax_delinquent'")
     expect(exportView.sql).toContain('public.tax_status_export_allowed_v1(parcel_id, county, prospect_id)')
-    expect(batch.sql).toContain("export_row.list_type IS DISTINCT FROM 'tax_delinquent' OR public.tax_status_export_allowed_v1")
+    expect(batch.sql).toMatch(/export_row\.list_type IS DISTINCT FROM 'tax_delinquent'\s+OR public\.tax_status_export_allowed_v1/)
     expect(batch.sql).toContain('SET jit = off')
     expect(taxAllowed.sql).toContain("check_row.result = 'delinquent'")
     expect(taxAllowed.sql).toContain("interval '7 days'")

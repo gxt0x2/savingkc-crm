@@ -185,11 +185,12 @@ SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114213919_source_list_service_area_block.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114215029_tax_status_verification.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205120000_dialer_export_suppression.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205130000_dialer_export_associate_property_dnc.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010826_dialer_export_suppression.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010849_dialer_export_associate_property_dnc.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261209120000_dialer_owner_line_release.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -568,6 +569,186 @@ BEGIN
         RAISE;
       END IF;
   END;
+
+  CREATE TEMP TABLE owner_line_case(
+    owner_name text,
+    owner_last text,
+    contact_name text,
+    relationship text,
+    skip_traced boolean,
+    verified_source text,
+    expected boolean
+  ) ON COMMIT DROP;
+  INSERT INTO owner_line_case VALUES
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('John Smith', 'Smith', 'John Smith', 'associate', false, NULL, true),
+    ('Oak LLC', 'LLC', 'Oak LLC', 'entity_contact', false, NULL, false),
+    ('Acme Inc', 'Inc', 'Acme Inc', 'unknown', false, NULL, false),
+    ('Acme Incorporated', 'Incorporated', 'Acme Incorporated', 'unknown', false, NULL, false),
+    ('Smith Family Trust', 'Trust', 'Smith Family', 'unknown', false, NULL, false),
+    ('First National Bank', 'Bank', 'First National', 'unknown', false, NULL, false),
+    ('John Smith, Trustee', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('John Smith Trustee of the Smith Trust', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('Alden Jimmie C & Nora A-Trustees', 'Alden', 'Nora Alden', 'unknown', false, NULL, true),
+    ('Smith Family Trust', 'Smith', 'Smith Trust', 'unknown', false, NULL, false),
+    ('John Smith & Acme LLC', 'Smith', 'Acme LLC', 'unknown', false, NULL, false),
+    ('John Smith & Acme LLC', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'unknown', false, NULL, true),
+    ('John & Mary Smith', 'Smith', 'John Smith', 'associate', false, NULL, true),
+    ('Alden Marcus S & Nora', 'Alden', 'Nora Alden', 'unknown', false, NULL, true),
+    ('Alden Nancy L & Brook Robert L', 'Alden', 'Robert Brook', 'unknown', false, NULL, true),
+    ('Parker Owen E & E Lila', 'Parker', 'Lila Parker', 'unknown', false, NULL, true),
+    ('Alden Walter C & Nora Jane', 'Alden', 'Nora Alden', 'unknown', false, NULL, true),
+    ('Alden Reginald T & Brook Johnetta', 'Alden', 'Johnetta Brook', 'unknown', false, NULL, true),
+    ('Alden Lynn & Brook Earl M Jr', 'Alden', 'Earl Brook', 'unknown', false, NULL, true),
+    ('Alden Ricky & Alden Ronald', 'Alden', 'Ronald Alden', 'unknown', false, NULL, true),
+    ('Alden Marcus L Jr & Nora', 'Alden Jr', 'Nora Alden', 'unknown', false, NULL, true),
+    ('William & Mary Smith', 'Smith', 'Bill Smith', 'unknown', false, NULL, true),
+    ('Robert Smith', 'Smith', 'Bob Smith', 'unknown', false, NULL, true),
+    ('Elizabeth Smith', 'Smith', 'Liz Smith', 'unknown', false, NULL, true),
+    ('John & Mary Smith', 'Smith', 'Mary Jones', 'unknown', false, NULL, false),
+    ('Fay Uno', 'Uno', 'Gus Uno', 'unknown', true, 'dataskip_run1', false),
+    ('Alden Brenda Sue & Alden Carol Sue', 'Alden', 'Judy Alden', 'unknown', false, NULL, false),
+    ('Dearing John & Diane', 'Dearing', 'Diana Dearing', 'unknown', false, NULL, false),
+    ('Roy Huggins & Christine', 'Huggins', 'Christine Leiker', 'unknown', false, NULL, false),
+    ('Margaret Smith', 'Smith', 'Peggy Smith', 'unknown', false, NULL, false),
+    ('John Smith', 'Smith', 'John Smith', 'registered_agent', false, NULL, false),
+    ('James Robert Smith', 'Smith', 'James Smith', 'unknown', false, NULL, true),
+    ('James Robert Smith', 'Smith', 'James Q Smith', 'unknown', false, NULL, true),
+    ('James Robert Smith', 'Smith', 'James Robert Smith', 'unknown', false, NULL, true),
+    ('Smith James R', 'Smith', 'James Smith', 'unknown', false, NULL, true),
+    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', true, NULL, true),
+    ('James Robert Smith', 'Smith', 'Bob Smith', 'unknown', false, 'dataskip_run1', true),
+    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', false, NULL, false),
+    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', false, 'manual', false),
+    ('John Smith et al', 'Smith', 'John Smith', 'unknown', false, NULL, false),
+    ('Heirs of John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, false),
+    ('Estate of John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, false),
+    ('John Smith deceased', 'Smith', 'John Smith', 'unknown', false, NULL, false),
+    ('John Smith c/o Jane Doe', 'Smith', 'John Smith', 'unknown', false, NULL, false),
+    ('John Smith c/o Jane Doe', 'Smith', 'Jane Doe', 'unknown', false, NULL, false),
+    ('John Smith', 'Smith', 'John Smith et al', 'unknown', false, NULL, false);
+  FOR rec IN SELECT * FROM owner_line_case LOOP
+    IF public.dialer_owner_line_release_v1(
+      rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source
+    ) IS DISTINCT FROM rec.expected THEN
+      RAISE EXCEPTION 'owner line % / % expected % got %', rec.owner_name, rec.contact_name, rec.expected,
+        public.dialer_owner_line_release_v1(
+          rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source
+        );
+    END IF;
+  END LOOP;
+
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1, owner_1_last, owner_1_type, is_skip_traced) VALUES
+    ('20000000-0000-4000-8000-0000000000f1', 'jackson', '81 Co', 'P-CO', 'John & Mary Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000f2', 'jackson', '82 Middle', 'P-MID', 'James Robert Smith', 'Smith', 'Individual', true),
+    ('20000000-0000-4000-8000-0000000000f3', 'jackson', '83 NoSkip', 'P-NOSKIP', 'James Robert Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000f4', 'jackson', '84 Hold', 'P-HOLD2', 'John & Mary Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000f5', 'jackson', '85 Dnc', 'P-DNC2', 'John & Mary Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000f6', 'jackson', '86 Opt', 'P-OPT', 'John & Mary Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000f7', 'cass', '87 Cass', 'P-CASS2', 'John & Mary Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000f8', 'jackson', '88 Fan', 'P-FAN', 'John & Mary Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000f9', 'jackson', '89 Prop', 'P-PROP2', 'John & Mary Smith', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000fa', 'jackson', '90 Marker', 'P-ETAL', 'John Smith et al', 'Smith', 'Individual', false),
+    ('20000000-0000-4000-8000-0000000000fb', 'jackson', '91 Tax', 'P-TAX-CO', 'John & Mary Smith', 'Smith', 'Individual', false);
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship, contact_name, voice_hold, verified_source) VALUES
+    ('30000000-0000-4000-8000-0000000000f1', '20000000-0000-4000-8000-0000000000f1', '+18165550801', 'no_answer', 'associate', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f2', '20000000-0000-4000-8000-0000000000f1', '+18165550802', 'no_answer', 'unknown', 'Mary Jones', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f3', '20000000-0000-4000-8000-0000000000f2', '+18165550803', 'no_answer', 'unknown', 'Robert Smith', false, 'dataskip_run1'),
+    ('30000000-0000-4000-8000-0000000000f4', '20000000-0000-4000-8000-0000000000f3', '+18165550804', 'no_answer', 'unknown', 'Robert Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f5', '20000000-0000-4000-8000-0000000000f4', '+18165550805', 'no_answer', 'unknown', 'Mary Smith', true, NULL),
+    ('30000000-0000-4000-8000-0000000000f6', '20000000-0000-4000-8000-0000000000f5', '+18165550806', 'dnc', 'unknown', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f7', '20000000-0000-4000-8000-0000000000f6', '+18165550807', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f8', '20000000-0000-4000-8000-0000000000f7', '+18165550808', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f9', '20000000-0000-4000-8000-0000000000f8', '+18165550809', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000fa', '20000000-0000-4000-8000-0000000000f8', '+18165550810', 'dnc_contact', 'relative', 'John Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000fb', '20000000-0000-4000-8000-0000000000f9', '+18165550811', 'dnc', 'owner', 'John Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000fc', '20000000-0000-4000-8000-0000000000f9', '+18165550812', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000fd', '20000000-0000-4000-8000-0000000000fa', '+18165550813', 'no_answer', 'unknown', 'John Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000fe', '20000000-0000-4000-8000-0000000000fb', '+18165550814', 'no_answer', 'unknown', 'Mary Smith', false, NULL);
+  INSERT INTO public.sms_opt_outs (phone, is_opted_out) VALUES ('+18165550807', true);
+  IF public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1') IS NOT NULL THEN
+    RAISE EXCEPTION 'co-owner Mary stayed blocked: %',
+      public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550802', '20000000-0000-4000-8000-0000000000f1') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'Mary Jones was released: %',
+      public.source_list_phone_block_reason_v1('+18165550802', '20000000-0000-4000-8000-0000000000f1');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550803', '20000000-0000-4000-8000-0000000000f2') IS NOT NULL THEN
+    RAISE EXCEPTION 'skip-traced middle name stayed blocked: %',
+      public.source_list_phone_block_reason_v1('+18165550803', '20000000-0000-4000-8000-0000000000f2');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550804', '20000000-0000-4000-8000-0000000000f3') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'middle name without skip trace was released: %',
+      public.source_list_phone_block_reason_v1('+18165550804', '20000000-0000-4000-8000-0000000000f3');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550805', '20000000-0000-4000-8000-0000000000f4') IS DISTINCT FROM 'voice_hold' THEN
+    RAISE EXCEPTION 'owner-line release cleared a voice hold: %',
+      public.source_list_phone_block_reason_v1('+18165550805', '20000000-0000-4000-8000-0000000000f4');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550806', '20000000-0000-4000-8000-0000000000f5') IS DISTINCT FROM 'prospect_dnc' THEN
+    RAISE EXCEPTION 'owner-line release cleared a DNC: %',
+      public.source_list_phone_block_reason_v1('+18165550806', '20000000-0000-4000-8000-0000000000f5');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550807', '20000000-0000-4000-8000-0000000000f6') IS DISTINCT FROM 'sms_opt_out' THEN
+    RAISE EXCEPTION 'owner-line release cleared an opt-out: %',
+      public.source_list_phone_block_reason_v1('+18165550807', '20000000-0000-4000-8000-0000000000f6');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550808', 'cass', 'cass') IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'owner-line release cleared Cass: %',
+      public.source_list_phone_block_reason_v1('+18165550808', 'cass', 'cass');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550808', NULL, NULL) IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'owner-line release cleared an unresolved county: %',
+      public.source_list_phone_block_reason_v1('+18165550808', NULL, NULL);
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550809', '20000000-0000-4000-8000-0000000000f8') IS DISTINCT FROM 'person_fanout' THEN
+    RAISE EXCEPTION 'owner-line release cleared a person fan-out: %',
+      public.source_list_phone_block_reason_v1('+18165550809', '20000000-0000-4000-8000-0000000000f8');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550812', '20000000-0000-4000-8000-0000000000f9') IS DISTINCT FROM 'property_owner_dnc_fanout' THEN
+    RAISE EXCEPTION 'owner-line release cleared a property fan-out: %',
+      public.source_list_phone_block_reason_v1('+18165550812', '20000000-0000-4000-8000-0000000000f9');
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550813', '20000000-0000-4000-8000-0000000000fa') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'et al was released: %',
+      public.source_list_phone_block_reason_v1('+18165550813', '20000000-0000-4000-8000-0000000000fa');
+  END IF;
+
+  INSERT INTO public.source_list_rows (
+    id, source_list_id, list_type, county, state, parcel_id, address, owner_names, prospect_id, status, phones
+  ) VALUES (
+    '50000000-0000-4000-8000-0000000000fb',
+    '10000000-0000-4000-8000-000000000001',
+    'tax_delinquent',
+    'jackson',
+    'MO',
+    'P-TAX-CO',
+    '91 Tax',
+    'John & Mary Smith',
+    '20000000-0000-4000-8000-0000000000fb',
+    'ready',
+    ARRAY['+18165550814']
+  );
+  IF public.source_list_phone_block_reason_v1('+18165550814', '20000000-0000-4000-8000-0000000000fb') IS NOT NULL THEN
+    RAISE EXCEPTION 'tax row was blocked before the tax gate: %',
+      public.source_list_phone_block_reason_v1('+18165550814', '20000000-0000-4000-8000-0000000000fb');
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export
+    WHERE phone_e164 = '+18165550814' AND prospect_id = '20000000-0000-4000-8000-0000000000fb'
+  ) THEN
+    RAISE EXCEPTION 'owner-line release exported a tax row without a live delinquent check';
+  END IF;
+  INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
+  VALUES ('P-TAX-CO', 'jackson', 'tax_delinquent', '20000000-0000-4000-8000-0000000000fb', now(), 'jackson_tax_portal', 'delinquent', 0);
+  IF NOT EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export
+    WHERE phone_e164 = '+18165550814' AND prospect_id = '20000000-0000-4000-8000-0000000000fb'
+  ) THEN
+    RAISE EXCEPTION 'a live delinquent co-owner stayed out of the export';
+  END IF;
 END $$;
 RESET ROLE;
 SELECT 'PASS: raw Fax and DNC Number, DNC Contact fan-out, dnc_refused without a prospect link, dead_reason dnc versus DNC Number only, fan-out voice hold, last-4 hold, monotonic stamps, associate and property fan-out, dataskip_dnc export, encode queue no-op, F1 release, litigator stamp' AS result;
@@ -775,3 +956,22 @@ END $$;
 RESET ROLE;
 SELECT 'PASS: line-check migration kept Cass, null county, tax-status, and jit=off' AS result;
 SQL
+
+explain_ms="$("${PSQL[@]}" -tA <<'SQL'
+SET jit = off;
+EXPLAIN (ANALYZE, FORMAT JSON)
+SELECT count(*)
+FROM public.source_list_dialer_export
+WHERE source_list_id = '60000000-0000-4000-8000-000000000099';
+SQL
+)"
+python3 - "$explain_ms" <<'PY'
+import json, sys
+raw = sys.argv[1].strip()
+raw = raw[raw.find('['):]
+plan = json.loads(raw)
+elapsed = float(plan[0]["Execution Time"])
+print(f"export view explain analyze {elapsed:.1f} ms")
+if elapsed >= 4000:
+    raise SystemExit(f"export view EXPLAIN took {elapsed:.1f} ms")
+PY
