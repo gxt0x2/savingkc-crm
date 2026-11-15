@@ -266,6 +266,11 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208120000_mojo_dnc_ledger.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208130000_calling_pool_v1.sql" >/dev/null
+echo "PASS: apply #825 after #817"
 
 SEED_JSON=$(node -e '
 const fs = require("fs");
@@ -567,6 +572,7 @@ BEGIN
   FROM public.source_lists WHERE source_file_sha256 = repeat('1', 64);
   INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
   VALUES ('ONE1', 'jackson', 'tax_delinquent', '00000000-0000-4000-8000-0000000000b1', now(), 'jackson_tax_portal', 'delinquent', 0);
+  PERFORM set_config('dialer.pool_now', '2026-11-14 16:00:00+00', true);
   v_export := public.record_source_list_export_batch_v1(
     'rehearsal', 'tax_delinquent', 'jackson', 'MO', NULL,
     (SELECT id FROM public.source_lists WHERE source_file_sha256 = repeat('1', 64)),

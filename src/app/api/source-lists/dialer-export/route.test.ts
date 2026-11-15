@@ -5,11 +5,12 @@ const mocks = vi.hoisted(() => ({
   actor: vi.fn(),
   sandbox: vi.fn(),
   rpc: vi.fn(),
+  from: vi.fn(),
 }))
 
 vi.mock('@/lib/api/authenticated-actor', () => ({ resolveAuthenticatedActor: mocks.actor }))
 vi.mock('@/lib/auth/oauth-review-sandbox-session', () => ({ resolveOauthReviewSandboxLeadId: mocks.sandbox }))
-vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc }) }))
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({ rpc: mocks.rpc, from: mocks.from }) }))
 
 import { GET } from './route'
 
@@ -87,6 +88,25 @@ describe('GET /api/source-lists/dialer-export', () => {
     const response = await GET(new NextRequest('https://crm.savingkc.com/api/source-lists/dialer-export?lineMode=2'))
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ code: 'multi_line_suspended' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('returns the saved lane filters without writing an export', async () => {
+    const sets = [
+      { priority: 1, name: 'Deceased', lane_key: 'deceased', single_line: true, daily_cap_first_3_days: 30, daily_cap: 75 },
+      { priority: 2, name: 'Tax 3+', lane_key: 'tax_delinquent', single_line: false, daily_cap_first_3_days: 30, daily_cap: 75 },
+      { priority: 3, name: 'Probate', lane_key: 'probate_estate', single_line: false, daily_cap_first_3_days: 30, daily_cap: 75 },
+      { priority: 4, name: 'Inherited', lane_key: 'probate_no_property', single_line: false, daily_cap_first_3_days: 30, daily_cap: 75 },
+      { priority: 5, name: 'Code Violation', lane_key: 'code_violation', single_line: false, daily_cap_first_3_days: 30, daily_cap: 75 },
+      { priority: 6, name: 'Expired (single-line, disclosure)', lane_key: 'mls_expired', single_line: true, daily_cap_first_3_days: 30, daily_cap: 75 },
+    ]
+    const order = vi.fn().mockResolvedValue({ data: sets, error: null })
+    const select = vi.fn().mockReturnValue({ order })
+    mocks.from.mockReturnValue({ select })
+    const response = await GET(new NextRequest('https://crm.savingkc.com/api/source-lists/dialer-export?sets=1'))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ sets })
+    expect(order).toHaveBeenCalledWith('priority')
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 

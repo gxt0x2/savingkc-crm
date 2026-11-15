@@ -192,6 +192,8 @@ function excludedPhones(value: unknown): DialerExportExclusion[] {
   return phones
 }
 
+// Row order comes from record_source_list_export_batch_v1: scrub first, then
+// newest intake, Tier 1, Tier 2, and single. Keep that order in the file.
 export async function recordDialerExportBatch(
   db: SourceListRpcClient,
   actor: string,

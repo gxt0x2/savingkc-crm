@@ -53,6 +53,15 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url)
+    if (url.searchParams.get('sets') === '1') {
+      const db = supabaseAdmin()
+      const { data, error } = await db
+        .from('dialer_saved_filters_v1')
+        .select('priority, name, lane_key, single_line, daily_cap_first_3_days, daily_cap')
+        .order('priority')
+      if (error) throw error
+      return NextResponse.json({ sets: data ?? [] }, { headers: NO_STORE })
+    }
     const selected = filters(url)
     const format = url.searchParams.get('format') || 'csv'
     if (format !== 'csv' && format !== 'json') {

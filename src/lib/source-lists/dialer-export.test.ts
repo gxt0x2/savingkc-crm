@@ -38,6 +38,20 @@ describe('dialer export file', () => {
     )
   })
 
+  it('keeps the scrubbed batch order: fresh, then tier, without sorting again', () => {
+    const csv = dialerExportCsv([
+      row('+18165552101', '1 Fresh'),
+      row('+18165552102', '2 Tier'),
+      row('+18165552103', '3 Single'),
+    ])
+    const lines = csv.trim().split('\n')
+    expect(lines.slice(1).map((line) => line.split(',')[9])).toEqual([
+      '+18165552101',
+      '+18165552102',
+      '+18165552103',
+    ])
+  })
+
   it('keeps a dialable phone and quotes a spreadsheet formula in the address', () => {
     const csv = dialerExportCsv([row('+18165550101', '=cmd')])
     expect(csv).toContain('+18165550101')
