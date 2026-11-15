@@ -185,11 +185,11 @@ SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114213919_source_list_service_area_block.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114215029_tax_status_verification.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205120000_dialer_export_suppression.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205130000_dialer_export_associate_property_dnc.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010826_dialer_export_suppression.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010849_dialer_export_associate_property_dnc.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
