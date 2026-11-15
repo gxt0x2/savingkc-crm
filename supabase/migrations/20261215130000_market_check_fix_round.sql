@@ -89,16 +89,17 @@ ALTER TABLE public.source_list_row_status_history DROP CONSTRAINT IF EXISTS sour
 ALTER TABLE public.source_list_row_status_history
   ADD CONSTRAINT source_list_row_status_history_from_check CHECK (
     from_status IS NULL OR from_status IN (
-      'new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'new_needs_skip'
+      'new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'out_of_area', 'new_needs_skip'
     )
   );
 ALTER TABLE public.source_list_row_status_history
   ADD CONSTRAINT source_list_row_status_history_to_check CHECK (
     to_status IN (
-      'new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'new_needs_skip'
+      'new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'out_of_area', 'new_needs_skip'
     )
   );
 
+-- #826's live set_source_list_row_status_v1, plus new_needs_skip. out_of_area stays allowed.
 CREATE OR REPLACE FUNCTION public.set_source_list_row_status_v1(
   p_row_id uuid,
   p_status text,
@@ -120,7 +121,7 @@ BEGIN
     RAISE EXCEPTION 'source_list_identity_invalid';
   END IF;
   IF v_status IS NULL OR v_status NOT IN (
-    'new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'new_needs_skip'
+    'new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'out_of_area', 'new_needs_skip'
   ) THEN
     RAISE EXCEPTION 'source_list_status_invalid';
   END IF;
@@ -134,28 +135,38 @@ BEGIN
     RAISE EXCEPTION 'source_list_export_batch_mismatch';
   END IF;
   IF v_status = 'loaded_to_dialer' THEN
-    IF NOT EXISTS (SELECT 1 FROM public.source_list_export_batches WHERE id = p_export_batch_id) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.source_list_export_batches WHERE id = p_export_batch_id
+    ) THEN
       RAISE EXCEPTION 'source_list_export_batch_not_found';
     END IF;
     IF NOT EXISTS (
-      SELECT 1 FROM public.source_list_export_batch_phones AS phone
-      WHERE phone.export_batch_id = p_export_batch_id AND phone.source_list_row_id = p_row_id
+      SELECT 1
+      FROM public.source_list_export_batch_phones AS phone
+      WHERE phone.export_batch_id = p_export_batch_id
+        AND phone.source_list_row_id = p_row_id
     ) THEN
       RAISE EXCEPTION 'source_list_export_batch_mismatch';
     END IF;
   END IF;
+
   UPDATE public.source_list_rows
   SET status = v_status,
       status_reason = v_reason,
       updated_by = v_actor,
       updated_at = clock_timestamp(),
       loaded_at = CASE WHEN v_status = 'loaded_to_dialer' THEN clock_timestamp() ELSE loaded_at END,
-      loaded_export_batch_id = CASE WHEN v_status = 'loaded_to_dialer' THEN p_export_batch_id ELSE loaded_export_batch_id END
+      loaded_export_batch_id = CASE
+        WHEN v_status = 'loaded_to_dialer' THEN p_export_batch_id
+        ELSE loaded_export_batch_id
+      END
   WHERE id = p_row_id
   RETURNING * INTO v_row;
+
   IF v_row.id IS NULL THEN
     RAISE EXCEPTION 'source_list_row_not_found';
   END IF;
+
   RETURN jsonb_build_object(
     'id', v_row.id,
     'status', v_row.status,
@@ -781,7 +792,7 @@ BEGIN
   IF v_state IS NOT NULL AND v_state NOT IN ('MO', 'KS') THEN
     RAISE EXCEPTION 'source_list_lane_invalid';
   END IF;
-  IF v_kind IS NOT NULL AND v_kind NOT IN ('dangerous_building', 'board_up', 'structural') THEN
+  IF v_kind IS NOT NULL AND v_kind NOT IN ('dangerous_building', 'board_up', 'open_to_entry', 'structural', 'nuisance') THEN
     RAISE EXCEPTION 'source_list_lane_invalid';
   END IF;
   IF v_list_type = 'mls_expired' AND coalesce(p_line_mode, 1) IS DISTINCT FROM 1 THEN

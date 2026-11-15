@@ -218,6 +218,7 @@ ALTER TABLE public.source_lists
 ALTER TABLE public.source_lists ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE public.source_list_rows
   ADD COLUMN IF NOT EXISTS match_key text,
+  ADD COLUMN IF NOT EXISTS status_reason text,
   ADD COLUMN IF NOT EXISTS updated_by text,
   ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now(),
@@ -555,6 +556,22 @@ BEGIN
   IF v_export->>'phone_count' IS DISTINCT FROM '1' THEN
     RAISE EXCEPTION 'gate case expected 1 phone, got %', v_export->>'phone_count';
   END IF;
+
+  INSERT INTO public.source_lists (list_type, county, state, violation_kind, pull_date, source_file_name, source_file_sha256, source_file_bytes, imported_by)
+  VALUES ('code_violation', 'johnson', 'KS', 'nuisance', CURRENT_DATE, 'ks-code.csv', repeat('9', 64), 10, 'rehearsal');
+  INSERT INTO public.source_list_rows (
+    source_list_id, list_type, county, state, violation_kind, match_key, parcel_id, address, phones, status
+  )
+  SELECT id, 'code_violation', 'johnson', 'KS', 'nuisance', 'parcel:KSCODE', 'KSCODE', '1 Kansas Ave', ARRAY['+19135550101'], 'out_of_area'
+  FROM public.source_lists WHERE source_file_sha256 = repeat('9', 64);
+  PERFORM public.set_source_list_row_status_v1(
+    (SELECT id FROM public.source_list_rows WHERE match_key = 'parcel:KSCODE'),
+    'out_of_area', NULL, 'rehearsal'
+  );
+  PERFORM public.set_source_list_row_status_v1(
+    (SELECT id FROM public.source_list_rows WHERE match_key = 'parcel:KSCODE'),
+    'new_needs_skip', NULL, 'rehearsal'
+  );
 
   RAISE NOTICE 'market check rehearsal passed in % ms', v_ms;
 END

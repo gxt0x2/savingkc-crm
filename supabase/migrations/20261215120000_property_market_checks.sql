@@ -395,8 +395,10 @@ ALTER TABLE public.source_lists ADD CONSTRAINT source_lists_lane_check CHECK (
   OR (list_type = 'foreclosure' AND state IS NOT NULL)
   OR (
     list_type = 'code_violation'
-    AND state = 'MO'
-    AND (county IS NULL OR county IN ('jackson', 'clay', 'platte'))
+    AND (
+      (state = 'MO' AND (county IS NULL OR county IN ('jackson', 'clay', 'platte')))
+      OR (state = 'KS' AND (county IS NULL OR county IN ('johnson', 'wyandotte')))
+    )
   )
   OR (
     list_type IN ('probate_estate', 'probate_no_property')
@@ -436,8 +438,10 @@ ALTER TABLE public.source_list_rows ADD CONSTRAINT source_list_rows_lane_check C
   OR (list_type = 'foreclosure' AND state IS NOT NULL)
   OR (
     list_type = 'code_violation'
-    AND state = 'MO'
-    AND (county IS NULL OR county IN ('jackson', 'clay', 'platte'))
+    AND (
+      (state = 'MO' AND (county IS NULL OR county IN ('jackson', 'clay', 'platte')))
+      OR (state = 'KS' AND (county IS NULL OR county IN ('johnson', 'wyandotte')))
+    )
   )
   OR (
     list_type IN ('probate_estate', 'probate_no_property')
@@ -453,7 +457,7 @@ ALTER TABLE public.source_list_rows ADD CONSTRAINT source_list_rows_lane_check C
 );
 ALTER TABLE public.source_list_rows DROP CONSTRAINT IF EXISTS source_list_rows_status_check;
 ALTER TABLE public.source_list_rows ADD CONSTRAINT source_list_rows_status_check CHECK (
-  status IN ('new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'new_needs_skip')
+  status IN ('new', 'needs_check', 'ready', 'excluded_entity', 'dropped', 'loaded_to_dialer', 'out_of_area', 'new_needs_skip')
 );
 ALTER TABLE public.source_list_rows DROP CONSTRAINT IF EXISTS source_list_rows_match_key_check;
 ALTER TABLE public.source_list_rows ADD CONSTRAINT source_list_rows_match_key_check CHECK (
