@@ -6,14 +6,8 @@ import {
 } from './provider'
 
 /**
- * MillionVerifier is the low-cost checker implemented behind EmailValidationProvider.
- * ZeroBounce is the adapter to add when accuracy matters more than price.
- *
- * ZeroBounce and NeverBounce list around a third of a cent to eight tenths of a
- * cent per address. MillionVerifier's published packs are lower: about $0.0039
- * at 10,000 credits and under $0.0005 at a million credits (one credit per
- * completed good/bad check). Its real-time result codes map onto the statuses
- * this ledger stores: ok, invalid, catch_all, unknown, disposable.
+ * Opt-in real-time checker. Used only when EMAIL_VALIDATION_PROVIDER=millionverifier.
+ * ZeroBounce is the default adapter.
  *
  * The API key is read from MILLIONVERIFIER_API_KEY. When that variable is
  * empty the adapter is not constructed and the address stays unverified.
