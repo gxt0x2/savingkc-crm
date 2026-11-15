@@ -1,5 +1,5 @@
--- Pat 4f: owner-line release requires owner_1_type person, unless the owner
--- name is a clean first and last with no company word.
+-- Pat 4f: owner-line release requires owner_1_type person or individual, unless
+-- the owner name is a clean first and last with no company word.
 -- Pat 4g: a middle-name or co-owner release also requires relationship owner,
 -- verified_source dataskip_run* or smartskip_*, and is_skip_traced.
 -- Does not read or write mojo_call_queue. Does not recreate the export batch.
@@ -93,7 +93,7 @@ BEGIN
   END IF;
 
   owner_type := nullif(lower(btrim(coalesce(p_owner_type, ''))), '');
-  IF owner_type IS DISTINCT FROM 'person' THEN
+  IF owner_type IS NULL OR owner_type NOT IN ('person', 'individual') THEN
     IF owner_type IS NOT NULL THEN
       RETURN false;
     END IF;
@@ -115,7 +115,7 @@ BEGIN
       OR EXISTS (
         SELECT 1 FROM unnest(clean_tokens) AS token
         WHERE length(token) = 1
-          OR token = ANY (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'trust', 'bank', 'company', 'llp', 'pllc', 'lp'])
+          OR token = ANY (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'trust', 'bank', 'company', 'llp', 'pllc', 'lp', 'properties', 'homes', 'holdings', 'investments', 'realty', 'rentals', 'group', 'partners', 'ventures', 'capital', 'enterprises', 'management', 'development'])
           OR token IN ('trustee', 'trustees')
           OR token LIKE '%-trustee'
           OR token LIKE '%-trustees'
@@ -145,7 +145,7 @@ BEGIN
     hint := hint_tokens[cardinality(hint_tokens)];
     IF hint IS NULL
       OR length(hint) = 1
-      OR hint = ANY (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'trust', 'bank', 'company', 'llp', 'pllc', 'lp'])
+      OR hint = ANY (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'trust', 'bank', 'company', 'llp', 'pllc', 'lp', 'properties', 'homes', 'holdings', 'investments', 'realty', 'rentals', 'group', 'partners', 'ventures', 'capital', 'enterprises', 'management', 'development'])
       OR NOT hint = ANY (line_tokens) THEN
       hint := NULL;
     END IF;
@@ -196,7 +196,7 @@ BEGIN
     words := public.dialer_owner_line_tokens_v1(segment);
     IF EXISTS (
       SELECT 1 FROM unnest(words) AS token
-      WHERE token = ANY (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'trust', 'bank', 'company', 'llp', 'pllc', 'lp'])
+      WHERE token = ANY (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'trust', 'bank', 'company', 'llp', 'pllc', 'lp', 'properties', 'homes', 'holdings', 'investments', 'realty', 'rentals', 'group', 'partners', 'ventures', 'capital', 'enterprises', 'management', 'development'])
     ) AND NOT EXISTS (
       SELECT 1 FROM unnest(words) AS token
       WHERE token IN ('trustee', 'trustees') OR token LIKE '%-trustee' OR token LIKE '%-trustees'
@@ -447,7 +447,7 @@ END;
 $function$;
 
 COMMENT ON FUNCTION public.dialer_owner_line_release_v1(text, text, text, text, boolean, text, text) IS
-  'Owner-line release. owner_1_type must be person, unless the owner name is a clean first and last with no company word. A middle-name or co-owner match also needs relationship owner, dataskip_run* or smartskip_*, and is_skip_traced. subject, auto, manual, mojo_*, and null do not qualify.';
+  'Owner-line release. owner_1_type must be person or individual, unless the owner name is a clean first and last with no company word. A middle-name or co-owner match also needs relationship owner, dataskip_run* or smartskip_*, and is_skip_traced. subject, auto, manual, mojo_*, and null do not qualify.';
 
 REVOKE ALL ON FUNCTION public.dialer_owner_line_release_v1(text, text, text, text, boolean, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.dialer_owner_line_release_v1(text, text, text, text, boolean, text, text) TO service_role;

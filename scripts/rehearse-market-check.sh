@@ -58,6 +58,8 @@ CREATE TABLE public.prospects (
   county text,
   situs_street text,
   situs_address text,
+  situs_city text,
+  situs_state text,
   situs_zip text,
   parcel_id text,
   owner_1 text,
@@ -117,7 +119,11 @@ CREATE TABLE public.system_config (
 CREATE TABLE public.source_lists (
   id uuid PRIMARY KEY,
   pull_date date,
-  source_file_name text
+  source_file_name text,
+  list_type text,
+  county text,
+  state text,
+  violation_kind text
 );
 CREATE TABLE public.source_list_rows (
   id uuid PRIMARY KEY,
@@ -137,7 +143,16 @@ CREATE TABLE public.source_list_rows (
   phones text[],
   raw jsonb NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE TABLE public.crm_properties (id uuid PRIMARY KEY, county text);
+CREATE TABLE public.source_list_row_status_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_list_row_id uuid NOT NULL,
+  from_status text,
+  to_status text NOT NULL,
+  status_reason text,
+  changed_by text,
+  changed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE public.crm_properties (id uuid PRIMARY KEY, county text, parcel_id text);
 CREATE TABLE public.mortgage_foreclosure_prospects (id uuid PRIMARY KEY);
 CREATE TABLE public.source_list_export_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -196,8 +211,6 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010849_dialer_export_associate_property_dnc.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261209120000_dialer_owner_line_release.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 ALTER TABLE public.leads
@@ -247,8 +260,12 @@ CREATE TABLE IF NOT EXISTS public.parcel_inventory (
 );
 SQL
 
+# Atlas order after the #814 chain: #826, #827, #817, then #830.
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115012108_code_violation_county_backfill.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261209120000_dialer_owner_line_release.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
 
 SEED_JSON=$(node -e '
 const fs = require("fs");

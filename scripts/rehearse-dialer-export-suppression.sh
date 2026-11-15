@@ -291,6 +291,7 @@ DO $$
 DECLARE
   rec record;
   got text;
+  probe_got boolean;
   report jsonb;
 BEGIN
   INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
@@ -642,6 +643,12 @@ BEGIN
     ('Oak LLC', 'LLC', 'Oak LLC', 'owner', true, 'dataskip_run_1', NULL, false),
     ('Jane Smith LLC', 'Smith', 'Jane Smith', 'owner', true, 'dataskip_run_1', NULL, false),
     ('Jane Doe', 'Doe', 'Jane Doe', 'unknown', false, NULL, NULL, true),
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, 'Individual', true),
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, 'individual', true),
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, 'PERSON', true),
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, 'Coworker', false),
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, 'LLC', false),
+    ('Oak Properties', 'Properties', 'Oak Properties', 'unknown', false, NULL, NULL, false),
     ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'dataskip_run_x', 'person', true),
     ('James Robert Smith', 'Smith', 'James Smith', 'owner', true, 'smartskip_batch', 'person', true);
   FOR rec IN SELECT * FROM owner_line_case LOOP
@@ -652,6 +659,52 @@ BEGIN
         public.dialer_owner_line_release_v1(
           rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source, rec.owner_type
         );
+    END IF;
+  END LOOP;
+
+  -- Original #827 probes with a null owner type. Clean first-and-last names stay
+  -- released. Every other #827 release flips off under Pat 4f/4g.
+  CREATE TEMP TABLE probe_827(
+    owner_name text, owner_last text, contact_name text, relationship text,
+    skip_traced boolean, verified_source text, old_expected boolean
+  ) ON COMMIT DROP;
+  INSERT INTO probe_827 VALUES
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('John Smith', 'Smith', 'John Smith', 'associate', false, NULL, true),
+    ('Robert Smith', 'Smith', 'Bob Smith', 'unknown', false, NULL, true),
+    ('Elizabeth Smith', 'Smith', 'Liz Smith', 'unknown', false, NULL, true),
+    ('John Smith, Trustee', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('John Smith Trustee of the Smith Trust', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('Alden Jimmie C & Nora A-Trustees', 'Alden', 'Nora Alden', 'unknown', false, NULL, true),
+    ('John Smith & Acme LLC', 'Smith', 'John Smith', 'unknown', false, NULL, true),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'unknown', false, NULL, true),
+    ('John & Mary Smith', 'Smith', 'John Smith', 'associate', false, NULL, true),
+    ('William & Mary Smith', 'Smith', 'Bill Smith', 'unknown', false, NULL, true),
+    ('James Robert Smith', 'Smith', 'James Smith', 'unknown', false, NULL, true),
+    ('James Robert Smith', 'Smith', 'James Q Smith', 'unknown', false, NULL, true),
+    ('James Robert Smith', 'Smith', 'James Robert Smith', 'unknown', false, NULL, true),
+    ('Smith James R', 'Smith', 'James Smith', 'unknown', false, NULL, true),
+    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', true, NULL, true),
+    ('James Robert Smith', 'Smith', 'Bob Smith', 'unknown', false, 'dataskip_run1', true),
+    ('Oak LLC', 'LLC', 'Oak LLC', 'entity_contact', false, NULL, false),
+    ('John & Mary Smith', 'Smith', 'Mary Jones', 'unknown', false, NULL, false),
+    ('Fay Uno', 'Uno', 'Gus Uno', 'unknown', true, 'dataskip_run1', false),
+    ('Margaret Smith', 'Smith', 'Peggy Smith', 'unknown', false, NULL, false),
+    ('John Smith', 'Smith', 'John Smith', 'registered_agent', false, NULL, false);
+  FOR rec IN SELECT * FROM probe_827 LOOP
+    probe_got := public.dialer_owner_line_release_v1(
+      rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source, NULL
+    );
+    IF rec.owner_name IN ('John Smith', 'Robert Smith', 'Elizabeth Smith') AND rec.old_expected THEN
+      IF probe_got IS NOT TRUE THEN
+        RAISE EXCEPTION '#827 clean name flipped off: % / %', rec.owner_name, rec.contact_name;
+      END IF;
+    ELSIF rec.old_expected THEN
+      IF probe_got IS NOT FALSE THEN
+        RAISE EXCEPTION '#827 probe did not flip off: % / %', rec.owner_name, rec.contact_name;
+      END IF;
+    ELSIF probe_got IS NOT FALSE THEN
+      RAISE EXCEPTION '#827 blocked probe flipped on: % / %', rec.owner_name, rec.contact_name;
     END IF;
   END LOOP;
 

@@ -54,6 +54,19 @@ const ENTITY_WORDS = new Set([
   'llp',
   'pllc',
   'lp',
+  'properties',
+  'homes',
+  'holdings',
+  'investments',
+  'realty',
+  'rentals',
+  'group',
+  'partners',
+  'ventures',
+  'capital',
+  'enterprises',
+  'management',
+  'development',
 ])
 
 const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'junior', 'senior'])
@@ -246,7 +259,7 @@ function isCleanFirstLast(ownerName: string): boolean {
 
 function ownerTypeAllows(ownerType: string | null | undefined, ownerName: string): boolean {
   const type = ownerTypeKey(ownerType)
-  if (type === 'person') return true
+  if (type === 'person' || type === 'individual') return true
   if (type) return false
   return isCleanFirstLast(ownerName)
 }

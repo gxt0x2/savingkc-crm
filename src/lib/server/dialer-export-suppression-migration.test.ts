@@ -156,7 +156,8 @@ describe('dialer export suppression migration', () => {
       join(process.cwd(), 'supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql'),
       'utf8',
     )
-    expect(followUp).toContain("owner_type IS DISTINCT FROM 'person'")
+    expect(followUp).toContain("owner_type NOT IN ('person', 'individual')")
+    expect(followUp).toContain("'properties'")
     expect(followUp).toContain("lower(btrim(coalesce(p_verified_source, ''))) ~ '^dataskip_run'")
     expect(followUp).toContain("lower(btrim(coalesce(p_verified_source, ''))) ~ '^smartskip_'")
     expect(followUp).toContain('verified_source, owner_type_key')

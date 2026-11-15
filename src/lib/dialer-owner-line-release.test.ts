@@ -224,6 +224,75 @@ describe('owner line release', () => {
       })).toBe(false)
     })
 
+    it('accepts person and individual, and blocks every other owner type', () => {
+      expect(release({
+        ownerType: 'Individual',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+      expect(release({
+        ownerType: 'individual',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+      expect(release({
+        ownerType: 'PERSON',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+      expect(release({
+        ownerType: 'Coworker',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(false)
+      expect(release({
+        ownerType: 'LLC',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(false)
+    })
+
+    it('blocks a null owner type company name and still releases John Smith', () => {
+      expect(release({
+        ownerType: null,
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'Oak Properties',
+        ownerLast: 'Properties',
+        contactName: 'Oak Properties',
+      })).toBe(false)
+      expect(release({
+        ownerType: null,
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+    })
+
     it('releases a null owner type with a clean person name', () => {
       expect(release({
         ownerType: null,
