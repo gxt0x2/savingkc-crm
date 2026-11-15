@@ -1,3 +1,27 @@
+## Workstream / agent id
+
+- Workstream:
+- Agent id:
+
+## Migration versions
+
+Versions reserved in `supabase/migrations/RESERVED.json` for this PR:
+
+- None
+
+## Acceptance checks
+
+<!-- Exact commands or queries, and the result each one should return. -->
+
+## Out of scope
+
+-
+
+## Reviewer gate
+
+- Who gates:
+- One round:
+
 ## What changed
 
 -
