@@ -17,6 +17,15 @@ export const FORECLOSURE_INTAKE_BATCH_LIMIT = 500
 export const INTAKE_CONTROL_COUNTIES = ['jackson', 'clay', 'platte', 'johnson', 'wyandotte'] as const
 export const KS_LICENSE_BLOCK = 'ks_license_unconfirmed'
 
+export type ForeclosureServiceCounty = (typeof INTAKE_CONTROL_COUNTIES)[number]
+
+/** Jackson, Clay, Platte, Johnson, and Wyandotte. Blank, unknown, and every other county stay out. */
+export function serviceAreaCounty(raw: unknown): ForeclosureServiceCounty | null {
+  const county = normalizeCounty(raw)
+  if (!county || county === 'unknown') return null
+  return (INTAKE_CONTROL_COUNTIES as readonly string[]).includes(county) ? county as ForeclosureServiceCounty : null
+}
+
 const STREET_SUFFIX: Record<string, string> = {
   street: 'st', st: 'st', avenue: 'ave', ave: 'ave', road: 'rd', rd: 'rd',
   drive: 'dr', dr: 'dr', boulevard: 'blvd', blvd: 'blvd', lane: 'ln', ln: 'ln',
@@ -221,6 +230,17 @@ function unitToken(part: string, inline: boolean): string | null {
   return pattern.exec(cleaned)?.[1]?.toLowerCase() ?? null
 }
 
+/** A comma segment that is only a short unit, such as "4" or "4B", with no unit word. */
+function bareUnitToken(part: string): string | null {
+  const token = part.replace(/\./g, '').trim()
+  if (!token || /\s/.test(token)) return null
+  if (!/^#?[a-z0-9-]{1,6}$/i.test(token)) return null
+  if (!/\d/.test(token)) return null
+  if (/^#?\d{5}$/.test(token)) return null
+  const unit = token.replace(/^#/, '').toLowerCase()
+  return unit && /\d/.test(unit) ? unit : null
+}
+
 function normalizeStreetLine(line: string): string | null {
   const value = line
     .toLowerCase()
@@ -241,7 +261,7 @@ export function splitPropertyAddress(raw: unknown): { street: string | null; uni
   if (unit) streetLine = streetLine.replace(inlineUnitPattern(), '').trim()
   if (!unit) {
     for (const part of parts.slice(1)) {
-      unit = unitToken(part, false)
+      unit = unitToken(part, false) ?? bareUnitToken(part)
       if (unit) break
     }
   }
@@ -347,8 +367,14 @@ export function prepareIntakeRow(
     const paid = definition.isPaid ? ` Paid source${price} stays off until its enabled flag is changed.` : ''
     return { ok: false, code: 'source_disabled', reason: `${definition.displayName} is turned off.${paid}` }
   }
-  const county = normalizeCounty(input.county)
-  if (!county) return { ok: false, code: 'county_required', reason: 'County is required. A missing county stays paused.' }
+  const county = serviceAreaCounty(input.county)
+  if (!county) {
+    const parsed = normalizeCounty(input.county)
+    if (!parsed || parsed === 'unknown') {
+      return { ok: false, code: 'county_required', reason: 'County is required. A missing county stays paused.' }
+    }
+    return { ok: false, code: 'outside_service_area', reason: 'County must be Jackson, Clay, Platte, Johnson, or Wyandotte.' }
+  }
   const stage = clip(input.stage, 160)
   const noticeType = noticeTypeForIntake(definition, stage)
   if (!(FORECLOSURE_NOTICE_TYPES as readonly string[]).includes(noticeType)) {

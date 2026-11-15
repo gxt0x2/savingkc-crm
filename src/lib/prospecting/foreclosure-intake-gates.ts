@@ -5,6 +5,7 @@ import {
   foreclosureIntakeOutreachBlockers,
   normalizeParcelId,
   normalizePartyName,
+  serviceAreaCounty,
   splitPropertyAddress,
   unitsAgree,
 } from '@/lib/prospecting/foreclosure-intake'
@@ -42,6 +43,7 @@ export function joinsCallingListOn(approvedAt: Date, listDay: string): boolean {
  * 7:55am CT pre-export filter hook.
  * Call this before a foreclosure row is written into that day's calling export.
  * It does not call a vendor. Rows approved at or after the 4:00am CT lock stay off that day's file.
+ * A row also stays off unless its county is Jackson, Clay, Platte, Johnson, or Wyandotte.
  */
 export function preExportFilter<T extends {
   reviewStatus: IntakeReviewStatus
@@ -54,6 +56,7 @@ export function preExportFilter<T extends {
 }>(rows: readonly T[], now: Date): T[] {
   const listDay = chicagoDate(now)
   return rows.filter((row) => {
+    if (!serviceAreaCounty(row.county)) return false
     if (foreclosureIntakeOutreachBlockers(row).length > 0) return false
     if (!row.approvedAt) return false
     return joinsCallingListOn(new Date(row.approvedAt), listDay)
