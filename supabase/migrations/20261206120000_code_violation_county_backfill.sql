@@ -1,12 +1,12 @@
 -- Code-violation county placement, prospect county cleanup, and the
 -- parcel-match situs the dialer view was missing.
 --
--- Does not replace source_list_phone_block_reason_v1. Pull request 814 owns
--- that function, including migration 20261205150000. NULL, blank, and
--- 'unresolved' must block as county_unresolved there, not as
--- out_of_service_area, and must not pass. 'unknown' is removed here.
--- 814's source_list_dialer_phone_review replacement must keep
--- source_list_parcel_match_county_v1 in the situs_county coalesce.
+-- Does not replace source_list_phone_block_reason_v1 or
+-- source_list_dialer_phone_review. Pull request 814 owns both. Its view
+-- already reads raw situs_county first, and this backfill writes that
+-- lowercase value. NULL, blank, and 'unresolved' must block as
+-- county_unresolved there, not as out_of_service_area, and must not pass.
+-- 'unknown' is removed here.
 -- 814's record_source_list_export_batch_v1 copies must allow violation kinds
 -- open_to_entry and nuisance.
 --
@@ -948,96 +948,6 @@ REVOKE ALL ON FUNCTION public.set_source_list_row_status_v1(uuid, text, text, te
 GRANT EXECUTE ON FUNCTION public.set_source_list_row_status_v1(uuid, text, text, text, uuid)
   TO service_role;
 
-CREATE OR REPLACE VIEW public.source_list_dialer_phone_review
-WITH (security_invoker = true) AS
-SELECT
-  dialed.source_list_row_id,
-  dialed.source_list_id,
-  dialed.list_type,
-  dialed.county,
-  dialed.state,
-  dialed.violation_kind,
-  dialed.parcel_id,
-  dialed.case_id,
-  dialed.address,
-  dialed.owner_names,
-  dialed.amount_owed,
-  dialed.property_id,
-  dialed.prospect_id,
-  dialed.row_status,
-  dialed.phone_value,
-  dialed.phone_e164,
-  dialed.phone_origin,
-  dialed.pull_date,
-  dialed.source_file_name,
-  public.source_list_phone_block_reason_v1(
-    dialed.phone_value,
-    dialed.county,
-    dialed.situs_county
-  ) AS block_reason
-FROM (
-  SELECT DISTINCT ON (
-    row.id,
-    coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value))
-  )
-    row.id AS source_list_row_id,
-    row.source_list_id,
-    row.list_type,
-    row.county,
-    row.state,
-    row.violation_kind,
-    row.parcel_id,
-    row.case_id,
-    row.address,
-    row.owner_names,
-    row.amount_owed,
-    row.property_id,
-    row.prospect_id,
-    row.status AS row_status,
-    phone.phone_value,
-    public.normalize_conversation_phone(phone.phone_value) AS phone_e164,
-    phone.phone_origin,
-    list.pull_date,
-    list.source_file_name,
-    coalesce(
-      NULLIF(btrim(row.raw->>'situs_county'), ''),
-      public.source_list_parcel_match_county_v1(row.raw),
-      NULLIF(btrim(row.raw->>'county'), ''),
-      (
-        SELECT NULLIF(btrim(prospect.county), '')
-        FROM public.prospects AS prospect
-        WHERE prospect.id = row.prospect_id
-      ),
-      (
-        SELECT NULLIF(btrim(property.county), '')
-        FROM public.crm_properties AS property
-        WHERE property.id = row.property_id
-      )
-    ) AS situs_county
-  FROM public.source_list_rows AS row
-  JOIN public.source_lists AS list ON list.id = row.source_list_id
-  CROSS JOIN LATERAL (
-    SELECT phone_value, 'source_row'::text AS phone_origin
-    FROM unnest(row.phones) AS phone_value
-    WHERE nullif(btrim(phone_value), '') IS NOT NULL
-    UNION ALL
-    SELECT prospect_phone.phone, 'prospect_phone'::text
-    FROM public.prospect_phones AS prospect_phone
-    WHERE row.prospect_id IS NOT NULL
-      AND prospect_phone.prospect_id = row.prospect_id
-      AND nullif(btrim(prospect_phone.phone), '') IS NOT NULL
-  ) AS phone
-  WHERE row.status IN ('ready', 'loaded_to_dialer')
-  ORDER BY
-    row.id,
-    coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value)),
-    (phone.phone_origin = 'prospect_phone') DESC
-) AS dialed;
-
-
-COMMENT ON VIEW public.source_list_dialer_phone_review IS
-  'Review rows include suppressed numbers and block_reason. situs_county prefers raw, then a parcel-match key ending in the county name, then a linked prospect or property. Do not load the dialer from this view.';
-
 -- Idempotent county backfill for KCMO code-violation rows. A parcel-match key
 -- ending _jackson, _clay, or _platte sets both county and raw.situs_county.
 -- Rows with no match key stay NULL so the dialer gate can block them as
@@ -1075,6 +985,33 @@ CREATE TRIGGER prospects_county_canonical
 
 REVOKE ALL ON FUNCTION public.prospects_county_canonical_v1() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.prospects_county_canonical_v1() TO service_role;
+
+-- Snapshot the county values this backfill is about to change. A second run
+-- does not overwrite the first snapshot. To undo, disable
+-- prospects_county_canonical, drop prospects_county_canonical_check, and copy
+-- county back onto prospects. The trigger would otherwise rewrite unknown,
+-- blank, and mixed case.
+CREATE TABLE IF NOT EXISTS public.prospect_county_backfill_snapshot (
+  prospect_id uuid PRIMARY KEY,
+  county text,
+  snapshotted_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.prospect_county_backfill_snapshot IS
+  'Previous prospects.county for rows the code-violation county backfill changes. county may be null, blank, unknown, or mixed case.';
+
+ALTER TABLE public.prospect_county_backfill_snapshot ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.prospect_county_backfill_snapshot FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.prospect_county_backfill_snapshot TO service_role;
+
+INSERT INTO public.prospect_county_backfill_snapshot (prospect_id, county)
+SELECT prospect.id, prospect.county
+FROM public.prospects AS prospect
+WHERE prospect.county IS NULL
+  OR btrim(prospect.county) = ''
+  OR lower(btrim(prospect.county)) NOT IN ('jackson', 'clay', 'platte', 'johnson', 'wyandotte', 'unresolved')
+  OR prospect.county <> lower(btrim(prospect.county))
+ON CONFLICT (prospect_id) DO NOTHING;
 
 -- Idempotent. 'unknown', blank, NULL, and mixed case are placed from a parcel
 -- match, then the situs city or zip, and only into the five service counties.
