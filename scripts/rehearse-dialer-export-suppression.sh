@@ -843,10 +843,19 @@ END $$;
 RESET ROLE;
 SQL
 
-explain_ms="$("${PSQL[@]}" -tA -c "EXPLAIN (ANALYZE, FORMAT JSON) SELECT count(*) FROM public.source_list_dialer_export WHERE source_list_id = '60000000-0000-4000-8000-000000000099'")"
+explain_ms="$("${PSQL[@]}" -tA <<'SQL'
+SET jit = off;
+EXPLAIN (ANALYZE, FORMAT JSON)
+SELECT count(*)
+FROM public.source_list_dialer_export
+WHERE source_list_id = '60000000-0000-4000-8000-000000000099';
+SQL
+)"
 python3 - "$explain_ms" <<'PY'
 import json, sys
-plan = json.loads(sys.argv[1])
+raw = sys.argv[1].strip()
+raw = raw[raw.find('['):]
+plan = json.loads(raw)
 elapsed = float(plan[0]["Execution Time"])
 print(f"export view explain analyze {elapsed:.1f} ms")
 if elapsed >= 4000:
