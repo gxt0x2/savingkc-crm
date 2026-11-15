@@ -25,7 +25,7 @@ export interface MatrixDayFiles {
   date: string
   directory: string
   parts: MatrixPart[]
-  files: { name: string; part: MatrixPart; text: string }[]
+  files: { name: string; part: MatrixPart; text: string; bytes: number }[]
   missing: MatrixPart[]
   partCounts: Record<MatrixPart, number>
   doneMarker: string | null
@@ -54,7 +54,8 @@ export function readMatrixDay(directory: string, date: string, now: Date = new D
   const files = names.flatMap((name) => {
     const part = matrixPartForFile(name)
     if (!part) return []
-    return [{ name, part, text: readFileSync(join(directory, name), 'utf8') }]
+    const path = join(directory, name)
+    return [{ name, part, text: readFileSync(path, 'utf8'), bytes: statSync(path).size }]
   })
   const parts = [...new Set(files.map((file) => file.part))]
   const missing = MATRIX_PARTS.filter((part) => !parts.includes(part))
@@ -78,6 +79,7 @@ export function readMatrixDay(directory: string, date: string, now: Date = new D
     complete: date === today
       && partCounts.expired > 0
       && partCounts.sold > 0
+      && files.every((file) => file.bytes > 0)
       && doneMarker === date
       && beforeListLock(now),
   }

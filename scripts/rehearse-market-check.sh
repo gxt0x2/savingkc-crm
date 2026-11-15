@@ -501,6 +501,61 @@ BEGIN
     RAISE EXCEPTION 'a bad intake aborted the run record';
   END IF;
 
+  INSERT INTO public.target_zips (zip5, county, state, status)
+  VALUES ('66202', 'johnson', 'KS', 'keep')
+  ON CONFLICT (zip5) DO UPDATE SET county = EXCLUDED.county, state = EXCLUDED.state, status = EXCLUDED.status;
+  v_plan := public.apply_market_plan_v1(jsonb_build_object(
+    'actor', 'rehearsal',
+    'sha256', repeat('f', 64),
+    'bytes', 40,
+    'fileName', 'matrix.csv',
+    'pullDate', CURRENT_DATE,
+    'complete', true,
+    'checks', '[]'::jsonb,
+    'intakes', jsonb_build_array(
+      jsonb_build_object('matchKey', 'parcel:KSROW', 'parcelId', 'KSROW', 'address', '9 Kansas Ave', 'zip5', '66202', 'county', 'jackson', 'state', 'MO'),
+      jsonb_build_object('matchKey', 'parcel:BADROW', 'parcelId', 'BADROW', 'address', '1 Nowhere', 'zip5', '00000', 'county', 'jackson', 'state', 'MO')
+    )
+  ));
+  IF NOT EXISTS (SELECT 1 FROM public.mls_export_runs WHERE export_file_sha256 = repeat('f', 64)) THEN
+    RAISE EXCEPTION 'a Kansas intake aborted the load';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.source_list_rows
+    WHERE match_key = 'parcel:KSROW' AND county = 'johnson' AND state = 'KS'
+  ) THEN
+    RAISE EXCEPTION 'Kansas expired row was stored as jackson/MO or dropped';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export WHERE parcel_id = 'KSROW'
+  ) THEN
+    RAISE EXCEPTION 'a Kansas expired row was exported';
+  END IF;
+
+  UPDATE public.mls_market_config SET value = 'false', updated_at = clock_timestamp()
+  WHERE key IN ('MLS_MARKET_CHECK_ENABLED', 'EXPIRED_OWNER_CONFIRMED', 'KS_EXPIRED_RELEASE_APPROVED');
+  INSERT INTO public.source_lists (list_type, county, state, pull_date, source_file_name, source_file_sha256, source_file_bytes, imported_by)
+  VALUES ('tax_delinquent', 'jackson', 'MO', CURRENT_DATE, 'one.csv', repeat('1', 64), 10, 'rehearsal');
+  INSERT INTO public.prospects (id, owner_1, county) VALUES ('00000000-0000-4000-8000-0000000000b1', 'ONE OWNER', 'jackson');
+  INSERT INTO public.prospect_phones (prospect_id, phone, relationship)
+  VALUES ('00000000-0000-4000-8000-0000000000b1', '+18165551001', 'owner');
+  INSERT INTO public.source_list_rows (
+    source_list_id, list_type, county, state, match_key, parcel_id, address, phones, status, prospect_id
+  )
+  SELECT id, 'tax_delinquent', 'jackson', 'MO', 'parcel:ONE1', 'ONE1', '1 Oak St', ARRAY['+18165551001'], 'ready',
+    '00000000-0000-4000-8000-0000000000b1'
+  FROM public.source_lists WHERE source_file_sha256 = repeat('1', 64);
+  INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
+  VALUES ('ONE1', 'jackson', 'tax_delinquent', '00000000-0000-4000-8000-0000000000b1', now(), 'jackson_tax_portal', 'delinquent', 0);
+  v_export := public.record_source_list_export_batch_v1(
+    'rehearsal', 'tax_delinquent', 'jackson', 'MO', NULL,
+    (SELECT id FROM public.source_lists WHERE source_file_sha256 = repeat('1', 64)),
+    1
+  );
+  IF v_export->>'phone_count' IS DISTINCT FROM '1' THEN
+    RAISE EXCEPTION 'gate case expected 1 phone, got %', v_export->>'phone_count';
+  END IF;
+
   RAISE NOTICE 'market check rehearsal passed in % ms', v_ms;
 END
 $test$;

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
- * Load the newest Heartland Matrix day folder.
+ * Load today's America/Chicago Heartland Matrix folder.
  *
- * The folder is /workspace/mls-exports/<YYYY-MM-DD>/ unless --root is set.
- * A complete set is Active/Coming Soon, Pending, Sold, and Expired.
+ * The folder is /workspace/mls-exports/<today>/ unless --root is set.
+ * Yesterday's folder is rejected. A 0-byte part is rejected.
+ * Expired and sold must both have rows, and a done marker must name today.
+ * The load must finish before 4:00am Chicago.
  * Dry run unless --confirm. Does not fetch MLS data.
  *
  *   npx tsx scripts/load-market-check-day.mts --root /workspace/mls-exports
