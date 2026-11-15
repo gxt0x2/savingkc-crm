@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { blockedEmailStatus } from '@/lib/email-validation/gate'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 function trackedDealPageUrl(
@@ -122,6 +123,10 @@ export async function POST(req: NextRequest) {
 
       // --- Email ---
       if (buyer.email_opted_in && buyer.email) {
+        if (await blockedEmailStatus(buyer.email)) {
+          await db.from('broadcast_recipients').update({ email_status: 'skipped' }).eq('id', recipient.id)
+          continue
+        }
         try {
           const { Resend } = await import('resend')
           const resend = new Resend(process.env.RESEND_API_KEY)

@@ -13,6 +13,7 @@ import { recordSellerIntakeOperatingState } from '@/lib/operating-model/seller-i
 import { externalSideEffectsDisabled } from '@/lib/preview-safety'
 import { mergeLeadAttribution, websiteFormAttribution } from '@/lib/attribution/lead-attribution'
 import { linkJourneyToLead, visitorIdFromBody } from '@/lib/ppc/journey-link'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { retiredLegacyLeadsPatchResponse } from '@/lib/server/legacy-leads-patch-retirement'
 
 const corsHeaders = {
@@ -351,6 +352,7 @@ export async function POST(req: NextRequest) {
         { status: 400, headers: corsHeaders },
       )
     }
+    await recordWrittenEmails([email])
 
     let leadId: string | null = null
 

@@ -382,3 +382,16 @@ export function buildSourceListImport(actor: string, request: SourceListImportRe
     p_rows: [...byKey.values()],
   }
 }
+
+export function sourceListEmails(rows: SourceListRpcRow[]): string[] {
+  const emails: string[] = []
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row.raw)) {
+      const normalizedKey = key.trim().toLowerCase().replace(/[\s-]+/g, '_')
+      if (!normalizedKey.includes('email')) continue
+      const trimmed = value?.trim()
+      if (trimmed && !emails.includes(trimmed)) emails.push(trimmed)
+    }
+  }
+  return emails
+}

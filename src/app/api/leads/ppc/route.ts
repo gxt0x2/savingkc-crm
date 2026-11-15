@@ -21,6 +21,7 @@ import {
   SITUATION_TO_TAG,
   TIMELINE_TO_URGENCY,
 } from '@/lib/ppc/tracking-events'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { notifyNewLead } from '@/lib/ari-briefing'
 import { regenerateBriefing } from '@/lib/briefing-regen'
 import { isInternalTestPhone } from '@/lib/internal-test-phones'
@@ -548,6 +549,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    await recordWrittenEmails([email])
     // Dedupe by phone -> email -> address (in that order)
     let leadId = await findExistingPpcLeadId({ phone: phoneE164, email, address })
 

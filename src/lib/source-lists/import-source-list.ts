@@ -1,5 +1,7 @@
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import {
   buildSourceListImport,
+  sourceListEmails,
   SOURCE_LIST_STATUSES,
   SourceListImportError,
   type SourceListImportRequest,
@@ -81,6 +83,7 @@ export async function importSourceList(
   request: SourceListImportRequest,
 ): Promise<SourceListImportResult> {
   const payload = buildSourceListImport(actor, request)
+  await recordWrittenEmails(sourceListEmails(payload.p_rows))
   const { data, error } = await db.rpc('import_source_list_v1', payload)
   if (error) throw sourceListRpcError(error)
   return importResult(data)

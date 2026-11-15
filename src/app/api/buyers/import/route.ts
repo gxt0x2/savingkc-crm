@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 // ---------------------------------------------------------------------------
@@ -187,6 +188,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    await recordWrittenEmails(toInsert.map((row) => (typeof row.email === 'string' ? row.email : null)))
     // Batch insert in chunks of 500 to avoid payload limits
     const CHUNK_SIZE = 500
     let imported = 0

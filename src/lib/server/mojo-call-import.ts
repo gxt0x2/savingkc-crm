@@ -5,6 +5,7 @@ import { normalizePhoneToE164 } from '@/lib/phone-normalize'
 import { applyCrmLifecycleCommand, type CrmLifecycleStage } from '@/lib/server/crm-lifecycle'
 import { createWorkItem } from '@/lib/server/work-items'
 import { processMojoRecordingEvidence } from '@/lib/server/mojo-recording-evidence'
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const MOJO_CALL_OUTCOMES = [
@@ -353,6 +354,7 @@ export async function finishMojoCallQueue(input: {
 }
 
 export async function ingestCanonicalMojoCall(call: MojoCallRecord, db: Db = supabaseAdmin()): Promise<MojoCallIngestResult> {
+  await recordWrittenEmails([call.email, ...(call.emails ?? [])])
   const qualified = qualifyMojoCallRecord(call)
   const normalized = {
     ...qualified.call,

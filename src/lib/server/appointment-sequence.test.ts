@@ -7,7 +7,7 @@ vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: vi.fn() }))
 vi.mock('resend', () => ({ Resend: class { emails = { send: mocks.email } } }))
 import { processAppointmentSequence } from './appointment-sequence'
 
-function fixture(touch = 'arrival_sms', overrides: Record<string, unknown> = {}) {
+function fixture(touch = 'arrival_sms', overrides: Record<string, unknown> = {}, emailStatus: string | null = null) {
   const updates: Record<string, unknown>[] = []
   const step = { id: 'step-1', appointment_id: 'a-1', version: 1, touch, due_at: new Date().toISOString() }
   const rpc = vi.fn().mockResolvedValueOnce({ data: [step] }).mockResolvedValue({ data: [] })
@@ -17,6 +17,7 @@ function fixture(touch = 'arrival_sms', overrides: Record<string, unknown> = {})
     if (table === 'appointments') result = appointment
     if (table === 'leads') result = { full_name: 'Seller Smith', phone: '+19135550100', email: 'seller@example.com' }
     if (table === 'agent_profiles') result = { profile_photo_url: null }
+    if (table === 'email_address_validations') result = emailStatus ? { email_status: emailStatus } : null
     const chain = {
       select: vi.fn(() => chain), eq: vi.fn(() => chain), ilike: vi.fn(() => chain),
       single: vi.fn(async () => ({ data: result })), maybeSingle: vi.fn(async () => ({ data: result })),
@@ -52,6 +53,14 @@ describe('appointment delivery worker', () => {
     expect(f.updates[0].status).toBe('skipped')
     expect(mocks.sms).not.toHaveBeenCalled()
   })
+  it.each(['invalid', 'disposable'])('does not send booking email when the address is %s', async (emailStatus) => {
+    mocks.email.mockResolvedValue({ data: { id: 'email-1' } })
+    const f = fixture('booking_email', {}, emailStatus)
+    await processAppointmentSequence(10, f.db)
+    expect(mocks.email).not.toHaveBeenCalled()
+    expect(f.updates[0]).toMatchObject({ status: 'skipped', reason: 'email_not_deliverable' })
+  })
+
   it('sends booking email through Resend with a stable idempotency key', async () => {
     mocks.email.mockResolvedValue({ data: { id: 'email-1' } })
     const f = fixture('booking_email'); await processAppointmentSequence(10, f.db)

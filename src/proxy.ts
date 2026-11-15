@@ -35,6 +35,9 @@ const PUBLIC_API_EXACT = new Set([
   '/api/google-maps-key',
   // MCP performs its own dedicated bearer-token authorization in the route.
   '/api/mcp',
+  // Caller ID reputation log checks CALLER_ID_LOG_SECRET in the route.
+  // Exact path only, so a lookalike cannot inherit that gate.
+  '/api/ops/caller-id-reputation/log',
   // These fixed-target OAuth bridge routes remove only the unsupported MCP
   // resource indicator before forwarding to the configured Supabase issuer.
   '/api/oauth/authorize',
@@ -101,6 +104,7 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   '/api/cron/sync-mojo-emails',
   '/api/cron/sync-mojo-performance',
   '/api/cron/sync-mojo-calls',
+  '/api/cron/tax-status-verification',
   '/api/deals/import-photos',
   '/api/deals/upload',
   // Enrichment is intentionally exact-listed so adding a new route under the

@@ -1,4 +1,5 @@
 import "server-only";
+import { emailBlockedInWorkflow } from "../../email-validation/workflow-block";
 import { freezeHostedEnvelope } from "../providers/frozen-envelope";
 import { check, workflowHash, type Context } from "./core";
 
@@ -17,6 +18,9 @@ export async function queueIntent(
     expires: Date;
   },
 ) {
+  const [address] =
+    await context.tx`select a.normalized_address from em_threads t join em_addresses a on a.workspace_id=t.workspace_id and a.id=t.address_id where t.workspace_id=${context.member.workspace_id} and t.id=${input.threadId}`;
+  check(!(await emailBlockedInWorkflow(context.tx, address?.normalized_address)), "EMAIL_NOT_DELIVERABLE");
   const [workspace] =
     await context.tx`select execution_mode from em_workspaces where id=${context.member.workspace_id}`;
   if (workspace.execution_mode === "hosted") {

@@ -1,3 +1,4 @@
+import { recordWrittenEmails } from '@/lib/email-validation/record'
 import { createClient } from '@supabase/supabase-js'
 import type { ProspectMatch } from './prospect-lookup'
 
@@ -53,6 +54,7 @@ export async function createEnrichedLeadFromProspect(
   const state = match.situs_state || undefined
   const zip = match.situs_zip || undefined
 
+  await recordWrittenEmails([match.email_1, match.email_2])
   // Insert lead
   const { data: newLead } = await supabase.from('leads').insert({
     full_name: fullName,

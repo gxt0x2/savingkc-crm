@@ -1,3 +1,4 @@
+import { recordWrittenEmails } from "@/lib/email-validation/record";
 import { resolveAuthenticatedActor } from "@/lib/api/authenticated-actor";
 import { emailDatabase } from "@/lib/email/workflow/connection";
 import { sameOrigin, workflowErrorResponse } from "@/lib/email/workflow/http";
@@ -6,6 +7,15 @@ import { importAudience } from "@/lib/email/audiences/import";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+function audienceEmails(input: unknown): Array<string | null> {
+  if (!input || typeof input !== "object" || !("rows" in input)) return [];
+  const rows = (input as { rows?: unknown }).rows;
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) =>
+    row && typeof row === "object" && "email" in row && typeof row.email === "string" ? row.email : null,
+  );
+}
 export async function POST(request: Request) {
   try {
     check(sameOrigin(request), "INVALID_ORIGIN", 403);
@@ -24,6 +34,7 @@ export async function POST(request: Request) {
     } catch {
       check(false, "INVALID_JSON", 400);
     }
+    await recordWrittenEmails(audienceEmails(input));
     return Response.json(
       await importAudience(emailDatabase(), actor.subject, input),
       { headers: { "Cache-Control": "private, no-store" } },

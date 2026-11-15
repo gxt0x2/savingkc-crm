@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { logTcEvent } from '@/lib/tc'
+import { blockedEmailStatus } from '@/lib/email-validation/gate'
 import { unresolvedCommunicationTemplateFields } from '@/lib/operating-model/communication-template-catalog'
 
 const sendSchema = z.object({
@@ -74,6 +75,7 @@ function approvedBody(draft: SendDraftRow) {
 
 async function sendEmailDraft(draft: SendDraftRow, body: string, fromEmail?: string): Promise<DeliveryResult> {
   if (!draft.recipient_email) throw new DraftSendError('Draft has no recipient email', 400)
+  if (await blockedEmailStatus(draft.recipient_email)) throw new DraftSendError('Email address is not deliverable', 400)
 
   const subject = draft.subject?.trim() || 'Message from Saving KC'
   if (isTestMode()) {

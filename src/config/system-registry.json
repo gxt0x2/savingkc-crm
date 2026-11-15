@@ -600,7 +600,9 @@
         "em_reply_aliases",
         "em_preference_tokens",
         "em_newsletter_contacts",
-        "em_newsletter_schedules"
+        "em_newsletter_schedules",
+        "email_address_validations",
+        "email_validation_usage"
       ],
       "environment": [
         "EMAIL_CREDENTIALS_KEY_V1",
@@ -627,7 +629,11 @@
         "EMAIL_UI_AUTH_BYPASS_SECRET",
         "EMAIL_UI_TEST_ACTOR",
         "NODE_ENV",
-        "NEWSLETTER_OWNER_APPROVED"
+        "NEWSLETTER_OWNER_APPROVED",
+        "ZEROBOUNCE_API_KEY",
+        "EMAIL_VALIDATION_PROVIDER",
+        "MILLIONVERIFIER_API_KEY",
+        "EMAIL_VALIDATION_DAILY_CAP"
       ]
     },
     {
@@ -750,6 +756,32 @@
       "crons": [
         { "path": "/api/cron/data-retention", "schedule": "30 11 * * *" }
       ]
+    },
+    {
+      "id": "tax_status_verification",
+      "name": "Live county tax-status gate",
+      "owner": "Acquisitions",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/cron/tax-status-verification", "/api/tax-status/mojo-removal"],
+      "tables": ["tax_status_checks", "tax_status_mojo_removals", "crm_properties", "prospects", "source_list_rows", "mortgage_foreclosure_prospects", "prospecting_campaign_members"],
+      "environment": ["CRON_SECRET", "ADMIN_API_SECRET", "SCRAPER_API_KEY", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+      "crons": [
+        { "path": "/api/cron/tax-status-verification", "schedule": "0 8 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "0 9 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "55 12 * * *" },
+        { "path": "/api/cron/tax-status-verification", "schedule": "55 13 * * *" }
+      ]
+    },
+    {
+      "id": "caller_id_reputation",
+      "name": "Caller ID reputation log",
+      "owner": "Operations",
+      "status": "active",
+      "routes": [],
+      "apiRoutes": ["/api/ops/caller-id-reputation/log"],
+      "tables": ["caller_id_reputation_log", "caller_id_reputation_latest"],
+      "environment": ["CALLER_ID_LOG_SECRET"]
     }
   ]
 }

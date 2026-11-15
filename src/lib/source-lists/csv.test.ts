@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSourceListImport, sourceListMatchKey, SourceListImportError } from './csv'
+import { buildSourceListImport, sourceListEmails, sourceListMatchKey, SourceListImportError } from './csv'
 
 const actor = 'casey@savingkc.com'
 
@@ -89,6 +89,19 @@ describe('source list csv import', () => {
     expect(payload.p_violation_kind).toBe('board_up')
     expect(payload.p_county).toBeNull()
     expect(payload.p_rows[0].parcel_id).toBe('KC1')
+  })
+
+  it('collects owner email columns for validation without treating them as phones', () => {
+    const payload = buildSourceListImport(actor, {
+      listType: 'tax',
+      county: 'Jackson',
+      state: 'MO',
+      pullDate: '2026-11-14',
+      fileName: 'jackson-tax.csv',
+      csvText: 'Parcel ID,Owner Email,Email 2\n12-345-67,Ada@Example.com,other@example.com\n',
+    })
+    expect(sourceListEmails(payload.p_rows)).toEqual(['Ada@Example.com', 'other@example.com'])
+    expect(payload.p_rows[0].phones).toEqual([])
   })
 
   it('rejects a row that has neither a parcel nor a case', () => {

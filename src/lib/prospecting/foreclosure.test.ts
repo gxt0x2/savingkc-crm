@@ -11,6 +11,7 @@ import {
   foreclosureCallingHref,
   foreclosureMapPins,
   listRowPhones,
+  inferState,
   normalizeForeclosureInput,
   parseForeclosureCsv,
   appendNoticeFileEvents,
@@ -85,6 +86,35 @@ describe('mortgage foreclosure equity and skip-trace locks', () => {
     expect(thin.ok && thin.record.estEquity).toBe(40_000)
     expect(thin.ok && thin.record.phones).toEqual([])
     expect(thin.ok && thin.record.status).toBe('equity_screened')
+  })
+
+  it('rejects Cass County and still infers the other metro counties', () => {
+    expect(inferState('cass', null)).toBeNull()
+    expect(inferState('cass', 'MO')).toBe('MO')
+    expect(inferState('jackson', null)).toBe('MO')
+    expect(inferState('clay', null)).toBe('MO')
+    expect(inferState('platte', null)).toBe('MO')
+    expect(inferState('johnson', null)).toBe('KS')
+    expect(inferState('wyandotte', null)).toBe('KS')
+    expect(inferState('miami', null)).toBe('KS')
+
+    const cass = normalizeForeclosureInput({
+      county: 'Cass County',
+      state: 'MO',
+      ownerName: 'Casey Person',
+      situs: '10 Main St',
+      estValue: 200000,
+      estDebt: 50000,
+    })
+    expect(cass).toEqual({ ok: false, reason: 'Cass County is outside the service area.' })
+
+    const imported = parseForeclosureCsv([
+      'county,state,owner_name_raw,situs,est_value,est_debt',
+      'Cass,MO,Casey Person,10 Main St,200000,50000',
+      'Jackson,MO,Casey Person,11 Main St,200000,50000',
+    ].join('\n'))
+    expect(imported.rejected).toEqual([{ row: 2, reason: 'Cass County is outside the service area.' }])
+    expect(imported.accepted.map((row) => row.county)).toEqual(['jackson'])
   })
 
   it('rejects tax rows and makes a person with $75k+ SmartSkip phones callable', () => {
