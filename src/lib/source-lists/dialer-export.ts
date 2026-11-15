@@ -32,6 +32,7 @@ export const DIALER_EXPORT_COLUMNS = [
   'ks_license_unconfirmed',
   'basis',
   'calling_window',
+  'line_check_flag',
 ] as const
 
 export interface DialerExportRow {
@@ -58,6 +59,7 @@ export interface DialerExportRow {
   ks_license_unconfirmed: boolean
   basis: string
   calling_window: string | null
+  line_check_flag: string | null
 }
 
 export interface DialerExportExclusion {
@@ -155,6 +157,7 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
       ? row.basis
       : (typeof row.list_type === 'string' ? row.list_type : ''),
     calling_window: typeof row.calling_window === 'string' ? row.calling_window : null,
+    line_check_flag: typeof row.line_check_flag === 'string' ? row.line_check_flag : null,
   }
 }
 
