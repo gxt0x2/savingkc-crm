@@ -53,7 +53,7 @@ export function emailLocalPart(email: string): string {
   return email.slice(0, email.lastIndexOf('@')).split('+')[0] ?? ''
 }
 
-export const EMAIL_VALIDATION_RECHECK_MS = 90 * 24 * 60 * 60 * 1000
+export const EMAIL_VALIDATION_RECHECK_MS = 30 * 24 * 60 * 60 * 1000
 export const DEFAULT_EMAIL_VALIDATION_DAILY_CAP = 2000
 
 export function emailValidationDailyCap(env: NodeJS.ProcessEnv | { EMAIL_VALIDATION_DAILY_CAP?: string } = process.env): number {

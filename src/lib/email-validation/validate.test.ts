@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import { emailValidationProviderFromEnv } from './from-env'
 import { createMillionVerifier, millionVerifierFromEnv } from './millionverifier'
 import { ProviderCheckError } from './provider'
-import type { EmailValidationProvider } from './provider'
+import type { EmailValidationProvider, PaidEmailValidationProviderName } from './provider'
 import type { StoredEmailValidation } from './validate'
 import { validateEmail, type EmailValidationStore } from './validate'
 import { coldLedgerReviewReasons } from './cold-send'
-import { emailValidationDailyCap, isBadEmailStatus } from './status'
+import { createZeroBounce } from './zerobounce'
+import { EMAIL_VALIDATION_RECHECK_MS, emailValidationDailyCap, isBadEmailStatus } from './status'
 
 function memoryStore(seed: StoredEmailValidation[] = []) {
   const rows = new Map(seed.map((row) => [row.normalizedEmail, row]))
@@ -30,9 +32,13 @@ function memoryStore(seed: StoredEmailValidation[] = []) {
   return { store, rows, reservations: () => reserved }
 }
 
-function provider(status: 'valid' | 'invalid' | 'catch_all' | 'unknown' | 'disposable' = 'valid', role = false): EmailValidationProvider {
+function provider(
+  status: 'valid' | 'invalid' | 'catch_all' | 'unknown' | 'disposable' = 'valid',
+  role = false,
+  id: PaidEmailValidationProviderName = 'zerobounce',
+): EmailValidationProvider {
   return {
-    id: 'millionverifier',
+    id,
     verify: vi.fn(async () => ({ status, role, raw: { result: status } })),
   }
 }
@@ -110,16 +116,27 @@ describe('email validation on import', () => {
       dailyCap: 5,
     })
     expect(result.emailStatus).toBe(status)
-    expect(result.provider).toBe('millionverifier')
+    expect(result.provider).toBe('zerobounce')
     expect(isBadEmailStatus(result.emailStatus)).toBe(bad)
   })
 
-  it('does not call the provider again within 90 days', async () => {
-    const checkedAt = new Date('2026-10-01T00:00:00.000Z').toISOString()
+  it('stores the selected adapter id', async () => {
+    const { store } = memoryStore()
+    const result = await validateEmail('seller@example.com', {
+      store,
+      lookupMx: present,
+      provider: provider('valid', false, 'millionverifier'),
+      dailyCap: 5,
+    })
+    expect(result.provider).toBe('millionverifier')
+  })
+
+  it('reuses a completed provider result for 30 days', async () => {
+    const now = new Date('2026-11-14T00:00:00.000Z')
     const { store } = memoryStore([{
       normalizedEmail: 'seller@example.com',
       emailStatus: 'valid',
-      checkedAt,
+      checkedAt: new Date(now.getTime() - EMAIL_VALIDATION_RECHECK_MS).toISOString(),
       provider: 'millionverifier',
       rawResult: { result: 'ok' },
       isRole: false,
@@ -130,20 +147,22 @@ describe('email validation on import', () => {
       store,
       lookupMx: present,
       provider: paid,
-      now: new Date('2026-11-14T00:00:00.000Z'),
+      now,
       dailyCap: 5,
     })
-    expect(result).toMatchObject({ emailStatus: 'valid', skippedProvider: 'recent' })
+    expect(EMAIL_VALIDATION_RECHECK_MS).toBe(30 * 24 * 60 * 60 * 1000)
+    expect(result).toMatchObject({ emailStatus: 'valid', provider: 'millionverifier', skippedProvider: 'recent' })
     expect(paid.verify).not.toHaveBeenCalled()
   })
 
-  it('calls the provider again after 90 days', async () => {
+  it('calls the provider again after 30 days', async () => {
+    const now = new Date('2026-11-14T00:00:00.000Z')
     const { store } = memoryStore([{
       normalizedEmail: 'seller@example.com',
       emailStatus: 'unknown',
-      checkedAt: '2026-01-01T00:00:00.000Z',
-      provider: 'millionverifier',
-      rawResult: { result: 'unknown' },
+      checkedAt: new Date(now.getTime() - EMAIL_VALIDATION_RECHECK_MS - 1).toISOString(),
+      provider: 'zerobounce',
+      rawResult: { status: 'unknown' },
       isRole: false,
       localChecks: {},
     }])
@@ -152,11 +171,41 @@ describe('email validation on import', () => {
       store,
       lookupMx: present,
       provider: paid,
-      now: new Date('2026-11-14T00:00:00.000Z'),
+      now,
       dailyCap: 5,
     })
-    expect(result.emailStatus).toBe('valid')
+    expect(result).toMatchObject({ emailStatus: 'valid', provider: 'zerobounce' })
     expect(paid.verify).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a completed result when the key or daily cap is missing', async () => {
+    const row: StoredEmailValidation = {
+      normalizedEmail: 'seller@example.com',
+      emailStatus: 'valid',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      provider: 'zerobounce',
+      rawResult: { status: 'valid' },
+      isRole: false,
+      localChecks: {},
+    }
+    const noKey = memoryStore([row])
+    const capped = memoryStore([row])
+    const now = new Date('2026-11-14T00:00:00.000Z')
+    await expect(validateEmail('seller@example.com', {
+      store: noKey.store,
+      lookupMx: present,
+      provider: null,
+      now,
+    })).resolves.toMatchObject({ emailStatus: 'valid', provider: 'zerobounce', skippedProvider: 'no_key' })
+    const paid = provider('invalid')
+    await expect(validateEmail('seller@example.com', {
+      store: capped.store,
+      lookupMx: present,
+      provider: paid,
+      now,
+      dailyCap: 0,
+    })).resolves.toMatchObject({ emailStatus: 'valid', provider: 'zerobounce', skippedProvider: 'daily_cap' })
+    expect(paid.verify).not.toHaveBeenCalled()
   })
 
   it('stops at the daily cap and leaves the address unverified', async () => {
@@ -176,11 +225,36 @@ describe('email validation on import', () => {
   it('releases a reserved check when the provider fails and does not lock the address', async () => {
     const { store, reservations } = memoryStore()
     const paid: EmailValidationProvider = {
-      id: 'millionverifier',
+      id: 'zerobounce',
       verify: vi.fn(async () => { throw new ProviderCheckError('down', { error: 'provider_unavailable' }) }),
     }
     const result = await validateEmail('seller@example.com', { store, lookupMx: present, provider: paid, dailyCap: 2 })
     expect(result).toMatchObject({ emailStatus: 'unknown', provider: null })
+    expect(reservations()).toBe(0)
+  })
+
+  it('keeps a completed result when a later provider check fails', async () => {
+    const { store, reservations } = memoryStore([{
+      normalizedEmail: 'seller@example.com',
+      emailStatus: 'valid',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      provider: 'zerobounce',
+      rawResult: { status: 'valid' },
+      isRole: false,
+      localChecks: {},
+    }])
+    const paid: EmailValidationProvider = {
+      id: 'zerobounce',
+      verify: vi.fn(async () => { throw new ProviderCheckError('down', { error: 'provider_unavailable' }) }),
+    }
+    const result = await validateEmail('seller@example.com', {
+      store,
+      lookupMx: present,
+      provider: paid,
+      now: new Date('2026-11-14T00:00:00.000Z'),
+      dailyCap: 2,
+    })
+    expect(result).toMatchObject({ emailStatus: 'valid', provider: 'zerobounce' })
     expect(reservations()).toBe(0)
   })
 
@@ -204,6 +278,53 @@ describe('email validation on import', () => {
     expect(emailValidationDailyCap({})).toBe(2000)
     expect(emailValidationDailyCap({ EMAIL_VALIDATION_DAILY_CAP: '50' })).toBe(50)
     expect(emailValidationDailyCap({ EMAIL_VALIDATION_DAILY_CAP: 'nope' })).toBe(2000)
+  })
+})
+
+describe('provider selection', () => {
+  it('does not call a provider when ZeroBounce is unset', () => {
+    const fetcher = vi.fn()
+    expect(emailValidationProviderFromEnv({}, fetcher)).toBeNull()
+    expect(emailValidationProviderFromEnv({ ZEROBOUNCE_API_KEY: '   ' }, fetcher)).toBeNull()
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('uses ZeroBounce unless MillionVerifier is selected', () => {
+    const fetcher = vi.fn()
+    expect(emailValidationProviderFromEnv({ ZEROBOUNCE_API_KEY: 'zb', MILLIONVERIFIER_API_KEY: 'mv' }, fetcher)?.id).toBe('zerobounce')
+    expect(emailValidationProviderFromEnv({ EMAIL_VALIDATION_PROVIDER: 'ZeroBounce', ZEROBOUNCE_API_KEY: 'zb' }, fetcher)?.id).toBe('zerobounce')
+    expect(emailValidationProviderFromEnv({
+      EMAIL_VALIDATION_PROVIDER: 'millionverifier',
+      MILLIONVERIFIER_API_KEY: 'mv',
+      ZEROBOUNCE_API_KEY: 'zb',
+    }, fetcher)?.id).toBe('millionverifier')
+    expect(emailValidationProviderFromEnv({ EMAIL_VALIDATION_PROVIDER: 'millionverifier', ZEROBOUNCE_API_KEY: 'zb' }, fetcher)).toBeNull()
+    expect(emailValidationProviderFromEnv({ EMAIL_VALIDATION_PROVIDER: 'other', ZEROBOUNCE_API_KEY: 'zb' }, fetcher)).toBeNull()
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('stores the submitted address and does not apply did_you_mean', async () => {
+    const globalFetch = vi.spyOn(globalThis, 'fetch')
+    const fetcher = vi.fn(async () => Response.json({
+      address: 'seler@example.com',
+      status: 'invalid',
+      sub_status: 'possible_typo',
+      did_you_mean: 'seller@example.com',
+      firstname: 'Ada',
+      catchall_domain: false,
+    }))
+    const { store, rows } = memoryStore()
+    const result = await validateEmail('seler@example.com', {
+      store,
+      lookupMx: present,
+      provider: createZeroBounce('test-key', fetcher),
+      dailyCap: 5,
+    })
+    expect(result).toMatchObject({ normalizedEmail: 'seler@example.com', emailStatus: 'invalid', provider: 'zerobounce' })
+    expect(rows.get('seler@example.com')?.rawResult).toMatchObject({ did_you_mean: 'seller@example.com' })
+    expect(rows.get('seler@example.com')?.rawResult).not.toHaveProperty('firstname')
+    expect(globalFetch).not.toHaveBeenCalled()
+    globalFetch.mockRestore()
   })
 })
 
