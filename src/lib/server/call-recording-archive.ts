@@ -560,7 +560,9 @@ async function pageRows(
   orderColumn: string,
   offset: number,
   limit: number,
-  filter: (query: ReturnType<Db['from']>) => ReturnType<Db['from']>,
+  // select() narrows the Supabase builder, so one alias cannot name every table.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  filter: (query: any) => any,
 ): Promise<Array<Record<string, unknown>>> {
   const { data, error } = await filter(db.from(table))
     .order(orderColumn, { ascending: true })
