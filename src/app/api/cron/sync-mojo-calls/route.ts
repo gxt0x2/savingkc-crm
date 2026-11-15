@@ -10,6 +10,7 @@ import {
   syncMojoDialIngest,
   type MojoDialIngestStore,
 } from '@/lib/server/mojo-dial-ingest'
+import { archiveMojoRecordingsFromCron } from '@/lib/server/call-recording-archive'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -98,7 +99,15 @@ async function handle(request: NextRequest) {
       sessionId,
       store,
     })
-    return NextResponse.json(result, { headers: NO_STORE_HEADERS })
+    let recordingArchive: { archived: number; failed: number } = { archived: 0, failed: 0 }
+    try {
+      const archived = await archiveMojoRecordingsFromCron({ limit: 2, sessionId })
+      recordingArchive = { archived: archived.archived, failed: archived.failed }
+    } catch {
+      console.error('[sync-mojo-calls] recording archive failed')
+      recordingArchive = { archived: 0, failed: 1 }
+    }
+    return NextResponse.json({ ...result, recordingArchive }, { headers: NO_STORE_HEADERS })
   } catch (error) {
     const code = error instanceof MojoDialIngestError ? error.code : 'provider_unavailable'
     const message = error instanceof Error ? error.message : 'Mojo call ingest failed'

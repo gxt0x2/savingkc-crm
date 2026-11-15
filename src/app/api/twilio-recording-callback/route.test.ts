@@ -30,6 +30,10 @@ vi.mock('@/lib/mojo-recording-downloader', () => ({
   downloadRecording: mocks.downloadRecording,
 }))
 
+vi.mock('@/lib/server/call-recording-archive', () => ({
+  storeDownloadedTwilioRecording: vi.fn(async () => 'skipped'),
+}))
+
 vi.mock('@/lib/mojo-transcriber', () => ({
   transcribeAudio: mocks.transcribeAudio,
 }))

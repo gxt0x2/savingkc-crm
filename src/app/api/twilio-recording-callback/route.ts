@@ -31,6 +31,7 @@ import {
 } from '@/lib/server/dialer-post-call-review'
 import type { CallAnalysisResult } from '@/lib/mojo-call-analyzer'
 import { createCallAnalysisLeadProposal } from '@/lib/server/ai-change-proposals'
+import { storeDownloadedTwilioRecording } from '@/lib/server/call-recording-archive'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -474,8 +475,9 @@ async function processRecording(
   context: RecordingContext = {},
   prospect: { prospectId: string | null; prospectPhoneId: string | null; phone: string | null } | null = null,
 ): Promise<CallAnalysisResult | null> {
-  // 1. Download recording
+  // 1. Download recording, then keep a private copy before transcription.
   const filePath = await downloadRecording(recordingUrl, recordingSid)
+  await storeDownloadedTwilioRecording({ recordingSid, leadId, filePath }).catch(() => undefined)
 
   // 2. Transcribe with Groq Whisper
   const transcript = await transcribeAudio(filePath)

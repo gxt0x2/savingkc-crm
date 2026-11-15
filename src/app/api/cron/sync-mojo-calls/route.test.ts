@@ -15,7 +15,11 @@ vi.mock('@/lib/server/mojo-dial-ingest', async () => {
   return { ...actual, syncMojoDialIngest: mocks.sync }
 })
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => mocks.db }))
+vi.mock('@/lib/server/call-recording-archive', () => ({
+  archiveMojoRecordingsFromCron: vi.fn(async () => ({ archived: 0, failed: 0 })),
+}))
 
+import { archiveMojoRecordingsFromCron } from '@/lib/server/call-recording-archive'
 import { MojoDialIngestError } from '@/lib/server/mojo-dial-ingest'
 import { GET } from './route'
 
@@ -50,6 +54,7 @@ describe('/api/cron/sync-mojo-calls', () => {
     const response = await GET(new Request('https://crm.savingkc.com/api/cron/sync-mojo-calls') as never)
     expect(response.status).toBe(401)
     expect(mocks.sync).not.toHaveBeenCalled()
+    expect(archiveMojoRecordingsFromCron).not.toHaveBeenCalled()
   })
 
   it('returns the catch-up window with no-store semantics and no phone numbers', async () => {
@@ -60,6 +65,8 @@ describe('/api/cron/sync-mojo-calls', () => {
     expect(body).toMatchObject({ ok: true, from: '2026-10-28', cursor: '2026-10-29', calls: 4 })
     expect(JSON.stringify(body)).not.toContain('stored-session')
     expect(mocks.sync).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'stored-session' }))
+    expect(archiveMojoRecordingsFromCron).toHaveBeenCalledWith({ limit: 2, sessionId: 'stored-session' })
+    expect(body.recordingArchive).toEqual({ archived: 0, failed: 0 })
   })
 
   it('reports missing credentials without inventing a secret', async () => {

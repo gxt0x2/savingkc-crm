@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { publicRecordingObjectPath, signedRecordingRoute } from '@/lib/marketing/recording-playback'
 import { Icon } from '@/components/ui/icon'
 import { CallReviewAudioPlayer } from '@/components/call-review/call-review-audio-player'
 import Link from 'next/link'
@@ -84,50 +85,12 @@ function relTime(ts: string): string {
   }
 }
 
-// Public storage links first resolve to a short-lived authenticated URL. Every
-// call surface then delegates playback behavior to the shared player.
+// Public storage links play through the signed route. The route mints a
+// short-lived URL for the private bucket and streams the audio.
 function CallRecordingPlayer({ url, durationSeconds }: { url: string; durationSeconds?: number }) {
-  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    const resolve = async () => {
-      setLoading(true)
-      setError(false)
-      try {
-        if (url.includes('/storage/v1/object/public/recordings/')) {
-          const path = url.split('/storage/v1/object/public/recordings/')[1]
-          const res = await fetch(`/api/recordings?path=${encodeURIComponent(path)}`)
-          if (!res.ok) throw new Error('failed')
-          const data = await res.json() as { url?: string }
-          if (!data.url) throw new Error('failed')
-          if (active) setResolvedUrl(data.url)
-        } else {
-          if (active) setResolvedUrl(url)
-        }
-      } catch {
-        if (active) setError(true)
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    void resolve()
-    return () => { active = false }
-  }, [url])
-
-  if (loading) {
-    return (
-      <div
-        className="mt-3 rounded-xl px-3 py-2 text-[12px] animate-pulse"
-        style={{ background: 'var(--ck-surface-elev)', color: 'var(--ck-text-muted)' }}
-      >
-        Loading recording…
-      </div>
-    )
-  }
-  if (error || !resolvedUrl) {
+  const stored = publicRecordingObjectPath(url)
+  const src = stored ? signedRecordingRoute(stored) : url
+  if (!src) {
     return (
       <div
         className="mt-3 rounded-xl px-3 py-2 text-[12px]"
@@ -137,8 +100,7 @@ function CallRecordingPlayer({ url, durationSeconds }: { url: string; durationSe
       </div>
     )
   }
-
-  return <CallReviewAudioPlayer src={resolvedUrl} knownDuration={durationSeconds} label="Call recording" compact className="mt-3" />
+  return <CallReviewAudioPlayer src={src} knownDuration={durationSeconds} label="Call recording" compact className="mt-3" />
 }
 
 // ─── Direction badge (↗ outbound · ↙ inbound) ──────────────────────────────
