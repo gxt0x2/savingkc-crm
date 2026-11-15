@@ -88,10 +88,16 @@ describe('foreclosure ingest control service area', () => {
       noticeType: 'lis_pendens',
       paused: true,
     })).resolves.toMatchObject({ county: 'wyandotte', noticeType: 'lis_pendens', paused: true })
+    await expect(setForeclosureIngestControl(actor, {
+      county: 'Johnson County, KS',
+      noticeType: 'lis_pendens',
+      paused: false,
+    })).resolves.toMatchObject({ county: 'johnson', noticeType: 'lis_pendens', paused: false })
     expect(writes).toEqual([
       expect.objectContaining({ county: 'jackson', notice_type: 'lis_pendens' }),
       expect.objectContaining({ county: 'johnson', notice_type: 'lis_pendens' }),
       expect.objectContaining({ county: 'wyandotte', notice_type: 'lis_pendens' }),
+      expect.objectContaining({ county: 'johnson', notice_type: 'lis_pendens' }),
     ])
   })
 })

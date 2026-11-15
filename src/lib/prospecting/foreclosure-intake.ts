@@ -225,13 +225,13 @@ function unitToken(part: string, inline: boolean): string | null {
   return pattern.exec(cleaned)?.[1]?.toLowerCase() ?? null
 }
 
-/** A comma segment that is only a unit, such as "A", "4", or "4B", with no unit word. */
+/** A comma segment that is only a unit, such as "A", "4", "4B", or "1204". A 5-digit ZIP is not a unit. */
 function bareUnitToken(part: string): string | null {
   const token = part.replace(/\./g, '').trim()
   if (!token || /\s/.test(token)) return null
   if (!/^#?[a-z0-9-]{1,6}$/i.test(token)) return null
   const unit = token.replace(/^#/, '').toLowerCase()
-  if (!unit || /^\d{4,5}$/.test(unit)) return null
+  if (!unit || /^\d{5}$/.test(unit)) return null
   if (/^[a-z]$/.test(unit) || /\d/.test(unit)) return unit
   return null
 }

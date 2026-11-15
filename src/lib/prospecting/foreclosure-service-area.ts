@@ -39,17 +39,22 @@ function explicitServiceState(raw: unknown): ForeclosureServiceState | 'other' |
 
 /**
  * Jackson, Clay, and Platte are Missouri. Johnson and Wyandotte are Kansas.
- * A blank state is taken from that county. Any other state is rejected.
+ * A blank state is taken from that county. "Johnson County, KS" is read as the county plus its state.
+ * Any other state is rejected.
  */
 export function serviceAreaPlace(
   countyRaw: unknown,
   stateRaw?: unknown,
 ): { county: ForeclosureServiceCounty; state: ForeclosureServiceState } | null {
-  const county = serviceAreaCounty(countyRaw)
+  const words = countyWords(countyRaw)
+  const embeddedMatch = words.match(/^(.*), (mo|ks|missouri|kansas)$/)
+  const county = serviceAreaCounty(embeddedMatch ? embeddedMatch[1] : countyRaw)
   if (!county) return null
   const expected = SERVICE_AREA_STATE[county]
+  const embedded = embeddedMatch ? explicitServiceState(embeddedMatch[2]) : null
   const explicit = explicitServiceState(stateRaw)
-  if (explicit === null) return { county, state: expected }
-  if (explicit !== expected) return null
+  if (embedded === 'other' || explicit === 'other') return null
+  if (embedded && embedded !== expected) return null
+  if (explicit && explicit !== expected) return null
   return { county, state: expected }
 }

@@ -328,14 +328,15 @@ describe('foreclosure intake matching', () => {
     ])).toBeNull()
   })
 
-  it('does not treat a 4-digit comma segment as a unit', () => {
-    const withDigits = '100 Sample Ln, 1234, Kansas City, MO 64108'
-    const noUnit = '100 Sample Ln, Kansas City, MO 64108'
-    expect(splitPropertyAddress(withDigits)).toEqual({ street: '100 sample ln', unit: null })
-    expect(splitPropertyAddress('100 Sample Ln, 4, Kansas City, MO 64108').unit).toBe('4')
+  it('does not merge condo units 1204 and 1502 when owner, trustee, case, and sale differ', () => {
+    const unit1204 = '600 Sample Blvd, 1204, Kansas City, MO 64105'
+    const unit1502 = '600 Sample Blvd, 1502, Kansas City, MO 64105'
+    expect(splitPropertyAddress(unit1204)).toEqual({ street: '600 sample blvd', unit: '1204' })
+    expect(splitPropertyAddress(unit1502).unit).toBe('1502')
+    expect(splitPropertyAddress('600 Sample Blvd, 64105, Kansas City, MO 64105').unit).toBeNull()
     const incoming = prepared({
       parcel_id: '',
-      property_address: withDigits,
+      property_address: unit1204,
       owner_or_defendant: 'Owner A',
       plaintiff_or_trustee_firm: 'Trustee A',
       case_number_or_notice_id: 'CASE-A',
@@ -343,7 +344,7 @@ describe('foreclosure intake matching', () => {
     })
     const other = prepared({
       parcel_id: '',
-      property_address: noUnit,
+      property_address: unit1502,
       owner_or_defendant: 'Owner B',
       plaintiff_or_trustee_firm: 'Trustee B',
       case_number_or_notice_id: 'CASE-B',
@@ -351,7 +352,7 @@ describe('foreclosure intake matching', () => {
     })
     expect(bestIntakeMatch(incoming, [
       candidate({
-        id: 'no-unit',
+        id: 'unit-1502',
         addressKey: other.addressKey,
         zip: other.zip,
         unitKey: other.unitKey,
@@ -360,7 +361,41 @@ describe('foreclosure intake matching', () => {
         noticeKey: other.noticeKey,
         saleDate: other.saleDate,
       }),
-    ])).toMatchObject({ tier: 'address_zip', candidate: { id: 'no-unit' } })
+    ])).toBeNull()
+  })
+
+  it('does not merge condo unit 1204 with the same address and no unit', () => {
+    const withUnit = '600 Sample Blvd, 1204, Kansas City, MO 64105'
+    const noUnit = '600 Sample Blvd, Kansas City, MO 64105'
+    const incoming = prepared({ parcel_id: '', property_address: withUnit })
+    const other = prepared({ parcel_id: '', property_address: noUnit })
+    expect(incoming.unitKey).toBe('1204')
+    expect(other.unitKey).toBeNull()
+    expect(bestIntakeMatch(incoming, [
+      candidate({ id: 'no-unit', addressKey: other.addressKey, zip: other.zip, unitKey: other.unitKey }),
+    ])).toBeNull()
+    expect(bestIntakeMatch(other, [
+      candidate({ id: 'unit-1204', addressKey: incoming.addressKey, zip: incoming.zip, unitKey: incoming.unitKey }),
+    ])).toBeNull()
+  })
+
+  it('does not copy a 1502 sale onto a live 1204 filing', () => {
+    const decision = liveFilingSalePatch({
+      ownerName: 'Sample Homeowner',
+      situs: '600 Sample Blvd, 1204, Kansas City, MO 64105',
+      parcelId: 'PARCEL-600',
+      zip: '64105',
+      saleDate: '2026-12-01',
+      saleStatus: 'scheduled',
+    }, {
+      ownerName: 'Sample Homeowner',
+      propertyAddress: '600 Sample Blvd, 1502, Kansas City, MO 64105',
+      parcelId: 'PARCEL-600',
+      zip: '64105',
+      saleDate: '2026-12-15',
+      saleStatus: 'postponed',
+    })
+    expect(decision).toEqual({ ok: false, code: 'identity_conflict' })
   })
 
   it('keeps different units on the same street from merging', () => {
@@ -549,6 +584,7 @@ describe('foreclosure intake dialer and export gate', () => {
       ['johnson', 'KS', 'KS'],
       ['Wyandotte County', 'KS', 'KS'],
       ['Wyandotte Co.', '', 'KS'],
+      ['Johnson County, KS', '', 'KS'],
     ]
     for (const [county, state, expectedState] of accepted) {
       const result = prepareIntakeRow(row({ county, state }), enabled, running, '2026-11-14')
