@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20261203120000_mortgage_foreclosure_intake.sql'), 'utf8')
+const migration = readFileSync(join(process.cwd(), 'supabase/migrations/20261205120000_mortgage_foreclosure_intake.sql'), 'utf8')
 
 describe('mortgage foreclosure intake migration', () => {
   it('stages pulls, seeds paused counties, and leaves the live filings rows alone', () => {
