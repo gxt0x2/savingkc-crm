@@ -130,4 +130,24 @@ describe('dialer export suppression migration', () => {
     expect(speed).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(speed).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
   })
+
+  it('releases an owner-line co-owner without recreating the batch or clearing a hold', () => {
+    const release = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261209120000_dialer_owner_line_release.sql'),
+      'utf8',
+    )
+    expect(release).toContain('CREATE OR REPLACE FUNCTION public.dialer_owner_line_release_v1')
+    expect(release).toContain("('bill', 'william')")
+    expect(release).toContain("('bob', 'robert')")
+    expect(release).toContain("('liz', 'elizabeth')")
+    expect(release).toContain("OR public.dialer_owner_line_release_v1(")
+    expect(release).toContain('bucket = \'relationship_unknown\'')
+    expect(release).not.toContain('CREATE OR REPLACE FUNCTION public.record_source_list_export_batch_v1')
+    expect(release).not.toContain('CREATE OR REPLACE VIEW public.source_list_dialer_phone_review')
+    expect(release).not.toContain('CREATE OR REPLACE VIEW public.source_list_dialer_export')
+    expect(release).not.toMatch(/\bSET jit\b/i)
+    expect(release).not.toMatch(/voice_hold\s*=\s*false/)
+    expect(release).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
+    expect(release).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+  })
 })

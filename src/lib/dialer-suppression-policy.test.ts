@@ -493,6 +493,55 @@ describe('associate type and property owner fan-out', () => {
     }, 'uno')).toBeNull()
   })
 
+  it('releases a co-owner or middle name on the owner line and still applies every other block', () => {
+    const phone = '+18165550601'
+    const matched = {
+      prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual', parcelId: 'P-CO' }],
+      phones: [{ phone, prospectId: 'home', relationship: 'associate', contactName: 'Mary Smith', lastDisposition: 'no_answer' }],
+    }
+    expect(exportBlockReason(phone, matched, 'home')).toBeNull()
+    expect(exportBlockReason(phone, {
+      prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual' }],
+      phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Jones', lastDisposition: 'no_answer' }],
+    }, 'home')).toBe('relationship_unknown')
+    expect(exportBlockReason(phone, {
+      prospects: [{ id: 'home', ownerName: 'James Robert Smith', ownerLast: 'Smith', ownerType: 'Individual', skipTraced: true }],
+      phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Robert Smith', verifiedSource: 'dataskip_run1' }],
+    }, 'home')).toBeNull()
+    expect(exportBlockReason(phone, {
+      prospects: [{ id: 'home', ownerName: 'James Robert Smith', ownerLast: 'Smith', ownerType: 'Individual', skipTraced: false }],
+      phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Robert Smith' }],
+    }, 'home')).toBe('relationship_unknown')
+    expect(exportBlockReason(phone, {
+      ...matched,
+      phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Smith', voiceHold: true }],
+    }, 'home')).toBe('voice_hold')
+    expect(exportBlockReason(phone, {
+      ...matched,
+      phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Smith', lastDisposition: 'dnc' }],
+    }, 'home')).toBe('prospect_dnc')
+    expect(exportBlockReason(phone, {
+      ...matched,
+      optOuts: [{ phone, optedOut: true }],
+    }, 'home')).toBe('sms_opt_out')
+    expect(exportBlockReason(phone, { ...matched, county: 'Cass' }, 'home')).toBe('out_of_service_area')
+    expect(exportBlockReason(phone, { ...matched, county: null }, 'home')).toBe('county_unresolved')
+    expect(exportBlockReason(phone, {
+      prospects: matched.prospects,
+      phones: [
+        { phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Smith', lastDisposition: 'no_answer' },
+        { phone: '+18165550602', prospectId: 'home', relationship: 'relative', lastDisposition: 'dnc_contact' },
+      ],
+    }, 'home')).toBe('person_fanout')
+    expect(exportBlockReason(phone, {
+      prospects: matched.prospects,
+      phones: [
+        { phone: '+18165550602', prospectId: 'home', relationship: 'owner', lastDisposition: 'dnc' },
+        { phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Smith', lastDisposition: 'no_answer' },
+      ],
+    }, 'home')).toBe('property_owner_dnc_fanout')
+  })
+
   it('refuses line mode above 1 while multi-line export is suspended', () => {
     expect(exportLineModeBlock(1)).toBeNull()
     expect(exportLineModeBlock(2)).toBe('multi_line_suspended')
