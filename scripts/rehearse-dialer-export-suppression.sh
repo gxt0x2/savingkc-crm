@@ -52,6 +52,8 @@ CREATE TABLE public.prospects (
   county text,
   situs_street text,
   situs_address text,
+  situs_city text,
+  situs_state text,
   situs_zip text,
   parcel_id text,
   owner_1 text,
@@ -80,7 +82,12 @@ CREATE TABLE public.leads (
   id uuid PRIMARY KEY,
   phone text,
   call_result text,
-  dead_reason text
+  dead_reason text,
+  property_address text,
+  zip text,
+  dead_at timestamptz,
+  updated_at timestamptz,
+  parcel_id text
 );
 CREATE TABLE public.sms_opt_outs (phone text, is_opted_out boolean);
 CREATE TABLE public.crm_contact_methods (
@@ -111,7 +118,23 @@ CREATE TABLE public.system_config (
 CREATE TABLE public.source_lists (
   id uuid PRIMARY KEY,
   pull_date date,
-  source_file_name text
+  source_file_name text,
+  list_type text,
+  county text,
+  state text,
+  violation_kind text,
+  source_file_sha256 text,
+  source_file_bytes integer,
+  imported_by text
+);
+CREATE TABLE public.source_list_row_status_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_list_row_id uuid NOT NULL,
+  from_status text,
+  to_status text NOT NULL,
+  status_reason text,
+  changed_by text,
+  changed_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE public.source_list_rows (
   id uuid PRIMARY KEY,
@@ -129,9 +152,10 @@ CREATE TABLE public.source_list_rows (
   prospect_id uuid,
   status text,
   phones text[],
+  match_key text,
   raw jsonb NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE TABLE public.crm_properties (id uuid PRIMARY KEY, county text);
+CREATE TABLE public.crm_properties (id uuid PRIMARY KEY, county text, parcel_id text);
 CREATE TABLE public.mortgage_foreclosure_prospects (id uuid PRIMARY KEY);
 CREATE TABLE public.source_list_export_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -190,8 +214,13 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115012108_code_violation_county_backfill.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261209120000_dialer_owner_line_release.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -910,6 +939,182 @@ BEGIN
   RAISE NOTICE '500 phone batch took % seconds', elapsed;
 END $$;
 RESET ROLE;
+SQL
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
+
+"${PSQL[@]}" <<'SQL'
+INSERT INTO public.source_lists VALUES
+  ('81000000-0000-4000-8000-000000000001', DATE '2026-11-15', 'line-check-gates.csv');
+INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type) VALUES
+  ('82000000-0000-4000-8000-000000000001', 'cass', '30 Cass', 'P-LINE-CASS', 'Cass', 'Individual'),
+  ('82000000-0000-4000-8000-000000000002', NULL, '31 Blank', 'P-LINE-NULL', 'Blank', 'Individual'),
+  ('82000000-0000-4000-8000-000000000003', 'jackson', '32 Tax', 'P-LINE-TAX', 'Tax', 'Individual');
+INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship) VALUES
+  ('83000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001', '+18165550701', 'no_answer', 'owner'),
+  ('83000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000002', '+18165550702', 'no_answer', 'owner'),
+  ('83000000-0000-4000-8000-000000000003', '82000000-0000-4000-8000-000000000003', '+18165550703', 'no_answer', 'owner');
+INSERT INTO public.source_list_rows (
+  id, source_list_id, list_type, county, state, parcel_id, address, owner_names, prospect_id, status, phones, raw
+) VALUES
+  (
+    '84000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'foreclosure', 'Cass', 'MO', 'P-LINE-CASS', '30 Cass', 'Cass',
+    '82000000-0000-4000-8000-000000000001', 'ready', ARRAY['+18165550701'], '{}'::jsonb
+  ),
+  (
+    '84000000-0000-4000-8000-000000000002',
+    '81000000-0000-4000-8000-000000000001',
+    'foreclosure', NULL, 'MO', 'P-LINE-NULL', '31 Blank', 'Blank',
+    '82000000-0000-4000-8000-000000000002', 'ready', ARRAY['+18165550702'], '{}'::jsonb
+  ),
+  (
+    '84000000-0000-4000-8000-000000000003',
+    '81000000-0000-4000-8000-000000000001',
+    'tax_delinquent', 'jackson', 'MO', 'P-LINE-TAX', '32 Tax', 'Tax',
+    '82000000-0000-4000-8000-000000000003', 'ready', ARRAY['+18165550703'], '{}'::jsonb
+  );
+
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+
+SET ROLE service_role;
+DO $$
+DECLARE
+  report jsonb;
+  jit_off boolean;
+BEGIN
+  IF public.source_list_phone_block_reason_v1('+18165550701', 'Cass', 'Cass') IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'Cass was not out_of_service_area after the line-check migration';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550702', NULL, NULL) IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'a null county was not county_unresolved after the line-check migration';
+  END IF;
+
+  IF (
+    SELECT block_reason FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-LINE-CASS'
+  ) IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'Cass parcel review reason was %', (
+      SELECT block_reason FROM public.source_list_dialer_phone_review WHERE parcel_id = 'P-LINE-CASS'
+    );
+  END IF;
+  IF (
+    SELECT block_reason FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-LINE-NULL'
+  ) IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'null-county parcel review reason was %', (
+      SELECT block_reason FROM public.source_list_dialer_phone_review WHERE parcel_id = 'P-LINE-NULL'
+    );
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export
+    WHERE parcel_id IN ('P-LINE-CASS', 'P-LINE-NULL', 'P-LINE-TAX')
+  ) THEN
+    RAISE EXCEPTION 'a Cass, unresolved, or unchecked tax row was exported';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.tax_status_checks WHERE parcel_id = 'P-LINE-TAX'
+  ) AND EXISTS (
+    SELECT 1 FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-LINE-TAX' AND block_reason IS NULL
+  ) AND EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export WHERE parcel_id = 'P-LINE-TAX'
+  ) THEN
+    RAISE EXCEPTION 'tax-delinquent row with no status check was exported';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export WHERE parcel_id = 'P-LINE-TAX'
+  ) THEN
+    RAISE EXCEPTION 'tax-delinquent row with no recent status check was exported';
+  END IF;
+
+  report := public.record_source_list_export_batch_v1(
+    'line-check-gates', NULL, NULL, NULL, NULL, '81000000-0000-4000-8000-000000000001', 1
+  );
+  IF report->>'phone_count' IS DISTINCT FROM '0' THEN
+    RAISE EXCEPTION 'gate batch exported % phones', report->>'phone_count';
+  END IF;
+  IF (report->'rows')::text LIKE '%1816555070%' THEN
+    RAISE EXCEPTION 'gate batch rows included a blocked phone';
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_proc
+    WHERE proname = 'record_source_list_export_batch_v1'
+      AND 'jit=off' = ANY (proconfig)
+  ) INTO jit_off;
+  IF NOT jit_off THEN
+    RAISE EXCEPTION 'record_source_list_export_batch_v1 lost jit=off';
+  END IF;
+
+  INSERT INTO public.property_market_checks (id, source, list_day, listing_status)
+  VALUES ('85000000-0000-4000-8000-000000000001', 'heartland_matrix', CURRENT_DATE, 'listing_expired');
+  INSERT INTO public.source_lists (id, pull_date, source_file_name, list_type, county, state) VALUES
+    ('81000000-0000-4000-8000-000000000002', CURRENT_DATE, 'expired-tags.csv', 'probate_estate', 'jackson', 'MO'),
+    ('81000000-0000-4000-8000-000000000003', CURRENT_DATE, 'tomorrow.csv', 'probate_estate', 'jackson', 'MO');
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type) VALUES
+    ('82000000-0000-4000-8000-000000000011', 'jackson', '40 Probate', 'P-EXP-PROBATE', 'Probate', 'Individual'),
+    ('82000000-0000-4000-8000-000000000012', 'jackson', '41 Tax', 'P-EXP-TAX', 'TaxTag', 'Individual'),
+    ('82000000-0000-4000-8000-000000000013', 'jackson', '42 Tomorrow', 'P-TOMORROW', 'Tomorrow', 'Individual');
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship) VALUES
+    ('83000000-0000-4000-8000-000000000011', '82000000-0000-4000-8000-000000000011', '+18165550711', 'no_answer', 'owner'),
+    ('83000000-0000-4000-8000-000000000012', '82000000-0000-4000-8000-000000000012', '+18165550712', 'no_answer', 'owner'),
+    ('83000000-0000-4000-8000-000000000013', '82000000-0000-4000-8000-000000000013', '+18165550713', 'no_answer', 'owner');
+  INSERT INTO public.source_list_rows (
+    id, source_list_id, list_type, county, state, parcel_id, address, owner_names, prospect_id, status, phones, list_day, match_key
+  ) VALUES
+    (
+      '84000000-0000-4000-8000-000000000011',
+      '81000000-0000-4000-8000-000000000002',
+      'probate_estate', 'jackson', 'MO', 'P-EXP-PROBATE', '40 Probate', 'Probate',
+      '82000000-0000-4000-8000-000000000011', 'ready', ARRAY['+18165550711'], CURRENT_DATE, 'parcel:P-EXP-PROBATE'
+    ),
+    (
+      '84000000-0000-4000-8000-000000000012',
+      '81000000-0000-4000-8000-000000000002',
+      'tax_delinquent', 'jackson', 'MO', 'P-EXP-TAX', '41 Tax', 'TaxTag',
+      '82000000-0000-4000-8000-000000000012', 'ready', ARRAY['+18165550712'], CURRENT_DATE, 'parcel:P-EXP-TAX'
+    ),
+    (
+      '84000000-0000-4000-8000-000000000013',
+      '81000000-0000-4000-8000-000000000003',
+      'probate_estate', 'jackson', 'MO', 'P-TOMORROW', '42 Tomorrow', 'Tomorrow',
+      '82000000-0000-4000-8000-000000000013', 'ready', ARRAY['+18165550713'], CURRENT_DATE + 1, 'parcel:P-TOMORROW'
+    );
+  INSERT INTO public.source_list_row_mls_tags (source_list_row_id, mls_tag, strategy, source_check_id, list_day) VALUES
+    ('84000000-0000-4000-8000-000000000011', 'expired_listing', 'wholesale', '85000000-0000-4000-8000-000000000001', CURRENT_DATE),
+    ('84000000-0000-4000-8000-000000000012', 'expired_listing', 'wholesale', '85000000-0000-4000-8000-000000000001', CURRENT_DATE);
+
+  IF (
+    SELECT block_reason FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-EXP-PROBATE'
+  ) IS DISTINCT FROM 'expired_owner_confirm_pending' THEN
+    RAISE EXCEPTION 'expired-tag probate reason was %', (
+      SELECT block_reason FROM public.source_list_dialer_phone_review WHERE parcel_id = 'P-EXP-PROBATE'
+    );
+  END IF;
+  IF (
+    SELECT block_reason FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-EXP-TAX'
+  ) IS DISTINCT FROM 'expired_owner_confirm_pending' THEN
+    RAISE EXCEPTION 'expired-tag tax reason was %', (
+      SELECT block_reason FROM public.source_list_dialer_phone_review WHERE parcel_id = 'P-EXP-TAX'
+    );
+  END IF;
+  report := public.record_source_list_export_batch_v1(
+    'line-check-gates', NULL, NULL, NULL, NULL, '81000000-0000-4000-8000-000000000003', 1
+  );
+  IF report->>'phone_count' IS DISTINCT FROM '0' THEN
+    RAISE EXCEPTION 'tomorrow-dated row exported % phones', report->>'phone_count';
+  END IF;
+END $$;
+RESET ROLE;
+SELECT 'PASS: line-check migration kept Cass, null county, tax-status, and jit=off' AS result;
+SELECT 'PASS: expired-tag probate and tax stay expired_owner_confirm_pending, and a tomorrow row stays out of the batch' AS result;
 SQL
 
 explain_ms="$("${PSQL[@]}" -tA <<'SQL'

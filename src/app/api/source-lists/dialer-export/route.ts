@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { resolveAuthenticatedActor } from '@/lib/api/authenticated-actor'
 import { resolveOauthReviewSandboxLeadId } from '@/lib/auth/oauth-review-sandbox-session'
+import { exportLineModeBlock } from '@/lib/dialer-suppression-policy'
 import { syncMarketFlags } from '@/lib/market-check/run'
+import { lineCheckBlockEnabled } from '@/lib/server/phone-line-check'
 import { dialerExportCsv, recordDialerExportBatch } from '@/lib/source-lists/dialer-export'
 import { normalizeSourceListLane, SourceListImportError, SOURCE_LIST_COUNTIES } from '@/lib/source-lists/csv'
 import { supabaseAdmin } from '@/lib/supabase/admin'
@@ -61,8 +63,22 @@ export async function GET(request: Request) {
     const lineMode = lineModeRaw === null || lineModeRaw.trim() === ''
       ? 1
       : (/^\d+$/.test(lineModeRaw.trim()) ? Number(lineModeRaw.trim()) : 0)
+    if (exportLineModeBlock(lineMode)) {
+      throw new SourceListImportError(
+        'Multi-line dialer export is suspended. Export one line at a time.',
+        409,
+        'multi_line_suspended',
+      )
+    }
     const db = supabaseAdmin()
     await syncMarketFlags(db)
+    const { error: flagError } = await db.rpc('sync_phone_line_check_config_v1', {
+      p_block_enabled: lineCheckBlockEnabled(),
+      p_cost_usd: null,
+    })
+    if (flagError && !/schema cache|could not find the function|PGRST202/i.test(flagError.message ?? '')) {
+      throw flagError
+    }
     const scrub = await recordDialerExportBatch(db, actor.email, {
       listType: selected.lane?.listType ?? null,
       county: selected.county,
