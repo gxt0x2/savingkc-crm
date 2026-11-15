@@ -13,7 +13,9 @@
  *     --state MO \
  *     --pull-date 2026-11-14
  *
- * Environment, already used by the CRM. This script does not invent values:
+ * On the box, set SOURCE_LIST_IMPORT_URL and CRON_SECRET (or ADMIN_API_SECRET).
+ * The script posts to the CRM route and does not need a Supabase service key.
+ * A local run can still use the service key when that URL is unset:
  *   NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY
  */
@@ -48,6 +50,7 @@ const file = arg('--file')
 const listType = arg('--list-type')
 const county = arg('--county')
 const state = arg('--state')
+const city = arg('--city')
 const violationKind = arg('--violation-kind')
 const pullDate = arg('--pull-date')
 const sourceUrl = arg('--source-url')
@@ -56,7 +59,7 @@ const actor = arg('--actor') || 'source-list-import'
 
 if (!file || !listType || !pullDate) {
   console.error('Required: --file, --list-type, and --pull-date.')
-  console.error('Optional: --county, --state, --violation-kind, --source-url, --notes, --actor, --confirm.')
+  console.error('Optional: --county, --state, --city, --violation-kind, --source-url, --notes, --actor, --confirm.')
   process.exit(1)
 }
 
@@ -72,6 +75,7 @@ const request = {
   listType,
   county,
   state,
+  city,
   violationKind,
   pullDate,
   sourceUrl,
@@ -102,10 +106,47 @@ if (!process.argv.includes('--confirm')) {
   }
 }
 
+const importUrl = process.env.SOURCE_LIST_IMPORT_URL?.trim() ?? ''
+const importSecret = process.env.CRON_SECRET?.trim() || process.env.ADMIN_API_SECRET?.trim() || ''
+if (importUrl && importSecret) {
+  try {
+    const response = await fetch(importUrl, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${importSecret}`,
+        'content-type': 'application/json',
+        'x-imported-by': actor,
+      },
+      body: JSON.stringify({
+        listType,
+        county,
+        state,
+        city,
+        violationKind,
+        pullDate,
+        sourceUrl,
+        notes,
+        fileName: file,
+        csv: csvText,
+      }),
+    })
+    const body = await response.text()
+    if (!response.ok) {
+      console.error(body || 'The import failed.')
+      process.exit(1)
+    }
+    console.log(body)
+    process.exit(0)
+  } catch {
+    console.error('The import route could not be reached.')
+    process.exit(1)
+  }
+}
+
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
 if (!url || !key) {
-  console.error('Set NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.')
+  console.error('Set SOURCE_LIST_IMPORT_URL and CRON_SECRET, or NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
   process.exit(1)
 }
 
