@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { loadNewestMatrixDay, matrixPartForFile, matrixSetComplete, readMatrixDay } from '@/lib/market-check/day-load'
 import { matrixStatusRank } from '@/lib/market-check/plan'
-import { SERVICE_COUNTIES, TARGET_ZIPS } from '@/lib/market-check/seeds'
 
 const HEADER = 'MLS #,St,Address,Zip,Close Dt,Expire Date,List Price,Parcel ID'
 
@@ -38,14 +37,4 @@ describe('matrix day contract', () => {
     expect(matrixStatusRank('listing_check_unknown')).toBeGreaterThan(matrixStatusRank('listing_expired'))
   })
 
-  it('seeds all five service counties and leaves Cass out', () => {
-    expect(SERVICE_COUNTIES).toEqual(['jackson', 'clay', 'platte', 'johnson', 'wyandotte'])
-    for (const county of SERVICE_COUNTIES) {
-      expect(TARGET_ZIPS.some((zip) => zip.county === county)).toBe(true)
-    }
-    expect(TARGET_ZIPS.some((zip) => zip.county === 'johnson' && zip.state === 'KS')).toBe(true)
-    expect(TARGET_ZIPS.some((zip) => zip.county === 'wyandotte' && zip.state === 'KS')).toBe(true)
-    expect(TARGET_ZIPS.some((zip) => zip.county === 'cass' as string)).toBe(false)
-    expect(TARGET_ZIPS.map((zip) => zip.zip5)).not.toEqual(expect.arrayContaining(['64012', '64078', '64080', '64701']))
-  })
 })

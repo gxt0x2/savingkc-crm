@@ -15,7 +15,6 @@ import { classifyMatrixStatus } from '@/lib/market-check/plan'
 const migration = [
   'supabase/migrations/20261215120000_property_market_checks.sql',
   'supabase/migrations/20261215130000_market_check_fix_round.sql',
-  'supabase/migrations/20261215140000_market_check_service_counties.sql',
 ].map((file) => readFileSync(join(process.cwd(), file), 'utf8')).join('\n')
 const gateSource = readFileSync(
   join(process.cwd(), 'src/lib/market-check/expired-gate.ts'),

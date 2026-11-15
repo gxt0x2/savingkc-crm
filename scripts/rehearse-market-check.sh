@@ -108,7 +108,28 @@ SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215140000_market_check_service_counties.sql" >/dev/null
+
+SEED_JSON=$(node -e '
+const fs = require("fs");
+const root = process.argv[1];
+function table(name) {
+  const lines = fs.readFileSync(root + "/" + name, "utf8").replace(/^\uFEFF/, "").trim().split(/\n/);
+  const keys = lines[0].split(",");
+  return lines.slice(1).filter(Boolean).map((line) => {
+    const cells = line.split(",");
+    return Object.fromEntries(keys.map((key, index) => [key, cells[index]]));
+  });
+}
+const zips = table("data/mls-seeds/target_zips.csv");
+const prices = table("data/mls-seeds/min_list_price_by_zip.csv").map((row) => ({
+  zip5: row.zip5,
+  minListPrice: Number(row.min_list_price),
+  method: row.method,
+  confidence: row.confidence,
+}));
+process.stdout.write(JSON.stringify({ zips, prices }));
+' "$ROOT")
+"${PSQL[@]}" -c "SELECT public.apply_market_seeds_v1(\$seed\$${SEED_JSON}\$seed\$::jsonb);" >/dev/null
 
 "${PSQL[@]}" <<'SQL'
 DO $test$
@@ -129,8 +150,17 @@ BEGIN
   END IF;
   INSERT INTO public.source_list_export_batches (created_by, list_type, phone_count)
   VALUES ('rehearsal', 'mls_expired', 0);
-  IF NOT EXISTS (SELECT 1 FROM public.target_zips WHERE county = 'wyandotte' AND state = 'KS') THEN
-    RAISE EXCEPTION 'service counties were not seeded';
+  IF EXISTS (SELECT 1 FROM public.target_zips WHERE county IS DISTINCT FROM 'jackson' OR state IS DISTINCT FROM 'MO') THEN
+    RAISE EXCEPTION 'only the Jackson seed file should be loaded';
+  END IF;
+  IF (SELECT count(*) FROM public.target_zips) <> 42 THEN
+    RAISE EXCEPTION 'Jackson seed count drifted';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.mls_price_thresholds
+    WHERE zip5 = '64134' AND min_list_price = 180000 AND method = 'owner_override' AND confidence = 'high'
+  ) THEN
+    RAISE EXCEPTION '64134 seed drifted';
   END IF;
   IF EXISTS (SELECT 1 FROM public.target_zips WHERE county = 'cass') THEN
     RAISE EXCEPTION 'Cass must not be seeded';

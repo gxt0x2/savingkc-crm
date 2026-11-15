@@ -1,7 +1,7 @@
 import { coreMarketAddress, normalizeMarketAddress, normalizeParcelId, ownerNameVerdict, zip5 } from '@/lib/market-check/address'
 import { expiredRowBlock, type ExpiredContactChannel } from '@/lib/market-check/expired-gate'
 import type { MatrixRow } from '@/lib/market-check/matrix-csv'
-import type { TargetZipStatus } from '@/lib/market-check/seeds'
+import type { TargetZipSeed, TargetZipStatus } from '@/lib/market-check/seeds'
 
 export const SOLD_SINCE = '2026-01-01'
 export const DEFAULT_EXPIRED_WINDOW_DAYS = 90
@@ -60,8 +60,8 @@ export interface IntakeDraft {
   zip5: string
   mlsNumber: string | null
   listDay: string
-  county: 'jackson'
-  state: 'MO'
+  county: string
+  state: string
   propertyKey: string
 }
 
@@ -77,7 +77,7 @@ export interface MarketPlan {
 export interface PlanMarketCheckInput {
   rows: MatrixRow[]
   poolRows: PoolRowInput[]
-  targetStatusByZip: ReadonlyMap<string, TargetZipStatus>
+  targetStatusByZip: ReadonlyMap<string, TargetZipSeed>
   minListPriceByZip: ReadonlyMap<string, number>
   today: string
   additionListDay: string
@@ -307,7 +307,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
       propertyKey: key || `row:${pool.id}`,
     })
 
-    if (!hit || !intakeAllowed(input.targetStatusByZip.get(hit.zip5 || code))) continue
+    if (!hit || !intakeAllowed(input.targetStatusByZip.get(hit.zip5 || code)?.status)) continue
     if (hit.status === 'listing_expired') tag(pool.id, 'expired_listing', 'wholesale', key)
     if (hit.status === 'listed_active') {
       const floor = input.minListPriceByZip.get(hit.zip5)
@@ -319,7 +319,8 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
 
   for (const row of input.rows) {
     if (!row.addrNorm || !row.zip5) continue
-    if (!intakeAllowed(input.targetStatusByZip.get(row.zip5))) continue
+    const zipSeed = input.targetStatusByZip.get(row.zip5)
+    if (!intakeAllowed(zipSeed?.status)) continue
     const parcelId = row.parcelId
     const merged = prefer(parcelId ? byParcel.get(parcelId) : undefined, exact.get(`${row.addrNorm}|${row.zip5}`))
     if (!merged || merged.status !== 'listing_expired') continue
@@ -340,8 +341,8 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
       zip5: row.zip5,
       mlsNumber: row.mlsNumber || null,
       listDay: input.additionListDay,
-      county: 'jackson',
-      state: 'MO',
+      county: zipSeed?.county ?? '',
+      state: zipSeed?.state ?? '',
       propertyKey: key,
     })
     if (!checks.some((check) => check.propertyKey === key && check.listingStatus === 'listing_expired')) {

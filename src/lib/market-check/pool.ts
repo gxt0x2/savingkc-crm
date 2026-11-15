@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeParcelId, zip5 } from '@/lib/market-check/address'
 import type { PoolRowInput } from '@/lib/market-check/plan'
-import type { TargetZipStatus } from '@/lib/market-check/seeds'
+import type { TargetZipSeed, TargetZipStatus } from '@/lib/market-check/seeds'
 
 type Row = Record<string, unknown>
 
@@ -23,13 +23,18 @@ async function pages(
 }
 
 export async function loadTargeting(db: SupabaseClient): Promise<{
-  targetStatusByZip: Map<string, TargetZipStatus>
+  targetStatusByZip: Map<string, TargetZipSeed>
   minListPriceByZip: Map<string, number>
 }> {
-  const zips = await pages((from, to) => db.from('target_zips').select('zip5, status').range(from, to))
+  const zips = await pages((from, to) => db.from('target_zips').select('zip5, county, state, status').range(from, to))
   const prices = await pages((from, to) => db.from('mls_price_thresholds').select('zip5, min_list_price').range(from, to))
   return {
-    targetStatusByZip: new Map(zips.map((row) => [String(row.zip5), String(row.status) as TargetZipStatus])),
+    targetStatusByZip: new Map(zips.map((row) => [String(row.zip5), {
+      zip5: String(row.zip5),
+      county: String(row.county ?? ''),
+      state: String(row.state ?? ''),
+      status: String(row.status) as TargetZipStatus,
+    }])),
     minListPriceByZip: new Map(prices.map((row) => [String(row.zip5), Number(row.min_list_price)])),
   }
 }

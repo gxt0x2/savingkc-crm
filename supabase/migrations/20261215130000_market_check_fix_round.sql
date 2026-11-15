@@ -989,3 +989,38 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.apply_market_plan_v1(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.apply_market_plan_v1(jsonb) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.apply_market_seeds_v1(p_seeds jsonb)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  INSERT INTO public.target_zips (zip5, county, state, status)
+  SELECT
+    item->>'zip5',
+    item->>'county',
+    item->>'state',
+    item->>'status'
+  FROM jsonb_array_elements(coalesce(p_seeds->'zips', '[]'::jsonb)) AS item
+  ON CONFLICT (zip5) DO UPDATE SET
+    county = EXCLUDED.county,
+    state = EXCLUDED.state,
+    status = EXCLUDED.status;
+
+  INSERT INTO public.mls_price_thresholds (zip5, min_list_price, method, confidence)
+  SELECT
+    item->>'zip5',
+    (item->>'minListPrice')::numeric,
+    item->>'method',
+    item->>'confidence'
+  FROM jsonb_array_elements(coalesce(p_seeds->'prices', '[]'::jsonb)) AS item
+  ON CONFLICT (zip5) DO UPDATE SET
+    min_list_price = EXCLUDED.min_list_price,
+    method = EXCLUDED.method,
+    confidence = EXCLUDED.confidence;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.apply_market_seeds_v1(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.apply_market_seeds_v1(jsonb) TO service_role;

@@ -16,7 +16,7 @@ import { additionListDay, marketCheckWindow, offMarketAllowed } from '@/lib/mark
 const TODAY = '2026-11-14'
 
 function targetMap() {
-  return new Map(TARGET_ZIPS.map((zip) => [zip.zip5, zip.status]))
+  return new Map(TARGET_ZIPS.map((zip) => [zip.zip5, zip]))
 }
 
 function priceMap() {
@@ -215,6 +215,21 @@ describe('listed and sold market check', () => {
       expiredOwnerConfirmed: true,
       hasRelistCheckToday: true,
     })).toBe('active_high_price')
+  })
+
+  it('excludes avoid and parked zips even when the price is above the floor', () => {
+    const csv = [
+      'MLS #,St,Address,Zip,Close Dt,Expire Date,List Price,Parcel ID',
+      '1,Active,1 Main St,64125,,,500000,A1',
+      '2,Active,2 Main St,64131,,,500000,A2',
+      '3,Expired,3 Main St,64125,,2026-11-01,100000,A3',
+    ].join('\n')
+    const result = plan(csv, [
+      pool({ id: 'avoid', address: '1 Main St', zip5: '64125', parcelId: 'A1' }),
+      pool({ id: 'parked', address: '2 Main St', zip5: '64131', parcelId: 'A2' }),
+    ])
+    expect(result.tags).toEqual([])
+    expect(result.intakes).toEqual([])
   })
 
   it('holds expired rows for one owner-confirm switch and a same-day relist check', () => {

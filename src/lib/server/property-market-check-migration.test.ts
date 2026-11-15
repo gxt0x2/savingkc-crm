@@ -1,12 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PRICE_THRESHOLDS, TARGET_ZIPS } from '@/lib/market-check/seeds'
+import { PRICE_THRESHOLDS } from '@/lib/market-check/seeds'
 
 const migration = [
   'supabase/migrations/20261215120000_property_market_checks.sql',
   'supabase/migrations/20261215130000_market_check_fix_round.sql',
-  'supabase/migrations/20261215140000_market_check_service_counties.sql',
 ].map((file) => readFileSync(join(process.cwd(), file), 'utf8')).join('\n')
 
 describe('property market check migration', () => {
@@ -23,9 +22,9 @@ describe('property market check migration', () => {
     expect(migration).toContain("('MLS_MARKET_CHECK_ENABLED', 'false')")
     expect(migration).toContain("('EXPIRED_OWNER_CONFIRMED', 'false')")
     expect(migration).toContain("('MLS_EXPIRED_WINDOW_DAYS', '90')")
-    for (const zip of TARGET_ZIPS) {
-      expect(migration).toContain(`('${zip.zip5}', '${zip.county}', '${zip.state}', '${zip.status}')`)
-    }
+    expect(migration).toContain('apply_market_seeds_v1')
+    expect(migration).toContain("method IN ('oct', 't12', 'owner_override')")
+    expect(migration).not.toContain('trailing_12_month_override')
     expect(migration).not.toContain("'cass'")
     expect(migration).toContain("'mls_expired'")
     expect(migration).toContain("WHEN 'listing_check_unknown' THEN 3")
@@ -35,9 +34,11 @@ describe('property market check migration', () => {
     expect(migration).not.toContain('0900_1900')
     expect(migration).toContain('NULL::text AS line_check_flag')
     expect(migration).toContain('source_list_market_phone_review')
-    for (const price of PRICE_THRESHOLDS) {
-      expect(migration).toContain(`('${price.zip5}', ${price.minListPrice}, '${price.method}')`)
-    }
+    expect(PRICE_THRESHOLDS.find((row) => row.zip5 === '64134')).toMatchObject({
+      minListPrice: 180000,
+      method: 'owner_override',
+      confidence: 'high',
+    })
     expect(migration).toContain("'parked'")
     expect(migration).toContain("'avoid'")
   })

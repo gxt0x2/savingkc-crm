@@ -331,6 +331,8 @@ GRANT SELECT ON TABLE public.property_market_status_v1 TO service_role;
 COMMENT ON VIEW public.property_market_status_v1 IS
   'Latest market check per parcel, or per normalized street and zip when the parcel is blank.';
 
+-- Rows are not listed here. data/mls-seeds/*.csv is the seed.
+-- apply_market_seeds_v1 loads that file as-is. Another county is a CSV append.
 CREATE TABLE IF NOT EXISTS public.target_zips (
   zip5 text PRIMARY KEY CHECK (zip5 ~ '^[0-9]{5}$'),
   county text NOT NULL,
@@ -339,51 +341,6 @@ CREATE TABLE IF NOT EXISTS public.target_zips (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
-INSERT INTO public.target_zips (zip5, county, state, status) VALUES
-  ('64030', 'jackson', 'MO', 'core'),
-  ('64055', 'jackson', 'MO', 'core'),
-  ('64063', 'jackson', 'MO', 'core'),
-  ('64114', 'jackson', 'MO', 'core'),
-  ('64133', 'jackson', 'MO', 'core'),
-  ('64134', 'jackson', 'MO', 'core'),
-  ('64138', 'jackson', 'MO', 'core'),
-  ('64014', 'jackson', 'MO', 'keep'),
-  ('64015', 'jackson', 'MO', 'keep'),
-  ('64016', 'jackson', 'MO', 'keep'),
-  ('64029', 'jackson', 'MO', 'keep'),
-  ('64034', 'jackson', 'MO', 'keep'),
-  ('64054', 'jackson', 'MO', 'keep'),
-  ('64056', 'jackson', 'MO', 'keep'),
-  ('64057', 'jackson', 'MO', 'keep'),
-  ('64058', 'jackson', 'MO', 'keep'),
-  ('64064', 'jackson', 'MO', 'keep'),
-  ('64070', 'jackson', 'MO', 'keep'),
-  ('64075', 'jackson', 'MO', 'keep'),
-  ('64081', 'jackson', 'MO', 'keep'),
-  ('64082', 'jackson', 'MO', 'keep'),
-  ('64086', 'jackson', 'MO', 'keep'),
-  ('64105', 'jackson', 'MO', 'keep'),
-  ('64106', 'jackson', 'MO', 'keep'),
-  ('64108', 'jackson', 'MO', 'keep'),
-  ('64109', 'jackson', 'MO', 'keep'),
-  ('64110', 'jackson', 'MO', 'keep'),
-  ('64111', 'jackson', 'MO', 'keep'),
-  ('64112', 'jackson', 'MO', 'keep'),
-  ('64113', 'jackson', 'MO', 'keep'),
-  ('64136', 'jackson', 'MO', 'keep'),
-  ('64137', 'jackson', 'MO', 'keep'),
-  ('64139', 'jackson', 'MO', 'keep'),
-  ('64145', 'jackson', 'MO', 'keep'),
-  ('64146', 'jackson', 'MO', 'keep'),
-  ('64131', 'jackson', 'MO', 'parked'),
-  ('64125', 'jackson', 'MO', 'avoid'),
-  ('64126', 'jackson', 'MO', 'avoid'),
-  ('64127', 'jackson', 'MO', 'avoid'),
-  ('64128', 'jackson', 'MO', 'avoid'),
-  ('64129', 'jackson', 'MO', 'avoid'),
-  ('64130', 'jackson', 'MO', 'avoid')
-ON CONFLICT (zip5) DO NOTHING;
-
 ALTER TABLE public.target_zips ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.target_zips FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.target_zips TO service_role;
@@ -391,53 +348,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.target_zips TO service_role
 CREATE TABLE IF NOT EXISTS public.mls_price_thresholds (
   zip5 text PRIMARY KEY CHECK (zip5 ~ '^[0-9]{5}$'),
   min_list_price numeric NOT NULL CHECK (min_list_price >= 0),
-  method text NOT NULL CHECK (method IN ('compiled', 'trailing_12_month_override'))
+  method text NOT NULL CHECK (method IN ('oct', 't12', 'owner_override')),
+  confidence text NOT NULL CHECK (confidence IN ('high', 'medium'))
 );
-
-INSERT INTO public.mls_price_thresholds (zip5, min_list_price, method) VALUES
-  ('64030', 265000, 'compiled'),
-  ('64055', 225000, 'compiled'),
-  ('64063', 340000, 'compiled'),
-  ('64114', 345000, 'compiled'),
-  ('64133', 235000, 'compiled'),
-  ('64134', 180000, 'trailing_12_month_override'),
-  ('64138', 210000, 'compiled'),
-  ('64014', 320000, 'compiled'),
-  ('64015', 315000, 'compiled'),
-  ('64016', 240000, 'compiled'),
-  ('64029', 355000, 'compiled'),
-  ('64034', 390000, 'compiled'),
-  ('64054', 175000, 'compiled'),
-  ('64056', 250000, 'compiled'),
-  ('64057', 315000, 'compiled'),
-  ('64058', 260000, 'compiled'),
-  ('64064', 440000, 'compiled'),
-  ('64070', 425000, 'compiled'),
-  ('64075', 360000, 'compiled'),
-  ('64081', 435000, 'compiled'),
-  ('64082', 525000, 'compiled'),
-  ('64086', 385000, 'compiled'),
-  ('64105', 240000, 'compiled'),
-  ('64106', 170000, 'compiled'),
-  ('64108', 330000, 'compiled'),
-  ('64109', 270000, 'compiled'),
-  ('64110', 295000, 'compiled'),
-  ('64111', 320000, 'compiled'),
-  ('64112', 450000, 'compiled'),
-  ('64113', 610000, 'compiled'),
-  ('64136', 300000, 'compiled'),
-  ('64137', 230000, 'compiled'),
-  ('64139', 530000, 'compiled'),
-  ('64145', 430000, 'compiled'),
-  ('64146', 245000, 'compiled'),
-  ('64131', 230000, 'compiled'),
-  ('64125', 110000, 'compiled'),
-  ('64126', 95000, 'compiled'),
-  ('64127', 115000, 'compiled'),
-  ('64128', 115000, 'compiled'),
-  ('64129', 160000, 'compiled'),
-  ('64130', 105000, 'compiled')
-ON CONFLICT (zip5) DO NOTHING;
 
 ALTER TABLE public.mls_price_thresholds ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.mls_price_thresholds FROM PUBLIC, anon, authenticated;

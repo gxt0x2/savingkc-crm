@@ -5,6 +5,7 @@ import { planMarketCheck } from '@/lib/market-check/plan'
 import { loadCallingPool, loadTargeting } from '@/lib/market-check/pool'
 import { additionListDay, chicagoClock, offMarketAllowed } from '@/lib/market-check/schedule'
 import { explicitEnvFlag } from '@/lib/market-check/flags'
+import { marketSeedPayload } from '@/lib/market-check/seeds'
 
 export async function syncMarketFlags(db: SupabaseClient): Promise<void> {
   const enabled = explicitEnvFlag('MLS_MARKET_CHECK_ENABLED')
@@ -21,6 +22,8 @@ export async function runMatrixLoad(
   db: SupabaseClient,
   input: { csvText: string; fileName: string; actor: string; now?: Date; completeSet?: boolean; parts?: string[] },
 ): Promise<MarketWriteResult> {
+  const seeded = await db.rpc('apply_market_seeds_v1', { p_seeds: marketSeedPayload() })
+  if (seeded.error) throw new Error(seeded.error.message)
   const now = input.now ?? new Date()
   const clock = chicagoClock(now)
   const rows = parseMatrixCsv(input.csvText)
