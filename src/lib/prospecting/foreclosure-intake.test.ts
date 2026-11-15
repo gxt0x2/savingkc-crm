@@ -278,6 +278,91 @@ describe('foreclosure intake matching', () => {
     ])).toMatchObject({ tier: 'address_zip', candidate: { id: 'same-unit' } })
   })
 
+  it('does not merge single-letter units A and B', () => {
+    const unitA = '100 Sample Ln, A, Kansas City, MO 64108'
+    const unitB = '100 Sample Ln, B, Kansas City, MO 64108'
+    expect(splitPropertyAddress(unitA)).toEqual({ street: '100 sample ln', unit: 'a' })
+    expect(splitPropertyAddress(unitB).unit).toBe('b')
+    const incoming = prepared({
+      parcel_id: '',
+      property_address: unitA,
+      owner_or_defendant: 'Owner A',
+      plaintiff_or_trustee_firm: 'Trustee A',
+      case_number_or_notice_id: 'CASE-A',
+      sale_date: '2026-12-01',
+    })
+    const other = prepared({
+      parcel_id: '',
+      property_address: unitB,
+      owner_or_defendant: 'Owner B',
+      plaintiff_or_trustee_firm: 'Trustee B',
+      case_number_or_notice_id: 'CASE-B',
+      sale_date: '2026-12-15',
+    })
+    expect(bestIntakeMatch(incoming, [
+      candidate({
+        id: 'unit-b',
+        addressKey: other.addressKey,
+        zip: other.zip,
+        unitKey: other.unitKey,
+        ownerKey: other.ownerKey,
+        trusteeKey: other.trusteeKey,
+        noticeKey: other.noticeKey,
+        saleDate: other.saleDate,
+      }),
+    ])).toBeNull()
+  })
+
+  it('does not merge a single-letter unit with the same street and no unit', () => {
+    const withUnit = '100 Sample Ln, A, Kansas City, MO 64108'
+    const noUnit = '100 Sample Ln, Kansas City, MO 64108'
+    expect(splitPropertyAddress(withUnit).unit).toBe('a')
+    expect(splitPropertyAddress(noUnit).unit).toBeNull()
+    const incoming = prepared({ parcel_id: '', property_address: noUnit })
+    const other = prepared({ parcel_id: '', property_address: withUnit })
+    expect(bestIntakeMatch(incoming, [
+      candidate({ id: 'with-letter', addressKey: other.addressKey, zip: other.zip, unitKey: other.unitKey }),
+    ])).toBeNull()
+    expect(bestIntakeMatch(other, [
+      candidate({ id: 'no-letter', addressKey: incoming.addressKey, zip: incoming.zip, unitKey: incoming.unitKey }),
+    ])).toBeNull()
+  })
+
+  it('does not treat a 4-digit comma segment as a unit', () => {
+    const withDigits = '100 Sample Ln, 1234, Kansas City, MO 64108'
+    const noUnit = '100 Sample Ln, Kansas City, MO 64108'
+    expect(splitPropertyAddress(withDigits)).toEqual({ street: '100 sample ln', unit: null })
+    expect(splitPropertyAddress('100 Sample Ln, 4, Kansas City, MO 64108').unit).toBe('4')
+    const incoming = prepared({
+      parcel_id: '',
+      property_address: withDigits,
+      owner_or_defendant: 'Owner A',
+      plaintiff_or_trustee_firm: 'Trustee A',
+      case_number_or_notice_id: 'CASE-A',
+      sale_date: '2026-12-01',
+    })
+    const other = prepared({
+      parcel_id: '',
+      property_address: noUnit,
+      owner_or_defendant: 'Owner B',
+      plaintiff_or_trustee_firm: 'Trustee B',
+      case_number_or_notice_id: 'CASE-B',
+      sale_date: '2026-12-15',
+    })
+    expect(bestIntakeMatch(incoming, [
+      candidate({
+        id: 'no-unit',
+        addressKey: other.addressKey,
+        zip: other.zip,
+        unitKey: other.unitKey,
+        ownerKey: other.ownerKey,
+        trusteeKey: other.trusteeKey,
+        noticeKey: other.noticeKey,
+        saleDate: other.saleDate,
+      }),
+    ])).toMatchObject({ tier: 'address_zip', candidate: { id: 'no-unit' } })
+  })
+
   it('keeps different units on the same street from merging', () => {
     const apt2 = prepared({ parcel_id: '', property_address: '100 Main St, Apt 2, Kansas City, MO 64108' })
     const apt3 = prepared({ parcel_id: '', property_address: '100 Main St, Apt 3, Kansas City, MO 64108' })
@@ -456,10 +541,47 @@ describe('foreclosure intake dialer and export gate', () => {
         expect(result.code).toBe(outside ? 'outside_service_area' : 'county_required')
       }
     }
-    for (const county of ['Jackson', 'JACKSON COUNTY', 'Clay', 'Platte County', 'johnson', 'Wyandotte County']) {
-      const result = prepareIntakeRow(row({ county }), enabled, running, '2026-11-14')
+    const accepted: Array<[string, string, 'MO' | 'KS']> = [
+      ['Jackson', 'MO', 'MO'],
+      ['JACKSON COUNTY', 'MO', 'MO'],
+      ['Clay', '', 'MO'],
+      ['Platte County', 'MO', 'MO'],
+      ['johnson', 'KS', 'KS'],
+      ['Wyandotte County', 'KS', 'KS'],
+      ['Wyandotte Co.', '', 'KS'],
+    ]
+    for (const [county, state, expectedState] of accepted) {
+      const result = prepareIntakeRow(row({ county, state }), enabled, running, '2026-11-14')
       expect(result.ok, county).toBe(true)
+      if (result.ok) {
+        expect(result.record.state, county).toBe(expectedState)
+      }
     }
+  })
+
+  it('rejects a state that does not belong to the county and rejects compound counties', () => {
+    const rejected = [
+      { county: 'Johnson County', state: 'MO', code: 'state_mismatch' },
+      { county: 'Jackson County', state: 'KS', code: 'state_mismatch' },
+      { county: 'Johnson County, MO', state: '', code: 'outside_service_area' },
+      { county: 'Jackson County, KS', state: '', code: 'outside_service_area' },
+      { county: 'Jackson/Cass', state: 'MO', code: 'outside_service_area' },
+      { county: 'Cass County (near Jackson)', state: 'MO', code: 'outside_service_area' },
+    ]
+    for (const sample of rejected) {
+      const result = prepareIntakeRow(row({ county: sample.county, state: sample.state, parcel_id: '' }), enabled, running, '2026-11-14')
+      expect(result.ok, sample.county).toBe(false)
+      if (!result.ok) expect(result.code).toBe(sample.code)
+    }
+    const derived = prepareIntakeRow(row({ county: 'Johnson', state: '' }), enabled, running, '2026-11-14')
+    expect(derived.ok).toBe(true)
+    if (derived.ok) {
+      expect(derived.record.county).toBe('johnson')
+      expect(derived.record.state).toBe('KS')
+    }
+    const jackson = prepareIntakeRow(row({ county: 'Jackson', state: null }), enabled, running, '2026-11-14')
+    expect(jackson.ok).toBe(true)
+    if (jackson.ok) expect(jackson.record.state).toBe('MO')
   })
 
   it('keeps an approval after the 4:00am CT lock off that day\'s export', () => {
@@ -497,5 +619,27 @@ describe('foreclosure intake dialer and export gate', () => {
       { ...base, county: 'JOHNSON COUNTY', state: 'KS', id: 'johnson' },
     ], now)
     expect(rows.map((row) => row.id)).toEqual(['jackson', 'johnson'])
+  })
+
+  it('drops a mismatched state and a bad approval time without throwing', () => {
+    const now = new Date('2026-11-14T14:00:00.000Z')
+    const approvedAt = new Date('2026-11-14T09:30:00.000Z').toISOString()
+    const base = {
+      reviewStatus: 'approved' as const,
+      approvedAt,
+      dnc: false,
+      optedOut: false,
+      ksLicenseConfirmed: true,
+    }
+    const rows = preExportFilter([
+      { ...base, county: 'jackson', state: 'MO', id: 'jackson' },
+      { ...base, county: 'Johnson County', state: 'MO', id: 'johnson-mo' },
+      { ...base, county: 'Jackson County', state: 'KS', id: 'jackson-ks' },
+      { ...base, county: 'Jackson/Cass', state: 'MO', id: 'compound' },
+      { ...base, county: 'Cass County (near Jackson)', state: 'MO', id: 'near' },
+      { ...base, county: 'Wyandotte Co.', state: null, id: 'wyandotte' },
+      { ...base, county: 'jackson', state: 'MO', approvedAt: 'not-a-time', id: 'bad-time' },
+    ], now)
+    expect(rows.map((row) => row.id)).toEqual(['jackson', 'wyandotte'])
   })
 })

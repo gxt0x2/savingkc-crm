@@ -36,6 +36,10 @@ describe('foreclosure ingest control service area', () => {
     ['Cass County', 'outside_service_area'],
     ['Leavenworth', 'outside_service_area'],
     ['Leavenworth County', 'outside_service_area'],
+    ['Jackson/Cass', 'outside_service_area'],
+    ['Cass County (near Jackson)', 'outside_service_area'],
+    ['Johnson County, MO', 'outside_service_area'],
+    ['Jackson County, KS', 'outside_service_area'],
     ['', 'invalid_ingest'],
     ['   ', 'invalid_ingest'],
     ['unknown', 'invalid_ingest'],
@@ -50,7 +54,24 @@ describe('foreclosure ingest control service area', () => {
     expect(writes).toEqual([])
   })
 
-  it('saves Jackson County and JOHNSON inside the five-county service area', async () => {
+  it('does not save a county whose state disagrees', async () => {
+    await expect(setForeclosureIngestControl(actor, {
+      county: 'Johnson County',
+      state: 'MO',
+      noticeType: 'lis_pendens',
+      paused: false,
+    })).rejects.toMatchObject({ code: 'outside_service_area' })
+    await expect(setForeclosureIngestControl(actor, {
+      county: 'Jackson County',
+      state: 'KS',
+      noticeType: 'lis_pendens',
+      paused: false,
+    })).rejects.toMatchObject({ code: 'outside_service_area' })
+    expect(from).not.toHaveBeenCalled()
+    expect(writes).toEqual([])
+  })
+
+  it('saves Jackson County, JOHNSON, and Wyandotte Co. inside the service area', async () => {
     await expect(setForeclosureIngestControl(actor, {
       county: 'Jackson County',
       noticeType: 'lis_pendens',
@@ -58,12 +79,19 @@ describe('foreclosure ingest control service area', () => {
     })).resolves.toMatchObject({ county: 'jackson', noticeType: 'lis_pendens', paused: true })
     await expect(setForeclosureIngestControl(actor, {
       county: 'JOHNSON',
+      state: 'KS',
       noticeType: 'lis_pendens',
       paused: false,
     })).resolves.toMatchObject({ county: 'johnson', noticeType: 'lis_pendens', paused: false })
+    await expect(setForeclosureIngestControl(actor, {
+      county: 'Wyandotte Co.',
+      noticeType: 'lis_pendens',
+      paused: true,
+    })).resolves.toMatchObject({ county: 'wyandotte', noticeType: 'lis_pendens', paused: true })
     expect(writes).toEqual([
       expect.objectContaining({ county: 'jackson', notice_type: 'lis_pendens' }),
       expect.objectContaining({ county: 'johnson', notice_type: 'lis_pendens' }),
+      expect.objectContaining({ county: 'wyandotte', notice_type: 'lis_pendens' }),
     ])
   })
 })

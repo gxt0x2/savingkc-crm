@@ -5,7 +5,7 @@ import {
   normalizeCounty,
   parseNoticeType,
 } from '@/lib/prospecting/foreclosure'
-import { presentIngestControls, serviceAreaCounty } from '@/lib/prospecting/foreclosure-intake'
+import { missingServiceCounty, presentIngestControls, serviceAreaPlace } from '@/lib/prospecting/foreclosure-intake'
 import { supabase } from '@/lib/supabase-lazy'
 import { ForeclosureError } from '@/lib/server/foreclosure-prospects'
 
@@ -35,17 +35,17 @@ export async function listForeclosureIngestControls(): Promise<IngestControl[]> 
 
 export async function setForeclosureIngestControl(
   actor: AuthenticatedActor,
-  input: { county?: unknown; noticeType?: unknown; paused?: unknown; updatedSince?: unknown },
+  input: { county?: unknown; state?: unknown; noticeType?: unknown; paused?: unknown; updatedSince?: unknown },
 ): Promise<IngestControl> {
-  const parsedCounty = normalizeCounty(input.county)
-  const county = serviceAreaCounty(input.county)
+  const place = serviceAreaPlace(input.county, input.state)
   const noticeType = parseNoticeType(input.noticeType)
-  if (!parsedCounty || parsedCounty === 'unknown' || !noticeType) {
+  if (missingServiceCounty(input.county) || !noticeType) {
     throw new ForeclosureError('invalid_ingest', 400, 'County and notice type are required to pause ingest.')
   }
-  if (!county) {
-    throw new ForeclosureError('outside_service_area', 400, 'County must be Jackson, Clay, Platte, Johnson, or Wyandotte.')
+  if (!place) {
+    throw new ForeclosureError('outside_service_area', 400, 'County must be Jackson, Clay, or Platte in Missouri, or Johnson or Wyandotte in Kansas.')
   }
+  const county = place.county
   const existing = await supabase.from(INGEST_TABLE).select('paused,updated_since').eq('county', county).eq('notice_type', noticeType).maybeSingle<{ paused: boolean; updated_since: string | null }>()
   if (existing.error) throw databaseError(existing.error)
   const nextPaused = input.paused === undefined

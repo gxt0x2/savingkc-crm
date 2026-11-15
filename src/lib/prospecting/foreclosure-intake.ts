@@ -4,10 +4,8 @@ import {
   type IngestControl,
   type SaleStatus,
   FORECLOSURE_NOTICE_TYPES,
-  inferState,
   isSandboxForeclosureAddress,
   mergeIngestControls,
-  normalizeCounty,
   parseIsoDate,
   parseNoticeType,
 } from '@/lib/prospecting/foreclosure'
@@ -18,12 +16,57 @@ export const INTAKE_CONTROL_COUNTIES = ['jackson', 'clay', 'platte', 'johnson', 
 export const KS_LICENSE_BLOCK = 'ks_license_unconfirmed'
 
 export type ForeclosureServiceCounty = (typeof INTAKE_CONTROL_COUNTIES)[number]
+export type ForeclosureServiceState = 'MO' | 'KS'
 
-/** Jackson, Clay, Platte, Johnson, and Wyandotte. Blank, unknown, and every other county stay out. */
+const SERVICE_AREA_STATE: Record<ForeclosureServiceCounty, ForeclosureServiceState> = {
+  jackson: 'MO',
+  clay: 'MO',
+  platte: 'MO',
+  johnson: 'KS',
+  wyandotte: 'KS',
+}
+
+function countyWords(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  return raw.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim()
+}
+
+/** Exact county only. Case and a trailing "County" or "Co." are ignored. */
 export function serviceAreaCounty(raw: unknown): ForeclosureServiceCounty | null {
-  const county = normalizeCounty(raw)
-  if (!county || county === 'unknown') return null
-  return (INTAKE_CONTROL_COUNTIES as readonly string[]).includes(county) ? county as ForeclosureServiceCounty : null
+  const match = countyWords(raw).match(/^(jackson|clay|platte|johnson|wyandotte)(?: (?:county|co))?$/)
+  return match ? match[1] as ForeclosureServiceCounty : null
+}
+
+export function missingServiceCounty(raw: unknown): boolean {
+  const value = countyWords(raw)
+  if (!value) return true
+  return value.replace(/ (?:county|co)$/, '') === 'unknown'
+}
+
+function explicitServiceState(raw: unknown): ForeclosureServiceState | 'other' | null {
+  if (typeof raw !== 'string') return null
+  const value = raw.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim()
+  if (!value) return null
+  if (value === 'mo' || value === 'missouri') return 'MO'
+  if (value === 'ks' || value === 'kansas') return 'KS'
+  return 'other'
+}
+
+/**
+ * Jackson, Clay, and Platte are Missouri. Johnson and Wyandotte are Kansas.
+ * A blank state is taken from that county. Any other state is rejected.
+ */
+export function serviceAreaPlace(
+  countyRaw: unknown,
+  stateRaw?: unknown,
+): { county: ForeclosureServiceCounty; state: ForeclosureServiceState } | null {
+  const county = serviceAreaCounty(countyRaw)
+  if (!county) return null
+  const expected = SERVICE_AREA_STATE[county]
+  const explicit = explicitServiceState(stateRaw)
+  if (explicit === null) return { county, state: expected }
+  if (explicit !== expected) return null
+  return { county, state: expected }
 }
 
 const STREET_SUFFIX: Record<string, string> = {
@@ -230,15 +273,15 @@ function unitToken(part: string, inline: boolean): string | null {
   return pattern.exec(cleaned)?.[1]?.toLowerCase() ?? null
 }
 
-/** A comma segment that is only a short unit, such as "4" or "4B", with no unit word. */
+/** A comma segment that is only a unit, such as "A", "4", or "4B", with no unit word. */
 function bareUnitToken(part: string): string | null {
   const token = part.replace(/\./g, '').trim()
   if (!token || /\s/.test(token)) return null
   if (!/^#?[a-z0-9-]{1,6}$/i.test(token)) return null
-  if (!/\d/.test(token)) return null
-  if (/^#?\d{5}$/.test(token)) return null
   const unit = token.replace(/^#/, '').toLowerCase()
-  return unit && /\d/.test(unit) ? unit : null
+  if (!unit || /^\d{4,5}$/.test(unit)) return null
+  if (/^[a-z]$/.test(unit) || /\d/.test(unit)) return unit
+  return null
 }
 
 function normalizeStreetLine(line: string): string | null {
@@ -367,14 +410,17 @@ export function prepareIntakeRow(
     const paid = definition.isPaid ? ` Paid source${price} stays off until its enabled flag is changed.` : ''
     return { ok: false, code: 'source_disabled', reason: `${definition.displayName} is turned off.${paid}` }
   }
-  const county = serviceAreaCounty(input.county)
-  if (!county) {
-    const parsed = normalizeCounty(input.county)
-    if (!parsed || parsed === 'unknown') {
+  const place = serviceAreaPlace(input.county, input.state)
+  if (!place) {
+    if (missingServiceCounty(input.county)) {
       return { ok: false, code: 'county_required', reason: 'County is required. A missing county stays paused.' }
+    }
+    if (serviceAreaCounty(input.county)) {
+      return { ok: false, code: 'state_mismatch', reason: 'State does not match that county. Jackson, Clay, and Platte are Missouri. Johnson and Wyandotte are Kansas.' }
     }
     return { ok: false, code: 'outside_service_area', reason: 'County must be Jackson, Clay, Platte, Johnson, or Wyandotte.' }
   }
+  const county = place.county
   const stage = clip(input.stage, 160)
   const noticeType = noticeTypeForIntake(definition, stage)
   if (!(FORECLOSURE_NOTICE_TYPES as readonly string[]).includes(noticeType)) {
@@ -383,7 +429,7 @@ export function prepareIntakeRow(
   if (!automaticLoadAllowed(control)) {
     return { ok: false, code: 'ingest_paused', reason: `Automatic loading is paused for ${county} ${noticeType.replaceAll('_', ' ')}.` }
   }
-  const state = inferState(county, input.state)
+  const state = place.state
   const address = clip(input.property_address ?? input.propertyAddress, 300)
   const owner = clip(input.owner_or_defendant ?? input.ownerName, 200)
   const party = clip(input.plaintiff_or_trustee_firm ?? input.trusteeOrFirm, 200)
