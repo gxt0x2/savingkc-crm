@@ -661,3 +661,117 @@ BEGIN
 END $$;
 RESET ROLE;
 SQL
+
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
+
+"${PSQL[@]}" <<'SQL'
+INSERT INTO public.source_lists VALUES
+  ('81000000-0000-4000-8000-000000000001', DATE '2026-11-15', 'line-check-gates.csv');
+INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type) VALUES
+  ('82000000-0000-4000-8000-000000000001', 'cass', '30 Cass', 'P-LINE-CASS', 'Cass', 'Individual'),
+  ('82000000-0000-4000-8000-000000000002', NULL, '31 Blank', 'P-LINE-NULL', 'Blank', 'Individual'),
+  ('82000000-0000-4000-8000-000000000003', 'jackson', '32 Tax', 'P-LINE-TAX', 'Tax', 'Individual');
+INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship) VALUES
+  ('83000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001', '+18165550701', 'no_answer', 'owner'),
+  ('83000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000002', '+18165550702', 'no_answer', 'owner'),
+  ('83000000-0000-4000-8000-000000000003', '82000000-0000-4000-8000-000000000003', '+18165550703', 'no_answer', 'owner');
+INSERT INTO public.source_list_rows (
+  id, source_list_id, list_type, county, state, parcel_id, address, owner_names, prospect_id, status, phones, raw
+) VALUES
+  (
+    '84000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'foreclosure', 'Cass', 'MO', 'P-LINE-CASS', '30 Cass', 'Cass',
+    '82000000-0000-4000-8000-000000000001', 'ready', ARRAY['+18165550701'], '{}'::jsonb
+  ),
+  (
+    '84000000-0000-4000-8000-000000000002',
+    '81000000-0000-4000-8000-000000000001',
+    'foreclosure', NULL, 'MO', 'P-LINE-NULL', '31 Blank', 'Blank',
+    '82000000-0000-4000-8000-000000000002', 'ready', ARRAY['+18165550702'], '{}'::jsonb
+  ),
+  (
+    '84000000-0000-4000-8000-000000000003',
+    '81000000-0000-4000-8000-000000000001',
+    'tax_delinquent', 'jackson', 'MO', 'P-LINE-TAX', '32 Tax', 'Tax',
+    '82000000-0000-4000-8000-000000000003', 'ready', ARRAY['+18165550703'], '{}'::jsonb
+  );
+
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+
+SET ROLE service_role;
+DO $$
+DECLARE
+  report jsonb;
+  jit_off boolean;
+BEGIN
+  IF public.source_list_phone_block_reason_v1('+18165550701', 'Cass', 'Cass') IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'Cass was not out_of_service_area after the line-check migration';
+  END IF;
+  IF public.source_list_phone_block_reason_v1('+18165550702', NULL, NULL) IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'a null county was not county_unresolved after the line-check migration';
+  END IF;
+
+  IF (
+    SELECT block_reason FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-LINE-CASS'
+  ) IS DISTINCT FROM 'out_of_service_area' THEN
+    RAISE EXCEPTION 'Cass parcel review reason was %', (
+      SELECT block_reason FROM public.source_list_dialer_phone_review WHERE parcel_id = 'P-LINE-CASS'
+    );
+  END IF;
+  IF (
+    SELECT block_reason FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-LINE-NULL'
+  ) IS DISTINCT FROM 'county_unresolved' THEN
+    RAISE EXCEPTION 'null-county parcel review reason was %', (
+      SELECT block_reason FROM public.source_list_dialer_phone_review WHERE parcel_id = 'P-LINE-NULL'
+    );
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export
+    WHERE parcel_id IN ('P-LINE-CASS', 'P-LINE-NULL', 'P-LINE-TAX')
+  ) THEN
+    RAISE EXCEPTION 'a Cass, unresolved, or unchecked tax row was exported';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.tax_status_checks WHERE parcel_id = 'P-LINE-TAX'
+  ) AND EXISTS (
+    SELECT 1 FROM public.source_list_dialer_phone_review
+    WHERE parcel_id = 'P-LINE-TAX' AND block_reason IS NULL
+  ) AND EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export WHERE parcel_id = 'P-LINE-TAX'
+  ) THEN
+    RAISE EXCEPTION 'tax-delinquent row with no status check was exported';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.source_list_dialer_export WHERE parcel_id = 'P-LINE-TAX'
+  ) THEN
+    RAISE EXCEPTION 'tax-delinquent row with no recent status check was exported';
+  END IF;
+
+  report := public.record_source_list_export_batch_v1(
+    'line-check-gates', NULL, NULL, NULL, NULL, '81000000-0000-4000-8000-000000000001', 1
+  );
+  IF report->>'phone_count' IS DISTINCT FROM '0' THEN
+    RAISE EXCEPTION 'gate batch exported % phones', report->>'phone_count';
+  END IF;
+  IF (report->'rows')::text LIKE '%1816555070%' THEN
+    RAISE EXCEPTION 'gate batch rows included a blocked phone';
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_proc
+    WHERE proname = 'record_source_list_export_batch_v1'
+      AND 'jit=off' = ANY (proconfig)
+  ) INTO jit_off;
+  IF NOT jit_off THEN
+    RAISE EXCEPTION 'record_source_list_export_batch_v1 lost jit=off';
+  END IF;
+END $$;
+RESET ROLE;
+SELECT 'PASS: line-check migration kept Cass, null county, tax-status, and jit=off' AS result;
+SQL

@@ -1,6 +1,11 @@
--- Review fixes for the Lookup line check. Builds on
--- 20261202140000_dialer_export_suppression.sql (dialer_suppression_class_v1).
+-- Line-check review flag. Applies after 20261205150000_dialer_export_speed_f1_stamp.sql.
 -- Counsel ruling §4a, 2026-11-14 (Lookup inactive).
+--
+-- Does not replace source_list_phone_block_reasons_v1, source_list_dialer_export,
+-- or record_source_list_export_batch_v1. Those keep the Cass/service-area gate,
+-- the null-county hold, the tax-status export filter, and jit=off.
+-- A line-check reason is appended on the review view only when the #814 scrub
+-- returns null and LINE_CHECK_BLOCK_ENABLED is on.
 --
 -- An active recheck becomes eligible only when phone_line_rnd_clear_v1 returns
 -- clear. That hook returns unavailable, so an active recheck stays
@@ -877,377 +882,6 @@ AS $$
   END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1(p_phone text, p_prospect_id uuid)
-RETURNS text
-LANGUAGE plpgsql
-STABLE
-SET search_path = pg_catalog, public
-AS $function$
-DECLARE
-  v_key text;
-  v_class text;
-  v_encode text;
-  v_bucket text;
-  v_line text;
-BEGIN
-  IF public.normalize_conversation_phone(p_phone) IS NULL THEN
-    RETURN 'invalid_phone';
-  END IF;
-  v_key := public.prospecting_phone_key_v1(p_phone);
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.sms_opt_outs AS opt_out
-    WHERE opt_out.is_opted_out IS TRUE
-      AND public.prospecting_phone_key_v1(opt_out.phone) = v_key
-  ) THEN
-    RETURN 'sms_opt_out';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.prospect_phones AS phone
-    WHERE phone.voice_hold IS TRUE
-      AND public.prospecting_phone_key_v1(phone.phone) = v_key
-  ) THEN
-    RETURN 'voice_hold';
-  END IF;
-
-  SELECT matched.class
-  INTO v_class
-  FROM (
-    SELECT public.dialer_suppression_class_v1('prospect_disposition', phone.last_disposition) AS class
-    FROM public.prospect_phones AS phone
-    WHERE public.prospecting_phone_key_v1(phone.phone) = v_key
-  ) AS matched
-  WHERE matched.class IS NOT NULL AND matched.class <> 'allow'
-  ORDER BY CASE matched.class
-    WHEN 'person_dnc' THEN 1
-    WHEN 'prospect_dnc' THEN 1
-    WHEN 'wrong_number' THEN 2
-    WHEN 'disconnected' THEN 3
-    WHEN 'unmapped' THEN 4
-    ELSE 5
-  END
-  LIMIT 1;
-  IF v_class IN ('person_dnc', 'prospect_dnc') THEN
-    RETURN 'prospect_dnc';
-  ELSIF v_class = 'wrong_number' THEN
-    RETURN 'wrong_number';
-  ELSIF v_class = 'disconnected' THEN
-    RETURN 'disconnected';
-  ELSIF v_class = 'unmapped' THEN
-    RETURN 'unmapped_label';
-  END IF;
-
-  SELECT matched.class
-  INTO v_class
-  FROM (
-    SELECT public.dialer_suppression_class_v1('phone_connected', phone.phone_connected) AS class
-    FROM public.prospect_phones AS phone
-    WHERE public.prospecting_phone_key_v1(phone.phone) = v_key
-  ) AS matched
-  WHERE matched.class IS NOT NULL AND matched.class <> 'allow'
-  ORDER BY CASE matched.class
-    WHEN 'wrong_number' THEN 1
-    WHEN 'disconnected' THEN 2
-    WHEN 'unmapped' THEN 3
-    ELSE 4
-  END
-  LIMIT 1;
-  IF v_class = 'wrong_number' THEN
-    RETURN 'wrong_number';
-  ELSIF v_class = 'disconnected' THEN
-    RETURN 'disconnected';
-  ELSIF v_class = 'unmapped' THEN
-    RETURN 'unmapped_label';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.crm_contact_methods AS method
-    WHERE method.method_type = 'phone'
-      AND method.sms_consent_status = 'opted_out'
-      AND public.prospecting_phone_key_v1(method.normalized_value) = v_key
-  ) THEN
-    RETURN 'contact_opt_out';
-  END IF;
-  IF EXISTS (
-    SELECT 1
-    FROM public.crm_contact_methods AS method
-    WHERE method.method_type = 'phone'
-      AND method.deliverability_status = 'blocked'
-      AND public.prospecting_phone_key_v1(method.normalized_value) = v_key
-  ) THEN
-    RETURN 'contact_blocked';
-  END IF;
-
-  SELECT matched.class
-  INTO v_class
-  FROM (
-    SELECT public.dialer_suppression_class_v1('lead_call_result', lead.call_result) AS class
-    FROM public.leads AS lead
-    WHERE public.prospecting_phone_key_v1(lead.phone) = v_key
-    UNION ALL
-    SELECT public.dialer_suppression_class_v1('lead_dead_reason', lead.dead_reason) AS class
-    FROM public.leads AS lead
-    WHERE public.prospecting_phone_key_v1(lead.phone) = v_key
-  ) AS matched
-  WHERE matched.class IS NOT NULL AND matched.class <> 'allow'
-  ORDER BY CASE matched.class
-    WHEN 'person_dnc' THEN 1
-    WHEN 'lead_dnc' THEN 1
-    WHEN 'dead_number' THEN 2
-    WHEN 'disconnected' THEN 3
-    WHEN 'unmapped' THEN 4
-    ELSE 5
-  END
-  LIMIT 1;
-  IF v_class IN ('person_dnc', 'lead_dnc') THEN
-    RETURN 'lead_dnc';
-  ELSIF v_class = 'dead_number' THEN
-    RETURN 'dead_number';
-  ELSIF v_class = 'disconnected' THEN
-    RETURN 'disconnected';
-  ELSIF v_class = 'unmapped' THEN
-    RETURN 'unmapped_label';
-  END IF;
-
-  SELECT matched.class
-  INTO v_class
-  FROM (
-    SELECT public.dialer_suppression_class_v1('mojo_outcome', event.outcome) AS class
-    FROM public.crm_mojo_call_events AS event
-    WHERE public.prospecting_phone_key_v1(event.normalized_phone) = v_key
-  ) AS matched
-  WHERE matched.class IS NOT NULL AND matched.class <> 'allow'
-  ORDER BY CASE matched.class
-    WHEN 'mojo_dnc' THEN 1
-    WHEN 'disconnected' THEN 2
-    WHEN 'unmapped' THEN 3
-    ELSE 4
-  END
-  LIMIT 1;
-  IF v_class = 'mojo_dnc' THEN
-    RETURN 'mojo_dnc';
-  ELSIF v_class = 'disconnected' THEN
-    RETURN 'disconnected';
-  ELSIF v_class = 'unmapped' THEN
-    RETURN 'unmapped_label';
-  END IF;
-
-  SELECT matched.bucket
-  INTO v_bucket
-  FROM (
-    SELECT public.dialer_relationship_bucket_v1(phone.relationship, prospect.owner_1_type) AS bucket
-    FROM public.prospect_phones AS phone
-    JOIN public.prospects AS prospect ON prospect.id = phone.prospect_id
-    WHERE public.prospecting_phone_key_v1(phone.phone) = v_key
-  ) AS matched
-  WHERE matched.bucket IN ('associate_non_family', 'relationship_unknown')
-  ORDER BY CASE matched.bucket WHEN 'associate_non_family' THEN 1 ELSE 2 END
-  LIMIT 1;
-  IF v_bucket IS NOT NULL THEN
-    RETURN v_bucket;
-  END IF;
-
-  IF public.dialer_property_owner_dnc_fanout_v1(v_key, p_prospect_id) THEN
-    RETURN 'property_owner_dnc_fanout';
-  END IF;
-
-    IF EXISTS (
-    SELECT 1
-    FROM public.prospect_phones AS mine
-    JOIN public.prospect_phones AS flagged
-      ON flagged.prospect_id = mine.prospect_id
-    WHERE public.prospecting_phone_key_v1(mine.phone) = v_key
-      AND public.prospecting_phone_key_v1(flagged.phone) IS DISTINCT FROM v_key
-      AND public.dialer_suppression_class_v1('prospect_disposition', flagged.last_disposition) = 'person_dnc'
-  ) OR (
-    p_prospect_id IS NOT NULL AND EXISTS (
-      SELECT 1
-      FROM public.prospect_phones AS flagged
-      WHERE flagged.prospect_id = p_prospect_id
-        AND public.prospecting_phone_key_v1(flagged.phone) IS DISTINCT FROM v_key
-        AND public.dialer_suppression_class_v1('prospect_disposition', flagged.last_disposition) = 'person_dnc'
-    )
-  ) OR EXISTS (
-    SELECT 1
-    FROM public.prospects AS mine
-    JOIN public.leads AS lead ON lead.id = mine.lead_id
-    WHERE (
-      mine.id = p_prospect_id
-      OR EXISTS (
-        SELECT 1
-        FROM public.prospect_phones AS mine_phone
-        WHERE mine_phone.prospect_id = mine.id
-          AND public.prospecting_phone_key_v1(mine_phone.phone) = v_key
-      )
-    )
-    AND public.prospecting_phone_key_v1(lead.phone) IS DISTINCT FROM v_key
-    AND (
-      public.dialer_suppression_class_v1('lead_dead_reason', lead.dead_reason) = 'person_dnc'
-      OR public.dialer_suppression_class_v1('lead_call_result', lead.call_result) = 'person_dnc'
-    )
-  ) OR EXISTS (
-    SELECT 1
-    FROM public.crm_mojo_call_events AS mine_event
-    JOIN public.crm_mojo_call_events AS other_event
-      ON other_event.provider_contact_id = mine_event.provider_contact_id
-     AND nullif(btrim(mine_event.provider_contact_id), '') IS NOT NULL
-    WHERE public.prospecting_phone_key_v1(mine_event.normalized_phone) = v_key
-      AND public.prospecting_phone_key_v1(other_event.normalized_phone) IS DISTINCT FROM v_key
-      AND (
-        EXISTS (
-          SELECT 1
-          FROM public.prospect_phones AS flagged
-          WHERE public.prospecting_phone_key_v1(flagged.phone) = public.prospecting_phone_key_v1(other_event.normalized_phone)
-            AND public.dialer_suppression_class_v1('prospect_disposition', flagged.last_disposition) = 'person_dnc'
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM public.leads AS lead
-          WHERE public.prospecting_phone_key_v1(lead.phone) = public.prospecting_phone_key_v1(other_event.normalized_phone)
-            AND (
-              public.dialer_suppression_class_v1('lead_dead_reason', lead.dead_reason) = 'person_dnc'
-              OR public.dialer_suppression_class_v1('lead_call_result', lead.call_result) = 'person_dnc'
-            )
-        )
-      )
-  ) THEN
-    RETURN 'person_fanout';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.prospects AS mine
-    JOIN public.prospects AS anchor
-      ON public.dialer_household_key_v1(anchor.county, coalesce(anchor.situs_street, anchor.situs_address), anchor.owner_1_last, anchor.owner_1)
-       = public.dialer_household_key_v1(mine.county, coalesce(mine.situs_street, mine.situs_address), mine.owner_1_last, mine.owner_1)
-    WHERE anchor.id IS DISTINCT FROM mine.id
-      AND public.dialer_household_key_v1(mine.county, coalesce(mine.situs_street, mine.situs_address), mine.owner_1_last, mine.owner_1) IS NOT NULL
-      AND (
-        mine.id = p_prospect_id
-        OR EXISTS (
-          SELECT 1
-          FROM public.prospect_phones AS mine_phone
-          WHERE mine_phone.prospect_id = mine.id
-            AND public.prospecting_phone_key_v1(mine_phone.phone) = v_key
-        )
-      )
-      AND (
-        EXISTS (
-          SELECT 1
-          FROM public.prospect_phones AS flagged
-          WHERE flagged.prospect_id = anchor.id
-            AND public.dialer_suppression_class_v1('prospect_disposition', flagged.last_disposition) = 'person_dnc'
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM public.leads AS lead
-          WHERE lead.id = anchor.lead_id
-            AND (
-              public.dialer_suppression_class_v1('lead_dead_reason', lead.dead_reason) = 'person_dnc'
-              OR public.dialer_suppression_class_v1('lead_call_result', lead.call_result) = 'person_dnc'
-            )
-        )
-      )
-  ) THEN
-    RETURN 'household_fanout';
-  END IF;
-
-  -- Hook only. The encode queue is not created here. A missing table is not a block.
-  IF to_regclass('public.mojo_encode_queue') IS NOT NULL THEN
-    BEGIN
-      EXECUTE $encode$
-        SELECT CASE
-          WHEN EXISTS (
-            SELECT 1
-            FROM public.mojo_encode_queue AS pending
-            WHERE public.prospecting_phone_key_v1(pending.phone) = $1
-              AND pending.encoded_at IS NULL
-          ) THEN 'mojo_encode_pending'
-          WHEN EXISTS (
-            SELECT 1
-            FROM public.mojo_encode_queue AS pending
-            WHERE length(public.prospecting_phone_key_v1(pending.phone)) BETWEEN 4 AND 9
-              AND right(public.prospecting_phone_key_v1(pending.phone), 4) = right($1, 4)
-              AND pending.encoded_at IS NULL
-          ) THEN 'hold_last4'
-          ELSE NULL
-        END
-      $encode$
-      INTO v_encode
-      USING v_key;
-      IF v_encode IS NOT NULL THEN
-        RETURN v_encode;
-      END IF;
-    EXCEPTION
-      WHEN undefined_column OR undefined_table THEN
-        RAISE EXCEPTION 'mojo_encode_pending_unreadable'
-          USING HINT = 'public.mojo_encode_queue must expose phone and encoded_at';
-    END;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM public.prospect_phones AS phone
-    WHERE length(public.prospecting_phone_key_v1(phone.phone)) BETWEEN 4 AND 9
-      AND right(public.prospecting_phone_key_v1(phone.phone), 4) = right(v_key, 4)
-      AND (
-        coalesce(public.dialer_suppression_class_v1('prospect_disposition', phone.last_disposition), 'allow') <> 'allow'
-        OR coalesce(public.dialer_suppression_class_v1('phone_connected', phone.phone_connected), 'allow') <> 'allow'
-        OR phone.voice_hold IS TRUE
-      )
-  ) OR EXISTS (
-    SELECT 1
-    FROM public.leads AS lead
-    WHERE length(public.prospecting_phone_key_v1(lead.phone)) BETWEEN 4 AND 9
-      AND right(public.prospecting_phone_key_v1(lead.phone), 4) = right(v_key, 4)
-      AND (
-        coalesce(public.dialer_suppression_class_v1('lead_call_result', lead.call_result), 'allow') <> 'allow'
-        OR coalesce(public.dialer_suppression_class_v1('lead_dead_reason', lead.dead_reason), 'allow') <> 'allow'
-      )
-  ) OR EXISTS (
-    SELECT 1
-    FROM public.crm_mojo_call_events AS event
-    WHERE length(public.prospecting_phone_key_v1(event.normalized_phone)) BETWEEN 4 AND 9
-      AND right(public.prospecting_phone_key_v1(event.normalized_phone), 4) = right(v_key, 4)
-      AND coalesce(public.dialer_suppression_class_v1('mojo_outcome', event.outcome), 'allow') <> 'allow'
-  ) OR EXISTS (
-    SELECT 1
-    FROM public.sms_opt_outs AS opt_out
-    WHERE opt_out.is_opted_out IS TRUE
-      AND length(public.prospecting_phone_key_v1(opt_out.phone)) BETWEEN 4 AND 9
-      AND right(public.prospecting_phone_key_v1(opt_out.phone), 4) = right(v_key, 4)
-  ) THEN
-    RETURN 'hold_last4';
-  END IF;
-
-  -- Line-check blocks run only after every DNC, fan-out, and hold check.
-  -- Counsel ruling §4a, 2026-11-14 (Lookup inactive). LINE_CHECK_BLOCK_ENABLED
-  -- defaults off so applying this migration does not block live phones.
-  IF public.phone_line_check_block_enabled_v1() THEN
-    v_line := public.phone_line_export_block_reason_v1(p_phone);
-    IF v_line IS NOT NULL THEN
-      RETURN v_line;
-    END IF;
-  END IF;
-
-  RETURN NULL;
-END;
-$function$;
-
-
-CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1(p_phone text)
-RETURNS text
-LANGUAGE sql
-STABLE
-SET search_path = pg_catalog, public
-AS $function$
-  SELECT public.source_list_phone_block_reason_v1(p_phone, NULL::uuid);
-$function$;
-
 CREATE OR REPLACE FUNCTION public.source_list_phone_sms_block_reason_v1(p_phone text)
 RETURNS text
 LANGUAGE sql
@@ -1255,9 +889,10 @@ STABLE
 SET search_path = pg_catalog, public
 AS $$
   SELECT CASE
-    WHEN NOT public.phone_line_check_block_enabled_v1() THEN public.source_list_phone_block_reason_v1(p_phone)
+    WHEN NOT public.phone_line_check_block_enabled_v1() THEN public.source_list_phone_block_reason_v1(p_phone, NULL::uuid)
     ELSE coalesce(
       public.source_list_phone_block_reason_v1(p_phone, NULL::uuid),
+      public.phone_line_export_block_reason_v1(p_phone),
       CASE
         WHEN EXISTS (
           SELECT 1
@@ -1274,39 +909,7 @@ $$;
 
 CREATE OR REPLACE VIEW public.source_list_dialer_phone_review
 WITH (security_invoker = true) AS
-SELECT
-  dialed.source_list_row_id,
-  dialed.source_list_id,
-  dialed.list_type,
-  dialed.county,
-  dialed.state,
-  dialed.violation_kind,
-  dialed.parcel_id,
-  dialed.case_id,
-  dialed.address,
-  dialed.owner_names,
-  dialed.amount_owed,
-  dialed.property_id,
-  dialed.prospect_id,
-  dialed.row_status,
-  dialed.phone_value,
-  dialed.phone_e164,
-  dialed.phone_origin,
-  dialed.pull_date,
-  dialed.source_file_name,
-  public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id) AS block_reason,
-  CASE
-    WHEN public.source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id) IS NULL
-      AND EXISTS (
-        SELECT 1
-        FROM public.prospect_phones AS phone
-        WHERE public.prospecting_phone_key_v1(phone.phone) = public.prospecting_phone_key_v1(dialed.phone_value)
-          AND phone.line_check_raw->>'stale_active_export' = 'true'
-      )
-    THEN 'stale_active'
-    ELSE NULL
-  END AS line_check_flag
-FROM (
+WITH dialed AS (
   SELECT DISTINCT ON (
     row.id,
     coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value))
@@ -1329,7 +932,21 @@ FROM (
     public.normalize_conversation_phone(phone.phone_value) AS phone_e164,
     phone.phone_origin,
     list.pull_date,
-    list.source_file_name
+    list.source_file_name,
+    coalesce(
+      NULLIF(btrim(row.raw->>'situs_county'), ''),
+      NULLIF(btrim(row.raw->>'county'), ''),
+      (
+        SELECT NULLIF(btrim(prospect.county), '')
+        FROM public.prospects AS prospect
+        WHERE prospect.id = row.prospect_id
+      ),
+      (
+        SELECT NULLIF(btrim(property.county), '')
+        FROM public.crm_properties AS property
+        WHERE property.id = row.property_id
+      )
+    ) AS situs_county
   FROM public.source_list_rows AS row
   JOIN public.source_lists AS list ON list.id = row.source_list_id
   CROSS JOIN LATERAL (
@@ -1348,64 +965,68 @@ FROM (
     row.id,
     coalesce(public.normalize_conversation_phone(phone.phone_value), btrim(phone.phone_value)),
     (phone.phone_origin = 'prospect_phone') DESC
-) AS dialed;
-
-CREATE OR REPLACE VIEW public.source_list_dialer_export
-WITH (security_invoker = true) AS
+),
+ordered AS (
+  SELECT row_number() OVER (ORDER BY source_list_row_id, phone_value) AS ordinal, dialed.*
+  FROM dialed
+),
+reasons AS (
+  SELECT *
+  FROM public.source_list_phone_block_reasons_v1(
+    ARRAY(SELECT ordered.phone_value FROM ordered ORDER BY ordered.ordinal),
+    ARRAY(SELECT ordered.prospect_id FROM ordered ORDER BY ordered.ordinal),
+    ARRAY(SELECT ordered.county FROM ordered ORDER BY ordered.ordinal),
+    ARRAY(SELECT ordered.situs_county FROM ordered ORDER BY ordered.ordinal)
+  )
+)
 SELECT
-  source_list_row_id,
-  source_list_id,
-  list_type,
-  county,
-  state,
-  violation_kind,
-  parcel_id,
-  case_id,
-  address,
-  owner_names,
-  amount_owed,
-  property_id,
-  prospect_id,
-  row_status,
-  phone_e164,
-  phone_origin,
-  pull_date,
-  source_file_name,
-  line_check_flag
-FROM public.source_list_dialer_phone_review
-WHERE block_reason IS NULL;
+  ordered.source_list_row_id,
+  ordered.source_list_id,
+  ordered.list_type,
+  ordered.county,
+  ordered.state,
+  ordered.violation_kind,
+  ordered.parcel_id,
+  ordered.case_id,
+  ordered.address,
+  ordered.owner_names,
+  ordered.amount_owed,
+  ordered.property_id,
+  ordered.prospect_id,
+  ordered.row_status,
+  ordered.phone_value,
+  ordered.phone_e164,
+  ordered.phone_origin,
+  ordered.pull_date,
+  ordered.source_file_name,
+  CASE
+    WHEN reasons.block_reason IS NOT NULL THEN reasons.block_reason
+    WHEN public.phone_line_check_block_enabled_v1()
+      THEN public.phone_line_export_block_reason_v1(ordered.phone_value)
+    ELSE NULL
+  END AS block_reason,
+  CASE
+    WHEN reasons.block_reason IS NULL
+      AND (
+        NOT public.phone_line_check_block_enabled_v1()
+        OR public.phone_line_export_block_reason_v1(ordered.phone_value) IS NULL
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM public.prospect_phones AS phone
+        WHERE public.prospecting_phone_key_v1(phone.phone) = public.prospecting_phone_key_v1(ordered.phone_value)
+          AND phone.line_check_raw->>'stale_active_export' = 'true'
+      )
+    THEN 'stale_active'
+    ELSE NULL
+  END AS line_check_flag
+FROM ordered
+LEFT JOIN reasons ON reasons.ordinal = ordered.ordinal;
 
-CREATE OR REPLACE VIEW public.source_list_dialer_suppressed
-WITH (security_invoker = true) AS
-SELECT
-  source_list_row_id,
-  source_list_id,
-  list_type,
-  county,
-  state,
-  violation_kind,
-  parcel_id,
-  case_id,
-  address,
-  owner_names,
-  amount_owed,
-  property_id,
-  prospect_id,
-  row_status,
-  phone_value,
-  phone_e164,
-  phone_origin,
-  pull_date,
-  source_file_name,
-  block_reason,
-  line_check_flag
-FROM public.source_list_dialer_phone_review
-WHERE block_reason IS NOT NULL;
 
 COMMENT ON VIEW public.source_list_dialer_phone_review IS
-  'Review rows keep the #814 two-argument scrub. Line-check reasons are appended inside that function only while LINE_CHECK_BLOCK_ENABLED is on.';
-COMMENT ON VIEW public.source_list_dialer_export IS
-  'Dialer load file. Same columns as before, plus line_check_flag. Block reasons still come from source_list_phone_block_reason_v1(phone, prospect_id).';
+  'Keeps the #814 set-based scrub. Cass and any other named county outside Jackson, Clay, Platte, Johnson, and Wyandotte stay out_of_service_area. Null, blank, unknown, and unresolved stay county_unresolved. A line-check reason is used only when that scrub returns null and LINE_CHECK_BLOCK_ENABLED is on.';
+
 
 COMMENT ON FUNCTION public.phone_line_rnd_clear_v1(text, timestamptz) IS
   'RND HOOK. Counsel ruling §4a, 2026-11-14 (Lookup inactive): an active recheck is eligible only when this returns clear. It returns unavailable until the Reassigned Numbers Database is connected, so the recheck stays suppressed_bad_number.';

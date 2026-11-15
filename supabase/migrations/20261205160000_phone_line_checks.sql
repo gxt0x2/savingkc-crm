@@ -8,8 +8,8 @@
 --
 -- Counsel ruling §4a, 2026-11-14 (Lookup inactive).
 -- The per-check price is read from system_config LINE_CHECK_COST_USD, which the
--- app sets from LINE_CHECK_COST_USD. Export block reasons are added in the
--- following migration so they sit on dialer_suppression_class_v1.
+-- app sets from LINE_CHECK_COST_USD. The following migration layers a line-check
+-- reason onto the review view. It does not replace the #814 scrub.
 
 ALTER TABLE public.prospect_phones
   ADD COLUMN IF NOT EXISTS line_type text,

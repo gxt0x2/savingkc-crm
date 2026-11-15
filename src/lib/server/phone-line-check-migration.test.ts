@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const migration = readFileSync('supabase/migrations/20261203120000_phone_line_checks.sql', 'utf8')
+const migration = readFileSync('supabase/migrations/20261205160000_phone_line_checks.sql', 'utf8')
 const applyStart = migration.indexOf('CREATE OR REPLACE FUNCTION public.apply_phone_line_checks_v1')
 const applySql = migration.slice(applyStart, migration.indexOf('REVOKE ALL ON FUNCTION public.phone_line_rnd_clear_v1'))
 const updateStart = applySql.indexOf('UPDATE public.prospect_phones AS phone')
@@ -71,26 +71,30 @@ describe('phone line check migration', () => {
   })
 })
 
-const review = readFileSync('supabase/migrations/20261203130000_phone_line_check_review.sql', 'utf8')
+const review = readFileSync('supabase/migrations/20261205170000_phone_line_check_review.sql', 'utf8')
 
 describe('line check review migration on the #814 scrub', () => {
-  it('adds line-check reasons inside the two-argument function after the hold checks', () => {
-    const start = review.indexOf('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1(p_phone text, p_prospect_id uuid)')
-    const body = review.slice(start, review.indexOf('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1(p_phone text)\n'))
-    const hold = body.indexOf("RETURN 'hold_last4'")
-    const line = body.indexOf('phone_line_export_block_reason_v1(p_phone)')
-    expect(hold).toBeGreaterThan(0)
-    expect(line).toBeGreaterThan(hold)
-    expect(body).toContain('phone_line_check_block_enabled_v1')
-    expect(body).toContain('property_owner_dnc_fanout')
-    expect(review).toContain('SELECT public.source_list_phone_block_reason_v1(p_phone, NULL::uuid)')
-    expect(review).toContain('source_list_phone_block_reason_v1(dialed.phone_value, dialed.prospect_id)')
+  it('appends a line-check reason only when the #814 scrub returns null', () => {
+    const viewStart = review.indexOf('CREATE OR REPLACE VIEW public.source_list_dialer_phone_review')
+    const view = review.slice(viewStart, review.indexOf('COMMENT ON VIEW public.source_list_dialer_phone_review'))
+    const kept = view.indexOf('WHEN reasons.block_reason IS NOT NULL THEN reasons.block_reason')
+    const line = view.indexOf('phone_line_export_block_reason_v1(ordered.phone_value)')
+    expect(kept).toBeGreaterThan(0)
+    expect(line).toBeGreaterThan(kept)
+    expect(view).toContain('source_list_phone_block_reasons_v1')
+    expect(view).toContain('ARRAY(SELECT ordered.county FROM ordered ORDER BY ordered.ordinal)')
+    expect(view).toContain('ARRAY(SELECT ordered.situs_county FROM ordered ORDER BY ordered.ordinal)')
+    expect(view).toContain('phone_line_check_block_enabled_v1')
+    expect(review).toContain('public.source_list_phone_block_reason_v1(p_phone, NULL::uuid)')
     expect(review).toContain("THEN 'line_check_unknown'")
     expect(review).toContain("THEN 'line_check_stale'")
     expect(review).toContain("ELSE 'sms_requires_mobile'")
+    expect(review).not.toContain('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reason_v1')
+    expect(review).not.toContain('CREATE OR REPLACE FUNCTION public.source_list_phone_block_reasons_v1')
     expect(review).not.toContain('CREATE OR REPLACE FUNCTION public.dialer_suppression_class_v1')
     expect(review).not.toContain('CREATE OR REPLACE FUNCTION public.apply_mojo_dial_phone_stamp_v1')
     expect(review).not.toContain('CREATE OR REPLACE FUNCTION public.record_source_list_export_batch_v1')
+    expect(review).not.toContain('CREATE OR REPLACE VIEW public.source_list_dialer_export')
     expect(review).not.toMatch(/LIKE\s+'%dnc%'/i)
     expect(review).toContain('line_last_active_at')
     expect(review).toContain('FOR UPDATE')
