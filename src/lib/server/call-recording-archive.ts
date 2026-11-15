@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { readFile, unlink } from 'node:fs/promises'
+import { readFile, stat, unlink } from 'node:fs/promises'
 import { downloadRecording } from '@/lib/mojo-recording-downloader'
 import {
   MOJO_RECORDING_BUCKET,
@@ -9,6 +9,9 @@ import {
   mojoEventStoragePath,
   mojoRecordingSourceUrl,
   mojoRecordingUrlFromReportRow,
+  recordingSidFromCallMetadata,
+  twilioCallSid,
+  twilioCallStoragePath,
   twilioRecordingSid,
   twilioStoragePath,
 } from '@/lib/marketing/recording-playback'
@@ -17,10 +20,13 @@ import { centralDateString } from '../../../scripts/mojo-call-evidence.mjs'
 
 export const RECORDING_ARCHIVE_PAGE_LIMIT = 5
 export const RECORDING_ARCHIVE_RATE_LIMIT_MS = 1000
+export const RECORDING_ARCHIVE_READ_PAGE = 1000
+const MAX_RECORDING_BYTES = 104857600
+const MIN_RECORDING_BYTES = 1000
 const MOJO_REPORT_PATH = '/v2/rest/reports/call-recording-report-data/'
 const MOJO_BASE = 'https://app71.mojosells.com'
 
-export type RecordingArchiveKind = 'mojo_event' | 'mojo_call' | 'twilio_attempt'
+export type RecordingArchiveKind = 'mojo_event' | 'mojo_call' | 'twilio_attempt' | 'twilio_call'
 
 export type RecordingArchiveTarget = {
   kind: RecordingArchiveKind
@@ -29,6 +35,7 @@ export type RecordingArchiveTarget = {
   leadId: string | null
   recordingUrl: string | null
   recordingSid: string | null
+  callSid?: string | null
   storagePath: string | null
   isRecorded?: boolean
   providerCallId?: string | null
@@ -38,6 +45,7 @@ export type RecordingArchiveCounts = {
   mojoEvents: number
   mojoCalls: number
   twilioAttempts: number
+  twilioCalls: number
   total: number
 }
 
@@ -56,6 +64,7 @@ export type RecordingBackfillReport = {
 type ArchiveDeps = {
   downloadMojo: (url: string, id: string) => Promise<Uint8Array>
   downloadTwilio: (sid: string) => Promise<Uint8Array>
+  resolveCallRecording?: (callSid: string) => Promise<string>
   upload: (bucket: string, path: string, bytes: Uint8Array) => Promise<void>
   markStored: (target: RecordingArchiveTarget, storagePath: string, copiedAt: string) => Promise<void>
   sleep: (ms: number) => Promise<void>
@@ -63,12 +72,13 @@ type ArchiveDeps = {
 }
 
 const emptyCounts = (): RecordingArchiveCounts => ({
-  mojoEvents: 0, mojoCalls: 0, twilioAttempts: 0, total: 0,
+  mojoEvents: 0, mojoCalls: 0, twilioAttempts: 0, twilioCalls: 0, total: 0,
 })
 
 function addCount(counts: RecordingArchiveCounts, kind: RecordingArchiveKind) {
   if (kind === 'mojo_event') counts.mojoEvents += 1
   else if (kind === 'mojo_call') counts.mojoCalls += 1
+  else if (kind === 'twilio_call') counts.twilioCalls += 1
   else counts.twilioAttempts += 1
   counts.total += 1
 }
@@ -79,7 +89,73 @@ export function recordingArchiveKey(row: RecordingArchiveTarget): string {
 
 export function recordingSourceReady(row: RecordingArchiveTarget): boolean {
   if (row.kind === 'twilio_attempt') return Boolean(twilioRecordingSid(row.recordingSid))
+  if (row.kind === 'twilio_call') return Boolean(twilioRecordingSid(row.recordingSid) || twilioCallSid(row.callSid))
   return Boolean(mojoRecordingSourceUrl(row.recordingUrl))
+}
+
+/** Drop call rows whose recording or parent call is already on a dialer attempt. */
+export function omitTwilioCallsAlreadyAttempted(
+  calls: RecordingArchiveTarget[],
+  attempts: RecordingArchiveTarget[],
+): RecordingArchiveTarget[] {
+  const recordingSids = new Set(attempts.map((row) => twilioRecordingSid(row.recordingSid)).filter((sid): sid is string => Boolean(sid)))
+  const callSids = new Set(attempts.map((row) => twilioCallSid(row.callSid)).filter((sid): sid is string => Boolean(sid)))
+  const seen = new Set<string>()
+  const kept: RecordingArchiveTarget[] = []
+  for (const call of oldestExpiringFirst(calls)) {
+    const recordingSid = twilioRecordingSid(call.recordingSid)
+    const callSid = twilioCallSid(call.callSid)
+    if ((recordingSid && recordingSids.has(recordingSid)) || (callSid && callSids.has(callSid))) continue
+    const key = recordingSid || callSid || call.id
+    if (seen.has(key)) continue
+    seen.add(key)
+    kept.push(call)
+  }
+  return kept
+}
+
+export async function readAllPages<T>(
+  readPage: (offset: number, limit: number) => Promise<T[]>,
+  pageSize = RECORDING_ARCHIVE_READ_PAGE,
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let offset = 0; offset < 100_000; offset += pageSize) {
+    const page = await readPage(offset, pageSize)
+    rows.push(...page)
+    if (page.length < pageSize) return rows
+  }
+  return rows
+}
+
+export async function readBoundedAudio(response: Pick<Response, 'headers' | 'body'>): Promise<Uint8Array> {
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_RECORDING_BYTES) {
+    await response.body?.cancel()
+    throw new Error('recording_bytes_rejected')
+  }
+  if (!response.body) throw new Error('recording_bytes_rejected')
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > MAX_RECORDING_BYTES) throw new Error('recording_bytes_rejected')
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  if (total < MIN_RECORDING_BYTES) throw new Error('recording_bytes_rejected')
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
 }
 
 /** Oldest call time first. Mojo's retention window expires those copies first. */
@@ -155,23 +231,24 @@ export async function applyRecordingPage(
 
 export async function archiveOne(
   target: RecordingArchiveTarget,
-  deps: Pick<ArchiveDeps, 'downloadMojo' | 'downloadTwilio' | 'upload' | 'markStored' | 'now'>,
+  deps: Pick<ArchiveDeps, 'downloadMojo' | 'downloadTwilio' | 'resolveCallRecording' | 'upload' | 'markStored' | 'now'>,
 ): Promise<'archived' | 'already_stored'> {
   if (target.storagePath) return 'already_stored'
+  const sid = target.kind === 'twilio_attempt' || target.kind === 'twilio_call'
+    ? await resolvedTwilioSid(target, deps)
+    : null
   const storagePath = target.kind === 'twilio_attempt'
-    ? twilioStoragePath({
-      leadId: target.leadId,
-      attemptId: target.id,
-      recordingSid: target.recordingSid || '',
-    })
-    : target.kind === 'mojo_event'
-      ? mojoEventStoragePath(target.id)
-      : mojoCallStoragePath(target.id)
-  const bytes = target.kind === 'twilio_attempt'
-    ? await deps.downloadTwilio(twilioRecordingSid(target.recordingSid) || '')
+    ? twilioStoragePath({ leadId: target.leadId, attemptId: target.id, recordingSid: sid || '' })
+    : target.kind === 'twilio_call'
+      ? twilioCallStoragePath({ leadId: target.leadId, callId: target.id, recordingSid: sid || '' })
+      : target.kind === 'mojo_event'
+        ? mojoEventStoragePath(target.id)
+        : mojoCallStoragePath(target.id)
+  const bytes = sid
+    ? await deps.downloadTwilio(sid)
     : await deps.downloadMojo(mojoRecordingSourceUrl(target.recordingUrl) || '', target.id)
-  if (bytes.byteLength < 1000 || bytes.byteLength > 104857600) throw new Error('recording_bytes_rejected')
-  const bucket = target.kind === 'twilio_attempt' ? RECORDINGS_BUCKET : MOJO_RECORDING_BUCKET
+  if (bytes.byteLength < MIN_RECORDING_BYTES || bytes.byteLength > MAX_RECORDING_BYTES) throw new Error('recording_bytes_rejected')
+  const bucket = target.kind === 'twilio_attempt' || target.kind === 'twilio_call' ? RECORDINGS_BUCKET : MOJO_RECORDING_BUCKET
   await deps.upload(bucket, storagePath, bytes)
   const copiedAt = deps.now().toISOString()
   await deps.markStored(target, storagePath, copiedAt)
@@ -213,7 +290,7 @@ export async function runStoredRecordingBackfill(input: {
 } = {}): Promise<RecordingBackfillReport> {
   const apply = input.apply === true
   const db = input.db ?? supabaseAdmin()
-  const providers = new Set(input.providers ?? ['mojo_event', 'mojo_call', 'twilio_attempt'])
+  const providers = new Set(input.providers ?? ['mojo_event', 'mojo_call', 'twilio_attempt', 'twilio_call'])
   const rows = (await loadArchiveRows(db)).filter((row) => providers.has(row.kind))
   if (apply && input.sessionId && providers.has('mojo_call')) {
     await fillMissingMojoCallUrls(db, rows, input.sessionId, input.fetchImpl ?? fetch)
@@ -265,22 +342,44 @@ export async function storeDownloadedTwilioRecording(input: {
       .eq('recording_sid', sid)
       .limit(1)
       .maybeSingle()
-    if (error || !data?.id) return 'skipped'
-    if (typeof data.recording_storage_path === 'string' && data.recording_storage_path.trim()) return 'already_stored'
+    const info = await stat(input.filePath)
+    if (info.size < MIN_RECORDING_BYTES || info.size > MAX_RECORDING_BYTES) return 'skipped'
     const bytes = new Uint8Array(await readFile(input.filePath))
-    const target: RecordingArchiveTarget = {
-      kind: 'twilio_attempt',
-      id: data.id,
-      recordedAt: new Date(0).toISOString(),
-      leadId: typeof data.lead_id === 'string' ? data.lead_id : input.leadId,
+    const deps = { ...productionDeps(db), downloadTwilio: async () => bytes }
+    if (!error && data?.id) {
+      if (typeof data.recording_storage_path === 'string' && data.recording_storage_path.trim()) return 'already_stored'
+      await archiveOne({
+        kind: 'twilio_attempt',
+        id: data.id,
+        recordedAt: new Date(0).toISOString(),
+        leadId: typeof data.lead_id === 'string' ? data.lead_id : input.leadId,
+        recordingUrl: null,
+        recordingSid: sid,
+        storagePath: null,
+      }, deps)
+      return 'stored'
+    }
+    const activity = await db
+      .from('lead_activities')
+      .select('id,lead_id,metadata,created_at')
+      .in('activity_type', ['call', 'voicemail'])
+      .or(`metadata->>recordingSid.ilike.${sid},metadata->>RecordingSid.ilike.${sid},metadata->>recording_sid.ilike.${sid}`)
+      .limit(1)
+      .maybeSingle()
+    if (activity.error || !activity.data?.id) return 'skipped'
+    const metadata = metadataRecord(activity.data.metadata)
+    if (text(metadata.recording_storage_path)) return 'already_stored'
+    const ids = recordingSidFromCallMetadata(metadata)
+    await archiveOne({
+      kind: 'twilio_call',
+      id: activity.data.id,
+      recordedAt: text(activity.data.created_at) || new Date(0).toISOString(),
+      leadId: typeof activity.data.lead_id === 'string' ? activity.data.lead_id : input.leadId,
       recordingUrl: null,
       recordingSid: sid,
+      callSid: ids.callSid,
       storagePath: null,
-    }
-    await archiveOne(target, {
-      ...productionDeps(db),
-      downloadTwilio: async () => bytes,
-    })
+    }, deps)
     return 'stored'
   } catch {
     return 'skipped'
@@ -293,6 +392,7 @@ function productionDeps(db: Db): ArchiveDeps {
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     downloadMojo: downloadMojoBytes,
     downloadTwilio: downloadTwilioBytes,
+    resolveCallRecording: recordingSidForCall,
     upload: async (bucket, path, bytes) => {
       const { error } = await db.storage.from(bucket).upload(path, bytes, {
         contentType: 'audio/mpeg',
@@ -302,6 +402,22 @@ function productionDeps(db: Db): ArchiveDeps {
       if (error) throw new Error('recording_upload_failed')
     },
     markStored: async (target, storagePath, copiedAt) => {
+      if (target.kind === 'twilio_call') {
+        const current = await db.from('lead_activities').select('metadata').eq('id', target.id).maybeSingle()
+        if (current.error || !current.data) throw new Error('recording_path_write_failed')
+        const metadata = metadataRecord(current.data.metadata)
+        if (text(metadata.recording_storage_path)) return
+        const { error } = await db.from('lead_activities').update({
+          metadata: {
+            ...metadata,
+            recording_storage_path: storagePath,
+            recording_copied_at: copiedAt,
+            ...(target.recordingSid ? { recordingSid: target.recordingSid } : {}),
+          },
+        }).eq('id', target.id)
+        if (error) throw new Error('recording_path_write_failed')
+        return
+      }
       const table = target.kind === 'twilio_attempt'
         ? 'dialer_session_attempts'
         : target.kind === 'mojo_event'
@@ -321,9 +437,25 @@ function productionDeps(db: Db): ArchiveDeps {
   }
 }
 
+async function resolvedTwilioSid(
+  target: RecordingArchiveTarget,
+  deps: Pick<ArchiveDeps, 'resolveCallRecording'>,
+): Promise<string> {
+  const existing = twilioRecordingSid(target.recordingSid)
+  if (existing) return existing
+  const callSid = twilioCallSid(target.callSid)
+  if (!callSid || !deps.resolveCallRecording) throw new Error('twilio_recording_unavailable')
+  const resolved = twilioRecordingSid(await deps.resolveCallRecording(callSid))
+  if (!resolved) throw new Error('twilio_recording_unavailable')
+  target.recordingSid = resolved
+  return resolved
+}
+
 async function downloadMojoBytes(url: string, id: string): Promise<Uint8Array> {
   const filePath = await downloadRecording(url, id)
   try {
+    const info = await stat(filePath)
+    if (info.size < MIN_RECORDING_BYTES || info.size > MAX_RECORDING_BYTES) throw new Error('recording_bytes_rejected')
     return new Uint8Array(await readFile(filePath))
   } finally {
     await unlink(filePath).catch(() => undefined)
@@ -343,18 +475,61 @@ async function downloadTwilioBytes(sid: string): Promise<Uint8Array> {
   if (contentType.includes('text/html') || contentType.includes('application/json')) {
     throw new Error('twilio_recording_download_failed')
   }
-  return new Uint8Array(await response.arrayBuffer())
+  return readBoundedAudio(response)
+}
+
+async function recordingSidForCall(callSid: string): Promise<string> {
+  const auth = twilioRecordingAuthorization()
+  const parent = twilioCallSid(callSid)
+  if (!auth || !parent) throw new Error('twilio_recording_unavailable')
+  const response = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${auth.accountSid}/Recordings.json?CallSid=${encodeURIComponent(parent)}&PageSize=1`,
+    { headers: { Authorization: auth.authorization }, signal: AbortSignal.timeout(20_000) },
+  )
+  if (!response.ok) throw new Error('twilio_recording_download_failed')
+  const payload = await response.json() as { recordings?: Array<{ sid?: unknown }> }
+  const sid = twilioRecordingSid(payload.recordings?.[0]?.sid)
+  if (!sid) throw new Error('twilio_recording_unavailable')
+  return sid
 }
 
 async function loadArchiveRows(db: Db): Promise<RecordingArchiveTarget[]> {
-  const [events, calls, attempts] = await Promise.all([
-    db.from('crm_mojo_call_events').select('id,call_at,lead_id,recording_url,recording_storage_path').not('recording_url', 'is', null).limit(1000),
-    db.from('crm_mojo_calls').select('id,call_at,lead_id,recording_url,recording_storage_path,is_recorded,provider_call_id').or('is_recorded.eq.true,recording_url.not.is.null').limit(1000),
-    db.from('dialer_session_attempts').select('id,lead_id,recording_sid,recording_storage_path,ended_at,created_at').not('recording_sid', 'is', null).limit(1000),
+  const [events, calls, attempts, activities] = await Promise.all([
+    readAllPages((offset, limit) => pageRows(db, 'crm_mojo_call_events', 'call_at', offset, limit, (query) =>
+      query.select('id,call_at,lead_id,recording_url,recording_storage_path').not('recording_url', 'is', null).is('recording_storage_path', null))),
+    readAllPages((offset, limit) => pageRows(db, 'crm_mojo_calls', 'call_at', offset, limit, (query) =>
+      query.select('id,call_at,lead_id,recording_url,recording_storage_path,is_recorded,provider_call_id').or('is_recorded.eq.true,recording_url.not.is.null').is('recording_storage_path', null))),
+    readAllPages((offset, limit) => pageRows(db, 'dialer_session_attempts', 'created_at', offset, limit, (query) =>
+      query.select('id,lead_id,recording_sid,provider_call_sid,recording_storage_path,ended_at,created_at').not('recording_sid', 'is', null).is('recording_storage_path', null))),
+    readAllPages((offset, limit) => pageRows(db, 'lead_activities', 'created_at', offset, limit, (query) =>
+      query.select('id,lead_id,metadata,created_at').in('activity_type', ['call', 'voicemail']).is('metadata->>recording_storage_path', null).or('metadata->>recordingSid.ilike.RE*,metadata->>RecordingSid.ilike.RE*,metadata->>recording_sid.ilike.RE*,metadata->>recordingUrl.ilike.*/api/recordings/RE*,metadata->>recordingUrl.ilike.*Recordings/RE*,metadata->>source.eq.twilio_recording_callback'))),
   ])
-  if (events.error || calls.error || attempts.error) throw new Error('recording_archive_query_failed')
+  const attemptRows = attempts.map((row) => ({
+    kind: 'twilio_attempt' as const,
+    id: String(row.id),
+    recordedAt: text(row.ended_at) || text(row.created_at) || new Date(0).toISOString(),
+    leadId: text(row.lead_id),
+    recordingUrl: null,
+    recordingSid: text(row.recording_sid),
+    callSid: text(row.provider_call_sid),
+    storagePath: text(row.recording_storage_path),
+  }))
+  const callRows = omitTwilioCallsAlreadyAttempted(activities.flatMap((row) => {
+    const ids = recordingSidFromCallMetadata(row.metadata)
+    if (!ids.recordingSid && !ids.callSid) return []
+    return [{
+      kind: 'twilio_call' as const,
+      id: String(row.id),
+      recordedAt: text(row.created_at) || new Date(0).toISOString(),
+      leadId: text(row.lead_id),
+      recordingUrl: null,
+      recordingSid: ids.recordingSid,
+      callSid: ids.callSid,
+      storagePath: text(metadataRecord(row.metadata).recording_storage_path),
+    }]
+  }), attemptRows)
   return [
-    ...((events.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    ...events.map((row) => ({
       kind: 'mojo_event' as const,
       id: String(row.id),
       recordedAt: text(row.call_at) || new Date(0).toISOString(),
@@ -363,7 +538,7 @@ async function loadArchiveRows(db: Db): Promise<RecordingArchiveTarget[]> {
       recordingSid: null,
       storagePath: text(row.recording_storage_path),
     })),
-    ...((calls.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    ...calls.map((row) => ({
       kind: 'mojo_call' as const,
       id: String(row.id),
       recordedAt: text(row.call_at) || new Date(0).toISOString(),
@@ -374,16 +549,25 @@ async function loadArchiveRows(db: Db): Promise<RecordingArchiveTarget[]> {
       isRecorded: row.is_recorded === true,
       providerCallId: text(row.provider_call_id),
     })),
-    ...((attempts.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-      kind: 'twilio_attempt' as const,
-      id: String(row.id),
-      recordedAt: text(row.ended_at) || text(row.created_at) || new Date(0).toISOString(),
-      leadId: text(row.lead_id),
-      recordingUrl: null,
-      recordingSid: text(row.recording_sid),
-      storagePath: text(row.recording_storage_path),
-    })),
+    ...attemptRows,
+    ...callRows,
   ]
+}
+
+async function pageRows(
+  db: Db,
+  table: string,
+  orderColumn: string,
+  offset: number,
+  limit: number,
+  filter: (query: ReturnType<Db['from']>) => ReturnType<Db['from']>,
+): Promise<Array<Record<string, unknown>>> {
+  const { data, error } = await filter(db.from(table))
+    .order(orderColumn, { ascending: true })
+    .order('id', { ascending: true })
+    .range(offset, offset + limit - 1)
+  if (error) throw new Error('recording_archive_query_failed')
+  return (data ?? []) as Array<Record<string, unknown>>
 }
 
 async function fillMissingMojoCallUrls(
@@ -443,4 +627,8 @@ function clampLimit(value: number): number {
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function metadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }

@@ -11,7 +11,7 @@ vi.mock('@/lib/server/call-recording-archive', () => ({
   runStoredRecordingBackfill: mocks.run,
 }))
 
-import { GET } from './route'
+import { GET, POST } from './route'
 
 const dryRun = {
   dryRun: true,
@@ -46,9 +46,15 @@ describe('/api/cron/backfill-call-recordings', () => {
     expect(mocks.run).not.toHaveBeenCalled()
   })
 
-  it('applies one rate-limited page only when asked', async () => {
+  it('keeps apply=1 on GET as a dry-run', async () => {
+    const response = await GET(new Request('https://crm.savingkc.com/api/cron/backfill-call-recordings?apply=1'))
+    expect(response.status).toBe(200)
+    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ apply: false, rateLimitMs: 0 }))
+  })
+
+  it('applies one rate-limited page only from POST', async () => {
     mocks.run.mockResolvedValue({ ...dryRun, dryRun: false, archived: 2 })
-    const response = await GET(new Request('https://crm.savingkc.com/api/cron/backfill-call-recordings?apply=1&cursor=2026-08-01&limit=2'))
+    const response = await POST(new Request('https://crm.savingkc.com/api/cron/backfill-call-recordings?apply=1&cursor=2026-08-01&limit=2', { method: 'POST' }))
     expect(response.status).toBe(200)
     expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({
       apply: true,

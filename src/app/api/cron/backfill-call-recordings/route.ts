@@ -10,13 +10,12 @@ const HEADERS = { 'Cache-Control': 'private, no-store' }
 
 /**
  * One-shot archive of Mojo and Twilio recordings that are not in our buckets yet.
- * Dry-run is the default. Pass apply=1 to copy a rate-limited page. Not scheduled.
+ * GET is always a dry-run. POST with apply=1 copies one rate-limited page. Not scheduled.
  */
-export async function GET(request: Request) {
+async function handle(request: Request, apply: boolean) {
   const unauthorized = await requireAdminOrSecret(request)
   if (unauthorized) return unauthorized
   const url = new URL(request.url)
-  const apply = url.searchParams.get('apply') === '1'
   try {
     const report = await runStoredRecordingBackfill({
       apply,
@@ -33,6 +32,11 @@ export async function GET(request: Request) {
   }
 }
 
+export async function GET(request: Request) {
+  return handle(request, false)
+}
+
 export async function POST(request: Request) {
-  return GET(request)
+  const apply = new URL(request.url).searchParams.get('apply') === '1'
+  return handle(request, apply)
 }

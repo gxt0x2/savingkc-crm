@@ -5,6 +5,7 @@ export const SIGNED_RECORDING_TTL_SECONDS = 60
 const STORAGE_PATH = /^[A-Za-z0-9][A-Za-z0-9/_.-]{0,220}\.(mp3|wav)$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const TWILIO_SID = /^RE[0-9a-f]{32}$/i
+const CALL_SID = /^CA[0-9a-f]{32}$/i
 const PUBLIC_RECORDING_MARKER = '/storage/v1/object/public/recordings/'
 
 export type PlaybackSource = 'stored' | 'provider'
@@ -19,7 +20,7 @@ export function recordingStoragePath(value: unknown): string | null {
 /** Paths that live in the private Twilio recordings bucket, not the Mojo bucket. */
 export function recordingsBucketPath(value: unknown): string | null {
   const path = recordingStoragePath(value)
-  if (!path || path.startsWith('events/') || path.startsWith('calls/')) return null
+  if (!path || path.startsWith('events/') || /^calls\/[0-9a-f-]{36}\.(?:mp3|wav)$/i.test(path)) return null
   return path
 }
 
@@ -84,6 +85,35 @@ export function twilioRecordingSid(value: unknown): string | null {
   return TWILIO_SID.test(sid) ? sid.toUpperCase() : null
 }
 
+export function twilioCallSid(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const sid = value.trim()
+  return CALL_SID.test(sid) ? sid.toUpperCase() : null
+}
+
+export function recordingSidFromCallMetadata(metadata: unknown): { recordingSid: string | null; callSid: string | null } {
+  const meta = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {}
+  const recordingSid = twilioRecordingSid(meta.recordingSid)
+    || twilioRecordingSid(meta.RecordingSid)
+    || twilioRecordingSid(meta.recording_sid)
+    || recordingSidFromUrl(meta.recordingUrl)
+    || recordingSidFromUrl(meta.recording_url)
+    || recordingSidFromUrl(meta.RecordingUrl)
+  const callSid = twilioCallSid(meta.callSid)
+    || twilioCallSid(meta.CallSid)
+    || twilioCallSid(meta.parentCallSid)
+    || twilioCallSid(meta.call_sid)
+  return { recordingSid, callSid }
+}
+
+function recordingSidFromUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const match = value.match(/\/(?:api\/recordings|Recordings)\/(RE[0-9a-f]{32})(?:\.[a-z0-9]+)?/i)
+  return match ? twilioRecordingSid(match[1]) : null
+}
+
 export function twilioStoragePath(input: {
   leadId: string | null
   attemptId: string
@@ -94,6 +124,19 @@ export function twilioStoragePath(input: {
   const file = `twilio_${sid}.mp3`
   if (input.leadId && UUID.test(input.leadId)) return `leads/${input.leadId}/${file}`
   if (UUID.test(input.attemptId)) return `attempts/${input.attemptId}/${file}`
+  throw new Error('recording_target_missing')
+}
+
+export function twilioCallStoragePath(input: {
+  leadId: string | null
+  callId: string
+  recordingSid: string
+}): string {
+  const sid = twilioRecordingSid(input.recordingSid)
+  if (!sid) throw new Error('invalid_recording_sid')
+  const file = `twilio_${sid}.mp3`
+  if (input.leadId && UUID.test(input.leadId)) return `leads/${input.leadId}/${file}`
+  if (UUID.test(input.callId)) return `calls/${input.callId}/${file}`
   throw new Error('recording_target_missing')
 }
 

@@ -1,5 +1,7 @@
 -- Retain every Mojo and Twilio call recording in private storage.
 -- Columns are nullable and additive. No existing functions are replaced.
+-- An existing recordings bucket is left untouched, including its public flag,
+-- size limit, and allowed mime types.
 
 ALTER TABLE public.crm_mojo_calls
   ADD COLUMN IF NOT EXISTS recording_url text,
@@ -11,7 +13,10 @@ ALTER TABLE public.crm_mojo_calls
   ADD CONSTRAINT crm_mojo_calls_recording_url_check
     CHECK (
       recording_url IS NULL
-      OR recording_url ~ '^https://([a-z0-9-]+\.)*mojosells\.com/[^[:space:]]{1,1800}$'
+      OR (
+        recording_url ~ '^[^[:space:]]+$'
+        AND char_length(recording_url) <= 1800
+      )
     ) NOT VALID;
 
 ALTER TABLE public.crm_mojo_calls
@@ -65,18 +70,22 @@ VALUES (
   104857600,
   ARRAY['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav']
 )
-ON CONFLICT (id) DO UPDATE SET public = false;
+ON CONFLICT (id) DO NOTHING;
 
--- Point stored private-bucket links at the signed playback route. The bucket
--- is not public, so the /object/public/ form cannot play.
+-- Point stored private-bucket links at the signed playback route. The path is
+-- URL-encoded so slashes stay inside the query value.
 UPDATE public.lead_activities
 SET metadata = jsonb_set(
   metadata,
   '{recordingUrl}',
   to_jsonb(
-    '/api/recordings?path=' || substring(
-      metadata->>'recordingUrl'
-      FROM '/storage/v1/object/public/recordings/([A-Za-z0-9][A-Za-z0-9/_.-]{0,220}\.(?:mp3|wav))'
+    '/api/recordings?path=' || replace(
+      substring(
+        metadata->>'recordingUrl'
+        FROM '/storage/v1/object/public/recordings/([A-Za-z0-9][A-Za-z0-9/_.-]{0,220}\.(?:mp3|wav))'
+      ),
+      '/',
+      '%2F'
     )
   )
 )
@@ -87,9 +96,13 @@ SET metadata = jsonb_set(
   metadata,
   '{recording_url}',
   to_jsonb(
-    '/api/recordings?path=' || substring(
-      metadata->>'recording_url'
-      FROM '/storage/v1/object/public/recordings/([A-Za-z0-9][A-Za-z0-9/_.-]{0,220}\.(?:mp3|wav))'
+    '/api/recordings?path=' || replace(
+      substring(
+        metadata->>'recording_url'
+        FROM '/storage/v1/object/public/recordings/([A-Za-z0-9][A-Za-z0-9/_.-]{0,220}\.(?:mp3|wav))'
+      ),
+      '/',
+      '%2F'
     )
   )
 )
@@ -100,9 +113,13 @@ SET metadata = jsonb_set(
   metadata,
   '{RecordingUrl}',
   to_jsonb(
-    '/api/recordings?path=' || substring(
-      metadata->>'RecordingUrl'
-      FROM '/storage/v1/object/public/recordings/([A-Za-z0-9][A-Za-z0-9/_.-]{0,220}\.(?:mp3|wav))'
+    '/api/recordings?path=' || replace(
+      substring(
+        metadata->>'RecordingUrl'
+        FROM '/storage/v1/object/public/recordings/([A-Za-z0-9][A-Za-z0-9/_.-]{0,220}\.(?:mp3|wav))'
+      ),
+      '/',
+      '%2F'
     )
   )
 )

@@ -73,6 +73,9 @@ jobs:
       - name: Market check PostgreSQL rehearsal
         run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-market-check.sh
 
+      - name: Call recording archive PostgreSQL rehearsal
+        run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-call-recording-archive.sh
+
       - name: Unit coverage gate
         run: |
           npm run test:coverage

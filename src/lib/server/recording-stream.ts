@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { RECORDINGS_BUCKET, SIGNED_RECORDING_TTL_SECONDS, recordingStoragePath } from '@/lib/marketing/recording-playback'
+import { RECORDINGS_BUCKET, SIGNED_RECORDING_TTL_SECONDS, recordingStoragePath, recordingsBucketPath } from '@/lib/marketing/recording-playback'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 
 export async function signedRecordingUrl(bucket: string, path: string): Promise<string | null> {
@@ -67,9 +67,8 @@ export async function lookupTwilioStoragePath(sid: string): Promise<string | nul
     const metadata = row?.metadata
     if (!metadata || typeof metadata !== 'object') continue
     const record = metadata as Record<string, unknown>
-    const stored = recordingStoragePath(record.recording_storage_path)
-      || recordingStoragePath(record.recordingStoragePath)
-    if (stored && !stored.startsWith('events/') && !stored.startsWith('calls/')) return stored
+    const stored = recordingsBucketPath(record.recording_storage_path) || recordingsBucketPath(record.recordingStoragePath)
+    if (stored) return stored
     const publicPath = publicPathFrom(record.recordingUrl) || publicPathFrom(record.recording_url)
     if (publicPath) return publicPath
   }

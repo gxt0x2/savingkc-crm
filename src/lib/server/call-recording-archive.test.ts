@@ -5,7 +5,10 @@ import {
   archiveOne,
   attachMojoCallRecordingUrls,
   oldestExpiringFirst,
+  omitTwilioCallsAlreadyAttempted,
   planRecordingBackfill,
+  readAllPages,
+  readBoundedAudio,
   recordingSourceReady,
   type RecordingArchiveTarget,
 } from './call-recording-archive'
@@ -22,6 +25,8 @@ const leadId = '99999999-9999-4999-8999-999999999999'
 const sidLead = `RE${'a'.repeat(32)}`
 const sidBare = `RE${'b'.repeat(32)}`
 const sidStored = `RE${'c'.repeat(32)}`
+const callOnly = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+const callSidOnly = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2'
 
 function row(partial: RecordingArchiveTarget): RecordingArchiveTarget {
   return partial
@@ -36,9 +41,11 @@ const fixture: RecordingArchiveTarget[] = [
   row({ kind: 'twilio_attempt', id: attemptLead, recordedAt: '2026-08-25T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: sidLead, storagePath: null }),
   row({ kind: 'twilio_attempt', id: attemptBare, recordedAt: '2026-09-02T00:00:00.000Z', leadId: null, recordingUrl: null, recordingSid: sidBare, storagePath: null }),
   row({ kind: 'twilio_attempt', id: attemptStored, recordedAt: '2026-03-27T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: sidStored, storagePath: `leads/${leadId}/twilio_${sidStored}.mp3` }),
+  row({ kind: 'twilio_call', id: callOnly, recordedAt: '2026-10-01T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: `RE${'d'.repeat(32)}`, callSid: `CA${'d'.repeat(32)}`, storagePath: null }),
+  row({ kind: 'twilio_call', id: callSidOnly, recordedAt: '2026-10-02T00:00:00.000Z', leadId: null, recordingUrl: null, recordingSid: null, callSid: `CA${'e'.repeat(32)}`, storagePath: null }),
 ]
 
-const migration = readFileSync('supabase/migrations/20261216120000_call_recording_archive.sql', 'utf8')
+const migration = readFileSync('supabase/migrations/20261217120000_call_recording_archive.sql', 'utf8')
 const archiveSource = readFileSync('src/lib/server/call-recording-archive.ts', 'utf8')
 
 describe('call recording archive', () => {
@@ -50,8 +57,8 @@ describe('call recording archive', () => {
     expect(downloadTwilio).not.toHaveBeenCalled()
     expect(plan.dryRun).toBe(true)
     expect(plan.archived).toBe(0)
-    expect(plan.wouldArchive).toEqual({ mojoEvents: 2, mojoCalls: 1, twilioAttempts: 2, total: 5 })
-    expect(plan.alreadyStored).toEqual({ mojoEvents: 1, mojoCalls: 0, twilioAttempts: 1, total: 2 })
+    expect(plan.wouldArchive).toEqual({ mojoEvents: 2, mojoCalls: 1, twilioAttempts: 2, twilioCalls: 2, total: 7 })
+    expect(plan.alreadyStored).toEqual({ mojoEvents: 1, mojoCalls: 0, twilioAttempts: 1, twilioCalls: 0, total: 2 })
     expect(plan.mojoCallsAwaitingUrl).toBe(1)
     expect(plan.page.map((item) => item.id)).toEqual([eventOld, callReady, attemptLead, eventNew, attemptBare])
     expect(oldestExpiringFirst(plan.page).map((item) => item.recordedAt)).toEqual([
@@ -68,7 +75,7 @@ describe('call recording archive', () => {
     const second = planRecordingBackfill(fixture, { cursor: first.nextCursor, limit: 2 })
     expect(first.page.map((item) => item.id)).toEqual([eventOld, callReady])
     expect(second.page.map((item) => item.id)).toEqual([attemptLead, eventNew])
-    expect(second.wouldArchive.total).toBe(5)
+    expect(second.wouldArchive.total).toBe(7)
   })
 
   it('copies a recording once and skips the download when the path is already stored', async () => {
@@ -131,13 +138,50 @@ describe('call recording archive', () => {
   })
 
   it('adds only nullable archive columns and leaves export functions alone', () => {
-    expect('20261216120000' > '20261215130000').toBe(true)
+    expect('20261217120000' > '20261216120000').toBe(true)
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS recording_url text')
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS recording_storage_path text')
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS recording_copied_at timestamptz')
-    expect(migration).toContain("'/api/recordings?path='")
+    expect(migration).toContain("recording_url ~ '^[^[:space:]]+$'")
+    expect(migration).toContain('char_length(recording_url) <= 1800')
+    expect(migration).not.toContain('{1,1800}')
+    expect(migration).toContain("'%2F'")
+    expect(migration).toContain('ON CONFLICT (id) DO NOTHING')
     expect(migration).not.toMatch(/CREATE\s+(OR\s+REPLACE\s+)?FUNCTION/i)
     expect(migration).not.toMatch(/dialer_export|source_list|mojo_call_queue/i)
     expect(archiveSource).not.toMatch(/claimMojoCallQueue|finishMojoCallQueue|mojo_call_queue/)
+    expect(archiveSource).not.toContain('20261216120000')
+  })
+
+  it('covers a Twilio recording that has no dialer attempt, and skips one the attempt already owns', () => {
+    const owned = fixture.find((item) => item.id === attemptLead)!
+    const duplicate = row({
+      kind: 'twilio_call',
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
+      recordedAt: '2026-08-20T00:00:00.000Z',
+      leadId,
+      recordingUrl: null,
+      recordingSid: owned.recordingSid,
+      callSid: `CA${'a'.repeat(32)}`,
+      storagePath: null,
+    })
+    const uncovered = fixture.filter((item) => item.kind === 'twilio_call')
+    const kept = omitTwilioCallsAlreadyAttempted([...uncovered, duplicate], [owned])
+    expect(kept.map((item) => item.id)).toEqual([callOnly, callSidOnly])
+    expect(planRecordingBackfill(kept).wouldArchive.twilioCalls).toBe(2)
+  })
+
+  it('pages past 1000 unstored rows and refuses an oversized recording before reading it', async () => {
+    const readPage = vi.fn(async (offset: number, limit: number) => {
+      if (offset === 0) return Array.from({ length: limit }, (_, index) => index)
+      if (offset === limit) return [limit]
+      return []
+    })
+    await expect(readAllPages(readPage, 1000)).resolves.toHaveLength(1001)
+    const body = { cancel: vi.fn(async () => undefined), getReader: vi.fn() }
+    const oversized = { headers: { get: (name: string) => name === 'content-length' ? '200000000' : null }, body }
+    await expect(readBoundedAudio(oversized as never)).rejects.toThrow('recording_bytes_rejected')
+    expect(body.getReader).not.toHaveBeenCalled()
+    expect(body.cancel).toHaveBeenCalled()
   })
 })
