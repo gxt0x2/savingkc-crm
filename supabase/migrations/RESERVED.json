@@ -28,5 +28,5 @@
   {"version":"20261215130000","pr":817,"owner":"gxt0x2","note":"market check fix round (merged/applied)"},
   {"version":"20261216120000","pr":818,"owner":"gxt0x2","note":"sanctioned prospect merge"},
   {"version":"20261217120000","pr":828,"owner":"gxt0x2","note":"call recording archive"},
-  {"version":"20261218120000","pr":null,"owner":"gxt0x2","note":"#827 N1/O3 follow-up"}
+  {"version":"20261218120000","pr":830,"owner":"gxt0x2","note":"#827 N1/O3 follow-up"}
 ]

@@ -499,7 +499,7 @@ describe('associate type and property owner fan-out', () => {
       prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual', parcelId: 'P-CO' }],
       phones: [{ phone, prospectId: 'home', relationship: 'associate', contactName: 'Mary Smith', lastDisposition: 'no_answer' }],
     }
-    expect(exportBlockReason(phone, matched, 'home')).toBeNull()
+    expect(exportBlockReason(phone, matched, 'home')).toBe('associate_non_family')
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual' }],
       phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Jones', lastDisposition: 'no_answer' }],
@@ -507,7 +507,7 @@ describe('associate type and property owner fan-out', () => {
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'home', ownerName: 'James Robert Smith', ownerLast: 'Smith', ownerType: 'Individual', skipTraced: true }],
       phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Robert Smith', verifiedSource: 'dataskip_run1' }],
-    }, 'home')).toBeNull()
+    }, 'home')).toBe('relationship_unknown')
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'home', ownerName: 'James Robert Smith', ownerLast: 'Smith', ownerType: 'Individual', skipTraced: false }],
       phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Robert Smith' }],
@@ -524,12 +524,20 @@ describe('associate type and property owner fan-out', () => {
       ...matched,
       optOuts: [{ phone, optedOut: true }],
     }, 'home')).toBe('sms_opt_out')
-    expect(exportBlockReason(phone, { ...matched, county: 'Cass' }, 'home')).toBe('out_of_service_area')
-    expect(exportBlockReason(phone, { ...matched, county: null }, 'home')).toBe('county_unresolved')
+    expect(exportBlockReason(phone, {
+      ...matched,
+      phones: [{ phone, prospectId: 'home', relationship: 'owner', contactName: 'Mary Smith', lastDisposition: 'no_answer' }],
+      county: 'Cass',
+    }, 'home')).toBe('out_of_service_area')
+    expect(exportBlockReason(phone, {
+      ...matched,
+      phones: [{ phone, prospectId: 'home', relationship: 'owner', contactName: 'Mary Smith', lastDisposition: 'no_answer' }],
+      county: null,
+    }, 'home')).toBe('county_unresolved')
     expect(exportBlockReason(phone, {
       prospects: matched.prospects,
       phones: [
-        { phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Smith', lastDisposition: 'no_answer' },
+        { phone, prospectId: 'home', relationship: 'owner', contactName: 'Mary Smith', lastDisposition: 'no_answer' },
         { phone: '+18165550602', prospectId: 'home', relationship: 'relative', lastDisposition: 'dnc_contact' },
       ],
     }, 'home')).toBe('person_fanout')
@@ -537,7 +545,7 @@ describe('associate type and property owner fan-out', () => {
       prospects: matched.prospects,
       phones: [
         { phone: '+18165550602', prospectId: 'home', relationship: 'owner', lastDisposition: 'dnc' },
-        { phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Smith', lastDisposition: 'no_answer' },
+        { phone, prospectId: 'home', relationship: 'owner', contactName: 'Mary Smith', lastDisposition: 'no_answer' },
       ],
     }, 'home')).toBe('property_owner_dnc_fanout')
   })

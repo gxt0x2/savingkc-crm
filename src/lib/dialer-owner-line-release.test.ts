@@ -3,8 +3,10 @@ import { OWNER_LINE_NICKNAMES, ownerLineRelease, type OwnerLineReleaseInput } fr
 
 function release(overrides: OwnerLineReleaseInput): boolean {
   return ownerLineRelease({
-    relationship: 'unknown',
-    skipTraced: false,
+    relationship: 'owner',
+    ownerType: 'person',
+    skipTraced: true,
+    verifiedSource: 'dataskip_run_1',
     ...overrides,
   })
 }
@@ -177,6 +179,147 @@ describe('owner line release', () => {
       expect(release({ ownerName: 'John Smith c/o Jane Doe', ownerLast: 'Smith', contactName: 'John Smith' })).toBe(false)
       expect(release({ ownerName: 'John Smith c/o Jane Doe', ownerLast: 'Smith', contactName: 'Jane Doe' })).toBe(false)
       expect(release({ ownerName: 'John Smith', ownerLast: 'Smith', contactName: 'John Smith et al' })).toBe(false)
+    })
+  })
+
+  describe('Pat 4f owner type and Pat 4g skip source', () => {
+    const coOwner = {
+      ownerName: 'John & Mary Smith',
+      ownerLast: 'Smith',
+      contactName: 'Mary Smith',
+      ownerType: 'person' as const,
+      skipTraced: true,
+      verifiedSource: 'dataskip_run_1',
+    }
+
+    it('keeps a skip-sourced spouse, parent, and unknown relationship blocked', () => {
+      expect(release({ ...coOwner, relationship: 'spouse' })).toBe(false)
+      expect(release({ ...coOwner, relationship: 'parent' })).toBe(false)
+      expect(release({ ...coOwner, relationship: 'unknown' })).toBe(false)
+    })
+
+    it('blocks an owner with a mojo source or a null source', () => {
+      expect(release({ ...coOwner, relationship: 'owner', verifiedSource: 'mojo_call' })).toBe(false)
+      expect(release({ ...coOwner, relationship: 'owner', verifiedSource: 'mojo_import' })).toBe(false)
+      expect(release({ ...coOwner, relationship: 'owner', verifiedSource: null })).toBe(false)
+      expect(release({ ...coOwner, relationship: 'owner', verifiedSource: 'subject' })).toBe(false)
+      expect(release({ ...coOwner, relationship: 'owner', verifiedSource: 'auto' })).toBe(false)
+      expect(release({ ...coOwner, relationship: 'owner', verifiedSource: 'manual' })).toBe(false)
+    })
+
+    it('blocks a null owner type with an LLC name', () => {
+      expect(release({
+        ownerType: null,
+        relationship: 'owner',
+        ownerName: 'Oak LLC',
+        ownerLast: 'LLC',
+        contactName: 'Oak LLC',
+      })).toBe(false)
+      expect(release({
+        ownerType: null,
+        relationship: 'owner',
+        ownerName: 'Jane Smith LLC',
+        ownerLast: 'Smith',
+        contactName: 'Jane Smith',
+      })).toBe(false)
+    })
+
+    it('accepts person and individual, and blocks every other owner type', () => {
+      expect(release({
+        ownerType: 'Individual',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+      expect(release({
+        ownerType: 'individual',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+      expect(release({
+        ownerType: 'PERSON',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+      expect(release({
+        ownerType: 'Coworker',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(false)
+      expect(release({
+        ownerType: 'LLC',
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(false)
+    })
+
+    it('blocks a null owner type company name and still releases John Smith', () => {
+      expect(release({
+        ownerType: null,
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'Oak Properties',
+        ownerLast: 'Properties',
+        contactName: 'Oak Properties',
+      })).toBe(false)
+      expect(release({
+        ownerType: null,
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'John Smith',
+        ownerLast: 'Smith',
+        contactName: 'John Smith',
+      })).toBe(true)
+    })
+
+    it('releases a null owner type with a clean person name', () => {
+      expect(release({
+        ownerType: null,
+        relationship: 'unknown',
+        skipTraced: false,
+        verifiedSource: null,
+        ownerName: 'Jane Doe',
+        ownerLast: 'Doe',
+        contactName: 'Jane Doe',
+      })).toBe(true)
+    })
+
+    it('releases a person owner from dataskip_run_x when skip traced', () => {
+      expect(release({
+        ...coOwner,
+        relationship: 'owner',
+        verifiedSource: 'dataskip_run_x',
+      })).toBe(true)
+      expect(release({
+        ownerType: 'person',
+        relationship: 'owner',
+        skipTraced: true,
+        verifiedSource: 'smartskip_batch',
+        ownerName: 'James Robert Smith',
+        ownerLast: 'Smith',
+        contactName: 'James Smith',
+      })).toBe(true)
     })
   })
 })

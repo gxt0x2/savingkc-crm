@@ -54,6 +54,19 @@ const ENTITY_WORDS = new Set([
   'llp',
   'pllc',
   'lp',
+  'properties',
+  'homes',
+  'holdings',
+  'investments',
+  'realty',
+  'rentals',
+  'group',
+  'partners',
+  'ventures',
+  'capital',
+  'enterprises',
+  'management',
+  'development',
 ])
 
 const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'junior', 'senior'])
@@ -63,6 +76,7 @@ export interface OwnerLineReleaseInput {
   contactName?: string | null
   ownerName?: string | null
   ownerLast?: string | null
+  ownerType?: string | null
   skipTraced?: boolean | null
   verifiedSource?: string | null
 }
@@ -110,10 +124,6 @@ function isRegisteredAgent(relationship?: string | null, contactName?: string | 
   const rel = String(relationship ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
   const contact = String(contactName ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
   return rel === 'registered_agent' || contact === 'registered_agent' || contact.includes('registered_agent')
-}
-
-function skipReturned(skipTraced?: boolean | null, verifiedSource?: string | null): boolean {
-  return skipTraced === true || String(verifiedSource ?? '').toLowerCase().includes('skip')
 }
 
 function sameFirst(left: string, right: string): boolean {
@@ -234,19 +244,58 @@ function ownerPersons(ownerName: string, ownerLast?: string | null): Person[] {
   return assignLastNames(people)
 }
 
-function contactMatches(people: Person[], contactName: string, skip: boolean): boolean {
+function ownerTypeKey(value: string | null | undefined): string | null {
+  const text = String(value ?? '').trim().toLowerCase()
+  return text || null
+}
+
+/** Null owner type releases only a two-token person name. Company words stay a backstop. */
+function isCleanFirstLast(ownerName: string): boolean {
+  if (/[&,]/.test(ownerName) || hasBlockedMarker(ownerName)) return false
+  const tokens = stripSuffix(tokensOf(ownerName))
+  return tokens.length === 2
+    && tokens.every((token) => !isInitial(token) && !ENTITY_WORDS.has(token) && !isTrusteeToken(token))
+}
+
+function ownerTypeAllows(ownerType: string | null | undefined, ownerName: string): boolean {
+  const type = ownerTypeKey(ownerType)
+  if (type === 'person' || type === 'individual') return true
+  if (type) return false
+  return isCleanFirstLast(ownerName)
+}
+
+/** Middle-name and co-owner releases. subject, auto, manual, mojo_*, and null do not qualify. */
+function qualifyingOwnerSkip(input: OwnerLineReleaseInput): boolean {
+  const relationship = String(input.relationship ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (relationship !== 'owner' || input.skipTraced !== true) return false
+  const source = String(input.verifiedSource ?? '').trim().toLowerCase()
+  return /^dataskip_run/.test(source) || /^smartskip_/.test(source)
+}
+
+function contactMatchKind(people: Person[], contactName: string): 'exact' | 'gated' | null {
   const tokens = stripSuffix(tokensOf(contactName))
-  if (tokens.length < 2) return false
+  if (tokens.length < 2) return null
   const last = tokens[tokens.length - 1]
-  if (!last || isInitial(last)) return false
+  if (!last || isInitial(last)) return null
   const given = tokens.slice(0, -1).filter((token) => !isInitial(token))
   const first = given[0]
-  if (!first) return false
-  return people.some((person) => {
-    if (!person.last || !lastNamesMatch(person.last, tokens)) return false
-    if (sameFirst(person.first, first)) return true
-    return skip && person.middles.some((middle) => !isInitial(middle) && sameFirst(middle, first))
-  })
+  if (!first) return null
+  const contactMiddles = given.slice(1)
+  const primary = people[0]
+  let exact = false
+  let gated = false
+  for (const person of people) {
+    if (!person.last || !lastNamesMatch(person.last, tokens)) continue
+    const fullMiddles = person.middles.filter((middle) => !isInitial(middle))
+    const sameGiven = sameFirst(person.first, first)
+    const middleAsFirst = person.middles.some((middle) => !isInitial(middle) && sameFirst(middle, first))
+    if (!sameGiven && !middleAsFirst) continue
+    const middlesDiffer = fullMiddles.join('\u0000') !== contactMiddles.join('\u0000')
+    if (sameGiven && person === primary && !middlesDiffer) exact = true
+    else gated = true
+  }
+  if (exact) return 'exact'
+  return gated ? 'gated' : null
 }
 
 export function ownerLineRelease(input: OwnerLineReleaseInput): boolean {
@@ -255,9 +304,9 @@ export function ownerLineRelease(input: OwnerLineReleaseInput): boolean {
   const contactName = String(input.contactName ?? '').trim()
   if (!ownerName || !contactName) return false
   if (hasBlockedMarker(ownerName) || hasBlockedMarker(contactName)) return false
-  return contactMatches(
-    ownerPersons(ownerName, input.ownerLast),
-    contactName,
-    skipReturned(input.skipTraced, input.verifiedSource),
-  )
+  if (!ownerTypeAllows(input.ownerType, ownerName)) return false
+  const kind = contactMatchKind(ownerPersons(ownerName, input.ownerLast), contactName)
+  if (kind === 'exact') return true
+  if (kind === 'gated') return qualifyingOwnerSkip(input)
+  return false
 }
