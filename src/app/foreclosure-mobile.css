@@ -541,6 +541,21 @@
   background: var(--fc-purple-deep);
 }
 
+.fc-reject {
+  display: inline-flex;
+  align-items: center;
+  height: 1.6rem;
+  padding: 0 0.55rem;
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-pill);
+  background: var(--fc-card);
+  color: var(--fc-purple-deep);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 /* Dark theme follows the shell instead of a light card on black chrome. */
 .crm-workspace-shell[data-theme="dark"] .fc-mobile {
   --fc-canvas: #2A2C44;
