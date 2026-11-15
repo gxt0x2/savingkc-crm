@@ -491,7 +491,7 @@ function ownerLineMatches(world: SuppressionWorld, phone: SuppressionPhone): boo
   const prospect = prospectFor(world, phone.prospectId)
   return ownerLineRelease({
     relationship: phone.relationship, contactName: phone.contactName, ownerName: prospect?.ownerName,
-    ownerLast: prospect?.ownerLast, skipTraced: prospect?.skipTraced, verifiedSource: phone.verifiedSource,
+    ownerLast: prospect?.ownerLast, ownerType: prospect?.ownerType, skipTraced: prospect?.skipTraced, verifiedSource: phone.verifiedSource,
   })
 }
 

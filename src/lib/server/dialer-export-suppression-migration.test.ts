@@ -150,4 +150,18 @@ describe('dialer export suppression migration', () => {
     expect(release).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(release).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
   })
+
+  it('requires a person owner type and a skip-trace source for a co-owner release', () => {
+    const followUp = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql'),
+      'utf8',
+    )
+    expect(followUp).toContain("owner_type IS DISTINCT FROM 'person'")
+    expect(followUp).toContain("lower(btrim(coalesce(p_verified_source, ''))) ~ '^dataskip_run'")
+    expect(followUp).toContain("lower(btrim(coalesce(p_verified_source, ''))) ~ '^smartskip_'")
+    expect(followUp).toContain('verified_source, owner_type_key')
+    expect(followUp).not.toContain('CREATE OR REPLACE FUNCTION public.record_source_list_export_batch_v1')
+    expect(followUp).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+    expect(followUp).not.toMatch(/\bSET jit\b/i)
+  })
 })

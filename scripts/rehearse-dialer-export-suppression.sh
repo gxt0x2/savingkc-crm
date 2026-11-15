@@ -191,6 +191,7 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261209120000_dialer_owner_line_release.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -577,64 +578,79 @@ BEGIN
     relationship text,
     skip_traced boolean,
     verified_source text,
+    owner_type text,
     expected boolean
   ) ON COMMIT DROP;
   INSERT INTO owner_line_case VALUES
-    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, true),
-    ('John Smith', 'Smith', 'John Smith', 'associate', false, NULL, true),
-    ('Oak LLC', 'LLC', 'Oak LLC', 'entity_contact', false, NULL, false),
-    ('Acme Inc', 'Inc', 'Acme Inc', 'unknown', false, NULL, false),
-    ('Acme Incorporated', 'Incorporated', 'Acme Incorporated', 'unknown', false, NULL, false),
-    ('Smith Family Trust', 'Trust', 'Smith Family', 'unknown', false, NULL, false),
-    ('First National Bank', 'Bank', 'First National', 'unknown', false, NULL, false),
-    ('John Smith, Trustee', 'Smith', 'John Smith', 'unknown', false, NULL, true),
-    ('John Smith Trustee of the Smith Trust', 'Smith', 'John Smith', 'unknown', false, NULL, true),
-    ('Alden Jimmie C & Nora A-Trustees', 'Alden', 'Nora Alden', 'unknown', false, NULL, true),
-    ('Smith Family Trust', 'Smith', 'Smith Trust', 'unknown', false, NULL, false),
-    ('John Smith & Acme LLC', 'Smith', 'Acme LLC', 'unknown', false, NULL, false),
-    ('John Smith & Acme LLC', 'Smith', 'John Smith', 'unknown', false, NULL, true),
-    ('John & Mary Smith', 'Smith', 'Mary Smith', 'unknown', false, NULL, true),
-    ('John & Mary Smith', 'Smith', 'John Smith', 'associate', false, NULL, true),
-    ('Alden Marcus S & Nora', 'Alden', 'Nora Alden', 'unknown', false, NULL, true),
-    ('Alden Nancy L & Brook Robert L', 'Alden', 'Robert Brook', 'unknown', false, NULL, true),
-    ('Parker Owen E & E Lila', 'Parker', 'Lila Parker', 'unknown', false, NULL, true),
-    ('Alden Walter C & Nora Jane', 'Alden', 'Nora Alden', 'unknown', false, NULL, true),
-    ('Alden Reginald T & Brook Johnetta', 'Alden', 'Johnetta Brook', 'unknown', false, NULL, true),
-    ('Alden Lynn & Brook Earl M Jr', 'Alden', 'Earl Brook', 'unknown', false, NULL, true),
-    ('Alden Ricky & Alden Ronald', 'Alden', 'Ronald Alden', 'unknown', false, NULL, true),
-    ('Alden Marcus L Jr & Nora', 'Alden Jr', 'Nora Alden', 'unknown', false, NULL, true),
-    ('William & Mary Smith', 'Smith', 'Bill Smith', 'unknown', false, NULL, true),
-    ('Robert Smith', 'Smith', 'Bob Smith', 'unknown', false, NULL, true),
-    ('Elizabeth Smith', 'Smith', 'Liz Smith', 'unknown', false, NULL, true),
-    ('John & Mary Smith', 'Smith', 'Mary Jones', 'unknown', false, NULL, false),
-    ('Fay Uno', 'Uno', 'Gus Uno', 'unknown', true, 'dataskip_run1', false),
-    ('Alden Brenda Sue & Alden Carol Sue', 'Alden', 'Judy Alden', 'unknown', false, NULL, false),
-    ('Dearing John & Diane', 'Dearing', 'Diana Dearing', 'unknown', false, NULL, false),
-    ('Roy Huggins & Christine', 'Huggins', 'Christine Leiker', 'unknown', false, NULL, false),
-    ('Margaret Smith', 'Smith', 'Peggy Smith', 'unknown', false, NULL, false),
-    ('John Smith', 'Smith', 'John Smith', 'registered_agent', false, NULL, false),
-    ('James Robert Smith', 'Smith', 'James Smith', 'unknown', false, NULL, true),
-    ('James Robert Smith', 'Smith', 'James Q Smith', 'unknown', false, NULL, true),
-    ('James Robert Smith', 'Smith', 'James Robert Smith', 'unknown', false, NULL, true),
-    ('Smith James R', 'Smith', 'James Smith', 'unknown', false, NULL, true),
-    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', true, NULL, true),
-    ('James Robert Smith', 'Smith', 'Bob Smith', 'unknown', false, 'dataskip_run1', true),
-    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', false, NULL, false),
-    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', false, 'manual', false),
-    ('John Smith et al', 'Smith', 'John Smith', 'unknown', false, NULL, false),
-    ('Heirs of John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, false),
-    ('Estate of John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, false),
-    ('John Smith deceased', 'Smith', 'John Smith', 'unknown', false, NULL, false),
-    ('John Smith c/o Jane Doe', 'Smith', 'John Smith', 'unknown', false, NULL, false),
-    ('John Smith c/o Jane Doe', 'Smith', 'Jane Doe', 'unknown', false, NULL, false),
-    ('John Smith', 'Smith', 'John Smith et al', 'unknown', false, NULL, false);
+    ('John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, NULL, true),
+    ('John Smith', 'Smith', 'John Smith', 'associate', false, NULL, NULL, true),
+    ('Oak LLC', 'LLC', 'Oak LLC', 'entity_contact', false, NULL, NULL, false),
+    ('Acme Inc', 'Inc', 'Acme Inc', 'unknown', false, NULL, NULL, false),
+    ('Acme Incorporated', 'Incorporated', 'Acme Incorporated', 'unknown', false, NULL, NULL, false),
+    ('Smith Family Trust', 'Trust', 'Smith Family', 'unknown', false, NULL, NULL, false),
+    ('First National Bank', 'Bank', 'First National', 'unknown', false, NULL, NULL, false),
+    ('John Smith, Trustee', 'Smith', 'John Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('John Smith Trustee of the Smith Trust', 'Smith', 'John Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Jimmie C & Nora A-Trustees', 'Alden', 'Nora Alden', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Smith Family Trust', 'Smith', 'Smith Trust', 'unknown', false, NULL, NULL, false),
+    ('John Smith & Acme LLC', 'Smith', 'Acme LLC', 'unknown', false, NULL, NULL, false),
+    ('John Smith & Acme LLC', 'Smith', 'John Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('John & Mary Smith', 'Smith', 'John Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Marcus S & Nora', 'Alden', 'Nora Alden', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Nancy L & Brook Robert L', 'Alden', 'Robert Brook', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Parker Owen E & E Lila', 'Parker', 'Lila Parker', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Walter C & Nora Jane', 'Alden', 'Nora Alden', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Reginald T & Brook Johnetta', 'Alden', 'Johnetta Brook', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Lynn & Brook Earl M Jr', 'Alden', 'Earl Brook', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Ricky & Alden Ronald', 'Alden', 'Ronald Alden', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Alden Marcus L Jr & Nora', 'Alden Jr', 'Nora Alden', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('William & Mary Smith', 'Smith', 'Bill Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Robert Smith', 'Smith', 'Bob Smith', 'unknown', false, NULL, NULL, true),
+    ('Elizabeth Smith', 'Smith', 'Liz Smith', 'unknown', false, NULL, NULL, true),
+    ('John & Mary Smith', 'Smith', 'Mary Jones', 'unknown', false, NULL, NULL, false),
+    ('Fay Uno', 'Uno', 'Gus Uno', 'unknown', true, 'dataskip_run1', NULL, false),
+    ('Alden Brenda Sue & Alden Carol Sue', 'Alden', 'Judy Alden', 'unknown', false, NULL, NULL, false),
+    ('Dearing John & Diane', 'Dearing', 'Diana Dearing', 'unknown', false, NULL, NULL, false),
+    ('Roy Huggins & Christine', 'Huggins', 'Christine Leiker', 'unknown', false, NULL, NULL, false),
+    ('Margaret Smith', 'Smith', 'Peggy Smith', 'unknown', false, NULL, NULL, false),
+    ('John Smith', 'Smith', 'John Smith', 'registered_agent', false, NULL, NULL, false),
+    ('James Robert Smith', 'Smith', 'James Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('James Robert Smith', 'Smith', 'James Q Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('James Robert Smith', 'Smith', 'James Robert Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('Smith James R', 'Smith', 'James Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('James Robert Smith', 'Smith', 'Robert Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('James Robert Smith', 'Smith', 'Bob Smith', 'owner', true, 'dataskip_run_1', 'person', true),
+    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', false, NULL, NULL, false),
+    ('James Robert Smith', 'Smith', 'Robert Smith', 'unknown', false, 'manual', NULL, false),
+    ('John Smith et al', 'Smith', 'John Smith', 'unknown', false, NULL, NULL, false),
+    ('Heirs of John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, NULL, false),
+    ('Estate of John Smith', 'Smith', 'John Smith', 'unknown', false, NULL, NULL, false),
+    ('John Smith deceased', 'Smith', 'John Smith', 'unknown', false, NULL, NULL, false),
+    ('John Smith c/o Jane Doe', 'Smith', 'John Smith', 'unknown', false, NULL, NULL, false),
+    ('John Smith c/o Jane Doe', 'Smith', 'Jane Doe', 'unknown', false, NULL, NULL, false),
+    ('John Smith', 'Smith', 'John Smith et al', 'unknown', false, NULL, NULL, false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'spouse', true, 'dataskip_run_1', 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'parent', true, 'dataskip_run_1', 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'unknown', true, 'dataskip_run_1', 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'mojo_call', 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'mojo_import', 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, NULL, 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'subject', 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'auto', 'person', false),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'manual', 'person', false),
+    ('Oak LLC', 'LLC', 'Oak LLC', 'owner', true, 'dataskip_run_1', NULL, false),
+    ('Jane Smith LLC', 'Smith', 'Jane Smith', 'owner', true, 'dataskip_run_1', NULL, false),
+    ('Jane Doe', 'Doe', 'Jane Doe', 'unknown', false, NULL, NULL, true),
+    ('John & Mary Smith', 'Smith', 'Mary Smith', 'owner', true, 'dataskip_run_x', 'person', true),
+    ('James Robert Smith', 'Smith', 'James Smith', 'owner', true, 'smartskip_batch', 'person', true);
   FOR rec IN SELECT * FROM owner_line_case LOOP
     IF public.dialer_owner_line_release_v1(
-      rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source
+      rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source, rec.owner_type
     ) IS DISTINCT FROM rec.expected THEN
       RAISE EXCEPTION 'owner line % / % expected % got %', rec.owner_name, rec.contact_name, rec.expected,
         public.dialer_owner_line_release_v1(
-          rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source
+          rec.relationship, rec.contact_name, rec.owner_name, rec.owner_last, rec.skip_traced, rec.verified_source, rec.owner_type
         );
     END IF;
   END LOOP;
@@ -659,24 +675,24 @@ BEGIN
     ('30000000-0000-4000-8000-0000000000f5', '20000000-0000-4000-8000-0000000000f4', '+18165550805', 'no_answer', 'unknown', 'Mary Smith', true, NULL),
     ('30000000-0000-4000-8000-0000000000f6', '20000000-0000-4000-8000-0000000000f5', '+18165550806', 'dnc', 'unknown', 'Mary Smith', false, NULL),
     ('30000000-0000-4000-8000-0000000000f7', '20000000-0000-4000-8000-0000000000f6', '+18165550807', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
-    ('30000000-0000-4000-8000-0000000000f8', '20000000-0000-4000-8000-0000000000f7', '+18165550808', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
-    ('30000000-0000-4000-8000-0000000000f9', '20000000-0000-4000-8000-0000000000f8', '+18165550809', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f8', '20000000-0000-4000-8000-0000000000f7', '+18165550808', 'no_answer', 'owner', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000f9', '20000000-0000-4000-8000-0000000000f8', '+18165550809', 'no_answer', 'owner', 'Mary Smith', false, NULL),
     ('30000000-0000-4000-8000-0000000000fa', '20000000-0000-4000-8000-0000000000f8', '+18165550810', 'dnc_contact', 'relative', 'John Smith', false, NULL),
     ('30000000-0000-4000-8000-0000000000fb', '20000000-0000-4000-8000-0000000000f9', '+18165550811', 'dnc', 'owner', 'John Smith', false, NULL),
-    ('30000000-0000-4000-8000-0000000000fc', '20000000-0000-4000-8000-0000000000f9', '+18165550812', 'no_answer', 'unknown', 'Mary Smith', false, NULL),
+    ('30000000-0000-4000-8000-0000000000fc', '20000000-0000-4000-8000-0000000000f9', '+18165550812', 'no_answer', 'owner', 'Mary Smith', false, NULL),
     ('30000000-0000-4000-8000-0000000000fd', '20000000-0000-4000-8000-0000000000fa', '+18165550813', 'no_answer', 'unknown', 'John Smith', false, NULL),
-    ('30000000-0000-4000-8000-0000000000fe', '20000000-0000-4000-8000-0000000000fb', '+18165550814', 'no_answer', 'unknown', 'Mary Smith', false, NULL);
+    ('30000000-0000-4000-8000-0000000000fe', '20000000-0000-4000-8000-0000000000fb', '+18165550814', 'no_answer', 'owner', 'Mary Smith', false, NULL);
   INSERT INTO public.sms_opt_outs (phone, is_opted_out) VALUES ('+18165550807', true);
-  IF public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1') IS NOT NULL THEN
-    RAISE EXCEPTION 'co-owner Mary stayed blocked: %',
+  IF public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1') IS DISTINCT FROM 'associate_non_family' THEN
+    RAISE EXCEPTION 'associate co-owner was released: %',
       public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1');
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550802', '20000000-0000-4000-8000-0000000000f1') IS DISTINCT FROM 'relationship_unknown' THEN
     RAISE EXCEPTION 'Mary Jones was released: %',
       public.source_list_phone_block_reason_v1('+18165550802', '20000000-0000-4000-8000-0000000000f1');
   END IF;
-  IF public.source_list_phone_block_reason_v1('+18165550803', '20000000-0000-4000-8000-0000000000f2') IS NOT NULL THEN
-    RAISE EXCEPTION 'skip-traced middle name stayed blocked: %',
+  IF public.source_list_phone_block_reason_v1('+18165550803', '20000000-0000-4000-8000-0000000000f2') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'unknown middle-name tie was released: %',
       public.source_list_phone_block_reason_v1('+18165550803', '20000000-0000-4000-8000-0000000000f2');
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550804', '20000000-0000-4000-8000-0000000000f3') IS DISTINCT FROM 'relationship_unknown' THEN
