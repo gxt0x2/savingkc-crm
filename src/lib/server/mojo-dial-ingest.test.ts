@@ -67,7 +67,7 @@ describe('syncMojoDialIngest', () => {
     const writes = db.state.batches[0] ?? []
     expect(writes.map((row) => row.provider_call_id).sort()).toEqual(['7', '8'])
     expect(writes.find((row) => row.provider_call_id === '8')).toMatchObject({
-      phone_disposition: 'dnc',
+      phone_disposition: 'dnc_contact',
       outcome: 'dnc',
       normalized_phone: '+18165550199',
       phone_last4: '0199',

@@ -1,3 +1,4 @@
+import { exportLineModeBlock } from '@/lib/dialer-suppression-policy'
 import { SourceListImportError } from '@/lib/source-lists/csv'
 import { sourceListRpcError, type SourceListRpcClient } from '@/lib/source-lists/import-source-list'
 
@@ -48,12 +49,25 @@ export interface DialerExportRow {
   export_batch_id: string
 }
 
+export interface DialerExportExclusion {
+  reason: string
+  phoneMasked: string
+}
+
+export interface DialerExportScrub {
+  exportBatchId: string
+  rows: DialerExportRow[]
+  excludedCounts: Record<string, number>
+  excludedPhones: DialerExportExclusion[]
+}
+
 export interface DialerExportFilters {
   listType: string | null
   county: string | null
   state: string | null
   violationKind: string | null
   sourceListId: string | null
+  lineMode?: number | null
 }
 
 export interface DialerExportPage {
@@ -107,11 +121,50 @@ function asExportRow(value: unknown, exportBatchId: string): DialerExportRow | n
   }
 }
 
+function maskedExportPhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  if (value === '****') return value
+  if (!/^\*{6}\d{4}$/.test(value)) return null
+  return value
+}
+
+function excludedCounts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const counts: Record<string, number> = {}
+  for (const [reason, count] of Object.entries(value)) {
+    if (!reason || !Number.isInteger(count) || Number(count) < 0) continue
+    counts[reason] = Number(count)
+  }
+  return counts
+}
+
+function excludedPhones(value: unknown): DialerExportExclusion[] {
+  if (!Array.isArray(value)) return []
+  const phones: DialerExportExclusion[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const reason = typeof row.reason === 'string' ? row.reason : ''
+    const phoneMasked = maskedExportPhone(row.phone_masked)
+    if (!reason || !phoneMasked) continue
+    phones.push({ reason, phoneMasked })
+  }
+  return phones
+}
+
 export async function recordDialerExportBatch(
   db: SourceListRpcClient,
   actor: string,
   filters: DialerExportFilters,
-): Promise<{ exportBatchId: string; rows: DialerExportRow[] }> {
+): Promise<DialerExportScrub> {
+  const lineMode = filters.lineMode ?? 1
+  if (exportLineModeBlock(lineMode)) {
+    throw new SourceListImportError(
+      'Multi-line dialer export is suspended. Export one line at a time.',
+      409,
+      'multi_line_suspended',
+    )
+  }
   const { data, error } = await db.rpc('record_source_list_export_batch_v1', {
     p_actor: actor.trim(),
     p_list_type: filters.listType,
@@ -119,6 +172,7 @@ export async function recordDialerExportBatch(
     p_state: filters.state,
     p_violation_kind: filters.violationKind,
     p_source_list_id: filters.sourceListId,
+    p_line_mode: lineMode,
   })
   if (error) throw sourceListRpcError(error)
   if (!data || typeof data !== 'object') {
@@ -134,7 +188,12 @@ export async function recordDialerExportBatch(
   if (rows.length !== rawRows.length) {
     throw new SourceListImportError('The dialer export is unavailable.', 503, 'source_list_unavailable')
   }
-  return { exportBatchId, rows }
+  return {
+    exportBatchId,
+    rows,
+    excludedCounts: excludedCounts(payload.excluded_counts),
+    excludedPhones: excludedPhones(payload.excluded_phones),
+  }
 }
 
 export async function readDialerExport(

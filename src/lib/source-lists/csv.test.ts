@@ -89,6 +89,77 @@ describe('source list csv import', () => {
     expect(payload.p_violation_kind).toBe('board_up')
     expect(payload.p_county).toBeNull()
     expect(payload.p_rows[0].parcel_id).toBe('KC1')
+    expect(payload.p_rows[0].county).toBeNull()
+    expect(payload.p_rows[0].out_of_area).toBe(false)
+  })
+
+  it('dedupes a code violation on the source case id and places the county from situs', () => {
+    const payload = buildSourceListImport(actor, {
+      listType: 'code_violation',
+      violationKind: 'open-to-entry',
+      state: 'MO',
+      pullDate: '2026-11-14',
+      fileName: '311.csv',
+      csvText: csv(`
+        case_number,parcel_id,city,state,zip_code
+        2024-00016,PIN-2,Kansas City,MO,64127
+        2024-00016,PIN-1,Kansas City,MO,64118
+      `),
+    })
+    expect(payload.p_violation_kind).toBe('open_to_entry')
+    expect(payload.p_rows).toHaveLength(1)
+    expect(payload.p_rows[0].case_id).toBe('2024-00016')
+    expect(payload.p_rows[0].county).toBe('clay')
+    expect(payload.p_rows[0].raw.situs_county).toBe('clay')
+  })
+
+  it('opens lanes for EnerGov nuisance and for cities outside Kansas City', () => {
+    const nuisance = buildSourceListImport(actor, {
+      listType: 'code_violation',
+      violationKind: 'energov',
+      state: 'MO',
+      pullDate: '2026-11-14',
+      fileName: 'nuisance.csv',
+      csvText: 'case_number,_clay_parcel_match\nEG-1,matched\n',
+    })
+    expect(nuisance.p_violation_kind).toBe('nuisance')
+    expect(nuisance.p_rows[0].county).toBe('clay')
+
+    const independence = buildSourceListImport(actor, {
+      listType: 'code_violation',
+      violationKind: 'board_up',
+      city: 'Independence',
+      pullDate: '2026-11-14',
+      fileName: 'independence.csv',
+      csvText: 'case_number,city\nIND-1,Independence\n',
+    })
+    expect(independence.p_county).toBe('jackson')
+    expect(independence.p_state).toBe('MO')
+
+    const overland = buildSourceListImport(actor, {
+      listType: 'code_violation',
+      violationKind: 'nuisance',
+      city: 'Overland Park',
+      pullDate: '2026-11-14',
+      fileName: 'op.csv',
+      csvText: 'case_number\nOP-1\n',
+    })
+    expect(overland.p_county).toBe('johnson')
+    expect(overland.p_state).toBe('KS')
+    expect(overland.p_rows[0].out_of_area).toBe(false)
+  })
+
+  it('marks a Cass code-violation row out of area', () => {
+    const payload = buildSourceListImport(actor, {
+      listType: 'code_violation',
+      violationKind: 'board_up',
+      state: 'MO',
+      pullDate: '2026-11-14',
+      fileName: 'cass.csv',
+      csvText: 'case_number,city,state,county\nCASS-1,Belton,MO,Cass\n',
+    })
+    expect(payload.p_rows[0].out_of_area).toBe(true)
+    expect(payload.p_rows[0].county).toBeNull()
   })
 
   it('collects owner email columns for validation without treating them as phones', () => {

@@ -1,11 +1,13 @@
 import { recordWrittenEmails } from '@/lib/email-validation/record'
 import {
   buildSourceListImport,
+  MAX_SOURCE_LIST_ROWS,
   sourceListEmails,
   SOURCE_LIST_STATUSES,
   SourceListImportError,
   type SourceListImportRequest,
   type SourceListRpcPayload,
+  type SourceListRpcRow,
   type SourceListStatus,
 } from '@/lib/source-lists/csv'
 
@@ -43,6 +45,8 @@ const CLIENT_ERRORS = new Set([
   'source_list_export_batch_not_found',
   'source_list_export_batch_mismatch',
   'source_list_export_too_large',
+  'dialer_label_unmapped',
+  'multi_line_suspended',
 ])
 
 const RPC_ERROR_RESPONSE: Record<string, { status: number; message: string }> = {
@@ -51,6 +55,8 @@ const RPC_ERROR_RESPONSE: Record<string, { status: number; message: string }> = 
   source_list_export_batch_not_found: { status: 404, message: 'That export batch was not found.' },
   source_list_export_batch_mismatch: { status: 400, message: 'That export batch does not include this row.' },
   source_list_export_too_large: { status: 409, message: 'This export is larger than 10000 phones. Filter by list type, county, or source list and run it again.' },
+  dialer_label_unmapped: { status: 409, message: 'The dialer export is paused because a phone label is not classified.' },
+  multi_line_suspended: { status: 409, message: 'Multi-line dialer export is suspended. Export one line at a time.' },
 }
 
 export function sourceListRpcError(error: SourceListRpcResult['error']): SourceListImportError {
@@ -77,6 +83,15 @@ function importResult(data: unknown): SourceListImportResult {
   return { sourceListId, inserted, updated, rowCount }
 }
 
+function rowChunks(rows: SourceListRpcRow[]): SourceListRpcRow[][] {
+  if (rows.length <= MAX_SOURCE_LIST_ROWS) return [rows]
+  const chunks: SourceListRpcRow[][] = []
+  for (let index = 0; index < rows.length; index += MAX_SOURCE_LIST_ROWS) {
+    chunks.push(rows.slice(index, index + MAX_SOURCE_LIST_ROWS))
+  }
+  return chunks
+}
+
 export async function importSourceList(
   db: SourceListRpcClient,
   actor: string,
@@ -84,9 +99,18 @@ export async function importSourceList(
 ): Promise<SourceListImportResult> {
   const payload = buildSourceListImport(actor, request)
   await recordWrittenEmails(sourceListEmails(payload.p_rows))
-  const { data, error } = await db.rpc('import_source_list_v1', payload)
-  if (error) throw sourceListRpcError(error)
-  return importResult(data)
+  let sourceListId = ''
+  let inserted = 0
+  let updated = 0
+  for (const rows of rowChunks(payload.p_rows)) {
+    const { data, error } = await db.rpc('import_source_list_v1', { ...payload, p_rows: rows })
+    if (error) throw sourceListRpcError(error)
+    const result = importResult(data)
+    sourceListId = result.sourceListId
+    inserted += result.inserted
+    updated += result.updated
+  }
+  return { sourceListId, inserted, updated, rowCount: inserted + updated }
 }
 
 const SOURCE_LIST_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i

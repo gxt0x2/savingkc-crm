@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { importSourceList, setSourceListRowStatus, sourceListRpcError } from './import-source-list'
 import { recordDialerExportBatch } from './dialer-export'
-import { SourceListImportError } from './csv'
+import { MAX_SOURCE_LIST_ROWS, SourceListImportError } from './csv'
 
 describe('source list import client', () => {
   it('sends the parsed file to the idempotent import function', async () => {
@@ -22,6 +22,36 @@ describe('source list import client', () => {
     expect(rpc.mock.calls[0][1].p_rows).toEqual([
       expect.objectContaining({ parcel_id: 'P1', owner_names: 'Ada' }),
     ])
+  })
+
+  it('chunks a file past the 5000-row database cap and keeps one file identity', async () => {
+    const rpc = vi.fn().mockImplementation(async (_name: string, args: { p_rows: unknown[] }) => ({
+      data: {
+        source_list_id: 'list-1',
+        inserted: args.p_rows.length,
+        updated: 0,
+        row_count: args.p_rows.length,
+      },
+      error: null,
+    }))
+    const lines = ['case_number,city,state,zip_code']
+    for (let index = 0; index < MAX_SOURCE_LIST_ROWS + 1; index += 1) {
+      lines.push(`CASE-${index},Kansas City,MO,64127`)
+    }
+    const result = await importSourceList({ rpc }, 'casey@savingkc.com', {
+      listType: 'code_violation',
+      violationKind: 'board_up',
+      state: 'MO',
+      pullDate: '2026-11-14',
+      fileName: 'daily-311.csv',
+      csvText: lines.join('\n'),
+    })
+    expect(rpc).toHaveBeenCalledTimes(2)
+    expect(rpc.mock.calls[0][1].p_rows).toHaveLength(MAX_SOURCE_LIST_ROWS)
+    expect(rpc.mock.calls[1][1].p_rows).toHaveLength(1)
+    expect(rpc.mock.calls[0][1].p_source_file_sha256).toBe(rpc.mock.calls[1][1].p_source_file_sha256)
+    expect(result.rowCount).toBe(MAX_SOURCE_LIST_ROWS + 1)
+    expect(result.sourceListId).toBe('list-1')
   })
 
   it('maps a database lane error to a client error and hides anything else', () => {
