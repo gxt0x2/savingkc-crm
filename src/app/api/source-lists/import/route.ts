@@ -9,6 +9,21 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export const runtime = 'nodejs'
 
+function trustedImportSecret(request: Request): boolean {
+  const header = request.headers.get('authorization') ?? ''
+  const match = header.match(/^Bearer\s+(\S+)\s*$/i)
+  const token = match?.[1]
+  if (!token) return false
+  return [process.env.CRON_SECRET, process.env.ADMIN_API_SECRET].some((secret) => Boolean(secret) && secret === token)
+}
+
+function boxActor(request: Request): string {
+  const named = request.headers.get('x-imported-by')?.trim() ?? ''
+  const secrets = [process.env.CRON_SECRET, process.env.ADMIN_API_SECRET]
+  if (!named || named.length > 320 || secrets.includes(named) || /[\r\n]/.test(named)) return 'source-list-import'
+  return named
+}
+
 async function readImport(request: Request) {
   const contentType = request.headers.get('content-type') || ''
   if (contentType.includes('multipart/form-data')) {
@@ -23,6 +38,7 @@ async function readImport(request: Request) {
       state: String(form.get('state') || ''),
       violationKind: String(form.get('violationKind') || ''),
       pullDate: String(form.get('pullDate') || ''),
+      city: String(form.get('city') || ''),
       sourceUrl: String(form.get('sourceUrl') || ''),
       notes: String(form.get('notes') || ''),
       fileName: file.name || String(form.get('fileName') || 'upload.csv'),
@@ -36,6 +52,7 @@ async function readImport(request: Request) {
     state: typeof body.state === 'string' ? body.state : '',
     violationKind: typeof body.violationKind === 'string' ? body.violationKind : '',
     pullDate: typeof body.pullDate === 'string' ? body.pullDate : '',
+    city: typeof body.city === 'string' ? body.city : '',
     sourceUrl: typeof body.sourceUrl === 'string' ? body.sourceUrl : '',
     notes: typeof body.notes === 'string' ? body.notes : '',
     fileName: typeof body.fileName === 'string' ? body.fileName : 'upload.csv',
@@ -44,14 +61,22 @@ async function readImport(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const actor = await resolveAuthenticatedActor(request)
-  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (await resolveOauthReviewSandboxLeadId(request)) {
-    return NextResponse.json({ error: 'This account cannot import source lists' }, { status: 403 })
+  const authorization = request.headers.get('authorization')
+  let actorEmail: string | null = null
+  if (authorization) {
+    if (!trustedImportSecret(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    actorEmail = boxActor(request)
+  } else {
+    const actor = await resolveAuthenticatedActor(request)
+    if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (await resolveOauthReviewSandboxLeadId(request)) {
+      return NextResponse.json({ error: 'This account cannot import source lists' }, { status: 403 })
+    }
+    actorEmail = actor.email
   }
 
   try {
-    const result = await importSourceList(supabaseAdmin(), actor.email, await readImport(request))
+    const result = await importSourceList(supabaseAdmin(), actorEmail, await readImport(request))
     return NextResponse.json({ success: true, ...result }, { status: 201 })
   } catch (error) {
     if (error instanceof SourceListImportError) {

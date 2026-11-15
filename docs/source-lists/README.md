@@ -13,15 +13,22 @@ Save `.xlsx` workbooks as CSV first. This path reads CSV only.
 | Case.net estates | `probate_estate` | `MO`, county optional |
 | Case.net no-property follow-up | `probate_no_property` | `MO`, county optional |
 | Foreclosure | `foreclosure` | `MO` or `KS`, county optional |
-| KC dangerous building, board-up, or structural | `code_violation` | `--violation-kind` `dangerous_building`, `board_up`, or `structural`. State `MO`. County blank, or Jackson, Clay, or Platte. |
+| KC dangerous building or structural | `code_violation` | `--violation-kind` `dangerous_building` or `structural`. State `MO`. County blank, or Jackson, Clay, or Platte. | 
+| KCMO 311 board-up or open-to-entry, daily | `code_violation` | `--violation-kind` `board_up` or `open_to_entry`. State `MO`. Leave county blank. Each row is placed from its parcel-match key, situs city, or situs zip. |
+| KCMO EnerGov nuisance | `code_violation` | `--violation-kind` `nuisance`. State `MO`. County blank, or the situs county. |
+| Independence, Overland Park, and other service-area cities | `code_violation` | `--city` `Independence` (Jackson, MO), `Overland Park` (Johnson, KS), or another city in Jackson, Clay, Platte, Johnson, or Wyandotte. Cass is out of area. |
 
-Tax, code, and other parcel lists match on parcel id. Probate and foreclosure match on case id when the file has one.
+Tax and other parcel lists match on parcel id. Probate, foreclosure, and code violations match on the source case id when the file has one. A code-violation re-import of the same case updates that row. New rows stay `new` for parcel and owner matching. A row whose situs is outside Jackson, Clay, Platte, Wyandotte, and Johnson, Cass included, is `out_of_area` and is not exported.
+
+Files larger than 5,000 rows are sent in chunks of 5,000. The database cap is unchanged.
+
+On a machine that should not hold the Supabase service key, set `SOURCE_LIST_IMPORT_URL` to `https://crm.savingkc.com/api/source-lists/import` and `CRON_SECRET` (or `ADMIN_API_SECRET`). The script posts the file with that bearer. A signed-in session still works when the bearer is absent.
 
 Recognized headers include `parcel_id`, `apn`, `case_number`, `owner_name`, `address`, `amount_owed`, and `phone` / `phone_1` / `phone_2` / `phone_3`. The original cells are kept on the row.
 
 ## Dry run, then write
 
-The script does not write unless you pass `--confirm`. It needs the CRM database URL and service role key that the app already uses: `NEXT_PUBLIC_SUPABASE_URL` or `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`. No new secret is required.
+The script does not write unless you pass `--confirm`. On the box, `SOURCE_LIST_IMPORT_URL` and `CRON_SECRET` are enough. A local run can still use `NEXT_PUBLIC_SUPABASE_URL` or `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`, when the import URL is unset.
 
 ```bash
 npx tsx scripts/import-source-list-csv.mts \

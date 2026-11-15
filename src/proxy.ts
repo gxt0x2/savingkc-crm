@@ -110,6 +110,10 @@ const TRUSTED_BEARER_API_EXACT = new Set([
   // handlers also enforce their own user/admin-or-secret authorization.
   '/api/enrich',
   '/api/enrich/batch',
+  // Source-list import is exact-listed so the box can post a CSV with the
+  // cron secret. The handler checks that secret again. Lookalike routes do
+  // not inherit it.
+  '/api/source-lists/import',
   // Worker routes are exact-listed so a newly added worker cannot inherit
   // service-bearer trust before its handler authorization is reviewed.
   '/api/workers/ppc-conversion-export-alert',

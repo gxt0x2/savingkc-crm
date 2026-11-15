@@ -32,6 +32,40 @@ describe('POST /api/source-lists/import', () => {
     })
   })
 
+  it('accepts the cron secret without a session and rejects a wrong secret', async () => {
+    process.env.CRON_SECRET = 'box-secret'
+    mocks.actor.mockResolvedValue(null)
+    const denied = await POST(new NextRequest('https://crm.savingkc.com/api/source-lists/import', {
+      method: 'POST',
+      headers: { authorization: 'Bearer wrong', 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    }))
+    expect(denied.status).toBe(401)
+    expect(mocks.rpc).not.toHaveBeenCalled()
+
+    const accepted = await POST(new NextRequest('https://crm.savingkc.com/api/source-lists/import', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer box-secret',
+        'content-type': 'application/json',
+        'x-imported-by': 'box-script',
+      },
+      body: JSON.stringify({
+        listType: 'code_violation',
+        violationKind: 'board_up',
+        state: 'MO',
+        pullDate: '2026-11-14',
+        fileName: '311.csv',
+        csv: 'case_number,city,state,zip_code\n2024-00016,Kansas City,MO,64118\n',
+      }),
+    }))
+    expect(accepted.status).toBe(201)
+    expect(mocks.actor).not.toHaveBeenCalled()
+    expect(mocks.rpc.mock.calls[0][1].p_imported_by).toBe('box-script')
+    expect(mocks.rpc.mock.calls[0][1].p_rows[0].county).toBe('clay')
+    delete process.env.CRON_SECRET
+  })
+
   it('requires a signed-in user and refuses the review sandbox', async () => {
     mocks.actor.mockResolvedValue(null)
     expect((await POST(request({}))).status).toBe(401)

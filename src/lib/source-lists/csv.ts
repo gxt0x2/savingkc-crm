@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { parseCsv } from '@/lib/parse-csv'
+import { countyForCity, resolveCodeViolationPlace } from '@/lib/source-lists/county'
 
 export const SOURCE_LIST_TYPES = [
   'tax_delinquent',
@@ -17,16 +18,18 @@ export const SOURCE_LIST_STATUSES = [
   'excluded_entity',
   'dropped',
   'loaded_to_dialer',
+  'out_of_area',
 ] as const
 
 export const MAX_SOURCE_LIST_ROWS = 5000
+export const MAX_SOURCE_LIST_FILE_ROWS = 100_000
 export const MAX_SOURCE_LIST_BYTES = 5_000_000
 
 export type SourceListType = (typeof SOURCE_LIST_TYPES)[number]
 export type SourceListCounty = (typeof SOURCE_LIST_COUNTIES)[number]
 export type SourceListStatus = (typeof SOURCE_LIST_STATUSES)[number]
 export type SourceListState = 'MO' | 'KS'
-export type CodeViolationKind = 'dangerous_building' | 'board_up' | 'structural'
+export type CodeViolationKind = 'dangerous_building' | 'board_up' | 'open_to_entry' | 'structural' | 'nuisance'
 
 const LIST_TYPE_ALIASES: Record<string, SourceListType> = {
   tax_delinquent: 'tax_delinquent',
@@ -49,12 +52,15 @@ const VIOLATION_ALIASES: Record<string, CodeViolationKind> = {
   dangerous: 'dangerous_building',
   board_up: 'board_up',
   boardup: 'board_up',
+  open_to_entry: 'open_to_entry',
   structural: 'structural',
+  nuisance: 'nuisance',
+  energov: 'nuisance',
 }
 
 const MO_COUNTIES = new Set<SourceListCounty>(['jackson', 'clay', 'platte'])
 const KS_COUNTIES = new Set<SourceListCounty>(['johnson', 'wyandotte'])
-const CASE_FIRST = new Set<SourceListType>(['probate_estate', 'probate_no_property', 'foreclosure'])
+const CASE_FIRST = new Set<SourceListType>(['probate_estate', 'probate_no_property', 'foreclosure', 'code_violation'])
 
 export class SourceListImportError extends Error {
   constructor(
@@ -79,6 +85,7 @@ export interface SourceListImportRequest {
   listType: string
   county?: string | null
   state?: string | null
+  city?: string | null
   violationKind?: string | null
   pullDate: string
   sourceUrl?: string | null
@@ -95,6 +102,8 @@ export interface SourceListRpcRow {
   amount_owed: string | null
   phones: string[]
   raw: Record<string, string>
+  county: string | null
+  out_of_area: boolean
 }
 
 export interface SourceListRpcPayload {
@@ -158,6 +167,7 @@ export function normalizeSourceListLane(input: {
   listType: string
   county?: string | null
   state?: string | null
+  city?: string | null
   violationKind?: string | null
 }): SourceListLane {
   const listType = LIST_TYPE_ALIASES[token(input.listType || '')]
@@ -195,36 +205,47 @@ export function normalizeSourceListLane(input: {
   const violationKind = violationToken ? VIOLATION_ALIASES[violationToken] ?? null : null
   if (violationToken && !violationKind) {
     throw new SourceListImportError(
-      'Code violation kind must be dangerous building, board-up, or structural.',
+      'Code violation kind must be dangerous building, board-up, open-to-entry, structural, or nuisance.',
       400,
       'invalid_lane',
     )
   }
 
-  if (county && state && ((MO_COUNTIES.has(county) && state !== 'MO') || (KS_COUNTIES.has(county) && state !== 'KS'))) {
-    throw new SourceListImportError(`${county} belongs with ${MO_COUNTIES.has(county) ? 'MO' : 'KS'}.`, 400, 'invalid_lane')
+  const fromCity = countyForCity(input.city, state)
+  let laneCounty = county
+  let laneState = state
+  if (!laneCounty && fromCity) {
+    laneCounty = fromCity.county
+    laneState = laneState ?? fromCity.state
   }
-  if (county && !state) {
+  if (laneCounty && laneState && fromCity && (fromCity.county !== laneCounty || fromCity.state !== laneState)) {
+    throw new SourceListImportError(`${input.city?.trim()} is ${fromCity.county}, ${fromCity.state}.`, 400, 'invalid_lane')
+  }
+
+  if (laneCounty && laneState && ((MO_COUNTIES.has(laneCounty) && laneState !== 'MO') || (KS_COUNTIES.has(laneCounty) && laneState !== 'KS'))) {
+    throw new SourceListImportError(`${laneCounty} belongs with ${MO_COUNTIES.has(laneCounty) ? 'MO' : 'KS'}.`, 400, 'invalid_lane')
+  }
+  if (laneCounty && !laneState) {
     throw new SourceListImportError('Choose MO or KS with the county.', 400, 'invalid_lane')
   }
 
-  if (listType === 'tax_delinquent' && (!county || !state)) {
+  if (listType === 'tax_delinquent' && (!laneCounty || !laneState)) {
     throw new SourceListImportError('A tax-delinquent list needs a county and a state.', 400, 'invalid_lane')
   }
-  if (listType === 'foreclosure' && !state) {
+  if (listType === 'foreclosure' && !laneState) {
     throw new SourceListImportError('A foreclosure list needs MO or KS.', 400, 'invalid_lane')
   }
   if (listType === 'code_violation') {
     if (!violationKind) {
       throw new SourceListImportError(
-        'A code-violation list needs a kind: dangerous building, board-up, or structural.',
+        'A code-violation list needs a kind: dangerous building, board-up, open-to-entry, structural, or nuisance.',
         400,
         'invalid_lane',
       )
     }
-    if (state !== 'MO' || (county !== null && !MO_COUNTIES.has(county))) {
+    if (laneState !== 'MO' && laneState !== 'KS') {
       throw new SourceListImportError(
-        'Code-violation lists in this import are Kansas City, Missouri. Use Jackson, Clay, Platte, or leave the county blank.',
+        'A code-violation list needs MO or KS. Kansas City, Missouri can leave the county blank so each row is placed from its situs.',
         400,
         'invalid_lane',
       )
@@ -232,11 +253,11 @@ export function normalizeSourceListLane(input: {
   } else if (violationKind) {
     throw new SourceListImportError('Violation kind is only used for code-violation lists.', 400, 'invalid_lane')
   }
-  if ((listType === 'probate_estate' || listType === 'probate_no_property') && state === 'KS') {
+  if ((listType === 'probate_estate' || listType === 'probate_no_property') && laneState === 'KS') {
     throw new SourceListImportError('Case.net probate lists are Missouri.', 400, 'invalid_lane')
   }
 
-  return { listType, county, state, violationKind: listType === 'code_violation' ? violationKind : null }
+  return { listType, county: laneCounty, state: laneState, violationKind: listType === 'code_violation' ? violationKind : null }
 }
 
 function pullDate(value: string): string {
@@ -332,20 +353,20 @@ export function buildSourceListImport(actor: string, request: SourceListImportRe
   const notes = clean(request.notes, 2000)
   const parsed = parseCsv(csv)
   if (parsed.length === 0) throw new SourceListImportError('The CSV has no data rows.', 400, 'empty_csv')
-  if (parsed.length > MAX_SOURCE_LIST_ROWS) {
-    throw new SourceListImportError(`Import at most ${MAX_SOURCE_LIST_ROWS} rows at a time.`, 400, 'too_many_rows')
+  if (parsed.length > MAX_SOURCE_LIST_FILE_ROWS) {
+    throw new SourceListImportError(`Import at most ${MAX_SOURCE_LIST_FILE_ROWS} rows in one file.`, 400, 'too_many_rows')
   }
 
   const byKey = new Map<string, SourceListRpcRow>()
   parsed.forEach((record, index) => {
     const rowNumber = index + 2
     const parcelId = identityBody(
-      first(record, ['parcel_id', 'parcel', 'apn', 'parcel_number', 'parcel_no', 'parcelid']),
+      first(record, ['parcel_id', 'parcel', 'apn', 'parcel_number', 'parcel_no', 'parcelid', 'pin']),
       rowNumber,
       'Parcel id',
     )
     const caseId = identityBody(
-      first(record, ['case_id', 'case_number', 'case', 'casenumber', 'estate_number', 'estate_no', 'cause_number', 'cause_no', 'probate_case']),
+      first(record, ['case_id', 'case_number', 'case', 'casenumber', 'sr_number', 'estate_number', 'estate_no', 'cause_number', 'cause_no', 'probate_case']),
       rowNumber,
       'Case id',
     )
@@ -353,6 +374,9 @@ export function buildSourceListImport(actor: string, request: SourceListImportRe
     if (!matchKey) {
       throw new SourceListImportError(`Row ${rowNumber} needs a parcel id or a case id`, 400, 'missing_match_key', rowNumber)
     }
+    const place = lane.listType === 'code_violation' ? resolveCodeViolationPlace(record) : null
+    const rowCounty = place?.outOfArea ? null : (place?.county ?? lane.county)
+    if (rowCounty) record.situs_county = record.situs_county?.trim() || rowCounty
     byKey.set(matchKey, {
       parcel_id: parcelId,
       case_id: caseId,
@@ -364,6 +388,8 @@ export function buildSourceListImport(actor: string, request: SourceListImportRe
       ),
       phones: phonesOf(record, rowNumber),
       raw: record,
+      county: rowCounty,
+      out_of_area: place?.outOfArea ?? false,
     })
   })
 
