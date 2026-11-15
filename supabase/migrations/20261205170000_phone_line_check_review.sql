@@ -61,7 +61,7 @@ STABLE
 SET search_path = pg_catalog, public
 AS $$
   SELECT CASE
-    WHEN cost > 0 THEN cost
+    WHEN cost > 0 THEN greatest(cost, 0.015)
     ELSE NULL
   END
   FROM (

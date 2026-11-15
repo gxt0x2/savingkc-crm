@@ -101,7 +101,7 @@ export function lineCheckCostUsd(env: Record<string, string | undefined> = proce
   const raw = env.LINE_CHECK_COST_USD?.trim()
   if (!raw) throw new LineCheckConfigError('LINE_CHECK_COST_USD is not configured')
   const value = Number(raw)
-  if (!Number.isFinite(value) || value <= 0 || value > 1) {
+  if (!Number.isFinite(value) || value < 0.015 || value > 1) {
     throw new LineCheckConfigError('LINE_CHECK_COST_USD is invalid')
   }
   return Math.round(value * 10000) / 10000

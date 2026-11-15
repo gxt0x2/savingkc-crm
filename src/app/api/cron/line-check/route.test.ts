@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/api/admin-auth', () => ({ requireAdminOrSecret: mocks.auth }))
-vi.mock('@/lib/server/phone-line-check', () => ({ runPhoneLineChecks: mocks.run }))
+vi.mock('@/lib/server/phone-line-check', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/server/phone-line-check')>('@/lib/server/phone-line-check')
+  return { LineCheckConfigError: actual.LineCheckConfigError, runPhoneLineChecks: mocks.run }
+})
 vi.mock('@/lib/server/phone-line-check-store', () => ({ phoneLineCheckStore: () => ({}) }))
 vi.mock('@/lib/server/phone-line-lookup', () => ({
   createTwilioLookupClient: mocks.client,
@@ -16,6 +19,7 @@ vi.mock('@/lib/server/phone-line-lookup', () => ({
 }))
 vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({}) }))
 
+import { LineCheckConfigError } from '@/lib/server/phone-line-check'
 import { GET } from './route'
 
 describe('/api/cron/line-check', () => {
@@ -48,6 +52,17 @@ describe('/api/cron/line-check', () => {
     expect(source).toContain('4:00am America/Chicago')
     expect(source).toContain('2:00am CST')
     expect(source).toContain('3:00am CDT')
+  })
+
+  it('returns 503 when the lookup price is below $0.015', async () => {
+    mocks.run.mockRejectedValue(new LineCheckConfigError('LINE_CHECK_COST_USD is invalid'))
+    const response = await GET(new Request('https://crm.savingkc.com/api/cron/line-check'))
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: 'line_check_cost_unconfigured',
+    })
+    expect(mocks.client).toHaveBeenCalled()
   })
 
   it('rejects an unsigned caller before creating a Twilio client', async () => {

@@ -103,4 +103,39 @@ describe('line check review migration on the #814 scrub', () => {
     expect(review).toContain("'calling_window_lock'")
     expect(review).toContain('Counsel ruling §4a, 2026-11-14 (Lookup inactive)')
   })
+
+  it('floors every configured price at $0.015 so a day never grants more than 1,000 lookups', () => {
+    const unitCost = review.slice(
+      review.indexOf('CREATE OR REPLACE FUNCTION public.phone_line_check_unit_cost_v1'),
+      review.indexOf('CREATE OR REPLACE FUNCTION public.sync_phone_line_check_config_v1'),
+    )
+    const floor = Number(unitCost.match(/greatest\(cost,\s*([0-9.]+)\)/)?.[1])
+    expect(floor).toBe(0.015)
+    const reserve = review.slice(
+      review.indexOf('CREATE OR REPLACE FUNCTION public.reserve_phone_line_check_candidates_v1'),
+      review.indexOf('CREATE OR REPLACE FUNCTION public.select_phone_line_check_candidates_v1'),
+    )
+    const apply = review.slice(
+      review.indexOf('CREATE OR REPLACE FUNCTION public.apply_phone_line_checks_v1'),
+      review.indexOf('CREATE OR REPLACE FUNCTION public.reserve_phone_line_check_candidates_v1'),
+    )
+    expect(reserve).toContain('v_cost := public.phone_line_check_unit_cost_v1()')
+    expect(reserve).toContain('/ v_cost')
+    expect(apply).toContain('v_cost := public.phone_line_check_unit_cost_v1()')
+    expect(apply).toContain('v_cost, p_source, v_actor')
+
+    const floorMills = Math.round(floor * 10000)
+    let widest = 0
+    for (let mills = 1; mills <= 10000; mills += 1) {
+      const unitMills = Math.max(mills, floorMills)
+      const byDay = Math.floor((15 * 10000) / unitMills)
+      const byMonth = Math.floor((60 * 10000) / unitMills)
+      const granted = Math.min(1500, byDay, byMonth)
+      expect(granted).toBeLessThanOrEqual(1000)
+      widest = Math.max(widest, granted)
+    }
+    expect(widest).toBe(1000)
+    const reproMills = Math.max(Math.round(0.001 * 10000), floorMills)
+    expect(Math.min(1500, Math.floor((15 * 10000) / reproMills))).toBe(1000)
+  })
 })

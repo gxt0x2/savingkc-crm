@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   decidePhoneLineCheck,
+  LineCheckConfigError,
   lineCheckBlockEnabled,
   lineCheckCostUsd,
   lineCheckExportBlock,
@@ -245,7 +246,10 @@ describe('counsel ruling §4a, 2026-11-14 (Lookup inactive)', () => {
 describe('line check lanes and price', () => {
   it('F5 reads the per-lookup price from the environment', () => {
     expect(lineCheckCostUsd({ LINE_CHECK_COST_USD: '0.02' })).toBe(0.02)
+    expect(lineCheckCostUsd({ LINE_CHECK_COST_USD: '0.015' })).toBe(0.015)
     expect(() => lineCheckCostUsd({})).toThrow(/LINE_CHECK_COST_USD is not configured/)
+    expect(() => lineCheckCostUsd({ LINE_CHECK_COST_USD: '0.001' })).toThrow(LineCheckConfigError)
+    expect(() => lineCheckCostUsd({ LINE_CHECK_COST_USD: '0.014' })).toThrow(/LINE_CHECK_COST_USD is invalid/)
   })
 
   it('B4 orders fresh intake, then the loaded calling list, then backfill', () => {
@@ -342,5 +346,23 @@ describe('line check runner', () => {
     })
     expect(lookup).not.toHaveBeenCalled()
     expect(summary).toMatchObject({ checked: 0, stopped: true, cap: 'daily_cost' })
+  })
+
+  it('spends nothing when the configured price is below $0.015', async () => {
+    vi.stubEnv('LINE_CHECK_COST_USD', '0.001')
+    const reserve = vi.fn()
+    const apply = vi.fn()
+    const lookup = vi.fn()
+    await expect(runPhoneLineChecks({
+      store: store(reserve, apply),
+      lookup,
+      source: 'cron',
+      actor: 'line-check-cron',
+      now: () => new Date('2026-11-14T08:00:00.000Z').getTime(),
+    })).rejects.toThrow(LineCheckConfigError)
+    expect(reserve).not.toHaveBeenCalled()
+    expect(apply).not.toHaveBeenCalled()
+    expect(lookup).not.toHaveBeenCalled()
+    vi.stubEnv('LINE_CHECK_COST_USD', '0.02')
   })
 })
