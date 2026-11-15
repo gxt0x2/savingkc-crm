@@ -277,13 +277,20 @@ export function counselRelativeOwnerDnc(input: {
   return false
 }
 
+interface CampaignPhone extends GatePhone {
+  ownerType?: string | null
+  ownerName?: string | null
+  ownerLast?: string | null
+  skipTraced?: boolean | null
+}
+
 export function campaignMemberOffered(input: {
   status: string
   lane?: string | null
   source?: string | null
   lanes?: readonly (string | null)[]
   title?: string | null
-  phones: readonly GatePhone[] & readonly { ownerType?: string | null; ownerName?: string | null; ownerLast?: string | null; skipTraced?: boolean | null }[]
+  phones: readonly CampaignPhone[]
 }, block: (phone: string, world: { lane?: string | null; source?: string | null; lanes?: readonly (string | null)[]; listTitle?: string | null; prospects: GateProspect[]; phones: GatePhone[] }, prospectId: string) => string | null): boolean {
   if (input.status !== 'active') return false
   return input.phones.some((phone) => block(phone.phone, {
