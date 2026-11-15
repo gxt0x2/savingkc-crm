@@ -1,3 +1,5 @@
+import { publicRecordingObjectPath, recordingsBucketPath, signedRecordingRoute } from './recording-playback'
+
 export const RECORDING_REVIEW_OUTCOMES = ['seller', 'spam', 'wrong_number', 'follow_up', 'review_later'] as const
 export const CALL_REVIEW_SUBMISSION_NOTE_MAX_LENGTH = 500
 
@@ -120,10 +122,19 @@ export function readRecordingSid(metadata: unknown): string {
 export function playableRecordingUrl(metadata: unknown): string | null {
   const meta = record(metadata)
   const sid = readRecordingSid(meta)
+  // A recording SID stays on one route: that route plays the stored file
+  // first and falls back to the live provider when the copy is missing.
   if (sid) return `/api/recordings/${encodeURIComponent(sid)}`
 
+  const storedRecording = publicRecordingObjectPath(meta.recordingUrl)
+    || publicRecordingObjectPath(meta.recording_url)
+    || publicRecordingObjectPath(meta.RecordingUrl)
+    || recordingsBucketPath(meta.recording_storage_path)
+    || recordingsBucketPath(meta.recordingStoragePath)
+  if (storedRecording) return signedRecordingRoute(storedRecording)
+
   const storedUrl = text(meta.recordingUrl) || text(meta.recording_url) || text(meta.RecordingUrl)
-  if (storedUrl.startsWith('/api/recordings/')) return storedUrl
+  if (storedUrl.startsWith('/api/recordings/') || storedUrl.startsWith('/api/recordings?')) return storedUrl
 
   const provider = text(meta.provider).toLowerCase()
   const source = text(meta.source).toLowerCase()

@@ -27,6 +27,13 @@ describe('marketing call recordings helpers', () => {
     expect(playableRecordingUrl({ RecordingUrl: 'https://api.twilio.com/2010-04-01/Accounts/AC123/Recordings/RE789.mp3' })).toBe('/api/recordings/RE789')
     expect(playableRecordingUrl({ recordingUrl: 'https://example.com/recordings/RE789' })).toBeNull()
     expect(playableRecordingUrl({
+      recordingUrl: 'https://abc.supabase.co/storage/v1/object/public/recordings/leads/11111111-1111-4111-8111-111111111111/call.mp3',
+    })).toBe('/api/recordings?path=leads%2F11111111-1111-4111-8111-111111111111%2Fcall.mp3')
+    expect(playableRecordingUrl({
+      recordingSid: 'REaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      recording_storage_path: 'leads/11111111-1111-4111-8111-111111111111/twilio_RE.mp3',
+    })).toBe('/api/recordings/REaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    expect(playableRecordingUrl({
       provider: 'mojo',
       event_id: 'event-1',
       recording_url: 'https://app71.mojosells.com/audio/1',
