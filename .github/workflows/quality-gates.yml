@@ -70,6 +70,9 @@ jobs:
       - name: Dialer export suppression PostgreSQL rehearsal
         run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-dialer-export-suppression.sh
 
+      - name: Market check PostgreSQL rehearsal
+        run: PG_BIN="$(pg_config --bindir)" bash scripts/rehearse-market-check.sh
+
       - name: Unit coverage gate
         run: |
           npm run test:coverage

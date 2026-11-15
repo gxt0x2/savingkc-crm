@@ -558,6 +558,30 @@ describe('per-phone voice hold (Item 10)', () => {
     expect(result).toMatchObject({ allowed: true })
   })
 
+  it('blocks an expired market row outside Monday-Saturday 09:00-17:00 Chicago', async () => {
+    const db = database({
+      leads: [goodLead({ phone: '+19135550777' })],
+      prospect_phones: [{
+        id: 'linked-phone', phone: '+19135550777', prospect_id: 'source-prospect',
+        phone_connected: null, last_disposition: null, prospects: { lead_id: 'lead-1' },
+      }],
+      source_list_rows: [{ id: 'expired-row', list_type: 'mls_expired', prospect_id: 'source-prospect' }],
+    })
+    const input: OutboundDialerCallInput = {
+      ...baseInput,
+      surface: 'crm',
+      phone: '+19135550777',
+      leadId: null,
+      prospectId: 'source-prospect',
+      prospectPhoneId: 'linked-phone',
+      source: 'web_click_to_call',
+    }
+    const closed = await evaluateOutboundDialerCall({ ...input, now: new Date('2026-11-14T23:30:00Z') }, { db: db.client })
+    expect(closed).toMatchObject({ allowed: false, reason: 'outside_calling_hours', reasonSource: 'market_calling_window' })
+    const open = await evaluateOutboundDialerCall({ ...input, now: new Date('2026-11-14T16:00:00Z') }, { db: db.client })
+    expect(open).toMatchObject({ allowed: true })
+  })
+
   it('SMS STOP alone still allows CRM voice, and a voice hold never writes an SMS opt-out', async () => {
     const db = database({
       leads: [goodLead()],
