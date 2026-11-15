@@ -8,10 +8,23 @@ import { ownerLineRelease } from '@/lib/dialer-owner-line-release'
 
 const FAMILY_POSSIBLE_TYPES = ['parent', 'in_law', 'spouse', 'child', 'sibling', 'other_relative'] as const
 const ROLE_WORDS = new Set(['member', 'manager', 'officer'])
-const ENTITY_WORDS = new Set(['llc', 'inc', 'incorporated', 'corp', 'corporation', 'company', 'trust', 'bank', 'lp', 'llp', 'pllc'])
-const LAW_WORDS = new Set(['law', 'attorney', 'attorneys', 'lawyer', 'lawyers', 'esq', 'firm'])
+const BLOCK_WORDS = new Set([
+  'llc', 'inc', 'incorporated', 'corp', 'corporation', 'company', 'trust', 'bank', 'lp', 'llp', 'pllc',
+  'holdings', 'ct', 'resident', 'agent', 'pc', 'legal', 'law', 'attorney', 'attorneys', 'lawyer', 'lawyers', 'esq', 'firm',
+])
 
-export type LaneClass = 'probate' | 'deceased' | 'open'
+export type LaneClass = 'probate' | 'deceased' | 'open' | 'closed'
+
+const REASON_RANK: Record<string, number> = {
+  deceased_owner_line: 88,
+  associate: 89,
+  associate_non_family: 90,
+  relationship_unknown: 91,
+  relative_not_allowed: 92,
+  dead_manual_review_unread: 76,
+  property_owner_dnc_fanout: 99,
+  lead_dnc: 70,
+}
 
 function labelKey(value: string | null | undefined): string | null {
   const text = String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
@@ -22,17 +35,27 @@ function tokens(value: string | null | undefined): string[] {
   return (labelKey(value) ?? '').split('_').filter(Boolean)
 }
 
-/** Titles are not lanes. Only the list lane and source field count. */
+function callerLane(key: string): boolean {
+  return key.startsWith('tax') || key === 'foreclosure' || key === 'code_violation' || key.startsWith('mls')
+    || isDeceasedSource(key) || isProbateOrInherited(key)
+}
+
+/** Caller lane (export batch, Mojo list, campaign setting) plus probate/inherited links. Titles are ignored. */
 export function sourceListLanes(input: {
   lane?: string | null
   source?: string | null
   lanes?: readonly (string | null | undefined)[]
+  linkedLanes?: readonly (string | null | undefined)[]
   title?: string | null
 }): string[] {
   void input.title
-  return [input.lane, input.source, ...(input.lanes ?? [])]
+  const caller = [input.lane, input.source, ...(input.lanes ?? [])]
     .map((value) => labelKey(value))
-    .filter((value): value is string => Boolean(value))
+    .filter((value): value is string => Boolean(value && callerLane(value)))
+  const links = (input.linkedLanes ?? [])
+    .map((value) => labelKey(value))
+    .filter((value): value is string => Boolean(value && isProbateOrInherited(value)))
+  return [...caller, ...links]
 }
 
 function isProbateOrInherited(key: string): boolean {
@@ -44,12 +67,24 @@ function isDeceasedSource(key: string): boolean {
   return key === 'deceased' || key.startsWith('deceased_')
 }
 
-/** Several matching lanes: probate/inherited beats a deceased source, which beats tax and every other list. */
+/** Probate/inherited wins. No lane fails closed. */
 export function laneClass(lanes: readonly (string | null | undefined)[]): LaneClass {
   const keys = lanes.map((value) => labelKey(value)).filter((value): value is string => Boolean(value))
+  if (keys.length === 0) return 'closed'
   if (keys.some(isProbateOrInherited)) return 'probate'
   if (keys.some(isDeceasedSource)) return 'deceased'
   return 'open'
+}
+
+export function worstBlockReason(reasons: readonly (string | null | undefined)[]): string | null {
+  let best: string | null = null
+  let rank = Number.POSITIVE_INFINITY
+  for (const reason of reasons) {
+    if (!reason) continue
+    const next = REASON_RANK[reason] ?? 200
+    if (next < rank) { best = reason; rank = next }
+  }
+  return best
 }
 
 export function isFamilyPossibleType(ownerType: string | null | undefined): boolean {
@@ -66,11 +101,9 @@ function showsRegisteredAgent(input: { relationship?: string | null; contactName
 }
 
 function isLawFirm(contactName: string | null | undefined, ownerName: string | null | undefined): boolean {
-  const contact = tokens(contactName)
-  const owner = tokens(ownerName)
   const joined = `${labelKey(contactName) ?? ''} ${labelKey(ownerName) ?? ''}`
-  if (joined.includes('law_firm')) return true
-  return contact.some((token) => LAW_WORDS.has(token)) || owner.some((token) => LAW_WORDS.has(token))
+  if (/law_firm|ct_corporation|resident_agent/.test(joined)) return true
+  return tokens(`${contactName ?? ''} ${ownerName ?? ''}`).some((token) => BLOCK_WORDS.has(token) && ['law', 'attorney', 'attorneys', 'lawyer', 'lawyers', 'esq', 'firm', 'legal', 'llp', 'pc'].includes(token))
 }
 
 function isCompanyItself(contactName: string | null | undefined, ownerName: string | null | undefined): boolean {
@@ -78,7 +111,7 @@ function isCompanyItself(contactName: string | null | undefined, ownerName: stri
   const owner = labelKey(ownerName)
   if (contact && owner && contact === owner) return true
   const nameTokens = tokens(contactName)
-  return nameTokens.length > 0 && nameTokens.every((token) => ENTITY_WORDS.has(token))
+  return nameTokens.length > 0 && nameTokens.every((token) => BLOCK_WORDS.has(token))
 }
 
 function hasEntityRole(input: { relationship?: string | null; contactName?: string | null; entityRole?: string | null }): boolean {
@@ -86,8 +119,8 @@ function hasEntityRole(input: { relationship?: string | null; contactName?: stri
     .some((token) => ROLE_WORDS.has(token))
 }
 
-function isNamedPerson(contactName: string | null | undefined): boolean {
-  return tokens(contactName).some((token) => token.length > 1 && !ROLE_WORDS.has(token) && !ENTITY_WORDS.has(token) && !LAW_WORDS.has(token))
+function personNameTokens(contactName: string | null | undefined): string[] {
+  return tokens(contactName).filter((token) => token.length > 1 && !ROLE_WORDS.has(token) && !BLOCK_WORDS.has(token))
 }
 
 function qualifyingEntitySkip(verifiedSource: string | null | undefined, skipTraced: boolean | null | undefined): boolean {
@@ -111,14 +144,35 @@ export function entityContactReleased(input: {
   skipTraced?: boolean | null
   lanes?: readonly (string | null | undefined)[]
 }): boolean {
-  if (laneClass(input.lanes ?? []) !== 'open') return false
+  const lane = laneClass(input.lanes ?? [])
+  if (lane === 'probate' || lane === 'deceased' || lane === 'closed') return false
   if (showsRegisteredAgent(input) || isLawFirm(input.contactName, input.ownerName) || isCompanyItself(input.contactName, input.ownerName)) return false
-  if (!hasEntityRole(input) || !isNamedPerson(input.contactName)) return false
+  if (!hasEntityRole(input) || personNameTokens(input.contactName).length < 2) return false
   return sosFiling(input.verifiedSource) || qualifyingEntitySkip(input.verifiedSource, input.skipTraced)
 }
 
-export function deceasedOwnerLine(relationship: string | null | undefined, ownerType: string | null | undefined): boolean {
-  return labelKey(relationship) === 'deceased_owner_line' || labelKey(ownerType) === 'deceased_owner_line'
+function ownerNameMatch(contactName: string | null | undefined, ownerName: string | null | undefined, ownerFirst: string | null | undefined, ownerLast: string | null | undefined): boolean {
+  const contact = labelKey(contactName)
+  const owner = labelKey(ownerName)
+  if (contact && owner && contact === owner) return true
+  const first = labelKey(ownerFirst)
+  const last = labelKey(ownerLast)
+  const parts = tokens(contactName)
+  return Boolean(first && last && parts.includes(first) && parts.includes(last))
+}
+
+export function deceasedOwnerLine(input: {
+  relationship?: string | null
+  contactName?: string | null
+  ownerName?: string | null
+  ownerFirst?: string | null
+  ownerLast?: string | null
+  deceased?: boolean | null
+}): boolean {
+  const rel = labelKey(input.relationship)
+  if (rel === 'decedent' || rel === 'deceased_owner_line' || tokens(input.contactName).includes('decedent')) return true
+  return (rel === 'owner' || rel === 'subject') && input.deceased === true
+    && ownerNameMatch(input.contactName, input.ownerName, input.ownerFirst, input.ownerLast)
 }
 
 const SPECIFIC_RELATIVES = ['spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'] as const
@@ -137,9 +191,9 @@ export function counselRelationshipBucket(relationship: string | null | undefine
   const owner = labelKey(ownerType)
   if (rel === 'associate' || (owner !== null && ASSOCIATE_TYPES.has(owner))) return 'associate_non_family'
   if (rel !== null && ON_TITLE.has(rel)) return 'owner'
-  if (rel === 'unknown' || rel === 'entity_contact' || owner === 'unknown' || deceasedOwnerLine(rel, owner)) return 'relationship_unknown'
+  if (rel === 'relative') return 'relative'
+  if (rel === 'unknown' || rel === 'entity_contact' || owner === 'unknown') return 'relationship_unknown'
   if (rel !== null && !RECOGNISED.has(rel)) return 'relationship_unknown'
-  if (rel === 'relative') return isFamilyPossibleType(owner) ? 'relative' : 'relationship_unknown'
   if ((rel !== null && (SPECIFIC_RELATIVES as readonly string[]).includes(rel)) || isFamilyPossibleType(owner)) return 'relative'
   return 'relationship_unknown'
 }
@@ -165,24 +219,39 @@ interface GateProspect {
   county?: string | null
   street?: string | null
   zip?: string | null
+  deceased?: boolean | null
+  ownerFirst?: string | null
+  leadId?: string | null
+}
+
+export function askOffText(value: string | null | undefined): boolean {
+  const text = `${labelKey(value) ?? ''} ${String(value ?? '').toLowerCase()}`
+  return /\b(dnc|dnc_refused|do_not_call|stop|refus|take_me_off|do_not_contact)\b/.test(text)
+}
+
+export function counselDeadLead(leads: readonly { phone?: string | null; deadReason?: string | null; notes?: string | null; station?: string | null; classification?: string | null }[] | undefined, key: string, samePhone: (phone: string, key: string) => boolean): 'lead_dnc' | 'dead_manual_review_unread' | null {
+  for (const lead of leads ?? []) {
+    if (!lead.phone || !samePhone(lead.phone, key)) continue
+    const dead = labelKey(lead.station) === 'dead' || labelKey(lead.classification) === 'dead' || Boolean(String(lead.deadReason ?? '').trim())
+    if (!dead) continue
+    if (askOffText(lead.deadReason) || askOffText(lead.notes)) return 'lead_dnc'
+    return 'dead_manual_review_unread'
+  }
+  return null
+}
+
+function strictLane(lanes: readonly (string | null | undefined)[]): boolean {
+  const lane = laneClass(lanes)
+  return lane === 'probate' || lane === 'closed'
 }
 
 function familyKind(relationship: string | null | undefined, ownerType: string | null | undefined): string | null {
   const rel = labelKey(relationship)
   const owner = labelKey(ownerType)
+  if (rel === 'relative') return 'other_relative'
   if (rel && (SPECIFIC_RELATIVES as readonly string[]).includes(rel)) return rel
-  if ((rel === 'relative' || !rel) && isFamilyPossibleType(owner)) return owner
+  if (!rel && isFamilyPossibleType(owner)) return owner
   return null
-}
-
-function nameTokens(value: string | null | undefined): string[] {
-  return (labelKey(value) ?? '').replace(/[^a-z0-9]+/g, '_').split('_').filter(Boolean)
-}
-
-function showsMemberOrOfficer(phone: GatePhone): boolean {
-  if (showsRegisteredAgent(phone)) return false
-  return [...tokens(phone.relationship), ...tokens(phone.entityRole), ...tokens(phone.contactName)]
-    .some((token) => token === 'member' || token === 'officer')
 }
 
 export function counselRelationshipBlock(input: {
@@ -195,9 +264,8 @@ export function counselRelationshipBlock(input: {
 }): 'associate' | 'associate_non_family' | 'relative_not_allowed' | 'relationship_unknown' | 'deceased_owner_line' | null {
   const prospectFor = (id: string | null | undefined) => input.prospects.find((item) => item.id === id)
   const rows = input.phones.filter((phone) => input.samePhone(phone.phone, input.key) && (!input.prospectId || phone.prospectId === input.prospectId))
-  const ownerOnThisNumber = !input.prospectId && input.phones.some((phone) => input.samePhone(phone.phone, input.key) && ON_TITLE.has(labelKey(phone.relationship) ?? ''))
   const lanes = input.lanes
-  let unknown = false
+  const found: string[] = []
   for (const phone of rows) {
     const rel = labelKey(phone.relationship)
     const prospect = prospectFor(phone.prospectId)
@@ -205,15 +273,19 @@ export function counselRelationshipBlock(input: {
       relationship: phone.relationship, contactName: phone.contactName, ownerName: prospect?.ownerName,
       ownerLast: prospect?.ownerLast, ownerType: prospect?.ownerType, skipTraced: prospect?.skipTraced, verifiedSource: phone.verifiedSource,
     })
-    if (deceasedOwnerLine(phone.relationship, prospect?.ownerType)) return 'deceased_owner_line'
+    if (deceasedOwnerLine({
+      relationship: phone.relationship, contactName: phone.contactName, ownerName: prospect?.ownerName,
+      ownerFirst: prospect?.ownerFirst, ownerLast: prospect?.ownerLast, deceased: prospect?.deceased,
+    })) { found.push('deceased_owner_line'); continue }
     if (rel === 'associate') {
-      if (ownerOnThisNumber) continue
-      return 'associate'
+      const ownerHere = Boolean(input.prospectId) && rows.some((row) => row.prospectId === input.prospectId && ON_TITLE.has(labelKey(row.relationship) ?? ''))
+      if (!ownerHere) found.push('associate')
+      continue
     }
     const bucket = counselRelationshipBucket(phone.relationship, prospect?.ownerType)
     if (bucket === 'owner') continue
     if (bucket === 'associate_non_family') {
-      if (showsRegisteredAgent(phone) || !release()) return 'associate_non_family'
+      if (showsRegisteredAgent(phone) || !release()) found.push('associate_non_family')
       continue
     }
     if (rel === 'entity_contact' || showsRegisteredAgent(phone)) {
@@ -221,31 +293,19 @@ export function counselRelationshipBlock(input: {
         relationship: phone.relationship, contactName: phone.contactName, entityRole: phone.entityRole,
         ownerName: prospect?.ownerName, verifiedSource: phone.verifiedSource, skipTraced: prospect?.skipTraced, lanes,
       })
-      if (!released) unknown = true
+      if (!released) found.push('relationship_unknown')
       continue
     }
-    if (bucket === 'relative' && laneClass(lanes) === 'probate') {
+    if (bucket === 'relative' && strictLane(lanes)) {
       const kind = familyKind(phone.relationship, prospect?.ownerType)
-      if (kind === 'parent' || kind === 'in_law' || kind === 'other_relative') return 'relative_not_allowed'
+      if (kind === 'parent' || kind === 'in_law' || kind === 'other_relative') found.push('relative_not_allowed')
       continue
     }
     if (bucket !== 'relationship_unknown') continue
-    if (rel === 'relative') {
-      if (release()) continue
-      unknown = true
-      continue
-    }
-    if (rel !== null && rel !== 'unknown') { unknown = true; continue }
-    const last = labelKey(prospect?.ownerLast)
-    const first = nameTokens(prospect?.ownerName).find((token) => token !== last)
-    const contact = nameTokens(phone.contactName)
-    const source = labelKey(phone.verifiedSource) ?? ''
-    const skip = prospect?.skipTraced === true || source.includes('skip')
-    const skipMatch = skip && Boolean(last && first && contact.includes(first) && contact.includes(last))
-    if (skipMatch || showsMemberOrOfficer(phone) || release()) continue
-    unknown = true
+    if (rel !== null && rel !== 'unknown') { found.push('relationship_unknown'); continue }
+    if (!release()) found.push('relationship_unknown')
   }
-  return unknown ? 'relationship_unknown' : null
+  return worstBlockReason(found) as 'associate' | 'associate_non_family' | 'relative_not_allowed' | 'relationship_unknown' | 'deceased_owner_line' | null
 }
 
 export function counselRelativeOwnerDnc(input: {
@@ -254,6 +314,7 @@ export function counselRelativeOwnerDnc(input: {
   phones: readonly GatePhone[]
   prospects: readonly GateProspect[]
   optOuts?: readonly { phone: string; optedOut?: boolean | null }[]
+  leads?: readonly { id?: string; phone?: string | null; deadReason?: string | null; notes?: string | null }[]
   samePhone: (phone: string, key: string) => boolean
   propertyOf: (prospect: GateProspect | null | undefined) => string | null
 }): boolean {
@@ -274,7 +335,8 @@ export function counselRelativeOwnerDnc(input: {
     if (phone.voiceHold === true) return true
     if ((input.optOuts ?? []).some((row) => row.optedOut !== false && input.samePhone(row.phone, phone.phone))) return true
   }
-  return false
+  const leadIds = new Set(targets.map((phone) => prospectFor(phone.prospectId)?.leadId).filter((id): id is string => Boolean(id)))
+  return (input.leads ?? []).some((lead) => Boolean(lead.id && leadIds.has(lead.id) && (askOffText(lead.deadReason) || askOffText(lead.notes))))
 }
 
 interface CampaignPhone extends GatePhone {

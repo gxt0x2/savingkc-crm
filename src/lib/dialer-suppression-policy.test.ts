@@ -207,6 +207,7 @@ describe('associate type and property owner fan-out', () => {
     const relative = '+18165550220'
     const owner = '+18165550221'
     expect(exportBlockReason(relative, {
+      lane: 'tax_delinquent',
       prospects: [
         { id: 'here', parcelId: 'AB 12', county: 'jackson', street: '1 Main', zip: '64111-1234' },
         { id: 'elsewhere', parcelId: 'ZZ', county: 'clay', street: '2 Side', zip: '64116' },
@@ -227,6 +228,7 @@ describe('associate type and property owner fan-out', () => {
       propertyKey({ id: 'b', county: 'jackson', street: '10 oak st', zip: null }),
     )
     expect(exportBlockReason(relative, {
+      lane: 'tax_delinquent',
       prospects: [
         { id: 'a', county: 'Jackson', street: '10 Oak St.', zip: '' },
         { id: 'b', county: 'jackson', street: '10 oak st', zip: null },
@@ -243,6 +245,7 @@ describe('associate type and property owner fan-out', () => {
     const owner = '+18165550241'
     const prospects = [{ id: 'a', parcelId: 'Z1', county: 'platte', street: '4 Pine', zip: '64152' }]
     expect(exportBlockReason(relative, {
+      lane: 'tax_delinquent',
       prospects,
       phones: [
         { phone: owner, prospectId: 'a', relationship: 'subject', lastDisposition: 'no_answer' },

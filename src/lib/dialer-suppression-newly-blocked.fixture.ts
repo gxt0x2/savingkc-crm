@@ -134,6 +134,7 @@ export function buildNewlyBlockedFixtures(): NewlyBlockedFixture[] {
     const street = `${index} Oak St.`
     const ownerLast = `Rivera${index}`
     fixtures.push(row('household_fanout', 'household_fanout', phone, {
+      lane: 'tax_delinquent',
       prospects: [
         { id: `house-a-${index}`, county: 'Jackson', street, ownerLast, ownerType: 'spouse' },
         { id: `house-b-${index}`, county: 'jackson', street: `${index} oak st`, ownerLast, ownerType: 'spouse' },

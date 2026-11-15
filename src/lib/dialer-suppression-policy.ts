@@ -1,4 +1,4 @@
-import { campaignMemberOffered as offerCampaignMember, counselRelationshipBlock, counselRelationshipBucket, counselRelativeOwnerDnc, sourceListLanes } from '@/lib/dialer-relationship-gate'
+import { campaignMemberOffered as offerCampaignMember, counselDeadLead, counselRelationshipBlock, counselRelationshipBucket, counselRelativeOwnerDnc, sourceListLanes } from '@/lib/dialer-relationship-gate'
 
 /** Label sets for the dialer export. dataskip_dnc is an allow. Anything else non-blank is unmapped. */
 
@@ -110,6 +110,8 @@ export interface SuppressionProspect {
   ownerLast?: string | null
   ownerName?: string | null
   ownerType?: string | null
+  ownerFirst?: string | null
+  deceased?: boolean | null
   parcelId?: string | null
   zip?: string | null
   skipTraced?: boolean | null
@@ -120,6 +122,9 @@ export interface SuppressionLead {
   phone?: string | null
   callResult?: string | null
   deadReason?: string | null
+  notes?: string | null
+  station?: string | null
+  classification?: string | null
 }
 
 export interface SuppressionMojoEvent {
@@ -456,6 +461,7 @@ function relativeBlockedByOwnerDnc(world: SuppressionWorld, key: string, prospec
     optOuts: world.optOuts,
     samePhone: (phone, phoneKeyValue) => phoneKey(phone) === phoneKeyValue,
     propertyOf: propertyKey,
+    leads: world.leads,
   })
 }
 
@@ -615,6 +621,8 @@ export function exportBlockReason(
     if (row.smsConsent === 'opted_out') return 'contact_opt_out'
     if (row.deliverability === 'blocked') return 'contact_blocked'
   }
+  const deadHold = counselDeadLead(world.leads, key, (phone, phoneKeyValue) => phoneKey(phone) === phoneKeyValue)
+  if (deadHold === 'lead_dnc') return 'lead_dnc'
   const leadReason = firstReason(
     (world.leads ?? []).filter((lead) => sameKey(lead.phone ?? '', key)).flatMap((lead) => [
       reasonFromLeadClass(blockingClass('lead_call_result', lead.callResult) ?? ''),
@@ -623,6 +631,7 @@ export function exportBlockReason(
     LEAD_REASON_ORDER,
   )
   if (leadReason) return leadReason
+  if (deadHold) return deadHold
   const mojoReason = firstReason(
     (world.mojoEvents ?? []).filter((event) => sameKey(event.phone, key)).flatMap((event) => {
       const raw = reasonFromMojoClass(blockingClass('mojo_disposition_raw', event.dispositionRaw) ?? '')

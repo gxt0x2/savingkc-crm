@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ownerLineRelease } from '@/lib/dialer-owner-line-release'
-import { laneClass, sourceListLanes } from '@/lib/dialer-relationship-gate'
+import { laneClass, sourceListLanes, worstBlockReason } from '@/lib/dialer-relationship-gate'
 import { campaignMemberOffered, exportBlockReason, relationshipBucket } from '@/lib/dialer-suppression-policy'
 
 const phone = '+18165550901'
@@ -91,21 +91,15 @@ describe('counsel relationship gate', () => {
 
   it('does not accept individual as a family owner type', () => {
     expect(relationshipBucket(null, 'individual')).toBe('relationship_unknown')
-    expect(relationshipBucket('relative', 'Individual')).toBe('relationship_unknown')
-    expect(reason({ relationship: 'relative', ownerType: 'individual' })).toBe('relationship_unknown')
+    expect(relationshipBucket('relative', 'unknown')).toBe('relative')
   })
 
-  it('blocks a generic relative with no family possible type', () => {
-    expect(relationshipBucket('relative', null)).toBe('relationship_unknown')
-    expect(reason({ relationship: 'relative', ownerType: null, contactName: 'Ann Other', ownerName: 'John Smith', ownerLast: 'Smith' })).toBe('relationship_unknown')
-  })
-
-  it('treats a generic relative as family when a family possible type is present', () => {
-    for (const ownerType of ['parent', 'in_law', 'spouse', 'child', 'sibling', 'other_relative']) {
-      expect(relationshipBucket('relative', ownerType)).toBe('relative')
-    }
-    expect(reason({ relationship: 'relative', ownerType: 'spouse', lane: 'tax_delinquent' })).toBeNull()
-    expect(reason({ relationship: 'relative', ownerType: 'parent', lane: 'probate_estate' })).toBe('relative_not_allowed')
+  it('treats a generic relative as other relative on tax and blocks it on probate', () => {
+    expect(relationshipBucket('relative', 'unknown')).toBe('relative')
+    expect(relationshipBucket('relative', null)).toBe('relative')
+    expect(reason({ relationship: 'relative', ownerType: 'unknown', lane: 'tax_delinquent', title: 'Tax · Deceased' })).toBeNull()
+    expect(reason({ relationship: 'relative', ownerType: null, lane: 'probate_estate' })).toBe('relative_not_allowed')
+    expect(reason({ relationship: 'relative', ownerType: null, lane: 'inherited_deed' })).toBe('relative_not_allowed')
   })
 
   it('keeps a generic relative whose contact name matches the owner under the owner-line release', () => {
@@ -118,12 +112,26 @@ describe('counsel relationship gate', () => {
       skipTraced: false,
     })).toBe(true)
     expect(reason({
-      relationship: 'relative',
-      ownerType: null,
-      ownerName: 'John Smith',
-      ownerLast: 'Smith',
-      contactName: 'John Smith',
+      relationship: 'relative', ownerType: null, lane: 'tax_delinquent',
+      ownerName: 'John Smith', ownerLast: 'Smith', contactName: 'John Smith',
     })).toBeNull()
+    expect(reason({
+      relationship: 'relative', ownerType: null, lane: 'probate_estate',
+      ownerName: 'John Smith', ownerLast: 'Smith', contactName: 'John Smith',
+    })).toBe('relative_not_allowed')
+  })
+
+  it('spreads an ask-off dead lead to every relative and holds other dead leads', () => {
+    expect(exportBlockReason(phone, {
+      lane: 'tax_delinquent',
+      prospects: [{ id: 'home', leadId: 'lead-ask', ownerType: 'person' }],
+      phones: [{ phone, prospectId: 'home', relationship: 'child' }],
+      leads: [{ id: 'lead-ask', phone: ownerPhone, deadReason: 'please stop calling' }],
+    }, 'home')).toBe('property_owner_dnc_fanout')
+    expect(exportBlockReason(ownerPhone, {
+      lane: 'tax_delinquent',
+      leads: [{ id: 'lead-other', phone: ownerPhone, station: 'dead', deadReason: 'not_selling' }],
+    })).toBe('dead_manual_review_unread')
   })
 
   it('blocks an owner DNC contact from every relative phone', () => {
@@ -230,8 +238,71 @@ describe('counsel relationship gate', () => {
     expect(reason({ relationship: 'parent', ownerType: 'person', lane: 'tax_delinquent', title: 'Tax · Deceased' })).toBeNull()
   })
 
-  it('blocks the decedent own owner phone on a tax lane', () => {
-    expect(reason({ relationship: 'deceased_owner_line', ownerType: 'person', lane: 'tax_delinquent', title: 'Tax · Deceased' })).toBe('deceased_owner_line')
+  it('holds decedent contact 8273 and not unrelated owners on 0ffc6445 or e783be2e', () => {
+    expect(exportBlockReason('+18165558273', {
+      lane: 'tax_delinquent', title: 'Tax · Deceased',
+      prospects: [{ id: '8273', ownerName: 'Ada Owner', ownerFirst: 'Ada', ownerLast: 'Owner', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558273', prospectId: '8273', relationship: 'owner', contactName: 'Ada Owner' }],
+    }, '8273')).toBe('deceased_owner_line')
+    expect(exportBlockReason('+18165558273', {
+      lane: 'tax_delinquent',
+      prospects: [{ id: '8273', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558273', prospectId: '8273', relationship: 'decedent', contactName: 'Someone Else' }],
+    }, '8273')).toBe('deceased_owner_line')
+    for (const id of ['0ffc6445', 'e783be2e']) {
+      expect(exportBlockReason('+18165558001', {
+        lane: 'tax_delinquent',
+        prospects: [{ id, ownerName: 'Record Owner', ownerFirst: 'Record', ownerLast: 'Owner', deceased: true }],
+        phones: [{ phone: '+18165558001', prospectId: id, relationship: 'owner', contactName: 'Unrelated Person' }],
+      }, id)).toBeNull()
+    }
+  })
+
+  it('fails closed when the lane is unknown and ignores a code-violation link', () => {
+    expect(laneClass([])).toBe('closed')
+    expect(sourceListLanes({ linkedLanes: ['code_violation'], title: 'Tax · Deceased' })).toEqual([])
+    expect(reason({ relationship: 'parent', ownerType: 'person' })).toBe('relative_not_allowed')
+    expect(reason({ relationship: 'parent', ownerType: 'person', lane: 'tax_delinquent' })).toBeNull()
+  })
+
+  it('does not release ABC Holdings Member or an agent-service contact', () => {
+    expect(reason({
+      relationship: 'entity_contact', contactName: 'ABC Holdings Member', ownerName: 'ABC Holdings LLC',
+      verifiedSource: 'missouri_sos_filing', lane: 'tax_delinquent',
+    })).toBe('relationship_unknown')
+    expect(reason({
+      relationship: 'entity_contact', contactName: 'CT Corporation', ownerName: 'Oak LLC',
+      verifiedSource: 'missouri_sos_filing', lane: 'tax_delinquent',
+    })).toBe('relationship_unknown')
+  })
+
+  it('releases an unknown row only through the owner-line release', () => {
+    expect(reason({
+      relationship: 'unknown', contactName: 'Officer', ownerName: 'Ada Owner', ownerLast: 'Owner', ownerType: 'person', lane: 'tax_delinquent',
+    })).toBe('relationship_unknown')
+    expect(reason({
+      relationship: 'unknown', contactName: 'Ada Owner', ownerName: 'Ada Owner', ownerLast: 'Owner', ownerType: 'person', lane: 'tax_delinquent',
+    })).toBeNull()
+  })
+
+  it('keeps the most restrictive reason when one row is clear', () => {
+    expect(worstBlockReason([null, 'relative_not_allowed', 'relationship_unknown'])).toBe('relationship_unknown')
+    expect(worstBlockReason([null, null])).toBeNull()
+  })
+
+  it('lifts an associate block only when the prospect is set', () => {
+    const shared = '+18165550911'
+    const world = {
+      lane: 'tax_delinquent' as const,
+      prospects: [{ id: 'home', ownerType: 'person' }, { id: 'other', ownerType: 'person' }],
+      phones: [
+        { phone: shared, prospectId: 'home', relationship: 'owner' },
+        { phone: shared, prospectId: 'other', relationship: 'associate' },
+      ],
+    }
+    expect(exportBlockReason(shared, world, 'home')).toBeNull()
+    expect(exportBlockReason(shared, world, 'other')).toBe('associate')
+    expect(exportBlockReason(shared, world)).toBe('associate')
   })
 
   it('uses the most restrictive source-list lane when several match', () => {
