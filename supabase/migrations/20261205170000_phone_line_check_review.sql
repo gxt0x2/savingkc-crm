@@ -1055,3 +1055,8 @@ REVOKE ALL ON TABLE public.source_list_dialer_phone_review, public.source_list_d
   FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON TABLE public.source_list_dialer_phone_review, public.source_list_dialer_export, public.source_list_dialer_suppressed
   TO service_role;
+
+-- #812 is applied after #817 on Atlas. Recreating the review view above would
+-- drop the market gate, the future-day hold, and the mls_expired branch.
+-- Rebuild them when those functions already exist.
+DO $$ BEGIN IF to_regprocedure('public.rebuild_market_review_v1()') IS NOT NULL THEN PERFORM public.rebuild_market_review_v1(); PERFORM public.rebuild_market_export_views_v1(); END IF; END $$;
