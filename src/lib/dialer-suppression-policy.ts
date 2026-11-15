@@ -1,5 +1,4 @@
-import { ownerLineRelease } from '@/lib/dialer-owner-line-release'
-import { deceasedOwnerLine, entityContactReleased, isFamilyPossibleType, laneClass, sourceListLanes } from '@/lib/dialer-relationship-gate'
+import { campaignMemberOffered as offerCampaignMember, counselRelationshipBlock, counselRelationshipBucket, counselRelativeOwnerDnc, sourceListLanes } from '@/lib/dialer-relationship-gate'
 
 /** Label sets for the dialer export. dataskip_dnc is an allow. Anything else non-blank is unmapped. */
 
@@ -73,13 +72,6 @@ export const PROPERTY_OWNER_DNC = [...PROSPECT_PHONE_DNC, ...PROSPECT_PERSON_DNC
 export const OWNER_RELATIONSHIPS = ['owner', 'subject', 'co_owner'] as const
 export const RELATIVE_RELATIONSHIPS = ['relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'] as const
 export const RELATIVE_OWNER_TYPES = ['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative'] as const
-const SPECIFIC_RELATIVE_RELATIONSHIPS = ['spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'] as const
-const RECOGNISED_RELATIONSHIPS = [
-  'owner', 'subject', 'co_owner', 'personal_representative', 'pr', 'personal_rep', 'on_title', 'on_title_owner',
-  'relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative',
-  'associate', 'entity_contact', 'unknown', 'deceased_owner_line',
-  'neighbor', 'coworker', 'past_neighbor', 'friend', 'landlord', 'tenant',
-] as const
 export const ASSOCIATE_OWNER_TYPES = ['neighbor', 'coworker', 'past_neighbor', 'friend', 'landlord', 'tenant'] as const
 export const UNKNOWN_RELATIONSHIPS = ['unknown', 'entity_contact'] as const
 
@@ -209,22 +201,7 @@ export function relationshipBucket(
   relationship: string | null | undefined,
   ownerType: string | null | undefined,
 ): RelationshipBucket {
-  const rel = labelKey(relationship)
-  const owner = labelKey(ownerType)
-  if (rel === 'associate' || (owner !== null && ASSOCIATE_OWNER_TYPES.includes(owner as typeof ASSOCIATE_OWNER_TYPES[number]))) {
-    return 'associate_non_family'
-  }
-  if (rel === 'personal_representative' || rel === 'pr' || rel === 'personal_rep' || rel === 'on_title' || rel === 'on_title_owner') return 'owner'
-  if (rel !== null && OWNER_RELATIONSHIPS.includes(rel as typeof OWNER_RELATIONSHIPS[number])) return 'owner'
-  if (rel !== null && UNKNOWN_RELATIONSHIPS.includes(rel as typeof UNKNOWN_RELATIONSHIPS[number])) return 'relationship_unknown'
-  if (owner === 'unknown' || deceasedOwnerLine(rel, owner)) return 'relationship_unknown'
-  if (rel !== null && !RECOGNISED_RELATIONSHIPS.includes(rel as typeof RECOGNISED_RELATIONSHIPS[number])) return 'relationship_unknown'
-  if (rel === 'relative') return isFamilyPossibleType(owner) ? 'relative' : 'relationship_unknown'
-  if (
-    (rel !== null && SPECIFIC_RELATIVE_RELATIONSHIPS.includes(rel as typeof SPECIFIC_RELATIVE_RELATIONSHIPS[number]))
-    || (owner !== null && RELATIVE_OWNER_TYPES.includes(owner as typeof RELATIVE_OWNER_TYPES[number]))
-  ) return 'relative'
-  return 'relationship_unknown'
+  return counselRelationshipBucket(relationship, ownerType)
 }
 
 export function propertyKey(prospect: SuppressionProspect | null | undefined): string | null {
@@ -459,150 +436,27 @@ function relationshipForPhone(world: SuppressionWorld, phone: SuppressionPhone):
   return relationshipBucket(phone.relationship, prospectFor(world, phone.prospectId)?.ownerType)
 }
 
-function candidatePhones(world: SuppressionWorld, key: string): SuppressionPhone[] {
-  return phonesOf(world).filter((phone) => sameKey(phone.phone, key))
-}
-
-function roleTokens(value: string | null | undefined): string[] {
-  return (labelKey(value) ?? '').split('_').filter(Boolean)
-}
-
-function showsRegisteredAgent(phone: SuppressionPhone): boolean {
-  return roleTokens(phone.relationship).includes('registered') && roleTokens(`${phone.relationship} ${phone.entityRole ?? ''} ${phone.contactName ?? ''}`).includes('agent')
-    || roleTokens(phone.entityRole).join('_') === 'registered_agent'
-    || roleTokens(phone.contactName).join('_').includes('registered_agent')
-    || (labelKey(phone.relationship) ?? '') === 'registered_agent'
-    || (labelKey(phone.entityRole) ?? '') === 'registered_agent'
-    || (labelKey(phone.contactName) ?? '').includes('registered_agent')
-}
-
-function showsMemberOrOfficer(phone: SuppressionPhone): boolean {
-  if (showsRegisteredAgent(phone)) return false
-  const tokens = [
-    ...roleTokens(phone.relationship),
-    ...roleTokens(phone.entityRole),
-    ...roleTokens(phone.contactName),
-  ]
-  return tokens.includes('member') || tokens.includes('officer')
-}
-
-function nameTokens(value: string | null | undefined): string[] {
-  return (labelKey(value) ?? '').replace(/[^a-z0-9]+/g, '_').split('_').filter(Boolean)
-}
-
-function ownerSkipTraceRelease(world: SuppressionWorld, phone: SuppressionPhone): boolean {
-  const prospect = prospectFor(world, phone.prospectId)
-  const source = labelKey(phone.verifiedSource) ?? ''
-  const skipTraced = prospect?.skipTraced === true || source.includes('skip')
-  if (!skipTraced) return false
-  if (relationshipForPhone(world, phone) === 'owner') return true
-  const contact = nameTokens(phone.contactName)
-  const last = labelKey(prospect?.ownerLast)
-  const first = nameTokens(prospect?.ownerName).find((token) => token !== last)
-  if (!last || !first || contact.length === 0) return false
-  return contact.includes(first) && contact.includes(last)
-}
-
-function ownerLineMatches(world: SuppressionWorld, phone: SuppressionPhone): boolean {
-  const prospect = prospectFor(world, phone.prospectId)
-  return ownerLineRelease({
-    relationship: phone.relationship, contactName: phone.contactName, ownerName: prospect?.ownerName,
-    ownerLast: prospect?.ownerLast, ownerType: prospect?.ownerType, skipTraced: prospect?.skipTraced, verifiedSource: phone.verifiedSource,
+function relationshipBlock(world: SuppressionWorld, key: string, prospectId?: string | null) {
+  return counselRelationshipBlock({
+    key,
+    prospectId,
+    lanes: sourceListLanes({ lane: world.lane, source: world.source, lanes: world.lanes, title: world.listTitle }),
+    phones: phonesOf(world),
+    prospects: world.prospects ?? [],
+    samePhone: (phone, phoneKeyValue) => phoneKey(phone) === phoneKeyValue,
   })
 }
 
-function listLanes(world: SuppressionWorld): string[] {
-  return sourceListLanes({ lane: world.lane, source: world.source, lanes: world.lanes, title: world.listTitle })
-}
-
-function familyKind(relationship: string | null | undefined, ownerType: string | null | undefined): string | null {
-  const rel = labelKey(relationship)
-  const owner = labelKey(ownerType)
-  if (rel && SPECIFIC_RELATIVE_RELATIONSHIPS.includes(rel as typeof SPECIFIC_RELATIVE_RELATIONSHIPS[number])) return rel
-  if (rel === 'relative' && isFamilyPossibleType(owner)) return owner
-  if (!rel && isFamilyPossibleType(owner)) return owner
-  return null
-}
-
-function nameReleaseAllowed(relationship: string | null | undefined): boolean {
-  const rel = labelKey(relationship)
-  return rel === null || rel === 'unknown' || rel === 'relative'
-}
-
-function relationshipBlock(world: SuppressionWorld, key: string, prospectId?: string | null): 'associate' | 'associate_non_family' | 'relative_not_allowed' | 'relationship_unknown' | 'deceased_owner_line' | null {
-  const rows = candidatePhones(world, key).filter((phone) => !prospectId || phone.prospectId === prospectId)
-  const ownerOnThisNumber = phonesOf(world).some((phone) => sameKey(phone.phone, key) && (
-    labelKey(phone.relationship) === 'owner' || labelKey(phone.relationship) === 'subject' || labelKey(phone.relationship) === 'co_owner'
-  ))
-  const lanes = listLanes(world)
-  let unknown = false
-  for (const phone of rows) {
-    const rel = labelKey(phone.relationship)
-    const prospect = prospectFor(world, phone.prospectId)
-    if (deceasedOwnerLine(phone.relationship, prospect?.ownerType)) return 'deceased_owner_line'
-    if (rel === 'associate') {
-      if (!prospectId && ownerOnThisNumber) continue
-      return 'associate'
-    }
-    const bucket = relationshipForPhone(world, phone)
-    if (bucket === 'owner') continue
-    if (bucket === 'associate_non_family') {
-      if (showsRegisteredAgent(phone) || !ownerLineMatches(world, phone)) return 'associate_non_family'
-      continue
-    }
-    if (rel === 'entity_contact' || showsRegisteredAgent(phone)) {
-      const released = rel === 'entity_contact' && entityContactReleased({
-        relationship: phone.relationship,
-        contactName: phone.contactName,
-        entityRole: phone.entityRole,
-        ownerName: prospect?.ownerName,
-        verifiedSource: phone.verifiedSource,
-        skipTraced: prospect?.skipTraced,
-        lanes,
-      })
-      if (!released) unknown = true
-      continue
-    }
-    if (bucket === 'relative' && laneClass(lanes) === 'probate') {
-      const kind = familyKind(phone.relationship, prospect?.ownerType)
-      if (kind === 'parent' || kind === 'in_law' || kind === 'other_relative') return 'relative_not_allowed'
-      continue
-    }
-    if (bucket !== 'relationship_unknown') continue
-    if (rel === 'relative') {
-      if (ownerLineMatches(world, phone)) continue
-      unknown = true
-      continue
-    }
-    if (!nameReleaseAllowed(phone.relationship)) { unknown = true; continue }
-    if (ownerSkipTraceRelease(world, phone) || showsMemberOrOfficer(phone) || ownerLineMatches(world, phone)) continue
-    unknown = true
-  }
-  return unknown ? 'relationship_unknown' : null
-}
-
 function relativeBlockedByOwnerDnc(world: SuppressionWorld, key: string, prospectId?: string | null): boolean {
-  const targets = candidatePhones(world, key).filter((phone) => !prospectId || phone.prospectId === prospectId)
-  if (!targets.some((phone) => relationshipForPhone(world, phone) === 'relative')) return false
-  const prospectIds = new Set(targets.map((phone) => phone.prospectId).filter((id): id is string => Boolean(id)))
-  const properties = new Set(
-    [...prospectIds].map((id) => propertyKey(prospectFor(world, id))).filter((value): value is string => Boolean(value)),
-  )
-  for (const phone of phonesOf(world)) {
-    if (sameKey(phone.phone, key)) continue
-    const prospect = prospectFor(world, phone.prospectId)
-    const ownerRel = labelKey(phone.relationship)
-    if (ownerRel !== 'owner' && ownerRel !== 'subject' && ownerRel !== 'co_owner' && relationshipForPhone(world, phone) !== 'owner') continue
-    const samePerson = Boolean(phone.prospectId && prospectIds.has(phone.prospectId))
-    const property = propertyKey(prospect)
-    const sameProperty = Boolean(property && properties.has(property))
-    if (!samePerson && !sameProperty) continue
-    const disposition = labelKey(phone.lastDisposition)
-    if (disposition === 'dnc' || disposition === 'do_not_call' || disposition === 'dnc_number' || disposition === 'dnc_contact' || disposition === 'take_me_off') return true
-    if (phone.voiceHold === true) return true
-    if ((world.optOuts ?? []).some((row) => row.optedOut !== false && sameKey(row.phone, phone.phone))) return true
-  }
-  return false
+  return counselRelativeOwnerDnc({
+    key,
+    prospectId,
+    phones: phonesOf(world),
+    prospects: world.prospects ?? [],
+    optOuts: world.optOuts,
+    samePhone: (phone, phoneKeyValue) => phoneKey(phone) === phoneKeyValue,
+    propertyOf: propertyKey,
+  })
 }
 
 function ownerPhoneHasPropertyDnc(world: SuppressionWorld, ownerKey: string): boolean {
@@ -791,49 +645,6 @@ export function exportBlockReason(
   return serviceAreaReason(world)
 }
 
-/** A campaign member is offered only when a phone survives the same block check. This does not write the member. */
-export function campaignMemberOffered(input: {
-  status: string
-  lane?: string | null
-  source?: string | null
-  lanes?: readonly (string | null)[]
-  title?: string | null
-  phones: readonly {
-    phone: string
-    relationship?: string | null
-    ownerType?: string | null
-    contactName?: string | null
-    ownerName?: string | null
-    ownerLast?: string | null
-    skipTraced?: boolean | null
-    verifiedSource?: string | null
-    entityRole?: string | null
-    lastDisposition?: string | null
-    voiceHold?: boolean | null
-  }[]
-}): boolean {
-  if (input.status !== 'active') return false
-  return input.phones.some((phone) => exportBlockReason(phone.phone, {
-    lane: input.lane,
-    source: input.source,
-    lanes: input.lanes,
-    listTitle: input.title,
-    prospects: [{
-      id: 'member',
-      ownerType: phone.ownerType,
-      ownerName: phone.ownerName,
-      ownerLast: phone.ownerLast,
-      skipTraced: phone.skipTraced,
-    }],
-    phones: [{
-      phone: phone.phone,
-      prospectId: 'member',
-      relationship: phone.relationship,
-      contactName: phone.contactName,
-      verifiedSource: phone.verifiedSource,
-      entityRole: phone.entityRole,
-      lastDisposition: phone.lastDisposition,
-      voiceHold: phone.voiceHold,
-    }],
-  }, 'member') === null)
+export function campaignMemberOffered(input: Parameters<typeof offerCampaignMember>[0]): boolean {
+  return offerCampaignMember(input, exportBlockReason)
 }
