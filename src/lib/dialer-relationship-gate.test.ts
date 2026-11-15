@@ -240,7 +240,7 @@ describe('counsel relationship gate', () => {
 
   it('holds decedent contact 8273 and not unrelated owners on 0ffc6445 or e783be2e', () => {
     expect(exportBlockReason('+18165558273', {
-      lane: 'tax_delinquent', title: 'Tax · Deceased',
+      lane: 'tax_delinquent', listTitle: 'Tax · Deceased',
       prospects: [{ id: '8273', ownerName: 'Ada Owner', ownerFirst: 'Ada', ownerLast: 'Owner', deceased: true, ownerType: 'person' }],
       phones: [{ phone: '+18165558273', prospectId: '8273', relationship: 'owner', contactName: 'Ada Owner' }],
     }, '8273')).toBe('deceased_owner_line')
