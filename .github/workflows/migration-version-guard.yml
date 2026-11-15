@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: '22'
       - name: Unit tests
-        run: node --test scripts/check-migration-versions.test.mjs scripts/ci/pr-guard.test.mjs
+        run: node --test scripts/check-migration-versions.test.mjs scripts/ci/pr-guard.test.mjs scripts/nightly-agent/run.test.mjs
       - name: Check migration versions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
