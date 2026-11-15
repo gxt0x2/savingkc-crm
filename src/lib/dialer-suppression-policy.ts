@@ -1,3 +1,5 @@
+import { ownerLineRelease } from '@/lib/dialer-owner-line-release'
+
 /** Label sets for the dialer export. dataskip_dnc is an allow. Anything else non-blank is unmapped. */
 
 export const PROSPECT_PHONE_DNC = ['dnc', 'do_not_call', 'dnc_number'] as const
@@ -485,15 +487,27 @@ function ownerSkipTraceRelease(world: SuppressionWorld, phone: SuppressionPhone)
   return contact.includes(first) && contact.includes(last)
 }
 
+function ownerLineMatches(world: SuppressionWorld, phone: SuppressionPhone): boolean {
+  const prospect = prospectFor(world, phone.prospectId)
+  return ownerLineRelease({
+    relationship: phone.relationship, contactName: phone.contactName, ownerName: prospect?.ownerName,
+    ownerLast: prospect?.ownerLast, skipTraced: prospect?.skipTraced, verifiedSource: phone.verifiedSource,
+  })
+}
+
 function relationshipBlock(world: SuppressionWorld, key: string, prospectId?: string | null): 'associate_non_family' | 'relationship_unknown' | null {
   const rows = candidatePhones(world, key).filter((phone) => !prospectId || phone.prospectId === prospectId)
   let unknown = false
   for (const phone of rows) {
     const bucket = relationshipForPhone(world, phone)
     if (bucket === 'owner') continue
-    if (bucket === 'associate_non_family') return 'associate_non_family'
+    if (bucket === 'associate_non_family') {
+      if (showsRegisteredAgent(phone) || !ownerLineMatches(world, phone)) return 'associate_non_family'
+      continue
+    }
     if (bucket !== 'relationship_unknown') continue
-    if (ownerSkipTraceRelease(world, phone) || showsMemberOrOfficer(phone)) continue
+    if (showsRegisteredAgent(phone)) { unknown = true; continue }
+    if (ownerSkipTraceRelease(world, phone) || showsMemberOrOfficer(phone) || ownerLineMatches(world, phone)) continue
     unknown = true
   }
   return unknown ? 'relationship_unknown' : null
