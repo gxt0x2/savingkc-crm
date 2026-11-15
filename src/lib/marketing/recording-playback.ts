@@ -105,6 +105,88 @@ export function twilioRecordingDownloadUrl(accountSid: string, recordingSid: str
   return `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Recordings/${sid}.mp3`
 }
 
+export type RecordingCopyRow = {
+  id: string
+  kind: string
+  recordedAt: string
+  leadId: string | null
+  recordingUrl: string | null
+  recordingSid: string | null
+  callSid?: string | null
+  storagePath: string | null
+}
+
+/** One identity per recording across attempts, calls, voicemails, notes, and Mojo. */
+export function recordingCopyKey(row: RecordingCopyRow): string | null {
+  const recording = canonicalTwilioSid(row.recordingSid)
+  if (recording?.startsWith('RE')) return recording
+  const call = canonicalTwilioSid(row.callSid)
+  if (call?.startsWith('CA')) return call
+  return mojoRecordingSourceUrl(row.recordingUrl)
+}
+
+const COPY_RANK: Record<string, number> = {
+  twilio_attempt: 0,
+  twilio_call: 1,
+  twilio_note: 2,
+  mojo_event: 3,
+  mojo_call: 4,
+}
+
+export function plannedRecordingPath(row: RecordingCopyRow): string | null {
+  const sid = twilioRecordingSid(row.recordingSid)
+  try {
+    if (sid && row.kind === 'twilio_attempt') return twilioStoragePath({ leadId: row.leadId, attemptId: row.id, recordingSid: sid })
+    if (sid && (row.kind === 'twilio_call' || row.kind === 'twilio_note')) return twilioCallStoragePath({ leadId: row.leadId, callId: row.id, recordingSid: sid })
+    if (row.kind === 'mojo_event') return mojoEventStoragePath(row.id)
+    if (row.kind === 'mojo_call') return mojoCallStoragePath(row.id)
+  } catch {
+    return null
+  }
+  return null
+}
+
+/**
+ * Download each recording once. If any row for that recording already has a
+ * path, siblings are stamped with it and nothing is fetched again.
+ */
+export function selectRecordingWork<T extends RecordingCopyRow>(rows: readonly T[]): {
+  downloads: T[]
+  stamps: Array<{ target: T; storagePath: string }>
+} {
+  const groups = new Map<string, T[]>()
+  for (const row of rows) {
+    const key = recordingCopyKey(row)
+    if (!key) continue
+    const group = groups.get(key) ?? []
+    group.push(row)
+    groups.set(key, group)
+  }
+  const downloads: T[] = []
+  const stamps: Array<{ target: T; storagePath: string }> = []
+  for (const group of groups.values()) {
+    const stored = group.find((row) => row.storagePath)
+    if (stored?.storagePath) {
+      for (const row of group) {
+        if (!row.storagePath) stamps.push({ target: row, storagePath: stored.storagePath })
+      }
+      continue
+    }
+    const winner = [...group].sort((left, right) =>
+      (COPY_RANK[left.kind] ?? 9) - (COPY_RANK[right.kind] ?? 9)
+      || left.recordedAt.localeCompare(right.recordedAt)
+      || left.id.localeCompare(right.id))[0]
+    if (!winner) continue
+    downloads.push(winner)
+    const storagePath = plannedRecordingPath(winner)
+    if (!storagePath) continue
+    for (const row of group) {
+      if (row !== winner) stamps.push({ target: row, storagePath })
+    }
+  }
+  return { downloads, stamps }
+}
+
 export function archivedActivityMetadata(
   existing: Record<string, unknown>,
   storagePath: string,

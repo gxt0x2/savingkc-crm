@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { archivedActivityMetadata, twilioRecordingDownloadUrl } from '@/lib/marketing/recording-playback'
+import { archivedActivityMetadata, selectRecordingWork, twilioRecordingDownloadUrl } from '@/lib/marketing/recording-playback'
 import {
   applyRecordingPage,
+  applyRecordingSelection,
   archiveOne,
   attachMojoCallRecordingUrls,
   oldestExpiringFirst,
@@ -219,6 +220,47 @@ describe('call recording archive', () => {
     const kept = omitTwilioCallsAlreadyAttempted([...uncovered, duplicate], [owned])
     expect(kept.map((item) => item.id)).toEqual([callOnly, callSidOnly])
     expect(planRecordingBackfill(kept).wouldArchive.twilioCalls).toBe(2)
+  })
+
+  it('downloads each SID once and selects nothing on the second run', async () => {
+    const shared = `RE${'b'.repeat(32)}`
+    const noLead = `RE${'c'.repeat(32)}`
+    const storedPath = `leads/${leadId}/twilio_${shared}.mp3`
+    const note = row({ kind: 'twilio_note', id: whisperOnly, recordedAt: '2026-04-20T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: shared, storagePath: storedPath })
+    const call = row({ kind: 'twilio_call', id: callOnly, recordedAt: '2026-04-21T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: `re${'B'.repeat(32)}`, storagePath: null })
+    const noLeadCall = row({ kind: 'twilio_call', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6', recordedAt: '2026-05-01T00:00:00.000Z', leadId: null, recordingUrl: null, recordingSid: noLead, storagePath: null })
+    const noLeadNote = row({ kind: 'twilio_note', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7', recordedAt: '2026-05-02T00:00:00.000Z', leadId: null, recordingUrl: null, recordingSid: noLead, storagePath: null })
+    const rows = [note, call, noLeadCall, noLeadNote]
+    const downloadTwilio = vi.fn(async () => new Uint8Array(1200))
+    const upload = vi.fn(async () => undefined)
+    const deps = {
+      downloadMojo: vi.fn(),
+      downloadTwilio,
+      upload,
+      markStored: vi.fn(async (target: RecordingArchiveTarget, path: string) => { target.storagePath = path }),
+      sleep: vi.fn(async () => undefined),
+      now: () => new Date('2026-11-15T00:00:00.000Z'),
+    }
+    const first = selectRecordingWork(rows)
+    const firstPlan = planRecordingBackfill(rows, { limit: 20 })
+    expect(first.downloads.map((item) => item.id)).toEqual([noLeadCall.id])
+    expect(first.stamps.map((item) => item.target.id).sort()).toEqual([call.id, noLeadNote.id].sort())
+    expect(first.stamps.find((item) => item.target.id === call.id)?.storagePath).toBe(storedPath)
+    await applyRecordingSelection(rows, deps, 0, firstPlan.page)
+    expect(downloadTwilio).toHaveBeenCalledTimes(1)
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(call.storagePath).toBe(storedPath)
+    expect(noLeadNote.storagePath).toBe(noLeadCall.storagePath)
+    expect(noLeadNote.storagePath).not.toContain(noLeadNote.id)
+    const second = selectRecordingWork(rows)
+    const secondPlan = planRecordingBackfill(rows, { limit: 20 })
+    expect(second.downloads).toEqual([])
+    expect(second.stamps).toEqual([])
+    expect(secondPlan.page).toEqual([])
+    expect(secondPlan.wouldArchive.total).toBe(0)
+    await applyRecordingSelection(rows, deps, 0, secondPlan.page)
+    expect(downloadTwilio).toHaveBeenCalledTimes(1)
+    expect(upload).toHaveBeenCalledTimes(1)
   })
 
   it('pages past 1000 unstored rows and refuses an oversized recording before reading it', async () => {

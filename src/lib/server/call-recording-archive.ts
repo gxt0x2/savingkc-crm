@@ -12,6 +12,7 @@ import {
   archivedActivityMetadata,
   canonicalTwilioSid,
   recordingSidFromCallMetadata,
+  selectRecordingWork,
   twilioCallSid,
   twilioCallStoragePath,
   twilioRecordingDownloadUrl,
@@ -202,25 +203,18 @@ export function planRecordingBackfill(
   rows: RecordingArchiveTarget[],
   input: { cursor?: string | null; limit?: number } = {},
 ): RecordingBackfillReport & { page: RecordingArchiveTarget[] } {
+  const work = selectRecordingWork(rows)
   const wouldArchive = emptyCounts()
   const alreadyStored = emptyCounts()
   let mojoCallsAwaitingUrl = 0
-  const ready: RecordingArchiveTarget[] = []
   for (const row of rows) {
-    if (row.storagePath) {
-      addCount(alreadyStored, row.kind)
-      continue
-    }
-    if (recordingSourceReady(row)) {
-      addCount(wouldArchive, row.kind)
-      ready.push(row)
-      continue
-    }
-    if (row.kind === 'mojo_call' && row.isRecorded) mojoCallsAwaitingUrl += 1
+    if (row.storagePath) addCount(alreadyStored, row.kind)
+    else if (row.kind === 'mojo_call' && row.isRecorded && !mojoRecordingSourceUrl(row.recordingUrl)) mojoCallsAwaitingUrl += 1
   }
+  for (const row of work.downloads) addCount(wouldArchive, row.kind)
   const cursor = input.cursor || ''
   const limit = clampLimit(input.limit ?? RECORDING_ARCHIVE_PAGE_LIMIT)
-  const page = oldestExpiringFirst(ready).filter((row) => recordingArchiveKey(row) > cursor).slice(0, limit)
+  const page = oldestExpiringFirst(work.downloads).filter((row) => recordingArchiveKey(row) > cursor).slice(0, limit)
   return {
     dryRun: true,
     wouldArchive,
@@ -332,8 +326,37 @@ export async function runStoredRecordingBackfill(input: {
   const plan = planRecordingBackfill(rows, { cursor: input.cursor, limit: input.limit })
   const { page, ...report } = plan
   if (!apply) return report
-  const applied = await applyRecordingPage(page, productionDeps(db), input.rateLimitMs ?? RECORDING_ARCHIVE_RATE_LIMIT_MS)
+  const applied = await applyRecordingSelection(rows, productionDeps(db), input.rateLimitMs ?? RECORDING_ARCHIVE_RATE_LIMIT_MS, page)
   return { ...report, ...applied, dryRun: false }
+}
+
+export async function applyRecordingSelection(
+  rows: RecordingArchiveTarget[],
+  deps: ArchiveDeps,
+  rateLimitMs: number,
+  page: RecordingArchiveTarget[],
+) {
+  const work = selectRecordingWork(rows)
+  const reused = new Set(rows.map((row) => row.storagePath).filter((path): path is string => Boolean(path)))
+  let stamped = 0
+  const copiedAt = deps.now().toISOString()
+  for (const stamp of work.stamps) {
+    if (stamp.target.storagePath || !reused.has(stamp.storagePath)) continue
+    await deps.markStored(stamp.target, stamp.storagePath, copiedAt)
+    stamp.target.storagePath = stamp.storagePath
+    stamped += 1
+  }
+  const archived = await applyRecordingPage(page, deps, rateLimitMs)
+  for (const target of page) {
+    if (!target.storagePath) continue
+    for (const stamp of work.stamps) {
+      if (stamp.target.storagePath || stamp.storagePath !== target.storagePath) continue
+      await deps.markStored(stamp.target, stamp.storagePath, copiedAt)
+      stamp.target.storagePath = stamp.storagePath
+      stamped += 1
+    }
+  }
+  return { ...archived, alreadyStoredThisRun: archived.alreadyStoredThisRun + stamped }
 }
 
 export async function archiveMojoRecordingsFromCron(input: {
@@ -525,15 +548,15 @@ async function loadArchiveRows(db: Db): Promise<RecordingArchiveTarget[]> {
   const activityColumns = 'id,lead_id,metadata,created_at,activity_type'
   const [events, calls, attempts, activities, notes] = await Promise.all([
     readAllPages((offset, limit) => pageRows(db, 'crm_mojo_call_events', 'call_at', offset, limit, (query) =>
-      query.select('id,call_at,lead_id,recording_url,recording_storage_path').not('recording_url', 'is', null).is('recording_storage_path', null))),
+      query.select('id,call_at,lead_id,recording_url,recording_storage_path').not('recording_url', 'is', null))),
     readAllPages((offset, limit) => pageRows(db, 'crm_mojo_calls', 'call_at', offset, limit, (query) =>
-      query.select('id,call_at,lead_id,recording_url,recording_storage_path,is_recorded,provider_call_id').or('is_recorded.eq.true,recording_url.not.is.null').is('recording_storage_path', null))),
+      query.select('id,call_at,lead_id,recording_url,recording_storage_path,is_recorded,provider_call_id').or('is_recorded.eq.true,recording_url.not.is.null'))),
     readAllPages((offset, limit) => pageRows(db, 'dialer_session_attempts', 'created_at', offset, limit, (query) =>
-      query.select('id,lead_id,recording_sid,provider_call_sid,recording_storage_path,ended_at,created_at').not('recording_sid', 'is', null).is('recording_storage_path', null))),
+      query.select('id,lead_id,recording_sid,provider_call_sid,recording_storage_path,ended_at,created_at').not('recording_sid', 'is', null))),
     readAllPages((offset, limit) => pageRows(db, 'lead_activities', 'created_at', offset, limit, (query) =>
-      query.select(activityColumns).in('activity_type', ['call', 'voicemail']).is('metadata->>recording_storage_path', null).or('metadata->>recordingSid.ilike.RE*,metadata->>RecordingSid.ilike.RE*,metadata->>recording_sid.ilike.RE*,metadata->>recordingUrl.ilike.*/api/recordings/RE*,metadata->>recordingUrl.ilike.*Recordings/RE*,metadata->>source.eq.twilio_recording_callback'))),
+      query.select(activityColumns).in('activity_type', ['call', 'voicemail']).or('metadata->>recordingSid.ilike.RE*,metadata->>RecordingSid.ilike.RE*,metadata->>recording_sid.ilike.RE*,metadata->>recordingUrl.ilike.*/api/recordings/RE*,metadata->>recordingUrl.ilike.*Recordings/RE*,metadata->>source.eq.twilio_recording_callback'))),
     readAllPages((offset, limit) => pageRows(db, 'lead_activities', 'created_at', offset, limit, (query) =>
-      query.select(activityColumns).eq('activity_type', 'note').eq('metadata->>source', 'whisper_transcription').is('metadata->>recording_storage_path', null).or('metadata->>recordingSid.ilike.RE*,metadata->>RecordingSid.ilike.RE*,metadata->>recording_sid.ilike.RE*'))),
+      query.select(activityColumns).eq('activity_type', 'note').eq('metadata->>source', 'whisper_transcription').or('metadata->>recordingSid.ilike.RE*,metadata->>RecordingSid.ilike.RE*,metadata->>recording_sid.ilike.RE*'))),
   ])
   const attemptRows = attempts.map((row) => ({
     kind: 'twilio_attempt' as const,
@@ -560,19 +583,14 @@ async function loadArchiveRows(db: Db): Promise<RecordingArchiveTarget[]> {
       storagePath: text(metadataRecord(row.metadata).recording_storage_path),
     }
   }
-  const selected = twilioArchiveSelection({
-    attempts: attemptRows,
-    calls: activities.flatMap((row) => {
-      const target = activityTarget(row, 'twilio_call')
-      return target ? [target] : []
-    }),
-    notes: notes.flatMap((row) => {
-      const target = activityTarget(row, 'twilio_note')
-      return target ? [target] : []
-    }),
+  const callRows = activities.flatMap((row) => {
+    const target = activityTarget(row, 'twilio_call')
+    return target ? [target] : []
   })
-  const callRows = selected.calls
-  const noteRows = selected.notes
+  const noteRows = notes.flatMap((row) => {
+    const target = activityTarget(row, 'twilio_note')
+    return target ? [target] : []
+  })
   return [
     ...events.map((row) => ({
       kind: 'mojo_event' as const,
