@@ -113,7 +113,33 @@ if [[ "$BUCKET_LIMIT" != "52428800" ]]; then
   echo "existing recordings bucket settings changed: $BUCKET_LIMIT" >&2
   exit 1
 fi
+BASE='https://app71.mojosells.com/'
+URL1800="${BASE}$(printf 'c%.0s' $(seq 1 $((1800 - ${#BASE}))))"
+URL1801="${URL1800}x"
+"${PSQL[@]}" <<SQL
+INSERT INTO public.crm_mojo_calls (id, is_recorded, recording_url)
+VALUES ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', true, '${URL1800}');
+SQL
+set +e
+REJECT_OUTPUT="$("${PSQL[@]}" 2>&1 <<SQL
+INSERT INTO public.crm_mojo_calls (id, is_recorded, recording_url)
+VALUES ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', true, '${URL1801}');
+SQL
+)"
+set -e
+if [[ "$REJECT_OUTPUT" != *"check constraint"* ]]; then
+  echo "1801-character recording URL was not rejected: $REJECT_OUTPUT" >&2
+  exit 1
+fi
+ACCEPTED="$("${PSQL[@]}" -tA -c "SELECT char_length(recording_url) FROM public.crm_mojo_calls WHERE id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'")"
+REJECTED="$("${PSQL[@]}" -tA -c "SELECT count(*) FROM public.crm_mojo_calls WHERE id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'")"
+if [[ "$ACCEPTED" != "1800" || "$REJECTED" != "0" || "${#URL1800}" != "1800" || "${#URL1801}" != "1801" ]]; then
+  echo "recording length rehearsal failed: accepted=$ACCEPTED rejected_rows=$REJECTED insert=${#URL1800} overflow=${#URL1801}" >&2
+  exit 1
+fi
 echo "$RESULT"
 echo "insert_length=${#INSERT_URL}"
 echo "update_length=${#UPDATE_URL}"
+echo "length_1800=accepted"
+echo "length_1801=rejected"
 echo "encoded_path=ok"

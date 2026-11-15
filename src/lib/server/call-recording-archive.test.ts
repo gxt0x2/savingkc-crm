@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import { archivedActivityMetadata, twilioRecordingDownloadUrl } from '@/lib/marketing/recording-playback'
 import {
   applyRecordingPage,
   archiveOne,
@@ -7,6 +8,7 @@ import {
   oldestExpiringFirst,
   omitTwilioCallsAlreadyAttempted,
   planRecordingBackfill,
+  twilioArchiveSelection,
   readAllPages,
   readBoundedAudio,
   recordingSourceReady,
@@ -27,6 +29,8 @@ const sidBare = `RE${'b'.repeat(32)}`
 const sidStored = `RE${'c'.repeat(32)}`
 const callOnly = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
 const callSidOnly = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2'
+const whisperOnly = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4'
+const lowerSid = `RE${'a'.repeat(32)}`
 
 function row(partial: RecordingArchiveTarget): RecordingArchiveTarget {
   return partial
@@ -43,6 +47,7 @@ const fixture: RecordingArchiveTarget[] = [
   row({ kind: 'twilio_attempt', id: attemptStored, recordedAt: '2026-03-27T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: sidStored, storagePath: `leads/${leadId}/twilio_${sidStored}.mp3` }),
   row({ kind: 'twilio_call', id: callOnly, recordedAt: '2026-10-01T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: `RE${'d'.repeat(32)}`, callSid: `CA${'d'.repeat(32)}`, storagePath: null }),
   row({ kind: 'twilio_call', id: callSidOnly, recordedAt: '2026-10-02T00:00:00.000Z', leadId: null, recordingUrl: null, recordingSid: null, callSid: `CA${'e'.repeat(32)}`, storagePath: null }),
+  row({ kind: 'twilio_note', id: whisperOnly, recordedAt: '2026-10-03T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: `RE${'9'.repeat(32)}`, storagePath: null }),
 ]
 
 const migration = readFileSync('supabase/migrations/20261217120000_call_recording_archive.sql', 'utf8')
@@ -57,8 +62,12 @@ describe('call recording archive', () => {
     expect(downloadTwilio).not.toHaveBeenCalled()
     expect(plan.dryRun).toBe(true)
     expect(plan.archived).toBe(0)
-    expect(plan.wouldArchive).toEqual({ mojoEvents: 2, mojoCalls: 1, twilioAttempts: 2, twilioCalls: 2, total: 7 })
-    expect(plan.alreadyStored).toEqual({ mojoEvents: 1, mojoCalls: 0, twilioAttempts: 1, twilioCalls: 0, total: 2 })
+    expect(plan.wouldArchive).toEqual({ mojoEvents: 2, mojoCalls: 1, twilioAttempts: 2, twilioCalls: 2, whisperNotes: 1, total: 8 })
+    expect(plan.alreadyStored).toEqual({ mojoEvents: 1, mojoCalls: 0, twilioAttempts: 1, twilioCalls: 0, whisperNotes: 0, total: 2 })
+    const archivedSids = planRecordingBackfill(fixture, { limit: 20 }).page
+      .map((item) => item.recordingSid)
+      .filter((sid): sid is string => Boolean(sid))
+    expect(new Set(archivedSids).size).toBe(archivedSids.length)
     expect(plan.mojoCallsAwaitingUrl).toBe(1)
     expect(plan.page.map((item) => item.id)).toEqual([eventOld, callReady, attemptLead, eventNew, attemptBare])
     expect(oldestExpiringFirst(plan.page).map((item) => item.recordedAt)).toEqual([
@@ -75,7 +84,7 @@ describe('call recording archive', () => {
     const second = planRecordingBackfill(fixture, { cursor: first.nextCursor, limit: 2 })
     expect(first.page.map((item) => item.id)).toEqual([eventOld, callReady])
     expect(second.page.map((item) => item.id)).toEqual([attemptLead, eventNew])
-    expect(second.wouldArchive.total).toBe(7)
+    expect(second.wouldArchive.total).toBe(8)
   })
 
   it('copies a recording once and skips the download when the path is already stored', async () => {
@@ -151,6 +160,47 @@ describe('call recording archive', () => {
     expect(migration).not.toMatch(/dialer_export|source_list|mojo_call_queue/i)
     expect(archiveSource).not.toMatch(/claimMojoCallQueue|finishMojoCallQueue|mojo_call_queue/)
     expect(archiveSource).not.toContain('20261216120000')
+  })
+
+  it('matches a lowercase-hex SID to its attempt and leaves the stored SID unchanged', async () => {
+    const attempt = row({ kind: 'twilio_attempt', id: attemptLead, recordedAt: '2026-08-25T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: lowerSid, storagePath: null })
+    const call = row({ kind: 'twilio_call', id: callOnly, recordedAt: '2026-08-26T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: `re${'A'.repeat(32)}`, storagePath: null })
+    const selected = twilioArchiveSelection({ attempts: [attempt], calls: [call], notes: [] })
+    expect(selected.calls).toEqual([])
+    const plan = planRecordingBackfill([attempt, ...selected.calls])
+    expect(plan.wouldArchive).toMatchObject({ twilioAttempts: 1, twilioCalls: 0, total: 1 })
+    const downloadTwilio = vi.fn(async () => new Uint8Array(1200))
+    const applied = await applyRecordingPage(plan.page, {
+      downloadMojo: vi.fn(),
+      downloadTwilio,
+      upload: vi.fn(async () => undefined),
+      markStored: vi.fn(async () => undefined),
+      sleep: vi.fn(async () => undefined),
+      now: () => new Date('2026-11-15T00:00:00.000Z'),
+    }, 0)
+    expect(applied.archived).toBe(1)
+    expect(downloadTwilio).toHaveBeenCalledTimes(1)
+    expect(downloadTwilio).toHaveBeenCalledWith(lowerSid)
+    const account = `AC${'1'.repeat(32)}`
+    expect(twilioRecordingDownloadUrl(account, lowerSid)).toBe(`https://api.twilio.com/2010-04-01/Accounts/${account}/Recordings/${lowerSid}.mp3`)
+    expect(twilioRecordingDownloadUrl(account, `RE${'A'.repeat(32)}`)).toBe(`https://api.twilio.com/2010-04-01/Accounts/${account}/Recordings/RE${'a'.repeat(32)}.mp3`)
+    const metadata = { recordingSid: lowerSid, source: 'twilio_recording_callback' }
+    expect(archivedActivityMetadata(metadata, `leads/${leadId}/twilio_${lowerSid}.mp3`, '2026-11-15T00:00:00.000Z')).toMatchObject({
+      recordingSid: lowerSid,
+      recording_storage_path: `leads/${leadId}/twilio_${lowerSid}.mp3`,
+    })
+  })
+
+  it('archives a whisper note once and skips it when the same SID is already on an attempt or a call', () => {
+    const sid = `RE${'9'.repeat(32)}`
+    const note = row({ kind: 'twilio_note', id: whisperOnly, recordedAt: '2026-04-20T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: sid, storagePath: null })
+    const duplicate = row({ kind: 'twilio_note', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5', recordedAt: '2026-04-21T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: sid, storagePath: null })
+    expect(twilioArchiveSelection({ attempts: [], calls: [], notes: [note, duplicate] }).notes.map((item) => item.id)).toEqual([whisperOnly])
+    const attempt = row({ kind: 'twilio_attempt', id: attemptLead, recordedAt: '2026-04-22T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: sid, storagePath: null })
+    const call = row({ kind: 'twilio_call', id: callOnly, recordedAt: '2026-04-23T00:00:00.000Z', leadId, recordingUrl: null, recordingSid: sid, storagePath: null })
+    expect(twilioArchiveSelection({ attempts: [attempt], calls: [], notes: [note] }).notes).toEqual([])
+    expect(twilioArchiveSelection({ attempts: [], calls: [call], notes: [note] }).notes).toEqual([])
+    expect(planRecordingBackfill([note]).wouldArchive).toMatchObject({ whisperNotes: 1, total: 1 })
   })
 
   it('covers a Twilio recording that has no dialer attempt, and skips one the attempt already owns', () => {

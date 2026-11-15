@@ -66,7 +66,7 @@ describe('recording playback order', () => {
     const sid = 'RE0123456789abcdef0123456789abcdef'
     const leadId = '99999999-9999-4999-8999-999999999999'
     const attemptId = '88888888-8888-4888-8888-888888888888'
-    expect(twilioStoragePath({ leadId, attemptId, recordingSid: sid })).toBe(`leads/${leadId}/twilio_${sid.toUpperCase()}.mp3`)
-    expect(twilioStoragePath({ leadId: null, attemptId, recordingSid: sid })).toBe(`attempts/${attemptId}/twilio_${sid.toUpperCase()}.mp3`)
+    expect(twilioStoragePath({ leadId, attemptId, recordingSid: sid })).toBe(`leads/${leadId}/twilio_${sid}.mp3`)
+    expect(twilioStoragePath({ leadId: null, attemptId, recordingSid: sid })).toBe(`attempts/${attemptId}/twilio_${sid}.mp3`)
   })
 })

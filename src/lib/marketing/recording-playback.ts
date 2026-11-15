@@ -82,13 +82,39 @@ export function mojoRecordingSourceUrl(value: unknown): string | null {
 export function twilioRecordingSid(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const sid = value.trim()
-  return TWILIO_SID.test(sid) ? sid.toUpperCase() : null
+  return TWILIO_SID.test(sid) ? sid : null
 }
 
 export function twilioCallSid(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const sid = value.trim()
-  return CALL_SID.test(sid) ? sid.toUpperCase() : null
+  return CALL_SID.test(sid) ? sid : null
+}
+
+/** Prefix uppercase and hex lowercase. Comparisons only; stored SIDs stay as written. */
+export function canonicalTwilioSid(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const match = value.trim().match(/^(RE|CA)([0-9a-f]{32})$/i)
+  if (!match?.[1] || !match[2]) return null
+  return `${match[1].toUpperCase()}${match[2].toLowerCase()}`
+}
+
+export function twilioRecordingDownloadUrl(accountSid: string, recordingSid: string): string {
+  const sid = canonicalTwilioSid(recordingSid)
+  if (!sid?.startsWith('RE') || !/^AC[0-9a-f]{32}$/i.test(accountSid)) throw new Error('invalid_recording_sid')
+  return `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Recordings/${sid}.mp3`
+}
+
+export function archivedActivityMetadata(
+  existing: Record<string, unknown>,
+  storagePath: string,
+  copiedAt: string,
+): Record<string, unknown> {
+  return {
+    ...existing,
+    recording_storage_path: storagePath,
+    recording_copied_at: copiedAt,
+  }
 }
 
 export function recordingSidFromCallMetadata(metadata: unknown): { recordingSid: string | null; callSid: string | null } {
