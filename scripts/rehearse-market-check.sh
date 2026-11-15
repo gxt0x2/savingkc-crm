@@ -268,9 +268,10 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208120000_mojo_dnc_ledger.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208130000_calling_pool_v1.sql" >/dev/null
-echo "PASS: apply #825 after #817"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261219120000_dialer_relationship_lane_gate.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220120000_mojo_dnc_ledger.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220130000_calling_pool_v1.sql" >/dev/null
+echo "PASS: apply #831 then #825"
 
 SEED_JSON=$(node -e '
 const fs = require("fs");

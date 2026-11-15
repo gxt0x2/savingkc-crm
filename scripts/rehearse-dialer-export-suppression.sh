@@ -270,10 +270,10 @@ apply "apply #830 owner-line person skip 20261218120000" "${PSQL[@]}" -f "$ROOT/
 apply "apply #817 property market checks 20261215120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql"
 apply "apply #817 market-check fix 20261215130000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql"
 apply "apply #831 relationship lane gate 20261219120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261219120000_dialer_relationship_lane_gate.sql"
-apply "apply #825 mojo DNC ledger 20261208120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208120000_mojo_dnc_ledger.sql"
-apply "apply #825 mojo DNC ledger 20261208120000 again" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208120000_mojo_dnc_ledger.sql"
-apply "apply #825 calling pool 20261208130000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208130000_calling_pool_v1.sql"
-apply "apply #825 calling pool 20261208130000 again" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261208130000_calling_pool_v1.sql"
+apply "apply #825 mojo DNC ledger 20261220120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220120000_mojo_dnc_ledger.sql"
+apply "apply #825 mojo DNC ledger 20261220120000 again" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220120000_mojo_dnc_ledger.sql"
+apply "apply #825 calling pool 20261220130000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220130000_calling_pool_v1.sql"
+apply "apply #825 calling pool 20261220130000 again" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220130000_calling_pool_v1.sql"
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;

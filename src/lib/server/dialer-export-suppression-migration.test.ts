@@ -133,7 +133,7 @@ describe('dialer export suppression migration', () => {
 
   it('adds the append-only DNC ledger and wires the encode queue view', () => {
     const ledger = readFileSync(
-      join(process.cwd(), 'supabase/migrations/20261208120000_mojo_dnc_ledger.sql'),
+      join(process.cwd(), 'supabase/migrations/20261220120000_mojo_dnc_ledger.sql'),
       'utf8',
     )
     expect(ledger).toContain('CREATE TABLE IF NOT EXISTS public.mojo_dnc_ledger')
@@ -154,7 +154,7 @@ describe('dialer export suppression migration', () => {
 
   it('builds the calling pool from system_config caps and keeps the 4am lock', () => {
     const pool = readFileSync(
-      join(process.cwd(), 'supabase/migrations/20261208130000_calling_pool_v1.sql'),
+      join(process.cwd(), 'supabase/migrations/20261220130000_calling_pool_v1.sql'),
       'utf8',
     )
     expect(pool).toContain("key = 'dialer_pool_caps_v1'")
