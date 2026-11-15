@@ -579,17 +579,32 @@ END
 $test$;
 SQL
 
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
+
 "${PSQL[@]}" <<'SQL'
 DO $n2$
 DECLARE
   v_def text;
+  v_has_flag boolean;
 BEGIN
+  v_has_flag := EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'source_list_dialer_phone_review'
+      AND column_name = 'line_check_flag'
+  );
   v_def := regexp_replace(pg_get_viewdef('public.source_list_dialer_phone_review'::regclass, true), ';[[:space:]]*$', '');
   DROP VIEW public.source_list_market_phone_review;
   DROP VIEW public.source_list_dialer_export;
   DROP VIEW public.source_list_dialer_suppressed;
   DROP VIEW public.source_list_dialer_phone_review;
-  EXECUTE 'CREATE VIEW public.source_list_dialer_phone_review AS SELECT dialed.*, NULL::text AS line_check_flag FROM (' || v_def || ') AS dialed';
+  IF v_has_flag THEN
+    EXECUTE 'CREATE VIEW public.source_list_dialer_phone_review AS ' || v_def;
+  ELSE
+    EXECUTE 'CREATE VIEW public.source_list_dialer_phone_review AS SELECT dialed.*, NULL::text AS line_check_flag FROM (' || v_def || ') AS dialed';
+  END IF;
   CREATE VIEW public.source_list_dialer_export AS
   SELECT source_list_row_id, source_list_id, list_type, county, state, violation_kind,
     parcel_id, case_id, address, owner_names, amount_owed, property_id, prospect_id,

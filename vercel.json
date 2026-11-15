@@ -83,6 +83,10 @@
       "schedule": "55 13 * * *"
     },
     {
+      "path": "/api/cron/line-check",
+      "schedule": "0 8 * * *"
+    },
+    {
       "path": "/api/cron/market-check",
       "schedule": "30 7 * * *"
     },
