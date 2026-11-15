@@ -19,12 +19,12 @@ import {
 } from '@/lib/dialer-suppression-policy'
 
 const associateMigration = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261205130000_dialer_export_associate_property_dnc.sql'),
+  join(process.cwd(), 'supabase/migrations/20261115010849_dialer_export_associate_property_dnc.sql'),
   'utf8',
 )
 
 const migration = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261205120000_dialer_export_suppression.sql'),
+  join(process.cwd(), 'supabase/migrations/20261115010826_dialer_export_suppression.sql'),
   'utf8',
 )
 
@@ -86,7 +86,7 @@ describe('dialer export suppression migration', () => {
 
   it('classifies raw Mojo labels, keeps stronger stamps, and does not require the encode queue', () => {
     const raw = readFileSync(
-      join(process.cwd(), 'supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql'),
+      join(process.cwd(), 'supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql'),
       'utf8',
     )
     expect(raw).toContain("WHEN 'mojo_disposition_raw'")
@@ -107,7 +107,7 @@ describe('dialer export suppression migration', () => {
 
   it('ranks unmapped labels above a weak stamp and classifies phones once', () => {
     const speed = readFileSync(
-      join(process.cwd(), 'supabase/migrations/20261205150000_dialer_export_speed_f1_stamp.sql'),
+      join(process.cwd(), 'supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql'),
       'utf8',
     )
     expect(speed).toContain("WHEN public.dialer_suppression_class_v1('prospect_disposition', label) = 'unmapped' THEN 25")
@@ -117,7 +117,7 @@ describe('dialer export suppression migration', () => {
     expect(speed).toContain("owner_type_key IN ('in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'individual')")
     expect(speed).not.toContain("'other_relative', 'unknown'")
     expect(speed).not.toContain('contact = owner_last')
-    expect(readFileSync(join(process.cwd(), 'supabase/migrations/20261205120000_dialer_export_suppression.sql'), 'utf8')).not.toMatch(/FUNCTION public\.dialer_label_key_v1[\s\S]{0,180}SET search_path/)
+    expect(readFileSync(join(process.cwd(), 'supabase/migrations/20261115010826_dialer_export_suppression.sql'), 'utf8')).not.toMatch(/FUNCTION public\.dialer_label_key_v1[\s\S]{0,180}SET search_path/)
     expect(speed).toContain('classified_phones AS MATERIALIZED')
     expect(speed).toContain('registered_agent')
     expect(speed).toContain('out_of_service_area')
@@ -125,9 +125,29 @@ describe('dialer export suppression migration', () => {
     expect(speed).toContain("NULLIF(lower(btrim(candidate.county_value)), '')")
     expect(speed).toContain('tax_status_export_allowed_v1')
     expect(speed).toContain('source_list_phone_block_reason_v1(text, text, text)')
-    expect(readFileSync(join(process.cwd(), 'supabase/migrations/20261205140000_dialer_export_mojo_raw_and_rehearsal.sql'), 'utf8')).not.toContain("RAISE EXCEPTION 'dialer_label_unmapped")
+    expect(readFileSync(join(process.cwd(), 'supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql'), 'utf8')).not.toContain("RAISE EXCEPTION 'dialer_label_unmapped")
     expect(speed).not.toMatch(/voice_hold\s*=\s*false/)
     expect(speed).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
     expect(speed).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+  })
+
+  it('releases an owner-line co-owner without recreating the batch or clearing a hold', () => {
+    const release = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261209120000_dialer_owner_line_release.sql'),
+      'utf8',
+    )
+    expect(release).toContain('CREATE OR REPLACE FUNCTION public.dialer_owner_line_release_v1')
+    expect(release).toContain("('bill', 'william')")
+    expect(release).toContain("('bob', 'robert')")
+    expect(release).toContain("('liz', 'elizabeth')")
+    expect(release).toContain("OR public.dialer_owner_line_release_v1(")
+    expect(release).toContain('bucket = \'relationship_unknown\'')
+    expect(release).not.toContain('CREATE OR REPLACE FUNCTION public.record_source_list_export_batch_v1')
+    expect(release).not.toContain('CREATE OR REPLACE VIEW public.source_list_dialer_phone_review')
+    expect(release).not.toContain('CREATE OR REPLACE VIEW public.source_list_dialer_export')
+    expect(release).not.toMatch(/\bSET jit\b/i)
+    expect(release).not.toMatch(/voice_hold\s*=\s*false/)
+    expect(release).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE|DROP\s+(?:TABLE|SCHEMA))\b/i)
+    expect(release).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
   })
 })
