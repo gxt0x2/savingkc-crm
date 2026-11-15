@@ -505,11 +505,24 @@ BEGIN
       ]));
   END IF;
   IF public.dialer_relationship_block_reason_v1(
-    'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Owner', false, NULL, true, NULL
+    'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
   ) IS DISTINCT FROM 'deceased_owner_line' THEN
-    RAISE EXCEPTION 'contact 8188 last-name-first owner was not held: %',
+    RAISE EXCEPTION 'contact 8188 was not held when owner_1_last disagrees with owner_1: %',
       public.dialer_relationship_block_reason_v1(
-        'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Owner', false, NULL, true, NULL
+        'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
+      );
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Ada Owner', NULL, 'Chapman', false, NULL, true, 'Janet'
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'null owner_1 on a deceased owner line was released';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'relative', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
+  ) IS NOT NULL THEN
+    RAISE EXCEPTION 'generic relative on a tax lane was held: %',
+      public.dialer_relationship_block_reason_v1(
+        'relative', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
       );
   END IF;
   -- Katherine round 3. Real last-4s are comments only: Unknown owner type 7005, surname-only Gus Uno 7006.

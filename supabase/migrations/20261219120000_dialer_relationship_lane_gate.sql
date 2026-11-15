@@ -173,22 +173,26 @@ DECLARE
   class text := public.dialer_lane_class_v1(p_lanes);
   family boolean := owner = ANY (ARRAY['parent', 'in_law', 'spouse', 'child', 'sibling', 'other_relative']);
   kind text;
+  owner_raw text := btrim(coalesce(p_owner_name, ''));
+  surname_source text := CASE WHEN position(',' IN owner_raw) > 0 THEN split_part(owner_raw, ',', 1) ELSE owner_raw END;
+  surname text;
+  contact_letters text[] := regexp_split_to_array(lower(btrim(coalesce(p_contact_name, ''))), '[^a-z]+');
 BEGIN
+  SELECT piece.word
+  INTO surname
+  FROM regexp_split_to_table(lower(surname_source), '[^a-z]+') WITH ORDINALITY AS piece(word, ordinality)
+  WHERE piece.word <> ''
+    AND length(piece.word) > 1
+    AND piece.word <> ALL (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'company', 'trust', 'bank', 'lp', 'llp', 'pllc', 'holdings', 'ct', 'resident', 'agent', 'pc', 'legal', 'law', 'attorney', 'attorneys', 'lawyer', 'lawyers', 'esq', 'firm'])
+    AND piece.word <> ALL (ARRAY['jr', 'sr', 'ii', 'iii', 'iv', 'junior', 'senior'])
+  ORDER BY piece.ordinality DESC
+  LIMIT 1;
   IF rel IN ('deceased_owner_line', 'decedent') OR contact LIKE '%decedent%'
     OR ((rel IN ('owner', 'subject')) AND coalesce(p_deceased, false)
       AND (
-        (contact <> '' AND contact = coalesce(public.dialer_label_key_v1(p_owner_name), ''))
-        OR (
-          public.dialer_label_key_v1(p_owner_last) IS NOT NULL
-          AND public.dialer_label_key_v1(p_owner_last) = ANY (regexp_split_to_array(lower(btrim(coalesce(p_owner_name, ''))), '[^a-z]+'))
-          AND public.dialer_label_key_v1(p_owner_last) = ANY (regexp_split_to_array(lower(btrim(coalesce(p_contact_name, ''))), '[^a-z]+'))
-          AND (
-            SELECT count(DISTINCT owner_token)
-            FROM unnest(regexp_split_to_array(lower(btrim(coalesce(p_owner_name, ''))), '[^a-z]+')) AS owner_token
-            WHERE owner_token <> ''
-              AND owner_token = ANY (regexp_split_to_array(lower(btrim(coalesce(p_contact_name, ''))), '[^a-z]+'))
-          ) >= 2
-        )
+        owner_raw = ''
+        OR (surname IS NOT NULL AND surname = ANY (contact_letters))
+        OR (contact <> '' AND contact = coalesce(public.dialer_label_key_v1(p_owner_name), ''))
         OR (
           public.dialer_label_key_v1(p_owner_first) IS NOT NULL
           AND public.dialer_label_key_v1(p_owner_last) IS NOT NULL

@@ -151,20 +151,29 @@ export function entityContactReleased(input: {
   return sosFiling(input.verifiedSource) || qualifyingEntitySkip(input.verifiedSource, input.skipTraced)
 }
 
+const NAME_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'junior', 'senior'])
+
 function nameTokens(value: string | null | undefined): string[] {
   return String(value ?? '').toLowerCase().split(/[^a-z]+/).filter(Boolean)
+}
+
+function surnameFromOwnerName(ownerName: string): string | null {
+  const raw = ownerName.trim()
+  const source = raw.includes(',') ? raw.slice(0, raw.indexOf(',')) : raw
+  const parts = nameTokens(source).filter((token) => token.length > 1 && !BLOCK_WORDS.has(token) && !NAME_SUFFIXES.has(token))
+  return parts.length ? parts[parts.length - 1] : null
 }
 
 function ownerNameMatch(contactName: string | null | undefined, ownerName: string | null | undefined, ownerFirst: string | null | undefined, ownerLast: string | null | undefined): boolean {
   const contact = labelKey(contactName)
   const owner = labelKey(ownerName)
   if (contact && owner && contact === owner) return true
+  const parts = nameTokens(contactName)
+  const surname = surnameFromOwnerName(String(ownerName ?? ''))
+  if (surname && parts.includes(surname)) return true
   const first = labelKey(ownerFirst)
   const last = labelKey(ownerLast)
-  const parts = nameTokens(contactName)
-  if (first && last && parts.includes(first) && parts.includes(last)) return true
-  const shared = nameTokens(ownerName).filter((token) => parts.includes(token))
-  return Boolean(last && shared.length >= 2 && shared.includes(last))
+  return Boolean(first && last && parts.includes(first) && parts.includes(last))
 }
 
 export function deceasedOwnerLine(input: {
@@ -177,8 +186,11 @@ export function deceasedOwnerLine(input: {
 }): boolean {
   const rel = labelKey(input.relationship)
   if (rel === 'decedent' || rel === 'deceased_owner_line' || tokens(input.contactName).includes('decedent')) return true
-  return (rel === 'owner' || rel === 'subject') && input.deceased === true
-    && ownerNameMatch(input.contactName, input.ownerName, input.ownerFirst, input.ownerLast)
+  if ((rel === 'owner' || rel === 'subject') && input.deceased === true) {
+    if (!String(input.ownerName ?? '').trim()) return true
+    return ownerNameMatch(input.contactName, input.ownerName, input.ownerFirst, input.ownerLast)
+  }
+  return false
 }
 
 const SPECIFIC_RELATIVES = ['spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'] as const

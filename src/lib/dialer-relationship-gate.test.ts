@@ -238,16 +238,24 @@ describe('counsel relationship gate', () => {
     expect(reason({ relationship: 'parent', ownerType: 'person', lane: 'tax_delinquent', title: 'Tax · Deceased' })).toBeNull()
   })
 
-  it('holds contact 8188 when the owner name is stored last name first', () => {
+  it('holds contact 8188 when owner_1_last disagrees with owner_1', () => {
     expect(exportBlockReason('+18165558188', {
       lane: 'tax_delinquent',
-      prospects: [{ id: '8188', ownerName: 'OWNER, ADA M', ownerLast: 'Owner', deceased: true, ownerType: 'person' }],
+      prospects: [{ id: '8188', ownerName: 'OWNER, ADA M', ownerFirst: 'Janet', ownerLast: 'Chapman', deceased: true, ownerType: 'person' }],
       phones: [{ phone: '+18165558188', prospectId: '8188', relationship: 'owner', contactName: 'Ada Owner' }],
     }, '8188')).toBe('deceased_owner_line')
     expect(exportBlockReason('+18165558188', {
       lane: 'tax_delinquent',
-      prospects: [{ id: '8188', ownerName: 'OWNER, ADA M', ownerLast: 'Owner', deceased: true, ownerType: 'person' }],
+      prospects: [{ id: '8188', ownerName: 'OWNER, ADA M', ownerFirst: 'Janet', ownerLast: 'Chapman', deceased: true, ownerType: 'person' }],
       phones: [{ phone: '+18165558188', prospectId: '8188', relationship: 'subject', contactName: 'Ada M Owner' }],
+    }, '8188')).toBe('deceased_owner_line')
+  })
+
+  it('holds a deceased owner line when owner_1 is null', () => {
+    expect(exportBlockReason('+18165558188', {
+      lane: 'tax_delinquent',
+      prospects: [{ id: '8188', ownerName: null, ownerFirst: 'Janet', ownerLast: 'Chapman', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558188', prospectId: '8188', relationship: 'owner', contactName: 'Ada Owner' }],
     }, '8188')).toBe('deceased_owner_line')
   })
 
