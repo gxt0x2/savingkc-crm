@@ -2,6 +2,8 @@
 # Applies the dialer suppression migrations on stub tables and asserts the SQL
 # function, not the TypeScript twin. Does not touch mojo_call_queue or Atlas.
 set -euo pipefail
+# Market checks use America/Chicago. Keep CURRENT_DATE on that clock.
+export TZ=America/Chicago
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PG_BIN="${PG_BIN:-/usr/lib/postgresql/16/bin}"
 REHEARSAL_DIR="$(mktemp -d /tmp/savingkc-dialer-suppression.XXXXXX)"
