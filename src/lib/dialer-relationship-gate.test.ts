@@ -251,6 +251,46 @@ describe('counsel relationship gate', () => {
     }, '8188')).toBe('deceased_owner_line')
   })
 
+  it('holds a joint owner when the contact uses the first person surname', () => {
+    expect(exportBlockReason('+18165558188', {
+      lane: 'tax_delinquent',
+      prospects: [{ id: 'joint', ownerName: 'JOHN SMITH AND MARY JONES', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558188', prospectId: 'joint', relationship: 'owner', contactName: 'Smith' }],
+    }, 'joint')).toBe('deceased_owner_line')
+  })
+
+  it('holds a last-first joint owner when the contact is John Smith', () => {
+    expect(exportBlockReason('+18165558188', {
+      lane: 'tax_delinquent',
+      prospects: [{ id: 'joint', ownerName: 'SMITH JOHN & MARY', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558188', prospectId: 'joint', relationship: 'owner', contactName: 'John Smith' }],
+    }, 'joint')).toBe('deceased_owner_line')
+  })
+
+  it('holds the 756bcafd shape when owner_1_last matches and the trailing word does not', () => {
+    expect(exportBlockReason('+18165558188', {
+      lane: 'tax_delinquent',
+      prospects: [{ id: '756bcafd', ownerName: 'MARY JONES & DAVID CHARLES', ownerFirst: 'Janet', ownerLast: 'Smith', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558188', prospectId: '756bcafd', relationship: 'owner', contactName: 'Smith' }],
+    }, '756bcafd')).toBe('deceased_owner_line')
+  })
+
+  it('holds a suffixed owner name when the contact uses the surname', () => {
+    expect(exportBlockReason('+18165558188', {
+      lane: 'tax_delinquent',
+      prospects: [{ id: 'suffix', ownerName: 'JOHN A SMITH JR TRUSTEE', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558188', prospectId: 'suffix', relationship: 'owner', contactName: 'Smith' }],
+    }, 'suffix')).toBe('deceased_owner_line')
+  })
+
+  it('keeps a generic relative dialable when the surname matches no owner person', () => {
+    expect(exportBlockReason('+18165558188', {
+      lane: 'tax_delinquent',
+      prospects: [{ id: 'rel', ownerName: 'JOHN SMITH AND MARY JONES', deceased: true, ownerType: 'person' }],
+      phones: [{ phone: '+18165558188', prospectId: 'rel', relationship: 'relative', contactName: 'Grant Other' }],
+    }, 'rel')).toBeNull()
+  })
+
   it('holds a deceased owner line when owner_1 is null', () => {
     expect(exportBlockReason('+18165558188', {
       lane: 'tax_delinquent',

@@ -152,16 +152,30 @@ export function entityContactReleased(input: {
 }
 
 const NAME_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'junior', 'senior'])
+const NAME_FILLER = new Set(['trustee', 'tr', 'etal', 'estate', 'est', 'deceased', 'heirs'])
 
 function nameTokens(value: string | null | undefined): string[] {
   return String(value ?? '').toLowerCase().split(/[^a-z]+/).filter(Boolean)
 }
 
-function surnameFromOwnerName(ownerName: string): string | null {
-  const raw = ownerName.trim()
-  const source = raw.includes(',') ? raw.slice(0, raw.indexOf(',')) : raw
-  const parts = nameTokens(source).filter((token) => token.length > 1 && !BLOCK_WORDS.has(token) && !NAME_SUFFIXES.has(token))
-  return parts.length ? parts[parts.length - 1] : null
+function personChunks(value: string): string[] {
+  const cleaned = value.replace(/life\s+estate/gi, ' ').replace(/\bet\s+al\b/gi, ' ')
+  return cleaned.split(/\s+and\s+|&|\//i).map((part) => part.trim()).filter(Boolean)
+}
+
+function remainingWords(value: string): string[] {
+  return nameTokens(value).filter((token) => token.length > 1 && !BLOCK_WORDS.has(token) && !NAME_SUFFIXES.has(token) && !NAME_FILLER.has(token))
+}
+
+function surnameTokens(value: string | null | undefined): string[] {
+  const found = new Set<string>()
+  for (const person of personChunks(String(value ?? ''))) {
+    const words = remainingWords(person)
+    if (!words.length) continue
+    found.add(words[0])
+    found.add(words[words.length - 1])
+  }
+  return [...found]
 }
 
 function ownerNameMatch(contactName: string | null | undefined, ownerName: string | null | undefined, ownerFirst: string | null | undefined, ownerLast: string | null | undefined): boolean {
@@ -169,10 +183,11 @@ function ownerNameMatch(contactName: string | null | undefined, ownerName: strin
   const owner = labelKey(ownerName)
   if (contact && owner && contact === owner) return true
   const parts = nameTokens(contactName)
-  const surname = surnameFromOwnerName(String(ownerName ?? ''))
-  if (surname && parts.includes(surname)) return true
-  const first = labelKey(ownerFirst)
-  const last = labelKey(ownerLast)
+  if (surnameTokens(ownerName).some((token) => parts.includes(token))) return true
+  if (surnameTokens(ownerLast).some((token) => parts.includes(token))) return true
+  const first = remainingWords(String(ownerFirst ?? ''))[0]
+  const lastWords = remainingWords(String(ownerLast ?? ''))
+  const last = lastWords[lastWords.length - 1]
   return Boolean(first && last && parts.includes(first) && parts.includes(last))
 }
 

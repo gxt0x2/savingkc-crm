@@ -174,31 +174,72 @@ DECLARE
   family boolean := owner = ANY (ARRAY['parent', 'in_law', 'spouse', 'child', 'sibling', 'other_relative']);
   kind text;
   owner_raw text := btrim(coalesce(p_owner_name, ''));
-  surname_source text := CASE WHEN position(',' IN owner_raw) > 0 THEN split_part(owner_raw, ',', 1) ELSE owner_raw END;
-  surname text;
   contact_letters text[] := regexp_split_to_array(lower(btrim(coalesce(p_contact_name, ''))), '[^a-z]+');
+  skip_words text[] := ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'company', 'trust', 'bank', 'lp', 'llp', 'pllc', 'holdings', 'ct', 'resident', 'agent', 'pc', 'legal', 'law', 'attorney', 'attorneys', 'lawyer', 'lawyers', 'esq', 'firm', 'jr', 'sr', 'ii', 'iii', 'iv', 'junior', 'senior', 'trustee', 'tr', 'etal', 'estate', 'est', 'deceased', 'heirs'];
+  normalized text;
+  people text[];
+  person text;
+  kept text[];
+  word text;
+  surname_hit boolean := false;
+  first_token text;
+  last_token text;
 BEGIN
-  SELECT piece.word
-  INTO surname
-  FROM regexp_split_to_table(lower(surname_source), '[^a-z]+') WITH ORDINALITY AS piece(word, ordinality)
-  WHERE piece.word <> ''
-    AND length(piece.word) > 1
-    AND piece.word <> ALL (ARRAY['llc', 'inc', 'incorporated', 'corp', 'corporation', 'company', 'trust', 'bank', 'lp', 'llp', 'pllc', 'holdings', 'ct', 'resident', 'agent', 'pc', 'legal', 'law', 'attorney', 'attorneys', 'lawyer', 'lawyers', 'esq', 'firm'])
-    AND piece.word <> ALL (ARRAY['jr', 'sr', 'ii', 'iii', 'iv', 'junior', 'senior'])
-  ORDER BY piece.ordinality DESC
-  LIMIT 1;
+  normalized := regexp_replace(regexp_replace(regexp_replace(owner_raw, 'life[[:space:]]+estate', ' ', 'gi'), '\met[[:space:]]+al\M', ' ', 'gi'), '\metal\M', ' ', 'gi');
+  SELECT coalesce(array_agg(btrim(part)), ARRAY[]::text[])
+  INTO people
+  FROM regexp_split_to_table(normalized, '\s+and\s+|&|/', 'i') AS part
+  WHERE btrim(part) <> '';
+  IF owner_raw <> '' THEN
+    FOREACH person IN ARRAY people LOOP
+      kept := ARRAY[]::text[];
+      FOR word IN
+        SELECT piece.word
+        FROM regexp_split_to_table(lower(person), '[^a-z]+') WITH ORDINALITY AS piece(word, ordinality)
+        WHERE piece.word <> '' AND length(piece.word) > 1 AND piece.word <> ALL (skip_words)
+        ORDER BY piece.ordinality
+      LOOP
+        kept := array_append(kept, word);
+      END LOOP;
+      IF coalesce(cardinality(kept), 0) > 0
+        AND (kept[1] = ANY (contact_letters) OR kept[cardinality(kept)] = ANY (contact_letters)) THEN
+        surname_hit := true;
+      END IF;
+    END LOOP;
+    kept := ARRAY[]::text[];
+    FOR word IN
+      SELECT piece.word
+      FROM regexp_split_to_table(lower(btrim(coalesce(p_owner_last, ''))), '[^a-z]+') WITH ORDINALITY AS piece(word, ordinality)
+      WHERE piece.word <> '' AND length(piece.word) > 1 AND piece.word <> ALL (skip_words)
+      ORDER BY piece.ordinality
+    LOOP
+      kept := array_append(kept, word);
+    END LOOP;
+    IF coalesce(cardinality(kept), 0) > 0
+      AND (kept[1] = ANY (contact_letters) OR kept[cardinality(kept)] = ANY (contact_letters)) THEN
+      surname_hit := true;
+    END IF;
+  END IF;
+  first_token := (
+    SELECT piece.word
+    FROM regexp_split_to_table(lower(btrim(coalesce(p_owner_first, ''))), '[^a-z]+') AS piece(word)
+    WHERE piece.word <> '' AND length(piece.word) > 1 AND piece.word <> ALL (skip_words)
+    LIMIT 1
+  );
+  last_token := (
+    SELECT piece.word
+    FROM regexp_split_to_table(lower(btrim(coalesce(p_owner_last, ''))), '[^a-z]+') WITH ORDINALITY AS piece(word, ordinality)
+    WHERE piece.word <> '' AND length(piece.word) > 1 AND piece.word <> ALL (skip_words)
+    ORDER BY piece.ordinality DESC
+    LIMIT 1
+  );
   IF rel IN ('deceased_owner_line', 'decedent') OR contact LIKE '%decedent%'
     OR ((rel IN ('owner', 'subject')) AND coalesce(p_deceased, false)
       AND (
         owner_raw = ''
-        OR (surname IS NOT NULL AND surname = ANY (contact_letters))
+        OR surname_hit
         OR (contact <> '' AND contact = coalesce(public.dialer_label_key_v1(p_owner_name), ''))
-        OR (
-          public.dialer_label_key_v1(p_owner_first) IS NOT NULL
-          AND public.dialer_label_key_v1(p_owner_last) IS NOT NULL
-          AND public.dialer_label_key_v1(p_owner_first) = ANY (string_to_array(contact, '_'))
-          AND public.dialer_label_key_v1(p_owner_last) = ANY (string_to_array(contact, '_'))
-        )
+        OR (first_token IS NOT NULL AND last_token IS NOT NULL AND first_token = ANY (contact_letters) AND last_token = ANY (contact_letters))
       )) THEN
     RETURN 'deceased_owner_line';
   END IF;

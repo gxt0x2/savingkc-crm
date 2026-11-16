@@ -525,6 +525,31 @@ BEGIN
         'relative', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
       );
   END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Smith', 'JOHN SMITH AND MARY JONES', NULL, false, NULL, true, NULL
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'joint owner Smith was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'John Smith', 'SMITH JOHN & MARY', NULL, false, NULL, true, NULL
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'last-first joint owner was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Smith', 'MARY JONES & DAVID CHARLES', 'Smith', false, NULL, true, 'Janet'
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION '756bcafd owner_1_last was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Smith', 'JOHN A SMITH JR TRUSTEE', NULL, false, NULL, true, NULL
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'suffixed owner surname was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'relative', 'person', ARRAY['tax'], 'Grant Other', 'JOHN SMITH AND MARY JONES', NULL, false, NULL, true, NULL
+  ) IS NOT NULL THEN
+    RAISE EXCEPTION 'generic relative whose surname matches no owner was held';
+  END IF;
   -- Katherine round 3. Real last-4s are comments only: Unknown owner type 7005, surname-only Gus Uno 7006.
   INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1, owner_1_last, owner_1_type, is_skip_traced) VALUES
     ('20000000-0000-4000-8000-0000000000e1', 'jackson', '15 Unknown', 'P-UNK', 'Pat Unknown', 'Unknown', 'Unknown', false),
