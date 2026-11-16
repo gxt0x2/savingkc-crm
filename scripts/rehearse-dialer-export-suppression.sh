@@ -2,6 +2,8 @@
 # Applies the dialer suppression migrations on stub tables and asserts the SQL
 # function, not the TypeScript twin. Does not touch mojo_call_queue or Atlas.
 set -euo pipefail
+# Market checks use America/Chicago. Keep CURRENT_DATE on that clock.
+export TZ=America/Chicago
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PG_BIN="${PG_BIN:-/usr/lib/postgresql/16/bin}"
 REHEARSAL_DIR="$(mktemp -d /tmp/savingkc-dialer-suppression.XXXXXX)"
@@ -205,6 +207,28 @@ FROM public.source_list_dialer_phone_review
 WHERE block_reason IS NULL;
 CREATE VIEW public.source_list_dialer_suppressed AS
 SELECT * FROM public.source_list_dialer_phone_review WHERE block_reason IS NOT NULL;
+
+CREATE TABLE public.prospecting_campaigns (
+  id uuid PRIMARY KEY,
+  name text NOT NULL
+);
+CREATE TABLE public.prospecting_campaign_members (
+  id uuid PRIMARY KEY,
+  campaign_id uuid NOT NULL,
+  prospect_id uuid
+);
+CREATE TABLE public.prospecting_campaign_member_contacts (
+  id uuid PRIMARY KEY,
+  member_id uuid NOT NULL,
+  prospect_id uuid,
+  prospect_phone_id uuid,
+  phone_snapshot text,
+  relationship text,
+  contact_name text,
+  status text
+);
+INSERT INTO public.prospecting_campaigns (id, name) VALUES
+  ('40000000-0000-4000-8000-0000000000a1', 'Jackson · Tax 3+ · 7 zips · Aug 30');
 SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114213919_source_list_service_area_block.sql" >/dev/null
@@ -221,6 +245,7 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261219120000_dialer_relationship_lane_gate.sql" >/dev/null
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -370,7 +395,7 @@ BEGIN
     ('+18165551051', '20000000-0000-4000-8000-000000000050', 'person_fanout'),
     ('+18165551050', '20000000-0000-4000-8000-000000000051', 'person_fanout'),
     ('+18165551050', '20000000-0000-4000-8000-000000000052', 'needs_counsel_review'),
-    ('+18165551210', '20000000-0000-4000-8000-000000000060', 'associate_non_family'),
+    ('+18165551210', '20000000-0000-4000-8000-000000000060', 'associate'),
     ('+18165551220', '20000000-0000-4000-8000-000000000070', 'prospect_dnc'),
     ('+18165551221', '20000000-0000-4000-8000-000000000071', 'property_owner_dnc_fanout'),
     ('+18165551099', '20000000-0000-4000-8000-000000000090', 'hold_last4'),
@@ -423,8 +448,9 @@ BEGIN
     RAISE EXCEPTION 'owner number blocked by an associate on another record: %',
       public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b1');
   END IF;
-  IF public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b2') IS DISTINCT FROM 'associate_non_family' THEN
-    RAISE EXCEPTION 'associate copy was released';
+  IF public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b2') IS DISTINCT FROM 'associate' THEN
+    RAISE EXCEPTION 'associate copy was released: %',
+      public.source_list_phone_block_reason_v1('+18165550501', '20000000-0000-4000-8000-0000000000b2');
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550502', '20000000-0000-4000-8000-0000000000b1') IS NOT NULL THEN
     RAISE EXCEPTION 'owner number blocked by an unknown tie on another record';
@@ -435,8 +461,8 @@ BEGIN
   IF public.source_list_phone_block_reason_v1('+18165550511', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
     RAISE EXCEPTION 'registered agent was released';
   END IF;
-  IF public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3') IS NOT NULL THEN
-    RAISE EXCEPTION 'entity officer stayed blocked: %',
+  IF public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
+    RAISE EXCEPTION 'entity contact without an SOS or entity skip was released: %',
       public.source_list_phone_block_reason_v1('+18165550512', '20000000-0000-4000-8000-0000000000b3');
   END IF;
   IF public.source_list_phone_block_reason_v1('+18165550513', '20000000-0000-4000-8000-0000000000b3') IS DISTINCT FROM 'relationship_unknown' THEN
@@ -450,6 +476,81 @@ BEGIN
   END IF;
   IF public.dialer_relationship_bucket_v1(NULL, 'Other Relative') IS DISTINCT FROM 'relative' THEN
     RAISE EXCEPTION 'other-relative owner type was not kept as a relative';
+  END IF;
+  IF (SELECT lane FROM public.prospecting_campaigns WHERE id = '40000000-0000-4000-8000-0000000000a1') IS DISTINCT FROM 'tax' THEN
+    RAISE EXCEPTION 'tax campaign lane was not backfilled';
+  END IF;
+  INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type) VALUES
+    ('20000000-0000-4000-8000-0000000000c8', 'jackson', '22 Tax Parent', 'P-TAX-PARENT', 'Parent', 'Individual'),
+    ('20000000-0000-4000-8000-0000000000c9', 'jackson', '23 Tax Relative', 'P-TAX-REL', 'Relative', 'Individual');
+  INSERT INTO public.prospect_phones (id, prospect_id, phone, last_disposition, relationship) VALUES
+    ('30000000-0000-4000-8000-0000000000c8', '20000000-0000-4000-8000-0000000000c8', '+18165551711', 'no_answer', 'parent'),
+    ('30000000-0000-4000-8000-0000000000c9', '20000000-0000-4000-8000-0000000000c9', '+18165551712', 'no_answer', 'relative');
+  INSERT INTO public.prospecting_campaign_members (id, campaign_id, prospect_id) VALUES
+    ('41000000-0000-4000-8000-0000000000c8', '40000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000c8'),
+    ('41000000-0000-4000-8000-0000000000c9', '40000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000c9');
+  INSERT INTO public.prospecting_campaign_member_contacts (
+    id, member_id, prospect_id, prospect_phone_id, phone_snapshot, relationship, status
+  ) VALUES
+    ('42000000-0000-4000-8000-0000000000c8', '41000000-0000-4000-8000-0000000000c8', '20000000-0000-4000-8000-0000000000c8', '30000000-0000-4000-8000-0000000000c8', '+18165551711', 'parent', 'ready'),
+    ('42000000-0000-4000-8000-0000000000c9', '41000000-0000-4000-8000-0000000000c9', '20000000-0000-4000-8000-0000000000c9', '30000000-0000-4000-8000-0000000000c9', '+18165551712', 'relative', 'ready');
+  IF EXISTS (
+    SELECT 1 FROM public.campaign_contacts_block_reasons_v1(ARRAY[
+      '42000000-0000-4000-8000-0000000000c8'::uuid,
+      '42000000-0000-4000-8000-0000000000c9'::uuid
+    ])
+  ) THEN
+    RAISE EXCEPTION 'tax campaign keeps a parent and a generic relative dialable failed: %',
+      (SELECT string_agg(contact_id::text || ':' || block_reason, ',') FROM public.campaign_contacts_block_reasons_v1(ARRAY[
+        '42000000-0000-4000-8000-0000000000c8'::uuid,
+        '42000000-0000-4000-8000-0000000000c9'::uuid
+      ]));
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'contact 8188 was not held when owner_1_last disagrees with owner_1: %',
+      public.dialer_relationship_block_reason_v1(
+        'owner', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
+      );
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Ada Owner', NULL, 'Chapman', false, NULL, true, 'Janet'
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'null owner_1 on a deceased owner line was released';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'relative', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
+  ) IS NOT NULL THEN
+    RAISE EXCEPTION 'generic relative on a tax lane was held: %',
+      public.dialer_relationship_block_reason_v1(
+        'relative', 'person', ARRAY['tax'], 'Ada Owner', 'OWNER, ADA M', 'Chapman', false, NULL, true, 'Janet'
+      );
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Smith', 'JOHN SMITH AND MARY JONES', NULL, false, NULL, true, NULL
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'joint owner Smith was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'John Smith', 'SMITH JOHN & MARY', NULL, false, NULL, true, NULL
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'last-first joint owner was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Smith', 'MARY JONES & DAVID CHARLES', 'Smith', false, NULL, true, 'Janet'
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION '756bcafd owner_1_last was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'owner', 'person', ARRAY['tax'], 'Smith', 'JOHN A SMITH JR TRUSTEE', NULL, false, NULL, true, NULL
+  ) IS DISTINCT FROM 'deceased_owner_line' THEN
+    RAISE EXCEPTION 'suffixed owner surname was not held';
+  END IF;
+  IF public.dialer_relationship_block_reason_v1(
+    'relative', 'person', ARRAY['tax'], 'Grant Other', 'JOHN SMITH AND MARY JONES', NULL, false, NULL, true, NULL
+  ) IS NOT NULL THEN
+    RAISE EXCEPTION 'generic relative whose surname matches no owner was held';
   END IF;
   -- Katherine round 3. Real last-4s are comments only: Unknown owner type 7005, surname-only Gus Uno 7006.
   INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1, owner_1_last, owner_1_type, is_skip_traced) VALUES
@@ -765,7 +866,7 @@ BEGIN
     ('30000000-0000-4000-8000-0000000000fd', '20000000-0000-4000-8000-0000000000fa', '+18165550813', 'no_answer', 'unknown', 'John Smith', false, NULL),
     ('30000000-0000-4000-8000-0000000000fe', '20000000-0000-4000-8000-0000000000fb', '+18165550814', 'no_answer', 'owner', 'Mary Smith', false, NULL);
   INSERT INTO public.sms_opt_outs (phone, is_opted_out) VALUES ('+18165550807', true);
-  IF public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1') IS DISTINCT FROM 'associate_non_family' THEN
+  IF public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1') IS DISTINCT FROM 'associate' THEN
     RAISE EXCEPTION 'associate co-owner was released: %',
       public.source_list_phone_block_reason_v1('+18165550801', '20000000-0000-4000-8000-0000000000f1');
   END IF;

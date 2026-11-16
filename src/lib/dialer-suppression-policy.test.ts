@@ -162,7 +162,7 @@ describe('associate type and property owner fan-out', () => {
     }
     expect(exportBlockReason(phone, {
       phones: [{ phone, prospectId: 'p', relationship: 'associate' }],
-    })).toBe('associate_non_family')
+    })).toBe('associate')
   })
 
   it('blocks unknown, entity contacts, and a null tie on a non-owner row', () => {
@@ -207,6 +207,7 @@ describe('associate type and property owner fan-out', () => {
     const relative = '+18165550220'
     const owner = '+18165550221'
     expect(exportBlockReason(relative, {
+      lane: 'tax_delinquent',
       prospects: [
         { id: 'here', parcelId: 'AB 12', county: 'jackson', street: '1 Main', zip: '64111-1234' },
         { id: 'elsewhere', parcelId: 'ZZ', county: 'clay', street: '2 Side', zip: '64116' },
@@ -227,6 +228,7 @@ describe('associate type and property owner fan-out', () => {
       propertyKey({ id: 'b', county: 'jackson', street: '10 oak st', zip: null }),
     )
     expect(exportBlockReason(relative, {
+      lane: 'tax_delinquent',
       prospects: [
         { id: 'a', county: 'Jackson', street: '10 Oak St.', zip: '' },
         { id: 'b', county: 'jackson', street: '10 oak st', zip: null },
@@ -243,6 +245,7 @@ describe('associate type and property owner fan-out', () => {
     const owner = '+18165550241'
     const prospects = [{ id: 'a', parcelId: 'Z1', county: 'platte', street: '4 Pine', zip: '64152' }]
     expect(exportBlockReason(relative, {
+      lane: 'tax_delinquent',
       prospects,
       phones: [
         { phone: owner, prospectId: 'a', relationship: 'subject', lastDisposition: 'no_answer' },
@@ -438,7 +441,7 @@ describe('associate type and property owner fan-out', () => {
       ],
     }
     expect(exportBlockReason(phone, world, 'home')).toBeNull()
-    expect(exportBlockReason(phone, world, 'other')).toBe('associate_non_family')
+    expect(exportBlockReason(phone, world, 'other')).toBe('associate')
     const unknown = {
       ...world,
       phones: [
@@ -466,7 +469,7 @@ describe('associate type and property owner fan-out', () => {
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'corp', ownerType: 'Corporate' }],
       phones: [{ phone, prospectId: 'corp', relationship: 'entity_contact', entityRole: 'officer' }],
-    }, 'corp')).toBeNull()
+    }, 'corp')).toBe('relationship_unknown')
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'corp', ownerType: 'Corporate' }],
       phones: [{ phone, prospectId: 'corp', relationship: 'entity_contact' }],
@@ -499,7 +502,7 @@ describe('associate type and property owner fan-out', () => {
       prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual', parcelId: 'P-CO' }],
       phones: [{ phone, prospectId: 'home', relationship: 'associate', contactName: 'Mary Smith', lastDisposition: 'no_answer' }],
     }
-    expect(exportBlockReason(phone, matched, 'home')).toBe('associate_non_family')
+    expect(exportBlockReason(phone, matched, 'home')).toBe('associate')
     expect(exportBlockReason(phone, {
       prospects: [{ id: 'home', ownerName: 'John & Mary Smith', ownerLast: 'Smith', ownerType: 'Individual' }],
       phones: [{ phone, prospectId: 'home', relationship: 'unknown', contactName: 'Mary Jones', lastDisposition: 'no_answer' }],

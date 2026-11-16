@@ -1,4 +1,4 @@
-import { ownerLineRelease } from '@/lib/dialer-owner-line-release'
+import { campaignMemberOffered as offerCampaignMember, counselDeadLead, counselRelationshipBlock, counselRelationshipBucket, counselRelativeOwnerDnc, sourceListLanes } from '@/lib/dialer-relationship-gate'
 
 /** Label sets for the dialer export. dataskip_dnc is an allow. Anything else non-blank is unmapped. */
 
@@ -71,7 +71,7 @@ export const PROPERTY_OWNER_DNC = [...PROSPECT_PHONE_DNC, ...PROSPECT_PERSON_DNC
 
 export const OWNER_RELATIONSHIPS = ['owner', 'subject', 'co_owner'] as const
 export const RELATIVE_RELATIONSHIPS = ['relative', 'spouse', 'parent', 'child', 'sibling', 'in_law', 'other_relative'] as const
-export const RELATIVE_OWNER_TYPES = ['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative', 'individual'] as const
+export const RELATIVE_OWNER_TYPES = ['in_law', 'child', 'parent', 'sibling', 'spouse', 'other_relative'] as const
 export const ASSOCIATE_OWNER_TYPES = ['neighbor', 'coworker', 'past_neighbor', 'friend', 'landlord', 'tenant'] as const
 export const UNKNOWN_RELATIONSHIPS = ['unknown', 'entity_contact'] as const
 
@@ -110,6 +110,8 @@ export interface SuppressionProspect {
   ownerLast?: string | null
   ownerName?: string | null
   ownerType?: string | null
+  ownerFirst?: string | null
+  deceased?: boolean | null
   parcelId?: string | null
   zip?: string | null
   skipTraced?: boolean | null
@@ -120,6 +122,9 @@ export interface SuppressionLead {
   phone?: string | null
   callResult?: string | null
   deadReason?: string | null
+  notes?: string | null
+  station?: string | null
+  classification?: string | null
 }
 
 export interface SuppressionMojoEvent {
@@ -161,6 +166,11 @@ export interface SuppressionWorld {
   contacts?: readonly SuppressionContact[]
   encodePending?: readonly string[]
   mojoCalls?: readonly SuppressionMojoCall[]
+  /** Source-list lane and source field only. A list title is not a lane. */
+  lane?: string | null
+  source?: string | null
+  lanes?: readonly (string | null)[]
+  listTitle?: string | null
 }
 
 export function labelKey(value: string | null | undefined): string | null {
@@ -196,19 +206,7 @@ export function relationshipBucket(
   relationship: string | null | undefined,
   ownerType: string | null | undefined,
 ): RelationshipBucket {
-  const rel = labelKey(relationship)
-  const owner = labelKey(ownerType)
-  if (rel === 'associate' || (owner !== null && ASSOCIATE_OWNER_TYPES.includes(owner as typeof ASSOCIATE_OWNER_TYPES[number]))) {
-    return 'associate_non_family'
-  }
-  if (rel !== null && OWNER_RELATIONSHIPS.includes(rel as typeof OWNER_RELATIONSHIPS[number])) return 'owner'
-  if (rel !== null && UNKNOWN_RELATIONSHIPS.includes(rel as typeof UNKNOWN_RELATIONSHIPS[number])) return 'relationship_unknown'
-  if (owner === 'unknown') return 'relationship_unknown'
-  if (
-    (rel !== null && RELATIVE_RELATIONSHIPS.includes(rel as typeof RELATIVE_RELATIONSHIPS[number]))
-    || (owner !== null && RELATIVE_OWNER_TYPES.includes(owner as typeof RELATIVE_OWNER_TYPES[number]))
-  ) return 'relative'
-  return 'relationship_unknown'
+  return counselRelationshipBucket(relationship, ownerType)
 }
 
 export function propertyKey(prospect: SuppressionProspect | null | undefined): string | null {
@@ -443,74 +441,28 @@ function relationshipForPhone(world: SuppressionWorld, phone: SuppressionPhone):
   return relationshipBucket(phone.relationship, prospectFor(world, phone.prospectId)?.ownerType)
 }
 
-function candidatePhones(world: SuppressionWorld, key: string): SuppressionPhone[] {
-  return phonesOf(world).filter((phone) => sameKey(phone.phone, key))
-}
-
-function roleTokens(value: string | null | undefined): string[] {
-  return (labelKey(value) ?? '').split('_').filter(Boolean)
-}
-
-function showsRegisteredAgent(phone: SuppressionPhone): boolean {
-  return roleTokens(phone.relationship).includes('registered') && roleTokens(`${phone.relationship} ${phone.entityRole ?? ''} ${phone.contactName ?? ''}`).includes('agent')
-    || roleTokens(phone.entityRole).join('_') === 'registered_agent'
-    || roleTokens(phone.contactName).join('_').includes('registered_agent')
-    || (labelKey(phone.relationship) ?? '') === 'registered_agent'
-    || (labelKey(phone.entityRole) ?? '') === 'registered_agent'
-    || (labelKey(phone.contactName) ?? '').includes('registered_agent')
-}
-
-function showsMemberOrOfficer(phone: SuppressionPhone): boolean {
-  if (showsRegisteredAgent(phone)) return false
-  const tokens = [
-    ...roleTokens(phone.relationship),
-    ...roleTokens(phone.entityRole),
-    ...roleTokens(phone.contactName),
-  ]
-  return tokens.includes('member') || tokens.includes('officer')
-}
-
-function nameTokens(value: string | null | undefined): string[] {
-  return (labelKey(value) ?? '').replace(/[^a-z0-9]+/g, '_').split('_').filter(Boolean)
-}
-
-function ownerSkipTraceRelease(world: SuppressionWorld, phone: SuppressionPhone): boolean {
-  const prospect = prospectFor(world, phone.prospectId)
-  const source = labelKey(phone.verifiedSource) ?? ''
-  const skipTraced = prospect?.skipTraced === true || source.includes('skip')
-  if (!skipTraced) return false
-  if (relationshipForPhone(world, phone) === 'owner') return true
-  const contact = nameTokens(phone.contactName)
-  const last = labelKey(prospect?.ownerLast)
-  const first = nameTokens(prospect?.ownerName).find((token) => token !== last)
-  if (!last || !first || contact.length === 0) return false
-  return contact.includes(first) && contact.includes(last)
-}
-
-function ownerLineMatches(world: SuppressionWorld, phone: SuppressionPhone): boolean {
-  const prospect = prospectFor(world, phone.prospectId)
-  return ownerLineRelease({
-    relationship: phone.relationship, contactName: phone.contactName, ownerName: prospect?.ownerName,
-    ownerLast: prospect?.ownerLast, ownerType: prospect?.ownerType, skipTraced: prospect?.skipTraced, verifiedSource: phone.verifiedSource,
+function relationshipBlock(world: SuppressionWorld, key: string, prospectId?: string | null) {
+  return counselRelationshipBlock({
+    key,
+    prospectId,
+    lanes: sourceListLanes({ lane: world.lane, source: world.source, lanes: world.lanes, title: world.listTitle }),
+    phones: phonesOf(world),
+    prospects: world.prospects ?? [],
+    samePhone: (phone, phoneKeyValue) => phoneKey(phone) === phoneKeyValue,
   })
 }
 
-function relationshipBlock(world: SuppressionWorld, key: string, prospectId?: string | null): 'associate_non_family' | 'relationship_unknown' | null {
-  const rows = candidatePhones(world, key).filter((phone) => !prospectId || phone.prospectId === prospectId)
-  let unknown = false
-  for (const phone of rows) {
-    const bucket = relationshipForPhone(world, phone)
-    if (bucket === 'owner') continue
-    if (bucket === 'associate_non_family') {
-      if (showsRegisteredAgent(phone) || !ownerLineMatches(world, phone)) return 'associate_non_family'
-      continue
-    }
-    if (bucket !== 'relationship_unknown') continue
-    if (showsRegisteredAgent(phone)) { unknown = true; continue }
-    if (ownerSkipTraceRelease(world, phone) || showsMemberOrOfficer(phone) || ownerLineMatches(world, phone)) continue
-    unknown = true
-  }
-  return unknown ? 'relationship_unknown' : null
+function relativeBlockedByOwnerDnc(world: SuppressionWorld, key: string, prospectId?: string | null): boolean {
+  return counselRelativeOwnerDnc({
+    key,
+    prospectId,
+    phones: phonesOf(world),
+    prospects: world.prospects ?? [],
+    optOuts: world.optOuts,
+    samePhone: (phone, phoneKeyValue) => phoneKey(phone) === phoneKeyValue,
+    propertyOf: propertyKey,
+    leads: world.leads,
+  })
 }
 
 function ownerPhoneHasPropertyDnc(world: SuppressionWorld, ownerKey: string): boolean {
@@ -669,6 +621,8 @@ export function exportBlockReason(
     if (row.smsConsent === 'opted_out') return 'contact_opt_out'
     if (row.deliverability === 'blocked') return 'contact_blocked'
   }
+  const deadHold = counselDeadLead(world.leads, key, (phone, phoneKeyValue) => phoneKey(phone) === phoneKeyValue)
+  if (deadHold === 'lead_dnc') return 'lead_dnc'
   const leadReason = firstReason(
     (world.leads ?? []).filter((lead) => sameKey(lead.phone ?? '', key)).flatMap((lead) => [
       reasonFromLeadClass(blockingClass('lead_call_result', lead.callResult) ?? ''),
@@ -677,6 +631,7 @@ export function exportBlockReason(
     LEAD_REASON_ORDER,
   )
   if (leadReason) return leadReason
+  if (deadHold) return deadHold
   const mojoReason = firstReason(
     (world.mojoEvents ?? []).filter((event) => sameKey(event.phone, key)).flatMap((event) => {
       const raw = reasonFromMojoClass(blockingClass('mojo_disposition_raw', event.dispositionRaw) ?? '')
@@ -688,6 +643,7 @@ export function exportBlockReason(
 
   const tie = relationshipBlock(world, key, prospectId)
   if (tie) return tie
+  if (relativeBlockedByOwnerDnc(world, key, prospectId)) return 'property_owner_dnc_fanout'
   if (propertyOwnerDncFanout(world, key, prospectId)) return 'property_owner_dnc_fanout'
   const held = counselOrPersonHold(world, key, prospectId)
   if (held) return held
@@ -696,4 +652,8 @@ export function exportBlockReason(
   if ((world.encodePending ?? []).some((row) => sameKey(row, key))) return 'mojo_encode_pending'
   if (shortSuppressionMatch(world, key, prospectId)) return 'hold_last4'
   return serviceAreaReason(world)
+}
+
+export function campaignMemberOffered(input: Parameters<typeof offerCampaignMember>[0]): boolean {
+  return offerCampaignMember(input, exportBlockReason)
 }
