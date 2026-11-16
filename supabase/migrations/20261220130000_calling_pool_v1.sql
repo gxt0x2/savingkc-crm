@@ -2008,6 +2008,64 @@ BEGIN
 END;
 $function$;
 
+-- #831's lane lookup. The OR across prospect id and phone key made the
+-- planner scan every prospect phone once per block-reason call. Same matches,
+-- as SQL so the block-reason query can inline them.
+CREATE OR REPLACE FUNCTION public.dialer_campaign_lanes_v1(p_prospect_id uuid, p_key text)
+RETURNS text[]
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $function$
+  SELECT coalesce(array_agg(DISTINCT nullif(btrim(found.lane), '')), ARRAY[]::text[])
+  FROM (
+    SELECT campaign.lane
+    FROM public.prospecting_campaigns AS campaign
+    JOIN public.prospecting_campaign_members AS member ON member.campaign_id = campaign.id
+    JOIN public.prospecting_campaign_member_contacts AS contact ON contact.member_id = member.id
+    WHERE contact.status = 'ready'
+      AND (contact.prospect_id = p_prospect_id OR member.prospect_id = p_prospect_id)
+    UNION
+    SELECT campaign.lane
+    FROM public.prospecting_campaigns AS campaign
+    JOIN public.prospecting_campaign_members AS member ON member.campaign_id = campaign.id
+    JOIN public.prospecting_campaign_member_contacts AS contact ON contact.member_id = member.id
+    LEFT JOIN public.prospect_phones AS phone ON phone.id = contact.prospect_phone_id
+    WHERE contact.status = 'ready'
+      AND public.prospecting_phone_key_v1(coalesce(phone.phone, contact.phone_snapshot)) = p_key
+  ) AS found;
+$function$;
+
+-- #831 attaches the lane gate to every bucketed phone, then filters to the
+-- input key. Keep that gate and run it only for the input key.
+DO $lane_push$
+DECLARE
+  def text := pg_get_functiondef('public.source_list_phone_block_reasons_v1(text[], uuid[], text[], text[])'::regprocedure);
+  old text := $old$    FROM bucketed_phones
+    CROSS JOIN LATERAL (
+      SELECT public.dialer_relationship_block_reason_v1($old$;
+  new text := $new$    FROM (
+      SELECT bucketed_phones.*
+      FROM bucketed_phones
+      WHERE length(bucketed_phones.key10) = 10
+        AND bucketed_phones.key10 IN (
+          SELECT input.key10 FROM input WHERE length(input.key10) = 10
+        )
+      OFFSET 0
+    ) AS bucketed_phones
+    CROSS JOIN LATERAL (
+      SELECT public.dialer_relationship_block_reason_v1($new$;
+BEGIN
+  IF position(old IN def) = 0 THEN
+    IF position('bucketed_phones.key10 IN' IN def) > 0 THEN
+      RETURN;
+    END IF;
+    RAISE EXCEPTION 'relationship lane call site was not found';
+  END IF;
+  EXECUTE replace(def, old, new);
+END;
+$lane_push$;
+
 COMMENT ON FUNCTION public.set_source_list_row_status_v1(uuid, text, text, text, uuid) IS
   'Status change from the live market-check function, including out_of_area and new_needs_skip. loaded_to_dialer is refused when a phone on that batch row is blocked or outside the calling window.';
 
