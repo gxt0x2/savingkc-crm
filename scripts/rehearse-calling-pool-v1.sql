@@ -867,6 +867,7 @@ END $$;
 
 RESET ROLE;
 DELETE FROM public.source_list_rows WHERE source_list_id = '81000000-0000-4000-8000-000000003104';
+VACUUM ANALYZE public.source_list_rows;
 SET ROLE service_role;
 
 RESET ROLE;
