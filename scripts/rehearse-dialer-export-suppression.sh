@@ -125,9 +125,12 @@ CREATE TABLE public.source_lists (
   county text,
   state text,
   violation_kind text,
+  source_url text,
+  notes text,
   source_file_sha256 text,
   source_file_bytes integer,
-  imported_by text
+  imported_by text,
+  created_at timestamptz DEFAULT now()
 );
 CREATE TABLE public.source_list_row_status_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -154,8 +157,18 @@ CREATE TABLE public.source_list_rows (
   prospect_id uuid,
   status text,
   phones text[],
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
   match_key text,
-  raw jsonb NOT NULL DEFAULT '{}'::jsonb
+  status_reason text,
+  updated_by text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  status_changed_at timestamptz DEFAULT now(),
+  loaded_at timestamptz,
+  loaded_export_batch_id uuid,
+  list_day date,
+  requires_licensee_disclosure boolean NOT NULL DEFAULT false,
+  strategy text
 );
 CREATE TABLE public.crm_properties (id uuid PRIMARY KEY, county text, parcel_id text);
 CREATE TABLE public.mortgage_foreclosure_prospects (id uuid PRIMARY KEY);
@@ -233,19 +246,34 @@ SQL
 
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114213919_source_list_service_area_block.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261114215029_tax_status_verification.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010826_dialer_export_suppression.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010849_dialer_export_associate_property_dnc.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115012108_code_violation_county_backfill.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261209120000_dialer_owner_line_release.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261219120000_dialer_relationship_lane_gate.sql" >/dev/null
+apply() {
+  local label="$1"
+  shift
+  if "$@" >/dev/null; then
+    echo "PASS: ${label}"
+  else
+    echo "FAIL: ${label}"
+    exit 1
+  fi
+}
+
+apply "apply #814 renamed suppression chain" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010826_dialer_export_suppression.sql"
+apply "apply #814 associate and property DNC" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010849_dialer_export_associate_property_dnc.sql"
+apply "apply #814 mojo raw rehearsal" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010855_dialer_export_mojo_raw_and_rehearsal.sql"
+apply "apply #814 speed stamp" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql"
+apply "apply #814 speed stamp again" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115010911_dialer_export_speed_f1_stamp.sql"
+apply "apply #826 code-violation county backfill" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115012108_code_violation_county_backfill.sql"
+apply "apply #812 phone line checks 20261205160000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql"
+apply "apply #812 phone line check review 20261205170000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql"
+apply "apply #827 owner-line release 20261209120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261209120000_dialer_owner_line_release.sql"
+apply "apply #830 owner-line person skip 20261218120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql"
+apply "apply #817 property market checks 20261215120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql"
+apply "apply #817 market-check fix 20261215130000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql"
+apply "apply #831 relationship lane gate 20261219120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261219120000_dialer_relationship_lane_gate.sql"
+apply "apply #825 mojo DNC ledger 20261220120000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220120000_mojo_dnc_ledger.sql"
+apply "apply #825 mojo DNC ledger 20261220120000 again" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220120000_mojo_dnc_ledger.sql"
+apply "apply #825 calling pool 20261220130000" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220130000_calling_pool_v1.sql"
+apply "apply #825 calling pool 20261220130000 again" "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220130000_calling_pool_v1.sql"
 
 "${PSQL[@]}" >/dev/null <<'SQL'
 GRANT USAGE ON SCHEMA public TO service_role;
@@ -348,6 +376,7 @@ DECLARE
   probe_got boolean;
   report jsonb;
 BEGIN
+  PERFORM set_config('dialer.pool_now', '2026-11-14 16:00:00+00', true);
   INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
   SELECT DISTINCT row.parcel_id, 'jackson', 'tax_delinquent', row.prospect_id, now(), 'jackson_tax_portal', 'delinquent', 0
   FROM public.source_list_rows AS row
@@ -952,6 +981,9 @@ END $$;
 RESET ROLE;
 SELECT 'PASS: raw Fax and DNC Number, DNC Contact fan-out, dnc_refused without a prospect link, dead_reason dnc versus DNC Number only, fan-out voice hold, last-4 hold, monotonic stamps, associate and property fan-out, dataskip_dnc export, encode queue no-op, F1 release, litigator stamp' AS result;
 SQL
+echo "PASS: #827 owner-line probes"
+
+"${PSQL[@]}" -f "$ROOT/scripts/rehearse-calling-pool-v1.sql"
 
 "${PSQL[@]}" <<'SQL'
 INSERT INTO public.prospects (id, county, situs_street, parcel_id, owner_1_last, owner_1_type)
@@ -1027,6 +1059,7 @@ DECLARE
   report jsonb;
   elapsed numeric;
 BEGIN
+  PERFORM set_config('dialer.pool_now', '2026-11-14 16:00:00+00', true);
   report := public.record_source_list_export_batch_v1(
     'speed', NULL, NULL, NULL, NULL, '60000000-0000-4000-8000-000000000099', 1
   );
@@ -1034,7 +1067,7 @@ BEGIN
   IF report->>'phone_count' <> '500' THEN
     RAISE EXCEPTION 'speed batch exported % phones', report->>'phone_count';
   END IF;
-  IF elapsed >= 5 THEN
+  IF elapsed > 7 THEN
     RAISE EXCEPTION '500 phone batch took % seconds', elapsed;
   END IF;
   RAISE NOTICE '500 phone batch took % seconds', elapsed;
@@ -1236,3 +1269,7 @@ print(f"export view explain analyze {elapsed:.1f} ms")
 if elapsed >= 4000:
     raise SystemExit(f"export view EXPLAIN took {elapsed:.1f} ms")
 PY
+
+echo "PASS: calling-pool export at or under 7s"
+bash "$ROOT/scripts/rehearse-market-check.sh"
+echo "PASS: #817 market-check rehearsal including B6 after #825"

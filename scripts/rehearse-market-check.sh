@@ -258,6 +258,26 @@ CREATE TABLE IF NOT EXISTS public.parcel_inventory (
   created_at timestamptz DEFAULT clock_timestamp(),
   run_id uuid
 );
+CREATE TABLE IF NOT EXISTS public.prospecting_campaigns (
+  id uuid PRIMARY KEY,
+  name text,
+  lane text
+);
+CREATE TABLE IF NOT EXISTS public.prospecting_campaign_members (
+  id uuid PRIMARY KEY,
+  campaign_id uuid,
+  prospect_id uuid
+);
+CREATE TABLE IF NOT EXISTS public.prospecting_campaign_member_contacts (
+  id uuid PRIMARY KEY,
+  member_id uuid,
+  prospect_id uuid,
+  prospect_phone_id uuid,
+  phone_snapshot text,
+  relationship text,
+  contact_name text,
+  status text
+);
 SQL
 
 # Atlas order after the #814 chain: #826, #827, #817, then #830.
@@ -266,6 +286,12 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215120000_property_market_checks.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261215130000_market_check_fix_round.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261218120000_dialer_owner_line_person_skip.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205160000_phone_line_checks.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261205170000_phone_line_check_review.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261219120000_dialer_relationship_lane_gate.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220120000_mojo_dnc_ledger.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261220130000_calling_pool_v1.sql" >/dev/null
+echo "PASS: apply #831 then #825"
 
 SEED_JSON=$(node -e '
 const fs = require("fs");
@@ -567,6 +593,7 @@ BEGIN
   FROM public.source_lists WHERE source_file_sha256 = repeat('1', 64);
   INSERT INTO public.tax_status_checks (parcel_id, county, list_type, prospect_id, checked_at, source, result, rank_boost)
   VALUES ('ONE1', 'jackson', 'tax_delinquent', '00000000-0000-4000-8000-0000000000b1', now(), 'jackson_tax_portal', 'delinquent', 0);
+  PERFORM set_config('dialer.pool_now', '2026-11-14 16:00:00+00', true);
   v_export := public.record_source_list_export_batch_v1(
     'rehearsal', 'tax_delinquent', 'jackson', 'MO', NULL,
     (SELECT id FROM public.source_lists WHERE source_file_sha256 = repeat('1', 64)),

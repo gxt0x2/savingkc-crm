@@ -131,6 +131,69 @@ describe('dialer export suppression migration', () => {
     expect(speed).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
   })
 
+  it('adds the append-only DNC ledger and wires the encode queue view', () => {
+    const ledger = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261220120000_mojo_dnc_ledger.sql'),
+      'utf8',
+    )
+    expect(ledger).toContain('CREATE TABLE IF NOT EXISTS public.mojo_dnc_ledger')
+    expect(ledger).toContain("CHECK (scope IN ('number', 'contact', 'person', 'household', 'property'))")
+    expect(ledger).toContain('CREATE OR REPLACE VIEW public.mojo_dnc_pending')
+    expect(ledger).toContain('WHERE encoded_at IS NULL')
+    expect(ledger).toContain('CREATE OR REPLACE VIEW public.mojo_encode_queue')
+    expect(ledger).toContain('e164 AS phone')
+    expect(ledger).toContain('mojo_dnc_ledger_append_only')
+    expect(ledger).toContain('sender_line')
+    expect(ledger).toContain('consent_basis')
+    expect(ledger).toContain('optout_verbatim')
+    expect(ledger).toContain('5 years')
+    expect(ledger).not.toMatch(/\b(?:DELETE\s+FROM|TRUNCATE\s+(?:TABLE\s+)?(?:public\.)?mojo_dnc_ledger|DROP\s+(?:TABLE|SCHEMA))\b/i)
+    expect(ledger).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+    expect(ledger).not.toMatch(/\b(?:TWILIO_|MERCURY_)/)
+  })
+
+  it('builds the calling pool from system_config caps and keeps the 4am lock', () => {
+    const pool = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20261220130000_calling_pool_v1.sql'),
+      'utf8',
+    )
+    expect(pool).toContain("key = 'dialer_pool_caps_v1'")
+    expect(pool).toContain('tier1_min_signals')
+    expect(pool).toContain('CREATE OR REPLACE VIEW public.dialer_pool_v1')
+    expect(pool).toContain("'eligible_pending_scrub'")
+    expect(pool).toContain('CREATE OR REPLACE VIEW public.dialer_pool_morning_audit_v1')
+    expect(pool).toContain('audit_findings_to_block')
+    expect(pool).toContain('audit_business_days')
+    expect(pool).toContain('list_lock_ct')
+    expect(pool).toContain('phones_per_contact')
+    expect(pool).toContain('list_locked')
+    expect(pool).toContain('dialer_multi_line_suspended_v1')
+    expect(pool).toContain('SELECT true;')
+    expect(pool).toContain('dialer_pool_call_window_open_v1')
+    expect(pool).toContain('outside_tz_window')
+    expect(pool).toContain("'new_needs_skip'")
+    expect(pool).toContain("'mls_expired'")
+    expect(pool).toContain('pg_advisory_xact_lock')
+    expect(pool).toContain('licensee_disclosure_required')
+    expect(pool).toContain('dialer_label_unmapped')
+    expect(pool).toContain('export_label')
+    expect(pool).toContain('source_list_market_phone_review')
+    expect(pool).toContain('source_list_market_block_reason_v1')
+    expect(pool).toContain('phone_line_check_block_enabled_v1')
+    expect(pool).toContain('linked_ids AS')
+    expect(pool).toContain('dialer_master_pool_v1')
+    expect(pool).toContain("'Deceased'")
+    expect(pool).toContain("'Tax 3+'")
+    expect(pool).toContain('MLS_EXPIRED_WINDOW_DAYS')
+    expect(pool).toContain("'market_expired'")
+    expect(pool).toContain("'held'")
+    expect(pool).not.toMatch(/UPDATE\s+public\.system_config[\s\S]{0,120}dialer_multi_line_suspended/i)
+    expect(pool).not.toContain("'cass'")
+    expect(pool).not.toMatch(/\b(?:DELETE\s+FROM|DROP\s+(?:TABLE|SCHEMA))\b/i)
+    expect(pool).not.toMatch(/\b(?:insert|update|delete|from|join|into|truncate)\s+(?:public\.)?mojo_call_queue\b/i)
+    expect(pool).not.toMatch(/\b(?:TWILIO_|MERCURY_)/)
+  })
+
   it('releases an owner-line co-owner without recreating the batch or clearing a hold', () => {
     const release = readFileSync(
       join(process.cwd(), 'supabase/migrations/20261209120000_dialer_owner_line_release.sql'),
