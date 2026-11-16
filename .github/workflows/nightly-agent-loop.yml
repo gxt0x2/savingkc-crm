@@ -1,0 +1,60 @@
+name: Nightly agent loop
+
+# 0 3 * * * UTC is 9pm CST / 10pm CDT.
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      depth:
+        description: Retry depth. Tries are 0, 1, and 2.
+        required: false
+        type: number
+        default: 0
+      reason:
+        description: Why this run was dispatched
+        required: false
+        type: string
+        default: ''
+
+env:
+  AGENT_MAX_MINUTES: 30
+  AGENT_MODEL: grok-4.7
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+  actions: write
+
+concurrency:
+  group: nightly-agent-loop
+  cancel-in-progress: false
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run nightly agent loop
+        env:
+          NIGHTLY_AGENT_ENABLED: ${{ vars.NIGHTLY_AGENT_ENABLED }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPTH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.depth || '0' }}
+          REASON: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.reason || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/nightly-agent/run.mjs
+
+      - name: Upload outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-agent-outcome
+          path: nightly-agent-outcome.json
+          if-no-files-found: warn
