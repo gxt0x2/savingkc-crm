@@ -226,6 +226,12 @@ function prefer(current: Hit | undefined, next: Hit | undefined): Hit | undefine
   return current
 }
 
+/** Unknown is the only status a later row may replace. Active and pending stay above expired and unmapped. */
+function mayReplaceStatus(current: ListingStatus, next: ListingStatus): boolean {
+  if (current === 'listing_check_unknown' && next !== 'listing_check_unknown') return true
+  return RANK[next] > RANK[current]
+}
+
 function hitFrom(row: MatrixRow, status: ListingStatus): Hit {
   return {
     status,
@@ -259,6 +265,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const listingHits = new Map<string, Hit>()
   const covered = new Set<string>()
   const rangeSkips: MatrixRow[] = []
+  const rangeKeys = new Set<string>()
   const storedListingStatuses = new Set<ListingStatus>([
     'listed_active', 'listed_pending', 'listed_withdrawn', 'listing_expired', 'sold_new_owner', 'listing_check_unknown',
   ])
@@ -267,6 +274,8 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     if (row.zip5 && row.addrNorm) covered.add(row.zip5)
     if (row.daysOutOfRange) {
       rangeSkips.push(row)
+      const rangeKey = propertyKey(row.parcelId, row.addrNorm, row.zip5)
+      if (rangeKey) rangeKeys.add(rangeKey)
       continue
     }
     const classified = classifyMatrixStatus(row.statusRaw, row, input.today, windowDays)
@@ -275,8 +284,10 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     const hit = hitFrom(row, status)
     if (storedListingStatuses.has(status)) {
       const listingKey = propertyKey(row.parcelId, row.addrNorm, row.zip5)
-      // Later file row wins, including an unmapped status, so an older active row cannot stay current.
-      if (listingKey) listingHits.set(listingKey, hit)
+      if (listingKey) {
+        const current = listingHits.get(listingKey)
+        if (!current || mayReplaceStatus(current.status, hit.status)) listingHits.set(listingKey, hit)
+      }
     }
     if (row.parcelId) byParcel.set(row.parcelId, prefer(byParcel.get(row.parcelId), hit) as Hit)
     if (!row.addrNorm || !row.zip5) continue
@@ -347,6 +358,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     else if (otherZip && otherZip.zip5 !== code) status = 'listing_check_unknown'
     else if (!addrNorm && !hit) status = 'listing_check_unknown'
     else if (!code || !covered.has(code)) status = 'listing_check_unknown'
+    else if (rangeKeys.has(propertyKey(parcelId, addrNorm, code))) status = 'listing_check_unknown'
     else if (input.allowOffMarket && input.completeFile) status = 'off_market_ok'
     else status = 'listing_check_unknown'
 
@@ -447,6 +459,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     const facts = marketFacts(hit)
     const existing = checks.find((check) => check.propertyKey === key)
     if (existing) {
+      if (!mayReplaceStatus(existing.listingStatus, hit.status)) continue
       existing.listingStatus = hit.status
       existing.mlsNumber = hit.mlsNumber
       existing.listStatusRaw = hit.raw

@@ -347,6 +347,41 @@ describe('listed and sold market check', () => {
     const result = plan(FIXTURE, [], { additionListDay: '2026-11-15' })
     expect(result.intakes[0]?.listDay).toBe('2026-11-15')
   })
+
+  it('keeps the higher status when a later row is expired or unmapped', () => {
+    const header = 'MLS #,St,Address,Zip,Close Dt,Expire Date,List Price,Parcel ID'
+    const activeThenExpired = [
+      header,
+      '1,Active,10 Oak St,64114,,,100000,P1',
+      '2,Expired,10 Oak St,64114,,2026-11-01,100000,P1',
+    ].join('\n')
+    const pendingThenExpired = [
+      header,
+      '1,Pending,11 Oak St,64114,,,100000,P2',
+      '2,Expired,11 Oak St,64114,,2026-11-01,100000,P2',
+    ].join('\n')
+    const activeThenUnmapped = [
+      header,
+      '1,Active,12 Oak St,64114,,,100000,P3',
+      '2,Not A Status,12 Oak St,64114,,,100000,P3',
+    ].join('\n')
+    const pooled = (csv: string, id: string, parcelId: string, address: string) => plan(csv, [
+      pool({ id, address, zip5: '64114', parcelId }),
+    ])
+    expect(pooled(activeThenExpired, 'a', 'P1', '10 Oak St').checks.find((row) => row.parcelId === 'P1')?.listingStatus).toBe('listed_active')
+    expect(pooled(pendingThenExpired, 'p', 'P2', '11 Oak St').checks.find((row) => row.parcelId === 'P2')?.listingStatus).toBe('listed_pending')
+    expect(pooled(activeThenUnmapped, 'u', 'P3', '12 Oak St').checks.find((row) => row.parcelId === 'P3')?.listingStatus).toBe('listed_active')
+  })
+
+  it('records unknown when the only Matrix row has an oversized DOM', () => {
+    const csv = [
+      'MLS #,St,Address,Zip,DOM,Parcel ID',
+      '1,Active,20 Pine St,64114,20001,BIG',
+    ].join('\n')
+    const result = plan(csv, [pool({ id: 'big', address: '20 Pine St', zip5: '64114', parcelId: 'BIG' })])
+    expect(result.skipped).toEqual([expect.objectContaining({ reason: 'dom_out_of_range', parcelId: 'BIG' })])
+    expect(result.checks.find((row) => row.parcelId === 'BIG')?.listingStatus).toBe('listing_check_unknown')
+  })
 })
 
 describe('Chicago market-check window', () => {

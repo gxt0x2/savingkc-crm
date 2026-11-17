@@ -108,7 +108,7 @@ describe('90+ Days selection', () => {
     expect(planned().intakes.map((row) => row.parcelId)).toEqual(['D3'])
   })
 
-  it('keeps only today and lets a newer unmapped row replace an older active row', () => {
+  it('keeps only today, and an unmapped latest row stays out of the lane', () => {
     const active = {
       propertyKey: 'parcel:P1',
       listingStatus: 'listed_active' as const,
@@ -144,7 +144,7 @@ describe('90+ Days selection', () => {
       hasExpireColumn: false,
       fileSha256: 'd'.repeat(64),
     })
-    expect(stored.checks.find((check) => check.parcelId === 'P1')?.listingStatus).toBe('listing_check_unknown')
+    expect(stored.checks.find((check) => check.parcelId === 'P1')?.listingStatus).toBe('listed_active')
   })
 })
 
