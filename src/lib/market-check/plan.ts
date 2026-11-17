@@ -39,6 +39,12 @@ export interface MarketCheckDraft {
   listingStatus: ListingStatus
   closeDate: string | null
   listPrice: number | null
+  expireDate: string | null
+  dom: number | null
+  cdom: number | null
+  listingAgentName: string | null
+  listingAgentPhone: string | null
+  listingOffice: string | null
   ownerOnRoll: string | null
   ownerChanged: boolean
   ownerCheckUnknown: boolean
@@ -67,7 +73,7 @@ export interface IntakeDraft {
 }
 
 export interface MarketSkip {
-  reason: 'out_of_service_area' | 'county_unresolved'
+  reason: 'out_of_service_area' | 'county_unresolved' | 'dom_out_of_range'
   zip5: string
   parcelId: string | null
   address: string
@@ -135,6 +141,12 @@ interface Hit {
   raw: string
   closeDate: string | null
   listPrice: number | null
+  expireDate: string | null
+  dom: number | null
+  cdom: number | null
+  listingAgentName: string | null
+  listingAgentPhone: string | null
+  listingOffice: string | null
   zip5: string
   parcelId: string | null
   addrNorm: string
@@ -214,6 +226,12 @@ function prefer(current: Hit | undefined, next: Hit | undefined): Hit | undefine
   return current
 }
 
+/** Unknown is the only status a later row may replace. Active and pending stay above expired and unmapped. */
+function mayReplaceStatus(current: ListingStatus, next: ListingStatus): boolean {
+  if (current === 'listing_check_unknown' && next !== 'listing_check_unknown') return true
+  return RANK[next] > RANK[current]
+}
+
 function hitFrom(row: MatrixRow, status: ListingStatus): Hit {
   return {
     status,
@@ -221,6 +239,12 @@ function hitFrom(row: MatrixRow, status: ListingStatus): Hit {
     raw: row.statusRaw,
     closeDate: row.closeDate,
     listPrice: row.listPrice,
+    expireDate: row.expireDate,
+    dom: row.dom,
+    cdom: row.cdom,
+    listingAgentName: row.listingAgentName,
+    listingAgentPhone: row.listingAgentPhone,
+    listingOffice: row.listingOffice,
     zip5: row.zip5,
     parcelId: row.parcelId,
     addrNorm: row.addrNorm,
@@ -238,14 +262,33 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const core = new Map<string, Hit>()
   const anyZip = new Map<string, Hit>()
   const byParcel = new Map<string, Hit>()
+  const listingHits = new Map<string, Hit>()
   const covered = new Set<string>()
+  const rangeSkips: MatrixRow[] = []
+  const rangeKeys = new Set<string>()
+  const storedListingStatuses = new Set<ListingStatus>([
+    'listed_active', 'listed_pending', 'listed_withdrawn', 'listing_expired', 'sold_new_owner', 'listing_check_unknown',
+  ])
 
   for (const row of input.rows) {
     if (row.zip5 && row.addrNorm) covered.add(row.zip5)
+    if (row.daysOutOfRange) {
+      rangeSkips.push(row)
+      const rangeKey = propertyKey(row.parcelId, row.addrNorm, row.zip5)
+      if (rangeKey) rangeKeys.add(rangeKey)
+      continue
+    }
     const classified = classifyMatrixStatus(row.statusRaw, row, input.today, windowDays)
     if (!classified) continue
     const status: ListingStatus = classified === 'unmapped' ? 'listing_check_unknown' : classified
     const hit = hitFrom(row, status)
+    if (storedListingStatuses.has(status)) {
+      const listingKey = propertyKey(row.parcelId, row.addrNorm, row.zip5)
+      if (listingKey) {
+        const current = listingHits.get(listingKey)
+        if (!current || mayReplaceStatus(current.status, hit.status)) listingHits.set(listingKey, hit)
+      }
+    }
     if (row.parcelId) byParcel.set(row.parcelId, prefer(byParcel.get(row.parcelId), hit) as Hit)
     if (!row.addrNorm || !row.zip5) continue
     const exactKey = `${row.addrNorm}|${row.zip5}`
@@ -258,12 +301,28 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const checks: MarketCheckDraft[] = []
   const tags: TagDraft[] = []
   const intakes: IntakeDraft[] = []
-  const skipped: MarketSkip[] = []
+  const skipped: MarketSkip[] = rangeSkips.map((row) => ({
+    reason: 'dom_out_of_range' as const,
+    zip5: row.zip5,
+    parcelId: row.parcelId,
+    address: row.address,
+  }))
   const seenIntake = new Set<string>()
   const tagged = new Set<string>()
 
   function pushCheck(draft: Omit<MarketCheckDraft, 'source' | 'exportFileSha256'>): void {
     checks.push({ ...draft, source: 'heartland_matrix', exportFileSha256: input.fileSha256 })
+  }
+
+  function marketFacts(hit: Hit | undefined) {
+    return {
+      dom: hit?.dom ?? null,
+      cdom: hit?.cdom ?? null,
+      expireDate: hit?.expireDate ?? null,
+      listingAgentName: hit?.listingAgentName ?? null,
+      listingAgentPhone: hit?.listingAgentPhone ?? null,
+      listingOffice: hit?.listingOffice ?? null,
+    }
   }
 
   function tag(poolRowId: string, mlsTag: TagDraft['mlsTag'], strategy: TagDraft['strategy'], key: string) {
@@ -299,6 +358,7 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     else if (otherZip && otherZip.zip5 !== code) status = 'listing_check_unknown'
     else if (!addrNorm && !hit) status = 'listing_check_unknown'
     else if (!code || !covered.has(code)) status = 'listing_check_unknown'
+    else if (rangeKeys.has(propertyKey(parcelId, addrNorm, code))) status = 'listing_check_unknown'
     else if (input.allowOffMarket && input.completeFile) status = 'off_market_ok'
     else status = 'listing_check_unknown'
 
@@ -311,13 +371,15 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     }
     const key = propertyKey(base.parcelId, base.addrNorm, base.zip5)
     const listDay = status === 'off_market_ok' ? input.additionListDay : input.today
+    const matched = hit && status !== 'off_market_ok' && status !== 'listing_check_unknown' ? hit : undefined
     pushCheck({
       ...base,
       listDay,
-      mlsNumber: hit && status !== 'off_market_ok' && status !== 'listing_check_unknown' ? hit.mlsNumber : null,
-      listStatusRaw: hit && status !== 'off_market_ok' && status !== 'listing_check_unknown' ? hit.raw : null,
+      mlsNumber: matched?.mlsNumber ?? null,
+      listStatusRaw: matched?.raw ?? null,
       listingStatus: status,
       propertyKey: key || `row:${pool.id}`,
+      ...marketFacts(matched),
     })
 
     if (!hit || !intakeAllowed(input.targetStatusByZip.get(hit.zip5 || code)?.status)) continue
@@ -383,8 +445,48 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
         ownerChanged: false,
         ownerCheckUnknown: true,
         propertyKey: key,
+        dom: row.dom,
+        cdom: row.cdom,
+        expireDate: row.expireDate,
+        listingAgentName: row.listingAgentName,
+        listingAgentPhone: row.listingAgentPhone,
+        listingOffice: row.listingOffice,
       })
     }
+  }
+
+  for (const [key, hit] of listingHits) {
+    const facts = marketFacts(hit)
+    const existing = checks.find((check) => check.propertyKey === key)
+    if (existing) {
+      if (!mayReplaceStatus(existing.listingStatus, hit.status)) continue
+      existing.listingStatus = hit.status
+      existing.mlsNumber = hit.mlsNumber
+      existing.listStatusRaw = hit.raw
+      existing.dom = facts.dom
+      existing.cdom = facts.cdom
+      existing.expireDate = facts.expireDate
+      existing.listingAgentName = facts.listingAgentName
+      existing.listingAgentPhone = facts.listingAgentPhone
+      existing.listingOffice = facts.listingOffice
+      continue
+    }
+    pushCheck({
+      parcelId: hit.parcelId,
+      addrNorm: hit.addrNorm,
+      zip5: hit.zip5,
+      listDay: input.today,
+      mlsNumber: hit.mlsNumber,
+      listStatusRaw: hit.raw,
+      listingStatus: hit.status,
+      closeDate: hit.closeDate,
+      listPrice: hit.listPrice,
+      ownerOnRoll: null,
+      ownerChanged: false,
+      ownerCheckUnknown: true,
+      propertyKey: key,
+      ...marketFacts(hit),
+    })
   }
 
   return { checks, tags, intakes, coveredZips: [...covered].sort(), skipped }
