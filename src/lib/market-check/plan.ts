@@ -39,6 +39,11 @@ export interface MarketCheckDraft {
   listingStatus: ListingStatus
   closeDate: string | null
   listPrice: number | null
+  expireDate: string | null
+  dom: number | null
+  cdom: number | null
+  listingAgentName: string | null
+  listingAgentPhone: string | null
   ownerOnRoll: string | null
   ownerChanged: boolean
   ownerCheckUnknown: boolean
@@ -135,6 +140,11 @@ interface Hit {
   raw: string
   closeDate: string | null
   listPrice: number | null
+  expireDate: string | null
+  dom: number | null
+  cdom: number | null
+  listingAgentName: string | null
+  listingAgentPhone: string | null
   zip5: string
   parcelId: string | null
   addrNorm: string
@@ -221,6 +231,11 @@ function hitFrom(row: MatrixRow, status: ListingStatus): Hit {
     raw: row.statusRaw,
     closeDate: row.closeDate,
     listPrice: row.listPrice,
+    expireDate: row.expireDate,
+    dom: row.dom,
+    cdom: row.cdom,
+    listingAgentName: row.listingAgentName,
+    listingAgentPhone: row.listingAgentPhone,
     zip5: row.zip5,
     parcelId: row.parcelId,
     addrNorm: row.addrNorm,
@@ -238,7 +253,11 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
   const core = new Map<string, Hit>()
   const anyZip = new Map<string, Hit>()
   const byParcel = new Map<string, Hit>()
+  const listingHits = new Map<string, Hit>()
   const covered = new Set<string>()
+  const storedListingStatuses = new Set<ListingStatus>([
+    'listed_active', 'listed_pending', 'listed_withdrawn', 'listing_expired', 'sold_new_owner',
+  ])
 
   for (const row of input.rows) {
     if (row.zip5 && row.addrNorm) covered.add(row.zip5)
@@ -246,6 +265,10 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     if (!classified) continue
     const status: ListingStatus = classified === 'unmapped' ? 'listing_check_unknown' : classified
     const hit = hitFrom(row, status)
+    if (storedListingStatuses.has(status)) {
+      const listingKey = propertyKey(row.parcelId, row.addrNorm, row.zip5)
+      if (listingKey) listingHits.set(listingKey, prefer(listingHits.get(listingKey), hit) as Hit)
+    }
     if (row.parcelId) byParcel.set(row.parcelId, prefer(byParcel.get(row.parcelId), hit) as Hit)
     if (!row.addrNorm || !row.zip5) continue
     const exactKey = `${row.addrNorm}|${row.zip5}`
@@ -264,6 +287,16 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
 
   function pushCheck(draft: Omit<MarketCheckDraft, 'source' | 'exportFileSha256'>): void {
     checks.push({ ...draft, source: 'heartland_matrix', exportFileSha256: input.fileSha256 })
+  }
+
+  function marketFacts(hit: Hit | undefined) {
+    return {
+      dom: hit?.dom ?? null,
+      cdom: hit?.cdom ?? null,
+      expireDate: hit?.expireDate ?? null,
+      listingAgentName: hit?.listingAgentName ?? null,
+      listingAgentPhone: hit?.listingAgentPhone ?? null,
+    }
   }
 
   function tag(poolRowId: string, mlsTag: TagDraft['mlsTag'], strategy: TagDraft['strategy'], key: string) {
@@ -311,13 +344,15 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
     }
     const key = propertyKey(base.parcelId, base.addrNorm, base.zip5)
     const listDay = status === 'off_market_ok' ? input.additionListDay : input.today
+    const matched = hit && status !== 'off_market_ok' && status !== 'listing_check_unknown' ? hit : undefined
     pushCheck({
       ...base,
       listDay,
-      mlsNumber: hit && status !== 'off_market_ok' && status !== 'listing_check_unknown' ? hit.mlsNumber : null,
-      listStatusRaw: hit && status !== 'off_market_ok' && status !== 'listing_check_unknown' ? hit.raw : null,
+      mlsNumber: matched?.mlsNumber ?? null,
+      listStatusRaw: matched?.raw ?? null,
       listingStatus: status,
       propertyKey: key || `row:${pool.id}`,
+      ...marketFacts(matched),
     })
 
     if (!hit || !intakeAllowed(input.targetStatusByZip.get(hit.zip5 || code)?.status)) continue
@@ -383,8 +418,33 @@ export function planMarketCheck(input: PlanMarketCheckInput): MarketPlan {
         ownerChanged: false,
         ownerCheckUnknown: true,
         propertyKey: key,
+        dom: row.dom,
+        cdom: row.cdom,
+        expireDate: row.expireDate,
+        listingAgentName: row.listingAgentName,
+        listingAgentPhone: row.listingAgentPhone,
       })
     }
+  }
+
+  for (const [key, hit] of listingHits) {
+    if (checks.some((check) => check.propertyKey === key)) continue
+    pushCheck({
+      parcelId: hit.parcelId,
+      addrNorm: hit.addrNorm,
+      zip5: hit.zip5,
+      listDay: input.today,
+      mlsNumber: hit.mlsNumber,
+      listStatusRaw: hit.raw,
+      listingStatus: hit.status,
+      closeDate: hit.closeDate,
+      listPrice: hit.listPrice,
+      ownerOnRoll: null,
+      ownerChanged: false,
+      ownerCheckUnknown: true,
+      propertyKey: key,
+      ...marketFacts(hit),
+    })
   }
 
   return { checks, tags, intakes, coveredZips: [...covered].sort(), skipped }
